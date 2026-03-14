@@ -4,17 +4,22 @@ from datetime import datetime
 class FatigueScore(db.Model):
     __tablename__ = 'fatigue_scores'
 
+    # ── Index for fast latest-score lookups ───────────────────────────────────
+    __table_args__ = (
+        db.Index('ix_fatigue_pitcher_calc', 'pitcher_id', 'calculated_at'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     pitcher_id = db.Column(db.Integer, db.ForeignKey('pitchers.id'), nullable=False)
     calculated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Score components (each 0-100)
-    raw_score = db.Column(db.Float, nullable=False)         # Final weighted score
-    pitch_count_score = db.Column(db.Float)                  # Based on pitches last 7 days
-    rest_days_score = db.Column(db.Float)                    # Days since last appearance
-    appearances_score = db.Column(db.Float)                  # Appearances in last 7/14 days
-    leverage_score = db.Column(db.Float)                     # High-leverage workload
-    innings_score = db.Column(db.Float)                      # Innings in rolling window
+    raw_score = db.Column(db.Float, nullable=False)
+    pitch_count_score = db.Column(db.Float)
+    rest_days_score = db.Column(db.Float)
+    appearances_score = db.Column(db.Float)
+    leverage_score = db.Column(db.Float)
+    innings_score = db.Column(db.Float)
 
     # Supporting data used in calculation
     days_since_last_appearance = db.Column(db.Integer)

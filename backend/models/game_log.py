@@ -4,12 +4,22 @@ from datetime import datetime
 class GameLog(db.Model):
     __tablename__ = 'game_logs'
 
+    # ── Indexes for query performance ─────────────────────────────────────────
+    __table_args__ = (
+        db.Index('ix_game_log_pitcher_date', 'pitcher_id', 'game_date'),
+        db.Index('ix_game_log_game_pk',      'mlb_game_pk'),
+        db.Index('ix_game_log_game_type',    'game_type'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     pitcher_id = db.Column(db.Integer, db.ForeignKey('pitchers.id'), nullable=False)
     mlb_game_pk = db.Column(db.Integer, nullable=False)
     game_date = db.Column(db.Date, nullable=False)
     opponent = db.Column(db.String(50))
     opponent_abbreviation = db.Column(db.String(10))
+
+    # Game type — 'R' = regular season, 'S' = spring training, 'P' = playoffs
+    game_type = db.Column(db.String(2), default='R')
 
     # Pitching stats for this appearance
     innings_pitched = db.Column(db.Float, default=0.0)
@@ -23,7 +33,7 @@ class GameLog(db.Model):
     home_runs_allowed = db.Column(db.Integer, default=0)
 
     # Context
-    leverage_index = db.Column(db.Float)  # High leverage = higher fatigue weight
+    leverage_index = db.Column(db.Float)
     inherited_runners = db.Column(db.Integer, default=0)
     inherited_runners_scored = db.Column(db.Integer, default=0)
     save_situation = db.Column(db.Boolean, default=False)
@@ -41,6 +51,7 @@ class GameLog(db.Model):
             'pitcher_id': self.pitcher_id,
             'mlb_game_pk': self.mlb_game_pk,
             'game_date': str(self.game_date),
+            'game_type': self.game_type,
             'opponent': self.opponent,
             'opponent_abbreviation': self.opponent_abbreviation,
             'innings_pitched': self.innings_pitched,
@@ -62,4 +73,4 @@ class GameLog(db.Model):
         }
 
     def __repr__(self):
-        return f'<GameLog pitcher_id={self.pitcher_id} date={self.game_date}>'
+        return f'<GameLog pitcher_id={self.pitcher_id} date={self.game_date} type={self.game_type}>'

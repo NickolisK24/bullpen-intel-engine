@@ -5,6 +5,16 @@ import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
 
+// Defined outside component so Tailwind scanner can see these classes
+const RISK_CONFIG = {
+  LOW:      { bg: '#10b981', text: 'text-emerald-400', dot: '#10b981' },
+  MODERATE: { bg: '#fbbf24', text: 'text-amber-400',   dot: '#fbbf24' },
+  HIGH:     { bg: '#fb923c', text: 'text-orange-400',  dot: '#fb923c' },
+  CRITICAL: { bg: '#ef4444', text: 'text-red-400',     dot: '#ef4444' },
+}
+
+const LEVELS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL']
+
 export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
   const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '' }))
@@ -15,7 +25,6 @@ export default function Dashboard() {
       {/* Hero */}
       <div className="mb-10 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-8 bg-stadium-glow">
-          {/* Grid lines background */}
           <div className="absolute inset-0 bg-grid-lines bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10">
             <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Command Center</div>
@@ -26,12 +35,10 @@ export default function Dashboard() {
               Bullpen fatigue modeling · Prospect pipeline tracking · Portfolio layer.<br/>
               Built to think like someone already in the room.
             </p>
-            {/* Season context — flip isLive={true} when 2025 season begins */}
             <div className="mt-4">
               <SeasonBanner season="2024" isLive={false} />
             </div>
           </div>
-          {/* Decorative stitch marks */}
           <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
             <div className="font-display text-[120px] tracking-widest text-white leading-none select-none">⚾</div>
           </div>
@@ -56,24 +63,36 @@ export default function Dashboard() {
       {overview.data?.risk_breakdown && (
         <div className="card p-5 mb-8 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
           <div className="text-chalk400 font-mono text-xs uppercase tracking-widest mb-4">Risk Distribution</div>
-          <div className="flex gap-1 h-3 rounded-full overflow-hidden">
-            {['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].map((level) => {
+
+          {/* Bar — inline bg colors so Tailwind purge can't remove them */}
+          <div className="flex h-3 rounded-full overflow-hidden w-full">
+            {LEVELS.map((level) => {
               const count = overview.data.risk_breakdown[level] || 0
               const total = overview.data.scored_pitchers || 1
-              const pct = (count / total) * 100
-              const colors = { LOW: 'bg-emerald-500', MODERATE: 'bg-amber-400', HIGH: 'bg-orange-400', CRITICAL: 'bg-red-500' }
-              return pct > 0 ? (
-                <div key={level} className={`${colors[level]} transition-all duration-700`} style={{ width: `${pct}%` }} title={`${level}: ${count}`} />
-              ) : null
+              const pct   = (count / total) * 100
+              if (pct === 0) return null
+              return (
+                <div
+                  key={level}
+                  className="flex-none transition-all duration-700"
+                  style={{ width: `${pct}%`, backgroundColor: RISK_CONFIG[level].bg }}
+                  title={`${level}: ${count}`}
+                />
+              )
             })}
           </div>
+
+          {/* Legend */}
           <div className="flex gap-5 mt-3">
-            {['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].map((level) => {
+            {LEVELS.map((level) => {
               const count = overview.data.risk_breakdown[level] || 0
-              const colors = { LOW: 'text-emerald-400', MODERATE: 'text-amber-400', HIGH: 'text-orange-400', CRITICAL: 'text-red-400' }
               return (
                 <div key={level} className="flex items-center gap-1.5">
-                  <span className={`font-mono text-xs font-semibold ${colors[level]}`}>{count}</span>
+                  <div
+                    className="h-2 w-2 rounded-full flex-none"
+                    style={{ backgroundColor: RISK_CONFIG[level].dot }}
+                  />
+                  <span className={`font-mono text-xs font-semibold ${RISK_CONFIG[level].text}`}>{count}</span>
                   <span className="text-chalk600 text-xs font-mono">{level}</span>
                 </div>
               )
@@ -135,10 +154,9 @@ export default function Dashboard() {
             <ErrorState message={pipeline.error} />
           ) : (
             <div className="p-5">
-              {/* Level counts */}
               <div className="grid grid-cols-3 gap-3 mb-5">
                 {['ROK','A','A+','AA','AAA','MLB'].map((lvl) => {
-                  const count = pipeline.data?.by_level?.[lvl] || 0
+                  const count  = pipeline.data?.by_level?.[lvl] || 0
                   const colors = { ROK:'text-chalk400', A:'text-ice', 'A+':'text-sky-400', AA:'text-violet-400', AAA:'text-amber', MLB:'text-emerald-400' }
                   return (
                     <div key={lvl} className="bg-chalk/40 border border-dirt rounded p-3 text-center">
@@ -149,7 +167,6 @@ export default function Dashboard() {
                 })}
               </div>
 
-              {/* Top prospects */}
               <div className="text-chalk600 font-mono text-xs uppercase tracking-widest mb-3">Top Rated</div>
               <div className="space-y-2.5">
                 {pipeline.data?.top_10?.slice(0, 5).map((p, i) => (

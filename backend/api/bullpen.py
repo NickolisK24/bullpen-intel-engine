@@ -23,9 +23,9 @@ def get_fatigue_scores():
       - risk_level: LOW | MODERATE | HIGH | CRITICAL
       - limit: max results (default 50)
     """
-    team_id = request.args.get('team_id', type=int)
+    team_id    = request.args.get('team_id', type=int)
     risk_level = request.args.get('risk_level')
-    limit = request.args.get('limit', 50, type=int)
+    limit      = request.args.get('limit', 50, type=int)
 
     subq = (
         db.session.query(
@@ -48,7 +48,7 @@ def get_fatigue_scores():
     if risk_level:
         query = query.filter(FatigueScore.risk_level == risk_level.upper())
 
-    query = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
+    query   = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
     results = query.all()
 
     return jsonify([
@@ -69,10 +69,10 @@ def get_pitcher_fatigue(pitcher_id):
         .first()
     )
 
-    seven_days_ago = date.today() - timedelta(days=14)
+    fourteen_days_ago = date.today() - timedelta(days=14)
     logs = (
         GameLog.query
-        .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= seven_days_ago)
+        .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= fourteen_days_ago)
         .order_by(desc(GameLog.game_date))
         .all()
     )
@@ -89,30 +89,55 @@ def get_pitcher_fatigue(pitcher_id):
     )
 
     return jsonify({
-        'pitcher': pitcher.to_dict(),
+        'pitcher':         pitcher.to_dict(),
         'current_fatigue': latest.to_dict() if latest else None,
-        'recent_logs': [log.to_dict() for log in logs],
-        'fatigue_trend': [s.to_dict() for s in history],
+        'recent_logs':     [log.to_dict() for log in logs],
+        'fatigue_trend':   [s.to_dict() for s in history],
     })
 
 
 @bullpen_bp.route('/fatigue/recalculate', methods=['POST'])
 def recalculate_fatigue():
-    """Trigger fatigue recalculation for all pitchers."""
+    """
+    Trigger fatigue recalculation for all pitchers.
+    Uses each pitcher's last game date as the reference point — not today —
+    so historical data produces meaningful scores.
+    """
     pitchers = Pitcher.query.filter_by(active=True).all()
-    updated = []
+    updated  = []
 
     for pitcher in pitchers:
-        fourteen_days_ago = date.today() - timedelta(days=14)
+        latest_log = (
+            GameLog.query
+            .filter_by(pitcher_id=pitcher.id)
+            .order_by(GameLog.game_date.desc())
+            .first()
+        )
+
+        if not latest_log:
+            continue
+
+        reference_date = latest_log.game_date
+        window_start   = reference_date - timedelta(days=14)
+
         logs = (
             GameLog.query
-            .filter(GameLog.pitcher_id == pitcher.id, GameLog.game_date >= fourteen_days_ago)
+            .filter(
+                GameLog.pitcher_id == pitcher.id,
+                GameLog.game_date  >= window_start,
+                GameLog.game_date  <= reference_date
+            )
             .order_by(desc(GameLog.game_date))
             .all()
         )
-        score = calculate_fatigue(pitcher, logs)
+
+        score = calculate_fatigue(pitcher, logs, reference_date=reference_date)
         db.session.add(score)
-        updated.append({'pitcher': pitcher.full_name, 'score': round(score.raw_score, 1), 'risk': score.risk_level})
+        updated.append({
+            'pitcher': pitcher.full_name,
+            'score':   round(score.raw_score, 1),
+            'risk':    score.risk_level,
+        })
 
     db.session.commit()
     return jsonify({'recalculated': len(updated), 'results': updated})
@@ -127,16 +152,16 @@ def sync_recent_logs():
     and recalculate fatigue scores. Safe to call repeatedly — skips duplicates.
 
     Optional JSON body:
-      { "days_back": 7 }   — how far back to look for new games (default: 7)
+      { "days_back": 7 }  — how far back to look for new games (default: 7)
     """
-    body = request.get_json(silent=True) or {}
-    days_back = body.get('days_back', 7)
+    body           = request.get_json(silent=True) or {}
+    days_back      = body.get('days_back', 7)
     current_season = datetime.now().year
-    cutoff = date.today() - timedelta(days=days_back)
+    cutoff         = date.today() - timedelta(days=days_back)
 
     pitchers = Pitcher.query.filter_by(active=True).all()
     new_logs = 0
-    errors = 0
+    errors   = 0
 
     for pitcher in pitchers:
         try:
@@ -146,10 +171,11 @@ def sync_recent_logs():
             continue
 
         for split in splits:
-            game_info = split.get('game', {})
-            stat = split.get('stat', {})
-            game_pk = game_info.get('gamePk')
+            game_info     = split.get('game', {})
+            stat          = split.get('stat', {})
+            game_pk       = game_info.get('gamePk')
             game_date_str = split.get('date')
+            game_type     = game_info.get('gameType', 'R')
 
             if not game_pk or not game_date_str:
                 continue
@@ -159,11 +185,9 @@ def sync_recent_logs():
             except ValueError:
                 continue
 
-            # Only process games within the sync window
             if game_date < cutoff:
                 continue
 
-            # Skip if already stored
             existing = GameLog.query.filter_by(
                 pitcher_id=pitcher.id,
                 mlb_game_pk=game_pk
@@ -177,6 +201,7 @@ def sync_recent_logs():
                 pitcher_id=pitcher.id,
                 mlb_game_pk=game_pk,
                 game_date=game_date,
+                game_type=game_type,
                 opponent=opponent.get('name'),
                 opponent_abbreviation=opponent.get('abbreviation'),
                 innings_pitched=float(stat.get('inningsPitched', 0) or 0),
@@ -204,7 +229,7 @@ def sync_recent_logs():
         db.session.rollback()
         return jsonify({'error': f'Commit failed: {str(e)}'}), 500
 
-    # Recalculate fatigue for all pitchers after sync
+    # Recalculate fatigue using today as reference (live mode)
     fatigue_updated = 0
     for pitcher in pitchers:
         fourteen_days_ago = date.today() - timedelta(days=14)
@@ -222,12 +247,12 @@ def sync_recent_logs():
     db.session.commit()
 
     return jsonify({
-        'status': 'ok',
-        'new_logs_added': new_logs,
+        'status':               'ok',
+        'new_logs_added':       new_logs,
         'fatigue_recalculated': fatigue_updated,
-        'errors': errors,
-        'synced_at': datetime.utcnow().isoformat(),
-        'days_back': days_back,
+        'errors':               errors,
+        'synced_at':            datetime.utcnow().isoformat(),
+        'days_back':            days_back,
     })
 
 
@@ -236,8 +261,8 @@ def sync_recent_logs():
 @bullpen_bp.route('/pitchers', methods=['GET'])
 def get_pitchers():
     """Get all pitchers, optionally filtered by team."""
-    team_id = request.args.get('team_id', type=int)
-    query = Pitcher.query.filter_by(active=True)
+    team_id  = request.args.get('team_id', type=int)
+    query    = Pitcher.query.filter_by(active=True)
     if team_id:
         query = query.filter_by(team_id=team_id)
     pitchers = query.order_by(Pitcher.team_name, Pitcher.full_name).all()
@@ -247,9 +272,9 @@ def get_pitchers():
 @bullpen_bp.route('/pitchers/<int:pitcher_id>/logs', methods=['GET'])
 def get_pitcher_logs(pitcher_id):
     """Get game logs for a pitcher."""
-    days = request.args.get('days', 30, type=int)
+    days  = request.args.get('days', 30, type=int)
     since = date.today() - timedelta(days=days)
-    logs = (
+    logs  = (
         GameLog.query
         .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= since)
         .order_by(desc(GameLog.game_date))
@@ -277,10 +302,10 @@ def get_teams():
     )
     return jsonify([
         {
-            'team_id': t.team_id,
-            'team_name': t.team_name,
+            'team_id':           t.team_id,
+            'team_name':         t.team_name,
             'team_abbreviation': t.team_abbreviation,
-            'pitcher_count': t.pitcher_count,
+            'pitcher_count':     t.pitcher_count,
         }
         for t in teams
     ])
@@ -288,24 +313,39 @@ def get_teams():
 
 @bullpen_bp.route('/teams/<int:team_id>/bullpen', methods=['GET'])
 def get_team_bullpen(team_id):
-    """Get full bullpen overview for a team."""
-    pitchers = Pitcher.query.filter_by(team_id=team_id, active=True).all()
-
-    results = []
-    for pitcher in pitchers:
-        latest_score = (
-            FatigueScore.query
-            .filter_by(pitcher_id=pitcher.id)
-            .order_by(desc(FatigueScore.calculated_at))
-            .first()
+    """
+    Get full bullpen overview for a team.
+    Single joined query — no N+1 issue.
+    """
+    subq = (
+        db.session.query(
+            FatigueScore.pitcher_id,
+            db.func.max(FatigueScore.calculated_at).label('max_calc')
         )
-        results.append({
-            'pitcher': pitcher.to_dict(),
-            'fatigue': latest_score.to_dict() if latest_score else None,
-        })
+        .group_by(FatigueScore.pitcher_id)
+        .subquery()
+    )
 
-    results.sort(key=lambda x: x['fatigue']['raw_score'] if x['fatigue'] else 0, reverse=True)
-    return jsonify(results)
+    results = (
+        db.session.query(Pitcher, FatigueScore)
+        .filter(Pitcher.team_id == team_id, Pitcher.active == True)
+        .outerjoin(subq, subq.c.pitcher_id == Pitcher.id)
+        .outerjoin(
+            FatigueScore,
+            (FatigueScore.pitcher_id == subq.c.pitcher_id) &
+            (FatigueScore.calculated_at == subq.c.max_calc)
+        )
+        .order_by(desc(FatigueScore.raw_score))
+        .all()
+    )
+
+    return jsonify([
+        {
+            'pitcher': pitcher.to_dict(),
+            'fatigue': score.to_dict() if score else None,
+        }
+        for pitcher, score in results
+    ])
 
 
 # ─── Stats & Aggregates ───────────────────────────────────────────────────────
@@ -314,7 +354,7 @@ def get_team_bullpen(team_id):
 def get_stats_overview():
     """Dashboard overview stats."""
     total_pitchers = Pitcher.query.filter_by(active=True).count()
-    total_logs = GameLog.query.count()
+    total_logs     = GameLog.query.count()
 
     subq = (
         db.session.query(
@@ -341,11 +381,11 @@ def get_stats_overview():
     )
 
     return jsonify({
-        'total_pitchers': total_pitchers,
-        'total_game_logs': total_logs,
-        'risk_breakdown': risk_breakdown,
+        'total_pitchers':    total_pitchers,
+        'total_game_logs':   total_logs,
+        'risk_breakdown':    risk_breakdown,
         'avg_fatigue_score': round(float(avg_fatigue), 1),
-        'scored_pitchers': len(latest_scores),
+        'scored_pitchers':   len(latest_scores),
     })
 
 
@@ -362,5 +402,5 @@ def get_mlb_teams():
 def get_mlb_pitcher_logs(player_id):
     """Proxy: Get live pitcher game logs from MLB Stats API."""
     season = request.args.get('season', type=int)
-    logs = mlb_client.get_pitcher_game_logs(player_id, season=season)
+    logs   = mlb_client.get_pitcher_game_logs(player_id, season=season)
     return jsonify(logs)
