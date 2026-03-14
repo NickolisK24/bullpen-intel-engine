@@ -34,10 +34,10 @@ WEIGHTS = {
 
 # Pitch count thresholds over last 7 days
 PITCH_THRESHOLDS = {
-    'max_fresh':    0,     # 0 pitches → score 0
-    'moderate':     50,    # 50 pitches → score starts climbing
-    'high':         90,    # 90 pitches → high fatigue zone
-    'critical':     120,   # 120+ → max score
+    'max_fresh':    0,
+    'moderate':     50,
+    'high':         90,
+    'critical':     120,
 }
 
 # Appearance count thresholds (7-day window)
@@ -48,10 +48,11 @@ APPEARANCE_THRESHOLDS = {
     'critical':   5,
 }
 
+# Bumped HIGH ceiling from 75 → 80 for a more realistic distribution
 RISK_LEVELS = [
     (25,  'LOW'),
     (50,  'MODERATE'),
-    (75,  'HIGH'),
+    (81,  'HIGH'),
     (101, 'CRITICAL'),
 ]
 
@@ -64,7 +65,6 @@ def score_pitch_count(pitches_last_7: int) -> float:
     elif pitches_last_7 >= PITCH_THRESHOLDS['critical']:
         return 100.0
     elif pitches_last_7 >= PITCH_THRESHOLDS['high']:
-        # Linear between high and critical
         ratio = (pitches_last_7 - PITCH_THRESHOLDS['high']) / \
                 (PITCH_THRESHOLDS['critical'] - PITCH_THRESHOLDS['high'])
         return 50.0 + (ratio * 50.0)
@@ -98,7 +98,6 @@ def score_rest_days(days_since_last: int) -> float:
 
 def score_appearances(apps_last_7: int, apps_last_14: int) -> float:
     """Score based on appearance frequency."""
-    # Weighted combo: 7-day window matters more
     weighted = (apps_last_7 * 0.7) + (apps_last_14 * 0.15)
 
     if weighted <= APPEARANCE_THRESHOLDS['max_fresh']:
@@ -123,7 +122,7 @@ def score_leverage(avg_leverage: float) -> float:
     LI: 0.0 = garbage time, 1.0 = average, 2.0+ = high leverage
     """
     if avg_leverage is None:
-        return 20.0  # Unknown — assume moderate
+        return 20.0
     elif avg_leverage >= 2.5:
         return 100.0
     elif avg_leverage >= 2.0:
@@ -141,7 +140,7 @@ def score_innings(innings_last_7: float) -> float:
     if innings_last_7 <= 0:
         return 0.0
     elif innings_last_7 >= 6.0:
-        return 100.0  # 6+ innings in 7 days for a reliever = heavy
+        return 100.0
     elif innings_last_7 >= 4.0:
         ratio = (innings_last_7 - 4.0) / 2.0
         return 50.0 + (ratio * 50.0)
@@ -158,39 +157,44 @@ def get_risk_level(score: float) -> str:
 
 # ─── Main Calculator ──────────────────────────────────────────────────────────
 
-def calculate_fatigue(pitcher, game_logs: list) -> FatigueScore:
+def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> FatigueScore:
     """
     Calculate fatigue score for a pitcher given their recent game logs.
 
     Args:
-        pitcher: Pitcher model instance
-        game_logs: List of GameLog model instances, ordered most recent first
+        pitcher:        Pitcher model instance
+        game_logs:      List of GameLog instances, ordered most recent first
+        reference_date: The date to score relative to. Defaults to today.
+                        Pass the pitcher's last game date when seeding historical
+                        data so scores reflect end-of-season workload, not
+                        months of offseason rest.
 
     Returns:
         FatigueScore model instance (not yet committed to DB)
     """
-    today = date.today()
-    seven_days_ago = today - timedelta(days=7)
-    fourteen_days_ago = today - timedelta(days=14)
+    # Use provided reference date or fall back to today (live mode)
+    ref = reference_date if reference_date is not None else date.today()
 
-    # Filter logs to relevant windows
-    logs_7 = [g for g in game_logs if g.game_date >= seven_days_ago]
-    logs_14 = [g for g in game_logs if g.game_date >= fourteen_days_ago]
+    seven_days_ago  = ref - timedelta(days=7)
+    fourteen_days_ago = ref - timedelta(days=14)
+
+    # Filter logs to relevant windows relative to reference date
+    logs_7  = [g for g in game_logs if g.game_date >= seven_days_ago  and g.game_date <= ref]
+    logs_14 = [g for g in game_logs if g.game_date >= fourteen_days_ago and g.game_date <= ref]
     last_log = game_logs[0] if game_logs else None
 
-    # ── Compute raw inputs ──
+    # Days since last appearance (relative to reference date)
     days_since_last = None
     if last_log:
-        days_since_last = (today - last_log.game_date).days
+        days_since_last = (ref - last_log.game_date).days
 
-    pitches_last_7 = sum(g.pitches_thrown or 0 for g in logs_7)
-    innings_last_7 = sum(g.innings_pitched or 0.0 for g in logs_7)
-    appearances_7 = len(logs_7)
-    appearances_14 = len(logs_14)
+    pitches_last_7   = sum(g.pitches_thrown or 0   for g in logs_7)
+    innings_last_7   = sum(g.innings_pitched or 0.0 for g in logs_7)
+    appearances_7    = len(logs_7)
+    appearances_14   = len(logs_14)
 
-    # Average leverage (use 1.0 as default if missing)
-    leverage_values = [g.leverage_index for g in logs_7 if g.leverage_index is not None]
-    avg_leverage = sum(leverage_values) / len(leverage_values) if leverage_values else 1.0
+    leverage_values  = [g.leverage_index for g in logs_7 if g.leverage_index is not None]
+    avg_leverage     = sum(leverage_values) / len(leverage_values) if leverage_values else 1.0
 
     # ── Score each component ──
     pc_score   = score_pitch_count(pitches_last_7)

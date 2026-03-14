@@ -3,6 +3,7 @@ import { getBullpenOverview, getFatigueScores, getPipelineOverview } from '../..
 import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
+import SeasonBanner from './SeasonBanner'
 
 export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
@@ -25,6 +26,10 @@ export default function Dashboard() {
               Bullpen fatigue modeling · Prospect pipeline tracking · Portfolio layer.<br/>
               Built to think like someone already in the room.
             </p>
+            {/* Season context — flip isLive={true} when 2025 season begins */}
+            <div className="mt-4">
+              <SeasonBanner season="2024" isLive={false} />
+            </div>
           </div>
           {/* Decorative stitch marks */}
           <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-5">

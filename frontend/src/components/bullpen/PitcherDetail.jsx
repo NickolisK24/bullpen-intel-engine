@@ -25,6 +25,13 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     { component: 'Innings',   value: Math.round(cf.innings_score ?? 0)      },
   ] : []
 
+  // Detect spring training games — MLB API uses 'gameType: S' but we can
+  // also catch it by the 'SIM' abbreviation that slips through on some logs
+  const isSpringTraining = (log) =>
+    log.game_type === 'S' ||
+    log.opponent_abbreviation === 'SIM' ||
+    log.opponent === 'Simulated'
+
   return (
     <div className="card sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
       {/* Header */}
@@ -126,9 +133,17 @@ export default function PitcherDetail({ pitcherId, onClose }) {
               <div className="space-y-2">
                 {recent_logs.slice(0, 6).map(log => (
                   <div key={log.id} className="flex items-center justify-between bg-chalk/30 rounded px-3 py-2 text-xs font-mono">
-                    <div>
+                    <div className="flex items-center gap-2">
                       <span className="text-chalk200">{fmtDate(log.game_date)}</span>
-                      <span className="text-chalk600 ml-2">vs {log.opponent_abbreviation ?? '---'}</span>
+                      {isSpringTraining(log) ? (
+                        <>
+                          <span className="text-chalk600">·</span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber/10 text-amber/70 text-[10px] font-mono tracking-wider">ST</span>
+                          <span className="text-chalk600">Spring Training</span>
+                        </>
+                      ) : (
+                        <span className="text-chalk600">vs {log.opponent_abbreviation ?? '---'}</span>
+                      )}
                     </div>
                     <div className="flex gap-3 text-chalk400">
                       <span>{fmtIP(log.innings_pitched)} IP</span>
