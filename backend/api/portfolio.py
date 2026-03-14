@@ -7,13 +7,13 @@ def get_portfolio():
     """Return portfolio/about data."""
     return jsonify({
         'name': 'Nikko',
-        'title': 'Aspiring Baseball Developer & Data Engineer',
+        'title': 'Baseball Developer & Data Engineer',
         'background': [
-            'U.S. Army Veteran — 8 years of service. Discipline, systems thinking, and mission focus are in my DNA.',
-            'Coca-Cola Consolidated Merchandiser — real-world logistics, inventory, and data management.',
+            'U.S. Army Veteran. 8 years of service. Discipline, systems thinking, and mission focus are in my DNA.',
+            'Coca-Cola Consolidated Merchandiser. Real-world logistics, inventory, and data management.',
             'Self-taught developer with a focus on baseball analytics and full-stack web development.',
         ],
-        'goal': 'Break into the baseball industry as a software developer or data engineer — building tools that help teams make better decisions.',
+        'goal': 'Break into the baseball industry as a software developer or data engineer; building tools that help teams make better decisions.',
         'stack': ['React', 'TailwindCSS', 'Flask', 'Python', 'PostgreSQL'],
         'projects': [
             {
@@ -30,7 +30,7 @@ def get_portfolio():
             },
             {
                 'name': 'Last Epoch Build & Analytics Tool',
-                'description': 'Build theorycrafting and analytics tool for the ARPG Last Epoch. Mirrors the mindset I bring to baseball analytics — deep system knowledge, optimization, and data-driven decisions.',
+                'description': 'Build theorycrafting and analytics tool for the ARPG Last Epoch. Mirrors the mindset I bring to baseball analytics; deep system knowledge, optimization, and data-driven decisions.',
                 'tech': ['React', 'Python'],
                 'status': 'In Progress',
             },
@@ -55,8 +55,8 @@ def get_portfolio():
             }
         },
         'contact': {
-            'github': 'https://github.com/yourgithub',
-            'email': 'your@email.com',
-            'linkedin': 'https://linkedin.com/in/yourprofile',
+            'github': 'https://github.com/NickolisK24',
+            'email': 'nickoliskacludis@gmail.com',
+            'linkedin': 'https://www.linkedin.com/in/nickolis-kacludis/',
         }
     })
