@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --field:    #0a0c0f;
+    --dugout:   #111418;
+    --chalk:    #1a1f26;
+    --dirt:     #242b35;
+    --amber:    #f5a623;
+    --gold:     #e8943a;
+    --pine:     #2d6a4f;
+    --warning:  #d97706;
+    --danger:   #dc2626;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    background-color: var(--field);
+    color: #d1dce8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background-color: var(--field);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--field); }
+  ::-webkit-scrollbar-thumb { background: #2a3340; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4555; }
+
+  /* Selection */
+  ::selection { background: rgba(245, 166, 35, 0.25); color: #f5a623; }
+}
+
+@layer components {
+  /* ── Layout ── */
+  .app-shell {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── Card ── */
+  .card {
+    @apply bg-dugout border border-dirt rounded-lg;
+  }
+  .card-header {
+    @apply px-5 py-4 border-b border-dirt flex items-center justify-between;
+  }
+
+  /* ── Stat Chip ── */
+  .stat-chip {
+    @apply bg-chalk border border-dirt rounded px-2 py-1 font-mono text-xs text-chalk200;
+  }
+
+  /* ── Risk badges ── */
+  .badge-low      { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-pine/20 text-emerald-400 border border-pine/40; }
+  .badge-moderate { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-warning/20 text-yellow-400 border border-warning/40; }
+  .badge-high     { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-orange-500/20 text-orange-400 border border-orange-500/40; }
+  .badge-critical { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-danger/20 text-red-400 border border-danger/40; }
+
+  /* ── Table ── */
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table th {
+    @apply text-left text-chalk400 font-mono text-xs uppercase tracking-widest py-2 px-3 border-b border-dirt;
+  }
+  .data-table td {
+    @apply py-2.5 px-3 border-b border-dirt/50;
+  }
+  .data-table tbody tr {
+    @apply hover:bg-chalk/40 transition-colors duration-150 cursor-pointer;
+  }
+
+  /* ── Fatigue bar ── */
+  .fatigue-bar-track {
+    @apply h-1.5 bg-dirt rounded-full overflow-hidden;
+  }
+
+  /* ── Nav item ── */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-chalk400 hover:text-chalk200 hover:bg-chalk/50 transition-all duration-150 text-sm font-medium cursor-pointer;
+  }
+  .nav-item.active {
+    @apply text-amber bg-amber/10 border border-amber/20;
+  }
+
+  /* ── Section title ── */
+  .section-title {
+    @apply font-display text-3xl tracking-wider text-chalk100 uppercase;
+  }
+
+  /* ── Mono number ── */
+  .mono-num {
+    @apply font-mono font-medium tabular-nums;
+  }
+
+  /* ── Glow text ── */
+  .glow-amber {
+    text-shadow: 0 0 20px rgba(245, 166, 35, 0.4);
+  }
+
+  /* ── Animated entry delays ── */
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.2s; }
+  .delay-3 { animation-delay: 0.3s; }
+  .delay-4 { animation-delay: 0.4s; }
+  .delay-5 { animation-delay: 0.5s; }
+}
+
+@layer utilities {
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 100px 100px;
+  }
+
+  .text-gradient-amber {
+    background: linear-gradient(135deg, #f5a623, #e8943a);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(135deg, #f5a623, transparent) 1;
+  }
+
+  /* Fade-up animation utility */
+  .animate-fade-up {
+    opacity: 0;
+    animation: fadeUp 0.5s ease forwards;
+  }
+}
