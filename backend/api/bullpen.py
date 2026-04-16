@@ -8,6 +8,7 @@ from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
 from services.mlb_api import mlb_client
+from services import sync as sync_service
 
 bullpen_bp = Blueprint('bullpen', __name__)
 
@@ -153,107 +154,39 @@ def sync_recent_logs():
 
     Optional JSON body:
       { "days_back": 7 }  — how far back to look for new games (default: 7)
+
+    Delegates to services/sync.py so the scheduled daily job and the manual
+    POST go through the exact same code path.
     """
-    body           = request.get_json(silent=True) or {}
-    days_back      = body.get('days_back', 7)
-    current_season = datetime.now().year
-    cutoff         = date.today() - timedelta(days=days_back)
-
-    pitchers = Pitcher.query.filter_by(active=True).all()
-    new_logs = 0
-    errors   = 0
-
-    for pitcher in pitchers:
-        try:
-            splits = mlb_client.get_pitcher_game_logs(pitcher.mlb_id, season=current_season)
-        except Exception:
-            errors += 1
-            continue
-
-        for split in splits:
-            game_info     = split.get('game', {})
-            stat          = split.get('stat', {})
-            game_pk       = game_info.get('gamePk')
-            game_date_str = split.get('date')
-            game_type     = game_info.get('gameType', 'R')
-
-            if not game_pk or not game_date_str:
-                continue
-
-            try:
-                game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
-            except ValueError:
-                continue
-
-            if game_date < cutoff:
-                continue
-
-            existing = GameLog.query.filter_by(
-                pitcher_id=pitcher.id,
-                mlb_game_pk=game_pk
-            ).first()
-            if existing:
-                continue
-
-            opponent = split.get('opponent', {})
-
-            log = GameLog(
-                pitcher_id=pitcher.id,
-                mlb_game_pk=game_pk,
-                game_date=game_date,
-                game_type=game_type,
-                opponent=opponent.get('name'),
-                opponent_abbreviation=opponent.get('abbreviation'),
-                innings_pitched=float(stat.get('inningsPitched', 0) or 0),
-                pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
-                strikes=int(stat.get('strikes', 0) or 0),
-                hits_allowed=int(stat.get('hits', 0) or 0),
-                runs_allowed=int(stat.get('runs', 0) or 0),
-                earned_runs=int(stat.get('earnedRuns', 0) or 0),
-                walks=int(stat.get('baseOnBalls', 0) or 0),
-                strikeouts=int(stat.get('strikeOuts', 0) or 0),
-                home_runs_allowed=int(stat.get('homeRuns', 0) or 0),
-                save_situation=stat.get('saveOpportunities', 0) > 0,
-                hold=stat.get('holds', 0) > 0,
-                blown_save=stat.get('blownSaves', 0) > 0,
-                win=stat.get('wins', 0) > 0,
-                loss=stat.get('losses', 0) > 0,
-                save=stat.get('saves', 0) > 0,
-            )
-            db.session.add(log)
-            new_logs += 1
+    body      = request.get_json(silent=True) or {}
+    days_back = body.get('days_back', 7)
 
     try:
-        db.session.commit()
+        pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Commit failed: {str(e)}'}), 500
+        return jsonify({'error': f'Sync failed: {str(e)}'}), 500
 
-    # Recalculate fatigue using today as reference (live mode)
-    fatigue_updated = 0
-    for pitcher in pitchers:
-        fourteen_days_ago = date.today() - timedelta(days=14)
-        logs = (
-            GameLog.query
-            .filter(GameLog.pitcher_id == pitcher.id, GameLog.game_date >= fourteen_days_ago)
-            .order_by(desc(GameLog.game_date))
-            .all()
-        )
-        if logs:
-            score = calculate_fatigue(pitcher, logs)
-            db.session.add(score)
-            fatigue_updated += 1
-
-    db.session.commit()
+    # Live mode: score against today — same behavior as before.
+    fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
 
     return jsonify({
         'status':               'ok',
-        'new_logs_added':       new_logs,
+        'new_logs_added':       pull['new_logs_added'],
         'fatigue_recalculated': fatigue_updated,
-        'errors':               errors,
+        'errors':               pull['errors'],
         'synced_at':            datetime.utcnow().isoformat(),
         'days_back':            days_back,
     })
+
+
+@bullpen_bp.route('/sync/status', methods=['GET'])
+def get_sync_status():
+    """
+    Return the last-run status written by the daily APScheduler job.
+    Frontend uses this to render the "Last synced" pill on the dashboard.
+    """
+    return jsonify(sync_service.read_status())
 
 
 # ─── Pitchers ─────────────────────────────────────────────────────────────────

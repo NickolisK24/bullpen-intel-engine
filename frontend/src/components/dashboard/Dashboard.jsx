@@ -4,6 +4,7 @@ import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
+import SyncStatus from './SyncStatus'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -35,8 +36,9 @@ export default function Dashboard() {
               Bullpen fatigue modeling · Prospect pipeline tracking · Portfolio layer.<br/>
               Built to think like someone already in the room.
             </p>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <SeasonBanner season="2024" isLive={false} />
+              <SyncStatus />
             </div>
           </div>
           <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-5">

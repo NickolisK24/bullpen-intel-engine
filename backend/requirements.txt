@@ -8,3 +8,4 @@ requests==2.31.0
 SQLAlchemy==2.0.23
 alembic==1.13.0
 gunicorn==21.2.0
+APScheduler==3.10.4

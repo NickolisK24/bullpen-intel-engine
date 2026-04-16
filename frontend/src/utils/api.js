@@ -34,6 +34,7 @@ export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/$
 export const getTeams          = () => request('/bullpen/teams')
 export const getTeamBullpen    = (teamId) => request(`/bullpen/teams/${teamId}/bullpen`)
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
+export const getSyncStatus     = () => request('/bullpen/sync/status')
 
 // ── Prospects ───────────────────────────────────────────────
 export const getProspects        = (params = {}) => {
