@@ -5,7 +5,7 @@ import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 export default function Portfolio() {
   const { data, loading, error } = useFetch(getPortfolio)
 
-  if (loading) return <LoadingPane label="Loading portfolio..." />
+  if (loading) return <LoadingPane message="Loading portfolio..." />
   if (error)   return <div className="p-8"><ErrorState message={error} /></div>
 
   const p = data

@@ -106,7 +106,7 @@ export default function Bullpen() {
         {/* Main table */}
         <div className={`flex-1 card overflow-hidden transition-all duration-300 ${selectedPitcher ? 'lg:flex-none lg:w-[60%]' : ''}`}>
           {allScores.loading ? (
-            <LoadingPane label="Loading fatigue data..." />
+            <LoadingPane message="Loading fatigue data..." />
           ) : allScores.error ? (
             <ErrorState message={allScores.error} onRetry={allScores.refetch} />
           ) : sorted.length === 0 ? (

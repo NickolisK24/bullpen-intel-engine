@@ -37,7 +37,7 @@ export default function Prospects() {
         }
       />
 
-      {pipeline.loading ? <LoadingPane label="Loading pipeline..." /> : pipeline.error ? <ErrorState message={pipeline.error} /> : (
+      {pipeline.loading ? <LoadingPane message="Loading pipeline..." /> : pipeline.error ? <ErrorState message={pipeline.error} onRetry={pipeline.refetch} /> : (
         <>
           {/* Level selector */}
           <div className="grid grid-cols-6 gap-2 mb-8 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>

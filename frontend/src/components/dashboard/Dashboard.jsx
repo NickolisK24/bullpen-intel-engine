@@ -47,7 +47,7 @@ export default function Dashboard() {
 
       {/* Overview stats */}
       {overview.loading ? (
-        <LoadingPane label="Loading stats..." />
+        <LoadingPane message="Loading stats..." />
       ) : overview.error ? (
         <ErrorState message={overview.error} onRetry={overview.refetch} />
       ) : (
@@ -110,9 +110,9 @@ export default function Dashboard() {
           </div>
           <div className="p-0">
             {topFatigue.loading ? (
-              <LoadingPane label="Loading..." />
+              <LoadingPane message="Loading..." />
             ) : topFatigue.error ? (
-              <ErrorState message={topFatigue.error} />
+              <ErrorState message={topFatigue.error} onRetry={topFatigue.refetch} />
             ) : !topFatigue.data?.length ? (
               <div className="p-6 text-chalk400 text-sm text-center font-mono">No data — run the seeder first</div>
             ) : (
@@ -149,9 +149,9 @@ export default function Dashboard() {
             <Link to="/prospects" className="text-amber text-xs font-mono hover:underline">View all →</Link>
           </div>
           {pipeline.loading ? (
-            <LoadingPane label="Loading..." />
+            <LoadingPane message="Loading..." />
           ) : pipeline.error ? (
-            <ErrorState message={pipeline.error} />
+            <ErrorState message={pipeline.error} onRetry={pipeline.refetch} />
           ) : (
             <div className="p-5">
               <div className="grid grid-cols-3 gap-3 mb-5">

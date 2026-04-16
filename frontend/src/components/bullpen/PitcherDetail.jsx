@@ -8,7 +8,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
   const { data, loading, error } = useFetch(() => getPitcherFatigue(pitcherId), [pitcherId])
 
   if (loading) return (
-    <div className="card h-full"><LoadingPane label="Loading pitcher..." /></div>
+    <div className="card h-full"><LoadingPane message="Loading pitcher..." /></div>
   )
   if (error) return (
     <div className="card h-full"><ErrorState message={error} /></div>
