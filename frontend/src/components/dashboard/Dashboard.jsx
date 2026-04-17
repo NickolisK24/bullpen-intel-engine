@@ -4,6 +4,7 @@ import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
+import SyncStatus from './SyncStatus'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -35,8 +36,9 @@ export default function Dashboard() {
               Bullpen fatigue modeling · Prospect pipeline tracking · Portfolio layer.<br/>
               Built to think like someone already in the room.
             </p>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <SeasonBanner season="2024" isLive={false} />
+              <SyncStatus />
             </div>
           </div>
           <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
@@ -47,7 +49,7 @@ export default function Dashboard() {
 
       {/* Overview stats */}
       {overview.loading ? (
-        <LoadingPane label="Loading stats..." />
+        <LoadingPane message="Loading stats..." />
       ) : overview.error ? (
         <ErrorState message={overview.error} onRetry={overview.refetch} />
       ) : (
@@ -110,9 +112,9 @@ export default function Dashboard() {
           </div>
           <div className="p-0">
             {topFatigue.loading ? (
-              <LoadingPane label="Loading..." />
+              <LoadingPane message="Loading..." />
             ) : topFatigue.error ? (
-              <ErrorState message={topFatigue.error} />
+              <ErrorState message={topFatigue.error} onRetry={topFatigue.refetch} />
             ) : !topFatigue.data?.length ? (
               <div className="p-6 text-chalk400 text-sm text-center font-mono">No data — run the seeder first</div>
             ) : (
@@ -149,9 +151,9 @@ export default function Dashboard() {
             <Link to="/prospects" className="text-amber text-xs font-mono hover:underline">View all →</Link>
           </div>
           {pipeline.loading ? (
-            <LoadingPane label="Loading..." />
+            <LoadingPane message="Loading..." />
           ) : pipeline.error ? (
-            <ErrorState message={pipeline.error} />
+            <ErrorState message={pipeline.error} onRetry={pipeline.refetch} />
           ) : (
             <div className="p-5">
               <div className="grid grid-cols-3 gap-3 mb-5">

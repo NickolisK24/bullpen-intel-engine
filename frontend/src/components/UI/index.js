@@ -1,0 +1,11 @@
+// Barrel exports for shared UI components.
+export { default as LoadingPane }  from './LoadingPane'
+export { default as ErrorState }   from './ErrorState'
+export { default as SectionHeader } from './SectionHeader'
+export { default as Divider }       from './Divider'
+export { default as Spinner }       from './Spinner'
+export { default as EmptyState }    from './EmptyState'
+export { default as FatigueBar }    from './FatigueBar'
+export { default as RiskBadge }     from './RiskBadge'
+export { default as StatCard }      from './StatCard'
+export { default as GradeBox }      from './GradeBox'

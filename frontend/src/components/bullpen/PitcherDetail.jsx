@@ -2,35 +2,66 @@ import { useFetch } from '../../hooks/useFetch'
 import { getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
-import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts'
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, Tooltip,
+} from 'recharts'
+
+// Spring-training detector — covers both the MLB gameType code and the
+// "SIM"/"Simulated" opponent markers that sneak through on some feeds.
+const isSpringTraining = (log) =>
+  log?.game_type === 'S' ||
+  log?.opponent_abbreviation === 'SIM' ||
+  log?.opponent === 'Simulated'
+
+// Short date label for the trend chart — "Apr 16"
+const trendDateFmt = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 export default function PitcherDetail({ pitcherId, onClose }) {
-  const { data, loading, error } = useFetch(() => getPitcherFatigue(pitcherId), [pitcherId])
+  const { data, loading, error, refetch } = useFetch(
+    () => getPitcherFatigue(pitcherId),
+    [pitcherId],
+  )
 
   if (loading) return (
-    <div className="card h-full"><LoadingPane label="Loading pitcher..." /></div>
+    <div className="card h-full"><LoadingPane message="Loading pitcher..." /></div>
   )
   if (error) return (
-    <div className="card h-full"><ErrorState message={error} /></div>
+    <div className="card h-full"><ErrorState message={error} onRetry={refetch} /></div>
   )
 
-  const { pitcher, current_fatigue: cf, recent_logs } = data || {}
+  const {
+    pitcher,
+    current_fatigue: cf,
+    recent_logs,
+    fatigue_trend,
+  } = data || {}
 
-  // Radar data for fatigue breakdown
+  // Radar — component breakdown
   const radarData = cf ? [
-    { component: 'Pitches',   value: Math.round(cf.pitch_count_score ?? 0)  },
-    { component: 'Rest',      value: Math.round(cf.rest_days_score ?? 0)    },
-    { component: 'Apps',      value: Math.round(cf.appearances_score ?? 0)  },
-    { component: 'Leverage',  value: Math.round(cf.leverage_score ?? 0)     },
-    { component: 'Innings',   value: Math.round(cf.innings_score ?? 0)      },
+    { component: 'Pitches',  value: Math.round(cf.pitch_count_score ?? 0) },
+    { component: 'Rest',     value: Math.round(cf.rest_days_score ?? 0)   },
+    { component: 'Apps',     value: Math.round(cf.appearances_score ?? 0) },
+    { component: 'Leverage', value: Math.round(cf.leverage_score ?? 0)    },
+    { component: 'Innings',  value: Math.round(cf.innings_score ?? 0)     },
   ] : []
 
-  // Detect spring training games — MLB API uses 'gameType: S' but we can
-  // also catch it by the 'SIM' abbreviation that slips through on some logs
-  const isSpringTraining = (log) =>
-    log.game_type === 'S' ||
-    log.opponent_abbreviation === 'SIM' ||
-    log.opponent === 'Simulated'
+  // Trend — sorted ascending by date for a clean left-to-right line
+  const trendData = (fatigue_trend ?? [])
+    .filter(s => s?.calculated_at && s?.raw_score != null)
+    .map(s => ({
+      date:  trendDateFmt(s.calculated_at),
+      score: Math.round(s.raw_score),
+      iso:   s.calculated_at,
+      risk:  s.risk_level,
+    }))
+    .sort((a, b) => new Date(a.iso) - new Date(b.iso))
 
   return (
     <div className="card sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
@@ -68,12 +99,12 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: 'Days Rest', value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
+              { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
               { label: 'Pitches/7d', value: cf.pitches_last_7_days ?? 0 },
-              { label: 'Apps/7d', value: cf.appearances_last_7 ?? 0 },
-              { label: 'IP/7d', value: fmtIP(cf.innings_last_7_days) },
-              { label: 'Apps/14d', value: cf.appearances_last_14 ?? 0 },
-              { label: 'Avg LI', value: cf.avg_leverage_last_7 ? cf.avg_leverage_last_7.toFixed(2) : '---' },
+              { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
+              { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
+              { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
+              { label: 'Avg LI',     value: cf.avg_leverage_last_7 ? cf.avg_leverage_last_7.toFixed(2) : '---' },
             ].map(({ label, value }) => (
               <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
                 <div className="font-mono font-semibold text-chalk200">{value}</div>
@@ -82,7 +113,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             ))}
           </div>
 
-          {/* Component breakdown */}
+          {/* Component breakdown — horizontal bars with weights */}
           <Divider label="Score Breakdown" />
           <div className="space-y-2.5">
             {[
@@ -105,7 +136,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             ))}
           </div>
 
-          {/* Radar chart */}
+          {/* Radar — component profile */}
           {radarData.length > 0 && (
             <>
               <Divider label="Fatigue Profile" />
@@ -126,32 +157,127 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             </>
           )}
 
-          {/* Recent logs */}
+          {/* Trend chart — fatigue_trend from API */}
+          {trendData.length > 1 && (
+            <>
+              <Divider label="Fatigue Trend" />
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
+                    <CartesianGrid stroke="#242b35" strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: '#8899aa', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                      tickLine={{ stroke: '#242b35' }}
+                      axisLine={{ stroke: '#242b35' }}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fill: '#8899aa', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                      tickLine={{ stroke: '#242b35' }}
+                      axisLine={{ stroke: '#242b35' }}
+                      width={30}
+                    />
+                    <ReferenceLine
+                      y={81}
+                      stroke="#dc2626"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: 'CRITICAL',
+                        position: 'insideTopRight',
+                        fill: '#f87171',
+                        fontFamily: 'JetBrains Mono',
+                        fontSize: 10,
+                        fontWeight: 600,
+                      }}
+                    />
+                    <Tooltip
+                      contentStyle={{ background: '#111418', border: '1px solid #242b35', borderRadius: '6px', fontFamily: 'JetBrains Mono', fontSize: '11px' }}
+                      labelStyle={{ color: '#d1dce8' }}
+                      itemStyle={{ color: '#f5a623' }}
+                      formatter={(value) => [`${value}`, 'Score']}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      stroke="#f5a623"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: '#f5a623', stroke: '#f5a623' }}
+                      activeDot={{ r: 5, fill: '#f5a623', stroke: '#111418', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {/* Recent logs — proper table */}
           {recent_logs?.length > 0 && (
             <>
               <Divider label="Recent Appearances" />
-              <div className="space-y-2">
-                {recent_logs.slice(0, 6).map(log => (
-                  <div key={log.id} className="flex items-center justify-between bg-chalk/30 rounded px-3 py-2 text-xs font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="text-chalk200">{fmtDate(log.game_date)}</span>
-                      {isSpringTraining(log) ? (
-                        <>
-                          <span className="text-chalk600">·</span>
-                          <span className="px-1.5 py-0.5 rounded bg-amber/10 text-amber/70 text-[10px] font-mono tracking-wider">ST</span>
-                          <span className="text-chalk600">Spring Training</span>
-                        </>
-                      ) : (
-                        <span className="text-chalk600">vs {log.opponent_abbreviation ?? '---'}</span>
-                      )}
-                    </div>
-                    <div className="flex gap-3 text-chalk400">
-                      <span>{fmtIP(log.innings_pitched)} IP</span>
-                      <span>{log.pitches_thrown ?? 0} P</span>
-                      <span>{log.strikeouts ?? 0} K</span>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto -mx-1">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Opponent</th>
+                      <th className="text-right">IP</th>
+                      <th className="text-right">P</th>
+                      <th className="text-right">LI</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recent_logs.slice(0, 8).map(log => {
+                      const st = isSpringTraining(log)
+                      const li = log.leverage_index
+                      const highLev = li != null && li > 1.5
+                      return (
+                        <tr key={log.id}>
+                          <td className="text-chalk200 font-mono text-xs whitespace-nowrap">{fmtDate(log.game_date)}</td>
+                          <td className="font-mono text-xs">
+                            {st ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono tracking-wider"
+                                  style={{ backgroundColor: 'rgba(245,166,35,0.12)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)' }}
+                                >
+                                  ST
+                                </span>
+                                <span className="text-chalk400">vs {log.opponent_abbreviation ?? 'SIM'}</span>
+                              </span>
+                            ) : (
+                              <span className="text-chalk400">vs {log.opponent_abbreviation ?? '---'}</span>
+                            )}
+                          </td>
+                          <td className="text-right font-mono text-xs text-chalk200">{fmtIP(log.innings_pitched)}</td>
+                          <td className="text-right font-mono text-xs text-chalk200">{log.pitches_thrown ?? 0}</td>
+                          <td className="text-right font-mono text-xs">
+                            {li != null ? (
+                              <span className={highLev ? 'text-amber font-semibold' : 'text-chalk400'}>
+                                {li.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-chalk600">---</span>
+                            )}
+                          </td>
+                          <td className="font-mono text-[10px]">
+                            {highLev ? (
+                              <span
+                                className="px-1.5 py-0.5 rounded uppercase tracking-wider"
+                                style={{ backgroundColor: 'rgba(245,166,35,0.12)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)' }}
+                              >
+                                High Leverage
+                              </span>
+                            ) : (
+                              <span className="text-chalk600">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </>
           )}

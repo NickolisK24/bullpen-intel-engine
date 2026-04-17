@@ -4,10 +4,16 @@ import { getFatigueScores, getTeams, getTeamBullpen, recalculateFatigue } from '
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader, StatCard, Divider } from '../UI'
 import { riskColor, fmtIP, fmtDate, daysAgo } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
+import TeamComparison from './TeamComparison'
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
+const VIEW_MODES   = [
+  { id: 'pitchers', label: 'Pitchers' },
+  { id: 'teams',    label: 'Team Rankings' },
+]
 
 export default function Bullpen() {
+  const [viewMode, setViewMode]           = useState('pitchers')
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
   const [selectedPitcher, setSelected]    = useState(null)
@@ -32,6 +38,68 @@ export default function Bullpen() {
     }
   }
 
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <SectionHeader
+        title="Bullpen"
+        subtitle="Relief pitcher fatigue scoring engine"
+        action={
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
+              {VIEW_MODES.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setViewMode(m.id)}
+                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
+                    viewMode === m.id
+                      ? 'bg-chalk border-dirt text-chalk200 shadow'
+                      : 'text-chalk400 hover:text-chalk200'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {viewMode === 'pitchers' && (
+              <button
+                onClick={handleRecalculate}
+                disabled={recalcing}
+                className="px-4 py-2 bg-amber/10 border border-amber/30 rounded text-amber text-xs font-mono hover:bg-amber/20 transition-colors disabled:opacity-40"
+              >
+                {recalcing ? '⟳ Recalculating...' : '⟳ Recalculate'}
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      {viewMode === 'teams' ? (
+        <TeamComparison />
+      ) : (
+        <PitcherView
+          teams={teams}
+          allScores={allScores}
+          selectedTeam={selectedTeam}
+          setSelectedTeam={setSelectedTeam}
+          riskFilter={riskFilter}
+          setRiskFilter={setRiskFilter}
+          selectedPitcher={selectedPitcher}
+          setSelected={setSelected}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+        />
+      )}
+    </div>
+  )
+}
+
+function PitcherView({
+  teams, allScores,
+  selectedTeam, setSelectedTeam,
+  riskFilter, setRiskFilter,
+  selectedPitcher, setSelected,
+  sortBy, setSortBy,
+}) {
   // Filter by risk
   const rows = (allScores.data || []).filter(r => {
     if (riskFilter === 'ALL') return true
@@ -40,9 +108,9 @@ export default function Bullpen() {
 
   // Sort
   const sorted = [...rows].sort((a, b) => {
-    if (sortBy === 'score')  return b.raw_score - a.raw_score
-    if (sortBy === 'name')   return a.pitcher?.full_name?.localeCompare(b.pitcher?.full_name)
-    if (sortBy === 'rest')   return (a.days_since_last_appearance ?? 99) - (b.days_since_last_appearance ?? 99)
+    if (sortBy === 'score')   return b.raw_score - a.raw_score
+    if (sortBy === 'name')    return a.pitcher?.full_name?.localeCompare(b.pitcher?.full_name)
+    if (sortBy === 'rest')    return (a.days_since_last_appearance ?? 99) - (b.days_since_last_appearance ?? 99)
     if (sortBy === 'pitches') return b.pitches_last_7_days - a.pitches_last_7_days
     return 0
   })
@@ -55,21 +123,7 @@ export default function Bullpen() {
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <SectionHeader
-        title="Bullpen"
-        subtitle="Relief pitcher fatigue scoring engine"
-        action={
-          <button
-            onClick={handleRecalculate}
-            disabled={recalcing}
-            className="px-4 py-2 bg-amber/10 border border-amber/30 rounded text-amber text-xs font-mono hover:bg-amber/20 transition-colors disabled:opacity-40"
-          >
-            {recalcing ? '⟳ Recalculating...' : '⟳ Recalculate'}
-          </button>
-        }
-      />
-
+    <>
       {/* Team filter pills */}
       <div className="flex flex-wrap gap-2 mb-6 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <button
@@ -106,7 +160,7 @@ export default function Bullpen() {
         {/* Main table */}
         <div className={`flex-1 card overflow-hidden transition-all duration-300 ${selectedPitcher ? 'lg:flex-none lg:w-[60%]' : ''}`}>
           {allScores.loading ? (
-            <LoadingPane label="Loading fatigue data..." />
+            <LoadingPane message="Loading fatigue data..." />
           ) : allScores.error ? (
             <ErrorState message={allScores.error} onRetry={allScores.refetch} />
           ) : sorted.length === 0 ? (
@@ -160,6 +214,6 @@ export default function Bullpen() {
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }
