@@ -28,9 +28,9 @@ export const riskBadgeClass = (level) => ({
 }[level] || 'badge-low')
 
 export const fatigueBarColor = (score) => {
-  if (score >= 76) return 'bg-red-500'
-  if (score >= 51) return 'bg-orange-400'
-  if (score >= 26) return 'bg-amber-400'
+  if (score >= 81) return 'bg-red-500'
+  if (score >= 50) return 'bg-orange-400'
+  if (score >= 25) return 'bg-amber-400'
   return 'bg-emerald-400'
 }
 
