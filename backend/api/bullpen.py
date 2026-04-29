@@ -310,7 +310,8 @@ def get_stats_overview():
             risk_breakdown[score.risk_level] += 1
 
     avg_fatigue = (
-        db.session.query(db.func.avg(FatigueScore.raw_score)).scalar() or 0
+        sum(s.raw_score for s in latest_scores) / len(latest_scores)
+        if latest_scores else 0
     )
 
     return jsonify({
