@@ -1,5 +1,5 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenOverview, getFatigueScores, getPipelineOverview } from '../../utils/api'
+import { getBullpenOverview, getFatigueScores, getPipelineOverview, getSyncStatus } from '../../utils/api'
 import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
@@ -20,6 +20,21 @@ export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
   const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '' }))
   const pipeline   = useFetch(getPipelineOverview)
+  const sync       = useFetch(getSyncStatus)
+
+  // Drive the SeasonBanner from the latest successful sync. We only
+  // call the season "live" once a sync has actually completed cleanly.
+  const seasonInfo = (() => {
+    const data = sync.data
+    if (!data || !data.last_sync || data.status !== 'ok') {
+      return { season: '2024', isLive: false }
+    }
+    const d = new Date(data.last_sync)
+    if (Number.isNaN(d.getTime())) {
+      return { season: '2024', isLive: false }
+    }
+    return { season: String(d.getFullYear()), isLive: true }
+  })()
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -37,7 +52,7 @@ export default function Dashboard() {
               Built to think like someone already in the room.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <SeasonBanner season="2024" isLive={false} />
+              <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
               <SyncStatus />
             </div>
           </div>
