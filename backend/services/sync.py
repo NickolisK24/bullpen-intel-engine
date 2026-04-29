@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from sqlalchemy import desc
@@ -126,6 +127,30 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
             db.session.add(log)
             new_logs += 1
             touched_this_pitcher = True
+
+            # Backfill leverage index from the boxscore. A failed call or a
+            # missing LI field just leaves the column as None — never crash
+            # the sync. Sleep briefly so we don't hammer the MLB API.
+            try:
+                pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
+            except Exception as e:
+                logger.warning('Boxscore fetch failed for game_pk=%s: %s', game_pk, e)
+                pitching_lines = []
+
+            for line in pitching_lines or []:
+                if line.get('player_id') == pitcher.mlb_id:
+                    stats_block = line.get('stats') or {}
+                    for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
+                        raw_li = stats_block.get(li_key)
+                        if raw_li is not None:
+                            try:
+                                log.leverage_index = float(raw_li)
+                            except (TypeError, ValueError):
+                                pass
+                            break
+                    break
+
+            time.sleep(0.1)
 
         if touched_this_pitcher:
             pitchers_touched += 1
