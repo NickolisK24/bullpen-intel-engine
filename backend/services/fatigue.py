@@ -10,9 +10,9 @@ Calculates a 0-100 fatigue score for relief pitchers based on:
   5. Innings Load         (10%) — Total innings in rolling window
 
 Score interpretation:
-  0–25   → LOW      (Fresh, readily available)
-  26–50  → MODERATE (Some use, monitor)
-  51–80  → HIGH     (Fatigued, use with caution)
+  0–24   → LOW      (Fresh, readily available)
+  25–49  → MODERATE (Some use, monitor)
+  50–80  → HIGH     (Fatigued, use with caution)
   81–100 → CRITICAL (Rest required)
 
 All thresholds are tunable via the WEIGHTS and THRESHOLDS dicts below.

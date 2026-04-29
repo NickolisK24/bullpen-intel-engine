@@ -47,10 +47,10 @@ def get_portfolio():
                     {'name': 'Innings Load', 'weight': '10%', 'rationale': 'A floor for volume — ensures workload is captured even when pitch counts are unavailable.'},
                 ],
                 'risk_tiers': [
-                    {'level': 'LOW', 'range': '0–25', 'interpretation': 'Fresh and available.'},
-                    {'level': 'MODERATE', 'range': '26–50', 'interpretation': 'Some recent use. Monitor.'},
-                    {'level': 'HIGH', 'range': '51–75', 'interpretation': 'Fatigued. Use with caution.'},
-                    {'level': 'CRITICAL', 'range': '76–100', 'interpretation': 'Rest required.'},
+                    {'level': 'LOW', 'range': '0–24', 'interpretation': 'Fresh and available.'},
+                    {'level': 'MODERATE', 'range': '25–49', 'interpretation': 'Some recent use. Monitor.'},
+                    {'level': 'HIGH', 'range': '50–80', 'interpretation': 'Fatigued. Use with caution.'},
+                    {'level': 'CRITICAL', 'range': '81–100', 'interpretation': 'Rest required.'},
                 ],
             }
         },
