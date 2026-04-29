@@ -70,7 +70,17 @@ def get_pitcher_fatigue(pitcher_id):
         .first()
     )
 
-    fourteen_days_ago = date.today() - timedelta(days=14)
+    # Anchor recent_logs / fatigue_trend on the pitcher's most recent game
+    # so historical (e.g. 2024-2025 seed) data still produces non-empty
+    # windows. Fall back to today if the pitcher has no logs at all.
+    last_game_date = (
+        db.session.query(db.func.max(GameLog.game_date))
+        .filter(GameLog.pitcher_id == pitcher_id)
+        .scalar()
+    )
+    anchor = last_game_date if last_game_date else date.today()
+
+    fourteen_days_ago = anchor - timedelta(days=14)
     logs = (
         GameLog.query
         .filter(GameLog.pitcher_id == pitcher_id, GameLog.game_date >= fourteen_days_ago)
@@ -78,7 +88,7 @@ def get_pitcher_fatigue(pitcher_id):
         .all()
     )
 
-    thirty_days_ago = date.today() - timedelta(days=30)
+    thirty_days_ago = anchor - timedelta(days=30)
     history = (
         FatigueScore.query
         .filter(
