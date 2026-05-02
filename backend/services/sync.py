@@ -7,7 +7,7 @@ it only touches the DB and the MLB API — no Flask request objects,
 no jsonify — so it can run from any context that has an app_context().
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import logging
 import os
@@ -245,7 +245,7 @@ def run_daily_sync(app, days_back: int = 7):
         run_logger.addHandler(file_handler)
     run_logger.setLevel(logging.INFO)
 
-    started_at = datetime.utcnow()
+    started_at = datetime.now(timezone.utc)
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
 
     status = {
@@ -287,7 +287,7 @@ def run_daily_sync(app, days_back: int = 7):
         status['message'] = str(e)
         run_logger.exception('Daily sync failed: %s', e)
 
-    status['finished_at'] = datetime.utcnow().isoformat()
+    status['finished_at'] = datetime.now(timezone.utc).isoformat()
 
     write_status(status)
 

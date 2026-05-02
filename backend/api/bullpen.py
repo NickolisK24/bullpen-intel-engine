@@ -3,7 +3,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 from sqlalchemy import desc
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from utils.db import db
 from models.pitcher import Pitcher
@@ -210,7 +210,7 @@ def sync_recent_logs():
     """
     body      = request.get_json(silent=True) or {}
     days_back = body.get('days_back', 7)
-    started   = datetime.utcnow()
+    started   = datetime.now(timezone.utc)
 
     try:
         pull = sync_service.sync_recent_logs(days_back=days_back)
@@ -224,13 +224,13 @@ def sync_recent_logs():
             'new_logs_added':  0,
             'errors':          1,
             'message':         str(e),
-            'finished_at':     datetime.utcnow().isoformat(),
+            'finished_at':     datetime.now(timezone.utc).isoformat(),
         })
         return jsonify({'error': f'Sync failed: {str(e)}'}), 500
 
     # Live mode: score against today — same behavior as before.
     fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
-    finished        = datetime.utcnow()
+    finished        = datetime.now(timezone.utc)
 
     # Mirror what the daily APScheduler job writes so /sync/status stays accurate.
     sync_service.write_status({
