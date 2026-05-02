@@ -101,7 +101,7 @@ def create_app(config_name='default'):
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
-    from backend.api.methodology import methodology_bp
+    from api.methodology import methodology_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
