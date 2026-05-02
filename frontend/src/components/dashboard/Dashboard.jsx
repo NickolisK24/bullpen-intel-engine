@@ -5,6 +5,7 @@ import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
 import SyncStatus from './SyncStatus'
+import FatigueInsightCard from './FatigueInsightCard'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -117,6 +118,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Fatigue → next-appearance ERA insight */}
+      <FatigueInsightCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Most fatigued pitchers */}
