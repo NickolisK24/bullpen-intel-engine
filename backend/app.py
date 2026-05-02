@@ -16,8 +16,12 @@ _scheduler = None
 
 
 def _init_scheduler(app):
+    """
+    Wire up the daily sync scheduler. Only activates when AUTO_SYNC=true
+    is set in the environment — so migrations and test runs don't kick
+    off background jobs.
+    """
     global _scheduler
-
     if _scheduler is not None:
         return
 
@@ -26,16 +30,12 @@ def _init_scheduler(app):
         return
 
     # Skip the WERKZEUG_RUN_MAIN guard when not running under Flask's dev server.
-    # That guard only matters for `flask run --debug`, which auto-reloads and
-    # would otherwise fork the scheduler twice. Under gunicorn (production) or
-    # any other WSGI server, there's no reloader, so we can start unconditionally.
     is_under_werkzeug_reloader = (
         app.debug
         and os.environ.get('WERKZEUG_RUN_MAIN') is not None
         and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
     )
     if is_under_werkzeug_reloader:
-        print('[scheduler] EXITING: under Werkzeug reloader parent process', flush=True)
         return
 
     try:
@@ -56,7 +56,7 @@ def _init_scheduler(app):
             eastern = None
 
         _scheduler = BackgroundScheduler(daemon=True)
-        trigger = CronTrigger(hour=10, minute=40, timezone=eastern) if eastern else CronTrigger(hour=10, minute=40)
+        trigger = CronTrigger(hour=6, minute=0, timezone=eastern) if eastern else CronTrigger(hour=6, minute=0)
 
         _scheduler.add_job(
             func=lambda: run_daily_sync(app),
