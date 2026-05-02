@@ -30,8 +30,17 @@ def _init_scheduler(app):
 
     print(f'[scheduler] checkpoint: app.debug={app.debug}, AUTO_SYNC ok, about to import APScheduler', flush=True)
 
-    if app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-        print('[scheduler] EXITING: debug mode without WERKZEUG_RUN_MAIN', flush=True)
+    # Skip the WERKZEUG_RUN_MAIN guard when not running under Flask's dev server.
+    # That guard only matters for `flask run --debug`, which auto-reloads and
+    # would otherwise fork the scheduler twice. Under gunicorn (production) or
+    # any other WSGI server, there's no reloader, so we can start unconditionally.
+    is_under_werkzeug_reloader = (
+        app.debug
+        and os.environ.get('WERKZEUG_RUN_MAIN') is not None
+        and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+    )
+    if is_under_werkzeug_reloader:
+        print('[scheduler] EXITING: under Werkzeug reloader parent process', flush=True)
         return
 
     try:
