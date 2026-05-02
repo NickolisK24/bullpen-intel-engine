@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams, getTeamBullpen, recalculateFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader, StatCard, Divider } from '../UI'
@@ -11,6 +11,7 @@ const VIEW_MODES   = [
   { id: 'pitchers', label: 'Pitchers' },
   { id: 'teams',    label: 'Team Rankings' },
 ]
+const PAGE_SIZE = 50
 
 export default function Bullpen() {
   const [viewMode, setViewMode]           = useState('pitchers')
@@ -26,7 +27,7 @@ export default function Bullpen() {
     () => selectedTeam
       ? getTeamBullpen(selectedTeam, { include_stale: includeStale })
           .then(rows => rows.map(r => ({ ...r.fatigue, pitcher: r.pitcher })).filter(r => r && r.raw_score != null))
-      : getFatigueScores({ limit: 200, include_stale: includeStale }),
+      : getFatigueScores({ limit: 750, include_stale: includeStale }),
     [selectedTeam, includeStale]
   )
 
@@ -108,6 +109,8 @@ function PitcherView({
   selectedPitcher, setSelected,
   sortBy, setSortBy,
 }) {
+  const [page, setPage] = useState(1)
+
   // Filter by risk
   const rows = (allScores.data || []).filter(r => {
     if (riskFilter === 'ALL') return true
@@ -115,15 +118,26 @@ function PitcherView({
   })
 
   // Sort
-  const sorted = [...rows].sort((a, b) => {
+  const sorted = useMemo(() => [...rows].sort((a, b) => {
     if (sortBy === 'score')   return b.raw_score - a.raw_score
     if (sortBy === 'name')    return a.pitcher?.full_name?.localeCompare(b.pitcher?.full_name)
     if (sortBy === 'rest')    return (a.days_since_last_appearance ?? 99) - (b.days_since_last_appearance ?? 99)
     if (sortBy === 'pitches') return b.pitches_last_7_days - a.pitches_last_7_days
     return 0
-  })
+  }), [rows, sortBy])
 
-  // Risk counts
+  // Pagination math
+  const totalRows  = sorted.length
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE))
+  const safePage   = Math.min(page, totalPages)
+  const startIdx   = (safePage - 1) * PAGE_SIZE
+  const endIdx     = Math.min(startIdx + PAGE_SIZE, totalRows)
+  const visible    = sorted.slice(startIdx, endIdx)
+
+  // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
+  useEffect(() => { setPage(1) }, [riskFilter, selectedTeam, sortBy])
+
+  // Risk counts (always use full filtered set, not paginated)
   const counts = { ALL: rows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
   rows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
 
@@ -178,40 +192,52 @@ function PitcherView({
               <p className="text-chalk600 text-xs mt-1 font-mono">Run <span className="text-amber">python seed.py</span> in the backend to load data</p>
             </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className={thStyle('name')} onClick={() => setSortBy('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
-                  <th className="text-chalk400">Team</th>
-                  <th className={thStyle('score')} onClick={() => setSortBy('score')}>Score {sortBy === 'score' && '↓'}</th>
-                  <th className="text-chalk400 hidden md:table-cell">Fatigue</th>
-                  <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
-                  <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
-                  <th className="text-chalk400">App/7d</th>
-                  <th className="text-chalk400">Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(row => (
-                  <tr
-                    key={row.id || row.pitcher_id}
-                    onClick={() => setSelected(selectedPitcher?.pitcher_id === row.pitcher_id ? null : row)}
-                    className={selectedPitcher?.pitcher_id === row.pitcher_id ? 'bg-amber/5 border-l-2 border-l-amber' : ''}
-                  >
-                    <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
-                    <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
-                    <td className={`font-mono font-semibold ${riskColor(row.risk_level)}`}>{Math.round(row.raw_score ?? 0)}</td>
-                    <td className="hidden md:table-cell w-28">
-                      <FatigueBar score={row.raw_score} height="h-1" />
-                    </td>
-                    <td className="font-mono text-xs text-chalk200">{row.pitches_last_7_days ?? 0}</td>
-                    <td className="font-mono text-xs text-chalk400">{row.days_since_last_appearance != null ? `${row.days_since_last_appearance}d` : '---'}</td>
-                    <td className="font-mono text-xs text-chalk200">{row.appearances_last_7 ?? 0}</td>
-                    <td><RiskBadge level={row.risk_level} /></td>
+            <>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className={thStyle('name')} onClick={() => setSortBy('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
+                    <th className="text-chalk400">Team</th>
+                    <th className={thStyle('score')} onClick={() => setSortBy('score')}>Score {sortBy === 'score' && '↓'}</th>
+                    <th className="text-chalk400 hidden md:table-cell">Fatigue</th>
+                    <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
+                    <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
+                    <th className="text-chalk400">App/7d</th>
+                    <th className="text-chalk400">Risk</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {visible.map(row => (
+                    <tr
+                      key={row.id || row.pitcher_id}
+                      onClick={() => setSelected(selectedPitcher?.pitcher_id === row.pitcher_id ? null : row)}
+                      className={selectedPitcher?.pitcher_id === row.pitcher_id ? 'bg-amber/5 border-l-2 border-l-amber' : ''}
+                    >
+                      <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
+                      <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
+                      <td className={`font-mono font-semibold ${riskColor(row.risk_level)}`}>{Math.round(row.raw_score ?? 0)}</td>
+                      <td className="hidden md:table-cell w-28">
+                        <FatigueBar score={row.raw_score} height="h-1" />
+                      </td>
+                      <td className="font-mono text-xs text-chalk200">{row.pitches_last_7_days ?? 0}</td>
+                      <td className="font-mono text-xs text-chalk400">{row.days_since_last_appearance != null ? `${row.days_since_last_appearance}d` : '---'}</td>
+                      <td className="font-mono text-xs text-chalk200">{row.appearances_last_7 ?? 0}</td>
+                      <td><RiskBadge level={row.risk_level} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {totalPages > 1 && (
+                <Pagination
+                  page={safePage}
+                  totalPages={totalPages}
+                  startIdx={startIdx}
+                  endIdx={endIdx}
+                  totalRows={totalRows}
+                  onPageChange={setPage}
+                />
+              )}
+            </>
           )}
         </div>
 
@@ -223,6 +249,72 @@ function PitcherView({
         )}
       </div>
     </>
+  )
+}
+
+// Pagination controls — only renders when there's more than one page.
+// Shows up to 5 page-number buttons centered on the current page,
+// plus prev/next chevrons and a "Showing X-Y of Z" summary.
+function Pagination({ page, totalPages, startIdx, endIdx, totalRows, onPageChange }) {
+  // Compute a windowed range of page numbers around the current page.
+  const window = 2  // pages to show on each side of current
+  const start  = Math.max(1, page - window)
+  const end    = Math.min(totalPages, page + window)
+  const pages  = []
+  for (let i = start; i <= end; i++) pages.push(i)
+
+  const btnStyle = (active) =>
+    `min-w-[2rem] px-2 py-1 rounded font-mono text-xs transition-all ${
+      active
+        ? 'bg-amber/20 border border-amber/40 text-amber'
+        : 'border border-dirt text-chalk400 hover:text-chalk200 hover:border-chalk400'
+    }`
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-t border-dirt bg-chalk/20">
+      <div className="text-chalk600 text-xs font-mono">
+        Showing {startIdx + 1}–{endIdx} of {totalRows}
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className={`${btnStyle(false)} disabled:opacity-30 disabled:cursor-not-allowed`}
+          aria-label="Previous page"
+        >
+          ‹
+        </button>
+        {start > 1 && (
+          <>
+            <button onClick={() => onPageChange(1)} className={btnStyle(false)}>1</button>
+            {start > 2 && <span className="text-chalk600 px-1">…</span>}
+          </>
+        )}
+        {pages.map(p => (
+          <button
+            key={p}
+            onClick={() => onPageChange(p)}
+            className={btnStyle(p === page)}
+          >
+            {p}
+          </button>
+        ))}
+        {end < totalPages && (
+          <>
+            {end < totalPages - 1 && <span className="text-chalk600 px-1">…</span>}
+            <button onClick={() => onPageChange(totalPages)} className={btnStyle(false)}>{totalPages}</button>
+          </>
+        )}
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages}
+          className={`${btnStyle(false)} disabled:opacity-30 disabled:cursor-not-allowed`}
+          aria-label="Next page"
+        >
+          ›
+        </button>
+      </div>
+    </div>
   )
 }
 
