@@ -1,13 +1,21 @@
 """
 BaseballOS Fatigue Scoring Engine
 ----------------------------------
-Calculates a 0-100 fatigue score for relief pitchers based on:
+Calculates a 0-100 fatigue score for relief pitchers based on four factors
+the MLB Stats API exposes reliably:
 
-  1. Pitch Count Load     (30%) — Total pitches thrown in last 7 days
-  2. Rest Days            (25%) — Days since last appearance
+  1. Pitch Count Load     (35%) — Total pitches thrown in last 7 days
+  2. Rest Days            (30%) — Days since last appearance
   3. Appearance Frequency (20%) — # of appearances in rolling 7 and 14-day windows
-  4. Leverage Index       (15%) — High-leverage = more physiological/mental stress
-  5. Innings Load         (10%) — Total innings in rolling window
+  4. Innings Load         (15%) — Total innings in rolling window
+
+NOTE on Leverage Index: an earlier version of the model included LI as a 5th
+component (15%). The MLB Stats API gameLog endpoint does not expose LI — it's
+a Fangraphs/Baseball Savant computed stat derived from play-by-play data we
+don't ingest. Rather than fake the data with a constant default, we dropped
+the component entirely and redistributed its weight across the four factors
+we can measure. The `leverage_score` column on FatigueScore is preserved for
+schema stability but is no longer used in the composite calculation.
 
 Score interpretation:
   0–24   → LOW      (Fresh, readily available)
@@ -24,12 +32,16 @@ from utils.db import db
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
+# Weights sum to 1.0 across the four factors we can reliably measure from
+# the MLB Stats API. Leverage Index was originally a 5th component (15%)
+# but MLB's gameLog endpoint does not expose LI — it's a Fangraphs/Savant-
+# computed stat derived from play-by-play. Rather than fake the data, we
+# dropped LI and redistributed its weight across the components we trust.
 WEIGHTS = {
-    'pitch_count':   0.30,
-    'rest_days':     0.25,
-    'appearances':   0.20,
-    'leverage':      0.15,
-    'innings':       0.10,
+    'pitch_count': 0.35,
+    'rest_days':   0.30,
+    'appearances': 0.20,
+    'innings':     0.15,
 }
 
 PITCH_THRESHOLDS = {
@@ -113,25 +125,6 @@ def score_appearances(apps_last_7: int, apps_last_14: int) -> float:
         return weighted * 15.0
 
 
-def score_leverage(avg_leverage: float) -> float:
-    """
-    Score based on average leverage index of recent appearances.
-    LI: 0.0 = garbage time, 1.0 = average, 2.0+ = high leverage
-    """
-    if avg_leverage is None:
-        return 20.0
-    elif avg_leverage >= 2.5:
-        return 100.0
-    elif avg_leverage >= 2.0:
-        return 80.0
-    elif avg_leverage >= 1.5:
-        return 60.0
-    elif avg_leverage >= 1.0:
-        return 40.0
-    else:
-        return 15.0
-
-
 def score_innings(innings_last_7: float) -> float:
     """Score based on innings pitched in last 7 days."""
     if innings_last_7 <= 0:
@@ -187,20 +180,15 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
     appearances_7   = len(logs_7)
     appearances_14  = len(logs_14)
 
-    leverage_values = [g.leverage_index for g in logs_7 if g.leverage_index is not None]
-    avg_leverage    = sum(leverage_values) / len(leverage_values) if leverage_values else 1.0
-
     pc_score   = score_pitch_count(pitches_last_7)
     rest_score = score_rest_days(days_since_last)
     app_score  = score_appearances(appearances_7, appearances_14)
-    lev_score  = score_leverage(avg_leverage)
     inn_score  = score_innings(innings_last_7)
 
     raw = (
         pc_score   * WEIGHTS['pitch_count'] +
-        rest_score * WEIGHTS['rest_days'] +
+        rest_score * WEIGHTS['rest_days']   +
         app_score  * WEIGHTS['appearances'] +
-        lev_score  * WEIGHTS['leverage'] +
         inn_score  * WEIGHTS['innings']
     )
     raw = max(0.0, min(100.0, raw))
@@ -211,14 +199,14 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
         pitch_count_score=pc_score,
         rest_days_score=rest_score,
         appearances_score=app_score,
-        leverage_score=lev_score,
+        leverage_score=0.0,         # deprecated component, retained for schema stability
         innings_score=inn_score,
         days_since_last_appearance=days_since_last,
         appearances_last_7=appearances_7,
         appearances_last_14=appearances_14,
         pitches_last_7_days=pitches_last_7,
         innings_last_7_days=innings_last_7,
-        avg_leverage_last_7=avg_leverage,
+        avg_leverage_last_7=None,   # no longer collected
         risk_level=get_risk_level(raw),
     )
 
