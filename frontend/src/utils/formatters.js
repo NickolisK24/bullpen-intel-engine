@@ -66,15 +66,29 @@ export const levelColor = (level) => ({
 }[level] || 'text-chalk400')
 
 // ── Date formatting ──────────────────────────────────────────
-export const fmtDate = (s) => {
-  if (!s) return '---'
+// Date-only ISO strings like "2026-05-01" parse as midnight UTC by default,
+// which shifts the display by one day in any timezone west of UTC. Detect
+// that pattern and parse as local instead.
+const parseLocalDate = (s) => {
+  if (!s) return null
+  if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number)
+    return new Date(y, m - 1, d)
+  }
   const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+export const fmtDate = (s) => {
+  const d = parseLocalDate(s)
+  if (!d) return '---'
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export const daysAgo = (s) => {
-  if (!s) return null
-  const diff = Math.floor((Date.now() - new Date(s)) / 86400000)
+  const d = parseLocalDate(s)
+  if (!d) return null
+  const diff = Math.floor((Date.now() - d.getTime()) / 86400000)
   if (diff === 0) return 'Today'
   if (diff === 1) return '1d ago'
   return `${diff}d ago`
