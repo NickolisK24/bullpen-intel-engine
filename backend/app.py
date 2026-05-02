@@ -1,3 +1,5 @@
+print('[boot] app.py module loading', flush=True)
+
 import atexit
 import logging
 import os
@@ -116,6 +118,7 @@ def create_app(config_name='default'):
     # Kick off the scheduler (guarded by AUTO_SYNC env var).
     _init_scheduler(app)
 
+    print('[boot] create_app finished', flush=True)
     return app
 
 
