@@ -1,5 +1,3 @@
-print('[boot] app.py module loading', flush=True)
-
 import atexit
 import logging
 import os
@@ -19,7 +17,6 @@ _scheduler = None
 
 def _init_scheduler(app):
     global _scheduler
-    print(f'[scheduler] _init_scheduler called, _scheduler={_scheduler}, AUTO_SYNC={os.environ.get("AUTO_SYNC")!r}', flush=True)
 
     if _scheduler is not None:
         return
@@ -27,8 +24,6 @@ def _init_scheduler(app):
     if os.environ.get('AUTO_SYNC', '').lower() not in ('1', 'true', 'yes'):
         print('[scheduler] AUTO_SYNC disabled — daily scheduler not started.', flush=True)
         return
-
-    print(f'[scheduler] checkpoint: app.debug={app.debug}, AUTO_SYNC ok, about to import APScheduler', flush=True)
 
     # Skip the WERKZEUG_RUN_MAIN guard when not running under Flask's dev server.
     # That guard only matters for `flask run --debug`, which auto-reloads and
@@ -46,25 +41,22 @@ def _init_scheduler(app):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
-        print('[scheduler] APScheduler imports succeeded', flush=True)
     except ImportError:
         print('[scheduler] APScheduler not installed — daily scheduler disabled.', flush=True)
         return
 
     try:
         from services.sync import run_daily_sync
-        print('[scheduler] services.sync imported', flush=True)
 
         try:
             from zoneinfo import ZoneInfo
             eastern = ZoneInfo('America/New_York')
-            print('[scheduler] ZoneInfo loaded', flush=True)
         except Exception as e:
             print(f'[scheduler] ZoneInfo failed: {e!r}', flush=True)
             eastern = None
 
         _scheduler = BackgroundScheduler(daemon=True)
-        trigger = CronTrigger(hour=6, minute=0, timezone=eastern) if eastern else CronTrigger(hour=6, minute=0)
+        trigger = CronTrigger(hour=10, minute=40, timezone=eastern) if eastern else CronTrigger(hour=10, minute=40)
 
         _scheduler.add_job(
             func=lambda: run_daily_sync(app),
@@ -124,7 +116,6 @@ def create_app(config_name='default'):
 
     _init_scheduler(app)
 
-    print('[boot] create_app finished', flush=True)
     return app
 
 
