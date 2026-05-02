@@ -109,19 +109,55 @@ def aggregate_by_tier(pairs):
     return out
 
 
-def build_headline(tiers):
-    low_era = tiers.get('LOW', {}).get('era')
-    crit_era = tiers.get('CRITICAL', {}).get('era')
+def build_comparison(tiers):
+    """
+    Compare MODERATE (rested baseline) against HIGH+CRITICAL combined
+    (elevated fatigue). LOW is excluded because pitchers who have a 'next
+    appearance' almost never score LOW by definition — that tier requires
+    5+ days of rest, which means they haven't pitched recently enough to
+    be in the analysis window.
+    """
+    moderate = tiers.get('MODERATE', {})
+    high = tiers.get('HIGH', {})
+    critical = tiers.get('CRITICAL', {})
 
-    if low_era is None or crit_era is None or low_era == 0:
-        return ('Insufficient sample to compare CRITICAL vs LOW fatigue ERAs '
-                'across the 2024-2025 seasons.')
+    baseline_apps = moderate.get('appearances', 0)
+    baseline_ip = moderate.get('ip', 0)
+    baseline_er = moderate.get('er', 0)
+    baseline_era = moderate.get('era')
 
-    pct_diff = ((crit_era - low_era) / low_era) * 100
-    direction = 'higher' if pct_diff >= 0 else 'lower'
-    return (f'Pitchers who threw at CRITICAL fatigue posted a {crit_era:.2f} ERA '
-            f'in their next outing vs {low_era:.2f} ERA when LOW — a '
-            f'{abs(pct_diff):.0f}% {direction} mark.')
+    elevated_apps = high.get('appearances', 0) + critical.get('appearances', 0)
+    elevated_ip = high.get('ip', 0) + critical.get('ip', 0)
+    elevated_er = high.get('er', 0) + critical.get('er', 0)
+    elevated_era = (elevated_er * 9 / elevated_ip) if elevated_ip > 0 else None
+
+    if baseline_apps < 100 or elevated_apps < 100 or baseline_era is None or elevated_era is None:
+        return {
+            'baseline_tier': 'MODERATE',
+            'baseline_era': baseline_era,
+            'baseline_apps': baseline_apps,
+            'elevated_era': round(elevated_era, 2) if elevated_era is not None else None,
+            'elevated_apps': elevated_apps,
+            'pct_difference': None,
+            'headline': ('Insufficient sample to compare rested vs elevated '
+                         'fatigue ERAs across the 2024-2025 seasons.'),
+        }
+
+    pct_diff = ((elevated_era - baseline_era) / baseline_era) * 100
+    headline = (f'Pitchers throwing at HIGH or CRITICAL fatigue posted a '
+                f'{elevated_era:.2f} ERA in their next outing — '
+                f'{abs(pct_diff):.0f}% {"worse" if pct_diff >= 0 else "better"} '
+                f'than the {baseline_era:.2f} ERA they posted when rested.')
+
+    return {
+        'baseline_tier': 'MODERATE',
+        'baseline_era': round(baseline_era, 2),
+        'baseline_apps': baseline_apps,
+        'elevated_era': round(elevated_era, 2),
+        'elevated_apps': elevated_apps,
+        'pct_difference': round(pct_diff),
+        'headline': headline,
+    }
 
 
 def print_table(tiers, total):
@@ -170,21 +206,22 @@ def run():
         all_pairs.extend(collect_appearance_pairs(pitcher, logs))
 
     tiers = aggregate_by_tier(all_pairs)
-    headline = build_headline(tiers)
+    comparison = build_comparison(tiers)
 
     payload = {
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'seasons': SEASONS,
         'total_appearances_analyzed': len(all_pairs),
         'tiers': tiers,
-        'headline': headline,
+        'comparison': comparison,
+        'headline': comparison['headline'],
     }
 
     with open(RESULTS_PATH, 'w') as fh:
         json.dump(payload, fh, indent=2)
 
     print_table(tiers, len(all_pairs))
-    print(f'  Headline: {headline}')
+    print(f'  Headline: {comparison["headline"]}')
     print(f'  Wrote {RESULTS_PATH}')
 
 

@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-05-02T04:41:59.398655+00:00",
+  "seasons": [
+    2024,
+    2025
+  ],
+  "total_appearances_analyzed": 30037,
+  "tiers": {
+    "LOW": {
+      "appearances": 0,
+      "ip": 0.0,
+      "er": 0,
+      "era": null,
+      "avg_fatigue": null
+    },
+    "MODERATE": {
+      "appearances": 15929,
+      "ip": 18423.33,
+      "er": 7296,
+      "era": 3.56,
+      "avg_fatigue": 43.46
+    },
+    "HIGH": {
+      "appearances": 14102,
+      "ip": 48579.0,
+      "er": 21314,
+      "era": 3.95,
+      "avg_fatigue": 66.23
+    },
+    "CRITICAL": {
+      "appearances": 6,
+      "ip": 6.33,
+      "er": 5,
+      "era": 7.11,
+      "avg_fatigue": 82.92
+    }
+  },
+  "comparison": {
+    "baseline_tier": "MODERATE",
+    "baseline_era": 3.56,
+    "baseline_apps": 15929,
+    "elevated_era": 3.95,
+    "elevated_apps": 14108,
+    "pct_difference": 11,
+    "headline": "Pitchers throwing at HIGH or CRITICAL fatigue posted a 3.95 ERA in their next outing \u2014 11% worse than the 3.56 ERA they posted when rested."
+  },
+  "headline": "Pitchers throwing at HIGH or CRITICAL fatigue posted a 3.95 ERA in their next outing \u2014 11% worse than the 3.56 ERA they posted when rested."
+}
