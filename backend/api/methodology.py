@@ -119,8 +119,8 @@ def get_methodology():
         'data_sources': [
             {
                 'name': 'MLB Stats API',
-                'url':  'https://statsapi.mlb.com/api/v1',
-                'use':  'Primary source for rosters, game logs, and box scores. Free and unauthenticated.',
+                'url':  'https://github.com/toddrob99/MLB-StatsAPI/wiki/Endpoints',
+                'use':  'Primary source for rosters, game logs, and box scores. Free, unauthenticated, and well-documented via the linked community wiki.',
             },
         ],
 
