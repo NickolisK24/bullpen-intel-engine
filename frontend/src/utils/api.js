@@ -35,6 +35,7 @@ export const getTeams          = () => request('/bullpen/teams')
 export const getTeamBullpen    = (teamId) => request(`/bullpen/teams/${teamId}/bullpen`)
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getSyncStatus     = () => request('/bullpen/sync/status')
+export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')
 
 // ── Prospects ───────────────────────────────────────────────
 export const getProspects        = (params = {}) => {
