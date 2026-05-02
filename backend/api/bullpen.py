@@ -21,6 +21,29 @@ FATIGUE_ERA_RESULTS_PATH = os.path.join(
     'fatigue_era_results.json',
 )
 
+ACTIVE_WINDOW_DAYS = 14
+
+
+def _truthy(value):
+    """Parse a query-string boolean tolerantly."""
+    if value is None:
+        return False
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS):
+    """
+    Subquery returning pitcher_ids whose most recent game_log.game_date falls
+    within the last `days` days. Used to suppress stale rows from list views.
+    """
+    cutoff = date.today() - timedelta(days=days)
+    return (
+        db.session.query(GameLog.pitcher_id.label('pitcher_id'))
+        .group_by(GameLog.pitcher_id)
+        .having(db.func.max(GameLog.game_date) >= cutoff)
+        .subquery()
+    )
+
 
 # ─── Fatigue Scores ───────────────────────────────────────────────────────────
 
@@ -32,10 +55,13 @@ def get_fatigue_scores():
       - team_id: filter by team
       - risk_level: LOW | MODERATE | HIGH | CRITICAL
       - limit: max results (default 50)
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
     """
-    team_id    = request.args.get('team_id', type=int)
-    risk_level = request.args.get('risk_level')
-    limit      = request.args.get('limit', 50, type=int)
+    team_id       = request.args.get('team_id', type=int)
+    risk_level    = request.args.get('risk_level')
+    limit         = request.args.get('limit', 50, type=int)
+    include_stale = _truthy(request.args.get('include_stale'))
 
     subq = (
         db.session.query(
@@ -52,6 +78,10 @@ def get_fatigue_scores():
                     (FatigueScore.calculated_at == subq.c.max_calc))
         .join(Pitcher, FatigueScore.pitcher_id == Pitcher.id)
     )
+
+    if not include_stale:
+        recent = _recent_pitcher_ids_subquery()
+        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
 
     if team_id:
         query = query.filter(Pitcher.team_id == team_id)
@@ -268,7 +298,13 @@ def get_team_bullpen(team_id):
     """
     Get full bullpen overview for a team.
     Single joined query — no N+1 issue.
+
+    Optional query params:
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
     """
+    include_stale = _truthy(request.args.get('include_stale'))
+
     subq = (
         db.session.query(
             FatigueScore.pitcher_id,
@@ -278,7 +314,7 @@ def get_team_bullpen(team_id):
         .subquery()
     )
 
-    results = (
+    query = (
         db.session.query(Pitcher, FatigueScore)
         .filter(Pitcher.team_id == team_id, Pitcher.active == True)
         .outerjoin(subq, subq.c.pitcher_id == Pitcher.id)
@@ -287,9 +323,13 @@ def get_team_bullpen(team_id):
             (FatigueScore.pitcher_id == subq.c.pitcher_id) &
             (FatigueScore.calculated_at == subq.c.max_calc)
         )
-        .order_by(desc(FatigueScore.raw_score))
-        .all()
     )
+
+    if not include_stale:
+        recent = _recent_pitcher_ids_subquery()
+        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
+
+    results = query.order_by(desc(FatigueScore.raw_score)).all()
 
     return jsonify([
         {
