@@ -3,7 +3,7 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
 import Prospects from './components/prospects/Prospects'
-import Portfolio from './components/portfolio/Portfolio'
+import Methodology from './components/methodology/Methodology'
 
 export default function App() {
   return (
@@ -12,10 +12,10 @@ export default function App() {
         <Sidebar />
         <main className="flex-1 min-w-0 overflow-y-auto">
           <Routes>
-            <Route path="/"          element={<Dashboard />} />
-            <Route path="/bullpen"   element={<Bullpen />} />
-            <Route path="/prospects" element={<Prospects />} />
-            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/"            element={<Dashboard />} />
+            <Route path="/bullpen"     element={<Bullpen />} />
+            <Route path="/prospects"   element={<Prospects />} />
+            <Route path="/methodology" element={<Methodology />} />
           </Routes>
         </main>
       </div>

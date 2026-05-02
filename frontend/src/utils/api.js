@@ -53,5 +53,5 @@ export const getProspectPipeline = () => request('/prospects/pipeline')
 export const compareProspects    = (id1, id2) => request(`/prospects/compare?id1=${id1}&id2=${id2}`)
 export const getPipelineOverview = () => request('/prospects/stats/overview')
 
-// ── Portfolio ───────────────────────────────────────────────
-export const getPortfolio = () => request('/portfolio/')
+// ── Methodology ───────────────────────────────────────────────
+export const getMethodology = () => request('/methodology/')

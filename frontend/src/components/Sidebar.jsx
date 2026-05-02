@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom'
 
 const NAV = [
-  { to: '/',          icon: '⬡',  label: 'Dashboard'  },
-  { to: '/bullpen',   icon: '🔥', label: 'Bullpen'    },
-  { to: '/prospects', icon: '📈', label: 'Pipeline'   },
-  { to: '/portfolio', icon: '⚙', label: 'Portfolio'  },
+  { to: '/',            icon: '⬡',  label: 'Dashboard'   },
+  { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
+  { to: '/prospects',   icon: '📈', label: 'Pipeline'    },
+  { to: '/methodology', icon: '📐', label: 'Methodology' },
 ]
 
 export default function Sidebar() {
