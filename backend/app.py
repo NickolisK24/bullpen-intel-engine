@@ -26,6 +26,8 @@ def _init_scheduler(app):
     off background jobs.
     """
     global _scheduler
+    print(f'[scheduler] _init_scheduler called, _scheduler={_scheduler}, AUTO_SYNC={os.environ.get("AUTO_SYNC")!r}', flush=True)
+
     if _scheduler is not None:
         return
 
