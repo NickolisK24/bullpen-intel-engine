@@ -47,31 +47,36 @@ def _init_scheduler(app):
         print('[scheduler] APScheduler not installed — daily scheduler disabled.', flush=True)
         return
 
-    from services.sync import run_daily_sync
-
-    # Lazy import to avoid a hard dependency during migrations.
     try:
-        from zoneinfo import ZoneInfo  # py3.9+
-        eastern = ZoneInfo('America/New_York')
-    except Exception:
-        eastern = None  # APScheduler will fall back to system TZ
+        from services.sync import run_daily_sync
 
-    _scheduler = BackgroundScheduler(daemon=True)
-    trigger = CronTrigger(hour=6, minute=0, timezone=eastern) if eastern else CronTrigger(hour=6, minute=0)
+        try:
+            from zoneinfo import ZoneInfo
+            eastern = ZoneInfo('America/New_York')
+        except Exception as e:
+            print(f'[scheduler] ZoneInfo failed: {e!r}', flush=True)
+            eastern = None
 
-    _scheduler.add_job(
-        func=lambda: run_daily_sync(app),
-        trigger=trigger,
-        id='daily_bullpen_sync',
-        name='Daily bullpen sync (06:00 ET)',
-        replace_existing=True,
-        misfire_grace_time=60 * 60,  # 1h grace if the host was asleep
-    )
-    _scheduler.start()
-    print('[scheduler] Daily bullpen sync scheduled at 06:00 ET.', flush=True)
+        _scheduler = BackgroundScheduler(daemon=True)
+        trigger = CronTrigger(hour=6, minute=0, timezone=eastern) if eastern else CronTrigger(hour=6, minute=0)
 
-    # Shut down cleanly when the Flask process exits.
-    atexit.register(lambda: _scheduler and _scheduler.shutdown(wait=False))
+        _scheduler.add_job(
+            func=lambda: run_daily_sync(app),
+            trigger=trigger,
+            id='daily_bullpen_sync',
+            name='Daily bullpen sync (06:00 ET)',
+            replace_existing=True,
+            misfire_grace_time=60 * 60,  # 1h grace if the host was asleep
+        )
+        _scheduler.start()
+        print('[scheduler] Daily bullpen sync scheduled at 06:00 ET.', flush=True)
+
+        # Shut down cleanly when the Flask process exits.
+        atexit.register(lambda: _scheduler and _scheduler.shutdown(wait=False))
+    except Exception as e:
+        import traceback
+        print(f'[scheduler] FAILED to start: {e!r}', flush=True)
+        print(traceback.format_exc(), flush=True)
 
 
 def create_app(config_name='default'):
