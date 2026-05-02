@@ -205,26 +205,50 @@ def sync_recent_logs():
       { "days_back": 7 }  — how far back to look for new games (default: 7)
 
     Delegates to services/sync.py so the scheduled daily job and the manual
-    POST go through the exact same code path.
+    POST go through the exact same code path. Also writes sync_status.json
+    so the dashboard "Last synced" pill reflects manual runs too.
     """
     body      = request.get_json(silent=True) or {}
     days_back = body.get('days_back', 7)
+    started   = datetime.utcnow()
 
     try:
         pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
         db.session.rollback()
+        # Persist failure status so the dashboard reflects the bad state.
+        sync_service.write_status({
+            'last_sync':       started.isoformat(),
+            'status':          'error',
+            'pitchers_updated': 0,
+            'new_logs_added':  0,
+            'errors':          1,
+            'message':         str(e),
+            'finished_at':     datetime.utcnow().isoformat(),
+        })
         return jsonify({'error': f'Sync failed: {str(e)}'}), 500
 
     # Live mode: score against today — same behavior as before.
     fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
+    finished        = datetime.utcnow()
+
+    # Mirror what the daily APScheduler job writes so /sync/status stays accurate.
+    sync_service.write_status({
+        'last_sync':       started.isoformat(),
+        'status':          'ok',
+        'pitchers_updated': fatigue_updated,
+        'new_logs_added':  pull['new_logs_added'],
+        'errors':          pull['errors'],
+        'message':         '',
+        'finished_at':     finished.isoformat(),
+    })
 
     return jsonify({
         'status':               'ok',
         'new_logs_added':       pull['new_logs_added'],
         'fatigue_recalculated': fatigue_updated,
         'errors':               pull['errors'],
-        'synced_at':            datetime.utcnow().isoformat(),
+        'synced_at':            finished.isoformat(),
         'days_back':            days_back,
     })
 

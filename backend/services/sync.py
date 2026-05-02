@@ -289,11 +289,7 @@ def run_daily_sync(app, days_back: int = 7):
 
     status['finished_at'] = datetime.utcnow().isoformat()
 
-    try:
-        with open(STATUS_FILE, 'w', encoding='utf-8') as fh:
-            json.dump(status, fh, indent=2)
-    except OSError as e:
-        run_logger.exception('Could not write status file: %s', e)
+    write_status(status)
 
     run_logger.info('── Daily sync finished: %s ──', status['status'])
     # Detach the handler so it doesn't leak on the next run.
@@ -302,6 +298,21 @@ def run_daily_sync(app, days_back: int = 7):
 
     return status
 
+def write_status(status: dict) -> None:
+    """
+    Persist a sync status dict to STATUS_FILE so /api/bullpen/sync/status
+    can serve it. Used by both the daily APScheduler job and manual POSTs
+    so both code paths produce a consistent dashboard pill.
+    """
+    _ensure_logs_dir()
+    try:
+        with open(STATUS_FILE, 'w', encoding='utf-8') as fh:
+            json.dump(status, fh, indent=2)
+    except OSError as e:
+        # Non-fatal — sync itself succeeded, we just couldn't persist.
+        logging.getLogger('baseballos.sync').warning(
+            'Could not write status file: %s', e
+        )
 
 def read_status():
     """Return the most recent sync status, or a sentinel if none exists."""
