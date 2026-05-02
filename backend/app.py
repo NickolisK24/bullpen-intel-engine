@@ -28,7 +28,7 @@ def _init_scheduler(app):
         return
 
     if os.environ.get('AUTO_SYNC', '').lower() not in ('1', 'true', 'yes'):
-        app.logger.info('AUTO_SYNC disabled — daily scheduler not started.')
+        print('[scheduler] AUTO_SYNC disabled — daily scheduler not started.', flush=True)
         return
 
     # In Flask debug mode the reloader forks a child process. Only start the
@@ -40,7 +40,7 @@ def _init_scheduler(app):
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
     except ImportError:
-        app.logger.warning('APScheduler not installed — daily scheduler disabled.')
+        print('[scheduler] APScheduler not installed — daily scheduler disabled.', flush=True)
         return
 
     from services.sync import run_daily_sync
@@ -64,7 +64,7 @@ def _init_scheduler(app):
         misfire_grace_time=60 * 60,  # 1h grace if the host was asleep
     )
     _scheduler.start()
-    app.logger.info('Daily bullpen sync scheduled at 06:00 ET.')
+    print('[scheduler] Daily bullpen sync scheduled at 06:00 ET.', flush=True)
 
     # Shut down cleanly when the Flask process exits.
     atexit.register(lambda: _scheduler and _scheduler.shutdown(wait=False))
