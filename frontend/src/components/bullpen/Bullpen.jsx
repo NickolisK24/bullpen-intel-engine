@@ -19,13 +19,15 @@ export default function Bullpen() {
   const [selectedPitcher, setSelected]    = useState(null)
   const [recalcing, setRecalcing]         = useState(false)
   const [sortBy, setSortBy]               = useState('score')
+  const [includeStale, setIncludeStale]   = useState(false)
 
   const teams    = useFetch(getTeams)
   const allScores = useFetch(
     () => selectedTeam
-      ? getTeamBullpen(selectedTeam).then(rows => rows.map(r => ({ ...r.fatigue, pitcher: r.pitcher })).filter(r => r && r.raw_score != null))
-      : getFatigueScores({ limit: 200 }),
-    [selectedTeam]
+      ? getTeamBullpen(selectedTeam, { include_stale: includeStale })
+          .then(rows => rows.map(r => ({ ...r.fatigue, pitcher: r.pitcher })).filter(r => r && r.raw_score != null))
+      : getFatigueScores({ limit: 200, include_stale: includeStale }),
+    [selectedTeam, includeStale]
   )
 
   const handleRecalculate = async () => {
@@ -44,7 +46,7 @@ export default function Bullpen() {
         title="Bullpen"
         subtitle="Relief pitcher fatigue scoring engine"
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
               {VIEW_MODES.map(m => (
                 <button
@@ -60,6 +62,12 @@ export default function Bullpen() {
                 </button>
               ))}
             </div>
+            {viewMode === 'pitchers' && (
+              <StaleToggle
+                active={includeStale}
+                onToggle={() => setIncludeStale(v => !v)}
+              />
+            )}
             {viewMode === 'pitchers' && (
               <button
                 onClick={handleRecalculate}
@@ -215,5 +223,50 @@ function PitcherView({
         )}
       </div>
     </>
+  )
+}
+
+// Inline hex colors so Tailwind purge can't drop the active state.
+function StaleToggle({ active, onToggle }) {
+  const ringColor   = active ? '#f59e0b66' : '#3a3a3a'
+  const bgColor     = active ? '#f59e0b1a' : 'transparent'
+  const labelColor  = active ? '#fbbf24' : '#a3a3a3'
+  const boxBorder   = active ? '#fbbf24' : '#525252'
+  const boxFill     = active ? '#fbbf24' : 'transparent'
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      className="px-3 py-1.5 rounded border text-left transition-colors"
+      style={{ borderColor: ringColor, backgroundColor: bgColor }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-flex items-center justify-center w-3 h-3 rounded-sm border"
+          style={{ borderColor: boxBorder, backgroundColor: boxFill }}
+        >
+          {active && (
+            <svg viewBox="0 0 12 12" className="w-2.5 h-2.5" aria-hidden="true">
+              <path
+                d="M2 6.5 L5 9.5 L10 3.5"
+                fill="none"
+                stroke="#1a1a1a"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+        </span>
+        <span className="font-mono text-xs" style={{ color: labelColor }}>
+          Show inactive pitchers
+        </span>
+      </div>
+      <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">
+        Includes pitchers with no games in the last 14 days
+      </div>
+    </button>
   )
 }

@@ -32,7 +32,10 @@ export const getPitchers       = (params = {}) => {
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
 
 export const getTeams          = () => request('/bullpen/teams')
-export const getTeamBullpen    = (teamId) => request(`/bullpen/teams/${teamId}/bullpen`)
+export const getTeamBullpen    = (teamId, params = {}) => {
+  const q = new URLSearchParams(params).toString()
+  return request(`/bullpen/teams/${teamId}/bullpen${q ? `?${q}` : ''}`)
+}
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getSyncStatus     = () => request('/bullpen/sync/status')
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')
