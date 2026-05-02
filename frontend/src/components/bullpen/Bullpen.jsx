@@ -111,8 +111,14 @@ function PitcherView({
 }) {
   const [page, setPage] = useState(1)
 
-  // Filter by risk
-  const rows = (allScores.data || []).filter(r => {
+  // Compute counts from the full dataset, BEFORE filtering — tab labels
+  // describe what's available, not what's currently shown.
+  const allRows = allScores.data || []
+  const counts = { ALL: allRows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
+  allRows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
+
+  // Filter by risk for actual display
+  const rows = allRows.filter(r => {
     if (riskFilter === 'ALL') return true
     return r.risk_level === riskFilter
   })
@@ -136,10 +142,6 @@ function PitcherView({
 
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
   useEffect(() => { setPage(1) }, [riskFilter, selectedTeam, sortBy])
-
-  // Risk counts (always use full filtered set, not paginated)
-  const counts = { ALL: rows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
-  rows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
 
   const thStyle = (key) =>
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
