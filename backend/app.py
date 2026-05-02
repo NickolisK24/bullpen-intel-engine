@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime
 
-from flask import Flask
+from flask import Flask, app
 from flask_cors import CORS
 from flask_migrate import Migrate
 
@@ -77,7 +77,18 @@ def create_app(config_name='default'):
     # Extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://localhost:3000"]}})
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://baseballos.vercel.app",
+    ]
+
+    # Allow any Vercel preview deployments for this project
+    extra_origins = os.environ.get("CORS_ORIGINS", "")
+    if extra_origins:
+        allowed_origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
+
+    CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
     # Import models so Migrate picks them up
     from models.pitcher import Pitcher
