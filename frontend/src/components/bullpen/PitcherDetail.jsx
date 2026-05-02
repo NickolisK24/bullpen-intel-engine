@@ -244,10 +244,10 @@ export default function PitcherDetail({ pitcherId, onClose }) {
                                 >
                                   ST
                                 </span>
-                                <span className="text-chalk400">vs {log.opponent_abbreviation ?? 'SIM'}</span>
+                                <span className="text-chalk400">vs {log.opponent_abbreviation ?? log.opponent ?? 'SIM'}</span>
                               </span>
                             ) : (
-                              <span className="text-chalk400">vs {log.opponent_abbreviation ?? '---'}</span>
+                              <span className="text-chalk400">vs {log.opponent_abbreviation ?? log.opponent ?? '---'}</span>
                             )}
                           </td>
                           <td className="text-right font-mono text-xs text-chalk200">{fmtIP(log.innings_pitched)}</td>

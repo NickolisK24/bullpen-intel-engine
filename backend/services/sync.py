@@ -58,6 +58,17 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
     cutoff         = reference_date - timedelta(days=days_back)
     season         = _season_for(reference_date)
 
+    # Build a team_id -> abbreviation map from existing pitcher rows.
+    # MLB's gameLog endpoint returns the opponent's id and name but NOT the
+    # abbreviation, so we resolve it ourselves. Falls back to None if a team
+    # somehow isn't represented in the pitchers table.
+    team_abbr_map = dict(
+        db.session.query(Pitcher.team_id, Pitcher.team_abbreviation)
+        .filter(Pitcher.team_abbreviation.isnot(None))
+        .distinct()
+        .all()
+    )
+
     pitchers        = Pitcher.query.filter_by(active=True).all()
     new_logs        = 0
     errors          = 0
@@ -107,7 +118,7 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
                 game_date=game_date,
                 game_type=game_type,
                 opponent=opponent.get('name'),
-                opponent_abbreviation=opponent.get('abbreviation'),
+                opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
                 innings_pitched=float(stat.get('inningsPitched', 0) or 0),
                 pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
                 strikes=int(stat.get('strikes', 0) or 0),
