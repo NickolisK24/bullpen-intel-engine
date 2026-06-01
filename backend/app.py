@@ -76,9 +76,21 @@ def _init_scheduler(app):
         print(traceback.format_exc(), flush=True)
 
 
-def create_app(config_name='default'):
+def create_app(config_name=None):
+    # Select config from APP_ENV (development | production), defaulting to
+    # development so the local workflow needs no extra setup. Pass an explicit
+    # config_name to override (e.g. in scripts).
+    if config_name is None:
+        config_name = os.environ.get('APP_ENV', 'development')
+    if config_name not in config:
+        config_name = 'development'
+
     app = Flask(__name__)
-    app.config.from_object(config[config_name])
+    cfg = config[config_name]
+    app.config.from_object(cfg)
+    app.config['APP_ENV'] = config_name
+    # Per-environment validation (production fails fast on unsafe config).
+    cfg.init_app(app)
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -109,7 +121,12 @@ def create_app(config_name='default'):
 
     @app.route('/api/health')
     def health():
-        return {'status': 'ok', 'message': 'BaseballOS API is live'}
+        return {
+            'status':      'ok',
+            'environment': app.config.get('APP_ENV', 'development'),
+            'debug':       bool(app.config.get('DEBUG', False)),
+            'message':     'BaseballOS API is live',
+        }
 
     logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
     os.makedirs(logs_dir, exist_ok=True)
@@ -122,4 +139,4 @@ def create_app(config_name='default'):
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=app.config.get('DEBUG', False))

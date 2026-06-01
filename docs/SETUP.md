@@ -143,17 +143,19 @@ The one optional frontend variable lives in `frontend/.env`
 
 | Variable | Where | Required? | Default | Purpose / Example |
 |----------|-------|-----------|---------|-------------------|
-| `DATABASE_URL` | backend | **Yes** | `postgresql://postgres:password@localhost/baseballos` | PostgreSQL connection string. Example: `postgresql://postgres:pw@localhost:5432/baseballos` |
+| `APP_ENV` | backend | No | `development` | Selects the config: `development` (debug on, safe local defaults) or `production` (debug off, fails fast on unsafe config). |
+| `DATABASE_URL` | backend | **Yes** (required in production) | `postgresql://postgres:password@localhost/baseballos` | PostgreSQL connection string. A `postgres://` URL is auto-normalized to `postgresql://`. Example: `postgresql://postgres:pw@localhost:5432/baseballos` |
 | `FLASK_APP` | backend | Recommended | (none) | Entry point for the `flask` CLI. Set to `app.py`. |
-| `SECRET_KEY` | backend | Recommended | `dev-secret-key` | Flask secret. Fine to leave default locally; set a strong value anywhere shared/hosted. |
+| `SECRET_KEY` | backend | Recommended (required in production) | `dev-secret-key` | Flask secret. Fine to leave default locally; with `APP_ENV=production` the app refuses to start on the dev default. |
 | `MLB_API_BASE` | backend | No | `https://statsapi.mlb.com/api/v1` | MLB Stats API base URL. The default is correct for everyone. |
 | `AUTO_SYNC` | backend | No | off | `1`/`true`/`yes` enables the in-process daily sync scheduler (06:00 ET). Leave off for dev/tests. |
 | `CORS_ORIGINS` | backend | No | (none) | Extra comma-separated allowed origins, added to the built-in localhost + Vercel demo origins. |
 | `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
 
-> Note: the app currently always loads `DevelopmentConfig` (debug enabled). There
-> is a `ProductionConfig` defined in `config.py`, but no environment switch is
-> wired to select it yet — see "Deployment notes" below.
+> Note: config is selected by `APP_ENV` (`development` by default, or `production`).
+> `development` enables debug and the safe local defaults; `production` disables
+> debug and fails fast if `SECRET_KEY` (non-default) and `DATABASE_URL` aren't set.
+> See "Deployment notes" below.
 
 ---
 
@@ -205,13 +207,17 @@ configured for one-command production deployment.
   suitable for a static host (Vercel, Netlify). Set `VITE_API_BASE_URL` to the
   deployed backend origin before building.
 - **Backend:** a standard Flask app. `gunicorn` is already in `requirements.txt`
-  (e.g. `gunicorn app:app`). It needs `DATABASE_URL` pointing at a hosted
-  PostgreSQL instance, and `flask db upgrade` must be run against that database
-  on deploy.
+  (e.g. `gunicorn app:app`). For a hosted environment set `APP_ENV=production`,
+  `SECRET_KEY` (a strong unique value), and `DATABASE_URL` (a hosted PostgreSQL
+  instance); the app fails fast at startup if those production requirements
+  aren't met. Run `flask db upgrade` against that database on deploy.
+- **Health check:** `GET /api/health` returns `{ status, environment, debug }`,
+  so you can confirm a deploy is actually running `production` (debug `false`).
 - **Scheduler:** `AUTO_SYNC=true` starts an in-process APScheduler job (06:00
   ET). In-process scheduling is not reliable on hosts that sleep idle instances
   or run multiple web workers; a separate scheduled job (e.g. a platform cron
   hitting the sync endpoint) is the more dependable pattern for hosted use.
-- **Config / debug:** as noted above, the app currently always runs
-  `DevelopmentConfig` (debug enabled). Wiring an environment switch to
-  `ProductionConfig` is a prerequisite before any real public deployment.
+- **Config / debug:** `APP_ENV=production` loads `ProductionConfig` (debug off);
+  unset/`development` keeps debug on for local work. This branch wires that
+  switch and the production safety checks, but full deployment (host setup,
+  managed Postgres, a production scheduler) is still future work.
