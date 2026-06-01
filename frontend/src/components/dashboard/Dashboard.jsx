@@ -23,18 +23,22 @@ export default function Dashboard() {
   const pipeline   = useFetch(getPipelineOverview)
   const sync       = useFetch(getSyncStatus)
 
-  // Drive the SeasonBanner from the latest successful sync. We only
-  // call the season "live" once a sync has actually completed cleanly.
+  // Drive the SeasonBanner from real state. "Live" only after a clean sync;
+  // otherwise treat it as a historical snapshot and label it with the actual
+  // latest game-date year from the database (not a hardcoded year).
   const seasonInfo = (() => {
-    const data = sync.data
-    if (!data || !data.last_sync || data.status !== 'ok') {
-      return { season: '2024', isLive: false }
+    const s = sync.data
+    if (s && s.last_sync && s.status === 'ok') {
+      const d = new Date(s.last_sync)
+      if (!Number.isNaN(d.getTime())) {
+        return { season: String(d.getFullYear()), isLive: true }
+      }
     }
-    const d = new Date(data.last_sync)
-    if (Number.isNaN(d.getTime())) {
-      return { season: '2024', isLive: false }
+    const snap = s?.data?.latest_game_date
+    if (snap && /^\d{4}-/.test(snap)) {
+      return { season: snap.slice(0, 4), isLive: false }
     }
-    return { season: String(d.getFullYear()), isLive: true }
+    return { season: '2024', isLive: false }
   })()
 
   return (
