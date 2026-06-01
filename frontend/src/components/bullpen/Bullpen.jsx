@@ -42,7 +42,7 @@ export default function Bullpen() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Bullpen"
         subtitle="Relief pitcher fatigue scoring engine"
@@ -195,6 +195,7 @@ function PitcherView({
             </div>
           ) : (
             <>
+              <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -229,6 +230,7 @@ function PitcherView({
                   ))}
                 </tbody>
               </table>
+              </div>
               {totalPages > 1 && (
                 <Pagination
                   page={safePage}

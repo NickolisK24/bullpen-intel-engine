@@ -38,14 +38,14 @@ export default function Dashboard() {
   })()
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       {/* Hero */}
       <div className="mb-10 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
-        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-8 bg-stadium-glow">
+        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-5 sm:p-8 bg-stadium-glow">
           <div className="absolute inset-0 bg-grid-lines bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10">
             <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Command Center</div>
-            <h1 className="font-display text-6xl tracking-wider text-chalk100 leading-none mb-3">
+            <h1 className="font-display text-5xl sm:text-6xl tracking-wider text-chalk100 leading-none mb-3">
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-lg font-mono leading-relaxed">
@@ -58,7 +58,7 @@ export default function Dashboard() {
               <SyncStatus />
             </div>
           </div>
-          <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
+          <div className="hidden sm:block absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
             <div className="font-display text-[120px] tracking-widest text-white leading-none select-none">⚾</div>
           </div>
         </div>
@@ -138,6 +138,7 @@ export default function Dashboard() {
             ) : !topFatigue.data?.length ? (
               <div className="p-6 text-chalk400 text-sm text-center font-mono">No data — run the seeder first</div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -160,6 +161,7 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

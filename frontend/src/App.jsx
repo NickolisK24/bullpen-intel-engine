@@ -8,9 +8,9 @@ import Methodology from './components/methodology/Methodology'
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="app-shell bg-noise">
+      <div className="app-shell bg-noise flex-col lg:flex-row">
         <Sidebar />
-        <main className="flex-1 min-w-0 overflow-y-auto">
+        <main className="flex-1 min-w-0">
           <Routes>
             <Route path="/"            element={<Dashboard />} />
             <Route path="/bullpen"     element={<Bullpen />} />
