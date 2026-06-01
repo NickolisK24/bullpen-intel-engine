@@ -186,6 +186,46 @@ Example candidate rule families:
 - Missing data gate: missing inputs create unknown or low-confidence display,
   not a fake workload status.
 
+### Implemented V1 Classification Framework
+
+The initial backend implementation lives in `backend/services/availability.py`.
+It is a pure classification layer used by API routes, not route-embedded logic.
+The helper returns:
+
+- `availability_status`
+- `confidence`
+- `data_state`
+- `reasons`
+- `limitations`
+- `inputs`
+
+The first API integration is additive: fatigue list, team bullpen, and pitcher
+detail responses preserve existing fatigue fields and add an `availability`
+object for each classified pitcher.
+
+V1 uses `Monitor` with low confidence for stale, missing, or incomplete data
+because the public status set is limited to Available, Monitor, Limited, Avoid,
+and Unavailable. Consumers must use `data_state`, `confidence`, `reasons`, and
+`limitations` to distinguish "workload concern" from "current availability is
+uncertain."
+
+Current threshold references:
+
+| Rule input | Monitor | Limited | Avoid | Unavailable |
+|------------|---------|---------|-------|-------------|
+| Fatigue score | >= 40 | >= 60 | >= 75 | >= 85 with heavy yesterday workload |
+| Pitches yesterday | >= 15 | >= 25 | >= 35 | >= 50 |
+| Pitches over last 3 days | >= 30 | >= 45 | >= 60 | >= 80 |
+| Pitches over last 5 days | n/a | >= 60 | >= 75 | >= 75 with 4+ appearances |
+| Appearances over last 3 days | n/a | >= 2 | >= 3 | n/a |
+| Appearances over last 5 days | >= 2 | >= 3 | >= 4 | >= 4 with 75+ pitches |
+| Back-to-back usage | Monitor or higher by context | Any back-to-back usage | Back-to-back plus 35+ pitches over 3 days | n/a |
+| Freshness | n/a | n/a | n/a | Stale data returns Monitor with low confidence, not a current workload label |
+
+These thresholds are intentionally conservative starting points. They are
+centralized in `AvailabilityThresholds` so future tuning can happen in one
+place with focused regression coverage.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are

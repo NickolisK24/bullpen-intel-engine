@@ -10,6 +10,7 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
+from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from utils.auth import require_admin_token
@@ -21,9 +22,6 @@ FATIGUE_ERA_RESULTS_PATH = os.path.join(
     'analysis',
     'fatigue_era_results.json',
 )
-
-ACTIVE_WINDOW_DAYS = 14
-
 
 def _truthy(value):
     """Parse a query-string boolean tolerantly."""
@@ -108,6 +106,39 @@ def _fatigue_list_meta(filtered_count, fresh_filtered_count, returned_count, inc
     }
 
 
+def _availability_context(pitcher_id, reference_date=None):
+    """Fetch the current workload window needed by the availability service."""
+    ref = reference_date or date.today()
+    latest_game_date = (
+        db.session.query(db.func.max(GameLog.game_date))
+        .filter(GameLog.pitcher_id == pitcher_id)
+        .scalar()
+    )
+    window_start = ref - timedelta(days=4)
+    logs = (
+        GameLog.query
+        .filter(
+            GameLog.pitcher_id == pitcher_id,
+            GameLog.game_date >= window_start,
+            GameLog.game_date <= ref,
+        )
+        .order_by(desc(GameLog.game_date))
+        .all()
+    )
+    return logs, latest_game_date
+
+
+def _availability_for(pitcher_id, score, reference_date=None):
+    logs, latest_game_date = _availability_context(pitcher_id, reference_date=reference_date)
+    return classify_availability(
+        score=score,
+        game_logs=logs,
+        reference_date=reference_date or date.today(),
+        latest_game_date=latest_game_date,
+        active_window_days=ACTIVE_WINDOW_DAYS,
+    )
+
+
 # ─── Fatigue Scores ───────────────────────────────────────────────────────────
 
 @bullpen_bp.route('/fatigue', methods=['GET'])
@@ -140,10 +171,13 @@ def get_fatigue_scores():
     query   = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
     results = query.all()
 
-    data = [
-        {**score.to_dict(), 'pitcher': pitcher.to_dict()}
-        for score, pitcher in results
-    ]
+    data = []
+    for score, pitcher in results:
+        data.append({
+            **score.to_dict(),
+            'pitcher': pitcher.to_dict(),
+            'availability': _availability_for(pitcher.id, score),
+        })
     if not with_meta:
         return jsonify(data)
 
@@ -204,6 +238,7 @@ def get_pitcher_fatigue(pitcher_id):
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         'current_fatigue': latest.to_dict() if latest else None,
+        'availability':    _availability_for(pitcher_id, latest),
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [s.to_dict() for s in history],
     })
@@ -441,6 +476,7 @@ def get_team_bullpen(team_id):
         {
             'pitcher': pitcher.to_dict(),
             'fatigue': score.to_dict() if score else None,
+            'availability': _availability_for(pitcher.id, score),
         }
         for pitcher, score in results
     ])
