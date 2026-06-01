@@ -152,6 +152,50 @@ export default function Methodology() {
             </div>
           </div>
 
+          {insights.samples && (
+            <div className="flex flex-wrap gap-x-5 gap-y-1 mb-4 text-xs font-mono">
+              <span className="text-chalk600 uppercase tracking-widest">Sample sizes:</span>
+              {['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].map((tier) => (
+                <span key={tier} className="text-chalk400">
+                  {tier} <span className="text-chalk200">n={(insights.samples[tier] ?? 0).toLocaleString()}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {(insights.measured || insights.not_measured) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {insights.measured && (
+                <div>
+                  <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-2">
+                    What was measured
+                  </div>
+                  <ul className="space-y-1">
+                    {insights.measured.map((m) => (
+                      <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
+                        <span className="text-emerald-400">✓</span>{m}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {insights.not_measured && (
+                <div>
+                  <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-2">
+                    What was not measured
+                  </div>
+                  <ul className="space-y-1">
+                    {insights.not_measured.map((m) => (
+                      <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
+                        <span className="text-chalk600">—</span>{m}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {insights.caveat && (
             <div className="text-chalk500 text-xs leading-relaxed italic max-w-3xl">
               {insights.caveat}

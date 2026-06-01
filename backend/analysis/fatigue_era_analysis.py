@@ -1,12 +1,19 @@
 """
-BaseballOS — Fatigue vs Next-Appearance ERA Analysis
------------------------------------------------------
+BaseballOS — Fatigue vs Next-Appearance ERA Analysis (Exploratory)
+------------------------------------------------------------------
 Walks 2024-2025 game logs, reconstructs each pitcher's fatigue score going
 into every appearance, and measures performance in their NEXT appearance.
 
-The premise being tested: relievers who pitched at HIGH or CRITICAL fatigue
-posted a meaningfully worse ERA in their next outing than those at LOW or
-MODERATE fatigue.
+The question explored: is a higher fatigue score going into an appearance
+ASSOCIATED with a worse next-appearance ERA? This is an exploratory,
+correlational look — not a controlled or causal study.
+
+Scope note: this runs over ALL active pitchers (starters and relievers are
+NOT separated — the stored game logs do not carry a per-appearance
+games-started / role flag). Higher-fatigue tiers therefore skew toward
+higher-workload, starter-style outings, which is a key confounder. The
+comparison is also not adjusted for opponent quality, park, leverage, game
+state, or defense. Treat the output as a directional finding, not validated.
 
 Run: python -m analysis.fatigue_era_analysis
 """
@@ -144,10 +151,11 @@ def build_comparison(tiers):
         }
 
     pct_diff = ((elevated_era - baseline_era) / baseline_era) * 100
-    headline = (f'Pitchers throwing at HIGH or CRITICAL fatigue posted a '
-                f'{elevated_era:.2f} ERA in their next outing — '
-                f'{abs(pct_diff):.0f}% {"worse" if pct_diff >= 0 else "better"} '
-                f'than the {baseline_era:.2f} ERA they posted when rested.')
+    headline = (f'Appearances made at HIGH or CRITICAL fatigue were followed by a '
+                f'{elevated_era:.2f} next-outing ERA, versus {baseline_era:.2f} after '
+                f'MODERATE-tier (rested-baseline) appearances — an observed '
+                f'{abs(pct_diff):.0f}% {"increase" if pct_diff >= 0 else "decrease"}. '
+                f'Association only, across all pitchers; not adjusted for role or context.')
 
     return {
         'baseline_tier': 'MODERATE',
@@ -215,6 +223,15 @@ def run():
         'tiers': tiers,
         'comparison': comparison,
         'headline': comparison['headline'],
+        'analysis_type': 'exploratory_correlational',
+        'scope': 'all_active_pitchers',  # starters + relievers; role not separated
+        'limitations': [
+            'Observed association only — not a controlled or causal study.',
+            'Pitcher role is not separated (starters and relievers are pooled); '
+            'higher-fatigue tiers skew toward higher-workload, starter-style outings.',
+            'Not adjusted for opponent quality, park, leverage, game state, or defense.',
+            'LOW and CRITICAL tiers are sparse — see per-tier sample sizes.',
+        ],
     }
 
     with open(RESULTS_PATH, 'w') as fh:
