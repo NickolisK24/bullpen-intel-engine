@@ -163,19 +163,25 @@ The one optional frontend variable lives in `frontend/.env`
 | `MLB_API_BASE` | backend | No | `https://statsapi.mlb.com/api/v1` | MLB Stats API base URL. The default is correct for everyone. |
 | `AUTO_SYNC` | backend | No | off | `1`/`true`/`yes` enables the in-process daily sync scheduler (06:00 ET). Leave off for dev/tests. |
 | `CORS_ORIGINS` | backend | No | (none) | Extra comma-separated allowed origins, added to the built-in localhost + Vercel demo origins. |
-| `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating the write endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`) via the `X-Admin-Token` header. Unset locally → those routes are allowed in development (with a warning). |
+| `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating admin endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`, `GET /api/bullpen/fatigue/snapshot`) via the `X-Admin-Token` header. Unset locally -> those routes are allowed in development (with a warning). |
 | `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
 | `VITE_ADMIN_API_TOKEN` | frontend | No | (none) | Sends `X-Admin-Token` from the frontend for the operator "Recalculate" action. Usually unset — it ends up in the public bundle, so prefer curl for protected calls. |
 
-### Protected (operational) endpoints
+### Protected admin endpoints
 
-Two endpoints mutate data / trigger expensive MLB pulls and are gated by
-`ADMIN_API_TOKEN`:
+These endpoints mutate data, trigger expensive MLB pulls, or expose
+validation-only historical workload data and are gated by `ADMIN_API_TOKEN`:
 
 - `POST /api/bullpen/sync`
 - `POST /api/bullpen/fatigue/recalculate`
+- `GET /api/bullpen/fatigue/snapshot`
 
-All other endpoints are read-only `GET`s and stay public. Behavior:
+The snapshot endpoint is admin/dev validation only. It returns
+`mode: latest_workload_snapshot`, `is_current_availability: false`, and a
+historical warning; public UI must use current-mode endpoints such as
+`GET /api/bullpen/fatigue` and `GET /api/bullpen/stats/overview`.
+
+All other read-only `GET`s stay public. Behavior:
 
 - **Token unset (development):** the protected routes are allowed (a warning is
   logged) so local work isn't painful.

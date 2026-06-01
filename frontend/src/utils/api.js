@@ -46,6 +46,8 @@ export const getTeamBullpen    = (teamId, params = {}) => {
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getSyncStatus     = () => request('/bullpen/sync/status')
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')
+// No public helper for /bullpen/fatigue/snapshot: latest-workload snapshot mode
+// is admin/dev validation only and must not power current-availability UI.
 
 // ── Prospects ───────────────────────────────────────────────
 export const getProspects        = (params = {}) => {

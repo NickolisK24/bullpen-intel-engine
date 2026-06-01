@@ -251,7 +251,10 @@ def get_latest_workload_snapshot():
             'risk_level': risk_level.upper() if risk_level else None,
         },
     })
-    return jsonify({'data': data, 'meta': meta})
+    response = jsonify({'data': data, 'meta': meta})
+    response.headers['X-BaseballOS-Data-Mode'] = LATEST_WORKLOAD_SNAPSHOT_MODE
+    response.headers['X-BaseballOS-Current-Availability'] = 'false'
+    return response
 
 
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])

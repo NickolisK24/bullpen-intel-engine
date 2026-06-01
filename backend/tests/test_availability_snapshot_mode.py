@@ -23,20 +23,49 @@ from utils.db import db
 
 @pytest.fixture
 def client():
-    app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['APP_ENV'] = 'development'
-    app.config['ADMIN_API_TOKEN'] = 'secret'
-    db.init_app(app)
-    app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
-    with app.app_context():
+    with _SnapshotAppClient() as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def production_client():
+    with _SnapshotAppClient(app_env='production', admin_token='secret') as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def development_open_client():
+    with _SnapshotAppClient(app_env='development', admin_token=None) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def production_no_token_client():
+    with _SnapshotAppClient(app_env='production', admin_token=None) as test_client:
+        yield test_client
+
+
+class _SnapshotAppClient:
+    def __init__(self, app_env='development', admin_token='secret'):
+        self.app = Flask(__name__)
+        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        self.app.config['APP_ENV'] = app_env
+        self.app.config['ADMIN_API_TOKEN'] = admin_token
+        db.init_app(self.app)
+        self.app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
+        self.context = None
+
+    def __enter__(self):
+        self.context = self.app.app_context()
+        self.context.push()
         db.create_all()
-        try:
-            yield app.test_client()
-        finally:
-            db.session.remove()
-            db.drop_all()
+        return self.app.test_client()
+
+    def __exit__(self, exc_type, exc, tb):
+        db.session.remove()
+        db.drop_all()
+        self.context.pop()
 
 
 def _risk_for_score(raw_score):
@@ -235,9 +264,88 @@ def test_snapshot_endpoint_is_admin_gated_and_marks_non_current(client):
     assert body['meta']['snapshot_date'] == '2026-05-01'
     assert body['meta']['is_current_availability'] is False
     assert body['meta']['warning'] == SNAPSHOT_WARNING
+    assert accepted.headers['X-BaseballOS-Data-Mode'] == LATEST_WORKLOAD_SNAPSHOT_MODE
+    assert accepted.headers['X-BaseballOS-Current-Availability'] == 'false'
     assert body['data'][0]['availability_mode']['mode'] == LATEST_WORKLOAD_SNAPSHOT_MODE
     assert body['data'][0]['availability_mode']['is_current_availability'] is False
     assert body['data'][0]['availability']['data_state'] == 'fresh'
+
+
+def test_snapshot_endpoint_denies_unauthorized_production_without_leaking_data(production_client):
+    with production_client.application.app_context():
+        _add_pitcher(
+            'Protected Snapshot Workload',
+            latest_game_date=date(2026, 5, 1),
+            raw_score=64.0,
+            log_pitches=[45],
+        )
+
+    res = production_client.get('/api/bullpen/fatigue/snapshot')
+
+    assert res.status_code == 401
+    body = res.get_json()
+    assert 'error' in body
+    assert 'data' not in body
+    assert 'meta' not in body
+    assert 'X-BaseballOS-Data-Mode' not in res.headers
+    assert 'X-BaseballOS-Current-Availability' not in res.headers
+
+
+def test_snapshot_endpoint_denies_production_when_admin_token_is_not_configured(production_no_token_client):
+    with production_no_token_client.application.app_context():
+        _add_pitcher(
+            'Disabled Snapshot Workload',
+            latest_game_date=date(2026, 5, 1),
+            raw_score=64.0,
+            log_pitches=[45],
+        )
+
+    res = production_no_token_client.get('/api/bullpen/fatigue/snapshot')
+
+    assert res.status_code == 403
+    body = res.get_json()
+    assert 'error' in body
+    assert 'ADMIN_API_TOKEN' in body['error']
+    assert 'data' not in body
+    assert 'meta' not in body
+
+
+def test_snapshot_endpoint_allows_development_without_token_when_unconfigured(development_open_client):
+    with development_open_client.application.app_context():
+        _add_pitcher(
+            'Development Snapshot Workload',
+            latest_game_date=date(2026, 5, 1),
+            raw_score=64.0,
+            log_pitches=[45],
+        )
+
+    res = development_open_client.get('/api/bullpen/fatigue/snapshot')
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body['meta']['mode'] == LATEST_WORKLOAD_SNAPSHOT_MODE
+    assert body['meta']['is_current_availability'] is False
+    assert body['meta']['warning'] == SNAPSHOT_WARNING
+    assert res.headers['X-BaseballOS-Data-Mode'] == LATEST_WORKLOAD_SNAPSHOT_MODE
+    assert res.headers['X-BaseballOS-Current-Availability'] == 'false'
+
+
+def test_public_current_fatigue_endpoint_remains_open_with_admin_token_configured(production_client):
+    with production_client.application.app_context():
+        _add_pitcher(
+            'Public Current Workload',
+            latest_game_date=date.today(),
+            raw_score=24.0,
+            log_pitches=[8],
+        )
+
+    res = production_client.get('/api/bullpen/fatigue?include_stale=true')
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert isinstance(body, list)
+    assert len(body) == 1
+    assert body[0]['availability']['inputs']['reference_date'] == date.today().isoformat()
 
 
 def test_audit_script_uses_shared_snapshot_path():

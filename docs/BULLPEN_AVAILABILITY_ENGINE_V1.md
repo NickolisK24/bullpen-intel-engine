@@ -294,8 +294,11 @@ GET /api/bullpen/fatigue/snapshot
 ```
 
 The route is gated by the same `X-Admin-Token` / `ADMIN_API_TOKEN` guard used by
-operational admin endpoints. It is not a public Bullpen UI mode and must not be
-presented as live availability.
+operational admin endpoints. Production access requires a configured
+`ADMIN_API_TOKEN` and a matching `X-Admin-Token` request header. Local
+development may allow the endpoint without a token when `ADMIN_API_TOKEN` is
+unset, matching the existing admin-endpoint development convention. It is not a
+public Bullpen UI mode and must not be presented as live availability.
 
 Responses include explicit non-current metadata:
 
@@ -309,6 +312,13 @@ Responses include explicit non-current metadata:
 }
 ```
 
+Authorized responses also include defensive headers:
+
+```text
+X-BaseballOS-Data-Mode: latest_workload_snapshot
+X-BaseballOS-Current-Availability: false
+```
+
 `snapshot_date` is the latest game-log date represented by the response. Each
 pitcher row also carries its own evaluation date because the validation strategy
 is per-pitcher latest workload, not a claim that every pitcher has current data
@@ -319,6 +329,10 @@ latest-workload section. Snapshot output is allowed to support visual
 validation, regression fixtures, and later threshold review. It is not allowed
 to tune thresholds by itself, replace current-calendar freshness filtering, or
 hide stale/missing data states.
+
+Public frontend code must not consume this endpoint for current availability.
+Use current-mode endpoints for public UI and reserve snapshot responses for
+admin/development validation workflows.
 
 ### System-Level Availability Summary
 
