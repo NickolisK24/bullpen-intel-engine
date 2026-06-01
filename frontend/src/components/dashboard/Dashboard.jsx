@@ -102,11 +102,19 @@ export default function Dashboard() {
             <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Risk Distribution</div>
             {overview.data?.scored_pitchers != null && overview.data?.total_pitchers != null && (
               <div className="text-chalk600 font-mono text-[11px] mt-1 leading-relaxed">
-                Current-season coverage:{' '}
                 <span className="text-chalk400">
-                  {overview.data.scored_pitchers.toLocaleString()} / {overview.data.total_pitchers.toLocaleString()}
-                </span>{' '}
-                pitchers with synced workload data
+                  {overview.data.total_pitchers.toLocaleString()}
+                </span>{' '}tracked ·{' '}
+                <span className="text-chalk400">
+                  {overview.data.scored_pitchers.toLocaleString()}
+                </span>{' '}with workload data
+                {sync.data?.last_sync && sync.data?.pitchers_updated > 0 && (
+                  <>
+                    {' '}·{' '}
+                    <span className="text-chalk400">{sync.data.pitchers_updated.toLocaleString()}</span>
+                    {' '}refreshed in last sync
+                  </>
+                )}
                 {fmtThroughDate(sync.data?.data?.latest_game_date) && (
                   <span> · through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
                 )}

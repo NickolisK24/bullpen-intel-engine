@@ -66,13 +66,14 @@ export default function SyncStatus() {
     const dot = stale ? '#f5a623' : '#10b981'
     return (
       <Pill dot={dot}
+            title="Pitchers refreshed in the latest sync (those with games in the recent 14-day window)."
             style={stale ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' } : { color: '#d1dce8' }}>
         <span>
           Last synced: {fmtSyncTime(last_sync)}
           {stale && <span className="ml-1 opacity-80">· stale</span>}
         </span>
         {pitchers_updated != null && pitchers_updated > 0 && (
-          <span className="text-chalk600 normal-case">· {pitchers_updated} pitchers</span>
+          <span className="text-chalk600 normal-case">· {pitchers_updated.toLocaleString()} refreshed</span>
         )}
       </Pill>
     )
