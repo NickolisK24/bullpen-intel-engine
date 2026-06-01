@@ -17,6 +17,17 @@ const RISK_CONFIG = {
 
 const LEVELS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL']
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Format a 'YYYY-MM-DD' game date as "Sep 10, 2025" (no timezone drift).
+const fmtThroughDate = (ymd) => {
+  if (!ymd) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return null
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`
+}
+
 export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
   const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '' }))
@@ -75,7 +86,9 @@ export default function Dashboard() {
         <ErrorState message={overview.error} onRetry={overview.refetch} />
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          <StatCard label="Active Pitchers" value={overview.data?.total_pitchers} icon="⚾" delay={100} />
+          <StatCard label="Active Pitchers" value={overview.data?.total_pitchers}
+            sub={overview.data?.scored_pitchers != null ? `${overview.data.scored_pitchers.toLocaleString()} with workload data` : undefined}
+            icon="⚾" delay={100} />
           <StatCard label="Game Logs" value={overview.data?.total_game_logs?.toLocaleString()} icon="📋" delay={150} />
           <StatCard label="Avg Fatigue Score" value={overview.data?.avg_fatigue_score} sub="out of 100" accent delay={200} />
           <StatCard label="Critical / High" value={`${overview.data?.risk_breakdown?.CRITICAL ?? 0} / ${overview.data?.risk_breakdown?.HIGH ?? 0}`} icon="🔥" delay={250} />
@@ -85,7 +98,21 @@ export default function Dashboard() {
       {/* Risk breakdown bar */}
       {overview.data?.risk_breakdown && (
         <div className="card p-5 mb-8 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
-          <div className="text-chalk400 font-mono text-xs uppercase tracking-widest mb-4">Risk Distribution</div>
+          <div className="mb-4">
+            <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Risk Distribution</div>
+            {overview.data?.scored_pitchers != null && overview.data?.total_pitchers != null && (
+              <div className="text-chalk600 font-mono text-[11px] mt-1 leading-relaxed">
+                Current-season coverage:{' '}
+                <span className="text-chalk400">
+                  {overview.data.scored_pitchers.toLocaleString()} / {overview.data.total_pitchers.toLocaleString()}
+                </span>{' '}
+                pitchers with synced workload data
+                {fmtThroughDate(sync.data?.data?.latest_game_date) && (
+                  <span> · through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Bar — inline bg colors so Tailwind purge can't remove them */}
           <div className="flex h-3 rounded-full overflow-hidden w-full">
