@@ -90,30 +90,53 @@ def get_methodology():
         },
 
         'insights': {
-            'title':   'Fatigue Costs Runs',
+            'title':   'Fatigue Score vs. Next-Outing ERA (Exploratory)',
             'summary': (
-                'A retrospective analysis across the 2024 and 2025 MLB '
-                'seasons measuring whether elevated fatigue scores predict '
-                'worse next-appearance ERA. We walked every game log '
-                'chronologically per pitcher, reconstructed the fatigue '
-                'score they carried into each appearance, and aggregated '
-                'their next-outing IP and ER by risk tier.'
+                'A retrospective, exploratory look across the 2024 and 2025 '
+                'MLB seasons at whether a higher fatigue score going into an '
+                'appearance is associated with a worse next-appearance ERA. '
+                'We walked every game log chronologically per pitcher, '
+                'reconstructed the fatigue score they carried into each '
+                'appearance, and aggregated their next-outing IP and ER by '
+                'risk tier. This is a simple association — not a controlled '
+                'or causal study.'
             ),
             'finding': (
-                'Pitchers throwing at HIGH or CRITICAL fatigue posted a '
-                '3.96 ERA in their next outing — roughly 10 percent worse '
-                'than the 3.59 ERA they posted when rested (MODERATE '
-                'tier). The result holds across more than 30,000 '
-                'appearances and ~14,000 in each bucket, so the gap is '
-                'not driven by sample noise.'
+                'Appearances made at HIGH or CRITICAL fatigue were followed '
+                'by a 3.96 next-outing ERA, versus 3.59 after MODERATE-tier '
+                '(rested-baseline) appearances — about a 10% difference. '
+                'This is an observed association across the seasons studied, '
+                'not evidence that fatigue causes runs: the comparison is '
+                'not adjusted for the factors listed below, and higher-'
+                'fatigue outings skew toward higher-workload (starter-style) '
+                'appearances.'
             ),
             'caveat': (
-                'LOW-tier appearances are structurally rare in this '
-                'analysis: a pitcher with five-plus days of rest by '
-                'definition has not pitched recently enough to have a '
-                'next-appearance pair. We use MODERATE as the rested '
-                'baseline rather than LOW.'
+                'LOW-tier appearances are structurally rare here: a pitcher '
+                'with five-plus days of rest has, by definition, not pitched '
+                'recently enough to form a next-appearance pair, so MODERATE '
+                'is used as the rested baseline. CRITICAL is also very sparse '
+                '(see sample sizes). Treat the result as a preliminary, '
+                'directional finding worth deeper study, not a validated '
+                'conclusion.'
             ),
+            # n per tier mirrors the current generated artifact
+            # (analysis/fatigue_era_results.json). Regenerating the analysis
+            # would update these counts.
+            'samples': {'LOW': 0, 'MODERATE': 16385, 'HIGH': 14495, 'CRITICAL': 6},
+            'measured': [
+                'Fatigue-score tier carried into an appearance',
+                'Next-appearance ERA (earned runs × 9 / innings pitched)',
+                'Number of appearances in each tier (sample size)',
+            ],
+            'not_measured': [
+                'Pitcher role (starters vs. relievers are not separated)',
+                'Opponent quality',
+                'Park factors',
+                'Game state / score',
+                'Leverage',
+                'Defense behind the pitcher',
+            ],
         },
 
         'data_sources': [

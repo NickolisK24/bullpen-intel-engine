@@ -42,7 +42,15 @@
     "elevated_era": 3.96,
     "elevated_apps": 14501,
     "pct_difference": 10,
-    "headline": "Pitchers throwing at HIGH or CRITICAL fatigue posted a 3.96 ERA in their next outing \u2014 10% worse than the 3.59 ERA they posted when rested."
+    "headline": "Appearances made at HIGH or CRITICAL fatigue were followed by a 3.96 next-outing ERA, versus 3.59 after MODERATE-tier (rested-baseline) appearances — an observed 10% increase. Association only, across all pitchers; not adjusted for role or context."
   },
-  "headline": "Pitchers throwing at HIGH or CRITICAL fatigue posted a 3.96 ERA in their next outing \u2014 10% worse than the 3.59 ERA they posted when rested."
+  "headline": "Appearances made at HIGH or CRITICAL fatigue were followed by a 3.96 next-outing ERA, versus 3.59 after MODERATE-tier (rested-baseline) appearances — an observed 10% increase. Association only, across all pitchers; not adjusted for role or context.",
+  "analysis_type": "exploratory_correlational",
+  "scope": "all_active_pitchers",
+  "limitations": [
+    "Observed association only — not a controlled or causal study.",
+    "Pitcher role is not separated (starters and relievers are pooled); higher-fatigue tiers skew toward higher-workload, starter-style outings.",
+    "Not adjusted for opponent quality, park, leverage, game state, or defense.",
+    "LOW and CRITICAL tiers are sparse — see per-tier sample sizes."
+  ]
 }
