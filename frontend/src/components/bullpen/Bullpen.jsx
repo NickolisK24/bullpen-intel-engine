@@ -2,10 +2,17 @@ import { useState, useEffect, useMemo } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
-import { riskColor, fmtIP, fmtDate, daysAgo } from '../../utils/formatters'
+import { riskColor } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
 import TeamComparison from './TeamComparison'
 import { getBullpenEmptyState } from './emptyState'
+import AvailabilityBadge from './AvailabilityBadge'
+import {
+  AVAILABILITY_FILTERS,
+  filterRowsByAvailability,
+  getAvailabilityFilterCounts,
+  getRowAvailabilityStatus,
+} from './availabilityView'
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
@@ -22,6 +29,7 @@ export default function Bullpen() {
   const [recalcing, setRecalcing]         = useState(false)
   const [sortBy, setSortBy]               = useState('score')
   const [includeStale, setIncludeStale]   = useState(false)
+  const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
 
   const teams    = useFetch(getTeams)
   const allScores = useFetch(
@@ -99,6 +107,8 @@ export default function Bullpen() {
           sortBy={sortBy}
           setSortBy={setSortBy}
           includeStale={includeStale}
+          availabilityFilter={availabilityFilter}
+          setAvailabilityFilter={setAvailabilityFilter}
         />
       )}
     </div>
@@ -112,6 +122,7 @@ function PitcherView({
   selectedPitcher, setSelected,
   sortBy, setSortBy,
   includeStale,
+  availabilityFilter, setAvailabilityFilter,
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
@@ -123,13 +134,15 @@ function PitcherView({
   const meta = Array.isArray(fatiguePayload) ? null : fatiguePayload?.meta
   const counts = { ALL: allRows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
   allRows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
+  const availabilityCounts = getAvailabilityFilterCounts(allRows)
   const selectedTeamInfo = (teams.data || []).find(t => t.team_id === selectedTeam)
   const selectedTeamLabel = selectedTeamInfo?.team_abbreviation || selectedTeamInfo?.team_name
   const normalizedSearch = searchTerm.trim().toLowerCase()
 
   // Filter by risk/search for actual display. Team and freshness are applied
   // by the backend so metadata can explain when those filters exclude data.
-  const rows = allRows.filter(r => {
+  const availabilityRows = filterRowsByAvailability(allRows, availabilityFilter)
+  const rows = availabilityRows.filter(r => {
     if (riskFilter !== 'ALL' && r.risk_level !== riskFilter) return false
     if (!normalizedSearch) return true
     const haystack = [
@@ -137,6 +150,7 @@ function PitcherView({
       r.pitcher?.team_name,
       r.pitcher?.team_abbreviation,
       r.risk_level,
+      getRowAvailabilityStatus(r),
     ].filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(normalizedSearch)
   })
@@ -165,11 +179,12 @@ function PitcherView({
     selectedTeam,
     selectedTeamLabel,
     riskFilter,
+    availabilityFilter,
     searchTerm,
   })
 
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
-  useEffect(() => { setPage(1) }, [riskFilter, selectedTeam, sortBy, searchTerm, includeStale])
+  useEffect(() => { setPage(1) }, [riskFilter, availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
 
   const thStyle = (key) =>
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
@@ -197,7 +212,7 @@ function PitcherView({
 
       {/* Risk/search filters */}
       <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg w-fit border border-dirt">
+        <div className="flex flex-wrap gap-1 bg-chalk/30 p-1 rounded-lg w-fit border border-dirt">
           {RISK_FILTERS.map(f => (
             <button
               key={f}
@@ -216,6 +231,24 @@ function PitcherView({
           placeholder="Search pitcher"
           className="w-full sm:w-64 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
         />
+      </div>
+
+      {/* Availability filter */}
+      <div className="mb-5 flex flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1 w-fit max-w-full">
+        {AVAILABILITY_FILTERS.map(f => (
+          <button
+            key={f}
+            onClick={() => setAvailabilityFilter(f)}
+            className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${
+              availabilityFilter === f
+                ? 'bg-chalk border-dirt text-chalk200 shadow'
+                : 'text-chalk400 hover:text-chalk200'
+            }`}
+          >
+            {f === 'ALL' ? 'All' : f}{' '}
+            <span className="opacity-60">({availabilityCounts[f] ?? 0})</span>
+          </button>
+        ))}
       </div>
 
       <div className="flex gap-6">
@@ -237,6 +270,7 @@ function PitcherView({
                     <th className="text-chalk400">Team</th>
                     <th className={thStyle('score')} onClick={() => setSortBy('score')}>Score {sortBy === 'score' && '↓'}</th>
                     <th className="text-chalk400 hidden md:table-cell">Fatigue</th>
+                    <th className="text-chalk400">Availability</th>
                     <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
                     <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>
                     <th className="text-chalk400">App/7d</th>
@@ -256,6 +290,7 @@ function PitcherView({
                       <td className="hidden md:table-cell w-28">
                         <FatigueBar score={row.raw_score} height="h-1" />
                       </td>
+                      <td><AvailabilityBadge availability={row.availability} showDataState /></td>
                       <td className="font-mono text-xs text-chalk200">{row.pitches_last_7_days ?? 0}</td>
                       <td className="font-mono text-xs text-chalk400">{row.days_since_last_appearance != null ? `${row.days_since_last_appearance}d` : '---'}</td>
                       <td className="font-mono text-xs text-chalk200">{row.appearances_last_7 ?? 0}</td>

@@ -3,6 +3,7 @@ import { getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
 import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
+import AvailabilitySummary from './AvailabilitySummary'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
@@ -40,6 +41,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
   const {
     pitcher,
     current_fatigue: cf,
+    availability,
     recent_logs,
     fatigue_trend,
   } = data || {}
@@ -102,6 +104,8 @@ export default function PitcherDetail({ pitcherId, onClose }) {
               {RISK_BLURB[cf.risk_level]} Workload risk only — not an injury or performance prediction.
             </div>
           )}
+
+          <AvailabilitySummary availability={availability} />
 
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-2">
