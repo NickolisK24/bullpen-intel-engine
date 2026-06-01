@@ -27,25 +27,38 @@ from services.fatigue import (
 class TestScorePitchCount:
     @pytest.mark.parametrize("pitches, expected", [
         (0,   0.0),    # no pitches → fresh
-        (25,  12.5),   # below moderate threshold (light-usage ramp: p/50 * 25)
-        (70,  25.0),   # inside moderate→high band (ramps 0→50 across 50..90)
+        (25,  12.5),   # light-usage ramp (p/50 * 25)
+        (50,  25.0),   # moderate threshold — continuous with the light band
+        (70,  37.5),   # moderate buildup (ramps 25→50 across 50..90)
         (90,  50.0),   # high threshold
+        (105, 75.0),   # high-fatigue zone (ramps 50→100 across 90..120)
         (120, 100.0),  # critical threshold
         (150, 100.0),  # above critical → clamped at 100
     ])
     def test_representative_values(self, pitches, expected):
         assert score_pitch_count(pitches) == pytest.approx(expected)
 
-    def test_moderate_threshold_boundary_is_a_known_discontinuity(self):
+    def test_moderate_threshold_is_continuous(self):
         """
-        Characterization test (documents current behavior, not asserting it is
-        ideal): the light-usage ramp tops out at ~24.5 just below 50 pitches,
-        then the moderate band restarts at 0 exactly at 50. This small
-        discontinuity is intentional to pin down for any future tuning — see
-        the fatigue model notes before changing it.
+        The light-usage band reaches ~24.5 at 49 pitches and the moderate band
+        starts at 25.0 at 50 pitches — continuous, with no downward jump.
         """
         assert score_pitch_count(49) == pytest.approx(24.5)
-        assert score_pitch_count(50) == pytest.approx(0.0)
+        assert score_pitch_count(50) == pytest.approx(25.0)
+        assert score_pitch_count(50) >= score_pitch_count(49)
+
+    def test_regression_no_downward_jump_at_50(self):
+        """
+        Regression guard for the Phase 4 discontinuity (49 -> 24.5, 50 -> 0.0):
+        one extra pitch must never *lower* the fatigue score.
+        """
+        assert score_pitch_count(50) > score_pitch_count(49)
+        assert score_pitch_count(50) != pytest.approx(0.0)
+
+    def test_monotonic_non_decreasing(self):
+        """Score must never decrease as pitch count rises (covers every boundary)."""
+        scores = [score_pitch_count(p) for p in range(0, 151)]
+        assert all(b >= a for a, b in zip(scores, scores[1:]))
 
     def test_never_exceeds_bounds(self):
         for p in (0, 10, 55, 95, 119, 200):
