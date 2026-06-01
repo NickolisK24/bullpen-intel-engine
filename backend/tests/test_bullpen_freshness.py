@@ -70,13 +70,26 @@ def _add_scored_pitcher(days_since_last_game, team_id=1, risk_level='HIGH', raw_
 class TestBullpenFreshness:
     def test_legacy_fatigue_response_stays_array(self, client):
         with client.application.app_context():
-            _add_scored_pitcher(days_since_last_game=1)
+            pitcher = _add_scored_pitcher(days_since_last_game=1)
+            pitcher_id = pitcher.id
 
         res = client.get('/api/bullpen/fatigue?include_stale=false')
 
         assert res.status_code == 200
-        assert isinstance(res.get_json(), list)
-        assert len(res.get_json()) == 1
+        body = res.get_json()
+        assert isinstance(body, list)
+        assert len(body) == 1
+        assert body[0]['pitcher_id'] == pitcher_id
+        assert 'raw_score' in body[0]
+        assert body[0]['availability']['availability_status'] in {
+            'Available',
+            'Monitor',
+            'Limited',
+            'Avoid',
+            'Unavailable',
+        }
+        assert body[0]['availability']['confidence'] in {'high', 'medium', 'low'}
+        assert isinstance(body[0]['availability']['reasons'], list)
 
     def test_metadata_explains_stale_filtered_empty_list(self, client):
         stale_days = ACTIVE_WINDOW_DAYS + 10
@@ -112,3 +125,24 @@ class TestBullpenFreshness:
         assert body['total_game_logs'] == 1
         assert body['scored_pitchers'] == 1
         assert body['risk_breakdown']['HIGH'] == 1
+
+    def test_detail_and_team_responses_include_availability(self, client):
+        with client.application.app_context():
+            pitcher = _add_scored_pitcher(days_since_last_game=1, team_id=7)
+            pitcher_id = pitcher.id
+
+        detail = client.get(f'/api/bullpen/fatigue/{pitcher_id}')
+        team = client.get('/api/bullpen/teams/7/bullpen?include_stale=false')
+
+        assert detail.status_code == 200
+        detail_body = detail.get_json()
+        assert detail_body['current_fatigue']['pitcher_id'] == pitcher_id
+        assert detail_body['availability']['availability_status']
+        assert isinstance(detail_body['availability']['reasons'], list)
+
+        assert team.status_code == 200
+        team_body = team.get_json()
+        assert len(team_body) == 1
+        assert team_body[0]['pitcher']['id'] == pitcher_id
+        assert team_body[0]['fatigue']['pitcher_id'] == pitcher_id
+        assert team_body[0]['availability']['availability_status']
