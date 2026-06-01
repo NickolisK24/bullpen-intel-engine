@@ -1,10 +1,10 @@
 """
-Lightweight admin-token guard for operational write endpoints.
+Lightweight admin-token guard for operational/admin endpoints.
 
 This is intentionally NOT a user auth system — no accounts, sessions, or OAuth.
-It is a single shared admin token used to gate routes that mutate data or
-trigger expensive work (sync, recalculation) so a public/hosted demo can't be
-driven by anonymous callers.
+It is a single shared admin token used to gate routes that mutate data, trigger
+expensive work (sync, recalculation), or expose validation-only data so a
+public/hosted demo can't be driven or inspected by anonymous callers.
 
 Behavior (token comes from app.config['ADMIN_API_TOKEN'], set from the
 ADMIN_API_TOKEN env var):
