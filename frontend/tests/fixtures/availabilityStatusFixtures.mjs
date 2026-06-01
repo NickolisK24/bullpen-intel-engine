@@ -1,0 +1,146 @@
+const sharedLimitations = [
+  'No injury information available',
+  'No team-reported availability information available',
+]
+
+export const availabilityStatusFixtures = [
+  {
+    pitcher_id: 101,
+    pitcher: { full_name: 'Fixture Available', team_abbreviation: 'TST' },
+    availability: {
+      availability_status: 'Available',
+      confidence: 'high',
+      data_state: 'fresh',
+      reasons: [
+        'No appearance yesterday',
+        '3 days rest',
+        'Light five-day workload',
+      ],
+      limitations: sharedLimitations,
+      inputs: {
+        fatigue_score: 18,
+        pitches_yesterday: 0,
+        pitches_last_3_days: 8,
+        pitches_last_5_days: 14,
+        appearances_last_3_days: 1,
+        appearances_last_5_days: 1,
+        days_rest: 3,
+        back_to_back: false,
+        three_in_four: false,
+        freshness_state: 'fresh',
+      },
+    },
+  },
+  {
+    pitcher_id: 102,
+    pitcher: { full_name: 'Fixture Monitor', team_abbreviation: 'TST' },
+    availability: {
+      availability_status: 'Monitor',
+      confidence: 'low',
+      data_state: 'stale',
+      reasons: [
+        'Latest workload snapshot is stale',
+        '18 pitches in last appearance',
+      ],
+      limitations: [
+        ...sharedLimitations,
+        'Stale data must not be treated as current availability',
+      ],
+      inputs: {
+        fatigue_score: 44,
+        pitches_yesterday: 18,
+        pitches_last_3_days: 24,
+        pitches_last_5_days: 38,
+        appearances_last_3_days: 1,
+        appearances_last_5_days: 2,
+        days_rest: 1,
+        back_to_back: false,
+        three_in_four: false,
+        freshness_state: 'stale',
+      },
+    },
+  },
+  {
+    pitcher_id: 103,
+    pitcher: { full_name: 'Fixture Limited', team_abbreviation: 'TST' },
+    availability: {
+      availability_status: 'Limited',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: [
+        '29 pitches yesterday',
+        '3 appearances in 5 days',
+        '1 day rest',
+      ],
+      limitations: sharedLimitations,
+      inputs: {
+        fatigue_score: 63,
+        pitches_yesterday: 29,
+        pitches_last_3_days: 48,
+        pitches_last_5_days: 64,
+        appearances_last_3_days: 2,
+        appearances_last_5_days: 3,
+        days_rest: 1,
+        back_to_back: false,
+        three_in_four: true,
+        freshness_state: 'fresh',
+      },
+    },
+  },
+  {
+    pitcher_id: 104,
+    pitcher: { full_name: 'Fixture Avoid', team_abbreviation: 'TST' },
+    availability: {
+      availability_status: 'Avoid',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: [
+        '42 pitches yesterday',
+        '4 appearances in 5 days',
+        'Back-to-back usage with meaningful pitch volume',
+      ],
+      limitations: sharedLimitations,
+      inputs: {
+        fatigue_score: 78,
+        pitches_yesterday: 42,
+        pitches_last_3_days: 62,
+        pitches_last_5_days: 76,
+        appearances_last_3_days: 2,
+        appearances_last_5_days: 4,
+        days_rest: 0,
+        back_to_back: true,
+        three_in_four: true,
+        freshness_state: 'fresh',
+      },
+    },
+  },
+  {
+    pitcher_id: 105,
+    pitcher: { full_name: 'Fixture Unavailable', team_abbreviation: 'TST' },
+    availability: {
+      availability_status: 'Unavailable',
+      confidence: 'high',
+      data_state: 'fresh',
+      reasons: [
+        '54 pitches yesterday',
+        '82 pitches over last 3 days',
+        'Back-to-back heavy usage',
+      ],
+      limitations: sharedLimitations,
+      inputs: {
+        fatigue_score: 91,
+        pitches_yesterday: 54,
+        pitches_last_3_days: 82,
+        pitches_last_5_days: 96,
+        appearances_last_3_days: 2,
+        appearances_last_5_days: 4,
+        days_rest: 0,
+        back_to_back: true,
+        three_in_four: true,
+        freshness_state: 'fresh',
+      },
+    },
+  },
+]
+
+export const availabilityFixtureRows = availabilityStatusFixtures
