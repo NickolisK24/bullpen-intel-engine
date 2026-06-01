@@ -14,7 +14,7 @@ export default function Methodology() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
         <LoadingPane message="Loading methodology..." />
       </div>
     )
@@ -22,7 +22,7 @@ export default function Methodology() {
 
   if (error) {
     return (
-      <div className="p-8 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
         <ErrorState message={error} onRetry={refetch} />
       </div>
     )
@@ -34,7 +34,7 @@ export default function Methodology() {
   const stack    = data?.stack ?? []
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-10">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-10">
       <SectionHeader
         title="Methodology"
         subtitle="How every number on the dashboard was computed"

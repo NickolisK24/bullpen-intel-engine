@@ -20,7 +20,7 @@ export default function Prospects() {
     : (viewMode === 'list' ? (all.data ?? []) : null)
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Pipeline"
         subtitle="Prospect development tracker · early prototype · illustrative sample data"
@@ -49,7 +49,7 @@ export default function Prospects() {
       {pipeline.loading ? <LoadingPane message="Loading pipeline..." /> : pipeline.error ? <ErrorState message={pipeline.error} onRetry={pipeline.refetch} /> : (
         <>
           {/* Level selector */}
-          <div className="grid grid-cols-6 gap-2 mb-8 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-8 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
             {LEVELS.map(lvl => {
               const count = pipeline.data?.pipeline?.[lvl]?.length ?? 0
               const isActive = selectedLevel === lvl

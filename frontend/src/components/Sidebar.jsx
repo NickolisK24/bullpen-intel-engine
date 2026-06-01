@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 
 const NAV = [
@@ -8,26 +9,41 @@ const NAV = [
 ]
 
 export default function Sidebar() {
+  // Mobile-only collapsible nav. On lg+ the nav is always shown and this
+  // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
+  const [open, setOpen] = useState(false)
+
   return (
-    <aside className="w-56 shrink-0 bg-dugout border-r border-dirt flex flex-col min-h-screen sticky top-0">
-      {/* Logo */}
-      <div className="px-5 py-6 border-b border-dirt">
-        <div className="flex items-center gap-2.5">
+    <aside className="w-full lg:w-56 lg:shrink-0 bg-dugout border-b border-dirt lg:border-b-0 lg:border-r flex flex-col lg:min-h-screen lg:sticky lg:top-0">
+      {/* Header row: logo + (mobile) hamburger */}
+      <div className="flex items-center justify-between px-5 py-4 lg:py-6 lg:border-b lg:border-dirt">
+        <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-2xl">⚾</span>
-          <div>
-            <div className="font-display text-2xl tracking-widest text-chalk100 leading-none">BaseballOS</div>
+          <div className="min-w-0">
+            <div className="font-display text-2xl tracking-widest text-chalk100 leading-none truncate">BaseballOS</div>
             <div className="text-chalk600 text-[10px] font-mono uppercase tracking-widest mt-0.5">Analytics Platform</div>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Toggle navigation"
+          aria-expanded={open}
+          className="lg:hidden shrink-0 ml-3 w-9 h-9 flex items-center justify-center rounded-lg border border-dirt text-chalk200 hover:bg-chalk/50 transition-colors"
+        >
+          <span className="text-lg leading-none">{open ? '✕' : '☰'}</span>
+        </button>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-5 space-y-1">
+      {/* Nav — hidden on mobile until toggled, always visible on lg+ */}
+      <nav className={`${open ? 'flex' : 'hidden'} lg:flex flex-1 flex-col px-3 pb-4 pt-1 lg:py-5 space-y-1`}>
         {NAV.map(({ to, icon, label, tag }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
+            onClick={() => setOpen(false)}
             className={({ isActive }) =>
               `nav-item ${isActive ? 'active' : ''}`
             }
@@ -43,8 +59,8 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-dirt">
+      {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
+      <div className={`${open ? 'block' : 'hidden'} lg:block px-5 py-4 border-t border-dirt`}>
         <div className="text-chalk600 text-[10px] font-mono leading-relaxed">
           <div className="text-chalk400 font-medium mb-1">Nikko</div>
           <div>Army Vet · Developer</div>
