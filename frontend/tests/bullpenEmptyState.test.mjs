@@ -56,3 +56,16 @@ test('reports visible filter misses separately from data availability', () => {
   assert.match(riskState.title, /critical risk/)
   assert.equal(searchState.title, 'No pitchers match your search.')
 })
+
+test('reports availability filter misses without setup guidance', () => {
+  const state = getBullpenEmptyState({
+    allRowsCount: 5,
+    visibleRowsCount: 0,
+    availabilityFilter: 'Unavailable',
+    meta: { total_game_logs: 10, total_scored_pitchers: 5 },
+  })
+
+  assert.equal(state.title, 'No pitchers match the Unavailable availability filter.')
+  assert.match(state.subtitle, /availability status/)
+  assert.doesNotMatch(state.subtitle, /seed\.py/)
+})

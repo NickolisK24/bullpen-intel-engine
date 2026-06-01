@@ -226,6 +226,32 @@ These thresholds are intentionally conservative starting points. They are
 centralized in `AvailabilityThresholds` so future tuning can happen in one
 place with focused regression coverage.
 
+### Implemented V1 UI Presentation
+
+The first frontend implementation presents backend availability output without
+reclassifying pitchers in the browser. Bullpen rows show a visible availability
+badge beside the existing fatigue and risk signals, and the Bullpen page adds an
+availability filter for Available, Monitor, Limited, Avoid, and Unavailable.
+
+Pitcher detail views include an availability summary with:
+
+- Availability status.
+- Confidence.
+- Data status.
+- Ordered reasons.
+- Limitations.
+
+The UI treats `data_state` as part of the trust contract. Stale, missing,
+incomplete, failed, or historical states must be displayed when returned by the
+backend instead of being silently hidden behind a status badge. Freshness-aware
+empty states remain distinct from availability, risk, team, and search filter
+empty states so users can tell whether BaseballOS has no workload data, stale
+data excluded by default, or current filters excluding visible pitchers.
+
+Frontend code should continue to consume `availability_status`, `confidence`,
+`data_state`, `reasons`, `limitations`, and `inputs` from the API. Thresholds
+and classification rules remain owned by the backend availability service.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are
