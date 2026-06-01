@@ -100,7 +100,7 @@ class TestAvailabilityClassification:
         result = classify(ScoreStub(raw_score=35.0), logs, reference_date=ref)
 
         assert result['availability_status'] == STATUS_AVOID
-        assert '54 pitches over last 3 days' in result['reasons']
+        assert '54 pitches in 3 days' in result['reasons']
         assert '3 appearances in 4 days' in result['reasons']
         assert result['inputs']['three_in_four'] is True
 
@@ -129,8 +129,8 @@ class TestAvailabilityClassification:
         assert result['availability_status'] == STATUS_MONITOR
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'stale'
-        assert 'Latest game log is older than 14 days' in result['reasons']
-        assert any('Stale data' in note for note in result['limitations'])
+        assert 'Latest workload data is outside the 14-day freshness window' in result['reasons']
+        assert any('Stale workload data' in note for note in result['limitations'])
 
     def test_incomplete_inputs_reduce_confidence(self, make_log):
         ref = date(2026, 6, 1)
