@@ -280,6 +280,12 @@ must not change backend thresholds, fatigue scoring, API response shape, or
 frontend rendering. Any threshold changes should happen in a later branch after
 the audit evidence is reviewed.
 
+Threshold tuning governance is documented in
+`docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md`. The current comparison baseline
+is `backend/reports/availability_threshold_baseline.md`. Future tuning branches
+should compare against that baseline, change one threshold variable at a time,
+and include before/after audit evidence before review.
+
 ### Latest Workload Snapshot Validation Mode
 
 Local historical datasets can make all public current-availability rows appear
