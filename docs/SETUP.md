@@ -117,6 +117,19 @@ Navigate to **http://localhost:5173**. You should see the BaseballOS dashboard.
 If you ran `python seed.py`, the bullpen views will be populated; otherwise the
 dashboard renders with empty states until data is synced.
 
+### Bullpen data freshness in local development
+
+The Bullpen list defaults to active/current workload data: pitchers whose latest
+game log is within the current 14-day freshness window. This protects the page
+from presenting old workload as current availability intelligence.
+
+Local seed data can be a valid historical snapshot while still falling outside
+that active window. In that case the dashboard can honestly show tracked
+pitchers and game logs while the Bullpen default view says no current pitchers
+match the freshness filter. Use **Show inactive pitchers** to inspect all
+tracked pitchers from the local snapshot. If the dashboard itself shows no game
+logs, the database is empty and needs to be seeded or synced.
+
 ---
 
 ## Step 5 — Run the tests
@@ -205,6 +218,12 @@ isn't set. Ensure `.env` contains `FLASK_APP=app.py`, or `export FLASK_APP=app.p
 **No data showing in the dashboard**
 → The database is empty. Run `python seed.py` to pull initial data from the MLB
 Stats API. (Seeding makes live network calls and can take a few minutes.)
+
+**Dashboard has pitchers/logs, but the Bullpen page has no current pitchers**
+→ Data exists, but every pitcher may be outside the active 14-day freshness
+window for the current calendar date. Enable **Show inactive pitchers** to view
+the stale/inactive snapshot, or run a fresh sync if you expect current-season
+data.
 
 **CORS error in the browser console**
 → Make sure the backend is running on port 5000 and you're using the Vite dev

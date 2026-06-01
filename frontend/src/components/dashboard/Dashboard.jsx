@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
 import SyncStatus from './SyncStatus'
 import FatigueInsightCard from './FatigueInsightCard'
+import { getBullpenEmptyState } from '../bullpen/emptyState'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -30,9 +31,16 @@ const fmtThroughDate = (ymd) => {
 
 export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
-  const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '' }))
+  const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '', with_meta: true }))
   const pipeline   = useFetch(getPipelineOverview)
   const sync       = useFetch(getSyncStatus)
+  const topFatigueRows = Array.isArray(topFatigue.data) ? topFatigue.data : (topFatigue.data?.data || [])
+  const topFatigueMeta = Array.isArray(topFatigue.data) ? null : topFatigue.data?.meta
+  const topFatigueEmpty = getBullpenEmptyState({
+    allRowsCount: topFatigueRows.length,
+    visibleRowsCount: topFatigueRows.length,
+    meta: topFatigueMeta,
+  })
 
   // Drive the SeasonBanner from real state. "Live" only after a clean sync;
   // otherwise treat it as a historical snapshot and label it with the actual
@@ -174,8 +182,11 @@ export default function Dashboard() {
               <LoadingPane message="Loading..." />
             ) : topFatigue.error ? (
               <ErrorState message={topFatigue.error} onRetry={topFatigue.refetch} />
-            ) : !topFatigue.data?.length ? (
-              <div className="p-6 text-chalk400 text-sm text-center font-mono">No data — run the seeder first</div>
+            ) : !topFatigueRows.length ? (
+              <div className="p-6 text-center font-mono">
+                <div className="text-chalk400 text-sm">{topFatigueEmpty.title}</div>
+                <div className="text-chalk600 text-xs mt-1">{topFatigueEmpty.subtitle}</div>
+              </div>
             ) : (
               <div className="overflow-x-auto">
               <table className="data-table">
@@ -188,7 +199,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topFatigue.data.slice(0, 8).map((row) => (
+                  {topFatigueRows.slice(0, 8).map((row) => (
                     <tr key={row.id}>
                       <td className="text-chalk200 font-medium">{row.pitcher?.full_name}</td>
                       <td className="text-chalk400 font-mono text-xs">{row.pitcher?.team_abbreviation}</td>
