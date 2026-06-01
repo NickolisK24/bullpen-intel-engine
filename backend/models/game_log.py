@@ -4,8 +4,13 @@ from datetime import datetime
 class GameLog(db.Model):
     __tablename__ = 'game_logs'
 
-    # ── Indexes for query performance ─────────────────────────────────────────
+    # ── Indexes + constraints ─────────────────────────────────────────────────
+    # A pitcher has exactly one pitching line per MLB game, so (pitcher_id,
+    # mlb_game_pk) is the natural key. The unique constraint makes duplicate
+    # game logs impossible at the database level — the authoritative backstop
+    # behind the application-level dedup checks in services/sync.py and seed.py.
     __table_args__ = (
+        db.UniqueConstraint('pitcher_id', 'mlb_game_pk', name='uq_game_logs_pitcher_game'),
         db.Index('ix_game_log_pitcher_date', 'pitcher_id', 'game_date'),
         db.Index('ix_game_log_game_pk',      'mlb_game_pk'),
         db.Index('ix_game_log_game_type',    'game_type'),
