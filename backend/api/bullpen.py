@@ -259,10 +259,27 @@ def sync_recent_logs():
 @bullpen_bp.route('/sync/status', methods=['GET'])
 def get_sync_status():
     """
-    Return the last-run status written by the daily APScheduler job.
-    Frontend uses this to render the "Last synced" pill on the dashboard.
+    Return the last sync status, enriched with the actual data snapshot
+    (latest game date + game-log count) from the database.
+
+    This lets the dashboard distinguish three real states that the bare status
+    file cannot: a successful/failed live sync, a loaded historical snapshot
+    (data present but no sync has run — e.g. after `python seed.py`), and a
+    genuinely empty system. The snapshot date is real DB data, never a faked
+    sync timestamp.
     """
-    return jsonify(sync_service.read_status())
+    status = sync_service.read_status()
+    try:
+        latest    = db.session.query(db.func.max(GameLog.game_date)).scalar()
+        log_count = db.session.query(db.func.count(GameLog.id)).scalar() or 0
+        status['data'] = {
+            'game_logs':        int(log_count),
+            'latest_game_date': latest.isoformat() if latest else None,
+        }
+    except Exception:
+        # A DB hiccup must never turn the status pill into a hard error.
+        status['data'] = {'game_logs': None, 'latest_game_date': None}
+    return jsonify(status)
 
 
 # ─── Pitchers ─────────────────────────────────────────────────────────────────
