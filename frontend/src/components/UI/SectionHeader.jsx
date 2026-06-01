@@ -1,9 +1,9 @@
 // Bold section heading with subtle bottom border. `action` renders right-aligned.
 export default function SectionHeader({ title, subtitle, action }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 mb-6 pb-3 border-b border-dirt">
+    <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 lg:gap-4 mb-6 pb-3 border-b border-dirt">
       <div className="min-w-0">
-        <h2 className="section-title break-words">{title}</h2>
+        <h2 className="section-title">{title}</h2>
         {subtitle && (
           <p className="text-chalk400 text-sm mt-1 font-mono">{subtitle}</p>
         )}
