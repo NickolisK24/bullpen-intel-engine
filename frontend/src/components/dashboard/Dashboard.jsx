@@ -106,7 +106,7 @@ export default function Dashboard() {
           </div>
 
           {/* Legend */}
-          <div className="flex gap-5 mt-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3">
             {LEVELS.map((level) => {
               const count = overview.data.risk_breakdown[level] || 0
               return (
