@@ -245,9 +245,11 @@ function PitcherView({
           )}
         </div>
 
-        {/* Detail panel */}
+        {/* Detail panel — side column on desktop, full-screen overlay on mobile
+            so selecting a pitcher always reveals the detail (it was hidden
+            below the lg breakpoint before). PitcherDetail's header ✕ closes it. */}
         {selectedPitcher && (
-          <div className="hidden lg:block lg:w-[38%]">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 lg:static lg:inset-auto lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0 lg:block lg:w-[38%] lg:shrink-0">
             <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={() => setSelected(null)} />
           </div>
         )}
