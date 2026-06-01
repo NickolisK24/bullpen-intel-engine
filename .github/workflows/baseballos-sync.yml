@@ -1,0 +1,59 @@
+name: Daily Bullpen Sync
+
+# Reliable production sync. An external scheduler POSTs the protected sync
+# endpoint instead of relying on the in-process APScheduler inside the Render
+# web service — that scheduler only fires if the web process happens to be
+# alive and un-restarted at the scheduled time, which a free Render instance
+# (that spins down when idle) cannot guarantee.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   BASEBALLOS_SYNC_URL         e.g. https://baseballos-api.onrender.com/api/bullpen/sync
+#   BASEBALLOS_ADMIN_API_TOKEN  must match the backend's ADMIN_API_TOKEN
+#
+# To disable: comment out the `schedule:` block below (manual runs still work
+# via the "Run workflow" button), or disable this workflow in the Actions tab.
+
+on:
+  schedule:
+    # Cron is always UTC and does NOT observe DST. 10:00 UTC is ~6 AM ET during
+    # daylight time (most of the MLB season) and ~5 AM ET during standard time.
+    - cron: '0 10 * * *'
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+# Never let scheduled + manual runs pile up on top of each other.
+concurrency:
+  group: baseballos-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger protected backend sync
+        env:
+          SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
+          ADMIN_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SYNC_URL:-}" ] || [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "::error::Missing BASEBALLOS_SYNC_URL or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          # -sS: quiet but surface errors. Capture body + HTTP status separately.
+          # The token is only passed via a header from an env var — never printed.
+          http_code=$(curl -sS -o response.json -w '%{http_code}' \
+            --retry 2 --max-time 600 \
+            -X POST "$SYNC_URL" \
+            -H 'Content-Type: application/json' \
+            -H "X-Admin-Token: $ADMIN_TOKEN" \
+            -d '{"days_back": 7}')
+          echo "HTTP $http_code"
+          echo "Response body:"
+          cat response.json || true
+          echo
+          case "$http_code" in
+            2[0-9][0-9]) echo "Sync succeeded." ;;
+            401|403) echo "::error::Unauthorized ($http_code) — check BASEBALLOS_ADMIN_API_TOKEN matches the backend ADMIN_API_TOKEN."; exit 1 ;;
+            *) echo "::error::Sync failed with HTTP $http_code"; exit 1 ;;
+          esac
