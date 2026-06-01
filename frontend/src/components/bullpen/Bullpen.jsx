@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useFetch } from '../../hooks/useFetch'
-import { getFatigueScores, getTeams, getTeamBullpen, recalculateFatigue } from '../../utils/api'
-import { LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader, StatCard, Divider } from '../UI'
+import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
+import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor, fmtIP, fmtDate, daysAgo } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
 import TeamComparison from './TeamComparison'
+import { getBullpenEmptyState } from './emptyState'
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
@@ -24,10 +25,11 @@ export default function Bullpen() {
 
   const teams    = useFetch(getTeams)
   const allScores = useFetch(
-    () => selectedTeam
-      ? getTeamBullpen(selectedTeam, { include_stale: includeStale })
-          .then(rows => rows.map(r => ({ ...r.fatigue, pitcher: r.pitcher })).filter(r => r && r.raw_score != null))
-      : getFatigueScores({ limit: 750, include_stale: includeStale }),
+    () => {
+      const params = { limit: 750, include_stale: includeStale, with_meta: true }
+      if (selectedTeam) params.team_id = selectedTeam
+      return getFatigueScores(params)
+    },
     [selectedTeam, includeStale]
   )
 
@@ -96,6 +98,7 @@ export default function Bullpen() {
           setSelected={setSelected}
           sortBy={sortBy}
           setSortBy={setSortBy}
+          includeStale={includeStale}
         />
       )}
     </div>
@@ -108,19 +111,34 @@ function PitcherView({
   riskFilter, setRiskFilter,
   selectedPitcher, setSelected,
   sortBy, setSortBy,
+  includeStale,
 }) {
   const [page, setPage] = useState(1)
+  const [searchTerm, setSearchTerm] = useState('')
 
   // Compute counts from the full dataset, BEFORE filtering — tab labels
   // describe what's available, not what's currently shown.
-  const allRows = allScores.data || []
+  const fatiguePayload = allScores.data
+  const allRows = Array.isArray(fatiguePayload) ? fatiguePayload : (fatiguePayload?.data || [])
+  const meta = Array.isArray(fatiguePayload) ? null : fatiguePayload?.meta
   const counts = { ALL: allRows.length, CRITICAL: 0, HIGH: 0, MODERATE: 0, LOW: 0 }
   allRows.forEach(r => { if (counts[r.risk_level] != null) counts[r.risk_level]++ })
+  const selectedTeamInfo = (teams.data || []).find(t => t.team_id === selectedTeam)
+  const selectedTeamLabel = selectedTeamInfo?.team_abbreviation || selectedTeamInfo?.team_name
+  const normalizedSearch = searchTerm.trim().toLowerCase()
 
-  // Filter by risk for actual display
+  // Filter by risk/search for actual display. Team and freshness are applied
+  // by the backend so metadata can explain when those filters exclude data.
   const rows = allRows.filter(r => {
-    if (riskFilter === 'ALL') return true
-    return r.risk_level === riskFilter
+    if (riskFilter !== 'ALL' && r.risk_level !== riskFilter) return false
+    if (!normalizedSearch) return true
+    const haystack = [
+      r.pitcher?.full_name,
+      r.pitcher?.team_name,
+      r.pitcher?.team_abbreviation,
+      r.risk_level,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(normalizedSearch)
   })
 
   // Sort
@@ -139,9 +157,19 @@ function PitcherView({
   const startIdx   = (safePage - 1) * PAGE_SIZE
   const endIdx     = Math.min(startIdx + PAGE_SIZE, totalRows)
   const visible    = sorted.slice(startIdx, endIdx)
+  const emptyState = getBullpenEmptyState({
+    allRowsCount: allRows.length,
+    visibleRowsCount: sorted.length,
+    meta,
+    includeStale,
+    selectedTeam,
+    selectedTeamLabel,
+    riskFilter,
+    searchTerm,
+  })
 
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
-  useEffect(() => { setPage(1) }, [riskFilter, selectedTeam, sortBy])
+  useEffect(() => { setPage(1) }, [riskFilter, selectedTeam, sortBy, searchTerm, includeStale])
 
   const thStyle = (key) =>
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
@@ -167,17 +195,27 @@ function PitcherView({
         ))}
       </div>
 
-      {/* Risk filter tabs */}
-      <div className="flex gap-1 mb-5 bg-chalk/30 p-1 rounded-lg w-fit border border-dirt">
-        {RISK_FILTERS.map(f => (
-          <button
-            key={f}
-            onClick={() => setRiskFilter(f)}
-            className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${riskFilter === f ? 'bg-chalk border-dirt text-chalk200 shadow' : 'text-chalk400 hover:text-chalk200'}`}
-          >
-            {f} <span className="opacity-60">({counts[f] ?? 0})</span>
-          </button>
-        ))}
+      {/* Risk/search filters */}
+      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg w-fit border border-dirt">
+          {RISK_FILTERS.map(f => (
+            <button
+              key={f}
+              onClick={() => setRiskFilter(f)}
+              className={`px-3 py-1.5 rounded text-xs font-mono transition-all ${riskFilter === f ? 'bg-chalk border-dirt text-chalk200 shadow' : 'text-chalk400 hover:text-chalk200'}`}
+            >
+              {f} <span className="opacity-60">({counts[f] ?? 0})</span>
+            </button>
+          ))}
+        </div>
+        <input
+          type="search"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          aria-label="Search pitchers"
+          placeholder="Search pitcher"
+          className="w-full sm:w-64 rounded border border-dirt bg-field/70 px-3 py-2 font-mono text-xs text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
+        />
       </div>
 
       <div className="flex gap-6">
@@ -188,11 +226,7 @@ function PitcherView({
           ) : allScores.error ? (
             <ErrorState message={allScores.error} onRetry={allScores.refetch} />
           ) : sorted.length === 0 ? (
-            <div className="p-8 text-center">
-              <div className="text-4xl mb-3 opacity-20">⚾</div>
-              <p className="text-chalk400 font-mono text-sm">No pitchers found</p>
-              <p className="text-chalk600 text-xs mt-1 font-mono">Run <span className="text-amber">python seed.py</span> in the backend to load data</p>
-            </div>
+            <EmptyState title={emptyState.title} subtitle={emptyState.subtitle} />
           ) : (
             <>
               <div className="overflow-x-auto">

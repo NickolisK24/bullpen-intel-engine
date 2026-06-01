@@ -32,12 +32,19 @@ def _truthy(value):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
+def _active_pitcher_cutoff(days: int = ACTIVE_WINDOW_DAYS):
+    """Calendar-date cutoff for the active/current bullpen list."""
+    return date.today() - timedelta(days=days)
+
+
 def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS):
     """
     Subquery returning pitcher_ids whose most recent game_log.game_date falls
-    within the last `days` days. Used to suppress stale rows from list views.
+    within the last `days` days relative to today's date. This intentionally
+    treats historical local snapshots as inactive/stale instead of pretending
+    old data is current bullpen availability.
     """
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = _active_pitcher_cutoff(days)
     return (
         db.session.query(GameLog.pitcher_id.label('pitcher_id'))
         .group_by(GameLog.pitcher_id)
@@ -46,24 +53,8 @@ def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS):
     )
 
 
-# ─── Fatigue Scores ───────────────────────────────────────────────────────────
-
-@bullpen_bp.route('/fatigue', methods=['GET'])
-def get_fatigue_scores():
-    """
-    Get current fatigue scores for all pitchers.
-    Optional query params:
-      - team_id: filter by team
-      - risk_level: LOW | MODERATE | HIGH | CRITICAL
-      - limit: max results (default 50)
-      - include_stale: when truthy, include pitchers whose most recent
-                       appearance is older than 14 days. Default false.
-    """
-    team_id       = request.args.get('team_id', type=int)
-    risk_level    = request.args.get('risk_level')
-    limit         = request.args.get('limit', 50, type=int)
-    include_stale = _truthy(request.args.get('include_stale'))
-
+def _latest_fatigue_query(team_id=None, risk_level=None):
+    """Latest fatigue-score rows with optional user-visible filters applied."""
     subq = (
         db.session.query(
             FatigueScore.pitcher_id,
@@ -80,22 +71,93 @@ def get_fatigue_scores():
         .join(Pitcher, FatigueScore.pitcher_id == Pitcher.id)
     )
 
-    if not include_stale:
-        recent = _recent_pitcher_ids_subquery()
-        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
-
     if team_id:
         query = query.filter(Pitcher.team_id == team_id)
     if risk_level:
         query = query.filter(FatigueScore.risk_level == risk_level.upper())
 
+    return query
+
+
+def _fatigue_list_meta(filtered_count, fresh_filtered_count, returned_count, include_stale, team_id, risk_level):
+    """Trust metadata explaining why a fatigue list may be empty."""
+    latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
+    total_game_logs = db.session.query(db.func.count(GameLog.id)).scalar() or 0
+
+    total_scored = (
+        db.session.query(db.func.count(db.func.distinct(FatigueScore.pitcher_id)))
+        .scalar()
+        or 0
+    )
+
+    return {
+        'include_stale': include_stale,
+        'active_window_days': ACTIVE_WINDOW_DAYS,
+        'active_cutoff_date': _active_pitcher_cutoff().isoformat(),
+        'latest_game_date': latest_game_date.isoformat() if latest_game_date else None,
+        'total_game_logs': int(total_game_logs),
+        'total_scored_pitchers': int(total_scored),
+        'filtered_scored_pitchers': int(filtered_count),
+        'fresh_filtered_pitchers': int(fresh_filtered_count),
+        'stale_filtered_pitchers': int(max(filtered_count - fresh_filtered_count, 0)),
+        'returned_pitchers': int(returned_count),
+        'filters': {
+            'team_id': team_id,
+            'risk_level': risk_level.upper() if risk_level else None,
+        },
+    }
+
+
+# ─── Fatigue Scores ───────────────────────────────────────────────────────────
+
+@bullpen_bp.route('/fatigue', methods=['GET'])
+def get_fatigue_scores():
+    """
+    Get current fatigue scores for all pitchers.
+    Optional query params:
+      - team_id: filter by team
+      - risk_level: LOW | MODERATE | HIGH | CRITICAL
+      - limit: max results (default 50)
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
+      - with_meta: when truthy, return {data, meta} instead of the legacy array.
+    """
+    team_id       = request.args.get('team_id', type=int)
+    risk_level    = request.args.get('risk_level')
+    limit         = request.args.get('limit', 50, type=int)
+    include_stale = _truthy(request.args.get('include_stale'))
+    with_meta     = _truthy(request.args.get('with_meta'))
+
+    base_query     = _latest_fatigue_query(team_id=team_id, risk_level=risk_level)
+    filtered_count = base_query.count()
+    recent         = _recent_pitcher_ids_subquery()
+    fresh_query    = base_query.join(recent, recent.c.pitcher_id == Pitcher.id)
+    fresh_count    = fresh_query.count()
+    query          = base_query
+    if not include_stale:
+        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
+
     query   = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
     results = query.all()
 
-    return jsonify([
+    data = [
         {**score.to_dict(), 'pitcher': pitcher.to_dict()}
         for score, pitcher in results
-    ])
+    ]
+    if not with_meta:
+        return jsonify(data)
+
+    return jsonify({
+        'data': data,
+        'meta': _fatigue_list_meta(
+            filtered_count=filtered_count,
+            fresh_filtered_count=fresh_count,
+            returned_count=len(data),
+            include_stale=include_stale,
+            team_id=team_id,
+            risk_level=risk_level,
+        ),
+    })
 
 
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])
