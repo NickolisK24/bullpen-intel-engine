@@ -243,10 +243,65 @@ configured for one-command production deployment.
 - **Health check:** `GET /api/health` returns `{ status, environment, debug }`,
   so you can confirm a deploy is actually running `production` (debug `false`).
 - **Scheduler:** `AUTO_SYNC=true` starts an in-process APScheduler job (06:00
-  ET). In-process scheduling is not reliable on hosts that sleep idle instances
-  or run multiple web workers; a separate scheduled job (e.g. a platform cron
-  hitting the sync endpoint) is the more dependable pattern for hosted use.
+  ET) — fine for local/dev convenience, but **not** reliable for hosted
+  production: it only fires if the web process is alive and un-restarted at the
+  scheduled time, which a free Render instance (it spins down when idle) can't
+  guarantee. For hosted use, prefer an **external scheduler** that POSTs the
+  protected sync endpoint — see "Automated daily sync (production)" below.
 - **Config / debug:** `APP_ENV=production` loads `ProductionConfig` (debug off);
   unset/`development` keeps debug on for local work. This branch wires that
   switch and the production safety checks, but full deployment (host setup,
   managed Postgres, a production scheduler) is still future work.
+
+### Automated daily sync (production)
+
+In hosted production (frontend on Vercel, backend on Render), don't rely on the
+in-process APScheduler. Use an external scheduler that POSTs the protected sync
+endpoint once a day. The endpoint is idempotent (it skips duplicates and the DB
+enforces game-log uniqueness), so re-runs are safe.
+
+**Recommended: GitHub Actions** (no dependency on the Render web process being
+awake first, and free on public repos). A ready-to-use workflow ships at
+`.github/workflows/baseballos-sync.yml`. To enable it:
+
+1. In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**, add:
+   - `BASEBALLOS_SYNC_URL` — e.g. `https://baseballos-api.onrender.com/api/bullpen/sync`
+   - `BASEBALLOS_ADMIN_API_TOKEN` — the **same** value as the backend's `ADMIN_API_TOKEN`
+2. The workflow runs daily at **10:00 UTC** (≈ 6 AM ET during daylight time —
+   most of the MLB season; ≈ 5 AM ET during standard time). Cron is always UTC
+   and doesn't observe DST, so the ET clock time shifts by an hour seasonally —
+   that's fine for a daily refresh.
+3. Trigger a manual run anytime from the **Actions** tab ("Run workflow"). The
+   job fails loudly (non-zero exit) on any non-2xx response, and calls out
+   401/403 as a token mismatch.
+
+**Manual / equivalent curl** (what the scheduler effectively runs):
+
+```bash
+curl -X POST https://baseballos-api.onrender.com/api/bullpen/sync \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  -d '{"days_back": 7}'
+```
+
+**Alternative: Render Cron Job.** Render can run the same `curl` on a schedule,
+but a Cron Job is a separate paid service on most plans — GitHub Actions is
+simpler and free for this use, so it's the recommended path.
+
+**UptimeRobot is not a sync.** UptimeRobot (or similar) hitting `HEAD/GET
+/api/health` only keeps/wakes the Render instance — it does **not** run a sync.
+It's complementary: keep your health monitor, and add the GitHub Actions
+workflow for the actual daily sync. (If your UptimeRobot plan supports POST with
+custom headers it *could* call `/api/bullpen/sync` directly, but the Actions
+workflow is cleaner and easier to audit.)
+
+**Expected dashboard behavior after a successful run:** the sync writes
+`sync_status.json`, so the dashboard pill switches from **"Snapshot · through
+…"** (seeded historical data, no sync yet) to **"Last synced: …"**. If a run
+fails, the pill shows **"Last sync failed"**. (Note: the status file is currently
+on the instance's ephemeral disk, so a Render restart can revert the pill to the
+snapshot state until the next sync — persisting status in the DB is a sensible
+future enhancement.)
+
+The protected endpoint stays protected throughout — the scheduler authenticates
+with `X-Admin-Token`; there is no anonymous sync and no public sync button.
