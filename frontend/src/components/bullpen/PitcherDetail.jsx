@@ -2,6 +2,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
+import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
@@ -43,14 +44,14 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     fatigue_trend,
   } = data || {}
 
-  // Radar — component breakdown
-  const radarData = cf ? [
-    { component: 'Pitches',  value: Math.round(cf.pitch_count_score ?? 0) },
-    { component: 'Rest',     value: Math.round(cf.rest_days_score ?? 0)   },
-    { component: 'Apps',     value: Math.round(cf.appearances_score ?? 0) },
-    { component: 'Leverage', value: Math.round(cf.leverage_score ?? 0)    },
-    { component: 'Innings',  value: Math.round(cf.innings_score ?? 0)     },
-  ] : []
+  // Radar — component breakdown. Driven by the shared four-factor model so
+  // it always matches the backend (no Leverage Index — see fatigueModel.js).
+  const radarData = cf
+    ? FATIGUE_FACTORS.map((f) => ({
+        component: f.short,
+        value: Math.round(cf[f.scoreField] ?? 0),
+      }))
+    : []
 
   // Trend — sorted ascending by date for a clean left-to-right line
   const trendData = (fatigue_trend ?? [])
@@ -90,11 +91,17 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             </div>
             <div>
               <RiskBadge level={cf.risk_level} />
-              <div className="text-chalk400 text-xs font-mono mt-1">Fatigue Score</div>
+              <div className="text-chalk400 text-xs font-mono mt-1">Fatigue Score · 0–100</div>
             </div>
           </div>
 
           <FatigueBar score={cf.raw_score} height="h-2" />
+
+          {RISK_BLURB[cf.risk_level] && (
+            <div className="text-chalk400 text-xs font-mono leading-relaxed">
+              {RISK_BLURB[cf.risk_level]} Workload risk only — not an injury or performance prediction.
+            </div>
+          )}
 
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-2">
@@ -104,7 +111,6 @@ export default function PitcherDetail({ pitcherId, onClose }) {
               { label: 'Apps/7d',    value: cf.appearances_last_7 ?? 0 },
               { label: 'IP/7d',      value: fmtIP(cf.innings_last_7_days) },
               { label: 'Apps/14d',   value: cf.appearances_last_14 ?? 0 },
-              { label: 'Avg LI',     value: cf.avg_leverage_last_7 ? cf.avg_leverage_last_7.toFixed(2) : '---' },
             ].map(({ label, value }) => (
               <div key={label} className="bg-chalk/40 border border-dirt rounded p-2.5 text-center">
                 <div className="font-mono font-semibold text-chalk200">{value}</div>
@@ -113,27 +119,25 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             ))}
           </div>
 
-          {/* Component breakdown — horizontal bars with weights */}
+          {/* Component breakdown — horizontal bars with weights. Sourced from
+              the shared four-factor model so weights always match the backend. */}
           <Divider label="Score Breakdown" />
           <div className="space-y-2.5">
-            {[
-              { label: 'Pitch Count Load', score: cf.pitch_count_score, weight: '30%' },
-              { label: 'Rest Days',        score: cf.rest_days_score,   weight: '25%' },
-              { label: 'Appearance Freq',  score: cf.appearances_score, weight: '20%' },
-              { label: 'Leverage Index',   score: cf.leverage_score,    weight: '15%' },
-              { label: 'Innings Load',     score: cf.innings_score,     weight: '10%' },
-            ].map(({ label, score, weight }) => (
-              <div key={label}>
-                <div className="flex justify-between mb-1">
-                  <span className="text-chalk400 text-xs font-mono">{label}</span>
-                  <div className="flex gap-2">
-                    <span className="text-chalk600 text-xs font-mono">{weight}</span>
-                    <span className="text-chalk200 text-xs font-mono w-6 text-right">{Math.round(score ?? 0)}</span>
+            {FATIGUE_FACTORS.map(({ key, label, scoreField, weight }) => {
+              const score = cf[scoreField]
+              return (
+                <div key={key}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-chalk400 text-xs font-mono">{label}</span>
+                    <div className="flex gap-2">
+                      <span className="text-chalk600 text-xs font-mono">{weight}%</span>
+                      <span className="text-chalk200 text-xs font-mono w-6 text-right">{Math.round(score ?? 0)}</span>
+                    </div>
                   </div>
+                  <FatigueBar score={score} height="h-1" />
                 </div>
-                <FatigueBar score={score} height="h-1" />
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* Radar — component profile */}
@@ -223,15 +227,11 @@ export default function PitcherDetail({ pitcherId, onClose }) {
                       <th>Opponent</th>
                       <th className="text-right">IP</th>
                       <th className="text-right">P</th>
-                      <th className="text-right">LI</th>
-                      <th>Note</th>
                     </tr>
                   </thead>
                   <tbody>
                     {recent_logs.slice(0, 8).map(log => {
                       const st = isSpringTraining(log)
-                      const li = log.leverage_index
-                      const highLev = li != null && li > 1.5
                       return (
                         <tr key={log.id}>
                           <td className="text-chalk200 font-mono text-xs whitespace-nowrap">{fmtDate(log.game_date)}</td>
@@ -252,27 +252,6 @@ export default function PitcherDetail({ pitcherId, onClose }) {
                           </td>
                           <td className="text-right font-mono text-xs text-chalk200">{fmtIP(log.innings_pitched)}</td>
                           <td className="text-right font-mono text-xs text-chalk200">{log.pitches_thrown ?? 0}</td>
-                          <td className="text-right font-mono text-xs">
-                            {li != null ? (
-                              <span className={highLev ? 'text-amber font-semibold' : 'text-chalk400'}>
-                                {li.toFixed(2)}
-                              </span>
-                            ) : (
-                              <span className="text-chalk600">---</span>
-                            )}
-                          </td>
-                          <td className="font-mono text-[10px]">
-                            {highLev ? (
-                              <span
-                                className="px-1.5 py-0.5 rounded uppercase tracking-wider"
-                                style={{ backgroundColor: 'rgba(245,166,35,0.12)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)' }}
-                              >
-                                High Leverage
-                              </span>
-                            ) : (
-                              <span className="text-chalk600">—</span>
-                            )}
-                          </td>
                         </tr>
                       )
                     })}
