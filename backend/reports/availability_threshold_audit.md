@@ -1,6 +1,6 @@
 # Availability Threshold Audit
 
-Generated at: 2026-06-01T22:54:12.674737+00:00
+Generated at: 2026-06-01T23:06:04.308378+00:00
 Current reference date: 2026-06-01
 
 This report audits current Availability Engine output using the existing classifier.

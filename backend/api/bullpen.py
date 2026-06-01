@@ -11,6 +11,12 @@ from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability_snapshot import (
+    LATEST_WORKLOAD_SNAPSHOT_MODE,
+    availability_mode_metadata,
+    classify_latest_fatigue_rows,
+    latest_fatigue_rows as snapshot_latest_fatigue_rows,
+)
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from utils.auth import require_admin_token
@@ -192,6 +198,58 @@ def get_fatigue_scores():
             risk_level=risk_level,
         ),
     })
+
+
+@bullpen_bp.route('/fatigue/snapshot', methods=['GET'])
+@require_admin_token
+def get_latest_workload_snapshot():
+    """
+    Admin/development-only validation view of the latest known workload window.
+
+    This intentionally does not represent current bullpen availability. It
+    anchors each pitcher on their own most recent game log so local historical
+    datasets can exercise availability thresholds without changing public
+    calendar-based freshness behavior.
+    """
+    team_id    = request.args.get('team_id', type=int)
+    risk_level = request.args.get('risk_level')
+    limit      = request.args.get('limit', 750, type=int)
+
+    rows = snapshot_latest_fatigue_rows(
+        team_id=team_id,
+        risk_level=risk_level,
+        limit=limit,
+        order_by_score=True,
+    )
+    records = classify_latest_fatigue_rows(rows, mode=LATEST_WORKLOAD_SNAPSHOT_MODE)
+
+    data = []
+    for record in records:
+        score = record['score']
+        pitcher = record['pitcher']
+        data.append({
+            **score.to_dict(),
+            'pitcher': pitcher.to_dict(),
+            'availability': record['availability'],
+            'availability_mode': {
+                'mode': LATEST_WORKLOAD_SNAPSHOT_MODE,
+                'evaluation_date': record['evaluation_date'].isoformat() if record['evaluation_date'] else None,
+                'latest_game_date': record['latest_game_date'].isoformat() if record['latest_game_date'] else None,
+                'is_current_availability': False,
+            },
+        })
+
+    meta = availability_mode_metadata(LATEST_WORKLOAD_SNAPSHOT_MODE, records=records)
+    meta.update({
+        'total_pitchers': len(records),
+        'returned_pitchers': len(data),
+        'active_window_days': ACTIVE_WINDOW_DAYS,
+        'filters': {
+            'team_id': team_id,
+            'risk_level': risk_level.upper() if risk_level else None,
+        },
+    })
+    return jsonify({'data': data, 'meta': meta})
 
 
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])

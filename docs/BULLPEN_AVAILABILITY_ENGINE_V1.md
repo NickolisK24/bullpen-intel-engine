@@ -280,6 +280,46 @@ must not change backend thresholds, fatigue scoring, API response shape, or
 frontend rendering. Any threshold changes should happen in a later branch after
 the audit evidence is reviewed.
 
+### Latest Workload Snapshot Validation Mode
+
+Local historical datasets can make all public current-availability rows appear
+stale even when useful workload examples exist. BaseballOS therefore includes a
+development/admin validation mode that anchors each pitcher to their latest
+known game-log date and reuses the same Availability Engine classifier.
+
+This mode is exposed through the protected backend endpoint:
+
+```powershell
+GET /api/bullpen/fatigue/snapshot
+```
+
+The route is gated by the same `X-Admin-Token` / `ADMIN_API_TOKEN` guard used by
+operational admin endpoints. It is not a public Bullpen UI mode and must not be
+presented as live availability.
+
+Responses include explicit non-current metadata:
+
+```json
+{
+  "mode": "latest_workload_snapshot",
+  "snapshot_date": "2026-05-01",
+  "reference_strategy": "per_pitcher_latest_game_date",
+  "is_current_availability": false,
+  "warning": "Historical workload snapshot for validation only. Do not treat as current bullpen availability."
+}
+```
+
+`snapshot_date` is the latest game-log date represented by the response. Each
+pitcher row also carries its own evaluation date because the validation strategy
+is per-pitcher latest workload, not a claim that every pitcher has current data
+on the same date.
+
+The threshold audit script uses this same shared snapshot path for its
+latest-workload section. Snapshot output is allowed to support visual
+validation, regression fixtures, and later threshold review. It is not allowed
+to tune thresholds by itself, replace current-calendar freshness filtering, or
+hide stale/missing data states.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are
