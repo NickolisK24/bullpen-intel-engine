@@ -124,6 +124,7 @@ See `docs/SETUP.md` for the complete step-by-step setup guide.
 ```bash
 # Backend
 cd backend && pip install -r requirements.txt
+cp .env.example .env    # then edit DATABASE_URL
 flask db upgrade        # apply existing migrations
 python seed.py          # pull data from the MLB Stats API
 flask run
