@@ -78,9 +78,12 @@ def score_pitch_count(pitches_last_7: int) -> float:
                 (PITCH_THRESHOLDS['critical'] - PITCH_THRESHOLDS['high'])
         return 50.0 + (ratio * 50.0)
     elif pitches_last_7 >= PITCH_THRESHOLDS['moderate']:
+        # Moderate buildup: ramp 25 -> 50 across [50, 90]. Starting at 25 (the
+        # value the light-usage band reaches at 50 pitches) keeps the curve
+        # continuous and monotonic — no downward jump at the 50-pitch boundary.
         ratio = (pitches_last_7 - PITCH_THRESHOLDS['moderate']) / \
                 (PITCH_THRESHOLDS['high'] - PITCH_THRESHOLDS['moderate'])
-        return ratio * 50.0
+        return 25.0 + (ratio * 25.0)
     else:
         ratio = pitches_last_7 / PITCH_THRESHOLDS['moderate']
         return ratio * 25.0
