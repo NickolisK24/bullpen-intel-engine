@@ -258,6 +258,28 @@ Unavailable at the same time. These fixtures validate UI rendering, filtering,
 confidence display, data-state visibility, reasons, and limitations only. They
 are not threshold validation and must not be treated as production pitcher data.
 
+### Threshold Audit
+
+Availability thresholds should be tuned from evidence, not from one-off visual
+inspection. The repeatable audit script is:
+
+```powershell
+cd backend
+python scripts/audit_availability_thresholds.py
+```
+
+By default it writes `backend/reports/availability_threshold_audit.md`. The
+report summarizes current classifier output, confidence and data-state
+distributions, reason frequencies, workload inputs, and near-threshold
+examples. It also separates current freshness-aware classifications from a
+latest-workload snapshot so stale-data Monitor counts are not confused with
+workload-driven Monitor counts.
+
+The audit is allowed to inform future threshold review and test-case design. It
+must not change backend thresholds, fatigue scoring, API response shape, or
+frontend rendering. Any threshold changes should happen in a later branch after
+the audit evidence is reviewed.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are
