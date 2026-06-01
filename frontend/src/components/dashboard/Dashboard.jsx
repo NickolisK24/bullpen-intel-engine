@@ -49,8 +49,9 @@ export default function Dashboard() {
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-lg font-mono leading-relaxed">
-              Bullpen fatigue modeling · Prospect pipeline tracking · Portfolio layer.<br/>
-              Built to think like someone already in the room.
+              Flagship module — the <span className="text-chalk200">Bullpen Intelligence Engine</span>:
+              relief-pitcher workload on live MLB data.<br/>
+              Prospect pipeline is an early prototype · Methodology keeps every number transparent.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
@@ -166,7 +167,10 @@ export default function Dashboard() {
         {/* Pipeline snapshot */}
         <div className="card animate-fade-up opacity-0 delay-5" style={{ animationFillMode: 'forwards' }}>
           <div className="card-header">
-            <span className="font-mono text-xs text-chalk400 uppercase tracking-widest">📈 Pipeline Snapshot</span>
+            <span className="font-mono text-xs text-chalk400 uppercase tracking-widest">
+              📈 Pipeline Snapshot
+              <span className="ml-2 text-[10px] text-chalk600 normal-case tracking-normal">· prototype · sample data</span>
+            </span>
             <Link to="/prospects" className="text-amber text-xs font-mono hover:underline">View all →</Link>
           </div>
           {pipeline.loading ? (
@@ -209,15 +213,18 @@ export default function Dashboard() {
       {/* Quick links */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
         {[
-          { to: '/bullpen', icon: '🔥', title: 'Bullpen Module', desc: 'Fatigue heatmap, team bullpens, pitcher detail' },
-          { to: '/prospects', icon: '📈', title: 'Pipeline Module', desc: 'Prospect tracker, development arcs, comparisons' },
-          { to: '/portfolio', icon: '⚙', title: 'Portfolio', desc: 'Methodology, projects, and contact' },
-        ].map(({ to, icon, title, desc }, i) => (
+          { to: '/bullpen', icon: '🔥', title: 'Bullpen Intelligence', desc: 'Fatigue scoring, team bullpens, pitcher detail', tag: 'Flagship' },
+          { to: '/prospects', icon: '📈', title: 'Prospect Pipeline', desc: 'Development tracker — early prototype, sample data', tag: 'Prototype' },
+          { to: '/methodology', icon: '📐', title: 'Methodology', desc: 'How every fatigue number is computed', tag: 'Reference' },
+        ].map(({ to, icon, title, desc, tag }, i) => (
           <Link key={to} to={to}
             className="card p-5 hover:border-amber/30 hover:bg-amber/5 transition-all duration-200 group animate-fade-up opacity-0"
             style={{ animationDelay: `${600 + i * 80}ms`, animationFillMode: 'forwards' }}
           >
-            <div className="text-2xl mb-3">{icon}</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-2xl">{icon}</div>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600 border border-dirt rounded px-1.5 py-0.5">{tag}</span>
+            </div>
             <div className="font-display text-xl tracking-wider text-chalk100 group-hover:text-amber transition-colors">{title}</div>
             <div className="text-chalk400 text-xs font-mono mt-1">{desc}</div>
           </Link>

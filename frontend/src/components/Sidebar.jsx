@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 const NAV = [
   { to: '/',            icon: '⬡',  label: 'Dashboard'   },
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
-  { to: '/prospects',   icon: '📈', label: 'Pipeline'    },
+  { to: '/prospects',   icon: '📈', label: 'Pipeline', tag: 'Preview' },
   { to: '/methodology', icon: '📐', label: 'Methodology' },
 ]
 
@@ -23,7 +23,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-5 space-y-1">
-        {NAV.map(({ to, icon, label }) => (
+        {NAV.map(({ to, icon, label, tag }) => (
           <NavLink
             key={to}
             to={to}
@@ -34,6 +34,11 @@ export default function Sidebar() {
           >
             <span className="text-base w-5 text-center">{icon}</span>
             <span>{label}</span>
+            {tag && (
+              <span className="ml-auto text-[9px] font-mono uppercase tracking-widest text-chalk600 border border-dirt rounded px-1 py-0.5">
+                {tag}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
