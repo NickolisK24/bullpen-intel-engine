@@ -23,7 +23,7 @@ export default function Prospects() {
     <div className="p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Pipeline"
-        subtitle="Prospect development tracker · 20-80 scouting scale"
+        subtitle="Prospect development tracker · early prototype · illustrative sample data"
         action={
           <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
             {['pipeline', 'list'].map(m => (
@@ -36,6 +36,15 @@ export default function Prospects() {
           </div>
         }
       />
+
+      <div className="mb-6 rounded border border-dirt bg-chalk/20 px-4 py-2.5">
+        <p className="text-chalk400 text-xs font-mono leading-relaxed">
+          <span className="text-amber/80 uppercase tracking-widest">Prototype</span> · This module is a
+          roadmap preview populated with a small set of illustrative, hand-entered sample players —
+          not a live minor-league data feed. The flagship, fully-implemented product is the{' '}
+          <span className="text-chalk200">Bullpen Intelligence Engine</span>.
+        </p>
+      </div>
 
       {pipeline.loading ? <LoadingPane message="Loading pipeline..." /> : pipeline.error ? <ErrorState message={pipeline.error} onRetry={pipeline.refetch} /> : (
         <>
