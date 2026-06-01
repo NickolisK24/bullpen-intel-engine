@@ -252,6 +252,12 @@ Frontend code should continue to consume `availability_status`, `confidence`,
 `data_state`, `reasons`, `limitations`, and `inputs` from the API. Thresholds
 and classification rules remain owned by the backend availability service.
 
+Frontend fixture coverage exists for all five statuses because live local
+datasets may not naturally contain Available, Monitor, Limited, Avoid, and
+Unavailable at the same time. These fixtures validate UI rendering, filtering,
+confidence display, data-state visibility, reasons, and limitations only. They
+are not threshold validation and must not be treated as production pitcher data.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are

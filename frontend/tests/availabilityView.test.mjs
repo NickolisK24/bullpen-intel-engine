@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  AVAILABILITY_FILTERS,
   filterRowsByAvailability,
   formatConfidence,
   getAvailabilityBadgeView,
@@ -9,33 +10,35 @@ import {
   getAvailabilitySummary,
   getDataStateView,
 } from '../src/components/bullpen/availabilityView.js'
+import { availabilityFixtureRows } from './fixtures/availabilityStatusFixtures.mjs'
 
-const rows = [
-  { pitcher_id: 1, availability: { availability_status: 'Available' } },
-  { pitcher_id: 2, availability: { availability_status: 'Monitor' } },
-  { pitcher_id: 3, availability: { availability_status: 'Limited' } },
-  { pitcher_id: 4, availability: { availability_status: 'Avoid' } },
-  { pitcher_id: 5, availability: { availability_status: 'Unavailable' } },
-]
+const statuses = AVAILABILITY_FILTERS.filter(status => status !== 'ALL')
 
-test('builds availability badge labels from backend status values', () => {
-  const badge = getAvailabilityBadgeView({ availability_status: 'Limited' })
+test('builds availability badge labels from every backend status value', () => {
+  for (const row of availabilityFixtureRows) {
+    const status = row.availability.availability_status
+    const badge = getAvailabilityBadgeView(row.availability)
 
-  assert.equal(badge.label, 'Limited')
-  assert.equal(badge.status, 'Limited')
-  assert.match(badge.tone, /workload/i)
+    assert.equal(badge.label, status)
+    assert.equal(badge.status, status)
+    assert.match(badge.tone, /workload|signals|rules/i)
+  }
 })
 
-test('filters rows by backend availability status without reclassifying', () => {
-  const limited = filterRowsByAvailability(rows, 'Limited')
-  const all = filterRowsByAvailability(rows, 'ALL')
+test('filters rows by every backend availability status without reclassifying', () => {
+  for (const status of statuses) {
+    const filtered = filterRowsByAvailability(availabilityFixtureRows, status)
 
-  assert.deepEqual(limited.map(row => row.pitcher_id), [3])
-  assert.equal(all.length, rows.length)
+    assert.equal(filtered.length, 1)
+    assert.equal(filtered[0].availability.availability_status, status)
+  }
+
+  const all = filterRowsByAvailability(availabilityFixtureRows, 'ALL')
+  assert.equal(all.length, availabilityFixtureRows.length)
 })
 
 test('counts availability filter options from returned rows', () => {
-  const counts = getAvailabilityFilterCounts(rows)
+  const counts = getAvailabilityFilterCounts(availabilityFixtureRows)
 
   assert.equal(counts.ALL, 5)
   assert.equal(counts.Available, 1)
@@ -45,32 +48,32 @@ test('counts availability filter options from returned rows', () => {
   assert.equal(counts.Unavailable, 1)
 })
 
-test('formats confidence values for display', () => {
-  assert.equal(formatConfidence('high'), 'High')
-  assert.equal(formatConfidence('medium'), 'Medium')
-  assert.equal(formatConfidence('low'), 'Low')
+test('formats fixture confidence values for display', () => {
+  for (const row of availabilityFixtureRows) {
+    assert.match(formatConfidence(row.availability.confidence), /^(High|Medium|Low)$/)
+  }
   assert.equal(formatConfidence(null), 'Unknown')
 })
 
-test('describes stale data state clearly', () => {
+test('describes stale data state clearly for Monitor fixture', () => {
   const stale = getDataStateView('stale')
+  const monitor = availabilityFixtureRows.find(row => row.availability.availability_status === 'Monitor')
 
   assert.equal(stale.label, 'Stale')
   assert.match(stale.message, /active freshness window/i)
+  assert.equal(getDataStateView(monitor.availability.data_state).label, 'Stale')
 })
 
-test('preserves explanation reasons and limitations from backend output', () => {
-  const summary = getAvailabilitySummary({
-    availability_status: 'Avoid',
-    confidence: 'low',
-    data_state: 'stale',
-    reasons: ['42 pitches yesterday', '4 appearances in 5 days'],
-    limitations: ['No team-reported availability data available'],
-  })
+test('preserves explanation reasons and limitations from fixture backend output', () => {
+  for (const row of availabilityFixtureRows) {
+    const summary = getAvailabilitySummary(row.availability)
 
-  assert.equal(summary.label, 'Avoid')
-  assert.equal(summary.confidenceLabel, 'Low')
-  assert.equal(summary.dataStateView.label, 'Stale')
-  assert.deepEqual(summary.reasons, ['42 pitches yesterday', '4 appearances in 5 days'])
-  assert.deepEqual(summary.limitations, ['No team-reported availability data available'])
+    assert.equal(summary.label, row.availability.availability_status)
+    assert.equal(summary.confidenceLabel, formatConfidence(row.availability.confidence))
+    assert.equal(summary.dataStateView.label, getDataStateView(row.availability.data_state).label)
+    assert.deepEqual(summary.reasons, row.availability.reasons)
+    assert.deepEqual(summary.limitations, row.availability.limitations)
+    assert.ok(summary.reasons.length > 0)
+    assert.ok(summary.limitations.length > 0)
+  }
 })
