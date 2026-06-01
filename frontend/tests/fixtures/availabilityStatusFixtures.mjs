@@ -39,12 +39,11 @@ export const availabilityStatusFixtures = [
       confidence: 'low',
       data_state: 'stale',
       reasons: [
-        'Latest workload snapshot is stale',
-        '18 pitches in last appearance',
+        'Latest workload data is outside the 14-day freshness window',
       ],
       limitations: [
         ...sharedLimitations,
-        'Stale data must not be treated as current availability',
+        'Stale workload data must not be treated as current availability',
       ],
       inputs: {
         fatigue_score: 44,
@@ -70,7 +69,7 @@ export const availabilityStatusFixtures = [
       reasons: [
         '29 pitches yesterday',
         '3 appearances in 5 days',
-        '1 day rest',
+        'Only 1 day of rest',
       ],
       limitations: sharedLimitations,
       inputs: {
@@ -97,7 +96,7 @@ export const availabilityStatusFixtures = [
       reasons: [
         '42 pitches yesterday',
         '4 appearances in 5 days',
-        'Back-to-back usage with meaningful pitch volume',
+        'Back-to-back appearances',
       ],
       limitations: sharedLimitations,
       inputs: {
@@ -123,8 +122,8 @@ export const availabilityStatusFixtures = [
       data_state: 'fresh',
       reasons: [
         '54 pitches yesterday',
-        '82 pitches over last 3 days',
-        'Back-to-back heavy usage',
+        '82 pitches in 3 days',
+        'Back-to-back appearances',
       ],
       limitations: sharedLimitations,
       inputs: {

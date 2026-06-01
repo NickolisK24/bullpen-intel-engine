@@ -12,6 +12,7 @@ from services.availability import (
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
+from services.availability_explanations import STALE_WORKLOAD_LIMITATION
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
 
 
@@ -68,7 +69,7 @@ def _summary_notes(total_pitchers, data_state_counts):
         notes.append('Availability classifications are based on fresh workload data.')
 
     if stale:
-        notes.append('Stale data must not be treated as current bullpen availability.')
+        notes.append(STALE_WORKLOAD_LIMITATION)
     if missing:
         notes.append('Missing workload history reduces availability confidence.')
     if incomplete:

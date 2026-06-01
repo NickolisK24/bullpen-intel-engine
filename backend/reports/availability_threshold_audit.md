@@ -1,6 +1,6 @@
 # Availability Threshold Audit
 
-Generated at: 2026-06-01T23:06:04.308378+00:00
+Generated at: 2026-06-01T23:44:11.795127+00:00
 Current reference date: 2026-06-01
 
 This report audits current Availability Engine output using the existing classifier.
@@ -45,7 +45,7 @@ Total pitchers evaluated: 704
 
 | Reason | Count |
 |---|---:|
-| Latest game log is older than 14 days | 640 |
+| Latest workload data is outside the 14-day freshness window | 640 |
 | Missing workload history or fatigue score | 64 |
 
 ### Workload Input Summary
@@ -83,18 +83,18 @@ Total pitchers evaluated: 704
 
 | Pitcher | Team | Status | Data state | Boundary | Value | Threshold | Distance | Reasons |
 |---|---|---|---|---|---:|---:|---:|---|
-| Connor Prielipp | MIN | Monitor | stale | Limited fatigue | 60 | 60 | 0 | Latest game log is older than 14 days |
-| Keegan Thompson | COL | Monitor | stale | Monitor fatigue | 40 | 40 | 0 | Latest game log is older than 14 days |
-| Max Lazar | PHI | Monitor | stale | Monitor fatigue | 40 | 40 | 0 | Latest game log is older than 14 days |
-| Tyler Mahle | SF | Monitor | stale | Limited fatigue | 60 | 60 | 0 | Latest game log is older than 14 days |
-| Bailey Ober | MIN | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Brady Singer | CIN | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Bryan Woo | SEA | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Bryce Elder | ATL | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Carson Whisenhunt | SF | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Cole Ragans | KC | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Colin Rea | CHC | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
-| Eury Pérez | MIA | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest game log is older than 14 days |
+| Connor Prielipp | MIN | Monitor | stale | Limited fatigue | 60 | 60 | 0 | Latest workload data is outside the 14-day freshness window |
+| Keegan Thompson | COL | Monitor | stale | Monitor fatigue | 40 | 40 | 0 | Latest workload data is outside the 14-day freshness window |
+| Max Lazar | PHI | Monitor | stale | Monitor fatigue | 40 | 40 | 0 | Latest workload data is outside the 14-day freshness window |
+| Tyler Mahle | SF | Monitor | stale | Limited fatigue | 60 | 60 | 0 | Latest workload data is outside the 14-day freshness window |
+| Bailey Ober | MIN | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Brady Singer | CIN | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Bryan Woo | SEA | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Bryce Elder | ATL | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Carson Whisenhunt | SF | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Cole Ragans | KC | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Colin Rea | CHC | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
+| Eury Pérez | MIA | Monitor | stale | Unavailable fatigue | 85.1 | 85 | 0.1 | Latest workload data is outside the 14-day freshness window |
 
 ## Latest-Workload Snapshot Output
 
@@ -137,21 +137,21 @@ Total pitchers evaluated: 704
 
 | Reason | Count |
 |---|---:|
-| 0 days rest | 640 |
-| 2 appearances in last 5 days | 192 |
-| 2 appearances in last 3 days | 140 |
-| Back-to-back usage | 80 |
-| 3 appearances in last 5 days | 69 |
+| No rest since last appearance | 640 |
+| 2 appearances in 5 days | 192 |
+| 2 appearances in 3 days | 140 |
+| Back-to-back appearances | 80 |
+| 3 appearances in 5 days | 69 |
 | Missing workload history or fatigue score | 64 |
-| Fatigue score 85.5 | 42 |
+| Fatigue score is 85.5 | 42 |
 | 3 appearances in 4 days | 34 |
-| Fatigue score 85.1 | 31 |
-| 40 pitches over last 3 days | 11 |
-| 90 pitches over last 3 days | 11 |
-| 90 pitches over last 5 days | 11 |
-| 36 pitches over last 3 days | 11 |
-| 95 pitches over last 3 days | 11 |
-| 95 pitches over last 5 days | 11 |
+| Fatigue score is 85.1 | 31 |
+| 40 pitches in 3 days | 11 |
+| 90 pitches in 3 days | 11 |
+| 90 pitches in 5 days | 11 |
+| 36 pitches in 3 days | 11 |
+| 95 pitches in 3 days | 11 |
+| 95 pitches in 5 days | 11 |
 
 ### Workload Input Summary
 
@@ -195,15 +195,15 @@ Total pitchers evaluated: 704
 
 | Pitcher | Team | Status | Data state | Boundary | Value | Threshold | Distance | Reasons |
 |---|---|---|---|---|---:|---:|---:|---|
-| A.J. Minter | NYM | Avoid | fresh | Limited 3-day appearances | 2 | 2 | 0 | 44 pitches over last 3 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 55.3 |
-| A.J. Minter | NYM | Avoid | fresh | Limited 5-day appearances | 3 | 3 | 0 | 44 pitches over last 3 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 55.3 |
-| A.J. Puk | AZ | Avoid | fresh | Limited 3-day appearances | 2 | 2 | 0 | 15 pitches yesterday; 36 pitches over last 3 days; 60 pitches over last 5 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 51.7 |
-| A.J. Puk | AZ | Avoid | fresh | Limited 5-day appearances | 3 | 3 | 0 | 15 pitches yesterday; 36 pitches over last 3 days; 60 pitches over last 5 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 51.7 |
-| A.J. Puk | AZ | Avoid | fresh | Limited 5-day pitches | 60 | 60 | 0 | 15 pitches yesterday; 36 pitches over last 3 days; 60 pitches over last 5 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 51.7 |
-| A.J. Puk | AZ | Avoid | fresh | Monitor yesterday pitches | 15 | 15 | 0 | 15 pitches yesterday; 36 pitches over last 3 days; 60 pitches over last 5 days; 2 appearances in last 3 days; 3 appearances in last 5 days; Back-to-back usage; 0 days rest; Fatigue score 51.7 |
-| Aaron Ashby | MIL | Limited | fresh | Limited 3-day pitches | 45 | 45 | 0 | 45 pitches over last 3 days; 0 days rest; Fatigue score 65.1 |
-| Aaron Bummer | ATL | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 2 appearances in last 3 days; 3 appearances in last 5 days; 0 days rest; Fatigue score 46.0 |
-| Aaron Bummer | ATL | Limited | fresh | Limited 5-day appearances | 3 | 3 | 0 | 2 appearances in last 3 days; 3 appearances in last 5 days; 0 days rest; Fatigue score 46.0 |
-| Abner Uribe | MIL | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 2 appearances in last 3 days; 2 appearances in last 5 days; Back-to-back usage; 0 days rest |
-| Abner Uribe | MIL | Limited | fresh | Monitor 5-day appearances | 2 | 2 | 0 | 2 appearances in last 3 days; 2 appearances in last 5 days; Back-to-back usage; 0 days rest |
-| Adrian Morejon | SD | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 43 pitches over last 3 days; 72 pitches over last 5 days; 2 appearances in last 3 days; 3 appearances in last 5 days; 0 days rest; Fatigue score 51.4 |
+| A.J. Minter | NYM | Avoid | fresh | Limited 3-day appearances | 2 | 2 | 0 | 44 pitches in 3 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 55.3 |
+| A.J. Minter | NYM | Avoid | fresh | Limited 5-day appearances | 3 | 3 | 0 | 44 pitches in 3 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 55.3 |
+| A.J. Puk | AZ | Avoid | fresh | Limited 3-day appearances | 2 | 2 | 0 | 15 pitches yesterday; 36 pitches in 3 days; 60 pitches in 5 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 51.7 |
+| A.J. Puk | AZ | Avoid | fresh | Limited 5-day appearances | 3 | 3 | 0 | 15 pitches yesterday; 36 pitches in 3 days; 60 pitches in 5 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 51.7 |
+| A.J. Puk | AZ | Avoid | fresh | Limited 5-day pitches | 60 | 60 | 0 | 15 pitches yesterday; 36 pitches in 3 days; 60 pitches in 5 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 51.7 |
+| A.J. Puk | AZ | Avoid | fresh | Monitor yesterday pitches | 15 | 15 | 0 | 15 pitches yesterday; 36 pitches in 3 days; 60 pitches in 5 days; 2 appearances in 3 days; 3 appearances in 5 days; Back-to-back appearances; No rest since last appearance; Fatigue score is 51.7 |
+| Aaron Ashby | MIL | Limited | fresh | Limited 3-day pitches | 45 | 45 | 0 | 45 pitches in 3 days; No rest since last appearance; Fatigue score is 65.1 |
+| Aaron Bummer | ATL | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 2 appearances in 3 days; 3 appearances in 5 days; No rest since last appearance; Fatigue score is 46 |
+| Aaron Bummer | ATL | Limited | fresh | Limited 5-day appearances | 3 | 3 | 0 | 2 appearances in 3 days; 3 appearances in 5 days; No rest since last appearance; Fatigue score is 46 |
+| Abner Uribe | MIL | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 2 appearances in 3 days; 2 appearances in 5 days; Back-to-back appearances; No rest since last appearance |
+| Abner Uribe | MIL | Limited | fresh | Monitor 5-day appearances | 2 | 2 | 0 | 2 appearances in 3 days; 2 appearances in 5 days; Back-to-back appearances; No rest since last appearance |
+| Adrian Morejon | SD | Limited | fresh | Limited 3-day appearances | 2 | 2 | 0 | 43 pitches in 3 days; 72 pitches in 5 days; 2 appearances in 3 days; 3 appearances in 5 days; No rest since last appearance; Fatigue score is 51.4 |

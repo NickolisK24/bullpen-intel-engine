@@ -46,7 +46,7 @@ const staleDominantSummary = {
   },
   notes: [
     'Most pitchers are classified from stale or missing workload data.',
-    'Stale data must not be treated as current bullpen availability.',
+    'Stale workload data must not be treated as current availability',
   ],
 }
 

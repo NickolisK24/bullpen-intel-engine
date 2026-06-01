@@ -74,7 +74,7 @@ def test_availability_summary_adds_stale_dominant_trust_note():
     ])
 
     assert 'Most pitchers are classified from stale or missing workload data.' in summary['notes']
-    assert 'Stale data must not be treated as current bullpen availability.' in summary['notes']
+    assert 'Stale workload data must not be treated as current availability' in summary['notes']
     assert 'Missing workload history reduces availability confidence.' in summary['notes']
 
 

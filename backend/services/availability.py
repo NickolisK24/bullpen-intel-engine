@@ -9,6 +9,22 @@ logs, and data freshness signals already available to the backend.
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from services.availability_explanations import (
+    BASE_LIMITATIONS,
+    INCOMPLETE_WORKLOAD_LIMITATION,
+    INCOMPLETE_WORKLOAD_REASON,
+    MISSING_WORKLOAD_LIMITATION,
+    MISSING_WORKLOAD_REASON,
+    STALE_WORKLOAD_LIMITATION,
+    WORKLOAD_FALLBACK_REASON,
+    appearance_frequency_reason,
+    back_to_back_reason,
+    fatigue_score_reason,
+    pitch_count_reason,
+    rest_reason,
+    stale_workload_reason,
+)
+
 
 ACTIVE_WINDOW_DAYS = 14
 
@@ -57,11 +73,6 @@ class AvailabilityThresholds:
 
 THRESHOLDS = AvailabilityThresholds()
 
-BASE_LIMITATIONS = [
-    'No injury data available',
-    'No team-reported availability data available',
-]
-
 
 def _value(obj, name, default=None):
     if obj is None:
@@ -73,14 +84,6 @@ def _value(obj, name, default=None):
 
 def _iso_or_none(value):
     return value.isoformat() if value else None
-
-
-def _format_days_rest(days):
-    if days is None:
-        return 'Unknown days rest'
-    if days == 1:
-        return '1 day rest'
-    return f'{days} days rest'
 
 
 def _sum_pitches(logs):
@@ -209,28 +212,28 @@ def _evaluate_workload(inputs, thresholds):
         status = STATUS_MONITOR
 
     if pitches_yesterday >= thresholds.monitor_pitches_yesterday:
-        _add_reason(reasons, f'{pitches_yesterday} pitches yesterday')
+        _add_reason(reasons, pitch_count_reason(pitches_yesterday, 'yesterday'))
     if pitches_3 >= thresholds.monitor_pitches_last_3_days:
-        _add_reason(reasons, f'{pitches_3} pitches over last 3 days')
+        _add_reason(reasons, pitch_count_reason(pitches_3, '3 days'))
     if pitches_5 >= thresholds.limited_pitches_last_5_days:
-        _add_reason(reasons, f'{pitches_5} pitches over last 5 days')
+        _add_reason(reasons, pitch_count_reason(pitches_5, '5 days'))
     if apps_3 >= thresholds.limited_appearances_last_3_days:
-        _add_reason(reasons, f'{apps_3} appearances in last 3 days')
+        _add_reason(reasons, appearance_frequency_reason(apps_3, '3 days'))
     if apps_5 >= thresholds.monitor_appearances_last_5_days:
-        _add_reason(reasons, f'{apps_5} appearances in last 5 days')
+        _add_reason(reasons, appearance_frequency_reason(apps_5, '5 days'))
     if inputs['back_to_back']:
-        _add_reason(reasons, 'Back-to-back usage')
+        _add_reason(reasons, back_to_back_reason())
     if inputs['three_in_four']:
         _add_reason(reasons, '3 appearances in 4 days')
     if inputs['four_in_five']:
         _add_reason(reasons, '4 appearances in 5 days')
     if days_rest is not None and days_rest <= 1:
-        _add_reason(reasons, _format_days_rest(days_rest))
+        _add_reason(reasons, rest_reason(days_rest))
     if fatigue is not None and fatigue >= thresholds.monitor_fatigue_score:
-        _add_reason(reasons, f'Fatigue score {round(fatigue, 1)}')
+        _add_reason(reasons, fatigue_score_reason(fatigue))
 
     if status != STATUS_AVAILABLE and not reasons:
-        _add_reason(reasons, 'Workload restriction rule triggered')
+        _add_reason(reasons, WORKLOAD_FALLBACK_REASON)
 
     return status, reasons
 
@@ -275,8 +278,8 @@ def classify_availability(
             'availability_status': STATUS_MONITOR,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
-            'reasons': ['Missing workload history or fatigue score'],
-            'limitations': limitations + ['Availability is low confidence because workload inputs are missing'],
+            'reasons': [MISSING_WORKLOAD_REASON],
+            'limitations': limitations + [MISSING_WORKLOAD_LIMITATION],
             'inputs': inputs,
         }
 
@@ -284,13 +287,13 @@ def classify_availability(
         status, reasons = _evaluate_workload(inputs, thresholds)
         if status == STATUS_AVAILABLE:
             status = STATUS_MONITOR
-        _add_reason(reasons, 'Incomplete workload inputs')
+        _add_reason(reasons, INCOMPLETE_WORKLOAD_REASON)
         return {
             'availability_status': status,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
             'reasons': reasons,
-            'limitations': limitations + ['Some game-log workload fields are incomplete'],
+            'limitations': limitations + [INCOMPLETE_WORKLOAD_LIMITATION],
             'inputs': inputs,
         }
 
@@ -299,8 +302,8 @@ def classify_availability(
             'availability_status': STATUS_MONITOR,
             'confidence': CONFIDENCE_LOW,
             'data_state': data_state,
-            'reasons': [f'Latest game log is older than {active_window_days} days'],
-            'limitations': limitations + ['Stale data must not be treated as current availability'],
+            'reasons': [stale_workload_reason(active_window_days)],
+            'limitations': limitations + [STALE_WORKLOAD_LIMITATION],
             'inputs': inputs,
         }
 

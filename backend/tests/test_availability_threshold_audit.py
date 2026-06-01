@@ -27,7 +27,7 @@ def test_audit_summary_keeps_stale_monitor_separate_from_fresh_monitor():
             'Fresh Monitor',
             'Monitor',
             'fresh',
-            ['15 pitches yesterday', '1 day rest'],
+            ['15 pitches yesterday', 'Only 1 day of rest'],
             {
                 'fatigue_score': 42,
                 'pitches_yesterday': 15,
@@ -41,7 +41,7 @@ def test_audit_summary_keeps_stale_monitor_separate_from_fresh_monitor():
             'Stale Monitor',
             'Monitor',
             'stale',
-            ['Latest game log is older than 14 days'],
+            ['Latest workload data is outside the 14-day freshness window'],
             {
                 'fatigue_score': 72,
                 'pitches_yesterday': 0,
@@ -56,7 +56,7 @@ def test_audit_summary_keeps_stale_monitor_separate_from_fresh_monitor():
             'Avoid Workload',
             'Avoid',
             'fresh',
-            ['42 pitches yesterday', '4 appearances in last 5 days'],
+            ['42 pitches yesterday', '4 appearances in 5 days'],
             {
                 'fatigue_score': 79,
                 'pitches_yesterday': 42,
@@ -83,20 +83,20 @@ def test_audit_summary_keeps_stale_monitor_separate_from_fresh_monitor():
 def test_reason_frequencies_count_repeated_rule_reasons():
     records = [
         {
-            'reasons': ['1 day rest', '15 pitches yesterday'],
+            'reasons': ['Only 1 day of rest', '15 pitches yesterday'],
         },
         {
-            'reasons': ['1 day rest', 'Fatigue score 55'],
+            'reasons': ['Only 1 day of rest', 'Fatigue score is 55'],
         },
         {
-            'reasons': ['Fatigue score 55'],
+            'reasons': ['Fatigue score is 55'],
         },
     ]
 
     counts = reason_frequencies(records)
 
-    assert counts['1 day rest'] == 2
-    assert counts['Fatigue score 55'] == 2
+    assert counts['Only 1 day of rest'] == 2
+    assert counts['Fatigue score is 55'] == 2
     assert counts['15 pitches yesterday'] == 1
 
 

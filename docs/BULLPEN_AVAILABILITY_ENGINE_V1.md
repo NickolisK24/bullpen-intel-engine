@@ -144,7 +144,7 @@ from MLB Stats API game logs.
 - Appearances over the last 3 days.
 - Appearances over the last 5 days.
 - Days of rest.
-- Back-to-back usage.
+- Back-to-back appearances.
 - Three-in-four usage.
 - Four-in-five usage.
 - Last appearance date.
@@ -219,7 +219,7 @@ Current threshold references:
 | Pitches over last 5 days | n/a | >= 60 | >= 75 | >= 75 with 4+ appearances |
 | Appearances over last 3 days | n/a | >= 2 | >= 3 | n/a |
 | Appearances over last 5 days | >= 2 | >= 3 | >= 4 | >= 4 with 75+ pitches |
-| Back-to-back usage | Monitor or higher by context | Any back-to-back usage | Back-to-back plus 35+ pitches over 3 days | n/a |
+| Back-to-back appearances | Monitor or higher by context | Any back-to-back appearance sequence | Back-to-back plus 35+ pitches in 3 days | n/a |
 | Freshness | n/a | n/a | n/a | Stale data returns Monitor with low confidence, not a current workload label |
 
 These thresholds are intentionally conservative starting points. They are
@@ -364,7 +364,7 @@ The eventual API shape can change, but V1 should preserve these concepts:
   "reasons": [
     "29 pitches yesterday",
     "3 appearances in 4 days",
-    "Only 1 day rest"
+    "Only 1 day of rest"
   ],
   "limitations": [
     "No injury data available",
@@ -398,6 +398,58 @@ Recommended fields:
   snapshot.
 - `if_used_tonight`: optional future scenario showing how a hypothetical
   appearance would affect tomorrow's status.
+
+## Explanation Quality Standards
+
+Availability explanations must read as factual workload observations, not raw
+debug output or unsupported recommendations. The wording rules live in
+`backend/services/availability_explanations.py` so classifier output, tests, and
+audit reports share the same vocabulary.
+
+Reasons and limitations have different jobs:
+
+- Reasons describe deterministic workload or data-state facts that contributed
+  to the status.
+- Limitations describe context BaseballOS does not know, such as injury status,
+  team-reported availability, or whether stale data can be trusted as current.
+
+Reason wording should stay short, specific, and ordered by signal family:
+
+1. Pitch volume, such as `42 pitches yesterday`, `54 pitches in 3 days`, or
+   `75 pitches in 5 days`.
+2. Appearance frequency, such as `2 appearances in 3 days`,
+   `3 appearances in 4 days`, `4 appearances in 5 days`, or
+   `Back-to-back appearances`.
+3. Rest context, such as `No rest since last appearance` or
+   `Only 1 day of rest`.
+4. Fatigue context, such as `Fatigue score is 55.3`.
+5. Data-state context, such as
+   `Latest workload data is outside the 14-day freshness window`,
+   `Missing workload history or fatigue score`, or `Incomplete workload inputs`.
+
+Rules for explanation text:
+
+- Do not use black-box phrases when a concrete input is available.
+- Do not duplicate the same exact reason in one pitcher response.
+- Do not mix limitations into reasons.
+- Do not present stale or missing data as a workload-driven current status.
+- Do not imply injury, medical status, manager intent, or private clubhouse
+  availability.
+- Keep text stable enough that downstream UI tests can assert it directly.
+
+The repeatable explanation audit script is:
+
+```powershell
+cd backend
+python scripts/audit_availability_explanations.py
+```
+
+By default it writes `backend/reports/availability_explanation_audit.md`. The
+report lists the possible reason catalog, observed reason frequencies, observed
+limitation frequencies, and grouped reason categories for both current
+availability output and latest-workload snapshot output. It is allowed to guide
+wording cleanup and test coverage. It must not change thresholds, status
+outcomes, fatigue scoring, or API structure.
 
 ## Trust Rules
 
