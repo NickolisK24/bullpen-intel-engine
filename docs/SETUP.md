@@ -150,7 +150,35 @@ The one optional frontend variable lives in `frontend/.env`
 | `MLB_API_BASE` | backend | No | `https://statsapi.mlb.com/api/v1` | MLB Stats API base URL. The default is correct for everyone. |
 | `AUTO_SYNC` | backend | No | off | `1`/`true`/`yes` enables the in-process daily sync scheduler (06:00 ET). Leave off for dev/tests. |
 | `CORS_ORIGINS` | backend | No | (none) | Extra comma-separated allowed origins, added to the built-in localhost + Vercel demo origins. |
+| `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating the write endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`) via the `X-Admin-Token` header. Unset locally → those routes are allowed in development (with a warning). |
 | `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
+| `VITE_ADMIN_API_TOKEN` | frontend | No | (none) | Sends `X-Admin-Token` from the frontend for the operator "Recalculate" action. Usually unset — it ends up in the public bundle, so prefer curl for protected calls. |
+
+### Protected (operational) endpoints
+
+Two endpoints mutate data / trigger expensive MLB pulls and are gated by
+`ADMIN_API_TOKEN`:
+
+- `POST /api/bullpen/sync`
+- `POST /api/bullpen/fatigue/recalculate`
+
+All other endpoints are read-only `GET`s and stay public. Behavior:
+
+- **Token unset (development):** the protected routes are allowed (a warning is
+  logged) so local work isn't painful.
+- **Token set:** requests must include a matching `X-Admin-Token` header, or they
+  get `401 Unauthorized`.
+- **`APP_ENV=production`:** `ADMIN_API_TOKEN` is **required** — the app fails fast
+  at startup if it's missing, so production can't silently expose these routes.
+
+Call a protected endpoint manually:
+
+```bash
+curl -X POST http://localhost:5000/api/bullpen/sync \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: your-token-here" \
+  -d '{"days_back": 7}'
+```
 
 > Note: config is selected by `APP_ENV` (`development` by default, or `production`).
 > `development` enables debug and the safe local defaults; `production` disables
@@ -208,9 +236,10 @@ configured for one-command production deployment.
   deployed backend origin before building.
 - **Backend:** a standard Flask app. `gunicorn` is already in `requirements.txt`
   (e.g. `gunicorn app:app`). For a hosted environment set `APP_ENV=production`,
-  `SECRET_KEY` (a strong unique value), and `DATABASE_URL` (a hosted PostgreSQL
-  instance); the app fails fast at startup if those production requirements
-  aren't met. Run `flask db upgrade` against that database on deploy.
+  `SECRET_KEY` (a strong unique value), `DATABASE_URL` (a hosted PostgreSQL
+  instance), and `ADMIN_API_TOKEN` (gates the write endpoints); the app fails
+  fast at startup if any of those production requirements aren't met. Run
+  `flask db upgrade` against that database on deploy.
 - **Health check:** `GET /api/health` returns `{ status, environment, debug }`,
   so you can confirm a deploy is actually running `production` (debug `false`).
 - **Scheduler:** `AUTO_SYNC=true` starts an in-process APScheduler job (06:00

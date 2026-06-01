@@ -2,12 +2,17 @@ const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
 
+// Optional admin token for operational write endpoints (sync / recalculate).
+// Left unset for local dev (the backend allows those routes when its own
+// ADMIN_API_TOKEN is unset). Only set this for a build where you intend the
+// operator UI to drive a token-protected backend.
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_API_TOKEN
+
 async function request(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  if (ADMIN_TOKEN) headers['X-Admin-Token'] = ADMIN_TOKEN
   try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    })
+    const res = await fetch(`${BASE}${path}`, { ...options, headers })
     if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
     return await res.json()
   } catch (err) {

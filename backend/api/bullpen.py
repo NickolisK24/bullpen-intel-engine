@@ -12,6 +12,7 @@ from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
 from services.mlb_api import mlb_client
 from services import sync as sync_service
+from utils.auth import require_admin_token
 
 bullpen_bp = Blueprint('bullpen', __name__)
 
@@ -147,6 +148,7 @@ def get_pitcher_fatigue(pitcher_id):
 
 
 @bullpen_bp.route('/fatigue/recalculate', methods=['POST'])
+@require_admin_token
 def recalculate_fatigue():
     """
     Trigger fatigue recalculation for all pitchers.
@@ -196,6 +198,7 @@ def recalculate_fatigue():
 # ─── Sync (Live Data Refresh) ─────────────────────────────────────────────────
 
 @bullpen_bp.route('/sync', methods=['POST'])
+@require_admin_token
 def sync_recent_logs():
     """
     Pull the latest game logs from the MLB Stats API for the current season

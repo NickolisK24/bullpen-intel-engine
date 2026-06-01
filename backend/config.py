@@ -27,6 +27,9 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MLB_API_BASE = os.environ.get('MLB_API_BASE', 'https://statsapi.mlb.com/api/v1')
+    # Shared admin token gating operational write endpoints (sync / recalculate).
+    # Unset in development = those endpoints are allowed locally (with a warning).
+    ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN')
     DEBUG = False
     TESTING = False
 
@@ -59,6 +62,12 @@ class ProductionConfig(Config):
             raise RuntimeError(
                 'DATABASE_URL must be set when APP_ENV=production — refusing to '
                 'fall back to the localhost development database.'
+            )
+        if not app.config.get('ADMIN_API_TOKEN'):
+            raise RuntimeError(
+                'ADMIN_API_TOKEN must be set when APP_ENV=production so that '
+                'operational write endpoints (sync, recalculate) are not exposed '
+                'to anonymous callers.'
             )
 
 
