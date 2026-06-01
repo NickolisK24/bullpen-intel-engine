@@ -320,6 +320,20 @@ validation, regression fixtures, and later threshold review. It is not allowed
 to tune thresholds by itself, replace current-calendar freshness filtering, or
 hide stale/missing data states.
 
+### System-Level Availability Summary
+
+The dashboard overview response includes a current-mode
+`availability_summary` object that aggregates existing Availability Engine
+outputs across scored pitchers. It counts status, confidence, and data-state
+distributions and includes trust notes when stale, missing, or incomplete data
+limits current availability confidence.
+
+This summary is current availability only. It does not use latest-workload
+snapshot mode and must not turn historical validation output into public
+current availability. Dashboard presentation should make stale/missing-data
+dominance visible so users can distinguish a workload-heavy bullpen from a
+system that lacks fresh workload context.
+
 ## Explainability Contract
 
 Every status must be explainable by a small set of ordered reasons. Reasons are

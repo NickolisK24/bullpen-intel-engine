@@ -12,11 +12,13 @@ from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.availability_snapshot import (
+    CURRENT_AVAILABILITY_MODE,
     LATEST_WORKLOAD_SNAPSHOT_MODE,
     availability_mode_metadata,
     classify_latest_fatigue_rows,
-    latest_fatigue_rows as snapshot_latest_fatigue_rows,
+    latest_fatigue_rows as availability_latest_fatigue_rows,
 )
+from services.availability_summary import summarize_availability_records
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from utils.auth import require_admin_token
@@ -215,7 +217,7 @@ def get_latest_workload_snapshot():
     risk_level = request.args.get('risk_level')
     limit      = request.args.get('limit', 750, type=int)
 
-    rows = snapshot_latest_fatigue_rows(
+    rows = availability_latest_fatigue_rows(
         team_id=team_id,
         risk_level=risk_level,
         limit=limit,
@@ -548,19 +550,11 @@ def get_stats_overview():
     total_pitchers = Pitcher.query.filter_by(active=True).count()
     total_logs     = GameLog.query.count()
 
-    subq = (
-        db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc')
-        )
-        .group_by(FatigueScore.pitcher_id)
-        .subquery()
-    )
-    latest_scores = (
-        db.session.query(FatigueScore)
-        .join(subq, (FatigueScore.pitcher_id == subq.c.pitcher_id) &
-                    (FatigueScore.calculated_at == subq.c.max_calc))
-        .all()
+    latest_rows = availability_latest_fatigue_rows()
+    latest_scores = [score for score, _pitcher in latest_rows]
+    availability_records = classify_latest_fatigue_rows(
+        latest_rows,
+        mode=CURRENT_AVAILABILITY_MODE,
     )
 
     risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
@@ -579,6 +573,7 @@ def get_stats_overview():
         'risk_breakdown':    risk_breakdown,
         'avg_fatigue_score': round(float(avg_fatigue), 1),
         'scored_pitchers':   len(latest_scores),
+        'availability_summary': summarize_availability_records(availability_records),
     })
 
 

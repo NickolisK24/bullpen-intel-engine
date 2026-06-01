@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
 import SyncStatus from './SyncStatus'
 import FatigueInsightCard from './FatigueInsightCard'
+import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
 
 // Defined outside component so Tailwind scanner can see these classes
@@ -102,6 +103,8 @@ export default function Dashboard() {
           <StatCard label="Critical / High" value={`${overview.data?.risk_breakdown?.CRITICAL ?? 0} / ${overview.data?.risk_breakdown?.HIGH ?? 0}`} icon="🔥" delay={250} />
         </div>
       )}
+
+      <AvailabilityDashboardSummary summary={overview.data?.availability_summary} />
 
       {/* Risk breakdown bar */}
       {overview.data?.risk_breakdown && (
