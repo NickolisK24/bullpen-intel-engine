@@ -117,6 +117,13 @@ requirements, and no-ranking/no-selection metadata. The implemented route in
 `backend/api/recommendations.py` exposes one-candidate evaluation only and
 delegates policy behavior to `RecommendationEngine.recommend()`.
 
+The frontend display contract is documented in
+`docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`. That contract defines how
+future UI surfaces must display candidate-level output, visible trust and
+freshness indicators, explanations, limitations, refusal states, copy
+conventions, mobile behavior, accessibility, and no-ranking/no-selection
+metadata before UI implementation is authorized.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.
@@ -491,10 +498,12 @@ output and must not recalculate recommendations.
 
 Exit criteria:
 
-- display states are documented
+- display states are documented in
+  `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
 - refusal state has a first-class UI plan
 - limitations are visible with the recommendation
 - mobile and desktop layouts preserve readability
+- accessibility requirements are documented before UI work begins
 
 ### Stage 7: Governance And Regression Validation
 
