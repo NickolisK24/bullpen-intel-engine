@@ -80,12 +80,14 @@ export default function Dashboard() {
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
-              <SyncStatus />
             </div>
           </div>
           <div className="hidden sm:block absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
             <div className="font-display text-[120px] tracking-widest text-white leading-none select-none">⚾</div>
           </div>
+        </div>
+        <div className="mt-3">
+          <SyncStatus />
         </div>
       </div>
 
