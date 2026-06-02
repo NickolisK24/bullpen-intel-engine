@@ -45,6 +45,22 @@ This plan does not authorize:
 
 This document is implementation planning only.
 
+## Current Implementation Status
+
+The Stage 1 UI shell is implemented in
+`frontend/src/components/recommendations/RecommendationPanel.jsx`.
+
+The shell:
+
+- reserves visible sections for candidate status, category eligibility,
+  explanations, limitations, trust/freshness, refusal output, and metadata
+- displays no-ranking and no-selection metadata placeholders
+- uses safe candidate-level copy
+- has render tests in `frontend/tests/recommendationPanel.test.mjs`
+- does not call the live recommendation endpoint
+- does not add a route, navigation item, candidate selector, dashboard panel,
+  ranking, scoring, comparison, or final pitcher selection
+
 ## 3. Where The UI Should Live
 
 The future UI should live under the existing frontend application structure:
@@ -373,13 +389,16 @@ No UI test should assert ranking, score, comparison, or final selection fields.
 
 ## 18. Staged Implementation Sequence
 
-### Stage 1: View Model Helpers
+### Stage 1: UI Shell And View Model Boundaries
 
-Create testable helpers that map API response fields into display-ready labels
-without changing recommendation meaning.
+Create the initial presentational shell and any testable helpers needed to map
+API response fields into display-ready labels without changing recommendation
+meaning.
 
 Exit criteria:
 
+- shell reserves visible sections for status, categories, explanations,
+  limitations, trust/freshness, refusal output, and metadata
 - helpers preserve trust, freshness, explanations, limitations, categories,
   refusal, ranking, and selection fields
 - helpers reject or flag multi-candidate response assumptions

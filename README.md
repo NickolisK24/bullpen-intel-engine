@@ -139,17 +139,17 @@ Direction, not promises — these are where the platform is headed, not features
 today:
 
 - **Recommendation Engine V1** — backend foundation work, the candidate-level
-  API route, and the frontend API client foundation are staged for
+  API route, the frontend API client foundation, and the UI shell are staged for
   candidate-level decision support while keeping recommendation wording bounded
-  by public workload data and explicit limitations. Final ranking,
-  multi-candidate selection, and UI remain future work. See
+  by public workload data and explicit limitations. Live UI integration, final
+  ranking, and multi-candidate selection remain future work. See
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
   The candidate-level API and frontend display contracts are documented, and
   the client calls the one-candidate route without exposing ranking or final
-  selection. UI implementation planning is documented separately before any
-  display work begins.
+  selection. UI implementation planning is documented separately, and the shell
+  reserves display boundaries without calling the live endpoint.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -180,7 +180,7 @@ bullpen-intel-engine/
 ├── frontend/                    # React + Vite app
 │   ├── .env.example             # Frontend env template
 │   └── src/
-│       ├── components/          # dashboard · bullpen · prospects · methodology · UI
+│       ├── components/          # dashboard · bullpen · prospects · methodology · recommendations · UI
 │       ├── hooks/
 │       └── utils/               # API client, formatters, shared fatigue-model definitions
 └── docs/
@@ -292,7 +292,7 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   required trust and freshness visibility, refusal states, safe copy,
   accessibility, and no-ranking/no-selection guarantees.
 - [`docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md)
-  - staged UI implementation plan for future candidate-level display
+  - staged UI implementation plan for candidate-level display
   architecture, component boundaries, trust and freshness visibility,
   refusal states, mobile/accessibility expectations, testing, and guardrails.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
@@ -311,9 +311,9 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 Recommendation Engine V1 is progressing in staged backend foundation work:
 policy, implementation planning, candidate-level engine integration, API
 contract documentation, frontend display contract documentation, and candidate
-route exposure are present. A frontend API client foundation is present for
-one-candidate evaluation only. UI implementation planning is documented, but UI
-build work, final ranking, and multi-candidate selection remain future work.
+route exposure are present. A frontend API client foundation and UI shell are
+present for one-candidate evaluation only. Live UI integration, final ranking,
+and multi-candidate selection remain future work.
 Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
