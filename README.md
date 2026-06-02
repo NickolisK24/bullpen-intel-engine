@@ -148,7 +148,8 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
   The candidate-level API and frontend display contracts are documented, and
   the client calls the one-candidate route without exposing ranking or final
-  selection.
+  selection. UI implementation planning is documented separately before any
+  display work begins.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -187,6 +188,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V1_POLICY.md
     ├── RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md
     ├── RECOMMENDATION_ENGINE_V1_API_CONTRACT.md
+    ├── RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -289,6 +291,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   - frontend display contract for future candidate-level UI presentation,
   required trust and freshness visibility, refusal states, safe copy,
   accessibility, and no-ranking/no-selection guarantees.
+- [`docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md)
+  - staged UI implementation plan for future candidate-level display
+  architecture, component boundaries, trust and freshness visibility,
+  refusal states, mobile/accessibility expectations, testing, and guardrails.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
@@ -306,8 +312,9 @@ Recommendation Engine V1 is progressing in staged backend foundation work:
 policy, implementation planning, candidate-level engine integration, API
 contract documentation, frontend display contract documentation, and candidate
 route exposure are present. A frontend API client foundation is present for
-one-candidate evaluation only. Final ranking, multi-candidate selection, and UI
-remain future work. Beyond that, see **Product Direction** above: usage
+one-candidate evaluation only. UI implementation planning is documented, but UI
+build work, final ranking, and multi-candidate selection remain future work.
+Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
 real.

@@ -220,8 +220,9 @@ status, or manager intent.
   not implemented yet. The backend foundation contracts, eligibility gates,
   category eligibility assignment, builder, single-candidate engine pipeline,
   API contract, frontend display contract, candidate-level API route, and
-  frontend API client foundation are present. Final ranking and selection remain
-  future work.
+  frontend API client foundation are present. UI implementation planning is
+  documented, but UI build work, final ranking, and selection remain future
+  work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -265,9 +266,14 @@ The frontend display contract for future candidate-level UI is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
 
+The future UI implementation plan is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`
+
 The implemented candidate-level route evaluates one candidate at a time and
 must preserve no-ranking/no-selection metadata. The frontend API client calls
-that route for one-candidate evaluation only and does not implement UI. This
-project state document does not authorize further Recommendation Engine API
-exposure, frontend UI, multi-candidate ranking, scoring, or final pitcher
-selection.
+that route for one-candidate evaluation only and does not implement UI. The UI
+plan defines future display architecture and guardrails without authorizing
+frontend build work. This project state document does not authorize further
+Recommendation Engine API exposure, frontend UI, multi-candidate ranking,
+scoring, or final pitcher selection.
