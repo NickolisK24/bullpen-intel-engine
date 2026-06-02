@@ -81,6 +81,34 @@ test('renders sync metadata unavailable with data-through date', () => {
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
 })
 
+test('renders successful sync without a data-through date', () => {
+  const data = {
+    status: 'success',
+    last_sync: '2026-06-01T21:39:12',
+    last_successful_sync: '2026-06-01T21:39:56',
+    pitchers_updated: 0,
+    data: {
+      game_logs: 0,
+      latest_game_date: null,
+      latest_workload_date: null,
+      latest_fatigue_calculated_at: null,
+    },
+    freshness: {
+      is_current: false,
+      label: 'No baseball workload data loaded.',
+      limitations: ['No game logs are available.'],
+    },
+  }
+
+  const html = renderToStaticMarkup(
+    React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
+  )
+
+  assert.ok(htmlIncludes(html, 'Synced:'))
+  assert.ok(htmlIncludes(html, 'June 1, 2026'))
+  assert.equal(htmlIncludes(html, 'Data Through:'), false)
+})
+
 test('renders failed sync while preserving data-through date', () => {
   const data = {
     status: 'failed',
