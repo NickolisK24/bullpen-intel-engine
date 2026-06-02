@@ -89,6 +89,12 @@ explainable exclusion and caution reasons; and keeps positive-pool eligibility
 separate from cautionary or avoidance contexts. It still does not select, rank,
 or recommend a pitcher.
 
+The category assignment layer in `backend/recommendation/categories.py` maps
+already-gated candidates into policy-approved category eligibility. It can mark
+categories as assigned or blocked with explanations and limitations, but it does
+not choose a final pitcher, rank candidates, or decide which eligible candidate
+is best.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.

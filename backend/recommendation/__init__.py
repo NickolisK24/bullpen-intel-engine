@@ -16,6 +16,11 @@ from recommendation.contracts import (
     RecommendationRefusal,
     RecommendationRequest,
 )
+from recommendation.categories import (
+    RecommendationCategoryAssignment,
+    RecommendationCategoryBlock,
+    assign_recommendation_categories,
+)
 from recommendation.engine import RecommendationEngine
 from recommendation.enums import (
     RecommendationCandidatePool,
@@ -42,6 +47,8 @@ __all__ = [
     'RecommendationCandidate',
     'RecommendationCandidatePool',
     'RecommendationCategory',
+    'RecommendationCategoryAssignment',
+    'RecommendationCategoryBlock',
     'RecommendationConfidence',
     'RecommendationConfidenceContext',
     'RecommendationEngine',
@@ -55,6 +62,7 @@ __all__ = [
     'RecommendationRequest',
     'RecommendationResult',
     'RefusalReason',
+    'assign_recommendation_categories',
     'evaluate_candidate_gates',
     'evaluate_candidate_pool',
     'is_valid_recommendation_result',
