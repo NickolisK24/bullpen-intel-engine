@@ -284,6 +284,19 @@ Investigate why Unavailable is more common than Avoid in latest-workload
 snapshot output and whether that reflects valid workload severity or threshold
 compression.
 
+An initial experiment is documented in
+`backend/reports/availability_unavailable_threshold_experiment.md`. It compares
+baseline Unavailable rules against one-variable candidate adjustments and a
+separate multi-signal gate. The report recommendation is `Needs more data`.
+Candidate C, raising the 3-day Unavailable pitch threshold from 80 to 90, is the
+only one-variable candidate in that report that materially changes the
+Unavailable bucket. It moves 57 pitchers from Unavailable to Avoid in
+latest-workload snapshot mode.
+
+This experiment is not production approval. Any candidate threshold still
+requires human review, near-boundary example review, and a production tuning
+branch before adoption.
+
 ### Confidence Assignment Review
 
 Investigate whether confidence should distinguish missing workload history,
