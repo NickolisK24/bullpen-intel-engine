@@ -86,7 +86,8 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
-| Recommendation Engine | ✓ Complete / Certified |
+| Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V2 Strategy | Scope Definition Active |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -143,12 +144,15 @@ Direction, not promises — these are where the platform is headed, not features
 today:
 
 - **Recommendation Engine V2 boundary** — future recommendation work may explore
-  bullpen-level intelligence, multi-candidate comparison, team-level stress
-  intelligence, prioritization, and advanced decision-support layers. Those
-  capabilities are outside the completed Recommendation Engine V1 certification.
-  V1 is production-ready for candidate-level evaluation only.
+  bullpen-level intelligence, grouped eligibility reporting, team-level stress
+  intelligence, readiness visibility, prioritization without ranking, and
+  broader explainability. Those capabilities are outside the completed
+  Recommendation Engine V1 certification. V1 is production-ready for
+  candidate-level evaluation only.
   See
-  [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md)
+  and
+  [`docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`](docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -190,6 +194,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md
     ├── RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md
     ├── RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md
+    ├── RECOMMENDATION_ENGINE_V2_STRATEGY.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -280,6 +285,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — official V1 completion certification documenting completed capabilities,
   certified behaviors, trust guarantees, production readiness, and future
   expansion boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`](docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md)
+  — official V2 strategy and scope-definition foundation for future
+  bullpen-level and team-level recommendation planning without ranking,
+  automated selection, or behavior changes.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -322,12 +331,13 @@ candidate-level evaluation in the pitcher detail workflow. It preserves visible
 confidence, freshness, availability, explanations, limitations, refusal
 reasons, `ranking_applied=false`, and `selection_made=false`.
 
-Future recommendation expansion belongs in Recommendation Engine V2 or later:
-bullpen-level intelligence, multi-candidate comparison, team-level stress
-intelligence, prioritization, and advanced decision-support layers. Beyond
-that, see **Product Direction** above: usage simulation, role-aware fatigue,
-exports/API, and real prospect ingestion - pursued in honest order, with
-prototype features labeled as such until they're real.
+Recommendation Engine V2 is entering strategy and scope definition. Future
+recommendation expansion may explore bullpen-level intelligence, team-level
+stress intelligence, grouped eligibility reporting, readiness visibility, and
+broader explainability while preserving V1 trust protections. Beyond that, see
+**Product Direction** above: usage simulation, role-aware fatigue, exports/API,
+and real prospect ingestion - pursued in honest order, with prototype features
+labeled as such until they're real.
 
 ## Author
 

@@ -131,7 +131,8 @@ It does not rank the bullpen or select the final pitcher.
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
-| Recommendation Engine | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V2 Strategy | Scope Definition Active |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -247,11 +248,11 @@ status, or manager intent.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
 - Recommendation Engine V1 is complete, certified, and production-ready for
-  candidate-level evaluation only. Bullpen ranking, multi-candidate comparison,
-  final pitcher selection, performance forecasting, injury prediction, save
+  candidate-level evaluation only. Bullpen ranking, pitcher ordering, final
+  pitcher selection, performance forecasting, injury prediction, save
   prediction, matchup guidance, and black-box or generated baseball opinions
-  remain outside V1 and belong to future Recommendation Engine V2 or later
-  work.
+  remain outside V1. V2 strategy and scope-definition work may explore grouped
+  bullpen and team-level visibility without ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -313,6 +314,26 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
+## Recommendation Engine V2 Strategy Milestone
+
+Recommendation Engine V2 is entering a strategy and scope-definition phase.
+This is a governance and planning milestone only.
+
+The official strategy foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
+
+V2 planning may explore bullpen-level intelligence, bullpen inventory
+visibility, bullpen stress awareness, leverage resource visibility, workload
+distribution visibility, grouped eligibility reporting, bullpen readiness
+reporting, and broader recommendation explainability.
+
+This milestone does not authorize pitcher rankings, pitcher ordering,
+automated pitcher selection, game outcome prediction, injury prediction, save
+prediction, performance forecasting, opaque recommendation scores, unsupported
+baseball opinions, Recommendation Engine API changes, frontend behavior
+changes, or new recommendation logic.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -320,12 +341,15 @@ Future recommendation work belongs in Recommendation Engine V2 or later.
 Possible future expansion areas include:
 
 - bullpen-level intelligence
-- multi-candidate comparison
 - team-level stress intelligence
-- recommendation prioritization
+- bullpen inventory visibility
+- grouped eligibility reporting
+- bullpen readiness reporting
+- prioritization without ranking
 - advanced decision-support layers
 - role-aware recommendation behavior
 - simulator integration
 
 This project state document does not authorize further Recommendation Engine
-API exposure, multi-candidate ranking, scoring, or final pitcher selection.
+API exposure, pitcher ranking, pitcher ordering, scoring, or final pitcher
+selection.
