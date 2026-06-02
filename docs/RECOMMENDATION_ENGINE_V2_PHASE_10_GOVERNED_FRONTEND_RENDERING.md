@@ -12,6 +12,11 @@ desktop readability fix in:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`
 
+Phase 10B Bullpen Selected Pitcher Layout Remediation is also complete and
+documents the selected-pitcher detail readability fix in:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
+
 The rendered endpoint source remains:
 
 ```text
@@ -68,6 +73,12 @@ The panel now uses container-aware layout classes so internal sections respond
 to the panel width rather than the browser width. This preserves readable
 metadata cards and avoids word-by-word wrapping in constrained desktop
 columns.
+
+Phase 10B applies the same container-aware readability principle to the
+Bullpen selected-pitcher detail surface and embedded recommendation trust
+panel. The Bullpen layout remediation changes presentation only and does not
+change backend behavior, API behavior, recommendation logic, or Recommendation
+Engine V1 behavior.
 
 ## Fail-Closed and Unavailable Behavior
 
@@ -152,8 +163,8 @@ selection_made = false
 ## Phase 11 Readiness Boundary
 
 Future V2 Phase 11 work should validate mobile and accessibility behavior for
-the governed V2 rendering layer after the completed Phase 10A desktop layout
-remediation.
+the governed V2 rendering layer after the completed Phase 10A and Phase 10B
+layout remediations.
 
 Phase 11 should preserve trust, freshness, refusal, limitation, explanation,
 no-ranking, and no-selection guarantees across mobile layout and assistive

@@ -25,6 +25,14 @@ freshness, refusal, explanation, limitation, inventory, and team-context
 sections remain readable when the panel is rendered inside constrained desktop
 layouts.
 
+Recommendation Engine V2 Phase 10B now remediates the Bullpen selected-pitcher
+detail layout. The selected-pitcher detail surface avoids the cramped fixed
+desktop split that squeezed the pitcher card and embedded recommendation trust
+surface on common desktop widths. This remediation changes layout only and
+does not change backend behavior, API behavior, recommendation logic, ranking
+behavior, selection behavior, prediction behavior, or Recommendation Engine V1
+behavior.
+
 The V2 frontend contract must preserve:
 
 ```text
@@ -134,6 +142,10 @@ bullpen-state details when the contract state is unavailable.
 Phase 10A preserves that behavior while improving desktop readability. It does
 not change the client contract, backend API, V2 response semantics, or
 Recommendation Engine V1 behavior.
+
+Phase 10B preserves V1 and V2 behavior while improving Bullpen selected-pitcher
+detail readability. It does not change the client contract, backend API, V2
+response semantics, or Recommendation Engine V1 behavior.
 
 ## 7. Frontend Contract Goals
 
@@ -662,6 +674,7 @@ V2 frontend rendering implementation must not begin until:
 
 Phase 9 satisfies the approved API-client integration gate. Phase 10 satisfies
 the approved governed frontend rendering gate. Phase 10A satisfies the desktop
-layout remediation gate for the governed V2 panel. This document does not
+layout remediation gate for the governed V2 panel. Phase 10B satisfies the
+Bullpen selected-pitcher layout remediation gate. This document does not
 authorize additional frontend rendering behavior changes, backend behavior
 changes, API behavior changes, or Recommendation Engine V1 behavior changes.

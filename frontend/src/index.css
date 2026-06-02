@@ -89,6 +89,50 @@
     word-break: normal;
   }
 
+  /* Bullpen selected-pitcher recommendation detail
+     Keeps metadata readable when the detail card is rendered as a constrained
+     right rail instead of a full-page panel. */
+  .recommendation-detail-panel,
+  .recommendation-panel {
+    container-type: inline-size;
+  }
+  .recommendation-detail-panel__trust-grid,
+  .recommendation-panel__layout,
+  .recommendation-panel__trust-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recommendation-detail-panel__header {
+    flex-direction: column;
+  }
+  @container (min-width: 42rem) {
+    .recommendation-detail-panel__header {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .recommendation-detail-panel__trust-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .recommendation-panel__trust-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 76rem) {
+    .recommendation-panel__layout {
+      grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.8fr);
+    }
+    .recommendation-panel__trust-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .recommendation-detail-panel__text,
+  .recommendation-panel__text {
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
   /* ── Stat Chip ── */
   .stat-chip {
     @apply bg-chalk border border-dirt rounded px-2 py-1 font-mono text-xs text-chalk200;

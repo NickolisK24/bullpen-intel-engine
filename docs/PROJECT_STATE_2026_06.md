@@ -151,6 +151,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
 | Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
 | Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
+| Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -347,7 +348,8 @@ backend-only team bullpen context work, Phase 6 backend-only trust metadata
 integration work, and Phase 7 backend-only refusal/fail-closed integration
 work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
 client integration work, Phase 10 governed frontend rendering work, and Phase
-10A desktop layout remediation work.
+10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
+layout remediation work.
 
 The official strategy foundation is:
 
@@ -425,6 +427,10 @@ The Phase 10A completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`
 
+The Phase 10B completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -480,7 +486,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 10A.
+phases after Phase 10B.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -727,6 +733,33 @@ The Phase 10A remediation does not introduce ranking UI, selection UI,
 prediction UI, best/preferred/recommended pitcher UI, backend V2 behavior
 changes, new backend routes, or changes to Recommendation Engine V1.
 
+Recommendation Engine V2 Phase 10B remediates the Bullpen selected-pitcher
+detail layout.
+
+The Phase 10B remediation updates:
+
+- `frontend/src/components/bullpen/Bullpen.jsx`
+- `frontend/src/components/bullpen/PitcherDetail.jsx`
+- `frontend/src/components/recommendations/RecommendationPitcherDetailSection.jsx`
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+The Bullpen selected-pitcher layout now avoids the cramped fixed desktop split
+that squeezed the detail card and recommendation trust surface on common
+desktop widths. The selected-pitcher detail surface remains full width in
+constrained desktop layouts and becomes a readable fixed-width rail only on
+wider desktop screens.
+
+The embedded recommendation detail surface now uses container-aware internal
+grids and text wrapping safeguards so trust, freshness, refusal, explanation,
+limitation, and metadata sections remain readable inside the selected-pitcher
+detail card.
+
+The Phase 10B remediation does not introduce ranking UI, selection UI,
+prediction UI, best/preferred/recommended pitcher UI, backend V2 behavior
+changes, new backend routes, or changes to Recommendation Engine V1.
+
 The active V1 and V2 governance guarantees remain:
 
 ```text
@@ -752,5 +785,6 @@ Possible future expansion areas include:
 
 This project state document does not authorize further Recommendation Engine
 API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
-surfaces beyond the governed Phase 10 rendering layer, pitcher ranking,
-pitcher ordering, scoring, or final pitcher selection.
+surfaces beyond the governed Phase 10 rendering layer and Phase 10B Bullpen
+selected-pitcher layout remediation, pitcher ranking, pitcher ordering,
+scoring, or final pitcher selection.

@@ -852,7 +852,8 @@ Render V2 output in governance-safe UI patterns.
 **Phase 10 completion status**
 
 Recommendation Engine V2 Phase 10 is complete as a governed frontend
-rendering layer, with Phase 10A desktop layout remediation complete.
+rendering layer, with Phase 10A desktop layout remediation and Phase 10B
+Bullpen selected-pitcher layout remediation complete.
 
 The governed rendering paths are:
 
@@ -873,6 +874,7 @@ Completion record:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
 
 Phase 10A remediates the desktop layout defect in the governed V2 panel by
 using container-aware internal grids and readability safeguards for trust,
@@ -880,6 +882,13 @@ freshness, inventory, team-context, limitation, explanation, refusal, and
 fail-closed sections. It does not change backend behavior, API behavior,
 ranking behavior, selection behavior, prediction behavior, or Recommendation
 Engine V1 behavior.
+
+Phase 10B remediates the Bullpen selected-pitcher detail layout by removing
+the cramped fixed desktop split, preserving full-width detail readability at
+constrained desktop widths, and applying container-aware grids to the embedded
+recommendation trust surface. It does not change backend behavior, API
+behavior, ranking behavior, selection behavior, prediction behavior, or
+Recommendation Engine V1 behavior.
 
 ## 18. Phase 11: Mobile and Accessibility Validation
 
@@ -905,6 +914,7 @@ Verify mobile and accessibility behavior preserves governance guarantees.
 **Dependencies**
 
 - Phase 10 frontend rendering implementation.
+- Phase 10A and Phase 10B layout remediations.
 
 **Required tests**
 
@@ -1297,4 +1307,4 @@ Recommendation Engine V2 Phase 11 Mobile and Accessibility Validation
 
 This milestone may begin only after the user explicitly approves
 implementation. Phase 11 remains governed by the approved V2 frontend contract
-and must preserve all Phase 1 through Phase 10A safeguards.
+and must preserve all Phase 1 through Phase 10B safeguards.

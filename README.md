@@ -106,6 +106,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
 | Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
 | Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
+| Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -176,8 +177,10 @@ today:
   limitation, explanation, refusal, fail-closed, inventory, team-context, and
   neutral group information. Phase 10A remediates the desktop layout defect in
   that governed panel so metadata, refusal, explanation, inventory, and
-  context sections remain readable on common desktop widths. No ranking UI,
-  final pitcher choice UI, or prediction UI is implemented. Those capabilities
+  context sections remain readable on common desktop widths. Phase 10B
+  remediates the Bullpen selected-pitcher detail layout so the pitcher card and
+  recommendation trust surface remain readable on common desktop widths. No
+  ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
   See
@@ -212,7 +215,9 @@ today:
   and the completed Phase 10 record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md),
   and the completed Phase 10A record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md),
+  and the completed Phase 10B record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -437,6 +442,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2 Phase 10A record for desktop layout remediation of the
   governed V2 panel, container-aware metadata grids, readability preservation,
   governance compliance, and V1 preservation.
+- [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md)
+  — completed V2 Phase 10B record for Bullpen selected-pitcher layout
+  remediation, readable detail and recommendation trust surfaces, governance
+  compliance, and V1 preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -489,7 +498,8 @@ layer, the Phase 6 backend-only trust metadata integration layer, and the
 Phase 7 backend-only refusal/fail-closed integration layer, and the Phase 8
 backend-only API contract exposure layer, and the Phase 9 frontend client
 integration layer, and the Phase 10 governed frontend rendering layer
-complete, with Phase 10A desktop layout remediation complete.
+complete, with Phase 10A desktop layout remediation and Phase 10B Bullpen
+selected-pitcher layout remediation complete.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
 intelligence, readiness visibility, mobile/accessibility certification, and

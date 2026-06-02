@@ -52,7 +52,7 @@ export default function Bullpen() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+    <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
         title="Bullpen"
         subtitle="Relief pitcher fatigue scoring engine"
@@ -251,9 +251,9 @@ function PitcherView({
         ))}
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
         {/* Main table */}
-        <div className={`flex-1 card overflow-hidden transition-all duration-300 ${selectedPitcher ? 'lg:flex-none lg:w-[60%]' : ''}`}>
+        <div className="min-w-0 flex-1 card overflow-hidden transition-all duration-300">
           {allScores.loading ? (
             <LoadingPane message="Loading fatigue data..." />
           ) : allScores.error ? (
@@ -318,7 +318,7 @@ function PitcherView({
             so selecting a pitcher always reveals the detail (it was hidden
             below the lg breakpoint before). PitcherDetail's header ✕ closes it. */}
         {selectedPitcher && (
-          <div className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 lg:static lg:inset-auto lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0 lg:block lg:w-[38%] lg:shrink-0">
+          <div className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 lg:static lg:inset-auto lg:z-auto lg:w-full lg:max-w-none lg:overflow-visible lg:bg-transparent lg:p-0 2xl:w-[36rem] 2xl:shrink-0">
             <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={() => setSelected(null)} />
           </div>
         )}

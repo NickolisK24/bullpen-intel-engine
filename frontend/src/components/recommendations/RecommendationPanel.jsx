@@ -236,7 +236,7 @@ export function getRecommendationPanelView({
 
 function FieldBadge({ label, value }) {
   return (
-    <div className="rounded border border-dirt bg-chalk/30 px-3 py-2">
+    <div className="recommendation-panel__text min-w-0 rounded border border-dirt bg-chalk/30 px-3 py-2">
       <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{label}</div>
       <div className="mt-1 text-sm font-semibold text-chalk100">{value}</div>
     </div>
@@ -247,11 +247,11 @@ function SectionCard({ title, children }) {
   const id = `${title.replace(/\s+/g, '-').toLowerCase()}-heading`
 
   return (
-    <section className="rounded border border-dirt bg-field/40 p-4" aria-labelledby={id}>
+    <section className="min-w-0 rounded border border-dirt bg-field/40 p-4" aria-labelledby={id}>
       <h3 id={id} className="font-mono text-xs uppercase tracking-widest text-chalk400">
         {title}
       </h3>
-      <div className="mt-3 text-sm leading-relaxed text-chalk200">{children}</div>
+      <div className="recommendation-panel__text mt-3 text-sm leading-relaxed text-chalk200">{children}</div>
     </section>
   )
 }
@@ -262,7 +262,7 @@ function TextList({ items, fallback }) {
   return (
     <ul className="space-y-2">
       {values.map((item) => (
-        <li key={item} className="rounded border border-dirt bg-chalk/20 px-3 py-2">
+        <li key={item} className="recommendation-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2">
           {item}
         </li>
       ))}
@@ -273,16 +273,16 @@ function TextList({ items, fallback }) {
 function CategoryList({ items, fallback }) {
   if (!Array.isArray(items) || items.length === 0) {
     return (
-      <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk400">
+      <div className="recommendation-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk400">
         {fallback}
       </div>
     )
   }
 
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 gap-2">
       {items.map((item) => (
-        <div key={`${item.label}-${item.reason || 'none'}`} className="rounded border border-dirt bg-chalk/20 px-3 py-2">
+        <div key={`${item.label}-${item.reason || 'none'}`} className="recommendation-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2">
           <div className="font-mono text-xs text-chalk100">{item.label}</div>
           {item.reason && <div className="mt-1 text-xs text-chalk500">{item.reason}</div>}
         </div>
@@ -320,7 +320,7 @@ function StatusContent({ view, error, onRetry }) {
 
   return (
     <div
-      className={`rounded border px-4 py-3 ${toneClass}`}
+      className={`recommendation-panel__text rounded border px-4 py-3 ${toneClass}`}
       data-recommendation-state={view.mode}
       role={view.mode === 'refusal' ? 'alert' : 'status'}
       aria-live="polite"
@@ -329,13 +329,13 @@ function StatusContent({ view, error, onRetry }) {
       <div className="mt-1 text-lg font-semibold text-chalk100">{view.statusLabel}</div>
       <div className="mt-1 text-chalk400">{view.statusDetail}</div>
       {view.mode === 'refusal' && (
-        <div className="mt-3 rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk200">
+        <div className="recommendation-panel__text mt-3 rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk200">
           <span className="sr-only">Refusal Reason: </span>
           {view.refusalReason}
         </div>
       )}
       {view.mode === 'caution' && (
-        <div className="mt-3 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-chalk200">
+        <div className="recommendation-panel__text mt-3 rounded border border-amber/30 bg-amber/5 px-3 py-2 text-chalk200">
           Caution reasons are shown in explanations and limitations below.
         </div>
       )}
@@ -365,8 +365,8 @@ export default function RecommendationPanel({
     model,
   })
   const wrapperClass = variant === 'embedded'
-    ? 'space-y-4'
-    : 'card p-5 lg:p-6'
+    ? 'recommendation-panel min-w-0 space-y-4'
+    : 'recommendation-panel min-w-0 card p-5 lg:p-6'
 
   return (
     <article
@@ -384,15 +384,15 @@ export default function RecommendationPanel({
               trust-first response state without ranking the bullpen or selecting a final pitcher.
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[22rem]">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:min-w-[22rem]">
             <FieldBadge label="Ranking" value="No Bullpen Ranking Applied" />
             <FieldBadge label="Selection" value="No Final Pitcher Selection Made" />
           </div>
         </header>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
-        <div className="space-y-4">
+      <div className="recommendation-panel__layout gap-4">
+        <div className="min-w-0 space-y-4">
           <SectionCard title="Recommendation Status">
             <StatusContent view={view} error={error} onRetry={onRetry} />
           </SectionCard>
@@ -429,9 +429,9 @@ export default function RecommendationPanel({
           </SectionCard>
         </div>
 
-        <aside className="space-y-4">
+        <aside className="min-w-0 space-y-4">
           <SectionCard title="Trust And Freshness">
-            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="recommendation-panel__trust-grid gap-3">
               <FieldBadge label="Confidence" value={view.trust.confidence} />
               <FieldBadge label="Data Freshness" value={view.trust.freshness} />
               <FieldBadge label="Availability" value={view.trust.availability} />
@@ -439,18 +439,18 @@ export default function RecommendationPanel({
           </SectionCard>
 
           <SectionCard title="Refusal Reason">
-            <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk300">
+            <div className="recommendation-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk300">
               {view.refusalReason}
             </div>
           </SectionCard>
 
           <SectionCard title="Metadata">
-            <dl className="grid gap-3">
-              <div className="flex items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
+            <dl className="grid min-w-0 gap-3">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
                 <dt className="font-mono text-xs text-chalk500">ranking_applied</dt>
                 <dd className="font-mono text-sm font-semibold text-chalk100">{String(view.metadata.rankingApplied)}</dd>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
                 <dt className="font-mono text-xs text-chalk500">selection_made</dt>
                 <dd className="font-mono text-sm font-semibold text-chalk100">{String(view.metadata.selectionMade)}</dd>
               </div>

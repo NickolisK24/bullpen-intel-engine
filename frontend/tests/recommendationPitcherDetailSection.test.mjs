@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -299,13 +300,37 @@ test('RecommendationPitcherDetailSection keeps trust, freshness, availability, a
 test('RecommendationPitcherDetailSection preserves mobile-safe layout structure', () => {
   const html = renderSection({ initialState: { response: successResponse } })
 
-  assert.ok(htmlIncludes(html, 'grid-cols-1'))
-  assert.ok(htmlIncludes(html, 'sm:grid-cols-2'))
-  assert.ok(htmlIncludes(html, 'sm:grid-cols-3'))
-  assert.ok(htmlIncludes(html, 'xl:grid-cols-1'))
+  assert.ok(htmlIncludes(html, 'recommendation-detail-panel'))
+  assert.ok(htmlIncludes(html, 'recommendation-detail-panel__trust-grid'))
+  assert.ok(htmlIncludes(html, 'recommendation-panel'))
+  assert.ok(htmlIncludes(html, 'recommendation-panel__layout'))
+  assert.ok(htmlIncludes(html, 'recommendation-panel__trust-grid'))
+  assert.ok(htmlIncludes(html, 'min-w-0'))
   assert.ok(htmlIncludes(html, 'min-h-10'))
   assert.ok(htmlIncludes(html, 'w-full'))
   assert.ok(htmlIncludes(html, 'sm:w-auto'))
+})
+
+test('Bullpen selected-pitcher layout uses readable panel widths instead of cramped fixed splits', async () => {
+  const [bullpenSource, panelSource, cssSource] = await Promise.all([
+    readFile(new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/recommendations/RecommendationPanel.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/index.css', import.meta.url), 'utf8'),
+  ])
+
+  assert.ok(bullpenSource.includes('2xl:flex-row'))
+  assert.ok(bullpenSource.includes('max-w-[100rem]'))
+  assert.ok(bullpenSource.includes('lg:w-full'))
+  assert.ok(bullpenSource.includes('2xl:w-[36rem]'))
+  assert.ok(!bullpenSource.includes('lg:w-[60%]'))
+  assert.ok(!bullpenSource.includes('lg:w-[38%]'))
+  assert.ok(panelSource.includes('recommendation-panel__layout'))
+  assert.ok(panelSource.includes('recommendation-panel__trust-grid'))
+  assert.ok(!panelSource.includes('xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]'))
+  assert.ok(!panelSource.includes('xl:grid-cols-1'))
+  assert.ok(cssSource.includes('.recommendation-detail-panel'))
+  assert.ok(cssSource.includes('@container (min-width: 42rem)'))
+  assert.ok(cssSource.includes('@container (min-width: 76rem)'))
 })
 
 test('RecommendationPitcherDetailSection keeps prohibited copy out of rendered states', () => {

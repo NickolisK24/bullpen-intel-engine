@@ -68,13 +68,13 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     .sort((a, b) => new Date(a.iso) - new Date(b.iso))
 
   return (
-    <div className="card sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
+    <div className="card sticky top-6 w-full min-w-0 max-w-full max-h-[calc(100vh-3rem)] overflow-y-auto">
       {/* Header */}
-      <div className="card-header">
-        <div>
+      <div className="card-header gap-3">
+        <div className="min-w-0">
           <div className="text-chalk400 font-mono text-xs mb-1">{pitcher?.team_name}</div>
-          <div className="font-display text-2xl tracking-wider text-chalk100">{pitcher?.full_name}</div>
-          <div className="flex gap-3 mt-1 font-mono text-xs text-chalk400">
+          <div className="font-display text-2xl tracking-wider text-chalk100 break-words">{pitcher?.full_name}</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 font-mono text-xs text-chalk400">
             <span>{pitcher?.position}</span>
             <span>·</span>
             <span>Throws {pitcher?.throws}</span>
@@ -82,17 +82,17 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
         </div>
-        <button onClick={onClose} className="text-chalk400 hover:text-chalk200 text-lg leading-none">✕</button>
+        <button onClick={onClose} className="shrink-0 text-chalk400 hover:text-chalk200 text-lg leading-none">✕</button>
       </div>
 
       {cf ? (
-        <div className="p-5 space-y-5">
+        <div className="min-w-0 p-4 space-y-5 sm:p-5">
           {/* Score + Risk */}
           <div className="flex items-center gap-4">
             <div className={`font-display text-6xl tracking-wider ${riskColor(cf.risk_level)}`}>
               {Math.round(cf.raw_score)}
             </div>
-            <div>
+            <div className="min-w-0">
               <RiskBadge level={cf.risk_level} />
               <div className="text-chalk400 text-xs font-mono mt-1">Fatigue Score · 0–100</div>
             </div>
@@ -111,7 +111,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           <RecommendationPitcherDetailSection pitcherDetail={data} />
 
           {/* Quick stats */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {[
               { label: 'Days Rest',  value: cf.days_since_last_appearance != null ? `${cf.days_since_last_appearance}d` : '---' },
               { label: 'Pitches/7d', value: cf.pitches_last_7_days ?? 0 },

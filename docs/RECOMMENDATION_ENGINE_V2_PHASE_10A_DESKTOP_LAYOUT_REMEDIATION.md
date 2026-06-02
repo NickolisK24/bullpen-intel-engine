@@ -7,6 +7,11 @@ Recommendation Engine V2 Phase 10A Desktop Layout Remediation is complete.
 This phase fixes the desktop rendering defect in the governed V2 bullpen-state
 panel introduced during Phase 10.
 
+Phase 10B Bullpen Selected Pitcher Layout Remediation is also complete and
+documents the separate Bullpen selected-pitcher detail layout fix in:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
+
 Phase 10A does not change backend behavior, API behavior, recommendation logic,
 ranking behavior, selection behavior, prediction behavior, or Recommendation
 Engine V1 behavior.
@@ -25,6 +30,8 @@ Observed desktop issues included:
 - metadata cards with insufficient usable width
 
 The pitcher table layout remains unchanged.
+
+The Bullpen selected-pitcher detail surface is handled separately by Phase 10B.
 
 ## Frontend Paths
 
@@ -100,7 +107,7 @@ classes that caused the defect.
 
 ## Phase 11 Readiness
 
-Phase 11 mobile and accessibility validation may resume after Phase 10A.
+Phase 11 mobile and accessibility validation may resume after Phase 10B.
 
 Future Phase 11 work should validate the remediated layout across mobile,
 tablet, desktop, keyboard, and assistive technology surfaces while preserving
