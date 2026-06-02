@@ -216,7 +216,8 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 is not implemented yet.
+- Recommendation Engine V1 decision logic and UI are not implemented yet; the
+  backend foundation contracts are present.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 

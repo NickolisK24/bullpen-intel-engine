@@ -75,6 +75,17 @@ Availability classification must remain owned by
 `backend/services/availability.py`. Recommendation code should consume
 availability objects and must not reimplement availability thresholds.
 
+### Foundation Layer Status
+
+The initial foundation layer lives in `backend/recommendation/`. It defines
+contracts, enums, result/refusal schemas, validation helpers, and a fail-closed
+engine default. It does not select pitchers, rank candidates, assign categories,
+or expose an API route.
+
+Future implementation stages may either keep this domain package or adapt it
+behind `backend/services/recommendations.py`, but recommendation behavior must
+remain centralized and must not be duplicated in routes or frontend components.
+
 ## 4. Candidate Recommendation Data Flow
 
 A future request should flow through explicit policy gates before any category
