@@ -29,16 +29,21 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
   const dataThrough = fmtDataDate(data?.data?.latest_game_date)
   const logCount = data?.data?.game_logs
   const limitations = data?.freshness?.limitations || []
+  const coverageValue = data?.pitchers_updated > 0
+    ? `${data.pitchers_updated.toLocaleString()} Pitchers Refreshed`
+    : null
 
   if (failedStatuses.has(status)) {
     return {
       variant: 'failed',
+      healthLabel: 'Limited',
       dot: '#ef4444',
       style: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
       syncLabel: 'Last sync failed',
       syncValue: fmtSyncDate(latestAttempt) || 'Latest attempt failed',
       dataLabel: dataThrough ? 'Data Through' : null,
       dataValue: dataThrough,
+      coverageValue,
       helper: data?.message || 'Latest sync attempt failed.',
       limitations,
     }
@@ -47,17 +52,22 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
   if (successfulSync) {
     const ageHours = (now - new Date(successfulSync).getTime()) / 3_600_000
     const stale = ageHours > STALE_HOURS
+    const limited = data?.freshness?.is_current === false || limitations.length > 0
     return {
-      variant: stale ? 'stale' : 'synced',
-      dot: stale ? '#f5a623' : '#10b981',
+      variant: stale ? 'stale' : (limited ? 'limited' : 'synced'),
+      healthLabel: stale ? 'Stale' : (limited ? 'Limited' : 'Healthy'),
+      dot: stale || limited ? '#f5a623' : '#10b981',
       style: stale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
+        : limited
+          ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : { color: '#d1dce8' },
       syncLabel: 'Synced',
       syncValue: fmtSyncDate(successfulSync),
       dataLabel: dataThrough ? 'Data Through' : null,
       dataValue: dataThrough,
-      refreshed: data?.pitchers_updated > 0 ? `${data.pitchers_updated.toLocaleString()} refreshed` : null,
+      coverageValue,
+      refreshed: coverageValue,
       helper: stale ? 'Sync metadata is older than the freshness target.' : data?.freshness?.label,
       limitations,
     }
@@ -66,12 +76,14 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
   if (logCount > 0 && dataThrough) {
     return {
       variant: 'metadata_unavailable',
+      healthLabel: 'Limited',
       dot: '#f5a623',
       style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
       syncLabel: 'Sync metadata',
       syncValue: 'Unavailable',
       dataLabel: 'Data Through',
       dataValue: dataThrough,
+      coverageValue,
       helper: 'Sync metadata unavailable; data coverage is based on game logs.',
       limitations,
     }
@@ -79,12 +91,14 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
 
   return {
     variant: 'empty',
+    healthLabel: 'Limited',
     dot: '#4a5568',
     style: {},
     syncLabel: 'No data loaded',
     syncValue: null,
     dataLabel: null,
     dataValue: null,
+    coverageValue,
     helper: 'No sync metadata or game logs are available.',
     limitations,
   }
