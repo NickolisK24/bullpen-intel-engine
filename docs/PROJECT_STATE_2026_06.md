@@ -133,6 +133,7 @@ It does not rank the bullpen or select the final pitcher.
 | Governance Framework | ✓ Complete |
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
+| Recommendation Engine V2 Governance Boundaries | Documented |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -323,6 +324,10 @@ The official strategy foundation is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
 
+The governance-boundary decision filter is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -333,6 +338,12 @@ automated pitcher selection, game outcome prediction, injury prediction, save
 prediction, performance forecasting, opaque recommendation scores, unsupported
 baseball opinions, Recommendation Engine API changes, frontend behavior
 changes, or new recommendation logic.
+
+The governance-boundary milestone documents allowed, restricted, and forbidden
+V2 behaviors; preserves the active `ranking_applied=false` and
+`selection_made=false` trust guarantees; and requires documented architecture,
+API contract, frontend contract, certification criteria, and explicit user
+approval before implementation may begin.
 
 ## Future Expansion Boundary
 

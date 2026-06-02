@@ -10,6 +10,10 @@ This document defines strategy and scope only. It does not authorize V2
 implementation, recommendation behavior changes, API behavior changes,
 frontend behavior changes, or new recommendation logic.
 
+The governance-boundary companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+
 V2 exists to explore broader bullpen and team context while preserving the
 trust contract certified in V1:
 
