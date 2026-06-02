@@ -25,15 +25,22 @@ FORBIDDEN_V2_FIELD_NAMES = frozenset(
         'rank',
         'ranking',
         'winner',
+        'priority',
         'priority_score',
         'score',
         'score_ordering',
         'selected_pitcher',
         'selected_pitcher_id',
+        'selected_candidate',
+        'selected_candidate_id',
         'recommended_pitcher',
+        'recommended_option',
         'preferred_pitcher',
+        'preferred_option',
         'use_this_pitcher',
         'best_candidate',
+        'best_pitcher',
+        'top_candidate',
         'pitcher_choice',
     }
 )
@@ -351,6 +358,7 @@ class TeamBullpenContext:
     workload_distribution: Mapping[str, Any] = field(default_factory=dict)
     readiness_distribution: Mapping[str, Any] = field(default_factory=dict)
     stress_indicators: Mapping[str, Any] = field(default_factory=dict)
+    team_summary: Mapping[str, Any] = field(default_factory=dict)
     context: RecommendationContext = field(
         default_factory=lambda: _context_for_scope('team_bullpen_context')
     )
@@ -376,10 +384,16 @@ class TeamBullpenContext:
             'stress_indicators',
             _freeze_mapping(self.stress_indicators),
         )
+        object.__setattr__(
+            self,
+            'team_summary',
+            _freeze_mapping(self.team_summary),
+        )
         require_v2_governance_safe(self.leverage_inventory)
         require_v2_governance_safe(self.workload_distribution)
         require_v2_governance_safe(self.readiness_distribution)
         require_v2_governance_safe(self.stress_indicators)
+        require_v2_governance_safe(self.team_summary)
 
     def to_dict(self):
         payload = {
@@ -389,6 +403,7 @@ class TeamBullpenContext:
             'workload_distribution': dict(self.workload_distribution),
             'readiness_distribution': dict(self.readiness_distribution),
             'stress_indicators': dict(self.stress_indicators),
+            'team_summary': dict(self.team_summary),
         }
         return _with_context(payload, self.context)
 

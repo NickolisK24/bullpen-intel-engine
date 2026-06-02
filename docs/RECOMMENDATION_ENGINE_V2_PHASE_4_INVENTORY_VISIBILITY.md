@@ -173,10 +173,13 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 5 Readiness Boundary
+## Phase 5 Completion Boundary
 
-Future V2 Phase 5 work may build on the inventory visibility layer for team
-bullpen context only if it preserves the same governance rules. Any future work
-remains subject to explicit scope approval and must not create ranking,
-selection, prediction, API behavior, frontend behavior, or user-visible
-recommendation behavior unless separately authorized.
+Recommendation Engine V2 Phase 5 now builds on the inventory visibility layer
+for backend-only team bullpen context while preserving the same governance
+rules.
+
+Phase 5 does not create ranking, selection, prediction, API behavior, frontend
+behavior, or user-visible recommendation behavior. Any future work remains
+subject to explicit scope approval and the same no-ranking/no-selection
+guarantees.

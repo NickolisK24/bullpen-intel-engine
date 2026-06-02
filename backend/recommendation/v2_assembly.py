@@ -33,6 +33,7 @@ V2_CONTEXT_ASSEMBLY_PHASE = 'phase_2_backend_context_assembly'
 V2_CONTEXT_ASSEMBLY_SOURCE = 'existing_availability_workload_evidence'
 V2_NEUTRAL_INTELLIGENCE_PHASE = 'phase_3_neutral_intelligence_expansion'
 V2_INVENTORY_VISIBILITY_PHASE = 'phase_4_inventory_visibility_layer'
+V2_TEAM_BULLPEN_CONTEXT_PHASE = 'phase_5_team_bullpen_context_layer'
 
 AVAILABILITY_STATUS_ORDER = (
     'Available',
@@ -76,6 +77,18 @@ INVENTORY_VISIBILITY_SECTIONS = (
     'freshness',
     'readiness',
     'workload',
+)
+TEAM_BULLPEN_CONTEXT_SECTIONS = (
+    'team_bullpen_status',
+    'availability_distribution',
+    'eligibility_distribution',
+    'refusal_distribution',
+    'freshness_distribution',
+    'readiness_distribution',
+    'workload_distribution',
+    'limitation_summary',
+    'explanation_summary',
+    'trust_summary',
 )
 
 ELIGIBILITY_CATEGORY_LABELS = {
@@ -168,6 +181,12 @@ def assemble_v2_context(
             context=context,
             failed_closed=True,
         )
+        team_bullpen_context_summary = _team_bullpen_context_summary(
+            records=(),
+            inventory_visibility=inventory_visibility,
+            context=context,
+            failed_closed=True,
+        )
         bullpen_state = BullpenState(
             team_id=team_id,
             team_name=team_name,
@@ -208,6 +227,7 @@ def assemble_v2_context(
                 'freshness_category_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
             },
             stress_indicators={'stress_level': 'unknown'},
+            team_summary=team_bullpen_context_summary,
             context=context,
         )
         return V2ContextAssembly(
@@ -228,6 +248,7 @@ def assemble_v2_context(
                     failed_closed=True,
                 ),
                 'inventory_visibility': inventory_visibility,
+                'team_bullpen_context_summary': team_bullpen_context_summary,
             },
         )
 
@@ -249,6 +270,12 @@ def assemble_v2_context(
         context=context,
         failed_closed=failed_closed,
     )
+    team_bullpen_context_summary = _team_bullpen_context_summary(
+        records=records,
+        inventory_visibility=inventory_visibility,
+        context=context,
+        failed_closed=failed_closed,
+    )
     bullpen_state = _bullpen_state(
         records=records,
         candidate_groups=candidate_groups,
@@ -262,6 +289,7 @@ def assemble_v2_context(
         context=context,
         team_id=team_id,
         team_name=team_name,
+        team_summary=team_bullpen_context_summary,
     )
 
     return V2ContextAssembly(
@@ -279,6 +307,7 @@ def assemble_v2_context(
             'neutral_ordering': 'input_order_preserved_within_groups',
             'neutral_intelligence': neutral_intelligence,
             'inventory_visibility': inventory_visibility,
+            'team_bullpen_context_summary': team_bullpen_context_summary,
         },
     )
 
@@ -889,6 +918,193 @@ def _inventory_member_entry(record, *, section, category):
     return entry
 
 
+def _team_bullpen_context_summary(
+    *,
+    records,
+    inventory_visibility,
+    context,
+    failed_closed,
+):
+    records = tuple(records)
+    inventory_visibility = dict(inventory_visibility or {})
+    availability_inventory = _as_mapping(
+        inventory_visibility.get('availability_inventory')
+    )
+    eligibility_inventory = _as_mapping(
+        inventory_visibility.get('eligibility_inventory')
+    )
+    refusal_inventory = _as_mapping(inventory_visibility.get('refusal_inventory'))
+    freshness_inventory = _as_mapping(inventory_visibility.get('freshness_inventory'))
+    readiness_inventory = _as_mapping(inventory_visibility.get('readiness_inventory'))
+    workload_inventory = _as_mapping(inventory_visibility.get('workload_inventory'))
+    limitation_inventory = _as_mapping(inventory_visibility.get('limitation_inventory'))
+    explanation_inventory = _as_mapping(
+        inventory_visibility.get('explanation_inventory')
+    )
+    trust_metadata = _as_mapping(inventory_visibility.get('trust_metadata'))
+    evidence_inventory = _as_mapping(inventory_visibility.get('evidence_inventory'))
+
+    availability_distribution = dict(
+        _as_mapping(availability_inventory.get('status_counts'))
+    )
+    if not availability_distribution:
+        availability_distribution = _readiness_distribution(records)
+    eligibility_distribution = dict(
+        _as_mapping(eligibility_inventory.get('category_counts'))
+    )
+    if not eligibility_distribution:
+        eligibility_distribution = _eligibility_distribution(records)
+    refusal_distribution = dict(_as_mapping(refusal_inventory.get('category_counts')))
+    if not refusal_distribution:
+        refusal_distribution = _refusal_distribution(records)
+    freshness_distribution = dict(
+        _as_mapping(freshness_inventory.get('data_state_counts'))
+    )
+    if not freshness_distribution:
+        freshness_distribution = _freshness_distribution(records)
+    readiness_distribution = dict(
+        _as_mapping(readiness_inventory.get('readiness_distribution'))
+    )
+    if not readiness_distribution:
+        readiness_distribution = _readiness_distribution(records)
+    workload_distribution = dict(
+        _as_mapping(workload_inventory.get('category_counts'))
+    )
+    if not workload_distribution:
+        workload_distribution = _workload_category_distribution(records)
+
+    payload = {
+        'phase': V2_TEAM_BULLPEN_CONTEXT_PHASE,
+        'source': 'v2_inventory_visibility_and_context_assembly',
+        'sections': list(TEAM_BULLPEN_CONTEXT_SECTIONS),
+        'team_bullpen_status': _team_bullpen_status(
+            records=records,
+            availability_distribution=availability_distribution,
+            freshness_distribution=freshness_distribution,
+            workload_distribution=workload_distribution,
+            failed_closed=failed_closed,
+        ),
+        'total_pitcher_count': len(records),
+        'availability_distribution': availability_distribution,
+        'eligibility_distribution': eligibility_distribution,
+        'refusal_distribution': refusal_distribution,
+        'freshness_distribution': freshness_distribution,
+        'data_state_distribution': freshness_distribution,
+        'readiness_distribution': readiness_distribution,
+        'workload_distribution': workload_distribution,
+        'readiness_context': {
+            'available_or_monitor_count': readiness_inventory.get(
+                'available_or_monitor_count',
+                readiness_distribution.get('Available', 0)
+                + readiness_distribution.get('Monitor', 0),
+            ),
+            'limited_or_avoid_count': readiness_inventory.get(
+                'limited_or_avoid_count',
+                readiness_distribution.get('Limited', 0)
+                + readiness_distribution.get('Avoid', 0),
+            ),
+            'unavailable_or_unknown_count': readiness_inventory.get(
+                'unavailable_or_unknown_count',
+                readiness_distribution.get('Unavailable', 0)
+                + readiness_distribution.get('Unknown', 0),
+            ),
+            'confidence_counts': dict(
+                _as_mapping(readiness_inventory.get('confidence_counts'))
+            ),
+        },
+        'workload_context': {
+            'workload_evidence_available': bool(
+                workload_inventory.get('workload_evidence_available')
+            ),
+            'fatigue_band_counts': dict(
+                _as_mapping(workload_inventory.get('fatigue_band_counts'))
+            ),
+            'recent_pitch_usage_counts': dict(
+                _as_mapping(workload_inventory.get('recent_pitch_usage_counts'))
+            ),
+            'missing_workload_input_count': int(
+                workload_inventory.get('missing_workload_input_count', 0)
+            ),
+        },
+        'leverage_context': _leverage_inventory(records),
+        'refusal_context': {
+            'refused_count': int(refusal_inventory.get('refused_count', 0)),
+            'context_refusal_reason_count': len(context.refusal_reasons),
+            'context_refusal_reasons': [
+                refusal.to_dict() for refusal in context.refusal_reasons
+            ],
+        },
+        'limitation_summary': dict(limitation_inventory),
+        'explanation_summary': dict(explanation_inventory),
+        'trust_summary': dict(trust_metadata),
+        'evidence_summary': dict(evidence_inventory),
+        'member_reference': _team_member_reference(records),
+        'failed_closed': bool(failed_closed),
+        'ordering_policy': 'input_order_preserved_across_team_context_reference',
+        'ranking_applied': context.ranking_applied,
+        'selection_made': context.selection_made,
+    }
+    require_v2_governance_safe(payload)
+    return payload
+
+
+def _team_member_reference(records):
+    members = []
+    for record in records:
+        entry = {
+            'pitcher_id': record['pitcher_id'],
+            'pitcher_name': record['pitcher_name'],
+            'team_id': record['team_id'],
+            'team_name': record['team_name'],
+            'availability_status': record['availability_status'],
+            'eligibility_category': _eligibility_category(record),
+            'refusal_category': _refusal_category(record),
+            'freshness_state': record['data_state'],
+            'readiness_category': record['availability_status'] or 'Unknown',
+            'workload_category': _workload_category(record),
+            'context_membership': {
+                'basis': 'source_input_sequence',
+                'sequence_policy': 'input_order_preserved_not_preference',
+            },
+        }
+        require_v2_governance_safe(entry)
+        members.append(entry)
+    return members
+
+
+def _team_bullpen_status(
+    *,
+    records,
+    availability_distribution,
+    freshness_distribution,
+    workload_distribution,
+    failed_closed,
+):
+    if not records:
+        return 'missing_evidence'
+    if failed_closed:
+        return 'degraded_evidence'
+    avoid_or_unavailable = (
+        int(availability_distribution.get('Avoid', 0))
+        + int(availability_distribution.get('Unavailable', 0))
+    )
+    monitor_or_limited = (
+        int(availability_distribution.get('Monitor', 0))
+        + int(availability_distribution.get('Limited', 0))
+    )
+    stale_or_missing = (
+        int(freshness_distribution.get('stale', 0))
+        + int(freshness_distribution.get('missing', 0))
+        + int(freshness_distribution.get('incomplete', 0))
+        + int(freshness_distribution.get('unknown', 0))
+    )
+    if avoid_or_unavailable or int(workload_distribution.get('elevated', 0)):
+        return 'stress_visible'
+    if monitor_or_limited or stale_or_missing:
+        return 'monitor'
+    return 'stable'
+
+
 def _bullpen_state(
     records,
     candidate_groups,
@@ -928,7 +1144,7 @@ def _bullpen_state(
     )
 
 
-def _team_bullpen_context(records, context, team_id, team_name):
+def _team_bullpen_context(records, context, team_id, team_name, team_summary):
     availability_counts = Counter(record['availability_status'] or 'Unknown' for record in records)
     data_state_counts = Counter(record['data_state'] for record in records)
     confidence_counts = Counter(record['confidence'] for record in records)
@@ -947,6 +1163,7 @@ def _team_bullpen_context(records, context, team_id, team_name):
             'freshness_category_counts': _freshness_distribution(records),
         },
         stress_indicators=_stress_summary(records, availability_counts, data_state_counts),
+        team_summary=team_summary,
         context=context,
     )
 
@@ -1366,8 +1583,10 @@ __all__ = [
     'V2_CONTEXT_ASSEMBLY_SOURCE',
     'V2_NEUTRAL_INTELLIGENCE_PHASE',
     'V2_INVENTORY_VISIBILITY_PHASE',
+    'V2_TEAM_BULLPEN_CONTEXT_PHASE',
     'NEUTRAL_INTELLIGENCE_DIMENSIONS',
     'INVENTORY_VISIBILITY_SECTIONS',
+    'TEAM_BULLPEN_CONTEXT_SECTIONS',
     'V2ContextAssembly',
     'assemble_v2_context',
 ]
