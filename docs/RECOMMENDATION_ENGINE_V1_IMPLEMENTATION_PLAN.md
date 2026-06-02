@@ -124,6 +124,11 @@ freshness indicators, explanations, limitations, refusal states, copy
 conventions, mobile behavior, accessibility, and no-ranking/no-selection
 metadata before UI implementation is authorized.
 
+The frontend API client foundation lives in `frontend/src/utils/api.js`. It can
+call the candidate-level route and expose trust, freshness, explanation,
+limitation, category, refusal, and no-ranking/no-selection fields for future UI
+consumers without implementing display logic.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.
@@ -493,13 +498,15 @@ Exit criteria:
 
 ### Stage 6: Frontend Display Planning
 
-Plan UI consumption before building it. The frontend should display backend
-output and must not recalculate recommendations.
+Plan UI consumption before building it. The frontend should use the
+candidate-level client helper, display backend output, and must not recalculate
+recommendations.
 
 Exit criteria:
 
 - display states are documented in
   `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
+- candidate-level client helper exists without UI assumptions
 - refusal state has a first-class UI plan
 - limitations are visible with the recommendation
 - mobile and desktop layouts preserve readability
