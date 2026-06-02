@@ -31,6 +31,7 @@ from recommendation.v2 import (
 
 V2_CONTEXT_ASSEMBLY_PHASE = 'phase_2_backend_context_assembly'
 V2_CONTEXT_ASSEMBLY_SOURCE = 'existing_availability_workload_evidence'
+V2_NEUTRAL_INTELLIGENCE_PHASE = 'phase_3_neutral_intelligence_expansion'
 
 AVAILABILITY_STATUS_ORDER = (
     'Available',
@@ -42,6 +43,46 @@ AVAILABILITY_STATUS_ORDER = (
 )
 CONFIDENCE_ORDER = ('high', 'medium', 'low', 'unknown')
 DATA_STATE_ORDER = ('fresh', 'stale', 'missing', 'incomplete', 'historical', 'unknown')
+ELIGIBILITY_CATEGORY_ORDER = (
+    'evidence_complete',
+    'cautionary_evidence',
+    'refused_or_degraded_evidence',
+    'unknown_evidence',
+)
+REFUSAL_CATEGORY_ORDER = (
+    'no_refusal',
+    'availability_refusal',
+    'freshness_refusal',
+    'confidence_refusal',
+    'missing_evidence_refusal',
+)
+WORKLOAD_CATEGORY_ORDER = ('low', 'moderate', 'elevated', 'unknown')
+NEUTRAL_INTELLIGENCE_DIMENSIONS = (
+    'eligibility',
+    'refusal',
+    'freshness',
+    'readiness',
+    'workload',
+)
+GROUPING_DIMENSION_ORDER = (
+    'availability_status',
+    *NEUTRAL_INTELLIGENCE_DIMENSIONS,
+)
+
+ELIGIBILITY_CATEGORY_LABELS = {
+    'evidence_complete': 'Evidence Complete',
+    'cautionary_evidence': 'Cautionary Evidence',
+    'refused_or_degraded_evidence': 'Refused Or Degraded Evidence',
+    'unknown_evidence': 'Unknown Evidence',
+}
+
+REFUSAL_CATEGORY_LABELS = {
+    'no_refusal': 'No Refusal Metadata',
+    'availability_refusal': 'Availability Refusal Metadata',
+    'freshness_refusal': 'Freshness Refusal Metadata',
+    'confidence_refusal': 'Confidence Refusal Metadata',
+    'missing_evidence_refusal': 'Missing Evidence Refusal Metadata',
+}
 
 
 @dataclass(frozen=True)
@@ -116,9 +157,22 @@ def assemble_v2_context(
             team_id=team_id,
             team_name=team_name,
             bullpen_status='refused',
-            inventory={'total_pitchers': 0, 'availability_status_counts': _ordered_counts(Counter(), AVAILABILITY_STATUS_ORDER)},
-            readiness={'data_state_counts': _ordered_counts(Counter(), DATA_STATE_ORDER)},
-            workload={'workload_evidence_available': False},
+            inventory={
+                'total_pitchers': 0,
+                'availability_status_counts': _ordered_counts(Counter(), AVAILABILITY_STATUS_ORDER),
+                'candidate_group_count': 0,
+                'neutral_intelligence_dimensions': list(NEUTRAL_INTELLIGENCE_DIMENSIONS),
+            },
+            readiness={
+                'data_state_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
+                'eligibility_category_counts': _ordered_counts(Counter(), ELIGIBILITY_CATEGORY_ORDER),
+                'refusal_category_counts': _ordered_counts(Counter(), REFUSAL_CATEGORY_ORDER),
+                'freshness_category_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
+            },
+            workload={
+                'workload_evidence_available': False,
+                'workload_category_counts': _ordered_counts(Counter(), WORKLOAD_CATEGORY_ORDER),
+            },
             stress={'stress_level': 'unknown'},
             candidate_groups=(),
             context=context,
@@ -127,8 +181,16 @@ def assemble_v2_context(
             team_id=team_id,
             team_name=team_name,
             leverage_inventory={'source_evidence_available': False},
-            workload_distribution={'workload_evidence_available': False},
-            readiness_distribution={'data_state_counts': _ordered_counts(Counter(), DATA_STATE_ORDER)},
+            workload_distribution={
+                'workload_evidence_available': False,
+                'workload_category_counts': _ordered_counts(Counter(), WORKLOAD_CATEGORY_ORDER),
+            },
+            readiness_distribution={
+                'data_state_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
+                'eligibility_category_counts': _ordered_counts(Counter(), ELIGIBILITY_CATEGORY_ORDER),
+                'refusal_category_counts': _ordered_counts(Counter(), REFUSAL_CATEGORY_ORDER),
+                'freshness_category_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
+            },
             stress_indicators={'stress_level': 'unknown'},
             context=context,
         )
@@ -144,6 +206,11 @@ def assemble_v2_context(
                 'assembled_candidate_count': 0,
                 'failed_closed': True,
                 'unsafe_input_error_count': len(unsafe_errors),
+                'neutral_intelligence': _neutral_intelligence_summary(
+                    records=(),
+                    candidate_groups=(),
+                    failed_closed=True,
+                ),
             },
         )
 
@@ -153,6 +220,12 @@ def assemble_v2_context(
         generated_at=generated_at,
     )
     candidate_groups = _candidate_groups(records, generated_at=generated_at)
+    failed_closed = bool(context.refusal_reasons)
+    neutral_intelligence = _neutral_intelligence_summary(
+        records=records,
+        candidate_groups=candidate_groups,
+        failed_closed=failed_closed,
+    )
     bullpen_state = _bullpen_state(
         records=records,
         candidate_groups=candidate_groups,
@@ -178,8 +251,9 @@ def assemble_v2_context(
             'source': V2_CONTEXT_ASSEMBLY_SOURCE,
             'input_candidate_count': len(records),
             'assembled_candidate_count': len(records),
-            'failed_closed': bool(context.refusal_reasons),
+            'failed_closed': failed_closed,
             'neutral_ordering': 'input_order_preserved_within_groups',
+            'neutral_intelligence': neutral_intelligence,
         },
     )
 
@@ -315,46 +389,149 @@ def _recommendation_context(
 
 
 def _candidate_groups(records, generated_at):
+    groups = []
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='availability_status',
+            group_id_prefix='availability',
+            category_order=AVAILABILITY_STATUS_ORDER,
+            category_for_record=lambda record: record['availability_status'] or 'Unknown',
+            label_for_category=lambda category: f'Availability: {category}',
+            criteria_name='availability_status',
+        )
+    )
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='eligibility',
+            group_id_prefix='eligibility',
+            category_order=ELIGIBILITY_CATEGORY_ORDER,
+            category_for_record=_eligibility_category,
+            label_for_category=lambda category: (
+                f'Eligibility: {ELIGIBILITY_CATEGORY_LABELS.get(category, category)}'
+            ),
+            criteria_name='eligibility_category',
+        )
+    )
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='refusal',
+            group_id_prefix='refusal',
+            category_order=REFUSAL_CATEGORY_ORDER,
+            category_for_record=_refusal_category,
+            label_for_category=lambda category: (
+                f'Refusal: {REFUSAL_CATEGORY_LABELS.get(category, category)}'
+            ),
+            criteria_name='refusal_category',
+        )
+    )
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='freshness',
+            group_id_prefix='freshness',
+            category_order=DATA_STATE_ORDER,
+            category_for_record=lambda record: record['data_state'] or 'unknown',
+            label_for_category=lambda category: f'Freshness: {category}',
+            criteria_name='freshness_category',
+        )
+    )
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='readiness',
+            group_id_prefix='readiness',
+            category_order=AVAILABILITY_STATUS_ORDER,
+            category_for_record=lambda record: record['availability_status'] or 'Unknown',
+            label_for_category=lambda category: f'Readiness: {category}',
+            criteria_name='readiness_category',
+        )
+    )
+    groups.extend(
+        _dimension_candidate_groups(
+            records=records,
+            generated_at=generated_at,
+            dimension='workload',
+            group_id_prefix='workload',
+            category_order=WORKLOAD_CATEGORY_ORDER,
+            category_for_record=_workload_category,
+            label_for_category=lambda category: f'Workload: {category}',
+            criteria_name='workload_category',
+        )
+    )
+    return tuple(groups)
+
+
+def _dimension_candidate_groups(
+    *,
+    records,
+    generated_at,
+    dimension,
+    group_id_prefix,
+    category_order,
+    category_for_record,
+    label_for_category,
+    criteria_name,
+):
     buckets = OrderedDict()
-    for status in AVAILABILITY_STATUS_ORDER:
-        buckets[status] = []
+    record_buckets = OrderedDict()
+    for category in category_order:
+        buckets[category] = []
+        record_buckets[category] = []
 
     for record in records:
-        status = record['availability_status'] or 'Unknown'
-        if status not in buckets:
-            buckets[status] = []
-        buckets[status].append(_candidate_group_entry(record))
+        category = category_for_record(record)
+        if category not in buckets:
+            buckets[category] = []
+            record_buckets[category] = []
+        record_buckets[category].append(record)
+        buckets[category].append(
+            _candidate_group_entry(
+                record,
+                grouping_dimension=dimension,
+                group_category=category,
+            )
+        )
 
     groups = []
-    for status, candidates in buckets.items():
+    for category, candidates in buckets.items():
         if not candidates:
             continue
         context = _recommendation_context(
-            records=[
-                record for record in records
-                if (record['availability_status'] or 'Unknown') == status
-            ],
+            records=record_buckets[category],
             scope='candidate_group',
             generated_at=generated_at,
         )
         groups.append(
             CandidateGroup(
-                group_id=f'availability_{_slug(status)}',
-                label=f'Availability: {status}',
-                criteria=(f'availability_status={status}',),
+                group_id=f'{group_id_prefix}_{_slug(category)}',
+                label=label_for_category(category),
+                criteria=(f'{criteria_name}={category}',),
                 candidates=tuple(candidates),
                 neutral_sequence_basis='input_sequence_preserved',
                 context=context,
                 metadata={
-                    'grouping_dimension': 'availability_status',
+                    'grouping_dimension': dimension,
+                    'category': category,
+                    'intelligence_phase': V2_NEUTRAL_INTELLIGENCE_PHASE,
                     'ordering_policy': 'input_order_preserved_not_preference',
+                    'category_ordering_policy': (
+                        'documented_static_taxonomy_not_preference'
+                    ),
                 },
             )
         )
     return tuple(groups)
 
 
-def _candidate_group_entry(record):
+def _candidate_group_entry(record, *, grouping_dimension=None, group_category=None):
     entry = {
         'pitcher_id': record['pitcher_id'],
         'pitcher_name': record['pitcher_name'],
@@ -368,9 +545,49 @@ def _candidate_group_entry(record):
             'recent_pitch_count_available': record['inputs'].get('pitches_yesterday') is not None,
             'latest_game_date_available': record['inputs'].get('latest_game_date') is not None,
         },
+        'group_membership': {
+            'dimension': grouping_dimension,
+            'category': group_category,
+            'basis': 'source_evidence_category_match',
+        },
+        'explanation_support': {
+            'availability_status': record['availability_status'],
+            'confidence': record['confidence'],
+            'data_state': record['data_state'],
+            'source_reason_count': len(record['reasons']),
+            'source_limitation_count': len(record['limitations']),
+        },
     }
     require_v2_governance_safe(entry)
     return entry
+
+
+def _neutral_intelligence_summary(*, records, candidate_groups, failed_closed):
+    records = tuple(records)
+    candidate_groups = tuple(candidate_groups)
+    payload = {
+        'phase': V2_NEUTRAL_INTELLIGENCE_PHASE,
+        'dimensions': list(NEUTRAL_INTELLIGENCE_DIMENSIONS),
+        'eligibility_distribution': _eligibility_distribution(records),
+        'refusal_distribution': _refusal_distribution(records),
+        'freshness_distribution': _freshness_distribution(records),
+        'readiness_distribution': _readiness_distribution(records),
+        'workload_distribution': _workload_category_distribution(records),
+        'grouping_dimension_counts': _ordered_counts(
+            Counter(
+                group.metadata.get('grouping_dimension', 'unknown')
+                for group in candidate_groups
+            ),
+            GROUPING_DIMENSION_ORDER,
+        ),
+        'candidate_group_count': len(candidate_groups),
+        'failed_closed': bool(failed_closed),
+        'ordering_policy': 'input_order_preserved_within_groups',
+        'ranking_applied': False,
+        'selection_made': False,
+    }
+    require_v2_governance_safe(payload)
+    return payload
 
 
 def _bullpen_state(records, candidate_groups, context, team_id, team_name):
@@ -387,10 +604,14 @@ def _bullpen_state(records, candidate_groups, context, team_id, team_name):
             'total_pitchers': len(records),
             'availability_status_counts': _ordered_counts(availability_counts, AVAILABILITY_STATUS_ORDER),
             'candidate_group_count': len(candidate_groups),
+            'neutral_intelligence_dimensions': list(NEUTRAL_INTELLIGENCE_DIMENSIONS),
         },
         readiness={
             'confidence_counts': _ordered_counts(confidence_counts, CONFIDENCE_ORDER),
             'data_state_counts': _ordered_counts(data_state_counts, DATA_STATE_ORDER),
+            'eligibility_category_counts': _eligibility_distribution(records),
+            'refusal_category_counts': _refusal_distribution(records),
+            'freshness_category_counts': _freshness_distribution(records),
             'readiness_basis': 'availability_confidence_and_data_state',
         },
         workload=_workload_summary(records),
@@ -414,6 +635,9 @@ def _team_bullpen_context(records, context, team_id, team_name):
             'availability_status_counts': _ordered_counts(availability_counts, AVAILABILITY_STATUS_ORDER),
             'data_state_counts': _ordered_counts(data_state_counts, DATA_STATE_ORDER),
             'confidence_counts': _ordered_counts(confidence_counts, CONFIDENCE_ORDER),
+            'eligibility_category_counts': _eligibility_distribution(records),
+            'refusal_category_counts': _refusal_distribution(records),
+            'freshness_category_counts': _freshness_distribution(records),
         },
         stress_indicators=_stress_summary(records, availability_counts, data_state_counts),
         context=context,
@@ -433,6 +657,7 @@ def _workload_summary(records):
         'missing_workload_input_count': sum(1 for item in inputs if not item),
         'fatigue_band_counts': _fatigue_band_counts(inputs),
         'recent_pitch_usage_counts': _recent_pitch_usage_counts(inputs),
+        'workload_category_counts': _workload_category_distribution(records),
     }
 
 
@@ -442,6 +667,7 @@ def _workload_distribution(records):
         'fatigue_band_counts': summary['fatigue_band_counts'],
         'recent_pitch_usage_counts': summary['recent_pitch_usage_counts'],
         'missing_workload_input_count': summary['missing_workload_input_count'],
+        'workload_category_counts': summary['workload_category_counts'],
     }
 
 
@@ -496,6 +722,88 @@ def _leverage_inventory(records):
             else ['No leverage evidence was supplied to V2 context assembly.']
         ),
     }
+
+
+def _eligibility_distribution(records):
+    return _ordered_counts(
+        Counter(_eligibility_category(record) for record in records),
+        ELIGIBILITY_CATEGORY_ORDER,
+    )
+
+
+def _refusal_distribution(records):
+    return _ordered_counts(
+        Counter(_refusal_category(record) for record in records),
+        REFUSAL_CATEGORY_ORDER,
+    )
+
+
+def _freshness_distribution(records):
+    return _ordered_counts(
+        Counter(record['data_state'] or 'unknown' for record in records),
+        DATA_STATE_ORDER,
+    )
+
+
+def _readiness_distribution(records):
+    return _ordered_counts(
+        Counter(record['availability_status'] or 'Unknown' for record in records),
+        AVAILABILITY_STATUS_ORDER,
+    )
+
+
+def _workload_category_distribution(records):
+    return _ordered_counts(
+        Counter(_workload_category(record) for record in records),
+        WORKLOAD_CATEGORY_ORDER,
+    )
+
+
+def _eligibility_category(record):
+    status = record['availability_status'] or 'Unknown'
+    confidence = str(record['confidence'] or 'unknown').lower()
+    data_state = str(record['data_state'] or 'unknown').lower()
+
+    if status in {'Unavailable', 'Unknown'} or data_state in {'missing', 'unknown'}:
+        return 'refused_or_degraded_evidence'
+    if data_state in {'stale', 'incomplete', 'historical'} or confidence in {'low', 'unknown'}:
+        return 'refused_or_degraded_evidence'
+    if status in {'Monitor', 'Limited', 'Avoid'} or confidence == 'medium':
+        return 'cautionary_evidence'
+    if status == 'Available' and data_state == 'fresh' and confidence == 'high':
+        return 'evidence_complete'
+    return 'unknown_evidence'
+
+
+def _refusal_category(record):
+    status = record['availability_status'] or 'Unknown'
+    confidence = str(record['confidence'] or 'unknown').lower()
+    data_state = str(record['data_state'] or 'unknown').lower()
+
+    if status == 'Unknown':
+        return 'missing_evidence_refusal'
+    if data_state in {'missing', 'unknown'}:
+        return 'missing_evidence_refusal'
+    if data_state in {'stale', 'incomplete', 'historical'}:
+        return 'freshness_refusal'
+    if status == 'Unavailable':
+        return 'availability_refusal'
+    if confidence in {'low', 'unknown'}:
+        return 'confidence_refusal'
+    return 'no_refusal'
+
+
+def _workload_category(record):
+    fatigue_band = _fatigue_band(record['inputs'].get('fatigue_score'))
+    recent_usage = _recent_pitch_usage(record['inputs'].get('pitches_yesterday'))
+    bands = {fatigue_band, recent_usage}
+    if 'elevated' in bands:
+        return 'elevated'
+    if 'moderate' in bands:
+        return 'moderate'
+    if bands == {'unknown'}:
+        return 'unknown'
+    return 'low'
 
 
 def _aggregate_confidence(records):
@@ -741,6 +1049,8 @@ def _slug(value):
 __all__ = [
     'V2_CONTEXT_ASSEMBLY_PHASE',
     'V2_CONTEXT_ASSEMBLY_SOURCE',
+    'V2_NEUTRAL_INTELLIGENCE_PHASE',
+    'NEUTRAL_INTELLIGENCE_DIMENSIONS',
     'V2ContextAssembly',
     'assemble_v2_context',
 ]
