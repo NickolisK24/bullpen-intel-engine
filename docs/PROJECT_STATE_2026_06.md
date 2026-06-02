@@ -248,5 +248,9 @@ The authoritative policy document is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_POLICY.md`
 
+The staged implementation planning document is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
+
 No Recommendation Engine implementation details are authorized by this project
-state document.
+state document or by the implementation plan itself.

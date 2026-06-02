@@ -177,6 +177,7 @@ bullpen-intel-engine/
 └── docs/
     ├── PROJECT_STATE_2026_06.md # Current product state and next milestone
     ├── RECOMMENDATION_ENGINE_V1_POLICY.md
+    ├── RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -267,6 +268,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
   governance boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md)
+  — staged engineering plan for translating the approved policy into backend
+  boundaries, gates, payloads, tests, API exposure, UI planning, and governance
+  validation.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
