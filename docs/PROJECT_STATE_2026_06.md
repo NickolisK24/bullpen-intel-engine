@@ -132,6 +132,7 @@ It does not rank the bullpen or select the final pitcher.
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V1 Candidate Evaluation Layout Remediation | Complete |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
@@ -759,6 +760,29 @@ detail card.
 The Phase 10B remediation does not introduce ranking UI, selection UI,
 prediction UI, best/preferred/recommended pitcher UI, backend V2 behavior
 changes, new backend routes, or changes to Recommendation Engine V1.
+
+Recommendation Engine V1 Candidate Evaluation Layout Remediation fixes the
+embedded Candidate Evaluation article rendered inside the Bullpen
+selected-pitcher detail surface.
+
+The V1 layout remediation updates:
+
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+The embedded V1 Candidate Evaluation article now has an explicit embedded
+layout path and remains single-column. Standalone Recommendation Engine V1
+panels may still use the wider container-aware layout, but the embedded
+selected-pitcher article no longer inherits the standalone two-column grid.
+
+The V1 layout remediation preserves Recommendation Status, Trust And
+Freshness, Eligible Categories, Blocked Categories, Explanation, Limitation,
+Refusal Reason, and Metadata visibility.
+
+The V1 layout remediation does not introduce ranking UI, selection UI,
+prediction UI, best/preferred/recommended pitcher UI, backend behavior
+changes, API changes, or Recommendation Engine V1 logic changes.
 
 The active V1 and V2 governance guarantees remain:
 

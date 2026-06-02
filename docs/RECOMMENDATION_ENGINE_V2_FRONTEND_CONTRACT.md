@@ -33,6 +33,13 @@ does not change backend behavior, API behavior, recommendation logic, ranking
 behavior, selection behavior, prediction behavior, or Recommendation Engine V1
 behavior.
 
+Recommendation Engine V1 Candidate Evaluation Layout Remediation now keeps the
+embedded V1 Candidate Evaluation article on a single-column layout path inside
+the selected-pitcher detail surface. Standalone Recommendation Engine V1 panels
+may keep wider container-aware behavior where safe, but the embedded article
+must not inherit a two-column layout that squeezes status, trust/freshness,
+category, explanation, limitation, refusal, or metadata sections.
+
 The V2 frontend contract must preserve:
 
 ```text

@@ -102,6 +102,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
+  .recommendation-panel--embedded .recommendation-panel__layout,
+  .recommendation-panel__layout--embedded {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .recommendation-detail-panel__header {
     flex-direction: column;
   }
@@ -119,10 +123,10 @@
     }
   }
   @container (min-width: 76rem) {
-    .recommendation-panel__layout {
+    .recommendation-panel--standalone .recommendation-panel__layout--standalone {
       grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.8fr);
     }
-    .recommendation-panel__trust-grid {
+    .recommendation-panel--standalone .recommendation-panel__trust-grid {
       grid-template-columns: minmax(0, 1fr);
     }
   }

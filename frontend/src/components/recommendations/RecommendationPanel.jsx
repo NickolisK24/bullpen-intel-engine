@@ -364,9 +364,10 @@ export default function RecommendationPanel({
     error,
     model,
   })
-  const wrapperClass = variant === 'embedded'
-    ? 'recommendation-panel min-w-0 space-y-4'
-    : 'recommendation-panel min-w-0 card p-5 lg:p-6'
+  const isEmbedded = variant === 'embedded'
+  const wrapperClass = isEmbedded
+    ? 'recommendation-panel recommendation-panel--embedded min-w-0 max-w-full space-y-4'
+    : 'recommendation-panel recommendation-panel--standalone min-w-0 max-w-full card p-5 lg:p-6'
 
   return (
     <article
@@ -391,7 +392,7 @@ export default function RecommendationPanel({
         </header>
       )}
 
-      <div className="recommendation-panel__layout gap-4">
+      <div className={`recommendation-panel__layout gap-4 ${isEmbedded ? 'recommendation-panel__layout--embedded' : 'recommendation-panel__layout--standalone'}`}>
         <div className="min-w-0 space-y-4">
           <SectionCard title="Recommendation Status">
             <StatusContent view={view} error={error} onRetry={onRetry} />

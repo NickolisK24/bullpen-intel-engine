@@ -87,6 +87,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V1 Candidate Evaluation Layout Remediation | Complete |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
@@ -179,7 +180,11 @@ today:
   that governed panel so metadata, refusal, explanation, inventory, and
   context sections remain readable on common desktop widths. Phase 10B
   remediates the Bullpen selected-pitcher detail layout so the pitcher card and
-  recommendation trust surface remain readable on common desktop widths. No
+  recommendation trust surface remain readable on common desktop widths. The
+  V1 Candidate Evaluation article inside that selected-pitcher detail surface
+  now stays on an embedded single-column layout path so status, trust,
+  freshness, categories, explanations, limitations, refusal, and metadata
+  sections remain readable. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -217,7 +222,9 @@ today:
   and the completed Phase 10A record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md),
   and the completed Phase 10B record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md),
+  and the completed V1 Candidate Evaluation layout remediation record in
+  [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -446,6 +453,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2 Phase 10B record for Bullpen selected-pitcher layout
   remediation, readable detail and recommendation trust surfaces, governance
   compliance, and V1 preservation.
+- [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
+  — completed V1 Candidate Evaluation layout remediation record for the
+  embedded selected-pitcher article, single-column embedded rendering,
+  governance compliance, and V1 logic preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
