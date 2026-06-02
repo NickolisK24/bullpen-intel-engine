@@ -161,10 +161,15 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 7 Readiness Boundary
+## Phase 7 Completion Boundary
 
-Future V2 Phase 7 work may build on trust metadata integration for refusal and
-fail-closed behavior only if it preserves the same governance rules. Any
-future work remains subject to explicit scope approval and must not create
+V2 Phase 7 built on trust metadata integration for backend-only refusal and
+fail-closed behavior while preserving the same governance rules.
+
+The Phase 7 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`
+
+Future work remains subject to explicit scope approval and must not create
 ranking, selection, prediction, API behavior, frontend behavior, or
 user-visible recommendation behavior unless separately authorized.

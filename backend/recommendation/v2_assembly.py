@@ -36,6 +36,7 @@ V2_NEUTRAL_INTELLIGENCE_PHASE = 'phase_3_neutral_intelligence_expansion'
 V2_INVENTORY_VISIBILITY_PHASE = 'phase_4_inventory_visibility_layer'
 V2_TEAM_BULLPEN_CONTEXT_PHASE = 'phase_5_team_bullpen_context_layer'
 V2_TRUST_METADATA_INTEGRATION_PHASE = 'phase_6_trust_metadata_integration'
+V2_REFUSAL_FAIL_CLOSED_PHASE = 'phase_7_refusal_fail_closed_integration'
 
 AVAILABILITY_STATUS_ORDER = (
     'Available',
@@ -47,6 +48,19 @@ AVAILABILITY_STATUS_ORDER = (
 )
 CONFIDENCE_ORDER = ('high', 'medium', 'low', 'unknown')
 DATA_STATE_ORDER = ('fresh', 'stale', 'missing', 'incomplete', 'historical', 'unknown')
+DEGRADED_DATA_STATES = frozenset({'stale', 'incomplete', 'historical', 'unknown'})
+FAIL_CLOSED_TRUST_ERROR_FIELDS = frozenset(
+    {
+        'confidence',
+        'freshness',
+        'data_state',
+        'refusal',
+        'limitations',
+        'explanations',
+        'unsupported_trust_fields',
+        'malformed_evidence',
+    }
+)
 ELIGIBILITY_CATEGORY_ORDER = (
     'evidence_complete',
     'cautionary_evidence',
@@ -167,7 +181,8 @@ def assemble_v2_context(
                     reason='unsupported_fields',
                     message=(
                         'V2 context assembly refused because source evidence '
-                        'contains ranking or selection fields.'
+                        'contains ranking, selection, prediction, or other '
+                        'governance-unsafe fields.'
                     ),
                     applies_to='context_assembly',
                 ),
@@ -181,17 +196,26 @@ def assemble_v2_context(
                 ),
             ),
         )
+        refusal_fail_closed = _refusal_fail_closed_summary(
+            records=(),
+            context=context,
+            failed_closed=True,
+            unsafe_errors=unsafe_errors,
+            trust_validation_errors=(),
+        )
         inventory_visibility = _inventory_visibility_summary(
             records=(),
             candidate_groups=(),
             context=context,
             failed_closed=True,
+            refusal_fail_closed=refusal_fail_closed,
         )
         team_bullpen_context_summary = _team_bullpen_context_summary(
             records=(),
             inventory_visibility=inventory_visibility,
             context=context,
             failed_closed=True,
+            refusal_fail_closed=refusal_fail_closed,
         )
         bullpen_state = BullpenState(
             team_id=team_id,
@@ -253,9 +277,11 @@ def assemble_v2_context(
                     candidate_groups=(),
                     context=context,
                     failed_closed=True,
+                    refusal_fail_closed=refusal_fail_closed,
                 ),
                 'inventory_visibility': inventory_visibility,
                 'team_bullpen_context_summary': team_bullpen_context_summary,
+                'refusal_fail_closed': refusal_fail_closed,
                 'trust_metadata': _context_trust_metadata(
                     context,
                     failed_closed=True,
@@ -269,28 +295,43 @@ def assemble_v2_context(
         generated_at=generated_at,
         trust_validation_errors=trust_validation_errors,
     )
-    candidate_groups = _candidate_groups(records, generated_at=generated_at)
+    output_records = (
+        ()
+        if _should_suppress_candidate_output(trust_validation_errors)
+        else records
+    )
+    candidate_groups = _candidate_groups(output_records, generated_at=generated_at)
     failed_closed = bool(context.refusal_reasons)
-    neutral_intelligence = _neutral_intelligence_summary(
+    refusal_fail_closed = _refusal_fail_closed_summary(
         records=records,
+        context=context,
+        failed_closed=failed_closed,
+        unsafe_errors=(),
+        trust_validation_errors=trust_validation_errors,
+    )
+    neutral_intelligence = _neutral_intelligence_summary(
+        records=output_records,
         candidate_groups=candidate_groups,
         context=context,
         failed_closed=failed_closed,
+        refusal_fail_closed=refusal_fail_closed,
     )
     inventory_visibility = _inventory_visibility_summary(
-        records=records,
+        records=output_records,
         candidate_groups=candidate_groups,
         context=context,
         failed_closed=failed_closed,
+        refusal_fail_closed=refusal_fail_closed,
     )
     team_bullpen_context_summary = _team_bullpen_context_summary(
-        records=records,
+        records=output_records,
         inventory_visibility=inventory_visibility,
         context=context,
         failed_closed=failed_closed,
+        refusal_fail_closed=refusal_fail_closed,
     )
     bullpen_state = _bullpen_state(
-        records=records,
+        records=output_records,
         candidate_groups=candidate_groups,
         context=context,
         team_id=team_id,
@@ -298,7 +339,7 @@ def assemble_v2_context(
         inventory_visibility=inventory_visibility,
     )
     team_context = _team_bullpen_context(
-        records=records,
+        records=output_records,
         context=context,
         team_id=team_id,
         team_name=team_name,
@@ -315,12 +356,13 @@ def assemble_v2_context(
             'assembly_phase': V2_CONTEXT_ASSEMBLY_PHASE,
             'source': V2_CONTEXT_ASSEMBLY_SOURCE,
             'input_candidate_count': len(records),
-            'assembled_candidate_count': len(records),
+            'assembled_candidate_count': len(output_records),
             'failed_closed': failed_closed,
             'neutral_ordering': 'input_order_preserved_within_groups',
             'neutral_intelligence': neutral_intelligence,
             'inventory_visibility': inventory_visibility,
             'team_bullpen_context_summary': team_bullpen_context_summary,
+            'refusal_fail_closed': refusal_fail_closed,
             'trust_metadata': _context_trust_metadata(
                 context,
                 failed_closed=failed_closed,
@@ -330,12 +372,14 @@ def assemble_v2_context(
 
 
 def _candidate_record(candidate):
+    malformed_evidence = False
     if isinstance(candidate, RecommendationCandidate):
         payload = candidate.to_dict()
     elif isinstance(candidate, Mapping):
         payload = dict(candidate)
     else:
         payload = {}
+        malformed_evidence = True
 
     availability = _as_mapping(payload.get('availability'))
     metadata = _as_mapping(payload.get('metadata'))
@@ -343,6 +387,7 @@ def _candidate_record(candidate):
 
     return {
         'source_payload': payload,
+        'malformed_evidence': malformed_evidence,
         'pitcher_id': payload.get('pitcher_id'),
         'pitcher_name': payload.get('pitcher_name'),
         'team_id': payload.get('team_id'),
@@ -381,6 +426,16 @@ def _unsafe_input_errors(records):
 def _trust_input_errors(records):
     errors = []
     for index, record in enumerate(records):
+        if record.get('malformed_evidence'):
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'malformed_evidence',
+                    'message': 'Candidate evidence has an unsupported source shape.',
+                }
+            )
+            continue
+
         payload = record['source_payload']
         availability = _as_mapping(payload.get('availability'))
         metadata = _as_mapping(payload.get('metadata'))
@@ -508,10 +563,11 @@ def _recommendation_context(
 
     trust_error_fields = _trust_error_fields(trust_validation_errors)
     for field_name in trust_error_fields:
+        refusal_id = _trust_refusal_id(field_name)
         refusals.append(
             V2Refusal(
-                refusal_id=f'missing_{field_name}_metadata',
-                reason=f'missing_{field_name}_metadata',
+                refusal_id=refusal_id,
+                reason=refusal_id,
                 message=(
                     'V2 context failed closed because required trust metadata '
                     f'is missing or unsupported: {field_name}.'
@@ -521,7 +577,7 @@ def _recommendation_context(
         )
         limitations.append(
             V2Limitation(
-                limitation_id=f'missing_{field_name}_metadata',
+                limitation_id=refusal_id,
                 message=(
                     'Required V2 trust metadata is missing or unsupported: '
                     f'{field_name}.'
@@ -755,7 +811,14 @@ def _candidate_group_entry(record, *, grouping_dimension=None, group_category=No
     return entry
 
 
-def _neutral_intelligence_summary(*, records, candidate_groups, context, failed_closed):
+def _neutral_intelligence_summary(
+    *,
+    records,
+    candidate_groups,
+    context,
+    failed_closed,
+    refusal_fail_closed=None,
+):
     records = tuple(records)
     candidate_groups = tuple(candidate_groups)
     payload = {
@@ -775,6 +838,7 @@ def _neutral_intelligence_summary(*, records, candidate_groups, context, failed_
         ),
         'candidate_group_count': len(candidate_groups),
         'failed_closed': bool(failed_closed),
+        'refusal_fail_closed': dict(refusal_fail_closed or {}),
         'ordering_policy': 'input_order_preserved_within_groups',
         'trust_metadata': _context_trust_metadata(
             context,
@@ -794,6 +858,7 @@ def _inventory_visibility_summary(
     candidate_groups,
     context,
     failed_closed,
+    refusal_fail_closed=None,
 ):
     records = tuple(records)
     candidate_groups = tuple(candidate_groups)
@@ -811,6 +876,7 @@ def _inventory_visibility_summary(
         'evidence_inventory': _evidence_inventory(records, candidate_groups),
         'limitation_inventory': _limitation_inventory(records, context),
         'explanation_inventory': _explanation_inventory(records, context),
+        'refusal_fail_closed': dict(refusal_fail_closed or {}),
         'trust_metadata': _inventory_trust_metadata(context, failed_closed),
         'ordering_policy': 'input_order_preserved_within_inventory_categories',
         'ranking_applied': False,
@@ -1016,6 +1082,93 @@ def _context_trust_metadata(context, *, failed_closed):
     return payload
 
 
+def _refusal_fail_closed_summary(
+    *,
+    records,
+    context,
+    failed_closed,
+    unsafe_errors,
+    trust_validation_errors,
+):
+    records = tuple(records)
+    trust_validation_errors = tuple(trust_validation_errors or ())
+    trust_error_fields = _trust_error_fields(trust_validation_errors)
+    critical_failure = _has_critical_refusal_failure(
+        records=records,
+        unsafe_errors=unsafe_errors,
+        trust_error_fields=trust_error_fields,
+    )
+    reason_codes = _refusal_fail_closed_reason_codes(
+        context=context,
+        unsafe_errors=unsafe_errors,
+        trust_error_fields=trust_error_fields,
+    )
+
+    if critical_failure:
+        state = 'failed_closed'
+    elif context.refusal_reasons:
+        state = 'degraded'
+    else:
+        state = 'passed'
+
+    payload = {
+        'phase': V2_REFUSAL_FAIL_CLOSED_PHASE,
+        'state': state,
+        'critical_failure': critical_failure,
+        'safe_partial_output_allowed': state == 'degraded',
+        'reason_codes': reason_codes,
+        'refusal_reason_count': len(context.refusal_reasons),
+        'limitation_count': len(context.limitations),
+        'explanation_count': len(context.explanations),
+        'trust_validation_error_count': len(trust_validation_errors),
+        'unsafe_source_error_count': len(tuple(unsafe_errors or ())),
+        'source_evidence_state': context.source_evidence_state,
+        'governance_state': context.governance_state,
+        'failed_closed': bool(failed_closed),
+        'trust_metadata': _context_trust_metadata(
+            context,
+            failed_closed=failed_closed,
+        ),
+        'ranking_applied': context.ranking_applied,
+        'selection_made': context.selection_made,
+    }
+    require_v2_governance_safe(payload)
+    require_v2_trust_metadata(payload)
+    return payload
+
+
+def _has_critical_refusal_failure(*, records, unsafe_errors, trust_error_fields):
+    if tuple(unsafe_errors or ()):
+        return True
+    if not tuple(records):
+        return True
+    return bool(set(trust_error_fields) & FAIL_CLOSED_TRUST_ERROR_FIELDS)
+
+
+def _should_suppress_candidate_output(trust_validation_errors):
+    trust_error_fields = set(_trust_error_fields(trust_validation_errors))
+    return bool(trust_error_fields & {'malformed_evidence', 'unsupported_trust_fields'})
+
+
+def _refusal_fail_closed_reason_codes(
+    *,
+    context,
+    unsafe_errors,
+    trust_error_fields,
+):
+    reason_codes = OrderedDict()
+    if tuple(unsafe_errors or ()):
+        reason_codes['governance_unsafe_source_evidence'] = (
+            'governance_unsafe_source_evidence'
+        )
+    for field_name in trust_error_fields:
+        reason_code = _trust_refusal_id(field_name)
+        reason_codes[reason_code] = reason_code
+    for refusal in context.refusal_reasons:
+        reason_codes[refusal.reason] = refusal.reason
+    return list(reason_codes.values())
+
+
 def _inventory_members_by_category(
     *,
     records,
@@ -1067,6 +1220,7 @@ def _team_bullpen_context_summary(
     inventory_visibility,
     context,
     failed_closed,
+    refusal_fail_closed=None,
 ):
     records = tuple(records)
     inventory_visibility = dict(inventory_visibility or {})
@@ -1179,6 +1333,7 @@ def _team_bullpen_context_summary(
         },
         'limitation_summary': dict(limitation_inventory),
         'explanation_summary': dict(explanation_inventory),
+        'refusal_fail_closed': dict(refusal_fail_closed or {}),
         'trust_summary': dict(trust_metadata),
         'evidence_summary': dict(evidence_inventory),
         'member_reference': _team_member_reference(records),
@@ -1722,6 +1877,12 @@ def _trust_error_fields(trust_validation_errors):
     return tuple(fields.values())
 
 
+def _trust_refusal_id(field_name):
+    if field_name in {'malformed_evidence', 'unsupported_trust_fields'}:
+        return field_name
+    return f'missing_{field_name}_metadata'
+
+
 def _trust_error_messages(trust_validation_errors):
     messages = []
     for error in trust_validation_errors:
@@ -1737,6 +1898,11 @@ def _trust_error_messages(trust_validation_errors):
 def _source_evidence_state(*, records, trust_validation_errors):
     if not records:
         return 'missing'
+    trust_error_fields = set(_trust_error_fields(trust_validation_errors))
+    if 'malformed_evidence' in trust_error_fields:
+        return 'malformed'
+    if 'unsupported_trust_fields' in trust_error_fields:
+        return 'unsupported'
     if trust_validation_errors:
         return 'trust_metadata_incomplete'
     return 'represented'
@@ -1766,6 +1932,7 @@ __all__ = [
     'V2_INVENTORY_VISIBILITY_PHASE',
     'V2_TEAM_BULLPEN_CONTEXT_PHASE',
     'V2_TRUST_METADATA_INTEGRATION_PHASE',
+    'V2_REFUSAL_FAIL_CLOSED_PHASE',
     'NEUTRAL_INTELLIGENCE_DIMENSIONS',
     'INVENTORY_VISIBILITY_SECTIONS',
     'TEAM_BULLPEN_CONTEXT_SECTIONS',

@@ -57,6 +57,20 @@ FORBIDDEN_V2_FIELD_NAMES = frozenset(
         'best_pitcher',
         'top_candidate',
         'pitcher_choice',
+        'prediction',
+        'predicted_performance',
+        'performance_prediction',
+        'performance_forecast',
+        'predicted_injury',
+        'injury_prediction',
+        'injury_risk_prediction',
+        'predicted_saves',
+        'save_prediction',
+        'game_prediction',
+        'game_outcome_prediction',
+        'outcome_prediction',
+        'projected_outcome',
+        'projected_performance',
     }
 )
 

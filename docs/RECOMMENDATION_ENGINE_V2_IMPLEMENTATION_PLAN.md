@@ -621,6 +621,28 @@ Ensure V2 refuses, suppresses, or downgrades unsupported output.
 - Unsupported output is not emitted.
 - V1 behavior remains unchanged.
 
+**Phase 7 completion status**
+
+Recommendation Engine V2 Phase 7 is complete as a backend-only refusal and
+fail-closed integration layer. Internal V2 outputs now carry deterministic
+refusal/fail-closed metadata for passed, degraded, and failed-closed states.
+The context assembly layer handles missing, incomplete, stale, unsupported,
+malformed, and governance-unsafe evidence with explicit refusal, limitation,
+freshness, explanation, and trust metadata.
+
+Malformed and unsupported source-shape evidence suppresses candidate output.
+Stale, incomplete, historical, or unknown but otherwise safe evidence may
+produce degraded internal summaries only when required trust metadata remains
+explicit.
+
+Phase 7 does not expose API support, frontend support, user-facing V2 refusal
+UI, user-facing V2 recommendation behavior, ranking, selection, prediction, or
+route changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`
+
 ## 15. Phase 8: API Endpoint Implementation
 
 **Goal**
@@ -1182,8 +1204,9 @@ governance package.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 1 Backend Domain Object Foundation
+Recommendation Engine V2 Phase 8 API Endpoint Implementation
 ```
 
 This milestone may begin only after the user explicitly approves
-implementation.
+implementation. Phase 8 remains governed by the approved V2 API contract and
+must preserve all Phase 1 through Phase 7 backend safeguards.

@@ -101,6 +101,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 4 Inventory Visibility | Complete |
 | Recommendation Engine V2 Phase 5 Team Bullpen Context | Complete |
 | Recommendation Engine V2 Phase 6 Trust Metadata Integration | Complete |
+| Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -163,9 +164,9 @@ today:
   Phase 2 backend context assembly layer, Phase 3 backend-only neutral
   intelligence expansion, Phase 4 backend-only inventory visibility layer,
   Phase 5 backend-only team bullpen context layer, and Phase 6 backend-only
-  trust metadata integration now exist for future V2 phases, but no V2 API,
-  frontend behavior,
-  user-facing V2 recommendation behavior, ranking, or selection is
+  trust metadata integration, and Phase 7 backend-only refusal/fail-closed
+  integration now exist for future V2 phases, but no V2 API, frontend
+  behavior, user-facing V2 recommendation behavior, ranking, or selection is
   implemented. Those capabilities remain outside the completed Recommendation
   Engine V1 certification. V1 is production-ready for
   candidate-level evaluation only.
@@ -191,7 +192,9 @@ today:
   and the completed Phase 5 record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_5_TEAM_BULLPEN_CONTEXT.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_5_TEAM_BULLPEN_CONTEXT.md),
   and the completed Phase 6 record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md),
+  and the completed Phase 7 record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -247,6 +250,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_5_TEAM_BULLPEN_CONTEXT.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -391,6 +395,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed backend-only V2 Phase 6 record for mandatory trust metadata
   enforcement, missing-metadata fail-closed behavior, governance compliance,
   V1 preservation, and no-API/no-frontend boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md)
+  — completed backend-only V2 Phase 7 record for refusal/fail-closed
+  integration, degraded-output handling, evidence safety handling, governance
+  compliance, V1 preservation, and no-API/no-frontend boundaries.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -439,11 +447,12 @@ readiness, implementation planning, the Phase 1 backend domain object
 foundation, the Phase 2 backend context assembly layer, and the Phase 3
 backend-only neutral intelligence expansion, the Phase 4 backend-only
 inventory visibility layer, and the Phase 5 backend-only team bullpen context
-layer, and the Phase 6 backend-only trust metadata integration layer complete.
+layer, the Phase 6 backend-only trust metadata integration layer, and the
+Phase 7 backend-only refusal/fail-closed integration layer complete.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, refusal and fail-closed integration, and
-broader explainability while preserving V1 trust protections. No V2 API,
+intelligence, readiness visibility, future API contract exposure, and broader
+explainability while preserving V1 trust protections. No V2 API,
 frontend behavior, user-facing V2 recommendation behavior, ranking, or
 selection exists yet. Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
