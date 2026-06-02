@@ -11,6 +11,7 @@ sentinel deterministically — i.e. we simulate "data loaded via seed, no sync".
 """
 
 from datetime import date
+import json
 
 import pytest
 from flask import Flask
@@ -71,3 +72,33 @@ class TestSyncStatusSnapshot:
         assert body['last_sync'] is None
         assert body['data']['game_logs'] == 0
         assert body['data']['latest_game_date'] is None
+
+    def test_reports_sync_timestamp_and_snapshot_date_together(self, client):
+        sync_service.STATUS_FILE.write_text(
+            json.dumps({
+                'last_sync': '2026-06-01T21:39:12+00:00',
+                'status': 'ok',
+                'pitchers_updated': 428,
+                'new_logs_added': 120,
+                'errors': 0,
+                'message': '',
+                'finished_at': '2026-06-01T21:39:56+00:00',
+            }),
+            encoding='utf-8',
+        )
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.commit()
+
+        res = client.get('/api/bullpen/sync/status')
+        assert res.status_code == 200
+        body = res.get_json()
+
+        assert body['last_sync'] == '2026-06-01T21:39:12+00:00'
+        assert body['status'] == 'ok'
+        assert body['pitchers_updated'] == 428
+        assert body['data']['game_logs'] == 1
+        assert body['data']['latest_game_date'] == '2026-05-31'
