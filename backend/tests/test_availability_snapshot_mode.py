@@ -177,7 +177,7 @@ def test_snapshot_mode_produces_mixed_workload_statuses_from_sample_data(client)
         _add_pitcher('Snapshot Monitor', latest_game_date=anchor, raw_score=20.0, log_pitches=[5], mlb_seed=1)
         _add_pitcher('Snapshot Limited', latest_game_date=anchor, raw_score=20.0, log_pitches=[45], mlb_seed=2)
         _add_pitcher('Snapshot Avoid', latest_game_date=anchor, raw_score=20.0, log_pitches=[65], mlb_seed=3)
-        _add_pitcher('Snapshot Unavailable', latest_game_date=anchor, raw_score=20.0, log_pitches=[85], mlb_seed=4)
+        _add_pitcher('Snapshot Unavailable', latest_game_date=anchor, raw_score=20.0, log_pitches=[90], mlb_seed=4)
 
         records = classify_latest_fatigue_rows(
             latest_fatigue_rows(),

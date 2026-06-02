@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+import pytest
+
 from services.availability import (
     CONFIDENCE_HIGH,
     CONFIDENCE_LOW,
@@ -103,6 +105,32 @@ class TestAvailabilityClassification:
         assert '54 pitches in 3 days' in result['reasons']
         assert '3 appearances in 4 days' in result['reasons']
         assert result['inputs']['three_in_four'] is True
+
+    @pytest.mark.parametrize(
+        ('three_day_pitches', 'expected_status'),
+        [
+            (79, STATUS_AVOID),
+            (80, STATUS_AVOID),
+            (89, STATUS_AVOID),
+            (90, STATUS_UNAVAILABLE),
+            (91, STATUS_UNAVAILABLE),
+        ],
+    )
+    def test_three_day_unavailable_boundary_uses_adopted_90_pitch_threshold(
+        self,
+        make_log,
+        three_day_pitches,
+        expected_status,
+    ):
+        ref = date(2026, 6, 1)
+        result = classify(
+            ScoreStub(raw_score=20.0),
+            [make_log(ref - timedelta(days=2), pitches_thrown=three_day_pitches)],
+            reference_date=ref,
+        )
+
+        assert result['availability_status'] == expected_status
+        assert f'{three_day_pitches} pitches in 3 days' in result['reasons']
 
     def test_missing_data_is_low_confidence_monitor(self):
         result = classify_availability(

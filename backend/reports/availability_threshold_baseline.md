@@ -1,7 +1,7 @@
 # Availability Threshold Baseline
 
 Generated from the current Availability Engine V1 thresholds and audit outputs
-on 2026-06-01.
+with reference date 2026-06-01. Updated after Candidate C adoption.
 
 This artifact is a comparison baseline for future threshold tuning branches. It
 does not change thresholds, fatigue scoring, API behavior, snapshot mode,
@@ -12,6 +12,7 @@ dashboard behavior, or frontend behavior.
 - Threshold implementation: `backend/services/availability.py`
 - Threshold audit: `backend/reports/availability_threshold_audit.md`
 - Explanation audit: `backend/reports/availability_explanation_audit.md`
+- Candidate C adoption: `backend/reports/availability_threshold_adoption_candidate_c.md`
 - Governance plan: `docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md`
 
 ## Current Thresholds
@@ -30,7 +31,7 @@ dashboard behavior, or frontend behavior.
 | Input | Monitor | Limited | Avoid | Unavailable |
 |---|---:|---:|---:|---:|
 | Pitches yesterday | >= 15 | >= 25 | >= 35 | >= 50 |
-| Pitches in 3 days | >= 30 | >= 45 | >= 60 | >= 80 |
+| Pitches in 3 days | >= 30 | >= 45 | >= 60 | >= 90 |
 | Pitches in 5 days | n/a | >= 60 | >= 75 | n/a |
 
 Unavailable also triggers when `appearances_last_5_days >= 4` and
@@ -100,8 +101,8 @@ availability.
 |---|---:|
 | Monitor | 268 |
 | Limited | 174 |
-| Avoid | 99 |
-| Unavailable | 163 |
+| Avoid | 156 |
+| Unavailable | 106 |
 
 | Confidence | Count |
 |---|---:|
@@ -119,8 +120,8 @@ availability.
 |---|---:|
 | Monitor | 204 |
 | Limited | 174 |
-| Avoid | 99 |
-| Unavailable | 163 |
+| Avoid | 156 |
+| Unavailable | 106 |
 
 ### Snapshot Workload Input Summary
 
@@ -176,8 +177,8 @@ availability.
 - Current mode is entirely Monitor because local data is stale or missing.
 - Current mode has 704 low-confidence classifications.
 - Latest-workload snapshot has no Available bucket.
-- Latest-workload snapshot has more Unavailable classifications than Avoid
-  classifications.
+- Latest-workload snapshot has more Avoid classifications than Unavailable
+  classifications after Candidate C adoption.
 - Limited, Avoid, and Unavailable together account for 436 of 640 fresh
   latest-workload snapshot pitchers.
 - Appearance-frequency reasons are the most common reason category.
@@ -185,6 +186,9 @@ availability.
   because snapshot mode evaluates each pitcher at their latest workload date.
   This is a validation-mode artifact, not current rest evidence.
 - Missing workload history remains visible as low-confidence Monitor.
+- Candidate C adoption moved the Unavailable three-day pitch threshold from 80
+  to 90. The adopted baseline keeps 80-89 three-day pitch workloads in Avoid
+  unless another Unavailable rule fires.
 
 ## Use In Future Tuning
 

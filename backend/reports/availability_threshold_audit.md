@@ -1,6 +1,6 @@
 # Availability Threshold Audit
 
-Generated at: 2026-06-01T23:44:11.795127+00:00
+Generated at: 2026-06-02T00:29:15.200189+00:00
 Current reference date: 2026-06-01
 
 This report audits current Availability Engine output using the existing classifier.
@@ -106,8 +106,8 @@ Total pitchers evaluated: 704
 |---|---:|
 | Monitor | 268 |
 | Limited | 174 |
-| Avoid | 99 |
-| Unavailable | 163 |
+| Avoid | 156 |
+| Unavailable | 106 |
 
 ### Confidence Distribution
 
@@ -129,8 +129,8 @@ Total pitchers evaluated: 704
 |---|---|---:|
 | fresh | Monitor | 204 |
 | fresh | Limited | 174 |
-| fresh | Avoid | 99 |
-| fresh | Unavailable | 163 |
+| fresh | Avoid | 156 |
+| fresh | Unavailable | 106 |
 | missing | Monitor | 64 |
 
 ### Top Reason Frequencies

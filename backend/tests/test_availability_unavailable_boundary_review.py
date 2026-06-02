@@ -9,6 +9,7 @@ from services.availability import (
 from services.availability_unavailable_boundary_review import (
     REVIEW_NEUTRAL,
     REVIEW_SUPPORTS,
+    baseline_candidate,
     boundary_sensitivity,
     build_review,
     candidate_c,
@@ -47,9 +48,11 @@ def _inputs(pitches_last_3_days, *, fatigue_score=40, pitches_yesterday=0, appea
 
 
 def test_candidate_c_only_raises_three_day_unavailable_threshold():
+    baseline = baseline_candidate()
     candidate = candidate_c()
 
-    assert THRESHOLDS.unavailable_pitches_last_3_days == 80
+    assert THRESHOLDS.unavailable_pitches_last_3_days == 90
+    assert baseline.thresholds.unavailable_pitches_last_3_days == 80
     assert candidate.thresholds.unavailable_pitches_last_3_days == 90
     assert candidate.thresholds.avoid_pitches_last_3_days == THRESHOLDS.avoid_pitches_last_3_days
 

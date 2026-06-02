@@ -52,7 +52,7 @@ def _record(pitcher_id, name, status, inputs, reasons=None, data_state='fresh', 
     }
 
 
-def test_baseline_candidate_preserves_current_unavailable_outcome(make_log):
+def test_baseline_candidate_uses_adopted_three_day_threshold(make_log):
     ref = date(2026, 6, 1)
     logs = [
         make_log(ref, pitches_thrown=30),
@@ -68,11 +68,11 @@ def test_baseline_candidate_preserves_current_unavailable_outcome(make_log):
         candidate=_baseline_candidate(),
     )
 
-    assert result['availability_status'] == STATUS_UNAVAILABLE
+    assert result['availability_status'] == STATUS_AVOID
     assert result['inputs']['pitches_last_3_days'] == 85
 
 
-def test_three_day_candidate_changes_only_intended_unavailable_behavior(make_log):
+def test_adopted_three_day_candidate_matches_current_production_behavior(make_log):
     ref = date(2026, 6, 1)
     candidate = _candidate('raise_three_day_90')
     logs = [
@@ -101,12 +101,12 @@ def test_multi_signal_candidate_preserves_unavailable_only_with_multiple_severe_
     single_signal_logs = [
         make_log(ref, pitches_thrown=30),
         make_log(ref - timedelta(days=1), pitches_thrown=30),
-        make_log(ref - timedelta(days=2), pitches_thrown=25),
+        make_log(ref - timedelta(days=2), pitches_thrown=32),
     ]
     two_signal_logs = [
         make_log(ref, pitches_thrown=20),
         make_log(ref - timedelta(days=1), pitches_thrown=35),
-        make_log(ref - timedelta(days=2), pitches_thrown=30),
+        make_log(ref - timedelta(days=2), pitches_thrown=35),
     ]
 
     single_signal = classify_for_candidate(
@@ -125,7 +125,7 @@ def test_multi_signal_candidate_preserves_unavailable_only_with_multiple_severe_
     )
 
     assert single_signal['availability_status'] == STATUS_AVOID
-    assert unavailable_severe_signals(single_signal['inputs']) == ['85 pitches in 3 days']
+    assert unavailable_severe_signals(single_signal['inputs']) == ['92 pitches in 3 days']
     assert two_signal['availability_status'] == STATUS_UNAVAILABLE
     assert len(unavailable_severe_signals(two_signal['inputs'])) == 2
 
