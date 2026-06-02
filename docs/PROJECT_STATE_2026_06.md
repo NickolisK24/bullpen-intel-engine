@@ -2,10 +2,11 @@
 
 ## Executive Summary
 
-BaseballOS has completed the Availability Engine trust foundation. The platform
-now moves beyond a fatigue dashboard into explainable bullpen availability
-intelligence while preserving clear limits around what public workload data can
-and cannot prove.
+BaseballOS has completed the Availability Engine trust foundation and
+Recommendation Engine V1. The platform now moves beyond a fatigue dashboard
+into explainable bullpen availability intelligence and certified
+candidate-level decision support while preserving clear limits around what
+public workload data can and cannot prove.
 
 The current product identity is:
 
@@ -95,6 +96,30 @@ Availability threshold governance is implemented through:
 Threshold changes must be evidence-based, single-variable where possible, and
 reviewed before adoption.
 
+### Recommendation Engine V1
+
+Recommendation Engine V1 is complete, certified, and production-ready for
+candidate-level evaluation. It translates trusted availability, confidence,
+freshness, explanation, limitation, and refusal evidence into structured
+candidate-level recommendation or refusal output.
+
+The certified V1 system includes:
+
+- backend recommendation foundation contracts and schemas
+- eligibility and exclusion gates
+- category eligibility assignment
+- response builder/composer
+- candidate-level engine integration
+- candidate API route
+- frontend recommendation API client
+- Recommendation Panel UI
+- controlled success, caution, refusal, loading, error, and empty states
+- pitcher detail dashboard integration
+- UI polish and regression certification
+
+Recommendation Engine V1 remains bounded to one pitcher candidate at a time.
+It does not rank the bullpen or select the final pitcher.
+
 ## Current Capabilities
 
 | Capability | Status |
@@ -106,7 +131,7 @@ reviewed before adoption.
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
-| Recommendation Engine | Backend foundation |
+| Recommendation Engine | ✓ Complete / Certified / Production Ready |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -122,6 +147,11 @@ Trust-first rules currently in force:
   medically unavailable, or team-reported unavailable.
 - Recommendation wording must not imply private clubhouse, medical, travel, or
   manager-intent knowledge.
+- Recommendation Engine V1 must preserve candidate-level evaluation only.
+- Recommendation Engine V1 must preserve `ranking_applied=false` and
+  `selection_made=false`.
+- Recommendation Engine V1 must keep confidence, freshness, explanations,
+  limitations, and refusal reasons visible.
 - Threshold changes require audit evidence and before/after comparison.
 
 The first governed threshold adoption is complete:
@@ -216,80 +246,86 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 final ranking and multi-candidate selection are not
-  implemented. Candidate-level dashboard integration is implemented only inside
-  the selected-pitcher detail workflow.
-  The backend foundation contracts, eligibility gates, category eligibility
-  assignment, builder, single-candidate engine pipeline, API contract, frontend
-  display contract, candidate-level API route, frontend API client foundation,
-  state-aware UI shell, and pitcher detail integration are present. The pitcher
-  detail workflow exposes a user-triggered Evaluate Candidate action for one
-  pitcher at a time and renders controlled success, caution, refusal, loading,
-  error, and empty states while preserving visible trust, freshness,
-  explanations, limitations, categories, refusal reasons, and
-  no-ranking/no-selection metadata. The UI integration has completed a polish
-  and regression certification pass for candidate-level display safety.
-  Final ranking and selection remain future work.
+- Recommendation Engine V1 is complete, certified, and production-ready for
+  candidate-level evaluation only. Bullpen ranking, multi-candidate comparison,
+  final pitcher selection, performance forecasting, injury prediction, save
+  prediction, matchup guidance, and black-box or generated baseball opinions
+  remain outside V1 and belong to future Recommendation Engine V2 or later
+  work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
-## Next Major Milestone
+## Recommendation Engine V1 Completion Status
 
-The next major initiative is:
+The completed major initiative is:
 
 ```text
-Recommendation Engine V1 Policy
+Recommendation Engine V1
 ```
 
-Goal:
+Status:
+
+```text
+Completed
+Certified
+Production Ready
+```
+
+Mission achieved:
 
 ```text
 Move BaseballOS from availability intelligence to decision-support intelligence.
 ```
 
-This milestone should define policy before implementation:
+Recommendation Engine V1 is certified for:
 
-- what a recommendation is allowed to say
-- what it must not imply
-- how confidence and limitations are carried into recommendations
-- how workload-unavailable differs from unknown availability
-- how stale/missing data changes recommendation wording
-- how future simulator work can consume availability classifications without
-  bypassing trust rules
+- fail-closed behavior
+- candidate-level evaluation
+- trust visibility
+- freshness visibility
+- confidence visibility
+- explanation visibility
+- limitation visibility
+- refusal visibility
 
-The authoritative policy document is:
+The official completion certification is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`
+
+Supporting governance documents:
 
 - `docs/RECOMMENDATION_ENGINE_V1_POLICY.md`
-
-The staged implementation planning document is:
-
 - `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
-
-The candidate-level API contract is:
-
 - `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
-
-The frontend display contract for future candidate-level UI is:
-
 - `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
-
-The future UI implementation plan is:
-
 - `docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`
-
-The dashboard integration plan is:
-
 - `docs/RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md`
 
-The implemented candidate-level route evaluates one candidate at a time and
-must preserve no-ranking/no-selection metadata. The frontend API client calls
-that route for one-candidate evaluation only. The selected-pitcher detail
-workflow now builds one candidate payload from existing pitcher detail,
-availability, and workload fields and displays the controlled Recommendation
-Panel response after a user-triggered evaluation. Its certified display keeps
-confidence, data freshness, availability, explanations, limitations, category
-eligibility, refusal reasons, `ranking_applied=false`, and
-`selection_made=false` visible. The integration does not perform ranking,
-scoring, bullpen comparison, route navigation, or final pitcher selection. This
-project state document does not authorize further Recommendation Engine API
-exposure, multi-candidate ranking, scoring, or final pitcher selection.
+The implemented candidate-level route evaluates one candidate at a time. The
+frontend API client calls that route for one-candidate evaluation only. The
+selected-pitcher detail workflow builds one candidate payload from existing
+pitcher detail, availability, and workload fields and displays the controlled
+Recommendation Panel response after a user-triggered evaluation.
+
+The certified display keeps confidence, data freshness, availability,
+explanations, limitations, category eligibility, refusal reasons,
+`ranking_applied=false`, and `selection_made=false` visible. The integration
+does not perform ranking, scoring, bullpen comparison, route navigation, or
+final pitcher selection.
+
+## Future Expansion Boundary
+
+Future recommendation work belongs in Recommendation Engine V2 or later.
+
+Possible future expansion areas include:
+
+- bullpen-level intelligence
+- multi-candidate comparison
+- team-level stress intelligence
+- recommendation prioritization
+- advanced decision-support layers
+- role-aware recommendation behavior
+- simulator integration
+
+This project state document does not authorize further Recommendation Engine
+API exposure, multi-candidate ranking, scoring, or final pitcher selection.
