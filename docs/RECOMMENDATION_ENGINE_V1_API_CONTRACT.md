@@ -2,15 +2,14 @@
 
 ## 1. API Objective
 
-This document defines the future API contract for exposing Recommendation
-Engine V1 candidate-level output.
+This document defines the API contract for exposing Recommendation Engine V1
+candidate-level output.
 
-The contract is design-only. It does not implement a route, change backend
-routes, add frontend UI, add database schema, or authorize multi-candidate
-ranking.
+The contract does not authorize frontend UI, database schema changes,
+multi-candidate ranking, scoring, or final pitcher selection.
 
-The future API must expose the existing candidate-level recommendation pipeline
-without weakening Recommendation Engine V1 policy:
+The candidate API must expose the existing candidate-level recommendation
+pipeline without weakening Recommendation Engine V1 policy:
 
 - one candidate per evaluation
 - deterministic gate, category, and builder output
@@ -26,7 +25,7 @@ must not claim that the candidate is the final best pitcher.
 
 This contract does not authorize:
 
-- backend route implementation
+- additional route implementation beyond the candidate contract
 - frontend UI implementation
 - database changes
 - write endpoints
@@ -42,12 +41,12 @@ This contract does not authorize:
 - save, hold, win, loss, or run-prevention projections
 - private clubhouse, travel, warm-up, or manager-intent inference
 
-The API contract is limited to future candidate-level exposure of the already
-staged Recommendation Engine V1 backend pipeline.
+The API contract is limited to candidate-level exposure of the already staged
+Recommendation Engine V1 backend pipeline.
 
 ## 3. Route Candidate
 
-Recommended route:
+Implemented route:
 
 ```text
 POST /api/recommendations/candidate
@@ -60,6 +59,11 @@ Route intent:
 - return the engine's structured recommendation or refusal result
 - preserve all trust and governance metadata
 
+Implementation surface:
+
+- `backend/api/recommendations.py`
+- registered under `/api/recommendations`
+
 Deferred routes:
 
 - team recommendation routes
@@ -68,9 +72,8 @@ Deferred routes:
 - dashboard aggregation routes
 - simulator routes
 
-No future route may implement recommendation policy inline. Route code should
-validate request shape, call the recommendation engine, and serialize the
-engine result.
+No route may implement recommendation policy inline. Route code should validate
+request shape, call the recommendation engine, and serialize the engine result.
 
 ## 4. Request Shape
 
@@ -198,8 +201,8 @@ and `meta` envelopes.
 }
 ```
 
-The exact serialization may adapt to current backend conventions, but the
-future route must preserve all fields required by this contract.
+The exact serialization may adapt to current backend conventions, but the route
+must preserve all fields required by this contract.
 
 ## 6. Success Response Example
 
@@ -588,7 +591,7 @@ An empty recommendation list must not be used as a substitute for refusal.
 
 ## 15. Fail-Closed Behavior
 
-The future API must fail closed.
+The candidate API must fail closed.
 
 Fail-closed means:
 
@@ -633,8 +636,8 @@ Display prohibitions:
 
 ## 17. Governance Requirements
 
-Future API implementation must satisfy these governance requirements before
-merge:
+Candidate API implementation must continue to satisfy these governance
+requirements:
 
 - route delegates to `RecommendationEngine.recommend()`
 - route tests prove no ranking or selection occurs
