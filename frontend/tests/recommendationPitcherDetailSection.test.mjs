@@ -106,6 +106,36 @@ const successResponse = {
   },
 }
 
+const cautionResponse = {
+  ...successResponse,
+  data: {
+    ...successResponse.data,
+    availability: {
+      availability_status: 'Monitor',
+      confidence: 'medium',
+      data_state: 'fresh',
+    },
+    assigned_categories: [
+      {
+        category: 'use_with_caution',
+        category_code: 'USE_WITH_CAUTION',
+      },
+    ],
+    explanations: [
+      {
+        code: 'monitor_status',
+        message: 'Monitor status requires caution before use.',
+      },
+    ],
+    limitations: [
+      {
+        code: 'candidate_requires_caution',
+        message: 'Candidate requires cautionary handling before any recommendation use.',
+      },
+    ],
+  },
+}
+
 const refusalResponse = {
   ...successResponse,
   data: {
@@ -154,9 +184,13 @@ test('RecommendationPitcherDetailSection renders in the pitcher detail context',
   assert.ok(htmlIncludes(html, 'Recommendation Engine V1'))
   assert.ok(htmlIncludes(html, 'Candidate Evaluation'))
   assert.ok(htmlIncludes(html, 'Evaluate Candidate'))
+  assert.ok(htmlIncludes(html, 'aria-describedby="recommendation-detail-description"'))
+  assert.ok(htmlIncludes(html, 'aria-controls="recommendation-detail-result"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Evaluate recommendation candidate for Example Pitcher"'))
   assert.ok(htmlIncludes(html, 'No Final Pitcher Selection Made'))
   assert.ok(htmlIncludes(html, 'No Bullpen Ranking Applied'))
   assert.ok(htmlIncludes(html, 'No candidate evaluation available'))
+  assert.ok(htmlIncludes(html, 'Use Evaluate Candidate to inspect this pitcher without ranking the bullpen.'))
 })
 
 test('pitcher detail candidate mapper preserves one pitcher and availability state', () => {
@@ -198,6 +232,7 @@ test('pitcher detail candidate mapper rejects multi-candidate payloads', () => {
 test('RecommendationPitcherDetailSection renders success response details', () => {
   const html = renderSection({ initialState: { response: successResponse } })
 
+  assert.ok(htmlIncludes(html, 'data-recommendation-state="success"'))
   assert.ok(htmlIncludes(html, 'Eligible Categories'))
   assert.ok(htmlIncludes(html, 'Best Available Arm'))
   assert.ok(htmlIncludes(html, 'Blocked Categories'))
@@ -206,11 +241,26 @@ test('RecommendationPitcherDetailSection renders success response details', () =
   assert.ok(htmlIncludes(html, 'Candidate-level evaluation only.'))
 })
 
+test('RecommendationPitcherDetailSection renders caution state distinctly', () => {
+  const html = renderSection({ initialState: { response: cautionResponse } })
+
+  assert.ok(htmlIncludes(html, 'data-recommendation-state="caution"'))
+  assert.ok(htmlIncludes(html, 'Use With Caution'))
+  assert.ok(htmlIncludes(html, 'border-amber/35'))
+  assert.ok(htmlIncludes(html, 'Caution reasons are shown in explanations and limitations below.'))
+  assert.ok(htmlIncludes(html, 'Monitor status requires caution before use.'))
+  assert.ok(htmlIncludes(html, 'Candidate requires cautionary handling before any recommendation use.'))
+  assert.ok(htmlIncludes(html, 'Monitor'))
+})
+
 test('RecommendationPitcherDetailSection renders refusal output', () => {
   const html = renderSection({ initialState: { response: refusalResponse } })
 
+  assert.ok(htmlIncludes(html, 'data-recommendation-state="refusal"'))
+  assert.ok(htmlIncludes(html, 'Refusal Reason'))
   assert.ok(htmlIncludes(html, 'Insufficient trusted data'))
   assert.ok(htmlIncludes(html, 'Stale data'))
+  assert.ok(htmlIncludes(html, 'border-red-500/30'))
   assert.ok(htmlIncludes(html, 'Freshness check failed.'))
   assert.ok(htmlIncludes(html, 'Recommendation output fails closed when trusted data is stale.'))
 })
@@ -220,12 +270,15 @@ test('RecommendationPitcherDetailSection renders loading state', () => {
 
   assert.ok(htmlIncludes(html, 'Evaluating...'))
   assert.ok(htmlIncludes(html, 'Loading candidate evaluation'))
+  assert.ok(htmlIncludes(html, 'aria-busy="true"'))
+  assert.ok(htmlIncludes(html, 'data-recommendation-state="loading"'))
 })
 
 test('RecommendationPitcherDetailSection renders safe error state', () => {
   const html = renderSection({ initialState: { error: new Error('private transport details') } })
 
   assert.ok(htmlIncludes(html, 'Candidate evaluation could not be loaded.'))
+  assert.ok(htmlIncludes(html, 'data-recommendation-state="error"'))
   assert.ok(!htmlIncludes(html, 'private transport details'))
 })
 
@@ -243,12 +296,25 @@ test('RecommendationPitcherDetailSection keeps trust, freshness, availability, a
   assert.ok(htmlIncludes(html, 'false'))
 })
 
+test('RecommendationPitcherDetailSection preserves mobile-safe layout structure', () => {
+  const html = renderSection({ initialState: { response: successResponse } })
+
+  assert.ok(htmlIncludes(html, 'grid-cols-1'))
+  assert.ok(htmlIncludes(html, 'sm:grid-cols-2'))
+  assert.ok(htmlIncludes(html, 'sm:grid-cols-3'))
+  assert.ok(htmlIncludes(html, 'xl:grid-cols-1'))
+  assert.ok(htmlIncludes(html, 'min-h-10'))
+  assert.ok(htmlIncludes(html, 'w-full'))
+  assert.ok(htmlIncludes(html, 'sm:w-auto'))
+})
+
 test('RecommendationPitcherDetailSection keeps prohibited copy out of rendered states', () => {
   const renderedStates = [
     renderSection(),
     renderSection({ initialState: { isLoading: true } }),
     renderSection({ initialState: { error: new Error('hidden') } }),
     renderSection({ initialState: { response: successResponse } }),
+    renderSection({ initialState: { response: cautionResponse } }),
     renderSection({ initialState: { response: refusalResponse } }),
   ].join('\n')
 

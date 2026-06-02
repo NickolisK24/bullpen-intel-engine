@@ -205,6 +205,7 @@ test('RecommendationPanel renders empty state', () => {
   assert.ok(htmlIncludes(html, 'No candidate evaluation available'))
   assert.ok(htmlIncludes(html, 'No eligible categories available for this state.'))
   assert.ok(htmlIncludes(html, 'Pending candidate input'))
+  assert.ok(htmlIncludes(html, 'Use Evaluate Candidate to inspect this pitcher without ranking the bullpen.'))
 })
 
 test('RecommendationPanel renders trust, freshness, availability, and metadata fields', () => {

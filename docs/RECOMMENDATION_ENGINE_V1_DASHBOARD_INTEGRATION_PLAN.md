@@ -13,6 +13,22 @@ The implementation remains candidate-level only. It does not rank pitchers,
 compare the bullpen, score candidates, select a final pitcher, change backend
 or API behavior, or add database changes.
 
+## Polish And Regression Certification Status
+
+The pitcher-detail integration has completed a UI polish and regression
+certification pass. The certified display keeps Candidate Evaluation, eligible
+categories, explanations, limitations, confidence, data freshness, availability,
+refusal reason, `ranking_applied=false`, and `selection_made=false` visible.
+
+The certification verifies that evaluation remains one pitcher at a time,
+multi-candidate arrays are rejected before request construction, caution and
+refusal states are visually and textually distinct, transport errors do not
+expose stack details, and mobile layout structure keeps trust metadata from
+being cramped.
+
+No backend behavior, API behavior, database behavior, ranking, bullpen
+comparison, scoring, or final pitcher selection was added during certification.
+
 ## 1. Dashboard Integration Objective
 
 Recommendation Engine V1 dashboard integration should expose candidate-level

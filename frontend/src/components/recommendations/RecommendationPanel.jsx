@@ -5,7 +5,7 @@ const EMPTY_RESULT = {
   mode: 'empty',
   candidateName: 'Candidate not selected',
   statusLabel: 'No candidate evaluation available',
-  statusDetail: 'Select one candidate in a future workflow to inspect candidate-level recommendation output.',
+  statusDetail: 'Use Evaluate Candidate to inspect this pitcher without ranking the bullpen.',
   statusTone: 'neutral',
   assignedCategories: [],
   blockedCategories: [],
@@ -293,15 +293,21 @@ function CategoryList({ items, fallback }) {
 
 function StatusContent({ view, error, onRetry }) {
   if (view.mode === 'loading') {
-    return <LoadingPane message="Loading candidate evaluation" />
+    return (
+      <div role="status" aria-live="polite" data-recommendation-state="loading">
+        <LoadingPane message="Loading candidate evaluation" />
+      </div>
+    )
   }
 
   if (view.mode === 'error') {
     return (
-      <ErrorState
-        message="Candidate evaluation could not be loaded."
-        onRetry={onRetry}
-      />
+      <div role="alert" data-recommendation-state="error">
+        <ErrorState
+          message="Candidate evaluation could not be loaded."
+          onRetry={onRetry}
+        />
+      </div>
     )
   }
 
@@ -313,12 +319,18 @@ function StatusContent({ view, error, onRetry }) {
   }[view.statusTone || view.mode] || 'border-dirt bg-chalk/20'
 
   return (
-    <div className={`rounded border px-4 py-3 ${toneClass}`}>
+    <div
+      className={`rounded border px-4 py-3 ${toneClass}`}
+      data-recommendation-state={view.mode}
+      role={view.mode === 'refusal' ? 'alert' : 'status'}
+      aria-live="polite"
+    >
       <div className="font-mono text-[11px] uppercase tracking-wider text-chalk400">Recommendation Status Area</div>
       <div className="mt-1 text-lg font-semibold text-chalk100">{view.statusLabel}</div>
       <div className="mt-1 text-chalk400">{view.statusDetail}</div>
       {view.mode === 'refusal' && (
         <div className="mt-3 rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk200">
+          <span className="sr-only">Refusal Reason: </span>
           {view.refusalReason}
         </div>
       )}
@@ -357,7 +369,11 @@ export default function RecommendationPanel({
     : 'card p-5 lg:p-6'
 
   return (
-    <article className={wrapperClass} aria-labelledby={showHeader ? 'recommendation-engine-v1-heading' : undefined} aria-label={!showHeader ? 'Recommendation Engine V1 Candidate Evaluation' : undefined}>
+    <article
+      className={wrapperClass}
+      aria-labelledby={showHeader ? 'recommendation-engine-v1-heading' : undefined}
+      aria-label={!showHeader ? 'Recommendation Engine V1 Candidate Evaluation' : undefined}
+    >
       {showHeader && (
         <header className="mb-6 flex flex-col gap-3 border-b border-dirt pb-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
@@ -422,7 +438,7 @@ export default function RecommendationPanel({
             </div>
           </SectionCard>
 
-          <SectionCard title="Refusal Output">
+          <SectionCard title="Refusal Reason">
             <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 text-chalk300">
               {view.refusalReason}
             </div>
