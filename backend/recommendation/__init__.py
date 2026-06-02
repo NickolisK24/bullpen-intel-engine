@@ -1,8 +1,8 @@
 """
-Recommendation Engine V1 foundation package.
+Recommendation Engine foundation package.
 
-This package defines contracts and fail-closed defaults only. It does not
-select, rank, or score recommendation candidates.
+This package defines V1 contracts plus V2 backend domain foundations. It does
+not select, rank, or score recommendation candidates.
 """
 
 from recommendation.contracts import (
@@ -41,10 +41,30 @@ from recommendation.validators import (
     is_valid_recommendation_result,
     recommendation_result_errors,
 )
+from recommendation.v2 import (
+    BASE_V2_LIMITATIONS,
+    NO_RANKING_APPLIED,
+    NO_SELECTION_MADE,
+    V2_PHASE,
+    V2_POLICY_NAME,
+    BullpenState,
+    CandidateGroup,
+    RecommendationContext,
+    TeamBullpenContext,
+    V2Explanation,
+    V2FreshnessMetadata,
+    V2Limitation,
+    V2Refusal,
+    require_v2_governance_safe,
+    v2_governance_errors,
+)
 
 __all__ = [
     'BASE_RECOMMENDATION_LIMITATIONS',
+    'BASE_V2_LIMITATIONS',
     'DEFAULT_REFUSAL_MESSAGE',
+    'NO_RANKING_APPLIED',
+    'NO_SELECTION_MADE',
     'RecommendationCandidate',
     'RecommendationCandidatePool',
     'RecommendationCategory',
@@ -52,6 +72,7 @@ __all__ = [
     'RecommendationCategoryBlock',
     'RecommendationConfidence',
     'RecommendationConfidenceContext',
+    'RecommendationContext',
     'RecommendationEngine',
     'RecommendationExplanation',
     'RecommendationFreshnessContext',
@@ -63,10 +84,21 @@ __all__ = [
     'RecommendationRequest',
     'RecommendationResult',
     'RefusalReason',
+    'V2_PHASE',
+    'V2_POLICY_NAME',
+    'BullpenState',
+    'CandidateGroup',
+    'TeamBullpenContext',
+    'V2Explanation',
+    'V2FreshnessMetadata',
+    'V2Limitation',
+    'V2Refusal',
     'build_recommendation_response',
     'assign_recommendation_categories',
     'evaluate_candidate_gates',
     'evaluate_candidate_pool',
     'is_valid_recommendation_result',
     'recommendation_result_errors',
+    'require_v2_governance_safe',
+    'v2_governance_errors',
 ]

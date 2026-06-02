@@ -19,7 +19,8 @@ auditable, governance-driven, and fail-closed. It must not introduce ranking,
 selection, prediction, opaque scores, hidden weights, or unsupported baseball
 opinions.
 
-The next milestone after this planning document is:
+The first implementation milestone after this planning document is now
+complete:
 
 ```text
 Recommendation Engine V2 Phase 1 Backend Domain Object Foundation
@@ -189,6 +190,22 @@ The current repository has unrelated `frontend/dist/**`,
 must not be mixed into V2 implementation work.
 
 ## 8. Phase 1: Backend Domain Object Foundation
+
+**Implementation status**
+
+Complete.
+
+The backend-only domain object foundation is implemented in:
+
+- `backend/recommendation/v2.py`
+
+The Phase 1 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`
+
+The implemented foundation does not expose a V2 endpoint, create frontend
+behavior, change routes, rank pitchers, select pitchers, predict outcomes, or
+modify Recommendation Engine V1 behavior.
 
 **Goal**
 

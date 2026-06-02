@@ -140,6 +140,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Certification Requirements | Documented |
 | Recommendation Engine V2 Implementation Readiness Review | Complete |
 | Recommendation Engine V2 Implementation Plan | Complete |
+| Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -258,8 +259,9 @@ status, or manager intent.
   candidate-level evaluation only. Bullpen ranking, pitcher ordering, final
   pitcher selection, performance forecasting, injury prediction, save
   prediction, matchup guidance, and black-box or generated baseball opinions
-  remain outside V1. V2 strategy and scope-definition work may explore grouped
-  bullpen and team-level visibility without ranking or automated selection.
+  remain outside V1. V2 now has a backend-only Phase 1 domain object foundation
+  for future grouped bullpen and team-level visibility without ranking or
+  automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -321,10 +323,11 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy Milestone
+## Recommendation Engine V2 Strategy and Phase 1 Status
 
-Recommendation Engine V2 is entering a strategy and scope-definition phase.
-This is a governance and planning milestone only.
+Recommendation Engine V2 has completed strategy, governance boundaries,
+architecture, contracts, certification planning, implementation readiness,
+implementation planning, and Phase 1 backend domain object foundation work.
 
 The official strategy foundation is:
 
@@ -357,6 +360,10 @@ The implementation-readiness review is:
 The implementation plan is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`
+
+The Phase 1 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -403,18 +410,36 @@ and final approval requirements. It does not authorize implementation.
 
 The implementation-readiness review evaluates the complete V2 planning package
 and finds no remaining governance blockers. The final readiness determination
-is `READY_FOR_IMPLEMENTATION`, with the next approved milestone defined as
-Recommendation Engine V2 Implementation Planning. The review does not
-implement or certify runtime behavior.
+is `READY_FOR_IMPLEMENTATION`. The review does not implement or certify
+runtime behavior.
 
 The implementation plan converts the approved V2 governance package into a
 phased roadmap covering repo hygiene, backend domain objects, bullpen state,
 candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
-production rollout decision. The next milestone is Recommendation Engine V2
-Phase 1 Backend Domain Object Foundation, only after explicit implementation
-approval. The plan does not implement or certify runtime behavior.
+production rollout decision. It remains the sequencing authority for future
+phases after Phase 1.
+
+Recommendation Engine V2 Phase 1 implements backend-only domain objects:
+
+- `RecommendationContext`
+- `BullpenState`
+- `CandidateGroup`
+- `TeamBullpenContext`
+
+The Phase 1 foundation represents trust, freshness, limitation, explanation,
+refusal, bullpen inventory, readiness, workload, stress, neutral candidate
+group, and team bullpen context metadata. It does not expose V2 API support,
+frontend support, runtime bullpen-state calculation, candidate grouping logic,
+ranking, selection, prediction, or user-visible behavior.
+
+The active V1 and V2 governance guarantees remain:
+
+```text
+ranking_applied = false
+selection_made = false
+```
 
 ## Future Expansion Boundary
 
