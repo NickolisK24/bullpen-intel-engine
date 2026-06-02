@@ -90,6 +90,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
+| Recommendation Engine V2 API Contract | Documented |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -155,8 +156,9 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md),
   [`docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`](docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md),
   [`docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`](docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md),
+  [`docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`](docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md),
   and
-  [`docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`](docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -201,6 +203,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_STRATEGY.md
     ├── RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md
     ├── RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md
+    ├── RECOMMENDATION_ENGINE_V2_API_CONTRACT.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -302,6 +305,9 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — architecture foundation for future V2 objects, services, outputs,
   metadata flow, trust preservation, fail-closed behavior, and governance
   enforcement.
+- [`docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md)
+  — proposed V2 API response contract for bullpen-state output, required trust
+  metadata, anti-ranking rules, refusal shape, and certification gates.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -344,8 +350,8 @@ candidate-level evaluation in the pitcher detail workflow. It preserves visible
 confidence, freshness, availability, explanations, limitations, refusal
 reasons, `ranking_applied=false`, and `selection_made=false`.
 
-Recommendation Engine V2 has strategy, governance boundaries, and architecture
-documented before API contract, frontend contract, certification, or
+Recommendation Engine V2 has strategy, governance boundaries, architecture,
+and API contract documented before frontend contract, certification, or
 implementation approval. Future recommendation expansion may explore
 bullpen-level intelligence, team-level stress intelligence, grouped eligibility
 reporting, readiness visibility, and broader explainability while preserving

@@ -65,6 +65,10 @@ The authoritative governance-boundary document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
+The API contract companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+
 That document defines allowed, restricted, and forbidden V2 behavior. This
 architecture must remain subordinate to those governance boundaries.
 

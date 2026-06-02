@@ -135,6 +135,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
+| Recommendation Engine V2 API Contract | Documented |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -333,6 +334,10 @@ The architecture foundation is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
 
+The API contract foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -355,6 +360,12 @@ metadata model, fail-closed path, API and frontend architecture concepts,
 governance enforcement points, testing architecture, certification
 architecture, and implementation-readiness criteria. It does not authorize
 backend, frontend, API, or Recommendation Engine V1 behavior changes.
+
+The API contract milestone defines the proposed V2 response shape, provisional
+bullpen-state endpoint scope, required trust metadata, response objects,
+anti-ranking rules, success and refusal examples, testing requirements,
+certification requirements, and implementation gate. It does not implement or
+modify endpoints.
 
 ## Future Expansion Boundary
 
