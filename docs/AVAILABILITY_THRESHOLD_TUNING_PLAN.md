@@ -297,6 +297,27 @@ This experiment is not production approval. Any candidate threshold still
 requires human review, near-boundary example review, and a production tuning
 branch before adoption.
 
+Candidate C boundary review is documented in
+`backend/reports/availability_unavailable_boundary_review.md`. The required
+workflow for material threshold movements is:
+
+```text
+Threshold experiment
+|
+v
+Boundary review
+|
+v
+Human review
+|
+v
+Potential adoption
+```
+
+Boundary review is evidence gathering only. It should identify moved pitchers,
+threshold sensitivity, and a review category. It must not approve a threshold
+change by itself.
+
 ### Confidence Assignment Review
 
 Investigate whether confidence should distinguish missing workload history,
