@@ -9,6 +9,11 @@ calls the one-candidate frontend client, and preserves confidence, freshness,
 availability, explanations, limitations, category fields, refusal output,
 `ranking_applied=false`, and `selection_made=false`.
 
+The pitcher-detail UI integration has completed a polish and regression
+certification pass. The certified UI keeps safe copy, readable empty/loading/
+error/refusal states, distinct caution and refusal treatment, mobile-safe trust
+metadata layout, and accessible status/error/refusal announcements.
+
 No bullpen ranking, multi-candidate comparison, scoring behavior, final pitcher
 selection, backend behavior change, API behavior change, or database change is
 implemented by the UI work.

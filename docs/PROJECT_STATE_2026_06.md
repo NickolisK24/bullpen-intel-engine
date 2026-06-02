@@ -226,7 +226,9 @@ status, or manager intent.
   detail workflow exposes a user-triggered Evaluate Candidate action for one
   pitcher at a time and renders controlled success, caution, refusal, loading,
   error, and empty states while preserving visible trust, freshness,
-  explanations, limitations, categories, and no-ranking/no-selection metadata.
+  explanations, limitations, categories, refusal reasons, and
+  no-ranking/no-selection metadata. The UI integration has completed a polish
+  and regression certification pass for candidate-level display safety.
   Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
@@ -284,8 +286,10 @@ must preserve no-ranking/no-selection metadata. The frontend API client calls
 that route for one-candidate evaluation only. The selected-pitcher detail
 workflow now builds one candidate payload from existing pitcher detail,
 availability, and workload fields and displays the controlled Recommendation
-Panel response after a user-triggered evaluation. The integration does not
-perform ranking, scoring, bullpen comparison, route navigation, or final pitcher
-selection. This project state document does not authorize further Recommendation
-Engine API exposure, multi-candidate ranking, scoring, or final pitcher
-selection.
+Panel response after a user-triggered evaluation. Its certified display keeps
+confidence, data freshness, availability, explanations, limitations, category
+eligibility, refusal reasons, `ranking_applied=false`, and
+`selection_made=false` visible. The integration does not perform ranking,
+scoring, bullpen comparison, route navigation, or final pitcher selection. This
+project state document does not authorize further Recommendation Engine API
+exposure, multi-candidate ranking, scoring, or final pitcher selection.

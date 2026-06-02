@@ -140,10 +140,11 @@ today:
 
 - **Recommendation Engine V1** — backend foundation work, the candidate-level
   API route, the frontend API client foundation, the state-aware UI shell, and
-  pitcher detail dashboard integration are staged for candidate-level decision
-  support while keeping recommendation wording bounded by public workload data
-  and explicit limitations. Final ranking and multi-candidate selection remain
-  future work.
+  polished pitcher detail dashboard integration are staged for candidate-level
+  decision support while keeping recommendation wording bounded by public
+  workload data and explicit limitations. The dashboard integration is
+  certified as candidate-level only; final ranking and multi-candidate
+  selection remain future work.
   See
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
@@ -152,7 +153,9 @@ today:
   the client calls the one-candidate route without exposing ranking or final
   selection. UI implementation planning is documented separately, and the
   pitcher detail workflow now renders controlled success, caution, refusal,
-  loading, error, and empty states from user-triggered candidate evaluation.
+  loading, error, and empty states from user-triggered candidate evaluation
+  with visible trust, freshness, explanation, limitation, refusal, and
+  no-ranking/no-selection fields.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -322,8 +325,8 @@ contract documentation, frontend display contract documentation, and candidate
 route exposure are present. A frontend API client foundation and state-aware UI
 shell are present for one-candidate evaluation only. Dashboard integration is
 implemented in the single-pitcher detail workflow with a user-triggered
-Evaluate Candidate action. Final ranking and multi-candidate selection remain
-future work.
+Evaluate Candidate action and has been polished/certified for candidate-level
+display safety. Final ranking and multi-candidate selection remain future work.
 Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
