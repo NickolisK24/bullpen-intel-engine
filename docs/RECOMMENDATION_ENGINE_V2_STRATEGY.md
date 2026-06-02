@@ -14,6 +14,10 @@ The governance-boundary companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
+The architecture companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+
 V2 exists to explore broader bullpen and team context while preserving the
 trust contract certified in V1:
 

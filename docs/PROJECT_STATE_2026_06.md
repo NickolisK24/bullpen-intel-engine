@@ -134,6 +134,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
+| Recommendation Engine V2 Architecture | Documented |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -328,6 +329,10 @@ The governance-boundary decision filter is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
+The architecture foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -344,6 +349,12 @@ V2 behaviors; preserves the active `ranking_applied=false` and
 `selection_made=false` trust guarantees; and requires documented architecture,
 API contract, frontend contract, certification criteria, and explicit user
 approval before implementation may begin.
+
+The architecture milestone defines the proposed V2 object model, service flow,
+metadata model, fail-closed path, API and frontend architecture concepts,
+governance enforcement points, testing architecture, certification
+architecture, and implementation-readiness criteria. It does not authorize
+backend, frontend, API, or Recommendation Engine V1 behavior changes.
 
 ## Future Expansion Boundary
 

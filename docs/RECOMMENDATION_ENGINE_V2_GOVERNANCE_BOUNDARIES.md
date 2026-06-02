@@ -47,6 +47,10 @@ The V2 strategy foundation is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
 
+The V2 architecture foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+
 That strategy defines the product direction for bullpen-level and team-level
 recommendation planning. This governance-boundary document converts that
 strategy into decision rules.
