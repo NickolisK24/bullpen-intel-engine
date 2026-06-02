@@ -110,6 +110,7 @@ def create_app(config_name=None):
     from models.game_log import GameLog
     from models.prospect import Prospect
     from models.fatigue_score import FatigueScore
+    from models.sync_run import SyncRun
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

@@ -48,8 +48,9 @@ export default function Dashboard() {
   // latest game-date year from the database (not a hardcoded year).
   const seasonInfo = (() => {
     const s = sync.data
-    if (s && s.last_sync && s.status === 'ok') {
-      const d = new Date(s.last_sync)
+    const syncedAt = s?.last_successful_sync || (s?.status === 'success' || s?.status === 'ok' ? s?.last_sync : null)
+    if (syncedAt) {
+      const d = new Date(syncedAt)
       if (!Number.isNaN(d.getTime())) {
         return { season: String(d.getFullYear()), isLive: true }
       }
@@ -127,7 +128,7 @@ export default function Dashboard() {
                   </>
                 )}
                 {fmtThroughDate(sync.data?.data?.latest_game_date) && (
-                  <span> · through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
+                  <span> · data through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
                 )}
               </div>
             )}

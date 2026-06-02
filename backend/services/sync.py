@@ -19,6 +19,7 @@ from sqlalchemy import desc
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
+from services import sync_metadata
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
 
@@ -257,11 +258,12 @@ def run_daily_sync(app, days_back: int = 7):
     run_logger.setLevel(logging.INFO)
 
     started_at = datetime.now(timezone.utc)
+    sync_run_id = None
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
 
     status = {
         'last_sync':        started_at.isoformat(),
-        'status':           'ok',
+        'status':           sync_metadata.STATUS_SUCCESS,
         'pitchers_updated': 0,
         'new_logs_added':   0,
         'errors':           0,
@@ -270,6 +272,10 @@ def run_daily_sync(app, days_back: int = 7):
 
     try:
         with app.app_context():
+            sync_run_id = sync_metadata.start_sync_run(
+                source=sync_metadata.SOURCE_SCHEDULED,
+                started_at=started_at.replace(tzinfo=None),
+            )
             pull = sync_recent_logs(days_back=days_back)
             run_logger.info(
                 'Pulled %s new logs (touched %s pitchers, %s errors)',
@@ -285,18 +291,33 @@ def run_daily_sync(app, days_back: int = 7):
                     GameLog.game_date >= (date.today() - timedelta(days=days_back))
                 ).first()
                 if recent_any is None:
-                    status['status']  = 'no_games'
                     status['message'] = 'No games found — offseason skip.'
                     run_logger.info('No games found — offseason skip.')
 
             pitchers_updated = recalculate_all_fatigue(use_last_game_date=True)
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+            sync_metadata.finish_sync_run(
+                sync_run_id,
+                status=sync_metadata.STATUS_SUCCESS,
+                records_processed=pull['new_logs_added'],
+                new_logs_added=pull['new_logs_added'],
+                pitchers_updated=pitchers_updated,
+                errors=pull['errors'],
+                error_message=status['message'] or None,
+            )
 
     except Exception as e:
-        status['status']  = 'error'
+        status['status']  = sync_metadata.STATUS_FAILED
         status['message'] = str(e)
         run_logger.exception('Daily sync failed: %s', e)
+        with app.app_context():
+            sync_metadata.finish_sync_run(
+                sync_run_id,
+                status=sync_metadata.STATUS_FAILED,
+                errors=1,
+                error_message=str(e),
+            )
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
 

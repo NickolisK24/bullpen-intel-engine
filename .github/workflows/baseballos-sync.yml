@@ -47,7 +47,7 @@ jobs:
             -X POST "$SYNC_URL" \
             -H 'Content-Type: application/json' \
             -H "X-Admin-Token: $ADMIN_TOKEN" \
-            -d '{"days_back": 7}')
+            -d '{"days_back": 7, "source": "github_actions"}')
           echo "HTTP $http_code"
           echo "Response body:"
           cat response.json || true
