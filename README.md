@@ -145,6 +145,8 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
+  The future candidate-level API contract is documented, but no route or UI is
+  exposed yet.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -182,6 +184,7 @@ bullpen-intel-engine/
     ├── PROJECT_STATE_2026_06.md # Current product state and next milestone
     ├── RECOMMENDATION_ENGINE_V1_POLICY.md
     ├── RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md
+    ├── RECOMMENDATION_ENGINE_V1_API_CONTRACT.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -276,6 +279,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — staged engineering plan for translating the approved policy into backend
   boundaries, gates, payloads, tests, API exposure, UI planning, and governance
   validation.
+- [`docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md)
+  - future candidate-level API contract for request and response shapes, trust
+  fields, freshness fields, refusal handling, frontend display requirements,
+  and no-ranking/no-selection guarantees.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
@@ -289,14 +296,13 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 
 ## Roadmap
 
-The next major milestone is **Recommendation Engine V1 Policy**: defining how BaseballOS
-should move from availability intelligence to decision-support intelligence without
-pretending to know private clubhouse, medical, travel, or manager-intent information. The
-authoritative policy is
-[`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md).
-Beyond that, see **Product Direction** above — usage simulation, role-aware fatigue,
-exports/API, and real prospect ingestion — pursued in honest order, with prototype features
-labeled as such until they're real.
+Recommendation Engine V1 is progressing in staged backend foundation work:
+policy, implementation planning, candidate-level engine integration, and future
+API contract documentation are present. Final ranking, route exposure, and UI
+remain future work. Beyond that, see **Product Direction** above: usage
+simulation, role-aware fatigue, exports/API, and real prospect ingestion -
+pursued in honest order, with prototype features labeled as such until they're
+real.
 
 ## Author
 

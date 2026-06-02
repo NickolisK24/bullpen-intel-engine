@@ -109,6 +109,12 @@ candidate input, or multiple candidates fail closed. The engine still does not
 rank, score, compare, or select a final pitcher, and route or frontend exposure
 remains a future stage.
 
+The future candidate-level API contract is documented in
+`docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`. That contract defines request
+and response shape, mandatory trust fields, refusal behavior, frontend display
+requirements, and no-ranking/no-selection metadata for a future route. It does
+not implement or authorize the route.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.
@@ -469,6 +475,7 @@ Expose a read-only endpoint only after service behavior is proven.
 
 Exit criteria:
 
+- route matches `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
 - route delegates to the recommendation service
 - response shape matches the documented contract
 - no database migration required
