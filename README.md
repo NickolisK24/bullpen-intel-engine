@@ -146,8 +146,8 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
-  The candidate-level API contract is documented, and the route exposes
-  one-candidate evaluation only.
+  The candidate-level API and frontend display contracts are documented, and
+  the route exposes one-candidate evaluation only.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -284,6 +284,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   - candidate-level API contract for request and response shapes, trust
   fields, freshness fields, refusal handling, frontend display requirements,
   and no-ranking/no-selection guarantees.
+- [`docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md)
+  - frontend display contract for future candidate-level UI presentation,
+  required trust and freshness visibility, refusal states, safe copy,
+  accessibility, and no-ranking/no-selection guarantees.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
@@ -299,11 +303,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 
 Recommendation Engine V1 is progressing in staged backend foundation work:
 policy, implementation planning, candidate-level engine integration, API
-contract documentation, and candidate route exposure are present. Final ranking,
-multi-candidate selection, and UI remain future work. Beyond that, see
-**Product Direction** above: usage simulation, role-aware fatigue, exports/API,
-and real prospect ingestion - pursued in honest order, with prototype features
-labeled as such until they're real.
+contract documentation, frontend display contract documentation, and candidate
+route exposure are present. Final ranking, multi-candidate selection, and UI
+remain future work. Beyond that, see **Product Direction** above: usage
+simulation, role-aware fatigue, exports/API, and real prospect ingestion -
+pursued in honest order, with prototype features labeled as such until they're
+real.
 
 ## Author
 

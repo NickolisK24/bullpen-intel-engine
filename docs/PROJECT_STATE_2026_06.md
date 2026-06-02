@@ -219,8 +219,8 @@ status, or manager intent.
 - Recommendation Engine V1 final ranking, multi-candidate selection, and UI are
   not implemented yet. The backend foundation contracts, eligibility gates,
   category eligibility assignment, builder, single-candidate engine pipeline,
-  API contract, and candidate-level API route are present. Final ranking and
-  selection remain future work.
+  API contract, frontend display contract, and candidate-level API route are
+  present. Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -259,6 +259,10 @@ The staged implementation planning document is:
 The candidate-level API contract is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
+
+The frontend display contract for future candidate-level UI is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
 
 The implemented candidate-level route evaluates one candidate at a time and
 must preserve no-ranking/no-selection metadata. This project state document does
