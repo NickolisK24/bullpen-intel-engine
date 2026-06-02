@@ -138,15 +138,16 @@ a sync — only the scheduled workflow (or a manual admin call) does. See
 Direction, not promises — these are where the platform is headed, not features that exist
 today:
 
-- **Recommendation Engine V1** — backend foundation work is staged for
-  candidate-level decision support while keeping recommendation wording bounded
-  by public workload data and explicit limitations. Final ranking, API exposure,
-  and UI remain future work. See
+- **Recommendation Engine V1** — backend foundation work and the
+  candidate-level API route are staged for candidate-level decision support
+  while keeping recommendation wording bounded by public workload data and
+  explicit limitations. Final ranking, multi-candidate selection, and UI remain
+  future work. See
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
-  The future candidate-level API contract is documented, but no route or UI is
-  exposed yet.
+  The candidate-level API contract is documented, and the route exposes
+  one-candidate evaluation only.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -280,7 +281,7 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   boundaries, gates, payloads, tests, API exposure, UI planning, and governance
   validation.
 - [`docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md)
-  - future candidate-level API contract for request and response shapes, trust
+  - candidate-level API contract for request and response shapes, trust
   fields, freshness fields, refusal handling, frontend display requirements,
   and no-ranking/no-selection guarantees.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
@@ -297,12 +298,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 ## Roadmap
 
 Recommendation Engine V1 is progressing in staged backend foundation work:
-policy, implementation planning, candidate-level engine integration, and future
-API contract documentation are present. Final ranking, route exposure, and UI
-remain future work. Beyond that, see **Product Direction** above: usage
-simulation, role-aware fatigue, exports/API, and real prospect ingestion -
-pursued in honest order, with prototype features labeled as such until they're
-real.
+policy, implementation planning, candidate-level engine integration, API
+contract documentation, and candidate route exposure are present. Final ranking,
+multi-candidate selection, and UI remain future work. Beyond that, see
+**Product Direction** above: usage simulation, role-aware fatigue, exports/API,
+and real prospect ingestion - pursued in honest order, with prototype features
+labeled as such until they're real.
 
 ## Author
 

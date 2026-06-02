@@ -216,11 +216,11 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 final ranking, API exposure, and UI are not
-  implemented yet. The backend foundation contracts, eligibility gates, category
-  eligibility assignment, builder, and single-candidate engine pipeline are
-  present. The candidate-level API contract is documented, but the route is not
-  implemented. Final ranking and selection remain future work.
+- Recommendation Engine V1 final ranking, multi-candidate selection, and UI are
+  not implemented yet. The backend foundation contracts, eligibility gates,
+  category eligibility assignment, builder, single-candidate engine pipeline,
+  API contract, and candidate-level API route are present. Final ranking and
+  selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -256,10 +256,11 @@ The staged implementation planning document is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
 
-The future candidate-level API contract is:
+The candidate-level API contract is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
 
-This project state document does not authorize Recommendation Engine API
-exposure, frontend UI, multi-candidate ranking, scoring, or final pitcher
-selection.
+The implemented candidate-level route evaluates one candidate at a time and
+must preserve no-ranking/no-selection metadata. This project state document does
+not authorize further Recommendation Engine API exposure, frontend UI,
+multi-candidate ranking, scoring, or final pitcher selection.

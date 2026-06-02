@@ -67,7 +67,8 @@ Proposed future module boundaries:
 | `backend/services/recommendations.py` | Policy orchestration, gate execution, category assignment, refusal construction, and response payload assembly. |
 | `backend/services/recommendation_explanations.py` | Reusable explanation and limitation text, kept separate from gate mechanics. |
 | `backend/services/recommendation_summary.py` | Optional team-level aggregation for Bullpen Stress Alert if that category needs shared summary behavior. |
-| `backend/api/bullpen.py` | Future route exposure only; no inline recommendation classification. |
+| `backend/api/recommendations.py` | Candidate-level route exposure only; no inline recommendation classification. |
+| `backend/api/bullpen.py` | Existing availability routes only; no inline recommendation classification. |
 | `backend/tests/test_recommendations.py` | Focused service tests for policy behavior. |
 | `backend/tests/test_recommendation_api.py` | Route-contract tests only after endpoint exposure is authorized. |
 
@@ -106,14 +107,15 @@ The engine integration in `backend/recommendation/engine.py` allows
 `RecommendationEngine.recommend()` to evaluate one candidate through the gate,
 category-assignment, and builder pipeline. Calls with no candidate, invalid
 candidate input, or multiple candidates fail closed. The engine still does not
-rank, score, compare, or select a final pitcher, and route or frontend exposure
-remains a future stage.
+rank, score, compare, or select a final pitcher. Frontend exposure and
+multi-candidate route behavior remain future stages.
 
-The future candidate-level API contract is documented in
+The candidate-level API contract is documented in
 `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`. That contract defines request
 and response shape, mandatory trust fields, refusal behavior, frontend display
-requirements, and no-ranking/no-selection metadata for a future route. It does
-not implement or authorize the route.
+requirements, and no-ranking/no-selection metadata. The implemented route in
+`backend/api/recommendations.py` exposes one-candidate evaluation only and
+delegates policy behavior to `RecommendationEngine.recommend()`.
 
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
