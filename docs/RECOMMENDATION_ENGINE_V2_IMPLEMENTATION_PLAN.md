@@ -253,17 +253,38 @@ or changing existing V1 recommendation output.
 - V1 regression tests still pass.
 - No ranking or selection semantics exist.
 
-## 9. Phase 2: Bullpen State Builder
+## 9. Phase 2: Backend Context Assembly Layer
+
+**Implementation status**
+
+Complete.
+
+The backend-only context assembly layer is implemented in:
+
+- `backend/recommendation/v2_assembly.py`
+
+The Phase 2 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`
+
+The implemented assembler maps existing availability, workload, freshness,
+limitation, explanation, and refusal evidence into the V2 Phase 1 domain
+objects. It does not expose a V2 endpoint, create frontend behavior, change
+routes, rank pitchers, select pitchers, predict outcomes, or modify
+Recommendation Engine V1 behavior.
 
 **Goal**
 
-Build descriptive bullpen-level state from existing availability and workload
-data.
+Build descriptive bullpen-level state and team context from existing
+availability and workload data.
 
 **Allowed work**
 
 - Create an internal builder that summarizes bullpen status, readiness,
   inventory, limitations, freshness, and trust state.
+- Create internal context assembly that maps evidence into `BullpenState`,
+  `TeamBullpenContext`, `RecommendationContext`, and neutral `CandidateGroup`
+  collections.
 - Use existing availability and workload evidence as inputs.
 - Keep the builder deterministic.
 - Add refusal or degraded-confidence paths when required evidence is missing.
@@ -294,6 +315,8 @@ data.
 **Exit criteria**
 
 - Bullpen state can be built internally.
+- Team bullpen context can be built internally.
+- Neutral candidate groups can be assembled internally.
 - It carries trust metadata.
 - It refuses or downgrades when evidence is insufficient.
 - It does not expose ranking, selection, or prediction.
@@ -869,7 +892,7 @@ review explicitly narrows a phase without weakening governance.
 ```text
 Phase 0 Repo Hygiene
   -> Phase 1 Backend Domain Objects
-  -> Phase 2 Bullpen State Builder
+  -> Phase 2 Backend Context Assembly Layer
   -> Phase 3 Candidate Grouping
   -> Phase 4 Inventory Visibility
   -> Phase 5 Team Bullpen Context

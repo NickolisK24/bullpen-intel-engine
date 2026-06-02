@@ -96,6 +96,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Implementation Readiness Review | Complete |
 | Recommendation Engine V2 Implementation Plan | Complete |
 | Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
+| Recommendation Engine V2 Phase 2 Context Assembly | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -154,11 +155,12 @@ today:
 - **Recommendation Engine V2 boundary** — future recommendation work may explore
   bullpen-level intelligence, grouped eligibility reporting, team-level stress
   intelligence, readiness visibility, neutral grouping without ranking, and
-  broader explainability. The Phase 1 backend domain object foundation now
-  exists for future V2 phases, but no V2 API, frontend behavior, runtime
-  bullpen-state calculation, ranking, or selection is implemented. Those
-  capabilities remain outside the completed Recommendation Engine V1
-  certification. V1 is production-ready for candidate-level evaluation only.
+  broader explainability. The Phase 1 backend domain object foundation and
+  Phase 2 backend context assembly layer now exist for future V2 phases, but
+  no V2 API, frontend behavior, user-facing V2 recommendation behavior,
+  ranking, or selection is implemented. Those capabilities remain outside the
+  completed Recommendation Engine V1 certification. V1 is production-ready for
+  candidate-level evaluation only.
   See
   [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md),
   [`docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`](docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md),
@@ -170,8 +172,10 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md),
   and
   [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md),
-  plus the completed Phase 1 record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md).
+  the completed Phase 1 record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md),
+  and the completed Phase 2 record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -222,6 +226,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md
     ├── RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -346,6 +351,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed backend-only V2 Phase 1 record for domain objects, architecture
   purpose, governance compliance, V1 preservation, and no-API/no-frontend
   boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md)
+  — completed backend-only V2 Phase 2 record for context assembly, source
+  evidence mapping, fail-closed behavior, governance compliance, V1
+  preservation, and no-API/no-frontend boundaries.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -390,12 +399,14 @@ reasons, `ranking_applied=false`, and `selection_made=false`.
 
 Recommendation Engine V2 has strategy, governance boundaries, architecture,
 API contract, frontend contract, certification requirements, implementation
-readiness, implementation planning, and the Phase 1 backend domain object
-foundation complete. Future recommendation expansion may build on those
-objects to explore bullpen-level intelligence, team-level stress intelligence,
+readiness, implementation planning, the Phase 1 backend domain object
+foundation, and the Phase 2 backend context assembly layer complete. Future
+recommendation expansion may build on those objects and internal assembly
+logic to explore bullpen-level intelligence, team-level stress intelligence,
 grouped eligibility reporting, readiness visibility, and broader explainability
-while preserving V1 trust protections. No V2 API, frontend behavior, ranking,
-or selection exists yet. Beyond that, see **Product Direction** above: usage
+while preserving V1 trust protections. No V2 API, frontend behavior, user-facing
+V2 recommendation behavior, ranking, or selection exists yet. Beyond that, see
+**Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
 real.

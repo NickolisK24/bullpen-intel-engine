@@ -58,6 +58,12 @@ from recommendation.v2 import (
     require_v2_governance_safe,
     v2_governance_errors,
 )
+from recommendation.v2_assembly import (
+    V2_CONTEXT_ASSEMBLY_PHASE,
+    V2_CONTEXT_ASSEMBLY_SOURCE,
+    V2ContextAssembly,
+    assemble_v2_context,
+)
 
 __all__ = [
     'BASE_RECOMMENDATION_LIMITATIONS',
@@ -86,13 +92,17 @@ __all__ = [
     'RefusalReason',
     'V2_PHASE',
     'V2_POLICY_NAME',
+    'V2_CONTEXT_ASSEMBLY_PHASE',
+    'V2_CONTEXT_ASSEMBLY_SOURCE',
     'BullpenState',
     'CandidateGroup',
     'TeamBullpenContext',
+    'V2ContextAssembly',
     'V2Explanation',
     'V2FreshnessMetadata',
     'V2Limitation',
     'V2Refusal',
+    'assemble_v2_context',
     'build_recommendation_response',
     'assign_recommendation_categories',
     'evaluate_candidate_gates',

@@ -141,6 +141,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Implementation Readiness Review | Complete |
 | Recommendation Engine V2 Implementation Plan | Complete |
 | Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
+| Recommendation Engine V2 Phase 2 Context Assembly | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -259,9 +260,9 @@ status, or manager intent.
   candidate-level evaluation only. Bullpen ranking, pitcher ordering, final
   pitcher selection, performance forecasting, injury prediction, save
   prediction, matchup guidance, and black-box or generated baseball opinions
-  remain outside V1. V2 now has a backend-only Phase 1 domain object foundation
-  for future grouped bullpen and team-level visibility without ranking or
-  automated selection.
+  remain outside V1. V2 now has backend-only Phase 1 domain objects and Phase 2
+  context assembly for future grouped bullpen and team-level visibility without
+  ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -323,11 +324,12 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 1 Status
+## Recommendation Engine V2 Strategy and Phase 2 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
-implementation planning, and Phase 1 backend domain object foundation work.
+implementation planning, Phase 1 backend domain object foundation work, and
+Phase 2 backend context assembly work.
 
 The official strategy foundation is:
 
@@ -364,6 +366,10 @@ The implementation plan is:
 The Phase 1 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`
+
+The Phase 2 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -419,7 +425,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 1.
+phases after Phase 2.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -433,6 +439,23 @@ refusal, bullpen inventory, readiness, workload, stress, neutral candidate
 group, and team bullpen context metadata. It does not expose V2 API support,
 frontend support, runtime bullpen-state calculation, candidate grouping logic,
 ranking, selection, prediction, or user-visible behavior.
+
+Recommendation Engine V2 Phase 2 implements backend-only context assembly:
+
+- `assemble_v2_context`
+- `V2ContextAssembly`
+
+The Phase 2 assembler maps existing availability, workload, freshness,
+limitation, explanation, and refusal evidence into `RecommendationContext`,
+`BullpenState`, `TeamBullpenContext`, and neutral `CandidateGroup` collections.
+It can summarize bullpen inventory, readiness distribution, workload evidence,
+stress indicators, and leverage evidence availability. It fails closed when
+required evidence is missing or source evidence includes forbidden ranking or
+selection fields.
+
+The Phase 2 assembler does not expose V2 API support, frontend support,
+user-facing V2 recommendation behavior, ranking, selection, prediction, or
+route changes.
 
 The active V1 and V2 governance guarantees remain:
 
