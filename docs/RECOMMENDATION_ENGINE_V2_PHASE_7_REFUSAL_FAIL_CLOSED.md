@@ -177,11 +177,16 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 8 Readiness Boundary
+## Phase 8 Completion Boundary
 
-Future V2 Phase 8 work may expose the approved backend context through the
-separately governed V2 API contract only if it preserves the same refusal,
-fail-closed, trust metadata, no-ranking, and no-selection guarantees. Any
-future API work remains subject to explicit scope approval and must not create
+V2 Phase 8 exposed the approved backend context through the separately governed
+V2 API contract while preserving the same refusal, fail-closed, trust metadata,
+no-ranking, and no-selection guarantees.
+
+The Phase 8 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+
+Future work remains subject to explicit scope approval and must not create
 ranking, selection, prediction, frontend behavior, or user-visible
 recommendation behavior unless separately authorized.

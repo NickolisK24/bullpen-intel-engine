@@ -696,6 +696,32 @@ GET /api/recommendations/v2/bullpen-state
 - V1 API behavior remains unchanged.
 - No ranking or selection fields exist.
 
+**Phase 8 completion status**
+
+Recommendation Engine V2 Phase 8 is complete as a backend-only API contract
+exposure layer.
+
+The approved endpoint is implemented:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The endpoint serializes V2 bullpen-state output from the completed Phase 1
+through Phase 7 backend systems. It returns top-level trust/governance
+metadata, freshness metadata, limitations, explanations, refusal reasons,
+fail-closed metadata, descriptive bullpen state, neutral candidate groups,
+inventory summaries, and team bullpen context.
+
+The endpoint fails closed or degrades explicitly for missing, stale,
+incomplete, unsupported, malformed, or governance-unsafe evidence. It does not
+create frontend behavior, user-facing V2 UI, ranking, selection, prediction,
+or Recommendation Engine V1 behavior changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+
 ## 16. Phase 9: Frontend Client Integration
 
 **Goal**
@@ -1204,9 +1230,9 @@ governance package.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 8 API Endpoint Implementation
+Recommendation Engine V2 Phase 9 Frontend Client Integration
 ```
 
 This milestone may begin only after the user explicitly approves
-implementation. Phase 8 remains governed by the approved V2 API contract and
-must preserve all Phase 1 through Phase 7 backend safeguards.
+implementation. Phase 9 remains governed by the approved V2 frontend contract
+and must preserve all Phase 1 through Phase 8 safeguards.

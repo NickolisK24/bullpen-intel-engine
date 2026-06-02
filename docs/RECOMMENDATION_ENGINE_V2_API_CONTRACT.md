@@ -2,13 +2,12 @@
 
 ## 1. Executive Summary
 
-This document defines the proposed Recommendation Engine V2 API response
-contract before implementation.
+This document defines the Recommendation Engine V2 API response contract.
 
-It is a documentation and contract-design milestone only. It does not
-implement V2, add endpoints, modify existing endpoints, modify backend
-behavior, modify frontend behavior, or change certified Recommendation Engine
-V1 behavior.
+It was originally approved as a documentation and contract-design milestone.
+Recommendation Engine V2 Phase 8 now implements the approved backend endpoint
+described in this contract. The implementation does not modify frontend
+behavior or change certified Recommendation Engine V1 behavior.
 
 The V2 API contract must preserve:
 
@@ -80,7 +79,7 @@ contract-level response objects:
 
 The V2 API contract should:
 
-- define future response shapes before implementation
+- define response shapes before frontend consumption
 - keep V2 descriptive, explainable, deterministic, auditable, trust-first, and
   fail-closed
 - preserve top-level no-ranking and no-selection metadata
@@ -108,23 +107,39 @@ This contract does not define or authorize:
 - hidden weights
 - implementation tests
 
-Endpoint naming and route behavior remain provisional until implementation is
-explicitly approved.
+Endpoint naming and route behavior are fixed for the Phase 8 backend contract
+exposure.
 
-## 8. Proposed Endpoint Scope
+## 7A. Implementation Status
 
-The proposed future endpoint scope is bullpen-state V2 context.
-
-Allowed provisional endpoint name:
+Recommendation Engine V2 Phase 8 implements the approved backend endpoint:
 
 ```text
 GET /api/recommendations/v2/bullpen-state
 ```
 
-Equivalent naming may be considered during implementation planning, but no
-endpoint is implemented by this document.
+The endpoint exposes backend-only V2 bullpen-state output with deterministic
+serialization, trust metadata, freshness metadata, limitations, explanations,
+refusal reasons, and fail-closed metadata.
 
-The proposed endpoint would return descriptive bullpen state, grouped
+Phase 8 does not create frontend behavior, user-facing V2 UI, ranking,
+selection, prediction, or Recommendation Engine V1 behavior changes.
+
+The Phase 8 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+
+## 8. Proposed Endpoint Scope
+
+The implemented endpoint scope is bullpen-state V2 context.
+
+Endpoint:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The endpoint returns descriptive bullpen state, grouped
 candidate context, inventory summaries, team bullpen context, trust metadata,
 explanations, limitations, freshness, and refusal state.
 
@@ -139,7 +154,8 @@ Future V2 requests should:
 - allow only inputs that can be explained from BaseballOS trust surfaces
 - fail closed when requested scope exceeds certified V2 behavior
 
-Request contracts belong in a future implementation-approved API milestone.
+Additional request contracts belong in a future implementation-approved API
+milestone.
 
 ## 10. Response Shape Principles
 
@@ -479,7 +495,8 @@ not rank, choose, or decide.
 
 ## 23. Example Successful Response
 
-This example is illustrative only. It does not implement an endpoint.
+This example is illustrative. The implemented Phase 8 endpoint follows this
+contract while using the current backend V2 serializer.
 
 ```json
 {
@@ -608,7 +625,8 @@ alphabetical and non-ranking.
 
 ## 24. Example Refusal Response
 
-This example is illustrative only. It does not implement an endpoint.
+This example is illustrative. The implemented Phase 8 endpoint follows this
+contract while using the current backend V2 serializer.
 
 ```json
 {
@@ -665,7 +683,7 @@ selection, score, winner, or recommended-pitcher fields.
 
 ## 25. Testing Requirements
 
-Future implementation must test:
+Implementation must test:
 
 - response includes `ranking_applied=false`
 - response includes `selection_made=false`
@@ -683,7 +701,7 @@ Tests must inspect both successful and fail-closed responses.
 
 ## 26. Certification Requirements
 
-Future implementation cannot be certified unless:
+Implementation cannot be certified unless:
 
 - API contract is followed
 - anti-ranking rules pass
@@ -698,12 +716,13 @@ hidden weights.
 
 ## 27. Implementation Gate
 
-V2 API implementation must not begin until:
+V2 API implementation required:
 
 1. API contract is approved
 2. frontend contract is approved
 3. certification requirements are approved
 4. user explicitly approves implementation
 
-This document alone does not authorize endpoint implementation, route changes,
-backend behavior changes, frontend behavior changes, or V1 behavior changes.
+Phase 8 satisfies the endpoint implementation gate for the approved backend
+contract. This document does not authorize frontend behavior changes or V1
+behavior changes.

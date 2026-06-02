@@ -147,6 +147,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 5 Team Bullpen Context | Complete |
 | Recommendation Engine V2 Phase 6 Trust Metadata Integration | Complete |
 | Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
+| Recommendation Engine V2 Phase 8 API Contract Exposure | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -268,8 +269,9 @@ status, or manager intent.
   remain outside V1. V2 now has backend-only Phase 1 domain objects, Phase 2
   context assembly, Phase 3 neutral internal intelligence, and Phase 4
   inventory visibility, Phase 5 team bullpen context, Phase 6 trust metadata
-  integration, and Phase 7 refusal/fail-closed integration for future grouped
-  bullpen and team-level visibility without ranking or automated selection.
+  integration, Phase 7 refusal/fail-closed integration, and Phase 8 backend
+  API contract exposure for grouped bullpen and team-level visibility without
+  ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -331,7 +333,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 7 Status
+## Recommendation Engine V2 Strategy and Phase 8 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -340,7 +342,7 @@ implementation planning, Phase 1 backend domain object foundation work, Phase
 expansion work, Phase 4 backend-only inventory visibility work, and Phase 5
 backend-only team bullpen context work, Phase 6 backend-only trust metadata
 integration work, and Phase 7 backend-only refusal/fail-closed integration
-work.
+work, and Phase 8 backend-only API contract exposure work.
 
 The official strategy foundation is:
 
@@ -402,6 +404,10 @@ The Phase 7 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`
 
+The Phase 8 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -456,7 +462,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 7.
+phases after Phase 8.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -598,6 +604,32 @@ The Phase 7 expansion does not expose V2 API support, frontend support,
 user-facing V2 refusal UI, user-facing V2 recommendation behavior, ranking,
 selection, prediction, or route changes.
 
+Recommendation Engine V2 Phase 8 exposes the approved backend API contract:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The Phase 8 endpoint returns V2 bullpen-state contract output with:
+
+- top-level no-ranking and no-selection metadata
+- trust metadata
+- freshness metadata
+- limitations
+- explanations
+- refusal reasons
+- fail-closed metadata
+- descriptive bullpen state when evidence is safe
+- neutral candidate groups when grouping is safe
+- inventory summaries
+- team bullpen context
+
+The Phase 8 endpoint fails closed or degrades explicitly when evidence is
+missing, stale, incomplete, unsupported, malformed, or governance-unsafe.
+
+The Phase 8 expansion does not expose frontend support, user-facing V2 UI,
+ranking, selection, prediction, or changes to Recommendation Engine V1.
+
 The active V1 and V2 governance guarantees remain:
 
 ```text
@@ -622,5 +654,5 @@ Possible future expansion areas include:
 - simulator integration
 
 This project state document does not authorize further Recommendation Engine
-API exposure, pitcher ranking, pitcher ordering, scoring, or final pitcher
-selection.
+API exposure beyond the approved V2 bullpen-state endpoint, pitcher ranking,
+pitcher ordering, scoring, or final pitcher selection.
