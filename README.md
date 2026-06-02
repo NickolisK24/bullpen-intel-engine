@@ -139,17 +139,19 @@ Direction, not promises — these are where the platform is headed, not features
 today:
 
 - **Recommendation Engine V1** — backend foundation work, the candidate-level
-  API route, the frontend API client foundation, and the UI shell are staged for
-  candidate-level decision support while keeping recommendation wording bounded
-  by public workload data and explicit limitations. Live UI integration, final
-  ranking, and multi-candidate selection remain future work. See
+  API route, the frontend API client foundation, and the state-aware UI shell
+  are staged for candidate-level decision support while keeping recommendation
+  wording bounded by public workload data and explicit limitations. Dashboard
+  integration, final ranking, and multi-candidate selection remain future work.
+  See
   [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   and
   [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
   The candidate-level API and frontend display contracts are documented, and
   the client calls the one-candidate route without exposing ranking or final
   selection. UI implementation planning is documented separately, and the shell
-  reserves display boundaries without calling the live endpoint.
+  renders controlled success, caution, refusal, loading, error, and empty
+  states without adding dashboard coupling.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -311,9 +313,9 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 Recommendation Engine V1 is progressing in staged backend foundation work:
 policy, implementation planning, candidate-level engine integration, API
 contract documentation, frontend display contract documentation, and candidate
-route exposure are present. A frontend API client foundation and UI shell are
-present for one-candidate evaluation only. Live UI integration, final ranking,
-and multi-candidate selection remain future work.
+route exposure are present. A frontend API client foundation and state-aware UI
+shell are present for one-candidate evaluation only. Dashboard integration,
+final ranking, and multi-candidate selection remain future work.
 Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
