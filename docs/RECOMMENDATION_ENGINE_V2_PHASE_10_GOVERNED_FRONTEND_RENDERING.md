@@ -7,6 +7,11 @@ Recommendation Engine V2 Phase 10 Governed Frontend Rendering is complete.
 This phase adds governed frontend rendering for the normalized V2 bullpen-state
 client output introduced in Phase 9.
 
+Phase 10A Desktop Layout Remediation is also complete and documents the
+desktop readability fix in:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`
+
 The rendered endpoint source remains:
 
 ```text
@@ -24,6 +29,7 @@ The V2 governed rendering layer is implemented in:
 - `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
 - `frontend/src/components/dashboard/Dashboard.jsx`
 - `frontend/src/components/recommendations/index.js`
+- `frontend/src/index.css`
 
 The dashboard consumes the Phase 9 client helper:
 
@@ -51,6 +57,17 @@ The governed panel renders:
 
 The panel is descriptive only. It exposes bullpen intelligence and visibility,
 not automated pitcher choice.
+
+## Desktop Layout Remediation
+
+Phase 10A fixes the desktop layout defect where viewport-based internal grids
+could squeeze trust, freshness, explanation, refusal, inventory, and context
+sections when the panel had less usable width than the full desktop viewport.
+
+The panel now uses container-aware layout classes so internal sections respond
+to the panel width rather than the browser width. This preserves readable
+metadata cards and avoids word-by-word wrapping in constrained desktop
+columns.
 
 ## Fail-Closed and Unavailable Behavior
 
@@ -135,7 +152,8 @@ selection_made = false
 ## Phase 11 Readiness Boundary
 
 Future V2 Phase 11 work should validate mobile and accessibility behavior for
-the governed V2 rendering layer.
+the governed V2 rendering layer after the completed Phase 10A desktop layout
+remediation.
 
 Phase 11 should preserve trust, freshness, refusal, limitation, explanation,
 no-ranking, and no-selection guarantees across mobile layout and assistive

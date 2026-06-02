@@ -19,6 +19,12 @@ refusal metadata, fail-closed state, bullpen state, inventory, team context,
 and neutral candidate groups without adding ranking, selection, or prediction
 semantics.
 
+Recommendation Engine V2 Phase 10A now remediates the desktop layout defect in
+that governed panel. The panel uses container-aware internal grids so trust,
+freshness, refusal, explanation, limitation, inventory, and team-context
+sections remain readable when the panel is rendered inside constrained desktop
+layouts.
+
 The V2 frontend contract must preserve:
 
 ```text
@@ -124,6 +130,10 @@ creating user-facing V2 UI.
 
 Phase 10 frontend rendering consumes those normalized states and withholds
 bullpen-state details when the contract state is unavailable.
+
+Phase 10A preserves that behavior while improving desktop readability. It does
+not change the client contract, backend API, V2 response semantics, or
+Recommendation Engine V1 behavior.
 
 ## 7. Frontend Contract Goals
 
@@ -651,6 +661,7 @@ V2 frontend rendering implementation must not begin until:
 3. user explicitly approves implementation
 
 Phase 9 satisfies the approved API-client integration gate. Phase 10 satisfies
-the approved governed frontend rendering gate. This document does not authorize
-additional frontend rendering behavior changes, backend behavior changes, API
-behavior changes, or Recommendation Engine V1 behavior changes.
+the approved governed frontend rendering gate. Phase 10A satisfies the desktop
+layout remediation gate for the governed V2 panel. This document does not
+authorize additional frontend rendering behavior changes, backend behavior
+changes, API behavior changes, or Recommendation Engine V1 behavior changes.

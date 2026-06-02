@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
+import { readFile } from 'node:fs/promises'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
@@ -20,6 +21,10 @@ const {
   getRecommendationV2BullpenStateView,
 } = await server.ssrLoadModule('/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx')
 const { default: Dashboard } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
+const panelSource = await readFile(
+  new URL('../src/components/recommendations/RecommendationV2BullpenStatePanel.jsx', import.meta.url),
+  'utf8',
+)
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -191,6 +196,19 @@ test('renders governed V2 bullpen intelligence in available state', () => {
   assert.ok(htmlIncludes(html, 'neutral source order'))
   assert.ok(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent or warm-up activity.'))
+})
+
+test('uses container-aware V2 layout classes for desktop readability', () => {
+  const html = renderPanel(availableState)
+
+  assert.ok(htmlIncludes(html, 'v2-governed-panel'))
+  assert.ok(htmlIncludes(html, 'v2-governed-panel__metadata-grid'))
+  assert.ok(htmlIncludes(html, 'v2-governed-panel__message-grid'))
+  assert.ok(htmlIncludes(html, 'v2-governed-panel__text'))
+  assert.equal(panelSource.includes('lg:grid-cols-3'), false)
+  assert.equal(panelSource.includes('lg:grid-cols-2'), false)
+  assert.equal(panelSource.includes('md:grid-cols-2'), false)
+  assert.equal(panelSource.includes('md:grid-cols-3'), false)
 })
 
 test('renders fail-closed state with refusal metadata visible', () => {

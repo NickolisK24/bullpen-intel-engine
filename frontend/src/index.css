@@ -56,6 +56,39 @@
     @apply px-5 py-4 border-b border-dirt flex items-center justify-between;
   }
 
+  /* V2 governed recommendation panel
+     Uses container queries so desktop side columns stay readable instead of
+     forcing viewport-width grid breakpoints inside a narrow panel. */
+  .v2-governed-panel {
+    container-type: inline-size;
+  }
+  .v2-governed-panel__metadata-grid,
+  .v2-governed-panel__state-grid,
+  .v2-governed-panel__inventory-grid,
+  .v2-governed-panel__team-grid,
+  .v2-governed-panel__message-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @container (min-width: 44rem) {
+    .v2-governed-panel__metadata-grid,
+    .v2-governed-panel__inventory-grid,
+    .v2-governed-panel__team-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 58rem) {
+    .v2-governed-panel__state-grid,
+    .v2-governed-panel__message-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  .v2-governed-panel__text {
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
   /* ── Stat Chip ── */
   .stat-chip {
     @apply bg-chalk border border-dirt rounded px-2 py-1 font-mono text-xs text-chalk200;
