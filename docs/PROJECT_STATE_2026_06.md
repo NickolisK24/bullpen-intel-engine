@@ -216,13 +216,13 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 final ranking, multi-candidate selection, and UI are
-  not implemented yet. The backend foundation contracts, eligibility gates,
-  category eligibility assignment, builder, single-candidate engine pipeline,
-  API contract, frontend display contract, candidate-level API route, and
-  frontend API client foundation are present. UI implementation planning is
-  documented, but UI build work, final ranking, and selection remain future
-  work.
+- Recommendation Engine V1 final ranking, multi-candidate selection, and live
+  candidate UI integration are not implemented yet. The backend foundation
+  contracts, eligibility gates, category eligibility assignment, builder,
+  single-candidate engine pipeline, API contract, frontend display contract,
+  candidate-level API route, frontend API client foundation, and UI shell are
+  present. The shell reserves candidate-level display boundaries without
+  calling the live endpoint. Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -272,8 +272,9 @@ The future UI implementation plan is:
 
 The implemented candidate-level route evaluates one candidate at a time and
 must preserve no-ranking/no-selection metadata. The frontend API client calls
-that route for one-candidate evaluation only and does not implement UI. The UI
-plan defines future display architecture and guardrails without authorizing
-frontend build work. This project state document does not authorize further
-Recommendation Engine API exposure, frontend UI, multi-candidate ranking,
-scoring, or final pitcher selection.
+that route for one-candidate evaluation only. The UI shell defines the future
+display boundaries with placeholder content only and does not perform live API
+integration, candidate selection, route navigation, ranking, or final pitcher
+selection. This project state document does not authorize further
+Recommendation Engine API exposure, live frontend workflows, multi-candidate
+ranking, scoring, or final pitcher selection.
