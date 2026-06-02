@@ -98,6 +98,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
 | Recommendation Engine V2 Phase 2 Context Assembly | Complete |
 | Recommendation Engine V2 Phase 3 Neutral Intelligence | Complete |
+| Recommendation Engine V2 Phase 4 Inventory Visibility | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -157,11 +158,12 @@ today:
   bullpen-level intelligence, grouped eligibility reporting, team-level stress
   intelligence, readiness visibility, neutral grouping without ranking, and
   broader explainability. The Phase 1 backend domain object foundation,
-  Phase 2 backend context assembly layer, and Phase 3 backend-only neutral
-  intelligence expansion now exist for future V2 phases, but no V2 API,
-  frontend behavior, user-facing V2 recommendation behavior, ranking, or
-  selection is implemented. Those capabilities remain outside the completed
-  Recommendation Engine V1 certification. V1 is production-ready for
+  Phase 2 backend context assembly layer, Phase 3 backend-only neutral
+  intelligence expansion, and Phase 4 backend-only inventory visibility layer
+  now exist for future V2 phases, but no V2 API, frontend behavior,
+  user-facing V2 recommendation behavior, ranking, or selection is
+  implemented. Those capabilities remain outside the completed Recommendation
+  Engine V1 certification. V1 is production-ready for
   candidate-level evaluation only.
   See
   [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md),
@@ -179,7 +181,9 @@ today:
   and the completed Phase 2 record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md),
   and the completed Phase 3 record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md),
+  and the completed Phase 4 record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -232,6 +236,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -364,6 +369,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed backend-only V2 Phase 3 record for neutral internal category
   summaries, expanded candidate groups, fail-closed behavior, governance
   compliance, V1 preservation, and no-API/no-frontend boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md)
+  — completed backend-only V2 Phase 4 record for deterministic inventory
+  summaries, inventory evidence, fail-closed behavior, governance compliance,
+  V1 preservation, and no-API/no-frontend boundaries.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -410,13 +419,13 @@ Recommendation Engine V2 has strategy, governance boundaries, architecture,
 API contract, frontend contract, certification requirements, implementation
 readiness, implementation planning, the Phase 1 backend domain object
 foundation, the Phase 2 backend context assembly layer, and the Phase 3
-backend-only neutral intelligence expansion complete. Future recommendation
-expansion may build on those objects and internal assembly logic to explore
-bullpen-level intelligence, team-level stress intelligence, inventory
-visibility, readiness visibility, and broader explainability while preserving
-V1 trust protections. No V2 API, frontend behavior, user-facing V2
-recommendation behavior, ranking, or selection exists yet. Beyond that, see
-**Product Direction** above: usage
+backend-only neutral intelligence expansion, and the Phase 4 backend-only
+inventory visibility layer complete. Future recommendation expansion may build
+on those objects and internal assembly logic to explore bullpen-level
+intelligence, team-level stress intelligence, readiness visibility, and
+broader explainability while preserving V1 trust protections. No V2 API,
+frontend behavior, user-facing V2 recommendation behavior, ranking, or
+selection exists yet. Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
 real.

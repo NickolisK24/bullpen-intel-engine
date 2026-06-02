@@ -32,6 +32,7 @@ from recommendation.v2 import (
 V2_CONTEXT_ASSEMBLY_PHASE = 'phase_2_backend_context_assembly'
 V2_CONTEXT_ASSEMBLY_SOURCE = 'existing_availability_workload_evidence'
 V2_NEUTRAL_INTELLIGENCE_PHASE = 'phase_3_neutral_intelligence_expansion'
+V2_INVENTORY_VISIBILITY_PHASE = 'phase_4_inventory_visibility_layer'
 
 AVAILABILITY_STATUS_ORDER = (
     'Available',
@@ -67,6 +68,14 @@ NEUTRAL_INTELLIGENCE_DIMENSIONS = (
 GROUPING_DIMENSION_ORDER = (
     'availability_status',
     *NEUTRAL_INTELLIGENCE_DIMENSIONS,
+)
+INVENTORY_VISIBILITY_SECTIONS = (
+    'availability',
+    'eligibility',
+    'refusal',
+    'freshness',
+    'readiness',
+    'workload',
 )
 
 ELIGIBILITY_CATEGORY_LABELS = {
@@ -153,6 +162,12 @@ def assemble_v2_context(
                 ),
             ),
         )
+        inventory_visibility = _inventory_visibility_summary(
+            records=(),
+            candidate_groups=(),
+            context=context,
+            failed_closed=True,
+        )
         bullpen_state = BullpenState(
             team_id=team_id,
             team_name=team_name,
@@ -162,6 +177,7 @@ def assemble_v2_context(
                 'availability_status_counts': _ordered_counts(Counter(), AVAILABILITY_STATUS_ORDER),
                 'candidate_group_count': 0,
                 'neutral_intelligence_dimensions': list(NEUTRAL_INTELLIGENCE_DIMENSIONS),
+                'visibility_summary': inventory_visibility,
             },
             readiness={
                 'data_state_counts': _ordered_counts(Counter(), DATA_STATE_ORDER),
@@ -211,6 +227,7 @@ def assemble_v2_context(
                     candidate_groups=(),
                     failed_closed=True,
                 ),
+                'inventory_visibility': inventory_visibility,
             },
         )
 
@@ -226,12 +243,19 @@ def assemble_v2_context(
         candidate_groups=candidate_groups,
         failed_closed=failed_closed,
     )
+    inventory_visibility = _inventory_visibility_summary(
+        records=records,
+        candidate_groups=candidate_groups,
+        context=context,
+        failed_closed=failed_closed,
+    )
     bullpen_state = _bullpen_state(
         records=records,
         candidate_groups=candidate_groups,
         context=context,
         team_id=team_id,
         team_name=team_name,
+        inventory_visibility=inventory_visibility,
     )
     team_context = _team_bullpen_context(
         records=records,
@@ -254,6 +278,7 @@ def assemble_v2_context(
             'failed_closed': failed_closed,
             'neutral_ordering': 'input_order_preserved_within_groups',
             'neutral_intelligence': neutral_intelligence,
+            'inventory_visibility': inventory_visibility,
         },
     )
 
@@ -590,7 +615,288 @@ def _neutral_intelligence_summary(*, records, candidate_groups, failed_closed):
     return payload
 
 
-def _bullpen_state(records, candidate_groups, context, team_id, team_name):
+def _inventory_visibility_summary(
+    *,
+    records,
+    candidate_groups,
+    context,
+    failed_closed,
+):
+    records = tuple(records)
+    candidate_groups = tuple(candidate_groups)
+    payload = {
+        'phase': V2_INVENTORY_VISIBILITY_PHASE,
+        'source': 'v2_context_assembly_records',
+        'total_inventory_count': len(records),
+        'sections': list(INVENTORY_VISIBILITY_SECTIONS),
+        'availability_inventory': _availability_inventory(records),
+        'eligibility_inventory': _eligibility_inventory(records),
+        'refusal_inventory': _refusal_inventory(records, context),
+        'freshness_inventory': _freshness_inventory(records, context),
+        'readiness_inventory': _readiness_inventory_summary(records),
+        'workload_inventory': _workload_inventory(records),
+        'evidence_inventory': _evidence_inventory(records, candidate_groups),
+        'limitation_inventory': _limitation_inventory(records, context),
+        'explanation_inventory': _explanation_inventory(records, context),
+        'trust_metadata': _inventory_trust_metadata(context, failed_closed),
+        'ordering_policy': 'input_order_preserved_within_inventory_categories',
+        'ranking_applied': False,
+        'selection_made': False,
+    }
+    require_v2_governance_safe(payload)
+    return payload
+
+
+def _availability_inventory(records):
+    counts = _readiness_distribution(records)
+    return {
+        'available_count': counts['Available'],
+        'monitor_count': counts['Monitor'],
+        'limited_count': counts['Limited'],
+        'avoid_count': counts['Avoid'],
+        'unavailable_count': counts['Unavailable'],
+        'unknown_count': counts['Unknown'],
+        'status_counts': counts,
+        'members_by_status': _inventory_members_by_category(
+            records=records,
+            category_order=AVAILABILITY_STATUS_ORDER,
+            category_for_record=lambda record: record['availability_status'] or 'Unknown',
+            section='availability',
+        ),
+    }
+
+
+def _eligibility_inventory(records):
+    counts = _eligibility_distribution(records)
+    return {
+        'category_counts': counts,
+        'evidence_complete_count': counts['evidence_complete'],
+        'cautionary_evidence_count': counts['cautionary_evidence'],
+        'refused_or_degraded_evidence_count': counts['refused_or_degraded_evidence'],
+        'unknown_evidence_count': counts['unknown_evidence'],
+        'members_by_category': _inventory_members_by_category(
+            records=records,
+            category_order=ELIGIBILITY_CATEGORY_ORDER,
+            category_for_record=_eligibility_category,
+            section='eligibility',
+        ),
+    }
+
+
+def _refusal_inventory(records, context):
+    counts = _refusal_distribution(records)
+    refused_count = sum(counts[category] for category in counts if category != 'no_refusal')
+    return {
+        'category_counts': counts,
+        'refused_count': refused_count,
+        'no_refusal_count': counts['no_refusal'],
+        'context_refusal_reason_count': len(context.refusal_reasons),
+        'context_refusal_reasons': [
+            refusal.to_dict() for refusal in context.refusal_reasons
+        ],
+        'members_by_category': _inventory_members_by_category(
+            records=records,
+            category_order=REFUSAL_CATEGORY_ORDER,
+            category_for_record=_refusal_category,
+            section='refusal',
+        ),
+    }
+
+
+def _freshness_inventory(records, context):
+    counts = _freshness_distribution(records)
+    return {
+        'data_state_counts': counts,
+        'fresh_count': counts['fresh'],
+        'stale_count': counts['stale'],
+        'missing_data_count': (
+            counts['missing'] + counts['incomplete'] + counts['unknown']
+        ),
+        'historical_count': counts['historical'],
+        'freshness': context.freshness.to_dict(),
+        'members_by_data_state': _inventory_members_by_category(
+            records=records,
+            category_order=DATA_STATE_ORDER,
+            category_for_record=lambda record: record['data_state'] or 'unknown',
+            section='freshness',
+        ),
+    }
+
+
+def _readiness_inventory_summary(records):
+    availability_counts = _readiness_distribution(records)
+    confidence_counts = _ordered_counts(
+        Counter(record['confidence'] for record in records),
+        CONFIDENCE_ORDER,
+    )
+    return {
+        'readiness_distribution': availability_counts,
+        'confidence_counts': confidence_counts,
+        'available_or_monitor_count': (
+            availability_counts['Available'] + availability_counts['Monitor']
+        ),
+        'limited_or_avoid_count': (
+            availability_counts['Limited'] + availability_counts['Avoid']
+        ),
+        'unavailable_or_unknown_count': (
+            availability_counts['Unavailable'] + availability_counts['Unknown']
+        ),
+        'members_by_readiness': _inventory_members_by_category(
+            records=records,
+            category_order=AVAILABILITY_STATUS_ORDER,
+            category_for_record=lambda record: record['availability_status'] or 'Unknown',
+            section='readiness',
+        ),
+    }
+
+
+def _workload_inventory(records):
+    summary = _workload_summary(records)
+    return {
+        'category_counts': summary['workload_category_counts'],
+        'fatigue_band_counts': summary['fatigue_band_counts'],
+        'recent_pitch_usage_counts': summary['recent_pitch_usage_counts'],
+        'workload_evidence_available': summary['workload_evidence_available'],
+        'fatigue_value_available_count': summary['fatigue_value_available_count'],
+        'recent_pitch_count_available_count': summary['recent_pitch_count_available_count'],
+        'missing_workload_input_count': summary['missing_workload_input_count'],
+        'members_by_workload': _inventory_members_by_category(
+            records=records,
+            category_order=WORKLOAD_CATEGORY_ORDER,
+            category_for_record=_workload_category,
+            section='workload',
+        ),
+    }
+
+
+def _evidence_inventory(records, candidate_groups):
+    group_counts = _ordered_counts(
+        Counter(
+            group.metadata.get('grouping_dimension', 'unknown')
+            for group in candidate_groups
+        ),
+        GROUPING_DIMENSION_ORDER,
+    )
+    return {
+        'source_record_count': len(records),
+        'source_reason_count': sum(len(record['reasons']) for record in records),
+        'source_limitation_count': sum(len(record['limitations']) for record in records),
+        'candidate_group_count': len(candidate_groups),
+        'candidate_group_dimension_counts': group_counts,
+        'candidate_group_reference': [
+            {
+                'group_id': group.group_id,
+                'grouping_dimension': group.metadata.get('grouping_dimension'),
+                'category': group.metadata.get('category'),
+                'candidate_count': len(group.candidates),
+            }
+            for group in candidate_groups
+        ],
+        'ordering_policy': 'input_order_preserved_within_inventory_categories',
+    }
+
+
+def _limitation_inventory(records, context):
+    source_limitations = _unique_texts(
+        limitation
+        for record in records
+        for limitation in record['limitations']
+    )
+    return {
+        'source_limitation_count': sum(len(record['limitations']) for record in records),
+        'source_limitations': source_limitations,
+        'context_limitation_count': len(context.limitations),
+        'context_limitations': [
+            limitation.to_dict() for limitation in context.limitations
+        ],
+    }
+
+
+def _explanation_inventory(records, context):
+    source_reasons = _unique_texts(
+        reason
+        for record in records
+        for reason in record['reasons']
+    )
+    return {
+        'source_reason_count': sum(len(record['reasons']) for record in records),
+        'source_reason_messages': source_reasons,
+        'context_explanation_count': len(context.explanations),
+        'context_explanations': [
+            explanation.to_dict() for explanation in context.explanations
+        ],
+    }
+
+
+def _inventory_trust_metadata(context, failed_closed):
+    return {
+        'confidence': context.confidence.value,
+        'confidence_code': context.confidence.name,
+        'data_state': context.data_state,
+        'generated_at': context.generated_at,
+        'freshness': context.freshness.to_dict(),
+        'refusal_reason_count': len(context.refusal_reasons),
+        'limitation_count': len(context.limitations),
+        'explanation_count': len(context.explanations),
+        'failed_closed': bool(failed_closed),
+        'ranking_applied': context.ranking_applied,
+        'selection_made': context.selection_made,
+    }
+
+
+def _inventory_members_by_category(
+    *,
+    records,
+    category_order,
+    category_for_record,
+    section,
+):
+    buckets = OrderedDict((category, []) for category in category_order)
+    for record in records:
+        category = category_for_record(record)
+        if category not in buckets:
+            buckets[category] = []
+        buckets[category].append(
+            _inventory_member_entry(record, section=section, category=category)
+        )
+    return {category: list(members) for category, members in buckets.items()}
+
+
+def _inventory_member_entry(record, *, section, category):
+    entry = {
+        'pitcher_id': record['pitcher_id'],
+        'pitcher_name': record['pitcher_name'],
+        'team_id': record['team_id'],
+        'team_name': record['team_name'],
+        'availability_status': record['availability_status'],
+        'confidence': record['confidence'],
+        'data_state': record['data_state'],
+        'inventory_membership': {
+            'section': section,
+            'category': category,
+            'basis': 'source_evidence_category_match',
+        },
+        'evidence': {
+            'source_reason_count': len(record['reasons']),
+            'source_limitation_count': len(record['limitations']),
+            'fatigue_value_available': record['inputs'].get('fatigue_score') is not None,
+            'recent_pitch_count_available': record['inputs'].get('pitches_yesterday') is not None,
+            'latest_game_date_available': record['inputs'].get('latest_game_date') is not None,
+            'high_leverage_evidence': record['high_leverage_evidence'],
+        },
+    }
+    require_v2_governance_safe(entry)
+    return entry
+
+
+def _bullpen_state(
+    records,
+    candidate_groups,
+    context,
+    team_id,
+    team_name,
+    inventory_visibility,
+):
     availability_counts = Counter(record['availability_status'] or 'Unknown' for record in records)
     confidence_counts = Counter(record['confidence'] for record in records)
     data_state_counts = Counter(record['data_state'] for record in records)
@@ -605,6 +911,7 @@ def _bullpen_state(records, candidate_groups, context, team_id, team_name):
             'availability_status_counts': _ordered_counts(availability_counts, AVAILABILITY_STATUS_ORDER),
             'candidate_group_count': len(candidate_groups),
             'neutral_intelligence_dimensions': list(NEUTRAL_INTELLIGENCE_DIMENSIONS),
+            'visibility_summary': inventory_visibility,
         },
         readiness={
             'confidence_counts': _ordered_counts(confidence_counts, CONFIDENCE_ORDER),
@@ -1010,6 +1317,14 @@ def _unique_refusals(refusals):
     return tuple(by_id.values())
 
 
+def _unique_texts(values):
+    by_text = OrderedDict()
+    for value in values:
+        text = str(value)
+        by_text[text] = text
+    return list(by_text.values())
+
+
 def _latest_sync_status(records):
     statuses = [record['latest_sync_status'] for record in records if record['latest_sync_status']]
     if any(str(status).lower() == 'failed' for status in statuses):
@@ -1050,7 +1365,9 @@ __all__ = [
     'V2_CONTEXT_ASSEMBLY_PHASE',
     'V2_CONTEXT_ASSEMBLY_SOURCE',
     'V2_NEUTRAL_INTELLIGENCE_PHASE',
+    'V2_INVENTORY_VISIBILITY_PHASE',
     'NEUTRAL_INTELLIGENCE_DIMENSIONS',
+    'INVENTORY_VISIBILITY_SECTIONS',
     'V2ContextAssembly',
     'assemble_v2_context',
 ]

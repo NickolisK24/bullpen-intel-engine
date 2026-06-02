@@ -430,6 +430,22 @@ Implement descriptive bullpen inventory summaries.
 - Inventory output refuses or downgrades when evidence is incomplete.
 - No inventory output implies preference.
 
+**Phase 4 completion status**
+
+Recommendation Engine V2 Phase 4 is complete as a backend-only inventory
+visibility layer. The context assembly layer now produces internal
+availability, eligibility, refusal, freshness, readiness, workload, evidence,
+limitation, explanation, and trust metadata inventory summaries. Member order
+inside inventory categories preserves source input order.
+
+Phase 4 does not expose API support, frontend support, user-facing V2
+inventory UI, user-facing V2 recommendation behavior, ranking, selection,
+prediction, or route changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md`
+
 ## 12. Phase 5: Team Bullpen Context Layer
 
 **Goal**

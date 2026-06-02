@@ -59,9 +59,11 @@ from recommendation.v2 import (
     v2_governance_errors,
 )
 from recommendation.v2_assembly import (
+    INVENTORY_VISIBILITY_SECTIONS,
     NEUTRAL_INTELLIGENCE_DIMENSIONS,
     V2_CONTEXT_ASSEMBLY_PHASE,
     V2_CONTEXT_ASSEMBLY_SOURCE,
+    V2_INVENTORY_VISIBILITY_PHASE,
     V2_NEUTRAL_INTELLIGENCE_PHASE,
     V2ContextAssembly,
     assemble_v2_context,
@@ -97,7 +99,9 @@ __all__ = [
     'V2_CONTEXT_ASSEMBLY_PHASE',
     'V2_CONTEXT_ASSEMBLY_SOURCE',
     'V2_NEUTRAL_INTELLIGENCE_PHASE',
+    'V2_INVENTORY_VISIBILITY_PHASE',
     'NEUTRAL_INTELLIGENCE_DIMENSIONS',
+    'INVENTORY_VISIBILITY_SECTIONS',
     'BullpenState',
     'CandidateGroup',
     'TeamBullpenContext',

@@ -143,6 +143,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
 | Recommendation Engine V2 Phase 2 Context Assembly | Complete |
 | Recommendation Engine V2 Phase 3 Neutral Intelligence | Complete |
+| Recommendation Engine V2 Phase 4 Inventory Visibility | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -262,9 +263,9 @@ status, or manager intent.
   pitcher selection, performance forecasting, injury prediction, save
   prediction, matchup guidance, and black-box or generated baseball opinions
   remain outside V1. V2 now has backend-only Phase 1 domain objects, Phase 2
-  context assembly, and Phase 3 neutral internal intelligence for future
-  grouped bullpen and team-level visibility without ranking or automated
-  selection.
+  context assembly, Phase 3 neutral internal intelligence, and Phase 4
+  inventory visibility for future grouped bullpen and team-level visibility
+  without ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -326,13 +327,13 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 3 Status
+## Recommendation Engine V2 Strategy and Phase 4 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
-implementation planning, Phase 1 backend domain object foundation work, and
-Phase 2 backend context assembly work, and Phase 3 backend-only neutral
-intelligence expansion work.
+implementation planning, Phase 1 backend domain object foundation work, Phase
+2 backend context assembly work, Phase 3 backend-only neutral intelligence
+expansion work, and Phase 4 backend-only inventory visibility work.
 
 The official strategy foundation is:
 
@@ -377,6 +378,10 @@ The Phase 2 completion record is:
 The Phase 3 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md`
+
+The Phase 4 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -432,7 +437,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 2.
+phases after Phase 4.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -481,6 +486,28 @@ explanation support, and fails closed when evidence is missing or unsafe.
 The Phase 3 expansion does not expose V2 API support, frontend support,
 user-facing V2 recommendation behavior, ranking, selection, prediction, or
 route changes.
+
+Recommendation Engine V2 Phase 4 expands backend-only inventory visibility:
+
+- availability inventory
+- eligibility inventory
+- refusal inventory
+- freshness inventory
+- readiness inventory
+- workload inventory
+- evidence inventory
+- limitation inventory
+- explanation inventory
+- trust metadata
+
+The Phase 4 expansion preserves source input order inside inventory
+categories, exposes deterministic counts and member references, propagates
+trust/freshness/refusal/limitation/explanation metadata, and fails closed when
+evidence is missing or unsafe.
+
+The Phase 4 expansion does not expose V2 API support, frontend support,
+user-facing V2 inventory UI, user-facing V2 recommendation behavior, ranking,
+selection, prediction, or route changes.
 
 The active V1 and V2 governance guarantees remain:
 

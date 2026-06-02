@@ -185,10 +185,10 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 4 Readiness Boundary
+## Phase 4 Completion Boundary
 
-Future V2 Phase 4 work may build on the neutral intelligence expansion for
-inventory visibility only if it preserves the same governance rules. Any future
-work remains subject to explicit scope approval and must not create ranking,
+V2 Phase 4 has built on the neutral intelligence expansion for backend-only
+inventory visibility while preserving the same governance rules. Later work
+remains subject to explicit scope approval and must not create ranking,
 selection, prediction, API behavior, frontend behavior, or user-visible
 recommendation behavior unless separately authorized.
