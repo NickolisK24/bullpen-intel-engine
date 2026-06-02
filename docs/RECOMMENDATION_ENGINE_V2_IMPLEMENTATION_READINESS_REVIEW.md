@@ -382,3 +382,6 @@ and preserve the documented constraints:
 ## 19. Next Approved Milestone
 
 Recommendation Engine V2 Implementation Planning
+
+The resulting implementation plan is documented in
+`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`.

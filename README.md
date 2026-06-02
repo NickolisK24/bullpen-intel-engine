@@ -94,6 +94,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Frontend Contract | Documented |
 | Recommendation Engine V2 Certification Requirements | Documented |
 | Recommendation Engine V2 Implementation Readiness Review | Complete |
+| Recommendation Engine V2 Implementation Plan | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -163,8 +164,9 @@ today:
   [`docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md),
   [`docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`](docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md),
   [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md),
+  [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md),
   and
-  [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -213,6 +215,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md
     ├── RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md
     ├── RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md
+    ├── RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -329,6 +332,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — final governance readiness review for the V2 planning package, including
   readiness findings, implementation risks, remaining blockers, final
   determination, and next approved milestone.
+- [`docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md)
+  — phased implementation roadmap for future V2 work, including repo hygiene,
+  backend/API/frontend sequencing, testing expectations, certification gates,
+  rollout controls, stop conditions, and the next implementation milestone.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -373,11 +380,13 @@ reasons, `ranking_applied=false`, and `selection_made=false`.
 
 Recommendation Engine V2 has strategy, governance boundaries, architecture,
 API contract, frontend contract, and certification requirements documented
-with an implementation-readiness review completed before implementation
-planning. Future recommendation expansion may explore
+with an implementation-readiness review and implementation plan completed
+before runtime work begins. Future recommendation expansion may explore
 bullpen-level intelligence, team-level stress intelligence, grouped eligibility
 reporting, readiness visibility, and broader explainability while preserving
-V1 trust protections. Beyond that, see **Product Direction** above: usage
+V1 trust protections. The next milestone is Recommendation Engine V2 Phase 1
+Backend Domain Object Foundation, only after explicit implementation approval.
+Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
 real.

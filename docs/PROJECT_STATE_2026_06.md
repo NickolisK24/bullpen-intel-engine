@@ -139,6 +139,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Frontend Contract | Documented |
 | Recommendation Engine V2 Certification Requirements | Documented |
 | Recommendation Engine V2 Implementation Readiness Review | Complete |
+| Recommendation Engine V2 Implementation Plan | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -353,6 +354,10 @@ The implementation-readiness review is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md`
 
+The implementation plan is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -401,6 +406,15 @@ and finds no remaining governance blockers. The final readiness determination
 is `READY_FOR_IMPLEMENTATION`, with the next approved milestone defined as
 Recommendation Engine V2 Implementation Planning. The review does not
 implement or certify runtime behavior.
+
+The implementation plan converts the approved V2 governance package into a
+phased roadmap covering repo hygiene, backend domain objects, bullpen state,
+candidate grouping, inventory visibility, team bullpen context, trust metadata,
+refusal and fail-closed behavior, API implementation, frontend integration,
+mobile/accessibility validation, test expansion, certification review, and
+production rollout decision. The next milestone is Recommendation Engine V2
+Phase 1 Backend Domain Object Foundation, only after explicit implementation
+approval. The plan does not implement or certify runtime behavior.
 
 ## Future Expansion Boundary
 
