@@ -106,7 +106,7 @@ reviewed before adoption.
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
-| Recommendation Engine | Planned |
+| Recommendation Engine | Backend foundation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -216,10 +216,10 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 decision logic and UI are not implemented yet; the
-  backend foundation contracts, eligibility gates, and category eligibility
-  assignment are present. The builder can compose candidate-level structured
-  responses, but final ranking and selection remain future work.
+- Recommendation Engine V1 final ranking, API exposure, and UI are not
+  implemented yet. The backend foundation contracts, eligibility gates, category
+  eligibility assignment, builder, and single-candidate engine pipeline are
+  present. Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -255,5 +255,6 @@ The staged implementation planning document is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
 
-No Recommendation Engine implementation details are authorized by this project
-state document or by the implementation plan itself.
+This project state document does not authorize Recommendation Engine API
+exposure, frontend UI, multi-candidate ranking, scoring, or final pitcher
+selection.

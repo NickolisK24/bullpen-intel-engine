@@ -1,7 +1,6 @@
 from recommendation import (
     RecommendationCandidate,
     RecommendationEngine,
-    RecommendationRequest,
     build_recommendation_response,
     evaluate_candidate_gates,
     is_valid_recommendation_result,
@@ -210,10 +209,7 @@ class TestRecommendationResponseBuilder:
         assert 'rank' not in payload['metadata']
 
     def test_existing_fail_closed_default_engine_behavior_remains_intact(self):
-        player = candidate(inputs={'fatigue_score': 20.0})
-        result = RecommendationEngine().recommend(
-            RecommendationRequest(candidates=(player,))
-        )
+        result = RecommendationEngine().recommend()
 
         assert result.is_refusal is True
         assert result.has_recommendation is False

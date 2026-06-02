@@ -236,7 +236,12 @@ class TestRecommendationCategoryAssignment:
         gate_result = evaluate_candidate_gates(player)
         assignment = assign_recommendation_categories(gate_result, candidate=player)
         engine_result = RecommendationEngine().recommend(
-            RecommendationRequest(candidates=(player,))
+            RecommendationRequest(
+                candidates=(
+                    player,
+                    candidate(pitcher_id=43, inputs={'fatigue_score': 15.0}),
+                )
+            )
         )
 
         assert assignment.ranking_applied is False

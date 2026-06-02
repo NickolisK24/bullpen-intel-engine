@@ -82,7 +82,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
 | Governance Framework | ✓ Complete |
-| Recommendation Engine | Planned |
+| Recommendation Engine | Backend foundation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -138,10 +138,13 @@ a sync — only the scheduled workflow (or a manual admin call) does. See
 Direction, not promises — these are where the platform is headed, not features that exist
 today:
 
-- **Recommendation Engine V1 Policy** — the next major milestone. The goal is to move
-  BaseballOS from availability intelligence to decision-support intelligence while keeping
-  recommendation wording bounded by public workload data and explicit limitations. See
-  [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md).
+- **Recommendation Engine V1** — backend foundation work is staged for
+  candidate-level decision support while keeping recommendation wording bounded
+  by public workload data and explicit limitations. Final ranking, API exposure,
+  and UI remain future work. See
+  [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
+  and
+  [`docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -162,7 +165,7 @@ bullpen-intel-engine/
 │   ├── recalculate_fatigue.py   # Recompute fatigue from historical reference dates
 │   ├── api/                     # Route blueprints (bullpen, prospects, methodology)
 │   ├── models/                  # SQLAlchemy models (incl. sync_run metadata)
-│   ├── recommendation/          # Recommendation Engine V1 contracts, gates, category mapping, builder, and fail-closed foundation
+│   ├── recommendation/          # Recommendation Engine V1 contracts, gates, category mapping, builder, and engine pipeline
 │   ├── services/                # mlb_api · fatigue · availability · sync metadata
 │   ├── utils/                   # db.py · auth.py (admin-token guard)
 │   ├── analysis/                # Out-of-band retrospective fatigue→ERA analysis
