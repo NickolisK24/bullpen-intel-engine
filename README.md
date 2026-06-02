@@ -191,6 +191,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md
     ├── RECOMMENDATION_ENGINE_V1_API_CONTRACT.md
     ├── RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md
+    ├── RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -297,6 +298,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   - staged UI implementation plan for candidate-level display
   architecture, component boundaries, trust and freshness visibility,
   refusal states, mobile/accessibility expectations, testing, and guardrails.
+- [`docs/RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md`](docs/RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md)
+  - dashboard integration plan for safely placing candidate-level
+  recommendation evaluation in the existing pitcher detail workflow without
+  ranking or final selection.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
@@ -314,8 +319,9 @@ Recommendation Engine V1 is progressing in staged backend foundation work:
 policy, implementation planning, candidate-level engine integration, API
 contract documentation, frontend display contract documentation, and candidate
 route exposure are present. A frontend API client foundation and state-aware UI
-shell are present for one-candidate evaluation only. Dashboard integration,
-final ranking, and multi-candidate selection remain future work.
+shell are present for one-candidate evaluation only. Dashboard integration is
+planned for the single-pitcher detail workflow, but implementation, final
+ranking, and multi-candidate selection remain future work.
 Beyond that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
