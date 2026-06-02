@@ -55,6 +55,10 @@ The V2 API contract foundation is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
+The V2 frontend contract foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+
 That strategy defines the product direction for bullpen-level and team-level
 recommendation planning. This governance-boundary document converts that
 strategy into decision rules.

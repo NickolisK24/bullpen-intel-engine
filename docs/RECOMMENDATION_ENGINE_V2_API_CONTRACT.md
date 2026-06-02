@@ -20,6 +20,10 @@ selection_made = false
 The contract prevents accidental ranking, selection, opaque scoring,
 prediction, or unsupported decision-making from entering future API design.
 
+The frontend contract companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+
 ## 2. Relationship to V1 API
 
 Recommendation Engine V1 exposes candidate-level evaluation only. V1 evaluates

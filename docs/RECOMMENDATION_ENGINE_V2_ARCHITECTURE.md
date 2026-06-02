@@ -69,8 +69,13 @@ The API contract companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
-That document defines allowed, restricted, and forbidden V2 behavior. This
-architecture must remain subordinate to those governance boundaries.
+The frontend contract companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+
+The governance-boundary document defines allowed, restricted, and forbidden V2
+behavior. This architecture must remain subordinate to those governance
+boundaries.
 
 Any future architecture detail that implies ranking, selection, prediction,
 hidden scoring, unsupported baseball opinion, or final pitcher choice is out

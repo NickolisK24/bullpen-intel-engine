@@ -22,6 +22,10 @@ The API contract companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
+The frontend contract companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+
 V2 exists to explore broader bullpen and team context while preserving the
 trust contract certified in V1:
 
