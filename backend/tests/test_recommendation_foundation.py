@@ -26,7 +26,7 @@ class TestRecommendationFoundation:
         engine = RecommendationEngine()
 
         assert engine.policy_name == 'recommendation_engine_v1'
-        assert engine.implementation_phase == 'foundation'
+        assert engine.implementation_phase == 'candidate_engine_integration'
         assert engine.policy_document == 'docs/RECOMMENDATION_ENGINE_V1_POLICY.md'
 
     def test_default_engine_behavior_refuses(self):
@@ -145,14 +145,27 @@ class TestRecommendationFoundation:
         assert is_valid_recommendation_result(result) is True
         assert result.to_dict()['category_code'] == 'BEST_AVAILABLE_ARM'
 
-    def test_fail_closed_engine_does_not_recommend_passed_candidates(self):
+    def test_multi_candidate_engine_request_fails_closed_without_ranking(self):
         request = RecommendationRequest(
             category=RecommendationCategory.BEST_AVAILABLE_ARM,
             candidates=(
                 RecommendationCandidate(
                     pitcher_id=99,
                     pitcher_name='Candidate Pitcher',
-                    availability={'availability_status': 'Available'},
+                    availability={
+                        'availability_status': 'Available',
+                        'confidence': 'high',
+                        'data_state': 'fresh',
+                    },
+                ),
+                RecommendationCandidate(
+                    pitcher_id=100,
+                    pitcher_name='Second Candidate',
+                    availability={
+                        'availability_status': 'Available',
+                        'confidence': 'high',
+                        'data_state': 'fresh',
+                    },
                 ),
             ),
         )
@@ -165,6 +178,11 @@ class TestRecommendationFoundation:
         assert payload['category'] is None
         assert payload['pitcher_id'] is None
         assert payload['pitcher_name'] is None
+        assert payload['metadata']['ranking_applied'] is False
+        assert payload['metadata']['selection_made'] is False
+        assert payload['metadata']['refusal_boundary'] == (
+            'multi_candidate_ranking_not_implemented'
+        )
         assert payload['metadata']['request']['candidates'][0]['pitcher_id'] == 99
 
     def test_bare_result_defaults_to_refusal(self):

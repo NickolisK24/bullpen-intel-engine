@@ -173,9 +173,7 @@ class TestRecommendationEligibilityGates:
         evaluated_candidate = candidate()
         gate_result = evaluate_candidate_gates(evaluated_candidate)
         gate_payload = gate_result.to_dict()
-        engine_result = RecommendationEngine().recommend(
-            RecommendationRequest(candidates=(evaluated_candidate,))
-        )
+        engine_result = RecommendationEngine().recommend()
 
         assert 'category' not in gate_payload
         assert 'outcome' not in gate_payload

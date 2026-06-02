@@ -102,6 +102,13 @@ freshness, availability state, assigned categories, blocked categories, and
 governance metadata. It still does not rank candidates, compare candidates, or
 select a final pitcher.
 
+The engine integration in `backend/recommendation/engine.py` allows
+`RecommendationEngine.recommend()` to evaluate one candidate through the gate,
+category-assignment, and builder pipeline. Calls with no candidate, invalid
+candidate input, or multiple candidates fail closed. The engine still does not
+rank, score, compare, or select a final pitcher, and route or frontend exposure
+remains a future stage.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.
