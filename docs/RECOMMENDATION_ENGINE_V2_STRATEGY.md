@@ -26,6 +26,10 @@ The frontend contract companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
+The certification requirements companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
 V2 exists to explore broader bullpen and team context while preserving the
 trust contract certified in V1:
 

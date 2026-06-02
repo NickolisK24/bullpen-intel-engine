@@ -137,6 +137,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Architecture | Documented |
 | Recommendation Engine V2 API Contract | Documented |
 | Recommendation Engine V2 Frontend Contract | Documented |
+| Recommendation Engine V2 Certification Requirements | Documented |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -343,6 +344,10 @@ The frontend contract foundation is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
+The certification requirements foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -377,6 +382,14 @@ restricted, and forbidden UI patterns; candidate groups, inventory, bullpen
 state, team context, trust metadata, freshness, limitations, refusal states,
 mobile rendering, accessibility language, visual hierarchy, testing, and
 certification. It does not create or modify frontend components.
+
+The certification requirements milestone defines the evidence standards,
+trust guarantees, explainability guarantees, freshness guarantees, fail-closed
+guarantees, backend/API/frontend/mobile/accessibility certification
+requirements, refusal-state requirements, anti-ranking and anti-selection
+audits, documentation requirements, test categories, production-readiness
+requirements, certification failure conditions, implementation admission gate,
+and final approval requirements. It does not authorize implementation.
 
 ## Future Expansion Boundary
 

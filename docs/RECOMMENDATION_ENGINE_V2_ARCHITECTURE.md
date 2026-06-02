@@ -73,6 +73,10 @@ The frontend contract companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
+The certification requirements companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
 The governance-boundary document defines allowed, restricted, and forbidden V2
 behavior. This architecture must remain subordinate to those governance
 boundaries.

@@ -24,6 +24,10 @@ The frontend contract companion document is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
+The certification requirements companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
 ## 2. Relationship to V1 API
 
 Recommendation Engine V1 exposes candidate-level evaluation only. V1 evaluates

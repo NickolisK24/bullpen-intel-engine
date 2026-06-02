@@ -23,6 +23,10 @@ emphasize, label, or describe candidates in a way that suggests ranking,
 selection, automated decision-making, "best option" logic, predictive
 certainty, or unsupported baseball opinion.
 
+The certification requirements companion document is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
 ## 2. Relationship to V1 Frontend
 
 Recommendation Engine V1 frontend behavior is certified for candidate-level
