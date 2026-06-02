@@ -47,19 +47,25 @@ This document is implementation planning only.
 
 ## Current Implementation Status
 
-The Stage 1 UI shell is implemented in
+The Stage 1 UI shell and Stage 2 controlled state rendering are implemented in
 `frontend/src/components/recommendations/RecommendationPanel.jsx`.
 
-The shell:
+The panel:
 
 - reserves visible sections for candidate status, category eligibility,
   explanations, limitations, trust/freshness, refusal output, and metadata
-- displays no-ranking and no-selection metadata placeholders
+- renders success, caution, refusal, loading, error, and empty states from
+  controlled props
+- consumes candidate-level response shape through the frontend recommendation
+  client helper without making live requests during render
+- displays assigned categories, blocked categories, confidence, freshness,
+  availability, refusal reasons, explanations, limitations, and no-ranking/
+  no-selection metadata
 - uses safe candidate-level copy
 - has render tests in `frontend/tests/recommendationPanel.test.mjs`
-- does not call the live recommendation endpoint
 - does not add a route, navigation item, candidate selector, dashboard panel,
-  ranking, scoring, comparison, or final pitcher selection
+  live request workflow, ranking, scoring, comparison, or final pitcher
+  selection
 
 ## 3. Where The UI Should Live
 
@@ -70,8 +76,8 @@ The future UI should live under the existing frontend application structure:
 - shared API client: `frontend/src/utils/api.js`
 - shared UI primitives: `frontend/src/components/UI/`
 
-The route should be added only when UI implementation is authorized. Until
-then, no navigation, route, or component should be added.
+The route should be added only when page-level UI implementation is authorized.
+Until then, no navigation or route should be added.
 
 The recommended first surface is a standalone candidate evaluation page rather
 than a bullpen dashboard panel. This keeps V1 scoped to one candidate at a time
@@ -411,9 +417,11 @@ explanations, limitations, metadata, and refusal state.
 
 Exit criteria:
 
+- panel consumes controlled response, loading, error, and empty state props
 - components render from fixture responses
 - success, caution, refusal, stale, and low-confidence fixtures are covered
 - no component performs recommendation logic
+- dashboard integration remains out of scope
 
 ### Stage 3: Candidate Evaluation Page
 
