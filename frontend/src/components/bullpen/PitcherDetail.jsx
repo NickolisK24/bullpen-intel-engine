@@ -4,6 +4,7 @@ import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
 import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
 import AvailabilitySummary from './AvailabilitySummary'
+import { RecommendationPitcherDetailSection } from '../recommendations'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
@@ -106,6 +107,8 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           )}
 
           <AvailabilitySummary availability={availability} />
+
+          <RecommendationPitcherDetailSection pitcherDetail={data} />
 
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-2">

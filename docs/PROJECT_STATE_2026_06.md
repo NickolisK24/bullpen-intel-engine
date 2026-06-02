@@ -216,17 +216,18 @@ status, or manager intent.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
-- Recommendation Engine V1 final ranking, multi-candidate selection, dashboard
-  integration, and live candidate-selection workflows are not implemented yet.
+- Recommendation Engine V1 final ranking and multi-candidate selection are not
+  implemented. Candidate-level dashboard integration is implemented only inside
+  the selected-pitcher detail workflow.
   The backend foundation contracts, eligibility gates, category eligibility
   assignment, builder, single-candidate engine pipeline, API contract, frontend
   display contract, candidate-level API route, frontend API client foundation,
-  and state-aware UI shell are present. The shell renders controlled success,
-  caution, refusal, loading, error, and empty states while preserving visible
-  trust, freshness, explanations, limitations, categories, and no-ranking/
-  no-selection metadata. The dashboard integration plan is present and
-  recommends the single-pitcher detail workflow for V1. Dashboard
-  implementation, final ranking, and selection remain future work.
+  state-aware UI shell, and pitcher detail integration are present. The pitcher
+  detail workflow exposes a user-triggered Evaluate Candidate action for one
+  pitcher at a time and renders controlled success, caution, refusal, loading,
+  error, and empty states while preserving visible trust, freshness,
+  explanations, limitations, categories, and no-ranking/no-selection metadata.
+  Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -280,11 +281,11 @@ The dashboard integration plan is:
 
 The implemented candidate-level route evaluates one candidate at a time and
 must preserve no-ranking/no-selection metadata. The frontend API client calls
-that route for one-candidate evaluation only. The UI shell can now consume
-controlled response state and render success, caution, refusal, loading, error,
-and empty states, but it does not perform live API integration, candidate
-selection, route navigation, ranking, or final pitcher selection. The dashboard
-integration plan recommends embedding the panel in the selected-pitcher detail
-workflow only when implementation is authorized. This project state document
-does not authorize further Recommendation Engine API exposure, live frontend
-workflows, multi-candidate ranking, scoring, or final pitcher selection.
+that route for one-candidate evaluation only. The selected-pitcher detail
+workflow now builds one candidate payload from existing pitcher detail,
+availability, and workload fields and displays the controlled Recommendation
+Panel response after a user-triggered evaluation. The integration does not
+perform ranking, scoring, bullpen comparison, route navigation, or final pitcher
+selection. This project state document does not authorize further Recommendation
+Engine API exposure, multi-candidate ranking, scoring, or final pitcher
+selection.

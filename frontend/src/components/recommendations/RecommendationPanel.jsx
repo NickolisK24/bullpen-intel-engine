@@ -342,6 +342,8 @@ export default function RecommendationPanel({
   error = null,
   onRetry,
   model = null,
+  variant = 'standalone',
+  showHeader = true,
 }) {
   const view = getRecommendationPanelView({
     response,
@@ -350,23 +352,28 @@ export default function RecommendationPanel({
     error,
     model,
   })
+  const wrapperClass = variant === 'embedded'
+    ? 'space-y-4'
+    : 'card p-5 lg:p-6'
 
   return (
-    <article className="card p-5 lg:p-6" aria-labelledby="recommendation-engine-v1-heading">
-      <header className="mb-6 flex flex-col gap-3 border-b border-dirt pb-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <p className="font-mono text-xs uppercase tracking-widest text-chalk400">Recommendation Engine V1</p>
-          <h2 id="recommendation-engine-v1-heading" className="section-title mt-1">Candidate Evaluation</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
-            Candidate-level display for Recommendation Engine V1 output. This surface renders
-            trust-first response state without ranking the bullpen or selecting a final pitcher.
-          </p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[22rem]">
-          <FieldBadge label="Ranking" value="No Bullpen Ranking Applied" />
-          <FieldBadge label="Selection" value="No Final Pitcher Selection Made" />
-        </div>
-      </header>
+    <article className={wrapperClass} aria-labelledby={showHeader ? 'recommendation-engine-v1-heading' : undefined} aria-label={!showHeader ? 'Recommendation Engine V1 Candidate Evaluation' : undefined}>
+      {showHeader && (
+        <header className="mb-6 flex flex-col gap-3 border-b border-dirt pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="font-mono text-xs uppercase tracking-widest text-chalk400">Recommendation Engine V1</p>
+            <h2 id="recommendation-engine-v1-heading" className="section-title mt-1">Candidate Evaluation</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
+              Candidate-level display for Recommendation Engine V1 output. This surface renders
+              trust-first response state without ranking the bullpen or selecting a final pitcher.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[22rem]">
+            <FieldBadge label="Ranking" value="No Bullpen Ranking Applied" />
+            <FieldBadge label="Selection" value="No Final Pitcher Selection Made" />
+          </div>
+        </header>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
         <div className="space-y-4">

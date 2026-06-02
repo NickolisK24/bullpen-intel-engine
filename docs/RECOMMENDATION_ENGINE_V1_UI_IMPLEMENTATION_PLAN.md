@@ -1,5 +1,18 @@
 # Recommendation Engine V1 UI Implementation Plan
 
+## Implementation Status
+
+The Recommendation Engine V1 UI shell, controlled response-state rendering, and
+selected-pitcher detail integration are implemented for candidate-level
+evaluation only. The integrated flow uses a visible Evaluate Candidate action,
+calls the one-candidate frontend client, and preserves confidence, freshness,
+availability, explanations, limitations, category fields, refusal output,
+`ranking_applied=false`, and `selection_made=false`.
+
+No bullpen ranking, multi-candidate comparison, scoring behavior, final pitcher
+selection, backend behavior change, API behavior change, or database change is
+implemented by the UI work.
+
 ## 1. UI Objective
 
 Recommendation Engine V1 UI should display candidate-level recommendation
@@ -426,7 +439,7 @@ Exit criteria:
 - components render from fixture responses
 - success, caution, refusal, stale, and low-confidence fixtures are covered
 - no component performs recommendation logic
-- dashboard integration remains out of scope
+- dashboard integration remains out of scope for this stage
 
 ### Stage 3: Candidate Evaluation Page
 
