@@ -219,7 +219,8 @@ status, or manager intent.
 - Recommendation Engine V1 final ranking, API exposure, and UI are not
   implemented yet. The backend foundation contracts, eligibility gates, category
   eligibility assignment, builder, and single-candidate engine pipeline are
-  present. Final ranking and selection remain future work.
+  present. The candidate-level API contract is documented, but the route is not
+  implemented. Final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -254,6 +255,10 @@ The authoritative policy document is:
 The staged implementation planning document is:
 
 - `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
+
+The future candidate-level API contract is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
 
 This project state document does not authorize Recommendation Engine API
 exposure, frontend UI, multi-candidate ranking, scoring, or final pitcher
