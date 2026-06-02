@@ -767,6 +767,36 @@ governance-unsafe UI.
 - Client exposes refusal data to future rendering layers.
 - No UI behavior changes unless separately approved.
 
+**Phase 9 completion status**
+
+Recommendation Engine V2 Phase 9 is complete as a frontend client integration
+layer.
+
+The frontend client consumes the approved endpoint:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The client integration is implemented in:
+
+- `frontend/src/utils/api.js`
+
+The client normalizes V2 responses into explicit `available`, `fail_closed`,
+and `unavailable` contract states. It preserves trust metadata, freshness
+metadata, limitations, explanations, refusal reasons, and governance flags.
+Missing, malformed, governance-unsafe, or forbidden
+ranking/selection/prediction fields are marked unavailable rather than being
+treated as valid future UI state.
+
+Phase 9 does not create V2 React panels, V2 route changes, user-facing V2 UI,
+ranking, selection, prediction, backend V2 behavior changes, or
+Recommendation Engine V1 behavior changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+
 ## 17. Phase 10: Frontend Rendering Implementation
 
 **Goal**
@@ -1230,9 +1260,9 @@ governance package.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 9 Frontend Client Integration
+Recommendation Engine V2 Phase 10 Frontend Rendering Implementation
 ```
 
 This milestone may begin only after the user explicitly approves
-implementation. Phase 9 remains governed by the approved V2 frontend contract
-and must preserve all Phase 1 through Phase 8 safeguards.
+implementation. Phase 10 remains governed by the approved V2 frontend contract
+and must preserve all Phase 1 through Phase 9 safeguards.

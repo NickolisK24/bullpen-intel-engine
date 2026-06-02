@@ -2,13 +2,14 @@
 
 ## 1. Executive Summary
 
-This document defines the proposed Recommendation Engine V2 frontend display
-contract before implementation.
+This document defines the Recommendation Engine V2 frontend display contract.
 
-It is a documentation and contract-design milestone only. It does not
-implement V2, create or modify React components, modify API clients, modify
-backend behavior, modify frontend behavior, or change certified Recommendation
-Engine V1 behavior.
+It was originally approved as a documentation and contract-design milestone.
+Recommendation Engine V2 Phase 9 now implements frontend client consumption of
+the approved V2 API endpoint in `frontend/src/utils/api.js`. That client work
+does not create or modify React display components, modify backend behavior,
+rank pitchers, select pitchers, predict outcomes, or change certified
+Recommendation Engine V1 behavior.
 
 The V2 frontend contract must preserve:
 
@@ -106,6 +107,12 @@ including:
 
 The frontend must not hide, rename, reorder, or visually transform API output
 in a way that creates ranking or selection semantics the API contract forbids.
+
+Phase 9 frontend client integration consumes the approved endpoint and
+normalizes responses into `available`, `fail_closed`, and `unavailable`
+contract states. That normalization preserves trust, freshness, limitation,
+explanation, refusal, and governance metadata for future display layers without
+creating user-facing V2 UI.
 
 ## 7. Frontend Contract Goals
 
@@ -626,12 +633,13 @@ accessibility text preserve V2 governance boundaries.
 
 ## 27. Implementation Gate
 
-V2 frontend implementation must not begin until:
+V2 frontend rendering implementation must not begin until:
 
 1. frontend contract is approved
 2. certification requirements are approved
 3. user explicitly approves implementation
 
-This document alone does not authorize React component work, API client
-changes, frontend behavior changes, backend behavior changes, API behavior
-changes, or Recommendation Engine V1 behavior changes.
+Phase 9 satisfies the approved API-client integration gate. This document does
+not authorize React component work, frontend rendering behavior changes,
+backend behavior changes, API behavior changes, or Recommendation Engine V1
+behavior changes.

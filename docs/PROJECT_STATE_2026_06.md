@@ -148,6 +148,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 6 Trust Metadata Integration | Complete |
 | Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
 | Recommendation Engine V2 Phase 8 API Contract Exposure | Complete |
+| Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -333,7 +334,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 8 Status
+## Recommendation Engine V2 Strategy and Phase 9 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -342,7 +343,8 @@ implementation planning, Phase 1 backend domain object foundation work, Phase
 expansion work, Phase 4 backend-only inventory visibility work, and Phase 5
 backend-only team bullpen context work, Phase 6 backend-only trust metadata
 integration work, and Phase 7 backend-only refusal/fail-closed integration
-work, and Phase 8 backend-only API contract exposure work.
+work, Phase 8 backend-only API contract exposure work, and Phase 9 frontend
+client integration work.
 
 The official strategy foundation is:
 
@@ -408,6 +410,10 @@ The Phase 8 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
 
+The Phase 9 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -416,8 +422,8 @@ reporting, and broader recommendation explainability.
 This milestone does not authorize pitcher rankings, pitcher ordering,
 automated pitcher selection, game outcome prediction, injury prediction, save
 prediction, performance forecasting, opaque recommendation scores, unsupported
-baseball opinions, Recommendation Engine API changes, frontend behavior
-changes, or new recommendation logic.
+baseball opinions, additional Recommendation Engine API exposure, frontend
+rendering behavior changes, or new recommendation logic.
 
 The governance-boundary milestone documents allowed, restricted, and forbidden
 V2 behaviors; preserves the active `ranking_applied=false` and
@@ -434,8 +440,9 @@ backend, frontend, API, or Recommendation Engine V1 behavior changes.
 The API contract milestone defines the proposed V2 response shape, provisional
 bullpen-state endpoint scope, required trust metadata, response objects,
 anti-ranking rules, success and refusal examples, testing requirements,
-certification requirements, and implementation gate. It does not implement or
-modify endpoints.
+certification requirements, and implementation gate. The contract itself did
+not implement or modify endpoints; the separately completed Phase 8 milestone
+implemented the approved endpoint.
 
 The frontend contract milestone defines future V2 display rules for allowed,
 restricted, and forbidden UI patterns; candidate groups, inventory, bullpen
@@ -462,7 +469,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 8.
+phases after Phase 9.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -630,6 +637,34 @@ missing, stale, incomplete, unsupported, malformed, or governance-unsafe.
 The Phase 8 expansion does not expose frontend support, user-facing V2 UI,
 ranking, selection, prediction, or changes to Recommendation Engine V1.
 
+Recommendation Engine V2 Phase 9 adds frontend client integration for the
+approved V2 endpoint:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The Phase 9 client integration is implemented in:
+
+- `frontend/src/utils/api.js`
+
+The client consumes the endpoint and normalizes V2 responses into explicit
+contract states:
+
+- `available`
+- `fail_closed`
+- `unavailable`
+
+The client preserves trust metadata, freshness metadata, limitation metadata,
+explanation metadata, refusal metadata, and no-ranking/no-selection governance
+flags. Missing, malformed, governance-unsafe, or forbidden
+ranking/selection/prediction fields are represented as unavailable instead of
+being treated as valid future UI state.
+
+The Phase 9 expansion does not expose user-facing V2 UI, ranking UI, selection
+UI, prediction UI, new V2 routes, backend V2 behavior changes, or changes to
+Recommendation Engine V1.
+
 The active V1 and V2 governance guarantees remain:
 
 ```text
@@ -654,5 +689,6 @@ Possible future expansion areas include:
 - simulator integration
 
 This project state document does not authorize further Recommendation Engine
-API exposure beyond the approved V2 bullpen-state endpoint, pitcher ranking,
-pitcher ordering, scoring, or final pitcher selection.
+API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
+rendering beyond a separately approved milestone, pitcher ranking, pitcher
+ordering, scoring, or final pitcher selection.

@@ -129,6 +129,16 @@ The Phase 8 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
 
+Recommendation Engine V2 Phase 9 adds frontend client consumption of this
+endpoint through `frontend/src/utils/api.js`. The client normalizes successful,
+fail-closed, and unavailable contract states without creating user-facing V2
+UI, ranking, selection, prediction, or Recommendation Engine V1 behavior
+changes.
+
+The Phase 9 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+
 ## 8. Proposed Endpoint Scope
 
 The implemented endpoint scope is bullpen-state V2 context.
@@ -724,5 +734,6 @@ V2 API implementation required:
 4. user explicitly approves implementation
 
 Phase 8 satisfies the endpoint implementation gate for the approved backend
-contract. This document does not authorize frontend behavior changes or V1
-behavior changes.
+contract. Phase 9 satisfies the frontend client consumption gate for the
+approved endpoint. This document does not authorize frontend rendering changes
+or V1 behavior changes.

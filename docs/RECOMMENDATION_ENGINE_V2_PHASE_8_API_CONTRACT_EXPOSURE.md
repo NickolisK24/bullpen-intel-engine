@@ -159,10 +159,14 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 9 Readiness Boundary
+## Phase 9 Completion Boundary
 
-Future V2 Phase 9 work may add frontend client consumption of the V2 endpoint
-only if it preserves trust metadata, freshness metadata, refusal metadata,
+Recommendation Engine V2 Phase 9 adds frontend client consumption of the V2
+endpoint while preserving trust metadata, freshness metadata, refusal metadata,
 limitations, explanations, no-ranking, and no-selection guarantees.
 
-Phase 8 does not create frontend UI support or user-facing V2 display behavior.
+The Phase 9 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+
+Phase 9 does not create frontend UI support or user-facing V2 display behavior.
