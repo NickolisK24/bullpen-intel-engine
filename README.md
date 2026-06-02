@@ -162,7 +162,7 @@ bullpen-intel-engine/
 │   ├── recalculate_fatigue.py   # Recompute fatigue from historical reference dates
 │   ├── api/                     # Route blueprints (bullpen, prospects, methodology)
 │   ├── models/                  # SQLAlchemy models (incl. sync_run metadata)
-│   ├── recommendation/          # Recommendation Engine V1 contracts, gates, category mapping, and fail-closed foundation
+│   ├── recommendation/          # Recommendation Engine V1 contracts, gates, category mapping, builder, and fail-closed foundation
 │   ├── services/                # mlb_api · fatigue · availability · sync metadata
 │   ├── utils/                   # db.py · auth.py (admin-token guard)
 │   ├── analysis/                # Out-of-band retrospective fatigue→ERA analysis

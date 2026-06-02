@@ -218,7 +218,8 @@ status, or manager intent.
   minor-league data product.
 - Recommendation Engine V1 decision logic and UI are not implemented yet; the
   backend foundation contracts, eligibility gates, and category eligibility
-  assignment are present.
+  assignment are present. The builder can compose candidate-level structured
+  responses, but final ranking and selection remain future work.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 

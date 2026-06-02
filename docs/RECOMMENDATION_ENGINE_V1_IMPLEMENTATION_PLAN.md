@@ -95,6 +95,13 @@ categories as assigned or blocked with explanations and limitations, but it does
 not choose a final pitcher, rank candidates, or decide which eligible candidate
 is best.
 
+The builder/composer layer in `backend/recommendation/builder.py` combines a
+candidate, gate result, and category assignment into a structured
+`RecommendationResult`. It preserves explanations, limitations, confidence,
+freshness, availability state, assigned categories, blocked categories, and
+governance metadata. It still does not rank candidates, compare candidates, or
+select a final pitcher.
+
 Future implementation stages may either keep this domain package or adapt it
 behind `backend/services/recommendations.py`, but recommendation behavior must
 remain centralized and must not be duplicated in routes or frontend components.
