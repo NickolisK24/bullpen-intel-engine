@@ -18,11 +18,17 @@ from recommendation.contracts import (
 )
 from recommendation.engine import RecommendationEngine
 from recommendation.enums import (
+    RecommendationCandidatePool,
     RecommendationCategory,
     RecommendationConfidence,
     RecommendationFreshnessState,
     RecommendationOutcome,
     RefusalReason,
+)
+from recommendation.gates import (
+    RecommendationGateResult,
+    evaluate_candidate_gates,
+    evaluate_candidate_pool,
 )
 from recommendation.result import RecommendationResult
 from recommendation.validators import (
@@ -34,6 +40,7 @@ __all__ = [
     'BASE_RECOMMENDATION_LIMITATIONS',
     'DEFAULT_REFUSAL_MESSAGE',
     'RecommendationCandidate',
+    'RecommendationCandidatePool',
     'RecommendationCategory',
     'RecommendationConfidence',
     'RecommendationConfidenceContext',
@@ -41,12 +48,15 @@ __all__ = [
     'RecommendationExplanation',
     'RecommendationFreshnessContext',
     'RecommendationFreshnessState',
+    'RecommendationGateResult',
     'RecommendationLimitation',
     'RecommendationOutcome',
     'RecommendationRefusal',
     'RecommendationRequest',
     'RecommendationResult',
     'RefusalReason',
+    'evaluate_candidate_gates',
+    'evaluate_candidate_pool',
     'is_valid_recommendation_result',
     'recommendation_result_errors',
 ]
