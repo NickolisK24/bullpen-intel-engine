@@ -140,7 +140,8 @@ today:
 
 - **Recommendation Engine V1 Policy** — the next major milestone. The goal is to move
   BaseballOS from availability intelligence to decision-support intelligence while keeping
-  recommendation wording bounded by public workload data and explicit limitations.
+  recommendation wording bounded by public workload data and explicit limitations. See
+  [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -175,6 +176,7 @@ bullpen-intel-engine/
 │       └── utils/               # API client, formatters, shared fatigue-model definitions
 └── docs/
     ├── PROJECT_STATE_2026_06.md # Current product state and next milestone
+    ├── RECOMMENDATION_ENGINE_V1_POLICY.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -261,6 +263,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 
 - [`docs/PROJECT_STATE_2026_06.md`](docs/PROJECT_STATE_2026_06.md) — current
   product state after the Availability Engine trust foundation.
+- [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
+  — authoritative policy for trust-first recommendation eligibility,
+  exclusions, refusal conditions, categories, explanations, limitations, and
+  governance boundaries.
 - [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
   — status definitions, implemented classifier contract, UI presentation, trust
   rules, and non-goals.
@@ -276,7 +282,9 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 
 The next major milestone is **Recommendation Engine V1 Policy**: defining how BaseballOS
 should move from availability intelligence to decision-support intelligence without
-pretending to know private clubhouse, medical, travel, or manager-intent information.
+pretending to know private clubhouse, medical, travel, or manager-intent information. The
+authoritative policy is
+[`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md).
 Beyond that, see **Product Direction** above — usage simulation, role-aware fatigue,
 exports/API, and real prospect ingestion — pursued in honest order, with prototype features
 labeled as such until they're real.

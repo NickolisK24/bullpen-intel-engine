@@ -244,5 +244,9 @@ This milestone should define policy before implementation:
 - how future simulator work can consume availability classifications without
   bypassing trust rules
 
+The authoritative policy document is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_POLICY.md`
+
 No Recommendation Engine implementation details are authorized by this project
 state document.
