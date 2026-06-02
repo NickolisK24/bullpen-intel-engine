@@ -50,3 +50,9 @@ class RefusalReason(StringEnum):
 class RecommendationOutcome(StringEnum):
     RECOMMENDATION = 'recommendation'
     REFUSAL = 'refusal'
+
+
+class RecommendationCandidatePool(StringEnum):
+    GENERAL = 'general'
+    POSITIVE = 'positive'
+    CAUTIONARY = 'cautionary'
