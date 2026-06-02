@@ -21,6 +21,29 @@ This is not a private clubhouse availability feed and not a medical model. V1
 is a public-data workload framework built from BaseballOS data: MLB Stats API
 game logs, existing fatigue scores, rest context, and data freshness state.
 
+## Current State: June 2026
+
+Availability Engine V1 is implemented as a completed trust foundation:
+
+- Backend classification service is live and reusable outside route handlers.
+- Fatigue, team bullpen, pitcher detail, and dashboard overview APIs expose
+  additive availability output.
+- Bullpen rows, filters, pitcher detail views, and dashboard summary surfaces
+  present availability without reclassifying in the frontend.
+- Explanations, confidence, data state, limitations, and deterministic inputs
+  are part of the contract.
+- Fixture coverage verifies all five statuses even when live local data does
+  not naturally contain every status.
+- Threshold audit, snapshot validation, boundary review, and tuning governance
+  are documented and tested.
+- The first governed threshold adoption raised the Unavailable three-day pitch
+  threshold from 80 to 90 after audit and boundary review.
+
+The next product milestone is not another threshold change. It is
+Recommendation Engine V1 Policy: defining how BaseballOS should move from
+availability intelligence to decision-support intelligence without implying
+private team, medical, travel, or manager-intent knowledge.
+
 ## Availability Statuses
 
 Availability labels are workload guidance, not commands. They should be shown
@@ -558,9 +581,10 @@ V1 deliberately defers:
 - Warm-up tracking or bullpen phone activity.
 - Travel, weather, and personal availability context.
 
-## Implementation Roadmap
+## V1 Foundation Sequence And Future Compatibility
 
-Future work should be split into small reviewable branches:
+The V1 foundation was built in small reviewable branches. Completed foundation
+work:
 
 1. **Backend status classification helper**
    - Add a pure deterministic helper that accepts fatigue score, game-log
@@ -591,21 +615,30 @@ Future work should be split into small reviewable branches:
    - Update setup/product docs with the status definitions and trust framing.
    - Link to methodology once the engine is implemented.
 
+Future compatibility work remains:
+
 7. **Future simulator compatibility**
    - Keep the classifier input shape compatible with hypothetical usage
      scenarios, such as "if used for 20 pitches tonight."
    - Do not build the simulator in V1.
 
-## Acceptance Criteria For This Design Branch
+## Current V1 Foundation Completion Criteria
 
-This branch is complete when:
+The V1 trust foundation is complete when:
 
-- This design document exists under `docs/`.
 - The five workload statuses are defined.
 - Initial deterministic inputs are listed.
-- The explainability contract is documented.
+- The backend classifier returns status, confidence, data state, reasons,
+  limitations, and inputs.
+- API availability output is additive and backward-compatible.
+- Bullpen and pitcher detail UI display status, confidence, data state,
+  reasons, and limitations.
+- Dashboard availability summary makes stale/missing-data dominance visible.
+- Explanation quality standards are documented and audited.
 - Trust rules are documented.
 - Edge cases are documented.
 - V1 non-goals are explicit.
-- Future implementation branches are clearly sequenced.
-- No engine logic or production endpoint behavior is changed.
+- Threshold governance and baseline artifacts exist.
+- The first governed threshold adoption is documented.
+- Durable sync metadata and dashboard trust-strip documentation distinguish
+  `Synced` from `Data Through`.

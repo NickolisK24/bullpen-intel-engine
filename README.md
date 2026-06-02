@@ -35,27 +35,55 @@ Everything here is implemented and runs against real MLB Stats API data:
 - **Fatigue scoring engine** — a deterministic 0–100 workload heuristic from four factors the
   MLB Stats API exposes reliably: pitch-count load (35%), rest days (30%), appearance
   frequency (20%), innings load (15%). Continuous and monotonic across thresholds.
+- **Availability Engine V1** — deterministic bullpen availability statuses
+  (`Available`, `Monitor`, `Limited`, `Avoid`, `Unavailable`) derived from existing
+  workload, fatigue, rest, and freshness data.
+- **Availability explainability** — every non-Available status carries ordered reasons,
+  confidence, data state, limitations, and deterministic inputs; labels are not black boxes.
+- **Dashboard availability summary** — current-mode availability distributions, confidence
+  counts, and stale/missing-data notes are visible from the dashboard.
 - **MLB Stats API ingestion** — pulls rosters and game-by-game pitching logs; idempotent
   (skips duplicates, enforced at the database level).
 - **Pitcher detail workflow** — per-pitcher view with score, risk tier, weighted component
-  breakdown, component radar, fatigue trend, and recent appearances — on desktop **and**
-  mobile.
+  breakdown, component radar, fatigue trend, recent appearances, availability status,
+  confidence, reasons, and limitations — on desktop **and** mobile.
 - **Team bullpen views** — per-team bullpen overview and team-vs-team workload rankings.
-- **Sync freshness visibility** — the dashboard pill shows the real state: last synced,
-  failed, historical snapshot, or no data.
+- **Trust strip and sync freshness visibility** — the dashboard separates platform data
+  status, last successful sync, baseball data-through date, and refresh coverage.
+- **Durable sync metadata** — sync attempts persist in the `sync_runs` table so successful,
+  failed, and missing metadata states survive restarts and deployments.
 - **Current-season coverage transparency** — the dashboard distinguishes total tracked
   pitchers, pitchers with computed workload data, and pitchers refreshed in the latest sync,
   so coverage gaps are visible rather than hidden.
+- **Freshness-aware bullpen visibility** — active/current data is the default; stale or
+  inactive pitchers remain inspectable without being presented as current availability.
 - **External scheduled sync** — a GitHub Actions workflow refreshes data daily via the
   protected backend endpoint.
 - **Protected operational endpoints** — sync and fatigue-recalculation are admin-token
   gated; all read endpoints stay public.
 - **Methodology page** — public, in-app documentation of the model, weights, and limitations.
+- **Availability governance framework** — threshold audits, snapshot validation, boundary
+  review, and adoption reports document how status thresholds are changed.
 - **Backend test coverage** — unit + integration tests for the scoring engine, the
-  admin-token guard, the game-log uniqueness constraint, and the sync-status endpoint.
+  availability engine, admin-token guard, game-log uniqueness constraint, sync-status
+  endpoint, and threshold audit tools.
 - **Data integrity** — a database unique constraint makes duplicate game logs impossible.
 - **Production config hardening** — environment-driven config with fail-fast checks before a
   hosted launch.
+
+## Platform Status
+
+| Capability | Status |
+|------------|--------|
+| Bullpen Intelligence | ✓ Complete |
+| Fatigue Engine | ✓ Complete |
+| Availability Engine | ✓ Complete |
+| Explainability | ✓ Complete |
+| Trust Layer | ✓ Complete |
+| Freshness Transparency | ✓ Complete |
+| Governance Framework | ✓ Complete |
+| Recommendation Engine | Planned |
+| Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
 
@@ -68,6 +96,12 @@ BaseballOS is built to earn a reviewer's trust rather than ask for it:
   limitations, never as causation or validation.
 - **Freshness is always visible** — you can see when data was last synced (or that it's a
   historical snapshot) instead of guessing.
+- **Synced and Data Through are distinct** — sync timestamps come from durable sync metadata;
+  baseball coverage dates come from workload/game-log data.
+- **Availability labels are explainable** — status badges are paired with confidence, data
+  state, reasons, and limitations.
+- **Threshold changes are governed** — the first adopted change raised the Unavailable
+  three-day pitch threshold from 80 to 90 after audit, experiment, and boundary review.
 - **Coverage is explicit** — tracked vs. workload-data vs. refreshed counts are labeled
   distinctly so gaps aren't mistaken for bugs.
 - **Write operations are protected** — only an admin token can trigger sync/recalculation.
@@ -104,11 +138,11 @@ a sync — only the scheduled workflow (or a manual admin call) does. See
 Direction, not promises — these are where the platform is headed, not features that exist
 today:
 
-- Bullpen **availability engine** (who is usable today, and at what workload cost)
+- **Recommendation Engine V1 Policy** — the next major milestone. The goal is to move
+  BaseballOS from availability intelligence to decision-support intelligence while keeping
+  recommendation wording bounded by public workload data and explicit limitations.
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
-- A **recommendation** layer for staff decisions
-- Trust infrastructure (a DB-backed sync ledger for durable freshness history)
 - **Reports / exports** and a documented **API platform**
 - Real minor-league prospect ingestion with a defensible grade/ETA source
 
@@ -126,12 +160,13 @@ bullpen-intel-engine/
 │   ├── seed.py                  # Seeds pitchers, game logs, fatigue scores (+ sample prospects)
 │   ├── recalculate_fatigue.py   # Recompute fatigue from historical reference dates
 │   ├── api/                     # Route blueprints (bullpen, prospects, methodology)
-│   ├── models/                  # SQLAlchemy models (pitcher, game_log, fatigue_score, prospect)
-│   ├── services/                # mlb_api · fatigue (scoring engine) · sync
+│   ├── models/                  # SQLAlchemy models (incl. sync_run metadata)
+│   ├── services/                # mlb_api · fatigue · availability · sync metadata
 │   ├── utils/                   # db.py · auth.py (admin-token guard)
 │   ├── analysis/                # Out-of-band retrospective fatigue→ERA analysis
 │   ├── migrations/              # Alembic migrations (incl. game-log uniqueness)
-│   └── tests/                   # pytest: fatigue, auth, game-log constraint, sync status
+│   ├── reports/                 # Audit, threshold, freshness, and readiness reports
+│   └── tests/                   # pytest coverage for fatigue, availability, sync, audits
 ├── frontend/                    # React + Vite app
 │   ├── .env.example             # Frontend env template
 │   └── src/
@@ -139,6 +174,9 @@ bullpen-intel-engine/
 │       ├── hooks/
 │       └── utils/               # API client, formatters, shared fatigue-model definitions
 └── docs/
+    ├── PROJECT_STATE_2026_06.md # Current product state and next milestone
+    ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
+    ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
 ```
 
@@ -221,16 +259,27 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 
 ## Documentation
 
+- [`docs/PROJECT_STATE_2026_06.md`](docs/PROJECT_STATE_2026_06.md) — current
+  product state after the Availability Engine trust foundation.
+- [`docs/BULLPEN_AVAILABILITY_ENGINE_V1.md`](docs/BULLPEN_AVAILABILITY_ENGINE_V1.md)
+  — status definitions, implemented classifier contract, UI presentation, trust
+  rules, and non-goals.
+- [`docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md`](docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md)
+  — governance process and current threshold baseline.
 - [`docs/SETUP.md`](docs/SETUP.md) — local setup, environment variables, troubleshooting,
   deployment notes, and the automated-sync guide.
+- [`frontend/docs/dashboard_trust_strip_polish.md`](frontend/docs/dashboard_trust_strip_polish.md)
+  — dashboard trust strip layout and messaging rationale.
 - **In-app Methodology page** — how the fatigue model works, its weights, and its limitations.
 
 ## Roadmap
 
-Near-term focus is depth on the bullpen engine and hardening for a public hosted demo. Beyond
-that, see **Product Direction** above — availability/usage intelligence, role-aware fatigue,
-decision support, durable freshness history, and exports/API — pursued in honest order, with
-prototype features labeled as such until they're real.
+The next major milestone is **Recommendation Engine V1 Policy**: defining how BaseballOS
+should move from availability intelligence to decision-support intelligence without
+pretending to know private clubhouse, medical, travel, or manager-intent information.
+Beyond that, see **Product Direction** above — usage simulation, role-aware fatigue,
+exports/API, and real prospect ingestion — pursued in honest order, with prototype features
+labeled as such until they're real.
 
 ## Author
 

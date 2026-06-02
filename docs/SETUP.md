@@ -130,21 +130,38 @@ match the freshness filter. Use **Show inactive pitchers** to inspect all
 tracked pitchers from the local snapshot. If the dashboard itself shows no game
 logs, the database is empty and needs to be seeded or synced.
 
+The dashboard trust strip separates sync metadata from baseball data coverage:
+
+- **Data Status** describes whether the visible data state is healthy, limited,
+  or stale.
+- **Synced** is based on explicit sync metadata from durable `sync_runs`
+  records when available.
+- **Data Through** is based on the latest game-log/workload date represented in
+  the database.
+- **Refresh Coverage** reports how many pitchers were refreshed by the latest
+  sync when that count is available.
+
+Seeded local snapshots may have game logs and fatigue rows without a durable
+sync run. In that case BaseballOS should show the data-through date and clearly
+state that sync metadata is unavailable rather than implying the database is
+empty.
+
 ---
 
 ## Step 5 — Run the tests
 
-The backend has a focused test suite for the fatigue scoring engine.
+The backend test suite covers fatigue scoring, availability classification,
+freshness behavior, sync metadata, admin protections, audit tooling, and data
+integrity checks.
 
 ```bash
 cd backend
 python -m pytest
-# Expected: 43 passed
+# Expected: all tests pass
 ```
 
-These tests are pure unit/integration tests of the scoring logic. They do **not**
-require a database, a running Flask server, or any MLB Stats API access — they
-use small in-memory stand-ins and run in well under a second.
+These tests do **not** require MLB Stats API access. Database-facing tests use
+test-local setup and small fixtures rather than production data.
 
 ---
 
@@ -321,12 +338,29 @@ custom headers it *could* call `/api/bullpen/sync` directly, but the Actions
 workflow is cleaner and easier to audit.)
 
 **Expected dashboard behavior after a successful run:** the sync writes
-`sync_status.json`, so the dashboard pill switches from **"Snapshot · through
-…"** (seeded historical data, no sync yet) to **"Last synced: …"**. If a run
-fails, the pill shows **"Last sync failed"**. (Note: the status file is currently
-on the instance's ephemeral disk, so a Render restart can revert the pill to the
-snapshot state until the next sync — persisting status in the DB is a sensible
-future enhancement.)
+durable metadata to the `sync_runs` table, while keeping the legacy status file
+as a fallback. The dashboard trust strip should show separate sync and data
+coverage fields:
+
+```text
+Data Status: Healthy
+Synced: <last successful sync date>
+Data Through: <latest baseball data date>
+Refresh Coverage: <pitchers refreshed>
+```
+
+If game logs exist but durable sync metadata is unavailable, the dashboard
+should show that limitation explicitly instead of presenting the database as
+empty:
+
+```text
+Data Status: Limited
+Sync metadata: Unavailable
+Data Through: <latest baseball data date>
+```
+
+If the latest run fails, the dashboard should preserve the data-through date and
+show the failed sync state separately.
 
 The protected endpoint stays protected throughout — the scheduler authenticates
 with `X-Admin-Token`; there is no anonymous sync and no public sync button.
