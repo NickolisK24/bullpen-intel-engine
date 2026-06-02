@@ -67,6 +67,11 @@ The panel:
   live request workflow, ranking, scoring, comparison, or final pitcher
   selection
 
+The dashboard integration planning document is
+`docs/RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md`. It recommends
+embedding future V1 dashboard display inside the existing single-pitcher detail
+workflow, with dashboard implementation remaining a separate future step.
+
 ## 3. Where The UI Should Live
 
 The future UI should live under the existing frontend application structure:
