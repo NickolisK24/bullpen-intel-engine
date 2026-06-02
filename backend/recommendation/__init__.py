@@ -21,6 +21,7 @@ from recommendation.categories import (
     RecommendationCategoryBlock,
     assign_recommendation_categories,
 )
+from recommendation.builder import build_recommendation_response
 from recommendation.engine import RecommendationEngine
 from recommendation.enums import (
     RecommendationCandidatePool,
@@ -62,6 +63,7 @@ __all__ = [
     'RecommendationRequest',
     'RecommendationResult',
     'RefusalReason',
+    'build_recommendation_response',
     'assign_recommendation_categories',
     'evaluate_candidate_gates',
     'evaluate_candidate_pool',
