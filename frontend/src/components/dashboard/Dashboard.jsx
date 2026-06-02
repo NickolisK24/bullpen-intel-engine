@@ -1,5 +1,11 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenOverview, getFatigueScores, getPipelineOverview, getSyncStatus } from '../../utils/api'
+import {
+  getBullpenOverview,
+  getFatigueScores,
+  getPipelineOverview,
+  getRecommendationV2BullpenState,
+  getSyncStatus,
+} from '../../utils/api'
 import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
@@ -8,6 +14,7 @@ import SyncStatus from './SyncStatus'
 import FatigueInsightCard from './FatigueInsightCard'
 import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
+import { RecommendationV2BullpenStatePanel } from '../recommendations'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -35,6 +42,7 @@ export default function Dashboard() {
   const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '', with_meta: true }))
   const pipeline   = useFetch(getPipelineOverview)
   const sync       = useFetch(getSyncStatus)
+  const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const topFatigueRows = Array.isArray(topFatigue.data) ? topFatigue.data : (topFatigue.data?.data || [])
   const topFatigueMeta = Array.isArray(topFatigue.data) ? null : topFatigue.data?.meta
   const topFatigueEmpty = getBullpenEmptyState({
@@ -108,6 +116,13 @@ export default function Dashboard() {
       )}
 
       <AvailabilityDashboardSummary summary={overview.data?.availability_summary} />
+
+      <RecommendationV2BullpenStatePanel
+        state={v2BullpenState.data}
+        loading={v2BullpenState.loading}
+        error={v2BullpenState.error}
+        onRetry={v2BullpenState.refetch}
+      />
 
       {/* Risk breakdown bar */}
       {overview.data?.risk_breakdown && (

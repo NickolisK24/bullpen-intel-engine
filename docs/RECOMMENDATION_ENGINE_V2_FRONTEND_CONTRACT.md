@@ -11,6 +11,14 @@ does not create or modify React display components, modify backend behavior,
 rank pitchers, select pitchers, predict outcomes, or change certified
 Recommendation Engine V1 behavior.
 
+Recommendation Engine V2 Phase 10 now implements governed frontend rendering
+for the normalized V2 client output in
+`frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`.
+That rendering work displays trust, freshness, limitations, explanations,
+refusal metadata, fail-closed state, bullpen state, inventory, team context,
+and neutral candidate groups without adding ranking, selection, or prediction
+semantics.
+
 The V2 frontend contract must preserve:
 
 ```text
@@ -113,6 +121,9 @@ normalizes responses into `available`, `fail_closed`, and `unavailable`
 contract states. That normalization preserves trust, freshness, limitation,
 explanation, refusal, and governance metadata for future display layers without
 creating user-facing V2 UI.
+
+Phase 10 frontend rendering consumes those normalized states and withholds
+bullpen-state details when the contract state is unavailable.
 
 ## 7. Frontend Contract Goals
 
@@ -639,7 +650,7 @@ V2 frontend rendering implementation must not begin until:
 2. certification requirements are approved
 3. user explicitly approves implementation
 
-Phase 9 satisfies the approved API-client integration gate. This document does
-not authorize React component work, frontend rendering behavior changes,
-backend behavior changes, API behavior changes, or Recommendation Engine V1
-behavior changes.
+Phase 9 satisfies the approved API-client integration gate. Phase 10 satisfies
+the approved governed frontend rendering gate. This document does not authorize
+additional frontend rendering behavior changes, backend behavior changes, API
+behavior changes, or Recommendation Engine V1 behavior changes.

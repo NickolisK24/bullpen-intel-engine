@@ -849,6 +849,30 @@ Render V2 output in governance-safe UI patterns.
 - No forbidden copy or ranking-like presentation appears.
 - Refusal states are explicit.
 
+**Phase 10 completion status**
+
+Recommendation Engine V2 Phase 10 is complete as a governed frontend
+rendering layer.
+
+The governed rendering paths are:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/components/recommendations/index.js`
+
+The panel renders normalized Phase 9 client output for bullpen state, trust,
+freshness, governance metadata, inventory visibility, team context, neutral
+candidate groups, limitations, explanations, refusal metadata, fail-closed
+state, and unavailable contract state.
+
+Phase 10 does not create backend V2 behavior changes, new backend routes,
+ranking UI, selection UI, prediction UI, best/preferred/recommended pitcher UI,
+or Recommendation Engine V1 behavior changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`
+
 ## 18. Phase 11: Mobile and Accessibility Validation
 
 **Goal**
@@ -1260,9 +1284,9 @@ governance package.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 10 Frontend Rendering Implementation
+Recommendation Engine V2 Phase 11 Mobile and Accessibility Validation
 ```
 
 This milestone may begin only after the user explicitly approves
-implementation. Phase 10 remains governed by the approved V2 frontend contract
-and must preserve all Phase 1 through Phase 9 safeguards.
+implementation. Phase 11 remains governed by the approved V2 frontend contract
+and must preserve all Phase 1 through Phase 10 safeguards.

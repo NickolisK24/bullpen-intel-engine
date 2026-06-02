@@ -151,10 +151,15 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 10 Readiness Boundary
+## Phase 10 Completion Boundary
 
-Future V2 Phase 10 work may add frontend rendering only if it preserves trust
-metadata, freshness metadata, refusal metadata, limitations, explanations,
-no-ranking, and no-selection guarantees.
+Recommendation Engine V2 Phase 10 adds governed frontend rendering while
+preserving trust metadata, freshness metadata, refusal metadata, limitations,
+explanations, no-ranking, and no-selection guarantees.
 
-Phase 9 does not create user-facing V2 display behavior.
+The Phase 10 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`
+
+Phase 10 does not create ranking UI, selection UI, prediction UI, or
+Recommendation Engine V1 behavior changes.

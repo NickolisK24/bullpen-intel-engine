@@ -149,6 +149,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
 | Recommendation Engine V2 Phase 8 API Contract Exposure | Complete |
 | Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
+| Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -334,7 +335,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 9 Status
+## Recommendation Engine V2 Strategy and Phase 10 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -343,8 +344,8 @@ implementation planning, Phase 1 backend domain object foundation work, Phase
 expansion work, Phase 4 backend-only inventory visibility work, and Phase 5
 backend-only team bullpen context work, Phase 6 backend-only trust metadata
 integration work, and Phase 7 backend-only refusal/fail-closed integration
-work, Phase 8 backend-only API contract exposure work, and Phase 9 frontend
-client integration work.
+work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
+client integration work, and Phase 10 governed frontend rendering work.
 
 The official strategy foundation is:
 
@@ -414,6 +415,10 @@ The Phase 9 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
 
+The Phase 10 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`
+
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
 distribution visibility, grouped eligibility reporting, bullpen readiness
@@ -469,7 +474,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 9.
+phases after Phase 10.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -665,6 +670,39 @@ The Phase 9 expansion does not expose user-facing V2 UI, ranking UI, selection
 UI, prediction UI, new V2 routes, backend V2 behavior changes, or changes to
 Recommendation Engine V1.
 
+Recommendation Engine V2 Phase 10 adds governed dashboard rendering for the
+normalized V2 frontend client output.
+
+The Phase 10 rendering paths are:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/components/recommendations/index.js`
+
+The Phase 10 panel renders:
+
+- bullpen state
+- trust metadata
+- freshness metadata
+- governance metadata
+- inventory visibility
+- team context
+- neutral candidate groups
+- limitations
+- explanations
+- refusal metadata
+- fail-closed state
+- unavailable contract state
+
+The panel renders fail-closed and unavailable states explicitly. When the
+client reports unavailable contract state, the panel withholds bullpen-state
+details and avoids rendering unsafe candidate, inventory, or team-context
+output.
+
+The Phase 10 expansion does not introduce ranking UI, selection UI, prediction
+UI, best/preferred/recommended pitcher UI, backend V2 behavior changes, new
+backend routes, or changes to Recommendation Engine V1.
+
 The active V1 and V2 governance guarantees remain:
 
 ```text
@@ -690,5 +728,5 @@ Possible future expansion areas include:
 
 This project state document does not authorize further Recommendation Engine
 API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
-rendering beyond a separately approved milestone, pitcher ranking, pitcher
-ordering, scoring, or final pitcher selection.
+surfaces beyond the governed Phase 10 rendering layer, pitcher ranking,
+pitcher ordering, scoring, or final pitcher selection.

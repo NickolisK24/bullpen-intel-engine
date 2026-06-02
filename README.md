@@ -104,6 +104,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
 | Recommendation Engine V2 Phase 8 API Contract Exposure | Complete |
 | Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
+| Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -169,10 +170,13 @@ today:
   trust metadata integration, and Phase 7 backend-only refusal/fail-closed
   integration now exist. Phase 8 exposes the approved backend-only V2
   bullpen-state API contract. Phase 9 adds frontend client integration for
-  that endpoint with contract-safe normalization and no V2 rendering. No
-  user-facing V2 recommendation UI, ranking, or selection is implemented.
-  Those capabilities remain outside the completed Recommendation Engine V1
-  certification. V1 is production-ready for candidate-level evaluation only.
+  that endpoint with contract-safe normalization. Phase 10 renders governed
+  V2 bullpen intelligence on the dashboard with visible trust, freshness,
+  limitation, explanation, refusal, fail-closed, inventory, team-context, and
+  neutral group information. No ranking UI, final pitcher choice UI, or
+  prediction UI is implemented. Those capabilities remain outside the
+  completed Recommendation Engine V1 certification. V1 is production-ready
+  for candidate-level evaluation only.
   See
   [`docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md),
   [`docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`](docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md),
@@ -201,7 +205,9 @@ today:
   and the completed Phase 8 record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md),
   and the completed Phase 9 record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md),
+  and the completed Phase 10 record in
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -260,6 +266,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -416,6 +423,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2 Phase 9 record for frontend client consumption of the
   approved bullpen-state endpoint, contract normalization, fail-closed client
   handling, governance compliance, V1 preservation, and no-UI boundaries.
+- [`docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md)
+  — completed V2 Phase 10 record for governed dashboard rendering of V2
+  bullpen intelligence, trust/freshness/refusal visibility, fail-closed
+  display behavior, governance compliance, and V1 preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -467,12 +478,13 @@ inventory visibility layer, and the Phase 5 backend-only team bullpen context
 layer, the Phase 6 backend-only trust metadata integration layer, and the
 Phase 7 backend-only refusal/fail-closed integration layer, and the Phase 8
 backend-only API contract exposure layer, and the Phase 9 frontend client
-integration layer complete.
+integration layer, and the Phase 10 governed frontend rendering layer
+complete.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, frontend rendering, and broader
-explainability while preserving V1 trust protections. No user-facing V2
-recommendation UI, ranking, or selection exists yet. Beyond
+intelligence, readiness visibility, mobile/accessibility certification, and
+broader explainability while preserving V1 trust protections. No V2 ranking,
+final pitcher choice, or prediction behavior exists. Beyond
 that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
 pursued in honest order, with prototype features labeled as such until they're
