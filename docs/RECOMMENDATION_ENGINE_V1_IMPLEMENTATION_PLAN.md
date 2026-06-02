@@ -124,6 +124,13 @@ freshness indicators, explanations, limitations, refusal states, copy
 conventions, mobile behavior, accessibility, and no-ranking/no-selection
 metadata before UI implementation is authorized.
 
+The frontend UI implementation plan is documented in
+`docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`. That plan translates
+the frontend display contract into future component boundaries, candidate input
+assumptions, visible trust and freshness requirements, refusal display,
+loading/error/empty states, mobile and accessibility expectations, staged UI
+build order, and guardrails without implementing UI.
+
 The frontend API client foundation lives in `frontend/src/utils/api.js`. It can
 call the candidate-level route and expose trust, freshness, explanation,
 limitation, category, refusal, and no-ranking/no-selection fields for future UI
@@ -506,6 +513,8 @@ Exit criteria:
 
 - display states are documented in
   `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
+- UI implementation sequence and component boundaries are documented in
+  `docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`
 - candidate-level client helper exists without UI assumptions
 - refusal state has a first-class UI plan
 - limitations are visible with the recommendation
