@@ -1,6 +1,6 @@
 # Availability Explanation Quality Audit
 
-Generated at: 2026-06-01T23:44:04.503283+00:00
+Generated at: 2026-06-02T00:29:25.376441+00:00
 Current reference date: 2026-06-01
 
 This report audits Availability Engine explanation text using existing classified records.

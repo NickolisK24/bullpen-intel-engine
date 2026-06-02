@@ -215,16 +215,20 @@ Current threshold references:
 |------------|---------|---------|-------|-------------|
 | Fatigue score | >= 40 | >= 60 | >= 75 | >= 85 with heavy yesterday workload |
 | Pitches yesterday | >= 15 | >= 25 | >= 35 | >= 50 |
-| Pitches over last 3 days | >= 30 | >= 45 | >= 60 | >= 80 |
+| Pitches over last 3 days | >= 30 | >= 45 | >= 60 | >= 90 |
 | Pitches over last 5 days | n/a | >= 60 | >= 75 | >= 75 with 4+ appearances |
 | Appearances over last 3 days | n/a | >= 2 | >= 3 | n/a |
 | Appearances over last 5 days | >= 2 | >= 3 | >= 4 | >= 4 with 75+ pitches |
 | Back-to-back appearances | Monitor or higher by context | Any back-to-back appearance sequence | Back-to-back plus 35+ pitches in 3 days | n/a |
 | Freshness | n/a | n/a | n/a | Stale data returns Monitor with low confidence, not a current workload label |
 
-These thresholds are intentionally conservative starting points. They are
-centralized in `AvailabilityThresholds` so future tuning can happen in one
-place with focused regression coverage.
+The Unavailable three-day pitch threshold was adopted from Candidate C after
+audit and boundary review. The governed adoption moved that value from 80 to 90,
+allowing 80-89 pitches in 3 days to classify as Avoid unless another
+Unavailable rule fires, while 90+ pitches in 3 days remains Unavailable.
+
+These thresholds are centralized in `AvailabilityThresholds` so future tuning
+can happen in one place with focused regression coverage.
 
 ### Implemented V1 UI Presentation
 
@@ -285,6 +289,12 @@ Threshold tuning governance is documented in
 is `backend/reports/availability_threshold_baseline.md`. Future tuning branches
 should compare against that baseline, change one threshold variable at a time,
 and include before/after audit evidence before review.
+
+The first governed threshold adoption is documented in
+`backend/reports/availability_threshold_adoption_candidate_c.md`. The supporting
+experiment is `backend/reports/availability_unavailable_threshold_experiment.md`
+and the boundary review is
+`backend/reports/availability_unavailable_boundary_review.md`.
 
 ### Latest Workload Snapshot Validation Mode
 

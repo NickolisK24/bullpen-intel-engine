@@ -43,7 +43,7 @@ UNAVAILABLE_RULES = [
     {
         'key': 'pitches_last_3_days',
         'rule': 'Three-day pitch volume',
-        'condition': 'pitches_last_3_days >= 80',
+        'condition': 'pitches_last_3_days >= 90',
     },
     {
         'key': 'appearances_and_5_day_pitches',
@@ -56,6 +56,8 @@ UNAVAILABLE_RULES = [
         'condition': 'fatigue_score >= 85.0 and pitches_yesterday >= 35',
     },
 ]
+
+PRE_ADOPTION_UNAVAILABLE_PITCHES_LAST_3_DAYS = 80
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,19 @@ class UnavailableCandidate:
 
 def _with_threshold(**overrides):
     return replace(THRESHOLDS, **overrides)
+
+
+def pre_adoption_candidate_c_baseline():
+    return UnavailableCandidate(
+        key='pre_adoption_baseline',
+        label='Pre-adoption baseline',
+        changed_rule='Historical production threshold before Candidate C adoption',
+        thresholds=_with_threshold(
+            unavailable_pitches_last_3_days=PRE_ADOPTION_UNAVAILABLE_PITCHES_LAST_3_DAYS,
+        ),
+        focus_input='pitches_last_3_days',
+        focus_threshold=PRE_ADOPTION_UNAVAILABLE_PITCHES_LAST_3_DAYS,
+    )
 
 
 def unavailable_candidates():
@@ -93,8 +108,8 @@ def unavailable_candidates():
         ),
         UnavailableCandidate(
             key='raise_three_day_90',
-            label='Candidate C: raise Unavailable three-day pitch threshold',
-            changed_rule='unavailable_pitches_last_3_days: 80 -> 90',
+            label='Candidate C: adopted Unavailable three-day pitch threshold',
+            changed_rule='adopted production baseline: unavailable_pitches_last_3_days = 90',
             thresholds=_with_threshold(unavailable_pitches_last_3_days=90),
             focus_input='pitches_last_3_days',
             focus_threshold=90,
@@ -399,7 +414,7 @@ def recommend(comparisons):
         rationale.append(
             f'The multi-signal gate moved {multi_signal_moves} pitchers, but it changes rule semantics rather than one threshold.'
         )
-    rationale.append('Review near-boundary pitcher examples before adopting any production threshold change.')
+    rationale.append('Review near-boundary pitcher examples before adopting any future production threshold change.')
 
     return {
         'decision': 'Needs more data',

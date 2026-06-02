@@ -1,6 +1,6 @@
 # Availability Unavailable Boundary Review
 
-Generated at: 2026-06-02T00:19:57.537692+00:00
+Generated at: 2026-06-02T00:29:44.411429+00:00
 Reference date: 2026-06-01
 
 This report reviews pitchers moved by Candidate C from the unavailable-threshold experiment.

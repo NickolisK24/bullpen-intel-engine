@@ -12,12 +12,11 @@ import json
 from services.availability import (
     STATUS_AVOID,
     STATUS_UNAVAILABLE,
-    THRESHOLDS,
 )
 from services.availability_threshold_audit import normalize_record, ordered_counts
 from services.availability_unavailable_experiment import (
-    UnavailableCandidate,
     classify_rows_for_candidate,
+    pre_adoption_candidate_c_baseline,
     unavailable_candidates,
     unavailable_severe_signals,
 )
@@ -30,12 +29,7 @@ REVIEW_AGAINST = 'Evidence against change'
 
 
 def baseline_candidate():
-    return UnavailableCandidate(
-        key='baseline',
-        label='Baseline',
-        changed_rule='Current production thresholds',
-        thresholds=THRESHOLDS,
-    )
+    return pre_adoption_candidate_c_baseline()
 
 
 def candidate_c():
@@ -55,6 +49,7 @@ def _transition_key(original_status, candidate_status):
 
 def case_from_records(baseline_record, candidate_record):
     inputs = baseline_record['inputs']
+    baseline_thresholds = baseline_candidate().thresholds
     return {
         'pitcher_id': baseline_record['pitcher_id'],
         'pitcher_name': baseline_record['pitcher_name'],
@@ -68,7 +63,7 @@ def case_from_records(baseline_record, candidate_record):
         'appearances_last_3_days': inputs.get('appearances_last_3_days'),
         'appearances_last_5_days': inputs.get('appearances_last_5_days'),
         'days_rest': inputs.get('days_rest'),
-        'baseline_severe_signals': unavailable_severe_signals(inputs, THRESHOLDS),
+        'baseline_severe_signals': unavailable_severe_signals(inputs, baseline_thresholds),
         'candidate_severe_signals': unavailable_severe_signals(inputs, candidate_c().thresholds),
         'reasons': baseline_record['reasons'],
     }

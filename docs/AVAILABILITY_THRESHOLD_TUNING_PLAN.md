@@ -80,7 +80,7 @@ future tuning branches.
 | Input | Monitor | Limited | Avoid | Unavailable |
 |---|---:|---:|---:|---:|
 | Pitches yesterday | >= 15 | >= 25 | >= 35 | >= 50 |
-| Pitches in 3 days | >= 30 | >= 45 | >= 60 | >= 80 |
+| Pitches in 3 days | >= 30 | >= 45 | >= 60 | >= 90 |
 | Pitches in 5 days | n/a | >= 60 | >= 75 | n/a |
 
 Unavailable can also trigger when `appearances_last_5_days >= 4` and
@@ -127,6 +127,7 @@ Baseline artifacts:
 - `backend/reports/availability_threshold_audit.md`
 - `backend/reports/availability_explanation_audit.md`
 - `backend/reports/availability_threshold_baseline.md`
+- `backend/reports/availability_threshold_adoption_candidate_c.md`
 
 The current audit reference date is 2026-06-01.
 
@@ -165,8 +166,8 @@ availability.
 |---|---:|
 | Monitor | 268 |
 | Limited | 174 |
-| Avoid | 99 |
-| Unavailable | 163 |
+| Avoid | 156 |
+| Unavailable | 106 |
 
 | Confidence | Count |
 |---|---:|
@@ -184,8 +185,8 @@ Fresh snapshot statuses:
 |---|---:|
 | Monitor | 204 |
 | Limited | 174 |
-| Avoid | 99 |
-| Unavailable | 163 |
+| Avoid | 156 |
+| Unavailable | 106 |
 
 Top snapshot reasons:
 
@@ -215,8 +216,8 @@ Reason-category snapshot totals from the explanation audit:
 - Current mode is not workload-informative for tuning because all 704 pitchers
   are Monitor due to stale or missing data.
 - Latest-workload snapshot output has no Available bucket in the local dataset.
-- Unavailable classifications are more common than Avoid classifications in
-  latest-workload snapshot output.
+- Avoid classifications are now more common than Unavailable classifications in
+  latest-workload snapshot output after Candidate C adoption.
 - Limited, Avoid, and Unavailable together account for 436 of 640 fresh
   latest-workload snapshot pitchers.
 - Appearance-frequency reasons are the most common reason category in the
@@ -235,7 +236,8 @@ These are evidence prompts, not tuning decisions.
 Potentially aggressive signals to investigate:
 
 - Latest-workload snapshot has no Available bucket.
-- Unavailable classifications outnumber Avoid classifications.
+- The Unavailable bucket remains large enough to monitor after Candidate C
+  adoption, but it no longer outnumbers Avoid in latest-workload snapshot mode.
 - Limited, Avoid, and Unavailable together represent most fresh snapshot rows.
 - Appearance-frequency reasons dominate the explanation audit.
 - Any back-to-back appearance currently produces at least Limited.
@@ -280,9 +282,8 @@ or whether pitch volume and role context should carry more weight.
 
 ### Unavailable Bucket Review
 
-Investigate why Unavailable is more common than Avoid in latest-workload
-snapshot output and whether that reflects valid workload severity or threshold
-compression.
+Investigate whether the adopted Unavailable bucket reflects valid workload
+severity or remaining threshold compression in latest-workload snapshot output.
 
 An initial experiment is documented in
 `backend/reports/availability_unavailable_threshold_experiment.md`. It compares
@@ -293,9 +294,11 @@ only one-variable candidate in that report that materially changes the
 Unavailable bucket. It moves 57 pitchers from Unavailable to Avoid in
 latest-workload snapshot mode.
 
-This experiment is not production approval. Any candidate threshold still
-requires human review, near-boundary example review, and a production tuning
-branch before adoption.
+Candidate C has now been adopted as the first governed threshold change. The
+production Unavailable three-day pitch threshold is 90. The adoption record is
+documented in `backend/reports/availability_threshold_adoption_candidate_c.md`.
+Any future candidate threshold still requires human review, near-boundary
+example review, and a production tuning branch before adoption.
 
 Candidate C boundary review is documented in
 `backend/reports/availability_unavailable_boundary_review.md`. The required

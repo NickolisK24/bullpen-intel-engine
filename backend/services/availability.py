@@ -55,7 +55,7 @@ class AvailabilityThresholds:
     monitor_pitches_last_3_days: int = 30
     limited_pitches_last_3_days: int = 45
     avoid_pitches_last_3_days: int = 60
-    unavailable_pitches_last_3_days: int = 80
+    unavailable_pitches_last_3_days: int = 90
 
     limited_pitches_last_5_days: int = 60
     avoid_pitches_last_5_days: int = 75
