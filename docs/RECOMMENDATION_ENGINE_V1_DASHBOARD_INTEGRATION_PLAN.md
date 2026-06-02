@@ -1,5 +1,18 @@
 # Recommendation Engine V1 Dashboard Integration Plan
 
+## Implementation Status
+
+The V1 dashboard integration is implemented in the selected-pitcher detail
+workflow using Option B from this plan. The integration adds a user-triggered
+Evaluate Candidate action, builds one candidate payload from the existing
+pitcher detail, availability, and workload data, and renders the existing
+RecommendationPanel with controlled loading, success, refusal, error, and empty
+states.
+
+The implementation remains candidate-level only. It does not rank pitchers,
+compare the bullpen, score candidates, select a final pitcher, change backend
+or API behavior, or add database changes.
+
 ## 1. Dashboard Integration Objective
 
 Recommendation Engine V1 dashboard integration should expose candidate-level
