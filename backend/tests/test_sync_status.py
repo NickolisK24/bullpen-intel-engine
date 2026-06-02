@@ -2,25 +2,25 @@
 Tests for the enriched GET /api/bullpen/sync/status endpoint.
 
 The endpoint now reports the real data snapshot (latest game date + log count)
-alongside the file-based sync status, so the dashboard can tell a loaded
-historical snapshot apart from a genuinely empty / never-synced system.
+alongside durable sync metadata, so the dashboard can tell sync timestamps
+apart from data-through dates.
 
 Runs against in-memory SQLite (no Postgres / MLB / network). The sync status
-file is pointed at an empty temp path so read_status() returns the 'never'
-sentinel deterministically — i.e. we simulate "data loaded via seed, no sync".
+file is pointed at an empty temp path so durable metadata is the authority.
 """
 
-from datetime import date
-import json
+from datetime import date, datetime
 
 import pytest
 from flask import Flask
 
 import services.sync as sync_service
+from services import sync_metadata
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
-import models.fatigue_score  # noqa: F401  (register on db.metadata)
+from models.fatigue_score import FatigueScore
+from models.sync_run import SyncRun
 import models.prospect        # noqa: F401  (register on db.metadata)
 from api.bullpen import bullpen_bp
 
@@ -60,45 +60,148 @@ class TestSyncStatusSnapshot:
 
         # No sync has run...
         assert body['last_sync'] is None
-        assert body['status'] == 'never'
+        assert body['status'] == 'metadata_unavailable'
         # ...but the data snapshot is reported honestly from the DB.
         assert body['data']['game_logs'] == 2
         assert body['data']['latest_game_date'] == '2025-09-10'
+        assert body['data']['latest_workload_date'] == '2025-09-10'
+        assert body['freshness']['limitations'] == [
+            'Sync metadata unavailable; data coverage is based on game logs.',
+            'No durable successful sync timestamp is available.',
+            'No fatigue calculation timestamp is available.',
+            'Latest game date is outside the 14-day freshness window.',
+        ]
 
     def test_reports_empty_when_no_data_and_no_sync(self, client):
         res = client.get('/api/bullpen/sync/status')
         assert res.status_code == 200
         body = res.get_json()
         assert body['last_sync'] is None
+        assert body['last_successful_sync'] is None
+        assert body['status'] == 'never'
         assert body['data']['game_logs'] == 0
         assert body['data']['latest_game_date'] is None
+        assert body['data']['latest_workload_date'] is None
+        assert body['data']['latest_fatigue_calculated_at'] is None
+        assert body['freshness']['label'] == 'No baseball workload data loaded.'
 
     def test_reports_sync_timestamp_and_snapshot_date_together(self, client):
-        sync_service.STATUS_FILE.write_text(
-            json.dumps({
-                'last_sync': '2026-06-01T21:39:12+00:00',
-                'status': 'ok',
-                'pitchers_updated': 428,
-                'new_logs_added': 120,
-                'errors': 0,
-                'message': '',
-                'finished_at': '2026-06-01T21:39:56+00:00',
-            }),
-            encoding='utf-8',
-        )
         with client.application.app_context():
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
             db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                latest_game_date=date(2026, 5, 31),
+                latest_workload_date=date(2026, 5, 31),
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                records_processed=120,
+                new_logs_added=120,
+                pitchers_updated=428,
+                errors=0,
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
             db.session.commit()
 
         res = client.get('/api/bullpen/sync/status')
         assert res.status_code == 200
         body = res.get_json()
 
-        assert body['last_sync'] == '2026-06-01T21:39:12+00:00'
-        assert body['status'] == 'ok'
+        assert body['status'] == 'success'
+        assert body['last_sync'] == '2026-06-01T21:39:12'
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
         assert body['pitchers_updated'] == 428
+        assert body['new_logs_added'] == 120
         assert body['data']['game_logs'] == 1
         assert body['data']['latest_game_date'] == '2026-05-31'
+        assert body['data']['latest_workload_date'] == '2026-05-31'
+        assert body['data']['latest_fatigue_calculated_at'] == '2026-06-01T21:39:55'
+        assert body['freshness']['is_current'] is True
+        assert body['freshness']['limitations'] == []
+        assert body['sync']['source'] == 'github_actions'
+        assert body['last_successful_sync_run']['status'] == 'success'
+
+    def test_reports_failed_sync_without_hiding_last_successful_sync(self, client):
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 2, 10, 0, 0),
+                completed_at=datetime(2026, 6, 2, 10, 0, 30),
+                status='failed',
+                source='github_actions',
+                errors=1,
+                error_message='MLB API unavailable',
+                created_at=datetime(2026, 6, 2, 10, 0, 0),
+            ))
+            db.session.commit()
+
+        res = client.get('/api/bullpen/sync/status')
+        assert res.status_code == 200
+        body = res.get_json()
+
+        assert body['status'] == 'failed'
+        assert body['last_sync'] == '2026-06-02T10:00:00'
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
+        assert body['message'] == 'MLB API unavailable'
+        assert 'The latest sync attempt failed; data may reflect an earlier successful sync.' in body['freshness']['limitations']
+
+    def test_sync_metadata_service_persists_start_and_completion(self, client):
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            db.session.commit()
+
+            run_id = sync_metadata.start_sync_run(
+                source='test',
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+            )
+            run = db.session.get(SyncRun, run_id)
+            assert run.status == 'running'
+
+            sync_metadata.finish_sync_run(
+                run_id,
+                status='success',
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                records_processed=120,
+                new_logs_added=120,
+                pitchers_updated=428,
+            )
+            run = db.session.get(SyncRun, run_id)
+
+            assert run.status == 'success'
+            assert run.latest_game_date == date(2026, 5, 31)
+            assert run.latest_workload_date == date(2026, 5, 31)
+            assert run.latest_fatigue_calculated_at == datetime(2026, 6, 1, 21, 39, 55)
+            assert run.records_processed == 120
+            assert run.pitchers_updated == 428

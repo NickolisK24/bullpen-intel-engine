@@ -21,6 +21,7 @@ from services.availability_snapshot import (
 from services.availability_summary import summarize_availability_records
 from services.mlb_api import mlb_client
 from services import sync as sync_service
+from services import sync_metadata
 from utils.auth import require_admin_token
 
 bullpen_bp = Blueprint('bullpen', __name__)
@@ -373,16 +374,27 @@ def sync_recent_logs():
     """
     body      = request.get_json(silent=True) or {}
     days_back = body.get('days_back', 7)
+    source    = str(body.get('source') or sync_metadata.SOURCE_MANUAL)[:30]
     started   = datetime.now(timezone.utc)
+    sync_run_id = sync_metadata.start_sync_run(
+        source=source,
+        started_at=started.replace(tzinfo=None),
+    )
 
     try:
         pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
         db.session.rollback()
+        sync_metadata.finish_sync_run(
+            sync_run_id,
+            status=sync_metadata.STATUS_FAILED,
+            errors=1,
+            error_message=str(e),
+        )
         # Persist failure status so the dashboard reflects the bad state.
         sync_service.write_status({
             'last_sync':       started.isoformat(),
-            'status':          'error',
+            'status':          sync_metadata.STATUS_FAILED,
             'pitchers_updated': 0,
             'new_logs_added':  0,
             'errors':          1,
@@ -394,11 +406,20 @@ def sync_recent_logs():
     # Live mode: score against today — same behavior as before.
     fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
     finished        = datetime.now(timezone.utc)
+    sync_metadata.finish_sync_run(
+        sync_run_id,
+        status=sync_metadata.STATUS_SUCCESS,
+        completed_at=finished.replace(tzinfo=None),
+        records_processed=pull['new_logs_added'],
+        new_logs_added=pull['new_logs_added'],
+        pitchers_updated=fatigue_updated,
+        errors=pull['errors'],
+    )
 
     # Mirror what the daily APScheduler job writes so /sync/status stays accurate.
     sync_service.write_status({
         'last_sync':       started.isoformat(),
-        'status':          'ok',
+        'status':          sync_metadata.STATUS_SUCCESS,
         'pitchers_updated': fatigue_updated,
         'new_logs_added':  pull['new_logs_added'],
         'errors':          pull['errors'],
@@ -412,6 +433,7 @@ def sync_recent_logs():
         'fatigue_recalculated': fatigue_updated,
         'errors':               pull['errors'],
         'synced_at':            finished.isoformat(),
+        'sync_run_id':          sync_run_id,
         'days_back':            days_back,
     })
 
@@ -428,18 +450,23 @@ def get_sync_status():
     genuinely empty system. The snapshot date is real DB data, never a faked
     sync timestamp.
     """
-    status = sync_service.read_status()
+    legacy_status = sync_service.read_status()
     try:
-        latest    = db.session.query(db.func.max(GameLog.game_date)).scalar()
-        log_count = db.session.query(db.func.count(GameLog.id)).scalar() or 0
-        status['data'] = {
-            'game_logs':        int(log_count),
-            'latest_game_date': latest.isoformat() if latest else None,
-        }
+        return jsonify(sync_metadata.build_sync_status_payload(legacy_status=legacy_status))
     except Exception:
         # A DB hiccup must never turn the status pill into a hard error.
-        status['data'] = {'game_logs': None, 'latest_game_date': None}
-    return jsonify(status)
+        legacy_status['data'] = {
+            'game_logs': None,
+            'latest_game_date': None,
+            'latest_workload_date': None,
+            'latest_fatigue_calculated_at': None,
+        }
+        legacy_status['freshness'] = {
+            'is_current': False,
+            'label': 'Freshness metadata unavailable.',
+            'limitations': ['Could not read durable sync metadata.'],
+        }
+        return jsonify(legacy_status)
 
 
 # ─── Pitchers ─────────────────────────────────────────────────────────────────
