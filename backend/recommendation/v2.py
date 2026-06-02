@@ -17,8 +17,23 @@ from recommendation.enums import (
 
 V2_POLICY_NAME = 'recommendation_engine_v2_domain_foundation'
 V2_PHASE = 'phase_1_backend_domain_object_foundation'
+V2_TRUST_METADATA_POLICY = 'mandatory_v2_trust_metadata'
 NO_RANKING_APPLIED = False
 NO_SELECTION_MADE = False
+V2_REQUIRED_TRUST_METADATA_FIELDS = frozenset(
+    {
+        'confidence',
+        'freshness',
+        'limitations',
+        'explanations',
+        'refusal_reasons',
+        'data_state',
+        'source_evidence_state',
+        'governance_state',
+        'ranking_applied',
+        'selection_made',
+    }
+)
 
 FORBIDDEN_V2_FIELD_NAMES = frozenset(
     {
@@ -92,6 +107,107 @@ def require_v2_governance_safe(payload: Any) -> None:
     errors = v2_governance_errors(payload)
     if errors:
         raise ValueError(' '.join(errors))
+
+
+def v2_trust_metadata_errors(payload: Any, path: str = 'payload') -> list[str]:
+    """Return missing or unsafe mandatory V2 trust metadata errors."""
+    errors: list[str] = []
+
+    if isinstance(payload, Mapping):
+        if _payload_requires_trust_metadata(payload):
+            errors.extend(_trust_metadata_mapping_errors(payload, path))
+        for key, value in payload.items():
+            errors.extend(v2_trust_metadata_errors(value, f'{path}.{key}'))
+        return errors
+
+    if isinstance(payload, (list, tuple)):
+        for index, item in enumerate(payload):
+            errors.extend(v2_trust_metadata_errors(item, f'{path}[{index}]'))
+
+    return errors
+
+
+def require_v2_trust_metadata(payload: Any) -> None:
+    errors = v2_trust_metadata_errors(payload)
+    if errors:
+        raise ValueError(' '.join(errors))
+
+
+def _payload_requires_trust_metadata(payload: Mapping[str, Any]) -> bool:
+    return 'ranking_applied' in payload or 'selection_made' in payload
+
+
+def _trust_metadata_mapping_errors(
+    payload: Mapping[str, Any],
+    path: str,
+) -> list[str]:
+    errors: list[str] = []
+    if payload.get('ranking_applied') is not NO_RANKING_APPLIED:
+        errors.append(f'{path}.ranking_applied must be false.')
+    if payload.get('selection_made') is not NO_SELECTION_MADE:
+        errors.append(f'{path}.selection_made must be false.')
+
+    trust_source = _trust_metadata_source(payload)
+    if not isinstance(trust_source, Mapping):
+        errors.append(f'{path} is missing mandatory V2 trust metadata.')
+        return errors
+
+    for field_name in sorted(V2_REQUIRED_TRUST_METADATA_FIELDS):
+        if field_name not in trust_source:
+            errors.append(
+                f'{path} trust metadata is missing required field {field_name}.'
+            )
+
+    if trust_source.get('ranking_applied') is not NO_RANKING_APPLIED:
+        errors.append(f'{path} trust metadata ranking_applied must be false.')
+    if trust_source.get('selection_made') is not NO_SELECTION_MADE:
+        errors.append(f'{path} trust metadata selection_made must be false.')
+    if not isinstance(trust_source.get('freshness'), Mapping):
+        errors.append(f'{path} trust metadata freshness must be represented.')
+    if not isinstance(trust_source.get('limitations'), list):
+        errors.append(f'{path} trust metadata limitations must be represented.')
+    if not isinstance(trust_source.get('explanations'), list):
+        errors.append(f'{path} trust metadata explanations must be represented.')
+    if not isinstance(trust_source.get('refusal_reasons'), list):
+        errors.append(
+            f'{path} trust metadata refusal_reasons must be represented.'
+        )
+    return errors
+
+
+def _trust_metadata_source(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    if V2_REQUIRED_TRUST_METADATA_FIELDS.issubset(payload.keys()):
+        return payload
+    for key in ('trust_metadata', 'trust_summary', 'context'):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return None
+
+
+def _trust_metadata_payload(context_payload: Mapping[str, Any]) -> dict[str, Any]:
+    payload = {
+        'policy': V2_TRUST_METADATA_POLICY,
+        'scope': context_payload['scope'],
+        'confidence': context_payload['confidence'],
+        'confidence_code': context_payload['confidence_code'],
+        'data_state': context_payload['data_state'],
+        'source_evidence_state': context_payload['source_evidence_state'],
+        'governance_state': context_payload['governance_state'],
+        'generated_at': context_payload['generated_at'],
+        'freshness': context_payload['freshness'],
+        'limitations': context_payload['limitations'],
+        'limitation_count': len(context_payload['limitations']),
+        'explanations': context_payload['explanations'],
+        'explanation_count': len(context_payload['explanations']),
+        'refusal_reasons': context_payload['refusal_reasons'],
+        'refusal_reason_count': len(context_payload['refusal_reasons']),
+        'trust_validation_errors': context_payload['trust_validation_errors'],
+        'ranking_applied': context_payload['ranking_applied'],
+        'selection_made': context_payload['selection_made'],
+    }
+    require_v2_governance_safe(payload)
+    return payload
 
 
 @dataclass(frozen=True)
@@ -207,11 +323,14 @@ class RecommendationContext:
     scope: str = 'bullpen_state'
     confidence: RecommendationConfidence = RecommendationConfidence.UNKNOWN
     data_state: str = 'unknown'
+    source_evidence_state: str = 'represented'
+    governance_state: str = 'compliant'
     generated_at: str | None = None
     freshness: V2FreshnessMetadata = field(default_factory=V2FreshnessMetadata)
     limitations: tuple[V2Limitation, ...] = BASE_V2_LIMITATIONS
     explanations: tuple[V2Explanation, ...] = ()
     refusal_reasons: tuple[V2Refusal, ...] = ()
+    trust_validation_errors: tuple[str, ...] = ()
     ranking_applied: bool = NO_RANKING_APPLIED
     selection_made: bool = NO_SELECTION_MADE
 
@@ -220,12 +339,37 @@ class RecommendationContext:
             raise ValueError('Recommendation Engine V2 must preserve ranking_applied=False.')
         if self.selection_made is not NO_SELECTION_MADE:
             raise ValueError('Recommendation Engine V2 must preserve selection_made=False.')
+        if self.confidence is None:
+            raise ValueError('Recommendation Engine V2 requires confidence trust metadata.')
+        if not self.data_state:
+            raise ValueError('Recommendation Engine V2 requires data_state trust metadata.')
+        if not self.source_evidence_state:
+            raise ValueError(
+                'Recommendation Engine V2 requires source evidence state metadata.'
+            )
+        if not self.governance_state:
+            raise ValueError(
+                'Recommendation Engine V2 requires governance state metadata.'
+            )
+        if self.freshness is None:
+            raise ValueError('Recommendation Engine V2 requires freshness metadata.')
+        if self.limitations is None:
+            raise ValueError('Recommendation Engine V2 requires limitation metadata.')
+        if self.explanations is None:
+            raise ValueError('Recommendation Engine V2 requires explanation metadata.')
+        if self.refusal_reasons is None:
+            raise ValueError('Recommendation Engine V2 requires refusal metadata.')
         object.__setattr__(self, 'limitations', _normalize_tuple(self.limitations))
         object.__setattr__(self, 'explanations', _normalize_tuple(self.explanations))
         object.__setattr__(
             self,
             'refusal_reasons',
             _normalize_tuple(self.refusal_reasons),
+        )
+        object.__setattr__(
+            self,
+            'trust_validation_errors',
+            _normalize_tuple(self.trust_validation_errors),
         )
 
     def to_dict(self):
@@ -238,6 +382,8 @@ class RecommendationContext:
             'confidence': self.confidence.value,
             'confidence_code': self.confidence.name,
             'data_state': self.data_state,
+            'source_evidence_state': self.source_evidence_state,
+            'governance_state': self.governance_state,
             'generated_at': self.generated_at,
             'freshness': self.freshness.to_dict(),
             'limitations': [limitation.to_dict() for limitation in self.limitations],
@@ -247,8 +393,11 @@ class RecommendationContext:
             'refusal_reasons': [
                 refusal.to_dict() for refusal in self.refusal_reasons
             ],
+            'trust_validation_errors': list(self.trust_validation_errors),
         }
+        payload['trust_metadata'] = _trust_metadata_payload(payload)
         require_v2_governance_safe(payload)
+        require_v2_trust_metadata(payload)
         return payload
 
 
@@ -263,11 +412,15 @@ def _with_context(payload: dict[str, Any], context: RecommendationContext):
     payload['selection_made'] = context_payload['selection_made']
     payload['confidence'] = context_payload['confidence']
     payload['data_state'] = context_payload['data_state']
+    payload['source_evidence_state'] = context_payload['source_evidence_state']
+    payload['governance_state'] = context_payload['governance_state']
     payload['freshness'] = context_payload['freshness']
     payload['limitations'] = context_payload['limitations']
     payload['explanations'] = context_payload['explanations']
     payload['refusal_reasons'] = context_payload['refusal_reasons']
+    payload['trust_metadata'] = context_payload['trust_metadata']
     require_v2_governance_safe(payload)
+    require_v2_trust_metadata(payload)
     return payload
 
 
@@ -414,6 +567,8 @@ __all__ = [
     'NO_SELECTION_MADE',
     'V2_PHASE',
     'V2_POLICY_NAME',
+    'V2_REQUIRED_TRUST_METADATA_FIELDS',
+    'V2_TRUST_METADATA_POLICY',
     'BullpenState',
     'CandidateGroup',
     'RecommendationContext',
@@ -423,5 +578,7 @@ __all__ = [
     'V2Limitation',
     'V2Refusal',
     'require_v2_governance_safe',
+    'require_v2_trust_metadata',
     'v2_governance_errors',
+    'v2_trust_metadata_errors',
 ]

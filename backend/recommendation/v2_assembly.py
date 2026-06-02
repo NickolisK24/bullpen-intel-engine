@@ -25,6 +25,7 @@ from recommendation.v2 import (
     V2Limitation,
     V2Refusal,
     require_v2_governance_safe,
+    require_v2_trust_metadata,
     v2_governance_errors,
 )
 
@@ -34,6 +35,7 @@ V2_CONTEXT_ASSEMBLY_SOURCE = 'existing_availability_workload_evidence'
 V2_NEUTRAL_INTELLIGENCE_PHASE = 'phase_3_neutral_intelligence_expansion'
 V2_INVENTORY_VISIBILITY_PHASE = 'phase_4_inventory_visibility_layer'
 V2_TEAM_BULLPEN_CONTEXT_PHASE = 'phase_5_team_bullpen_context_layer'
+V2_TRUST_METADATA_INTEGRATION_PHASE = 'phase_6_trust_metadata_integration'
 
 AVAILABILITY_STATUS_ORDER = (
     'Available',
@@ -121,18 +123,21 @@ class V2ContextAssembly:
         require_v2_governance_safe(self.metadata)
 
     def to_dict(self):
+        recommendation_context = self.recommendation_context.to_dict()
         payload = {
             'metadata': dict(self.metadata),
-            'recommendation_context': self.recommendation_context.to_dict(),
+            'recommendation_context': recommendation_context,
             'bullpen_state': self.bullpen_state.to_dict(),
             'team_context': self.team_context.to_dict(),
             'candidate_groups': [
                 group.to_dict() for group in self.candidate_groups
             ],
+            'trust_metadata': recommendation_context['trust_metadata'],
             'ranking_applied': False,
             'selection_made': False,
         }
         require_v2_governance_safe(payload)
+        require_v2_trust_metadata(payload)
         return payload
 
 
@@ -150,6 +155,7 @@ def assemble_v2_context(
 
     records = [_candidate_record(candidate) for candidate in list(candidates or ())]
     unsafe_errors = _unsafe_input_errors(records)
+    trust_validation_errors = _trust_input_errors(records)
     if unsafe_errors:
         context = _recommendation_context(
             records=(),
@@ -245,10 +251,15 @@ def assemble_v2_context(
                 'neutral_intelligence': _neutral_intelligence_summary(
                     records=(),
                     candidate_groups=(),
+                    context=context,
                     failed_closed=True,
                 ),
                 'inventory_visibility': inventory_visibility,
                 'team_bullpen_context_summary': team_bullpen_context_summary,
+                'trust_metadata': _context_trust_metadata(
+                    context,
+                    failed_closed=True,
+                ),
             },
         )
 
@@ -256,12 +267,14 @@ def assemble_v2_context(
         records=records,
         scope='bullpen_state',
         generated_at=generated_at,
+        trust_validation_errors=trust_validation_errors,
     )
     candidate_groups = _candidate_groups(records, generated_at=generated_at)
     failed_closed = bool(context.refusal_reasons)
     neutral_intelligence = _neutral_intelligence_summary(
         records=records,
         candidate_groups=candidate_groups,
+        context=context,
         failed_closed=failed_closed,
     )
     inventory_visibility = _inventory_visibility_summary(
@@ -308,6 +321,10 @@ def assemble_v2_context(
             'neutral_intelligence': neutral_intelligence,
             'inventory_visibility': inventory_visibility,
             'team_bullpen_context_summary': team_bullpen_context_summary,
+            'trust_metadata': _context_trust_metadata(
+                context,
+                failed_closed=failed_closed,
+            ),
         },
     )
 
@@ -361,6 +378,81 @@ def _unsafe_input_errors(records):
     return errors
 
 
+def _trust_input_errors(records):
+    errors = []
+    for index, record in enumerate(records):
+        payload = record['source_payload']
+        availability = _as_mapping(payload.get('availability'))
+        metadata = _as_mapping(payload.get('metadata'))
+        if not _has_any_field(availability, metadata, field_names=('confidence',)):
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'confidence',
+                    'message': 'Candidate evidence is missing confidence metadata.',
+                }
+            )
+        if not _has_any_field(
+            availability,
+            metadata,
+            field_names=('data_state', 'freshness_state'),
+        ):
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'freshness',
+                    'message': 'Candidate evidence is missing freshness metadata.',
+                }
+            )
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'data_state',
+                    'message': 'Candidate evidence is missing data-state metadata.',
+                }
+            )
+        if not _has_any_field(
+            availability,
+            payload,
+            field_names=('availability_status', 'status'),
+        ):
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'refusal',
+                    'message': 'Candidate evidence is missing refusal-state metadata.',
+                }
+            )
+        if 'limitations' not in availability:
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'limitations',
+                    'message': 'Candidate evidence is missing limitation metadata.',
+                }
+            )
+        if 'reasons' not in availability:
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'explanations',
+                    'message': 'Candidate evidence is missing explanation metadata.',
+                }
+            )
+        if (
+            'trust_metadata' in metadata
+            and not isinstance(metadata.get('trust_metadata'), Mapping)
+        ):
+            errors.append(
+                {
+                    'candidate_index': index,
+                    'field': 'unsupported_trust_fields',
+                    'message': 'Candidate evidence has unsupported trust metadata.',
+                }
+            )
+    return tuple(errors)
+
+
 def _recommendation_context(
     *,
     records,
@@ -368,8 +460,10 @@ def _recommendation_context(
     generated_at,
     explicit_refusals=(),
     explicit_explanations=(),
+    trust_validation_errors=(),
 ):
     records = tuple(records)
+    trust_validation_errors = tuple(trust_validation_errors or ())
     confidence = _aggregate_confidence(records)
     data_state = _aggregate_data_state(records)
     refusals = list(explicit_refusals)
@@ -412,6 +506,43 @@ def _recommendation_context(
             )
         )
 
+    trust_error_fields = _trust_error_fields(trust_validation_errors)
+    for field_name in trust_error_fields:
+        refusals.append(
+            V2Refusal(
+                refusal_id=f'missing_{field_name}_metadata',
+                reason=f'missing_{field_name}_metadata',
+                message=(
+                    'V2 context failed closed because required trust metadata '
+                    f'is missing or unsupported: {field_name}.'
+                ),
+                applies_to=scope,
+            )
+        )
+        limitations.append(
+            V2Limitation(
+                limitation_id=f'missing_{field_name}_metadata',
+                message=(
+                    'Required V2 trust metadata is missing or unsupported: '
+                    f'{field_name}.'
+                ),
+                applies_to=scope,
+            )
+        )
+
+    if trust_validation_errors:
+        explanations.append(
+            V2Explanation(
+                code='trust_metadata_validation_failed',
+                message='V2 trust metadata validation produced fail-closed metadata.',
+                applies_to=scope,
+                details={
+                    'error_count': len(trust_validation_errors),
+                    'missing_or_unsupported_fields': list(trust_error_fields),
+                },
+            )
+        )
+
     if data_state in {'stale', 'missing', 'incomplete', 'historical', 'unknown'}:
         refusals.append(
             V2Refusal(
@@ -434,11 +565,19 @@ def _recommendation_context(
         scope=scope,
         confidence=confidence,
         data_state=data_state,
+        source_evidence_state=_source_evidence_state(
+            records=records,
+            trust_validation_errors=trust_validation_errors,
+        ),
+        governance_state='failed_closed' if refusals else 'compliant',
         generated_at=generated_at,
         freshness=_freshness_metadata(records, data_state=data_state),
         limitations=tuple(_unique_limitations(limitations)),
         explanations=tuple(_unique_explanations(explanations)),
         refusal_reasons=tuple(_unique_refusals(refusals)),
+        trust_validation_errors=tuple(
+            _trust_error_messages(trust_validation_errors)
+        ),
     )
 
 
@@ -616,7 +755,7 @@ def _candidate_group_entry(record, *, grouping_dimension=None, group_category=No
     return entry
 
 
-def _neutral_intelligence_summary(*, records, candidate_groups, failed_closed):
+def _neutral_intelligence_summary(*, records, candidate_groups, context, failed_closed):
     records = tuple(records)
     candidate_groups = tuple(candidate_groups)
     payload = {
@@ -637,10 +776,15 @@ def _neutral_intelligence_summary(*, records, candidate_groups, failed_closed):
         'candidate_group_count': len(candidate_groups),
         'failed_closed': bool(failed_closed),
         'ordering_policy': 'input_order_preserved_within_groups',
+        'trust_metadata': _context_trust_metadata(
+            context,
+            failed_closed=failed_closed,
+        ),
         'ranking_applied': False,
         'selection_made': False,
     }
     require_v2_governance_safe(payload)
+    require_v2_trust_metadata(payload)
     return payload
 
 
@@ -673,6 +817,7 @@ def _inventory_visibility_summary(
         'selection_made': False,
     }
     require_v2_governance_safe(payload)
+    require_v2_trust_metadata(payload)
     return payload
 
 
@@ -858,19 +1003,17 @@ def _explanation_inventory(records, context):
 
 
 def _inventory_trust_metadata(context, failed_closed):
-    return {
-        'confidence': context.confidence.value,
-        'confidence_code': context.confidence.name,
-        'data_state': context.data_state,
-        'generated_at': context.generated_at,
-        'freshness': context.freshness.to_dict(),
-        'refusal_reason_count': len(context.refusal_reasons),
-        'limitation_count': len(context.limitations),
-        'explanation_count': len(context.explanations),
-        'failed_closed': bool(failed_closed),
-        'ranking_applied': context.ranking_applied,
-        'selection_made': context.selection_made,
-    }
+    return _context_trust_metadata(context, failed_closed=failed_closed)
+
+
+def _context_trust_metadata(context, *, failed_closed):
+    context_payload = context.to_dict()
+    payload = dict(context_payload['trust_metadata'])
+    payload['phase'] = V2_TRUST_METADATA_INTEGRATION_PHASE
+    payload['failed_closed'] = bool(failed_closed)
+    require_v2_governance_safe(payload)
+    require_v2_trust_metadata(payload)
+    return payload
 
 
 def _inventory_members_by_category(
@@ -1561,6 +1704,44 @@ def _first_value(*values):
     return None
 
 
+def _has_any_field(*mappings, field_names):
+    for mapping in mappings:
+        if not isinstance(mapping, Mapping):
+            continue
+        for field_name in field_names:
+            if mapping.get(field_name) is not None:
+                return True
+    return False
+
+
+def _trust_error_fields(trust_validation_errors):
+    fields = OrderedDict()
+    for error in trust_validation_errors:
+        field_name = str(error.get('field') or 'trust_metadata')
+        fields[field_name] = field_name
+    return tuple(fields.values())
+
+
+def _trust_error_messages(trust_validation_errors):
+    messages = []
+    for error in trust_validation_errors:
+        messages.append(
+            (
+                f"candidate[{error.get('candidate_index')}]."
+                f"{error.get('field')}: {error.get('message')}"
+            )
+        )
+    return tuple(messages)
+
+
+def _source_evidence_state(*, records, trust_validation_errors):
+    if not records:
+        return 'missing'
+    if trust_validation_errors:
+        return 'trust_metadata_incomplete'
+    return 'represented'
+
+
 def _as_mapping(value):
     return value if isinstance(value, Mapping) else {}
 
@@ -1584,6 +1765,7 @@ __all__ = [
     'V2_NEUTRAL_INTELLIGENCE_PHASE',
     'V2_INVENTORY_VISIBILITY_PHASE',
     'V2_TEAM_BULLPEN_CONTEXT_PHASE',
+    'V2_TRUST_METADATA_INTEGRATION_PHASE',
     'NEUTRAL_INTELLIGENCE_DIMENSIONS',
     'INVENTORY_VISIBILITY_SECTIONS',
     'TEAM_BULLPEN_CONTEXT_SECTIONS',

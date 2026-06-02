@@ -185,10 +185,13 @@ ranking_applied = false
 selection_made = false
 ```
 
-## Phase 6 Readiness Boundary
+## Phase 6 Completion Boundary
 
-Future V2 Phase 6 work may build on the team bullpen context layer for trust
-metadata integration only if it preserves the same governance rules. Any future
-work remains subject to explicit scope approval and must not create ranking,
-selection, prediction, API behavior, frontend behavior, or user-visible
-recommendation behavior unless separately authorized.
+Recommendation Engine V2 Phase 6 now builds on the team bullpen context layer
+for backend-only trust metadata integration while preserving the same
+governance rules.
+
+Phase 6 does not create ranking, selection, prediction, API behavior, frontend
+behavior, or user-visible recommendation behavior. Any future work remains
+subject to explicit scope approval and the same no-ranking/no-selection
+guarantees.

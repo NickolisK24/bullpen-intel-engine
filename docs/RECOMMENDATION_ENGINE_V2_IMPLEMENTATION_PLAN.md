@@ -554,6 +554,26 @@ Propagate mandatory trust metadata through all V2 output layers.
 - Missing metadata blocks output.
 - No output can truthfully imply ranking or selection.
 
+**Phase 6 completion status**
+
+Recommendation Engine V2 Phase 6 is complete as a backend-only trust metadata
+integration layer. Internal V2 outputs now carry mandatory trust metadata for
+confidence, freshness, limitations, explanations, refusal reasons, data state,
+source evidence state, governance state, and the required no-ranking and
+no-selection guarantees.
+
+The context assembly layer now fails closed or degrades context with explicit
+refusal, limitation, explanation, and validation metadata when required trust
+metadata is missing, malformed, unsafe, or unsupported.
+
+Phase 6 does not expose API support, frontend support, user-facing V2 trust UI,
+user-facing V2 recommendation behavior, ranking, selection, prediction, or
+route changes.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md`
+
 ## 14. Phase 7: Refusal and Fail-Closed Integration
 
 **Goal**

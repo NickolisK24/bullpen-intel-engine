@@ -145,6 +145,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 3 Neutral Intelligence | Complete |
 | Recommendation Engine V2 Phase 4 Inventory Visibility | Complete |
 | Recommendation Engine V2 Phase 5 Team Bullpen Context | Complete |
+| Recommendation Engine V2 Phase 6 Trust Metadata Integration | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -265,8 +266,9 @@ status, or manager intent.
   prediction, matchup guidance, and black-box or generated baseball opinions
   remain outside V1. V2 now has backend-only Phase 1 domain objects, Phase 2
   context assembly, Phase 3 neutral internal intelligence, and Phase 4
-  inventory visibility, and Phase 5 team bullpen context for future grouped
-  bullpen and team-level visibility without ranking or automated selection.
+  inventory visibility, Phase 5 team bullpen context, and Phase 6 trust
+  metadata integration for future grouped bullpen and team-level visibility
+  without ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
 
@@ -328,14 +330,15 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 5 Status
+## Recommendation Engine V2 Strategy and Phase 6 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
 implementation planning, Phase 1 backend domain object foundation work, Phase
 2 backend context assembly work, Phase 3 backend-only neutral intelligence
 expansion work, Phase 4 backend-only inventory visibility work, and Phase 5
-backend-only team bullpen context work.
+backend-only team bullpen context work, and Phase 6 backend-only trust
+metadata integration work.
 
 The official strategy foundation is:
 
@@ -388,6 +391,10 @@ The Phase 4 completion record is:
 The Phase 5 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_5_TEAM_BULLPEN_CONTEXT.md`
+
+The Phase 6 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -443,7 +450,7 @@ candidate grouping, inventory visibility, team bullpen context, trust metadata,
 refusal and fail-closed behavior, API implementation, frontend integration,
 mobile/accessibility validation, test expansion, certification review, and
 production rollout decision. It remains the sequencing authority for future
-phases after Phase 5.
+phases after Phase 6.
 
 Recommendation Engine V2 Phase 1 implements backend-only domain objects:
 
@@ -536,6 +543,30 @@ closed when evidence is missing or unsafe.
 The Phase 5 expansion does not expose V2 API support, frontend support,
 user-facing V2 team context UI, user-facing V2 recommendation behavior,
 ranking, selection, prediction, or route changes.
+
+Recommendation Engine V2 Phase 6 enforces backend-only trust metadata
+integration:
+
+- confidence metadata
+- freshness metadata
+- limitation metadata
+- explanation metadata
+- refusal metadata
+- data-state metadata
+- source evidence state
+- governance state
+- no-ranking and no-selection governance metadata
+
+The Phase 6 expansion adds mandatory trust metadata validation across
+`RecommendationContext`, `BullpenState`, `CandidateGroup`,
+`TeamBullpenContext`, `V2ContextAssembly`, neutral intelligence summaries,
+inventory visibility summaries, and team bullpen context summaries. Missing or
+unsupported trust metadata now produces explicit fail-closed/refusal metadata
+instead of silently passing incomplete context.
+
+The Phase 6 expansion does not expose V2 API support, frontend support,
+user-facing V2 trust UI, user-facing V2 recommendation behavior, ranking,
+selection, prediction, or route changes.
 
 The active V1 and V2 governance guarantees remain:
 
