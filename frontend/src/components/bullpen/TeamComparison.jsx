@@ -34,8 +34,8 @@ export default function TeamComparison() {
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
-  const [sortBy, setSortBy]   = useState('avg')
-  const [sortDir, setSortDir] = useState('desc')
+  const [sortBy, setSortBy]   = useState('team')
+  const [sortDir, setSortDir] = useState('asc')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -142,10 +142,10 @@ export default function TeamComparison() {
       <div className="card-header">
         <div>
           <span className="font-mono text-xs text-chalk400 uppercase tracking-widest">
-            30-Team Bullpen Rankings
+            30-Team Bullpen Summary
           </span>
           <div className="text-chalk600 text-[11px] font-mono mt-0.5">
-            Sorted by average fatigue — click a header to re-sort
+            Alphabetical by default — click a header to sort
           </div>
         </div>
         <button
@@ -160,7 +160,6 @@ export default function TeamComparison() {
         <table className="data-table">
           <thead>
             <tr>
-              <th className="w-8 text-chalk600">#</th>
               <th className={headerCls('team')}      onClick={() => handleSort('team')}>Team{arrow('team')}</th>
               <th className={`text-right ${headerCls('avg')}`} onClick={() => handleSort('avg')}>Avg Fatigue{arrow('avg')}</th>
               <th className={`text-right ${headerCls('critical')}`} onClick={() => handleSort('critical')}>CRITICAL{arrow('critical')}</th>
@@ -171,11 +170,10 @@ export default function TeamComparison() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row, i) => {
+            {sorted.map((row) => {
               const tierColor = row.avg_tier ? RISK_COLORS[row.avg_tier] : null
               return (
                 <tr key={row.team_id}>
-                  <td className="font-mono text-xs text-chalk600">{i + 1}</td>
                   <td>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px] text-chalk600 w-8 shrink-0">

@@ -192,10 +192,10 @@ export default function Dashboard() {
       <FatigueInsightCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Most fatigued pitchers */}
+        {/* High fatigue snapshot */}
         <div className="card animate-fade-up opacity-0 delay-4" style={{ animationFillMode: 'forwards' }}>
           <div className="card-header">
-            <span className="font-mono text-xs text-chalk400 uppercase tracking-widest">🔥 Most Fatigued</span>
+            <span className="font-mono text-xs text-chalk400 uppercase tracking-widest">🔥 High Fatigue Snapshot</span>
             <Link to="/bullpen" className="text-amber text-xs font-mono hover:underline">View all →</Link>
           </div>
           <div className="p-0">
@@ -265,11 +265,10 @@ export default function Dashboard() {
                 })}
               </div>
 
-              <div className="text-chalk600 font-mono text-xs uppercase tracking-widest mb-3">Top Rated</div>
+              <div className="text-chalk600 font-mono text-xs uppercase tracking-widest mb-3">Sample Grade Highlights</div>
               <div className="space-y-2.5">
-                {pipeline.data?.top_10?.slice(0, 5).map((p, i) => (
+                {pipeline.data?.top_10?.slice(0, 5).map((p) => (
                   <div key={p.id} className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-chalk600 w-4">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-chalk200 text-sm font-medium truncate">{p.full_name}</div>
                       <div className="text-chalk600 text-xs font-mono">{p.team_abbreviation} · {p.position} · {p.current_level}</div>

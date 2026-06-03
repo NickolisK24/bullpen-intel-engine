@@ -17,7 +17,7 @@ import {
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
   { id: 'pitchers', label: 'Pitchers' },
-  { id: 'teams',    label: 'Team Rankings' },
+  { id: 'teams',    label: 'Team Summary' },
 ]
 const PAGE_SIZE = 50
 

@@ -1414,7 +1414,72 @@ post-rollout validation without changing Recommendation Engine behavior.
 - Risky or out-of-scope warning fixes are deferred with rationale.
 - V2 governance guarantees remain unchanged.
 
-## 26. Dependency Map
+## 26. Phase 19: Prototype Surface Maintenance Review
+
+**Status**
+
+BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review is complete.
+
+The completed Phase 19 record is:
+
+- `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
+
+**Goal**
+
+Inventory, classify, and review production, supported, prototype,
+experimental, legacy, and deprecated surfaces after V2 rollout approval and
+warning remediation.
+
+**Allowed work**
+
+- Prototype inventory.
+- Route inventory.
+- Maintenance classification.
+- Governance review.
+- Warning review.
+- Documentation updates.
+- Low-risk cleanup when clearly safe.
+
+**Forbidden work**
+
+- Do not add recommendation behavior.
+- Do not change fatigue formulas.
+- Do not expand API contracts.
+- Do not add ranking, selection, prediction, or final pitcher choice behavior.
+- Do not promote prototype surfaces into production.
+
+**Completed review**
+
+- Classified backend routes, frontend routes, shared utilities, prototype
+  surfaces, experimental surfaces, legacy surfaces, and deprecated-surface
+  status.
+- Confirmed certified V2 remains bounded to the approved bullpen-state API and
+  Dashboard panel.
+- Identified Prospect Pipeline as prototype and fatigue-to-ERA, snapshot mode,
+  MLB passthrough helpers, and threshold experiment tooling as experimental.
+- Applied safe neutral-language cleanup to the Bullpen team summary and
+  Dashboard prototype Pipeline Snapshot.
+
+**Required tests**
+
+- Frontend regression suite.
+- Full backend regression suite.
+- Diff whitespace checks.
+
+**Documentation updates**
+
+- Record surface inventory and classification.
+- Record governance risks and cleanup recommendations.
+- Update current project state and roadmap surfaces.
+
+**Exit criteria**
+
+- Surface inventory is documented.
+- Prototype and experimental governance risks are documented.
+- Safe low-risk cleanup is validated.
+- V2 governance guarantees remain unchanged.
+
+## 27. Dependency Map
 
 Implementation order must remain sequential unless an approved implementation
 review explicitly narrows a phase without weakening governance.
@@ -1440,6 +1505,7 @@ Phase 0 Repo Hygiene
   -> Phase 17 Post-Rollout Monitoring and Boundary Review
   -> Phase 18 Maintenance Warning Remediation Review
   -> Phase 19 Prototype Surface Maintenance Review
+  -> Phase 20 Prototype Promotion and Deprecation Policy
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1447,7 +1513,7 @@ exist before frontend rendering. Frontend rendering must exist before mobile and
 accessibility certification. All runtime implementation must pass tests before
 certification review.
 
-## 27. Expected File/Module Areas
+## 28. Expected File/Module Areas
 
 Future implementation may touch these areas, subject to phase approval:
 
@@ -1477,7 +1543,7 @@ directories as part of V2 feature work:
 If those files appear in `git status`, they must be treated as unrelated drift
 unless explicitly approved for a separate maintenance task.
 
-## 28. Testing Plan
+## 29. Testing Plan
 
 Required test categories:
 
@@ -1509,7 +1575,7 @@ Testing expectations:
   imply ranking or selection.
 - V1 tests must continue to pass without weakening assertions.
 
-## 29. Rollout and Visibility Strategy
+## 30. Rollout and Visibility Strategy
 
 V2 should roll out only after implementation completion and certification
 review. The preferred visibility path is:
@@ -1523,7 +1589,7 @@ review. The preferred visibility path is:
 Rollout must preserve user decision authority. V2 output may organize,
 summarize, and explain bullpen information. It must not choose, rank, or decide.
 
-## 30. Feature Flag Strategy
+## 31. Feature Flag Strategy
 
 V2 should use a controlled visibility mechanism until production certification
 is complete.
@@ -1540,7 +1606,7 @@ The flag or visibility mechanism must not bypass governance checks. Hidden or
 disabled V2 code must still preserve no-ranking, no-selection, trust metadata,
 freshness, limitations, explanations, and refusal behavior.
 
-## 31. Risk Controls
+## 32. Risk Controls
 
 Scope creep controls:
 
@@ -1593,7 +1659,7 @@ Worktree drift controls:
 - Stage named files only when unrelated drift exists.
 - Keep generated frontend artifacts and dependency drift out of V2 commits.
 
-## 32. Implementation Stop Conditions
+## 33. Implementation Stop Conditions
 
 Implementation must stop if:
 
@@ -1611,7 +1677,7 @@ Implementation must stop if:
 
 Stop conditions require review before implementation continues.
 
-## 33. Definition of Implementation Complete
+## 34. Definition of Implementation Complete
 
 Implementation complete means:
 
@@ -1630,7 +1696,7 @@ Implementation complete means:
 
 Implementation complete does not mean production certified.
 
-## 34. Definition of Production Certified
+## 35. Definition of Production Certified
 
 Production certified requires:
 
@@ -1648,15 +1714,16 @@ requires:
 Production certification must be evidence-based and must preserve the full V2
 governance package. Production rollout must be recorded separately.
 
-## 35. Next Milestone
+## 36. Next Milestone
 
 The next milestone is:
 
 ```text
-BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review
+BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy
 ```
 
-This milestone may begin after Phase 18 warning remediation remains validated.
-Phase 19 should review prototype surfaces and remaining local maintenance
-hygiene separately from the certified Recommendation Engine V2 production
-boundary. It should not expand Recommendation Engine behavior.
+This milestone may begin after Phase 19 prototype surface maintenance review
+remains validated. Phase 20 should define how prototype surfaces may be
+promoted, deprecated, retired, or kept explicitly out of the certified
+Recommendation Engine V2 production boundary. It should not expand
+Recommendation Engine behavior.

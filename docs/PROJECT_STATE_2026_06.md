@@ -162,6 +162,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
 | BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
+| BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -370,6 +371,9 @@ BaseballOS V2.5 Phase 17 post-rollout monitoring and boundary review is also
 complete and preserves the approved V2 production boundary. BaseballOS V2.5
 Phase 18 maintenance warning remediation review is complete and removes the
 current backend validation warning debt without changing certified
+Recommendation Engine behavior. BaseballOS V2.5 Phase 19 prototype surface
+maintenance review is complete and classifies production, supported,
+prototype, experimental, legacy, and deprecated surfaces without expanding
 Recommendation Engine behavior.
 
 The official strategy foundation is:
@@ -483,6 +487,10 @@ The V2.5 Phase 17 post-rollout monitoring and boundary review record is:
 The V2.5 Phase 18 maintenance warning remediation review record is:
 
 - `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+The V2.5 Phase 19 prototype surface maintenance review record is:
+
+- `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1197,6 +1205,57 @@ logic, freshness logic, refusal logic, fatigue formulas, ranking behavior,
 selection behavior, prediction behavior, frontend behavior, or Recommendation
 Engine V1 behavior.
 
+BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review evaluates
+current backend routes, frontend routes, shared utilities, prototype surfaces,
+experimental surfaces, legacy surfaces, and deprecated-surface status.
+
+The Phase 19 prototype surface maintenance review record is:
+
+- `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
+
+Phase 19 classifications:
+
+- PRODUCTION: Dashboard, Bullpen, certified V2 bullpen-state API and panel,
+  certified V1 candidate API and panel, bullpen workload read APIs, sync
+  status, and health.
+- SUPPORTED: Methodology, admin sync/recalculation endpoints, frontend API
+  normalizers, and availability governance tooling.
+- PROTOTYPE: Prospect Pipeline UI, Prospect APIs, Prospect model, and Dashboard
+  Pipeline Snapshot.
+- EXPERIMENTAL: fatigue-to-ERA analysis, latest-workload snapshot mode, MLB
+  passthrough helpers, and availability threshold experiment tooling.
+- LEGACY: metadata-less fatigue array response and standalone fatigue
+  recalculation script.
+- DEPRECATED: none discovered.
+
+Phase 19 applied safe presentation cleanup:
+
+- renamed the Bullpen team view from ranking language to summary language
+- defaulted the team summary to alphabetical order
+- removed the team summary ordinal column
+- renamed the Dashboard prototype pipeline highlight label away from top-style
+  wording
+- removed ordinal numbering from the Dashboard prototype pipeline highlights
+
+Phase 19 validation:
+
+```text
+npm test
+77 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-prototype-review
+278 passed, 0 failed
+```
+
+Phase 19 did not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, selection behavior,
+prediction behavior, or Recommendation Engine V1 behavior.
+
+Prototype governance risk remains deferred to future policy work: the Prospect
+Pipeline must not be promoted to production until it has an explicit
+promotion contract covering provenance, freshness, limitations, refusal,
+fail-closed behavior, and trust metadata.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1222,6 +1281,6 @@ certification review, V2.5 Phase 14 inventory presentation optimization, and
 V2.5 Phase 15 intelligence presentation optimization, production rollout
 within the Phase 16-approved current certified V2 experience, or Phase 17
 post-rollout monitoring and boundary review, or Phase 18 maintenance warning
-remediation review,
+remediation review, or Phase 19 prototype surface maintenance review,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.

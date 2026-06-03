@@ -51,7 +51,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 - **Pitcher detail workflow** — per-pitcher view with score, risk tier, weighted component
   breakdown, component radar, fatigue trend, recent appearances, availability status,
   confidence, reasons, and limitations — on desktop **and** mobile.
-- **Team bullpen views** — per-team bullpen overview and team-vs-team workload rankings.
+- **Team bullpen views** — per-team bullpen overview and team-vs-team workload summaries.
 - **Trust strip and sync freshness visibility** — the dashboard separates platform data
   status, last successful sync, baseball data-through date, and refresh coverage.
 - **Durable sync metadata** — sync attempts persist in the `sync_runs` table so successful,
@@ -117,6 +117,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
 | BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
+| BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -213,7 +214,10 @@ today:
   contract, UX, and technical-debt regressions. V2.5 Phase 18 reviews and
   remediates the backend warning debt surfaced during post-rollout validation,
   reducing the full backend test-suite warning count from 139 to 0 without
-  changing certified Recommendation Engine behavior. No
+  changing certified Recommendation Engine behavior. V2.5 Phase 19 inventories
+  production, supported, prototype, experimental, legacy, and deprecated
+  surfaces, classifies prototype governance risks, and neutralizes rank-style
+  presentation language outside the certified V2 path. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -265,7 +269,13 @@ today:
   and the completed V2.5 Phase 15 intelligence presentation record in
   [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md),
   and the completed V2.5 Phase 16 production rollout decision in
-  [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md).
+  [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md),
+  and the completed V2.5 Phase 17 post-rollout monitoring and boundary review in
+  [`docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`](docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md),
+  and the completed V2.5 Phase 18 maintenance warning remediation review in
+  [`docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`](docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md),
+  and the completed V2.5 Phase 19 prototype surface maintenance review in
+  [`docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`](docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -540,6 +550,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 18 maintenance warning remediation review record for
   backend warning inventory, warning classification, safe remediation,
   deferred warnings, regression validation, and governance preservation.
+- [`docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`](docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md)
+  — completed V2.5 Phase 19 prototype surface maintenance review record for
+  production, supported, prototype, experimental, legacy, and deprecated
+  surface classification, governance risk review, cleanup recommendations, and
+  boundary preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -618,7 +633,9 @@ V2.5 Phase 17 is complete and establishes post-rollout monitoring, warning
 review, regression-protection review, and boundary review for the approved
 production scope. V2.5 Phase 18 is complete and remediates the current backend
 test warning debt, reducing the full backend suite from 139 warnings to 0
-warnings while preserving Recommendation Engine V2 governance.
+warnings while preserving Recommendation Engine V2 governance. V2.5 Phase 19
+is complete and inventories prototype, experimental, legacy, deprecated,
+supported, and production surfaces without expanding Recommendation Engine V2.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
