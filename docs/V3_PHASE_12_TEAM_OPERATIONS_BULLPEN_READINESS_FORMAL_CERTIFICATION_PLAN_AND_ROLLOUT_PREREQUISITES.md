@@ -542,3 +542,38 @@ The next milestone should execute this certification plan, assemble exact
 evidence, record manual browser/mobile/accessibility review, verify monitoring
 artifact readiness, and issue a certification decision without automatically
 approving production rollout.
+
+## Phase 13 Follow-Up
+
+V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review is
+complete.
+
+The Phase 13 record is:
+
+- `docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`
+
+Phase 13 decision:
+
+```text
+CERTIFICATION_DECISION = CERTIFIED_WITH_NON_BLOCKING_OPERATIONAL_GAPS
+PRODUCTION_ROLLOUT = NOT_APPROVED
+```
+
+Phase 13 executes the formal certification review described by this plan. It
+reviews backend domain evidence, internal route evidence, frontend client
+normalization evidence, Dashboard UI evidence, accessibility evidence,
+governance evidence, freshness evidence, trust metadata evidence,
+refusal/fail-closed evidence, V2 regression evidence, monitoring artifact
+status, and evidence packet status.
+
+Phase 13 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 13 does not approve production rollout. Remaining operational rollout
+gaps include monitoring artifact capture, deployment smoke review, manual
+browser/mobile evidence, manual screen-reader smoke review, and controlled
+rollout planning.
