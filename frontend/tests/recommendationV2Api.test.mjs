@@ -30,8 +30,31 @@ const baseV2Response = {
     sync_timestamp: '2026-06-02T11:55:00Z',
     data_through: '2026-06-02',
     freshness_state: 'current',
+    source_freshness_status: 'fresh',
+    aggregate_v2_freshness_status: 'fresh',
+    overall_sync_status: 'success',
+    overall_sync_current: true,
     stale_warning: null,
     missing_data_warning: null,
+  },
+  status_metadata: {
+    overall_sync_status: 'success',
+    overall_sync_current: true,
+    sync_timestamp: '2026-06-02T11:55:00Z',
+    sync_data_through: '2026-06-02',
+    source_freshness_status: 'fresh',
+    aggregate_v2_freshness_status: 'fresh',
+    fail_closed_state: 'passed',
+    fail_closed_reason_code: null,
+    reason_summary: 'No fail-closed refusal reason is active.',
+    trust_status: 'passed',
+    freshness_status: 'passed',
+    trust_failed: false,
+    freshness_failed: false,
+    safe_partial_output_allowed: false,
+    partial_context_safe: false,
+    ranking_applied: false,
+    selection_made: false,
   },
   limitations: [
     {
@@ -136,6 +159,7 @@ test('normalizes a successful V2 bullpen-state response without ranking or selec
   assert.equal(view.governance.trustRankingApplied, false)
   assert.equal(view.governance.trustSelectionMade, false)
   assert.deepEqual(view.freshness, baseV2Response.freshness)
+  assert.deepEqual(view.statusMetadata, baseV2Response.status_metadata)
   assert.deepEqual(view.limitations, baseV2Response.limitations)
   assert.deepEqual(view.explanations, baseV2Response.explanations)
   assert.deepEqual(view.refusalReasons, [])
@@ -185,12 +209,36 @@ test('accepts structured fail-closed metadata from the V2 bullpen-state contract
     confidence: 'low',
     data_state: 'missing',
     freshness: {
-      sync_timestamp: null,
+      sync_timestamp: '2026-06-03T07:44:27',
       data_through: '2026-05-01',
-      state: 'missing',
-      state_code: 'MISSING',
-      stale_warning: null,
-      missing_data_warning: 'Some source evidence is missing or incomplete.',
+      freshness_state: 'stale',
+      source_freshness_status: 'stale',
+      aggregate_v2_freshness_status: 'stale',
+      overall_sync_status: 'success',
+      overall_sync_current: true,
+      state_code: 'STALE',
+      stale_warning: 'Some source evidence is stale.',
+      missing_data_warning: null,
+    },
+    status_metadata: {
+      overall_sync_status: 'success',
+      overall_sync_current: true,
+      sync_timestamp: '2026-06-03T07:44:27',
+      sync_data_through: '2026-06-02',
+      source_freshness_status: 'stale',
+      aggregate_v2_freshness_status: 'stale',
+      fail_closed_state: 'degraded',
+      fail_closed_reason_code: 'data_state_stale',
+      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
+      trust_status: 'passed',
+      freshness_status: 'failed',
+      trust_failed: false,
+      freshness_failed: true,
+      safe_partial_output_allowed: true,
+      partial_context_safe: true,
+      withheld_summary: 'Current-state interpretation is withheld; degraded context remains visible with refusal metadata.',
+      ranking_applied: false,
+      selection_made: false,
     },
     fail_closed: {
       failed_closed: true,
@@ -198,14 +246,21 @@ test('accepts structured fail-closed metadata from the V2 bullpen-state contract
       governance_state: 'failed_closed',
       ranking_applied: false,
       selection_made: false,
-      reason_codes: ['data_state_missing'],
+      reason_codes: ['data_state_stale'],
+      primary_reason_code: 'data_state_stale',
+      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
+      display_label: 'Data freshness protection active',
+      withheld_summary: 'Current-state interpretation is withheld; degraded context remains visible with refusal metadata.',
+      trust_failed: false,
+      freshness_failed: true,
       safe_partial_output_allowed: true,
+      partial_context_safe: true,
     },
     refusal_reasons: [
       {
-        refusal_id: 'missing_data_state',
-        reason: 'data_state_missing',
-        message: 'V2 context is degraded or refused because source data state is missing.',
+        refusal_id: 'stale_data_state',
+        reason: 'data_state_stale',
+        message: 'V2 context is degraded or refused because source data state is stale.',
         applies_to: 'bullpen_state',
       },
     ],
@@ -218,6 +273,7 @@ test('accepts structured fail-closed metadata from the V2 bullpen-state contract
   assert.equal(view.isFailClosed, true)
   assert.deepEqual(view.failClosed, failClosedResponse.fail_closed)
   assert.deepEqual(view.freshness, failClosedResponse.freshness)
+  assert.deepEqual(view.statusMetadata, failClosedResponse.status_metadata)
   assert.deepEqual(view.refusalReasons, failClosedResponse.refusal_reasons)
   assert.deepEqual(view.malformedFields, [])
   assert.equal(view.governance.rankingApplied, false)

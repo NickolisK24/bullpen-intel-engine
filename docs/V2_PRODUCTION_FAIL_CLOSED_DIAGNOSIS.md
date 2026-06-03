@@ -8,6 +8,12 @@ Conclusion:
 Fail-closed functioning correctly but UI communication insufficient
 ```
 
+Remediation status:
+
+```text
+Implemented by docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md
+```
+
 ## 1. Investigation Purpose
 
 This investigation determines why the certified Recommendation Engine V2
@@ -442,6 +448,11 @@ The milestone should be planning-first and should authorize only bounded
 remediation design until separately approved. It should define the exact
 frontend copy, metadata fields, tests, and validation needed to explain degraded
 safe partial output without changing Recommendation Engine behavior.
+
+Remediation update: the bounded communication and freshness metadata
+remediation is complete. The follow-up record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md`
 
 ## Governance Confirmation
 
