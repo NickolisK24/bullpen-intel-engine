@@ -1,5 +1,5 @@
 from utils.db import db
-from datetime import datetime
+from utils.time import utc_now_naive
 
 class Pitcher(db.Model):
     __tablename__ = 'pitchers'
@@ -15,8 +15,8 @@ class Pitcher(db.Model):
     age = db.Column(db.Integer)
     jersey_number = db.Column(db.String(5))
     active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now_naive)
+    updated_at = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
     # Relationships
     game_logs = db.relationship('GameLog', backref='pitcher', lazy=True, cascade='all, delete-orphan')

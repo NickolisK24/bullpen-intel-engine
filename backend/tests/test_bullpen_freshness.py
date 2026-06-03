@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pytest
 from flask import Flask
@@ -9,6 +9,7 @@ from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 import models.prospect  # noqa: F401  (register on db.metadata)
 from api.bullpen import ACTIVE_WINDOW_DAYS, bullpen_bp
+from utils.time import utc_now_naive
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ def _add_scored_pitcher(days_since_last_game, team_id=1, risk_level='HIGH', raw_
     ))
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,
-        calculated_at=datetime.utcnow(),
+        calculated_at=utc_now_naive(),
         raw_score=raw_score,
         pitch_count_score=50.0,
         rest_days_score=30.0,

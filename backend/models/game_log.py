@@ -1,5 +1,5 @@
 from utils.db import db
-from datetime import datetime
+from utils.time import utc_now_naive
 
 class GameLog(db.Model):
     __tablename__ = 'game_logs'
@@ -48,7 +48,7 @@ class GameLog(db.Model):
     loss = db.Column(db.Boolean, default=False)
     save = db.Column(db.Boolean, default=False)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now_naive)
 
     def to_dict(self):
         return {

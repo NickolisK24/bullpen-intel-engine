@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from utils.db import db
+from utils.time import utc_now_naive
 
 
 class SyncRun(db.Model):
@@ -12,7 +11,7 @@ class SyncRun(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    started_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
     completed_at = db.Column(db.DateTime)
     status = db.Column(db.String(20), nullable=False, default='running')
     source = db.Column(db.String(30), nullable=False, default='manual')
@@ -26,7 +25,7 @@ class SyncRun(db.Model):
     pitchers_updated = db.Column(db.Integer, default=0)
     errors = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
 
     def to_dict(self):
         return {

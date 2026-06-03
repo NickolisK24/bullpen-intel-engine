@@ -1355,7 +1355,66 @@ boundary after rollout.
 - V2 behavior remains within the Phase 16-approved scope.
 - Boundary review decision is recorded as `BOUNDARY_REVIEW_PASSED`.
 
-## 25. Dependency Map
+## 25. Phase 18: Maintenance Warning Remediation Review
+
+**Status**
+
+BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review is complete.
+
+The completed Phase 18 record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+**Goal**
+
+Review, classify, and safely remediate backend warning debt surfaced during
+post-rollout validation without changing Recommendation Engine behavior.
+
+**Allowed work**
+
+- Warning inventory.
+- Warning classification.
+- Narrow warning remediation.
+- Test updates required by warning remediation.
+- Documentation updates.
+
+**Forbidden work**
+
+- Do not change recommendation behavior.
+- Do not change fatigue formulas.
+- Do not change API contracts.
+- Do not add frontend feature work.
+- Do not add ranking, selection, prediction, score ordering, or final pitcher
+  choice behavior.
+
+**Completed remediation**
+
+- Replaced deprecated UTC timestamp acquisition while preserving naive UTC
+  `DateTime` storage shape.
+- Replaced observed legacy SQLAlchemy route lookup with a session lookup and
+  explicit 404.
+- Removed current backend validation warnings from the full test suite.
+
+**Required tests**
+
+- Full backend regression suite.
+- Diff whitespace checks.
+- Frontend regression suite only if frontend files are touched.
+
+**Documentation updates**
+
+- Record warning inventory and classification.
+- Record safe fixes and deferred fixes.
+- Update current project state and roadmap surfaces.
+
+**Exit criteria**
+
+- Warning inventory is documented.
+- Safe low-risk warning fixes are validated.
+- Risky or out-of-scope warning fixes are deferred with rationale.
+- V2 governance guarantees remain unchanged.
+
+## 26. Dependency Map
 
 Implementation order must remain sequential unless an approved implementation
 review explicitly narrows a phase without weakening governance.
@@ -1380,6 +1439,7 @@ Phase 0 Repo Hygiene
   -> Phase 16 Production Rollout Decision
   -> Phase 17 Post-Rollout Monitoring and Boundary Review
   -> Phase 18 Maintenance Warning Remediation Review
+  -> Phase 19 Prototype Surface Maintenance Review
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1387,7 +1447,7 @@ exist before frontend rendering. Frontend rendering must exist before mobile and
 accessibility certification. All runtime implementation must pass tests before
 certification review.
 
-## 26. Expected File/Module Areas
+## 27. Expected File/Module Areas
 
 Future implementation may touch these areas, subject to phase approval:
 
@@ -1417,7 +1477,7 @@ directories as part of V2 feature work:
 If those files appear in `git status`, they must be treated as unrelated drift
 unless explicitly approved for a separate maintenance task.
 
-## 27. Testing Plan
+## 28. Testing Plan
 
 Required test categories:
 
@@ -1449,7 +1509,7 @@ Testing expectations:
   imply ranking or selection.
 - V1 tests must continue to pass without weakening assertions.
 
-## 28. Rollout and Visibility Strategy
+## 29. Rollout and Visibility Strategy
 
 V2 should roll out only after implementation completion and certification
 review. The preferred visibility path is:
@@ -1463,7 +1523,7 @@ review. The preferred visibility path is:
 Rollout must preserve user decision authority. V2 output may organize,
 summarize, and explain bullpen information. It must not choose, rank, or decide.
 
-## 29. Feature Flag Strategy
+## 30. Feature Flag Strategy
 
 V2 should use a controlled visibility mechanism until production certification
 is complete.
@@ -1480,7 +1540,7 @@ The flag or visibility mechanism must not bypass governance checks. Hidden or
 disabled V2 code must still preserve no-ranking, no-selection, trust metadata,
 freshness, limitations, explanations, and refusal behavior.
 
-## 30. Risk Controls
+## 31. Risk Controls
 
 Scope creep controls:
 
@@ -1533,7 +1593,7 @@ Worktree drift controls:
 - Stage named files only when unrelated drift exists.
 - Keep generated frontend artifacts and dependency drift out of V2 commits.
 
-## 31. Implementation Stop Conditions
+## 32. Implementation Stop Conditions
 
 Implementation must stop if:
 
@@ -1551,7 +1611,7 @@ Implementation must stop if:
 
 Stop conditions require review before implementation continues.
 
-## 32. Definition of Implementation Complete
+## 33. Definition of Implementation Complete
 
 Implementation complete means:
 
@@ -1570,7 +1630,7 @@ Implementation complete means:
 
 Implementation complete does not mean production certified.
 
-## 33. Definition of Production Certified
+## 34. Definition of Production Certified
 
 Production certified requires:
 
@@ -1588,15 +1648,15 @@ requires:
 Production certification must be evidence-based and must preserve the full V2
 governance package. Production rollout must be recorded separately.
 
-## 34. Next Milestone
+## 35. Next Milestone
 
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 18 Maintenance Warning Remediation Review
+BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review
 ```
 
-This milestone may begin after Phase 17 boundary review remains passed. Phase
-18 should address SQLAlchemy and datetime warning remediation planning,
-dependency-upgrade readiness, and continued V2 regression protection without
-expanding the approved Recommendation Engine V2 feature surface.
+This milestone may begin after Phase 18 warning remediation remains validated.
+Phase 19 should review prototype surfaces and remaining local maintenance
+hygiene separately from the certified Recommendation Engine V2 production
+boundary. It should not expand Recommendation Engine behavior.

@@ -170,6 +170,9 @@ Result:
 
 The backend run reported 139 deprecation warnings from existing SQLAlchemy and
 datetime usage. The warnings did not indicate V2 certification failures.
+BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review later
+removed the current backend validation warning debt without changing certified
+Recommendation Engine behavior.
 
 ## 7. API Certification Evidence
 
@@ -434,9 +437,10 @@ Live data may be stale, missing, incomplete, or unavailable. The certified
 behavior in those cases is explicit degraded, unavailable, or fail-closed
 output rather than fabricated intelligence.
 
-Existing backend tests report deprecation warnings from SQLAlchemy and
-datetime usage. Those warnings are maintenance follow-up items, not V2
-certification blockers.
+The original certification run reported deprecation warnings from SQLAlchemy
+and datetime usage. Those warnings were maintenance follow-up items, not V2
+certification blockers. BaseballOS V2.5 Phase 18 later remediated the current
+backend validation warning debt.
 
 Production rollout is not authorized by this certification record.
 
@@ -548,3 +552,22 @@ It confirms that the current approved V2 experience remains bounded to
 descriptive bullpen-state intelligence, neutral grouping, inventory visibility,
 team-context visibility, trust/freshness/refusal/fail-closed transparency, and
 user-controlled detail expansion.
+
+## 22. Maintenance Warning Remediation Review
+
+The completed maintenance warning remediation review record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+Phase 18 reviews and classifies the backend warning debt surfaced during
+post-rollout validation. It safely remediates the current datetime and
+SQLAlchemy warning output while preserving existing timestamp storage shape,
+route behavior, API contracts, and Recommendation Engine governance.
+
+Phase 18 validation records:
+
+```text
+278 passed, 0 failed, 0 warnings
+```
+
+Phase 18 does not expand certification scope or production rollout approval.

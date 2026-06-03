@@ -1,5 +1,5 @@
 from utils.db import db
-from datetime import datetime
+from utils.time import utc_now_naive
 
 class FatigueScore(db.Model):
     __tablename__ = 'fatigue_scores'
@@ -11,7 +11,7 @@ class FatigueScore(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     pitcher_id = db.Column(db.Integer, db.ForeignKey('pitchers.id'), nullable=False)
-    calculated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    calculated_at = db.Column(db.DateTime, default=utc_now_naive)
 
     # Score components (each 0-100)
     raw_score = db.Column(db.Float, nullable=False)

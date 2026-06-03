@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import logging
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,6 +8,7 @@ from models.game_log import GameLog
 from models.sync_run import SyncRun
 from services.availability import ACTIVE_WINDOW_DAYS
 from utils.db import db
+from utils.time import utc_now_naive
 
 
 STATUS_RUNNING = 'running'
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now():
-    return datetime.utcnow()
+    return utc_now_naive()
 
 
 def _iso(value):

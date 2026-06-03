@@ -161,6 +161,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
+| BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -366,7 +367,10 @@ complete as post-certification usability milestones. BaseballOS V2.5 Phase 16
 production rollout decision is complete and approves the current certified V2
 Dashboard experience for production rollout within the implemented scope only.
 BaseballOS V2.5 Phase 17 post-rollout monitoring and boundary review is also
-complete and preserves the approved V2 production boundary.
+complete and preserves the approved V2 production boundary. BaseballOS V2.5
+Phase 18 maintenance warning remediation review is complete and removes the
+current backend validation warning debt without changing certified
+Recommendation Engine behavior.
 
 The official strategy foundation is:
 
@@ -475,6 +479,10 @@ The V2.5 Phase 16 production rollout decision record is:
 The V2.5 Phase 17 post-rollout monitoring and boundary review record is:
 
 - `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
+The V2.5 Phase 18 maintenance warning remediation review record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1134,6 +1142,61 @@ contracts, recommendation logic, trust logic, freshness logic, refusal logic,
 ranking behavior, selection behavior, prediction behavior, fatigue formulas,
 or Recommendation Engine V1 behavior.
 
+BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review evaluates the
+backend warning debt surfaced during Phase 17 post-rollout validation. It
+classifies datetime warnings, SQLAlchemy warnings, pytest temp/cache
+permission warnings, prototype route scan findings, and unrelated
+generated/dependency drift.
+
+The Phase 18 maintenance warning remediation review record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+Phase 18 validation ran before remediation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-warning-review
+```
+
+Initial result:
+
+```text
+278 passed, 0 failed, 139 warnings
+```
+
+Phase 18 applied safe warning remediation:
+
+- replaced deprecated UTC timestamp acquisition with a naive UTC helper that
+  preserves existing `DateTime` storage shape
+- replaced backend test fixture `datetime.utcnow()` calls with the same helper
+- replaced the observed bullpen detail route legacy query lookup with
+  `db.session.get()` and explicit 404 behavior
+
+Phase 18 validation ran after remediation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-warning-review
+```
+
+Final result:
+
+```text
+278 passed, 0 failed, 0 warnings
+```
+
+Frontend validation was not required because Phase 18 did not touch frontend
+files.
+
+Phase 18 deferred local pytest temp/cache permission warnings, unrelated
+frontend generated/dependency drift, and prototype Prospect API scan findings.
+Those items are not part of the certified V2 behavior and should be handled
+only in separate maintenance work if needed.
+
+Phase 18 did not change API contracts, Recommendation Engine behavior, trust
+logic, freshness logic, refusal logic, fatigue formulas, ranking behavior,
+selection behavior, prediction behavior, frontend behavior, or Recommendation
+Engine V1 behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1158,6 +1221,7 @@ Phase 12 certification readiness validation, and Phase 13 formal
 certification review, V2.5 Phase 14 inventory presentation optimization, and
 V2.5 Phase 15 intelligence presentation optimization, production rollout
 within the Phase 16-approved current certified V2 experience, or Phase 17
-post-rollout monitoring and boundary review,
+post-rollout monitoring and boundary review, or Phase 18 maintenance warning
+remediation review,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.

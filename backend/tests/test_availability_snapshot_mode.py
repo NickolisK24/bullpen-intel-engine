@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pytest
 from flask import Flask
@@ -20,6 +20,7 @@ from services.availability_snapshot import (
 )
 from utils.auth import ADMIN_TOKEN_HEADER
 from utils.db import db
+from utils.time import utc_now_naive
 
 
 @pytest.fixture
@@ -102,7 +103,7 @@ def _add_pitcher(name, latest_game_date=None, raw_score=20.0, log_pitches=None, 
 
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,
-        calculated_at=datetime.utcnow(),
+        calculated_at=utc_now_naive(),
         raw_score=raw_score,
         pitch_count_score=0.0,
         rest_days_score=0.0,

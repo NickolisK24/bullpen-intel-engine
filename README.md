@@ -116,6 +116,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
+| BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -209,7 +210,10 @@ today:
   experience for production rollout within the implemented scope only. V2.5
   Phase 17 establishes post-rollout monitoring, warning review, and boundary
   review procedures to protect the approved system from governance,
-  contract, UX, and technical-debt regressions. No
+  contract, UX, and technical-debt regressions. V2.5 Phase 18 reviews and
+  remediates the backend warning debt surfaced during post-rollout validation,
+  reducing the full backend test-suite warning count from 139 to 0 without
+  changing certified Recommendation Engine behavior. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -532,6 +536,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 17 post-rollout monitoring and boundary review record
   for governance drift, contract drift, UX drift, technical-debt warnings,
   regression protection, and continued production boundary preservation.
+- [`docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`](docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md)
+  — completed V2.5 Phase 18 maintenance warning remediation review record for
+  backend warning inventory, warning classification, safe remediation,
+  deferred warnings, regression validation, and governance preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -608,7 +616,9 @@ expansion. V2.5 Phase 16 is complete and approves the current certified V2
 Dashboard experience for production rollout within the implemented scope only.
 V2.5 Phase 17 is complete and establishes post-rollout monitoring, warning
 review, regression-protection review, and boundary review for the approved
-production scope.
+production scope. V2.5 Phase 18 is complete and remediates the current backend
+test warning debt, reducing the full backend suite from 139 warnings to 0
+warnings while preserving Recommendation Engine V2 governance.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

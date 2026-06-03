@@ -1,7 +1,7 @@
 import json
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, abort, jsonify, request
 from sqlalchemy import desc
 from datetime import date, datetime, timedelta, timezone
 
@@ -269,7 +269,9 @@ def get_latest_workload_snapshot():
 @bullpen_bp.route('/fatigue/<int:pitcher_id>', methods=['GET'])
 def get_pitcher_fatigue(pitcher_id):
     """Get detailed fatigue profile for a single pitcher."""
-    pitcher = Pitcher.query.get_or_404(pitcher_id)
+    pitcher = db.session.get(Pitcher, pitcher_id)
+    if pitcher is None:
+        abort(404)
 
     latest = (
         FatigueScore.query
