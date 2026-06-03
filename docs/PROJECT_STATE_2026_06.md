@@ -192,6 +192,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision | Blocked Pending Manual Evidence / Full Rollout Not Approved |
 | BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
 | BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
+| Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -571,6 +572,13 @@ readiness route, prohibited-query refusal, and frontend shell reachability
 evidence. Controlled rollout remains blocked because the deployed backend
 reports development/debug state and rendered Dashboard, browser, mobile,
 accessibility, and explicit maintainer-review evidence remain pending.
+Operational Review 1 Deployment Configuration and Environment Classification
+Investigation is complete and concludes `DEPLOYMENT_CONFIGURATION_INCORRECT`.
+Repository evidence shows the health endpoint reflects selected Flask app
+configuration, and deployed evidence shows the backend selected development
+configuration with debug enabled. Team Operations Bullpen Readiness rollout
+remains blocked pending deployment configuration remediation and retained
+manual evidence.
 
 The official strategy foundation is:
 
@@ -833,6 +841,11 @@ manual review records are:
 
 - `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
 - `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
+
+The Operational Review 1 deployment configuration and environment
+classification investigation record is:
+
+- `docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -3454,6 +3467,102 @@ Phase 17 recommended next milestone:
 BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Deployment Configuration Remediation and Manual Browser Review
 ```
 
+```text
+Operational Review 1 Deployment Configuration and Environment Classification Investigation
+```
+
+## Operational Review 1 Deployment Configuration and Environment Classification Investigation
+
+Operational Review 1 Deployment Configuration and Environment Classification
+Investigation is complete.
+
+The investigation record is:
+
+- `docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md`
+
+Investigation conclusion:
+
+```text
+DEPLOYMENT_CONFIGURATION_INCORRECT
+```
+
+Operational Review 1 finds:
+
+- `backend/app.py` selects configuration from `APP_ENV`, defaulting to
+  `development`.
+- `backend/config.py` sets `DevelopmentConfig.DEBUG = True`.
+- `backend/config.py` sets `ProductionConfig.DEBUG = False` and requires
+  production-only configuration checks.
+- `/api/health` reports the selected Flask application environment and debug
+  flag.
+- deployed `/api/health` reports `environment = development` and
+  `debug = true`.
+
+Root cause summary:
+
+```text
+The deployed backend selected the development configuration instead of the production configuration.
+```
+
+Most likely operational cause:
+
+```text
+APP_ENV is unset, empty, invalid, or set to development in the deployed backend environment.
+```
+
+The exact Render environment-variable setting is not committed in the
+repository and therefore is not directly inspectable from repository evidence.
+
+Operational Review 1 confirms deployed V2 and V3 read routes still preserve
+governance metadata:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Operational Review 1 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- certified Recommendation Engine V2 behavior remains unchanged
+- V3 Team Operations Bullpen Readiness remains internal, non-production, and
+  uncertified
+
+Rollout impact decision:
+
+```text
+Should Team Operations Bullpen Readiness rollout remain blocked?
+YES
+```
+
+Recommended remediation:
+
+```text
+Correct the deployed backend configuration so APP_ENV=production and required production variables are present, then redeploy and capture health evidence.
+```
+
+Recommended priority:
+
+```text
+P0_BEFORE_CONTROLLED_ROLLOUT
+```
+
+Operational Review 1 does not authorize runtime fixes, controlled rollout,
+full production rollout, public exposure, route exposure changes, backend route
+changes, frontend implementation changes, Recommendation Engine V2 contract
+changes, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior,
+hidden priority ordering, pitcher-level advice, or matchup advice.
+
+Operational Review 1 recommended next milestone:
+
+```text
+Operational Remediation 1 - Deployment Production Configuration Correction and Health Verification
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3575,8 +3684,10 @@ Readiness controlled rollout and monitoring, or V3 Phase 15 Team Operations
 Bullpen Readiness deployment smoke review and controlled rollout decision, or
 V3 Phase 16 Team Operations Bullpen Readiness deployment evidence and manual
 smoke review, or V3 Phase 17 Team Operations Bullpen Readiness deployment
-environment manual review, or V2 production fail-closed communication and
-freshness metadata remediation. Phase 29 authorizes V3 product capability
+environment manual review, or Operational Review 1 deployment configuration
+and environment classification investigation, or V2 production fail-closed
+communication and freshness metadata remediation. Phase 29 authorizes V3
+product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
 defines the selected capability only. V3 Phase 3 defines implementation
 planning only. V3 Phase 4 defines contract and certification planning only.
@@ -3653,6 +3764,14 @@ changes, backend route changes, frontend implementation changes,
 Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
 pitcher recommendation, prediction behavior, hidden priority ordering,
 pitcher-level advice, or matchup advice.
+Operational Review 1 authorizes only deployment configuration diagnosis,
+evidence collection, root cause analysis, rollout impact assessment, and
+remediation planning. It does not authorize runtime fixes, controlled rollout
+approval, full production rollout, public exposure, route exposure changes,
+backend route changes, frontend implementation changes, Recommendation Engine
+V2 contract changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

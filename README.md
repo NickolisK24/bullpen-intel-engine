@@ -147,6 +147,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision | Blocked Pending Manual Evidence / Full Rollout Not Approved |
 | BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
 | BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
+| Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -349,7 +350,12 @@ today:
   and frontend shell reachability evidence. Controlled rollout remains blocked
   because the deployed backend reports development/debug state and rendered
   Dashboard, browser, mobile, accessibility, and explicit maintainer evidence
-  remain pending.
+  remain pending. Operational Review 1 is complete and concludes
+  `DEPLOYMENT_CONFIGURATION_INCORRECT`: repository evidence shows the health
+  endpoint reflects selected Flask app config, and the deployed backend is
+  selecting the development configuration. Team Operations Bullpen Readiness
+  rollout remains blocked until the deployed backend reports production health
+  evidence with debug disabled and manual rollout evidence is retained.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -951,6 +957,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   readiness route, prohibited-query refusal, frontend shell reachability,
   pending browser/mobile/accessibility/maintainer evidence, and the blocked
   controlled rollout decision.
+- [`docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md`](docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md)
+  — completed operational review investigating the deployed
+  `environment: development` / `debug: true` health finding, concluding the
+  deployment configuration is incorrect and keeping Team Operations Bullpen
+  Readiness rollout blocked pending production configuration remediation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1112,7 +1123,10 @@ pending; controlled rollout remains blocked. V3 Phase 17 is complete and
 retains deployed API route evidence plus frontend shell reachability, but
 controlled rollout remains blocked because the deployed backend reports a
 development/debug health state and rendered Dashboard, mobile, accessibility,
-and explicit maintainer evidence remain pending.
+and explicit maintainer evidence remain pending. Operational Review 1 is
+complete and concludes the deployed backend selected development configuration,
+not a production-safe configuration. Controlled rollout remains blocked until
+deployment configuration is remediated and health/manual evidence is retained.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
