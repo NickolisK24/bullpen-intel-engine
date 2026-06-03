@@ -112,6 +112,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
+| BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -195,7 +196,10 @@ today:
   refusal, fail-closed, mobile, accessibility, and V1 regression evidence and
   classifies V2 as ready for formal certification review. Phase 13 formally
   certifies the implemented and governed V2 scope as production-ready while
-  leaving production rollout to a separate governed decision. No
+  leaving production rollout to a separate governed decision. V2.5 Phase 14
+  optimizes certified inventory presentation so summary cards show category
+  counts, trust state, freshness state, and evidence summaries first, with
+  full inventory membership available on demand. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -241,7 +245,9 @@ today:
   and the completed Phase 12 certification readiness record in
   [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md),
   and the completed Phase 13 formal certification record in
-  [`docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md),
+  and the completed V2.5 Phase 14 inventory presentation record in
+  [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -302,6 +308,11 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md
     ├── RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md
+    ├── RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md
+    ├── RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md
+    ├── RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md
+    ├── V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -486,6 +497,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   trust/freshness/refusal/fail-closed evidence, anti-ranking and
   anti-selection validation, V1 regression validation, known limitations, and
   post-certification boundaries.
+- [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md)
+  — completed V2.5 Phase 14 record for summary-first inventory presentation,
+  collapsible inventory membership, count visibility, preserved evidence,
+  preserved trust/freshness metadata, mobile page-length reduction, and
+  governance compliance.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -552,14 +568,17 @@ accessibility validation complete. Phase 12 certification readiness validation
 is complete and classifies V2 as ready for formal certification review, not
 production certified. Phase 13 formal certification review is complete and
 certifies the implemented and governed V2 scope as production-ready; production
-rollout still requires a separate governed rollout decision.
+rollout still requires a separate governed rollout decision. V2.5 Phase 14 is
+complete and reduces initial inventory page length by rendering category
+summaries first, with full membership and evidence available through expansion.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
 the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, production rollout review, and broader
+intelligence, readiness visibility, production rollout review, certified
+inventory usability, and broader
 explainability while preserving V1 trust protections. No V2 ranking,
 final pitcher choice, or prediction behavior exists. Beyond
 that, see **Product Direction** above: usage

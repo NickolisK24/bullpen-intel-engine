@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { LoadingPane, ErrorState } from '../UI'
 
 const FORBIDDEN_DISPLAY_TERMS = [
@@ -88,6 +90,49 @@ function getDistributionRows(distribution = {}) {
   return Object.entries(asObject(distribution))
     .map(([key, count]) => ({ key, label: toTitle(key), count }))
     .filter((row) => row.count !== null && row.count !== undefined)
+}
+
+function inventoryItemKey(item, index) {
+  return String(item.inventory_type || item.label || `inventory-${index}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function inventoryCategoryName(item) {
+  const label = item.label || toTitle(item.inventory_type) || 'Inventory'
+  return label.replace(/\s+inventory$/i, '').trim() || label
+}
+
+function inventoryCountLabel(item) {
+  return `${displayValue(item.count, asArray(item.members).length)} ${inventoryCategoryName(item)}`
+}
+
+function inventorySummaryText(item) {
+  const evidenceMessages = asArray(item.evidence).map(messageFrom).filter(Boolean)
+  if (evidenceMessages.length) return evidenceMessages[0]
+
+  const limitationMessages = asArray(item.limitations).map(messageFrom).filter(Boolean)
+  if (limitationMessages.length) return limitationMessages[0]
+
+  const freshness = asObject(item.freshness)
+  const freshnessState = freshness.freshness_state || freshness.state || freshness.state_code
+  if (freshnessState || item.confidence) {
+    return `Freshness ${displayValue(freshnessState, 'unavailable')} | Confidence ${displayValue(item.confidence, 'unavailable')}`
+  }
+
+  return 'Inventory category reported by the V2 contract.'
+}
+
+function inventoryFreshnessRows(item) {
+  const freshness = asObject(item.freshness)
+  return [
+    { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
+    { label: 'Data Through', value: displayValue(freshness.data_through) },
+    { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
+    { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
+    { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
+  ]
 }
 
 function getDiagnosticCount(view = {}) {
@@ -247,39 +292,138 @@ function MessageList({ title, messages, emptyText }) {
   )
 }
 
-function InventorySummary({ inventory }) {
+function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
+  const [expandedInventoryKeys, setExpandedInventoryKeys] = useState(
+    () => new Set(initialExpandedInventoryKeys),
+  )
+
+  const toggleInventory = (key) => {
+    setExpandedInventoryKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
   return (
     <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-inventory">
       <h3 id="recommendation-v2-inventory" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Inventory</h3>
       {inventory.length ? (
         <div className="v2-governed-panel__inventory-grid gap-3">
-          {inventory.map((item) => (
-            <div key={`${item.inventory_type || item.label}-${item.count}`} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
+          {inventory.map((item, index) => {
+            const key = inventoryItemKey(item, index)
+            const expanded = expandedInventoryKeys.has(key)
+            const detailId = `recommendation-v2-inventory-${key}-details`
+            const members = asArray(item.members)
+            const evidence = asArray(item.evidence).map(messageFrom).filter(Boolean)
+            const limitations = asArray(item.limitations).map(messageFrom).filter(Boolean)
+
+            return (
+              <div key={key} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="v2-governed-panel__text text-sm font-semibold text-chalk200">{item.label || toTitle(item.inventory_type)}</div>
-                  <div className="v2-governed-panel__text mt-1 font-mono text-[11px] text-chalk500">{displayValue(item.confidence, 'confidence unavailable')}</div>
+                  <div className="v2-governed-panel__text mt-1 font-mono text-[11px] text-chalk500">{inventoryCountLabel(item)}</div>
                 </div>
                 <div className="shrink-0 rounded border border-dirt bg-field/50 px-2 py-1 font-mono text-xs text-chalk200">
                   {displayValue(item.count, '0')}
                 </div>
               </div>
-              {asArray(item.members).length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {asArray(item.members).map((member) => (
-                    <span key={`${member.pitcher_id || member.display_name}`} className="rounded border border-dirt bg-field/50 px-2 py-1 font-mono text-[11px] text-chalk300">
-                      {member.display_name || member.pitcher_id}
-                    </span>
-                  ))}
+              <div className="v2-governed-panel__text mt-3 text-xs leading-relaxed text-chalk500">
+                {inventorySummaryText(item)}
+              </div>
+              <div className="mt-3 grid gap-2">
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Confidence</span>
+                  <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
+                    {displayValue(item.confidence, 'Unavailable')}
+                  </span>
                 </div>
-              )}
-              {asArray(item.limitations).length > 0 && (
-                <div className="v2-governed-panel__text mt-3 text-xs text-chalk500">
-                  {asArray(item.limitations).map(messageFrom).filter(Boolean).join(' · ')}
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Freshness</span>
+                  <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
+                    {displayValue(asObject(item.freshness).freshness_state || asObject(item.freshness).state || asObject(item.freshness).state_code)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="mt-3 w-full rounded border border-dirt bg-field/60 px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+                aria-expanded={expanded}
+                aria-controls={detailId}
+                onClick={() => toggleInventory(key)}
+              >
+                {expanded ? 'Collapse' : 'View Members'}
+              </button>
+              {expanded && (
+                <div id={detailId} className="mt-3 min-w-0 rounded border border-dirt bg-field/45 p-3">
+                  <div className="grid gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
+                        Members ({members.length})
+                      </div>
+                      {members.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {members.map((member) => (
+                            <span key={`${member.pitcher_id || member.display_name}`} className="rounded border border-dirt bg-chalk/30 px-2 py-1 font-mono text-[11px] text-chalk300">
+                              {member.display_name || member.pitcher_id}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="font-mono text-xs text-chalk500">No members reported.</div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Evidence</div>
+                      {evidence.length ? (
+                        <ul className="space-y-2">
+                          {evidence.map((message) => (
+                            <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/30 px-3 py-2 text-xs leading-relaxed text-chalk300">
+                              {message}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="font-mono text-xs text-chalk500">No evidence reported.</div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Inventory Freshness</div>
+                      <div className="grid gap-2">
+                        {inventoryFreshnessRows(item).map((row) => (
+                          <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/30 px-3 py-2">
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{row.label}</span>
+                            <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">{row.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {limitations.length > 0 && (
+                      <div className="min-w-0">
+                        <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Limitations</div>
+                        <ul className="space-y-2">
+                          {limitations.map((message) => (
+                            <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/30 px-3 py-2 text-xs leading-relaxed text-chalk300">
+                              {message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <div className="font-mono text-xs text-chalk500">No inventory summary available.</div>
@@ -394,6 +538,7 @@ export default function RecommendationV2BullpenStatePanel({
   loading = false,
   error = null,
   onRetry,
+  initialExpandedInventoryKeys = [],
 }) {
   if (loading) {
     return (
@@ -494,7 +639,7 @@ export default function RecommendationV2BullpenStatePanel({
 
         {!view.isUnavailable && (
           <>
-            <InventorySummary inventory={view.inventory} />
+            <InventorySummary inventory={view.inventory} initialExpandedInventoryKeys={initialExpandedInventoryKeys} />
             <TeamContext context={view.teamContext} />
             <CandidateGroups groups={view.candidateGroups} />
           </>

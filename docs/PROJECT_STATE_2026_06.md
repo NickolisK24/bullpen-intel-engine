@@ -157,6 +157,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
+| BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -356,7 +357,8 @@ client integration work, Phase 10 governed frontend rendering work, and Phase
 10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
 layout remediation work, and Phase 11 mobile/accessibility validation work,
 Phase 12 certification readiness validation work, and Phase 13 formal
-certification review work.
+certification review work. BaseballOS V2.5 Phase 14 inventory presentation
+optimization is also complete as a post-certification usability milestone.
 
 The official strategy foundation is:
 
@@ -449,6 +451,10 @@ The Phase 12 certification readiness record is:
 The Phase 13 formal certification record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
+
+The V2.5 Phase 14 inventory presentation optimization record is:
+
+- `docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -955,6 +961,30 @@ CERTIFIED_PRODUCTION_READY
 This certifies the implemented and governed V2 scope only. Production rollout
 still requires a separate governed rollout decision.
 
+BaseballOS V2.5 Phase 14 Inventory Presentation Optimization reduces the
+Dashboard V2 inventory surface from full membership by default to
+summary-first category cards with expansion on demand.
+
+The Phase 14 inventory presentation record is:
+
+- `docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`
+
+Phase 14 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+72 passed, 0 failed
+```
+
+Phase 14 did not touch backend files, API contracts, recommendation logic,
+trust logic, freshness logic, refusal logic, ranking behavior, selection
+behavior, prediction behavior, or Recommendation Engine V1 behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -976,5 +1006,6 @@ API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
 surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
 selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
 Phase 12 certification readiness validation, and Phase 13 formal
-certification review, pitcher ranking, pitcher ordering, scoring, final
-pitcher selection, or production rollout.
+certification review, and V2.5 Phase 14 inventory presentation optimization,
+pitcher ranking, pitcher ordering, scoring, final pitcher selection, or
+production rollout.

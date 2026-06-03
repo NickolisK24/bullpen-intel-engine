@@ -480,12 +480,15 @@ implementation, testing, certification, and rollout review.
 
 ## 19. Next Recommended Milestone
 
-The next recommended milestone is:
+The next post-certification milestone is:
 
 ```text
-Recommendation Engine V2 Phase 14 Production Rollout Decision
+BaseballOS V2.5 Phase 14 Inventory Presentation Optimization
 ```
 
-Phase 14 should decide whether the certified V2 system should be approved,
-deferred, or rejected for production rollout, with explicit rollout evidence
-and approval recorded.
+Phase 14 improves certified inventory usability before production rollout
+decision review. It reduces initial inventory page length while preserving
+full membership visibility, trust metadata, freshness metadata, refusal
+metadata, and the certified no-ranking and no-selection guarantees.
+
+Production rollout decision review remains a later governed milestone.

@@ -107,19 +107,21 @@ const availableState = {
     readiness_summary: 'Current availability inventory can be summarized.',
     inventory_summary: [
       {
-        inventory_type: 'availability_inventory',
-        label: 'Availability Inventory',
+        inventory_type: 'available_inventory',
+        label: 'Available Inventory',
         count: 1,
         members: [
           {
             pitcher_id: 42,
-            display_name: 'Example Pitcher',
+            display_name: 'Inventory Member',
           },
         ],
         evidence: ['Availability category is Available.'],
         limitations: [],
         freshness: {
           freshness_state: 'current',
+          data_through: '2026-06-02',
+          sync_timestamp: '2026-06-02T11:55:00Z',
         },
         confidence: 'medium',
       },
@@ -135,7 +137,7 @@ const availableState = {
         candidates: [
           {
             pitcher_id: 42,
-            display_name: 'Example Pitcher',
+            display_name: 'Candidate Member',
           },
         ],
         explanations: [],
@@ -194,12 +196,105 @@ test('renders governed V2 bullpen intelligence in available state', () => {
   assert.ok(htmlIncludes(html, 'Inventory'))
   assert.ok(htmlIncludes(html, 'Team Context'))
   assert.ok(htmlIncludes(html, 'Neutral Candidate Groups'))
-  assert.ok(htmlIncludes(html, 'Example Pitcher'))
+  assert.ok(htmlIncludes(html, 'Candidate Member'))
   assert.ok(htmlIncludes(html, 'Ordering applied'))
   assert.ok(htmlIncludes(html, 'Automated decision made'))
   assert.ok(htmlIncludes(html, 'neutral source order'))
   assert.ok(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent or warm-up activity.'))
+})
+
+test('renders inventory summary cards collapsed by default with counts and metadata visible', () => {
+  const html = renderPanel(availableState)
+
+  assert.ok(htmlIncludes(html, 'Available Inventory'))
+  assert.ok(htmlIncludes(html, '1 Available'))
+  assert.ok(htmlIncludes(html, 'Availability category is Available.'))
+  assert.ok(htmlIncludes(html, 'Confidence'))
+  assert.ok(htmlIncludes(html, 'medium'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'current'))
+  assert.ok(htmlIncludes(html, 'View Members'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+  assert.ok(!htmlIncludes(html, 'Inventory Member'))
+  assert.ok(!htmlIncludes(html, 'Members (1)'))
+})
+
+test('renders expanded inventory membership, evidence, trust, and freshness on demand', () => {
+  const html = renderPanel(availableState, { initialExpandedInventoryKeys: ['available-inventory'] })
+
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(html, 'Collapse'))
+  assert.ok(htmlIncludes(html, 'Members (1)'))
+  assert.ok(htmlIncludes(html, 'Inventory Member'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Availability category is Available.'))
+  assert.ok(htmlIncludes(html, 'Inventory Freshness'))
+  assert.ok(htmlIncludes(html, 'Data Through'))
+  assert.ok(htmlIncludes(html, '2026-06-02'))
+  assert.ok(htmlIncludes(html, 'Synced'))
+  assert.ok(htmlIncludes(html, '2026-06-02T11:55:00Z'))
+})
+
+test('keeps high-volume inventory short until mobile users expand details', () => {
+  const makeMembers = (prefix, count) => Array.from({ length: count }, (_, index) => ({
+    pitcher_id: `${prefix}-${index + 1}`,
+    display_name: `${prefix} Pitcher ${String(index + 1).padStart(3, '0')}`,
+  }))
+  const highVolumeState = {
+    ...availableState,
+    bullpenState: {
+      ...availableState.bullpenState,
+      inventory_summary: [
+        {
+          inventory_type: 'available_inventory',
+          label: 'Available Inventory',
+          count: 266,
+          members: makeMembers('Available', 266),
+          evidence: ['Available inventory contains current availability evidence.'],
+          limitations: [],
+          freshness: { freshness_state: 'current', data_through: '2026-06-02' },
+          confidence: 'medium',
+        },
+        {
+          inventory_type: 'monitor_inventory',
+          label: 'Monitor Inventory',
+          count: 284,
+          members: makeMembers('Monitor', 284),
+          evidence: ['Monitor inventory contains current availability evidence.'],
+          limitations: [],
+          freshness: { freshness_state: 'current', data_through: '2026-06-02' },
+          confidence: 'medium',
+        },
+        {
+          inventory_type: 'limited_inventory',
+          label: 'Limited Inventory',
+          count: 88,
+          members: makeMembers('Limited', 88),
+          evidence: ['Limited inventory contains current availability evidence.'],
+          limitations: [],
+          freshness: { freshness_state: 'current', data_through: '2026-06-02' },
+          confidence: 'medium',
+        },
+      ],
+      candidate_groups: [],
+    },
+  }
+
+  const collapsedText = visibleText(renderPanel(highVolumeState))
+  const expandedText = visibleText(renderPanel(highVolumeState, {
+    initialExpandedInventoryKeys: ['available-inventory', 'monitor-inventory', 'limited-inventory'],
+  }))
+  const reduction = 1 - (collapsedText.length / expandedText.length)
+
+  assert.ok(htmlIncludes(collapsedText, '266 Available'))
+  assert.ok(htmlIncludes(collapsedText, '284 Monitor'))
+  assert.ok(htmlIncludes(collapsedText, '88 Limited'))
+  assert.ok(!htmlIncludes(collapsedText, 'Available Pitcher 001'))
+  assert.ok(htmlIncludes(expandedText, 'Available Pitcher 001'))
+  assert.ok(htmlIncludes(expandedText, 'Monitor Pitcher 284'))
+  assert.ok(htmlIncludes(expandedText, 'Limited Pitcher 088'))
+  assert.ok(reduction >= 0.8, `expected at least 80% initial inventory text reduction, got ${Math.round(reduction * 100)}%`)
 })
 
 test('uses container-aware V2 layout classes for desktop readability', () => {
