@@ -546,3 +546,36 @@ The next milestone should capture actual deployment smoke-review evidence,
 manual browser review evidence, mobile review evidence, accessibility
 smoke-review evidence, and evidence-retention owner confirmation before
 reopening the controlled rollout decision.
+
+## Phase 16 Follow-Up
+
+Phase 16 follow-up status:
+
+```text
+V3_PHASE_16_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_COMPLETE
+CONTROLLED_ROLLOUT_DECISION = CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+FULL_PRODUCTION_ROLLOUT = NOT_APPROVED
+```
+
+Phase 16 records:
+
+- `docs/V3_PHASE_16_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_16_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 16 retained local smoke evidence for the backend health route, internal
+Team Operations Bullpen Readiness route, prohibited-query refusal path, and
+frontend development-server reachability. Browser runtime attachment,
+deployment-environment review, mobile review, accessibility smoke review, and
+explicit maintainer-review evidence remain pending.
+
+The Phase 16 result keeps the Phase 15 rollout blocker in force:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+```
+
+Full production rollout remains not approved. The Phase 16 follow-up preserves
+`ranking_applied === false`, `selection_made === false`, no ranking behavior,
+no selection behavior, no prediction behavior, no best/preferred/recommended
+behavior, no hidden priority ordering, no pitcher-level advice, no matchup
+advice, and unchanged certified Recommendation Engine V2 behavior.

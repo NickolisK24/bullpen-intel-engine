@@ -301,3 +301,28 @@ Required follow-up actions:
 7. Re-run frontend validation after any remediation.
 8. Create a new rollout decision record only after required manual evidence is
    retained.
+
+## Phase 16 Follow-Up
+
+Phase 16 follow-up artifact:
+
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_16_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 16 retained local evidence for:
+
+- backend health route reachability.
+- internal Team Operations Bullpen Readiness route degraded payload.
+- prohibited-query refusal and fail-closed behavior.
+- frontend development-server reachability.
+
+Phase 16 did not retain deployment-environment browser evidence, manual
+browser evidence, mobile evidence, accessibility smoke-review evidence, or
+explicit maintainer-review evidence. Those items remain pending and continue
+to block controlled rollout approval.
+
+Phase 16 rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
