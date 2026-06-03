@@ -19,6 +19,26 @@ The repository remains `bullpen-intel-engine`. Repository structures, package
 names, imports, and deployment configuration should not be renamed solely for
 branding.
 
+## Documentation Structure
+
+The README now functions as a concise project front page for onboarding,
+platform status, architecture, quick start, environment variables, testing, data
+sources, and primary documentation links.
+
+Long historical roadmap, certification, rollout, operational review, and
+documentation-inventory material is retained in dedicated documentation:
+
+- `docs/INDEX.md`
+- `docs/ROADMAP.md`
+- `docs/CHANGELOG.md`
+- `docs/governance/CERTIFICATION_LEDGER.md`
+- `docs/operations/OPERATIONAL_REVIEWS.md`
+
+This documentation structure refactor preserves governance, certification,
+rollout, and monitoring evidence. It does not authorize backend changes,
+frontend changes, runtime behavior changes, API contract changes, ranking
+behavior, selection behavior, prediction behavior, or full production rollout.
+
 ## Completed Foundations
 
 ### Bullpen Intelligence
@@ -860,6 +880,14 @@ are:
 - `docs/monitoring/team_operations_bullpen_readiness/PHASE_18_MANUAL_REVIEW_AND_ROLLOUT_REASSESSMENT_ARTIFACT.md`
 - `docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md`
 - `docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md`
+
+The documentation navigation records are:
+
+- `docs/INDEX.md`
+- `docs/ROADMAP.md`
+- `docs/CHANGELOG.md`
+- `docs/governance/CERTIFICATION_LEDGER.md`
+- `docs/operations/OPERATIONAL_REVIEWS.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -4108,6 +4136,13 @@ route changes, frontend implementation changes, Recommendation Engine V2
 contract changes, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction behavior, hidden priority ordering, pitcher-level advice, or
 matchup advice.
+The README documentation structure refactor authorizes only documentation
+navigation and onboarding-surface cleanup. It does not authorize backend
+changes, frontend changes, runtime behavior changes, API contract changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, controlled rollout expansion, or full
+production rollout.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
