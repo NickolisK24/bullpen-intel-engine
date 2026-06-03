@@ -284,3 +284,32 @@ only the normalized Phase 9 client payload. It should preserve internal,
 non-production, uncertified route status and must not introduce production
 certification, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction, matchup advice, or hidden priority ordering.
+
+## Phase 10 Follow-Up
+
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+Integration is complete.
+
+The Phase 10 record is:
+
+- `docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`
+
+Phase 10 consumes the normalized Phase 9 client payload in a governed
+Dashboard panel. The panel keeps the route visibly internal, non-production,
+and uncertified, renders readiness as team-level context only, exposes
+context/evidence/metadata sections on demand, and adds frontend rendering
+tests for successful, degraded, refused, unavailable, metadata, and governance
+states.
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 10 does not introduce ranking behavior, selection behavior, prediction
+behavior, best/preferred/recommended behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, public exposure, production
+certification, production rollout, backend route changes, or Recommendation
+Engine V2 contract changes.

@@ -184,6 +184,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review | Ready for Frontend Integration Planning |
 | BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan | Complete / Planning Only |
 | BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
+| BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration | Complete / Internal UI / Uncertified |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -507,6 +508,16 @@ refused, missing-field, malformed-governance, unknown-vocabulary, and
 internal-status payloads, plus focused frontend contract tests. It does not add
 Dashboard UI, production certification, public exposure, or Recommendation
 Engine V2 contract changes.
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+integration is complete and adds the first governed Dashboard panel for the
+internal readiness route. The panel uses the Phase 9 normalized payload,
+displays internal/non-production/uncertified status, renders summary-first
+team-level context, exposes context/evidence/metadata on demand, shows
+trust/freshness/refusal/fail-closed/governance metadata, and adds focused
+frontend rendering tests. It does not grant production certification, public
+route certification, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, matchup advice, or Recommendation Engine
+V2 contract changes.
 
 The official strategy foundation is:
 
@@ -2859,6 +2870,51 @@ Phase 9 recommended next milestone:
 BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration
 ```
 
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+Integration is complete.
+
+The V3 Phase 10 record is:
+
+- `docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`
+
+Phase 10 adds:
+
+- Dashboard integration for the internal Team Operations readiness route
+- `TeamOperationsBullpenReadinessPanel`
+- summary-first readiness status and summary rendering
+- visible internal, non-production, uncertified status
+- expand-on-demand context details
+- expand-on-demand explanations and limitations
+- expand-on-demand trust metadata
+- expand-on-demand freshness metadata
+- expand-on-demand refusal metadata
+- expand-on-demand fail-closed metadata
+- expand-on-demand governance metadata
+- safe unavailable rendering for unsafe normalized payloads
+- safe degraded rendering for degraded normalized payloads
+- safe refused rendering for refused/fail-closed normalized payloads
+- frontend rendering tests for successful, degraded, refused, metadata, and
+  governance-safe states
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 10 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+public exposure, production certification, production rollout, backend route
+changes, or Recommendation Engine V2 contract changes.
+
+Phase 10 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -2970,7 +3026,8 @@ backend domain foundation, or V3 Phase 6 Team Operations Bullpen Readiness
 internal API route integration, or V3 Phase 7 Team Operations Bullpen
 Readiness route certification-readiness review, or V3 Phase 8 Team Operations
 Bullpen Readiness frontend integration plan, or V3 Phase 9 Team Operations
-Bullpen Readiness frontend client normalization and contract tests, or V2
+Bullpen Readiness frontend client normalization and contract tests, or V3
+Phase 10 Team Operations Bullpen Readiness Dashboard UI integration, or V2
 production fail-closed communication and freshness metadata remediation. Phase
 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
@@ -2989,7 +3046,13 @@ frontend client code, public exposure, production certification, or production
 rollout. V3 Phase 9 authorizes only frontend client normalization and contract
 tests for the internal route. It does not authorize Dashboard UI
 implementation, public exposure, production certification, production rollout,
-or Recommendation Engine V2 contract changes.
+or Recommendation Engine V2 contract changes. V3 Phase 10 authorizes only the
+internal, non-production, uncertified Dashboard UI panel and frontend rendering
+tests for Team Operations Bullpen Readiness. It does not authorize public
+exposure, production certification, production rollout, backend route changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

@@ -5,6 +5,7 @@ import {
   getPipelineOverview,
   getRecommendationV2BullpenState,
   getSyncStatus,
+  getTeamOperationsBullpenReadiness,
 } from '../../utils/api'
 import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor } from '../../utils/formatters'
@@ -15,6 +16,7 @@ import FatigueInsightCard from './FatigueInsightCard'
 import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
 import { RecommendationV2BullpenStatePanel } from '../recommendations'
+import { TeamOperationsBullpenReadinessPanel } from '../teamOperations'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -43,6 +45,7 @@ export default function Dashboard() {
   const pipeline   = useFetch(getPipelineOverview)
   const sync       = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
+  const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
   const topFatigueRows = Array.isArray(topFatigue.data) ? topFatigue.data : (topFatigue.data?.data || [])
   const topFatigueMeta = Array.isArray(topFatigue.data) ? null : topFatigue.data?.meta
   const topFatigueEmpty = getBullpenEmptyState({
@@ -122,6 +125,13 @@ export default function Dashboard() {
         loading={v2BullpenState.loading}
         error={v2BullpenState.error}
         onRetry={v2BullpenState.refetch}
+      />
+
+      <TeamOperationsBullpenReadinessPanel
+        state={teamOperationsReadiness.data}
+        loading={teamOperationsReadiness.loading}
+        error={teamOperationsReadiness.error}
+        onRetry={teamOperationsReadiness.refetch}
       />
 
       {/* Risk breakdown bar */}

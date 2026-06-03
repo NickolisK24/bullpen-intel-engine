@@ -139,6 +139,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review | Ready for Frontend Integration Planning |
 | BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan | Complete / Planning Only |
 | BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
+| BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration | Complete / Internal UI / Uncertified |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -306,7 +307,13 @@ today:
   and adds frontend client normalization and contract tests for the internal
   Team Operations Bullpen Readiness route without adding Dashboard UI,
   production certification, public exposure, or Recommendation Engine V2
-  contract changes.
+  contract changes. V3 Phase 10 is complete and adds the governed Dashboard
+  panel for Team Operations Bullpen Readiness using the Phase 9 normalized
+  client payload, with visible internal/non-production/uncertified status,
+  summary-first rendering, expand-on-demand evidence, trust/freshness/refusal
+  metadata, governance metadata, and frontend rendering tests. It does not
+  grant production certification, public route certification, or any
+  Recommendation Engine V2 contract change.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -421,7 +428,10 @@ today:
   [`docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`](docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md),
   and the completed V3 Phase 9 Team Operations Bullpen Readiness frontend
   client normalization and contract tests in
-  [`docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`](docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md).
+  [`docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`](docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md),
+  and the completed V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+  integration in
+  [`docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`](docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -452,7 +462,7 @@ bullpen-intel-engine/
 ├── frontend/                    # React + Vite app
 │   ├── .env.example             # Frontend env template
 │   └── src/
-│       ├── components/          # dashboard · bullpen · prospects · methodology · recommendations · UI
+│       ├── components/          # dashboard · bullpen · prospects · methodology · recommendations · teamOperations · UI
 │       ├── hooks/
 │       └── utils/               # API client, formatters, shared fatigue-model definitions
 └── docs/
@@ -819,6 +829,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   normalization and contract tests for the internal route, including governed
   success, degraded, refused, missing-field, malformed-governance, unknown
   vocabulary, and internal-status handling without Dashboard UI changes.
+- [`docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`](docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md)
+  — completed V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+  integration for the internal route, including summary-first rendering,
+  expand-on-demand context/evidence/metadata, trust/freshness/refusal
+  visibility, governance metadata, accessibility controls, and frontend
+  rendering tests without production certification.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
