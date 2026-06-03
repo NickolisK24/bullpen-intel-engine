@@ -122,6 +122,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
 | BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan | Complete |
+| BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -234,7 +235,10 @@ today:
   findings, and remaining owner/runbook/metadata/test evidence gaps. V2.5
   Phase 23 converts those findings into the owner assignment, evidence gap,
   promotion-readiness, and evidence acquisition framework required before any
-  prototype, experimental, or legacy lifecycle movement can proceed.
+  prototype, experimental, or legacy lifecycle movement can proceed. V2.5
+  Phase 24 introduces the standard lifecycle evidence packet template and
+  initial packet stubs for selected production, prototype, experimental, and
+  legacy surfaces.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -304,7 +308,10 @@ today:
   [`docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`](docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md),
   and the completed V2.5 Phase 23 lifecycle evidence backfill and owner
   assignment plan in
-  [`docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`](docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md).
+  [`docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`](docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md),
+  and the completed V2.5 Phase 24 lifecycle evidence packet template and
+  initial backfill record in
+  [`docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`](docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -380,6 +387,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md
     ├── V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md
     ├── V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md
+    ├── V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -612,6 +620,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 23 framework for owner assignment, evidence backfill,
   evidence gap inventory, promotion-readiness review, and acquisition
   priorities before lifecycle movement.
+- [`docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`](docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md)
+  — completed V2.5 Phase 24 framework for standard lifecycle evidence packets,
+  packet review requirements, initial packet stubs, prioritization, and
+  explicit missing-evidence tracking.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -705,6 +717,9 @@ and adoption audit layer that proves checklist usage and evidence gaps are
 tracked before any future lifecycle movement. V2.5 Phase 23 is complete and
 converts those audit findings into a structured owner assignment and evidence
 backfill plan for prototype, experimental, supported, and legacy surfaces.
+V2.5 Phase 24 is complete and creates the standard lifecycle evidence packet
+template plus initial packet stubs for selected production, prototype,
+experimental, and legacy surfaces.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

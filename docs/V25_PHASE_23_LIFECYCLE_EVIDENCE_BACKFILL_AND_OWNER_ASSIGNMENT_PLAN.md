@@ -472,12 +472,23 @@ which is expected and is not a project failure.
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill
 ```
 
-Phase 24 should convert the Phase 23 framework into reusable evidence packet
-templates and begin backfilling the highest-priority owner, runbook, metadata,
-test, and migration records without changing runtime behavior.
+Phase 24 converts the Phase 23 framework into the standard lifecycle evidence
+packet template and creates first-generation packet stubs for selected
+production, prototype, experimental, and legacy surfaces.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution
+```
+
+Phase 25 should review the Phase 24 packet stubs, add precise evidence
+citations where existing records already satisfy packet sections, and begin the
+first evidence backfill pass for high-priority prototype and experimental
+surfaces without changing runtime behavior.

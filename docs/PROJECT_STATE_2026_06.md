@@ -167,6 +167,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
 | BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan | Complete |
+| BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -392,6 +393,10 @@ BaseballOS V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan
 is complete and converts those adoption findings into a structured owner,
 runbook, metadata, test, governance, certification, and migration-evidence
 framework before any future lifecycle movement.
+BaseballOS V2.5 Phase 24 lifecycle evidence packet template and initial
+backfill is complete and introduces standardized evidence packets plus initial
+packet stubs for selected production, prototype, experimental, and legacy
+surfaces.
 
 The official strategy foundation is:
 
@@ -528,6 +533,11 @@ The V2.5 Phase 22 lifecycle review log and adoption audit record is:
 The V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan is:
 
 - `docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`
+
+The V2.5 Phase 24 lifecycle evidence packet template and initial backfill
+record is:
+
+- `docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1589,6 +1599,89 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 23. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial
+Backfill creates the standard lifecycle evidence packet framework required by
+the Phase 21 through Phase 23 lifecycle governance chain.
+
+The Phase 24 packet framework record is:
+
+- `docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`
+
+Phase 24 defines required evidence packet sections for:
+
+- owner evidence
+- runbook evidence
+- metadata evidence
+- test evidence
+- governance evidence
+- certification evidence
+- migration evidence
+- evidence retention
+- packet review
+- promotion readiness
+- demotion, deprecation, and removal readiness
+
+Phase 24 creates initial packet stubs for:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+- Prospect Pipeline
+- Fatigue-to-ERA Insight
+- Snapshot Mode
+- MLB Passthrough Helpers
+- Threshold Experimentation
+- metadata-less fatigue array response
+- standalone recalculation script
+
+Phase 24 explicitly avoids fabricating evidence. The initial packet stubs record
+known evidence where existing certification, rollout, review, or governance
+records already apply, and they mark missing evidence where owner, runbook,
+metadata, test, governance, certification, migration, or retention proof is not
+yet complete.
+
+Phase 24 confirms:
+
+- production packet stubs preserve the current certified V2 scope
+- Prospect Pipeline remains PROTOTYPE and is not promotion-ready
+- Fatigue-to-ERA Insight, Snapshot Mode, MLB Passthrough Helpers, and Threshold
+  Experimentation remain EXPERIMENTAL and are not promotion-ready for Supported
+- metadata-less fatigue array response and standalone recalculation script
+  remain LEGACY and are not ready for deprecation or removal
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 24 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 24 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-24-evidence-packets
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 24. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1617,7 +1710,8 @@ post-rollout monitoring and boundary review, or Phase 18 maintenance warning
 remediation review, or Phase 19 prototype surface maintenance review, or
 Phase 20 prototype promotion and deprecation policy, or Phase 21 lifecycle
 enforcement checklist, or Phase 22 lifecycle review log and adoption audit,
-or Phase 23 lifecycle evidence backfill and owner assignment plan.
+or Phase 23 lifecycle evidence backfill and owner assignment plan, or Phase 24
+lifecycle evidence packet template and initial backfill.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
