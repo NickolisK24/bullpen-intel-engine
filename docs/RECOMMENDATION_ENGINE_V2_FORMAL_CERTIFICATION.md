@@ -623,3 +623,33 @@ review before production eligibility.
 Phase 20 confirms no Phase 19 surface classification correction is required.
 
 Phase 20 does not expand certification scope or production rollout approval.
+
+## 25. Lifecycle Enforcement Checklist
+
+The completed lifecycle enforcement checklist record is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
+
+Phase 21 converts the Phase 20 lifecycle policy into an operational checklist
+for:
+
+- Prototype -> Experimental review
+- Experimental -> Supported review
+- Supported -> Production review
+- Production -> Legacy review
+- Legacy -> Deprecated review
+- Deprecated -> Removed review
+- future intelligence-surface promotion eligibility
+
+The checklist requires explicit review of trust metadata, freshness metadata,
+refusal metadata, fail-closed behavior, contract impact, certification review,
+rollout review, anti-ranking validation, anti-selection validation, and
+anti-prediction validation before future intelligence surfaces can become
+production eligible.
+
+Phase 21 confirms the current Prospect Pipeline, fatigue-to-ERA insight,
+latest-workload snapshot mode, MLB passthrough helpers, and threshold
+experimentation tooling do not pass promotion readiness under the enforcement
+checklist.
+
+Phase 21 does not expand certification scope or production rollout approval.

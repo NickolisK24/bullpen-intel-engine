@@ -119,6 +119,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
 | BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
+| BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -223,7 +224,10 @@ today:
   surfaces, classifies prototype governance risks, and neutralizes rank-style
   presentation language outside the certified V2 path. V2.5 Phase 20 defines
   the official lifecycle policy for promotion, support, production approval,
-  legacy classification, deprecation, and removal. No
+  legacy classification, deprecation, and removal. V2.5 Phase 21 converts that
+  policy into an operational enforcement checklist for lifecycle movement,
+  production promotion, deprecation, removal, and intelligence-surface review.
+  No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -285,7 +289,9 @@ today:
   and the completed V2.5 Phase 19 prototype surface maintenance review in
   [`docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`](docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md),
   and the completed V2.5 Phase 20 prototype promotion and deprecation policy in
-  [`docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`](docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md).
+  [`docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`](docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md),
+  and the completed V2.5 Phase 21 lifecycle enforcement checklist in
+  [`docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`](docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -574,6 +580,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 20 lifecycle policy for prototype promotion,
   experimental support, production eligibility, legacy classification,
   deprecation, removal, and future intelligence-surface governance gates.
+- [`docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`](docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md)
+  — completed V2.5 Phase 21 operational checklist for enforcing lifecycle
+  promotion, production eligibility, deprecation, removal, and future
+  intelligence-surface governance review.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -659,7 +669,10 @@ warnings while preserving Recommendation Engine V2 governance. V2.5 Phase 19
 is complete and inventories prototype, experimental, legacy, deprecated,
 supported, and production surfaces without expanding Recommendation Engine V2.
 V2.5 Phase 20 is complete and establishes the official promotion and
-deprecation lifecycle policy for those surface classifications.
+deprecation lifecycle policy for those surface classifications. V2.5 Phase 21
+is complete and converts that lifecycle policy into enforceable checklists for
+promotion, production eligibility, deprecation, removal, and intelligence
+surface review.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

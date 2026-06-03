@@ -164,6 +164,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
 | BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
+| BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -378,7 +379,10 @@ prototype, experimental, legacy, and deprecated surfaces without expanding
 Recommendation Engine behavior. BaseballOS V2.5 Phase 20 prototype promotion
 and deprecation policy is complete and defines the official lifecycle gates
 for promotion, support, production approval, legacy classification,
-deprecation, removal, and intelligence-surface governance.
+deprecation, removal, and intelligence-surface governance. BaseballOS V2.5
+Phase 21 lifecycle enforcement checklist is complete and converts those gates
+into operational pass/fail checklists for lifecycle movement, production
+eligibility, deprecation, removal, and future intelligence-surface review.
 
 The official strategy foundation is:
 
@@ -503,6 +507,10 @@ The V2.5 Phase 19 prototype surface maintenance review record is:
 The V2.5 Phase 20 prototype promotion and deprecation policy record is:
 
 - `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+The V2.5 Phase 21 lifecycle enforcement checklist record is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1344,6 +1352,71 @@ logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
 ranking behavior, selection behavior, prediction behavior, or Recommendation
 Engine V1 behavior.
 
+BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist converts the Phase 20
+policy into an operational checklist that must be completed before lifecycle
+movement, production promotion, legacy classification, deprecation, or removal.
+
+The Phase 21 enforcement record is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
+
+Phase 21 checklists cover:
+
+- Prototype -> Experimental
+- Experimental -> Supported
+- Supported -> Production
+- Production -> Legacy
+- Legacy -> Deprecated
+- Deprecated -> Removed
+- intelligence-surface promotion readiness
+
+Phase 21 requires promotion reviews to confirm:
+
+- ownership and purpose are documented
+- maintenance expectations are defined
+- contracts are reviewed where applicable
+- test coverage exists for the requested tier
+- trust metadata is defined, visible, and tested where intelligence is shown
+- freshness metadata is defined, visible, and tested where intelligence is shown
+- refusal metadata and fail-closed behavior are defined and tested where
+  applicable
+- certification and rollout review are complete before production eligibility
+- ranking, selection, prediction, best option, preferred option, and recommended
+  option behavior are reviewed before promotion eligibility
+
+Phase 21 conceptual readiness review finds no current prototype or experimental
+surface is unexpectedly promotion-ready:
+
+- Prospect Pipeline remains PROTOTYPE and does not pass Prototype ->
+  Experimental readiness.
+- Fatigue-to-ERA insight remains EXPERIMENTAL and does not pass Experimental ->
+  Supported readiness.
+- Latest-workload snapshot mode remains EXPERIMENTAL and does not pass
+  Experimental -> Supported readiness.
+- MLB passthrough helpers remain EXPERIMENTAL and do not pass Experimental ->
+  Supported readiness.
+- Threshold experimentation tooling remains EXPERIMENTAL and does not pass
+  Experimental -> Supported readiness.
+
+Phase 21 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, or Recommendation
+Engine V1 behavior.
+
+Phase 21 validation:
+
+```text
+npm test
+ENOENT at repository root because no root package.json exists.
+
+cd frontend
+npm test
+78 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-lifecycle-enforcement
+278 passed, 0 failed
+```
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1370,6 +1443,7 @@ V2.5 Phase 15 intelligence presentation optimization, production rollout
 within the Phase 16-approved current certified V2 experience, or Phase 17
 post-rollout monitoring and boundary review, or Phase 18 maintenance warning
 remediation review, or Phase 19 prototype surface maintenance review, or
-Phase 20 prototype promotion and deprecation policy,
+Phase 20 prototype promotion and deprecation policy, or Phase 21 lifecycle
+enforcement checklist,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.

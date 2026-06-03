@@ -501,15 +501,19 @@ git diff --check
 git diff --cached --check
 ```
 
-## Recommended Next Milestone
+## Follow-On Milestone
 
-Recommended next milestone:
+Follow-on milestone completed:
 
 ```text
 BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist
 ```
 
-Phase 21 should convert this policy into a repeatable review checklist for
-future pull requests, route additions, prototype promotions, deprecations, and
-production-surface changes. It should not add product features or expand
+Phase 21 converts this policy into a repeatable review checklist for future
+route additions, prototype promotions, deprecations, removals, and
+production-surface changes. It does not add product features or expand
 Recommendation Engine behavior.
+
+The completed Phase 21 checklist is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
