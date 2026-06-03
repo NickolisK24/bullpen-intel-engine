@@ -293,3 +293,38 @@ The next milestone should review the new Dashboard panel, frontend rendering
 tests, internal status labeling, accessibility behavior, metadata visibility,
 refused/degraded/unavailable state handling, and V2 regression safety before
 any production certification or rollout decision is considered.
+
+## Phase 11 Follow-Up
+
+BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
+Certification Readiness Review is complete.
+
+The Phase 11 record is:
+
+- `docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase 11 reviews the Phase 10 Dashboard UI integration for governance-safe
+rendering, neutral language, summary-first presentation, expand-on-demand
+evidence, trust/freshness/refusal/fail-closed/governance metadata visibility,
+accessibility behavior, mobile/responsive behavior, frontend test coverage,
+and certified V2 regression safety.
+
+Phase 11 decision:
+
+```text
+READY_FOR_FORMAL_CERTIFICATION_PLANNING
+```
+
+Phase 11 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 11 does not grant production certification, production rollout approval,
+public route certification, runtime behavior changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+ranking behavior, selection behavior, prediction behavior,
+best/preferred/recommended behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
