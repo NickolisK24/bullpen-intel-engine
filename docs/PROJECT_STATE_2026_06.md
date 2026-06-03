@@ -186,6 +186,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
 | BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration | Complete / Internal UI / Uncertified |
 | BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review | Ready for Formal Certification Planning |
+| BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -528,6 +529,15 @@ accessibility, mobile/responsive behavior, frontend test coverage, and V2
 regression safety. It does not grant production certification, production
 rollout approval, public route certification, runtime behavior changes, or
 Recommendation Engine V2 contract changes.
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness formal certification
+plan and rollout prerequisites are complete and define the checklist required
+before any formal certification review or rollout decision can be attempted.
+The plan covers backend, frontend, accessibility, governance, freshness, trust,
+refusal/fail-closed, V2 regression, monitoring artifact, evidence packet,
+rollout prerequisite, and stop-condition requirements. It does not grant
+production certification, production rollout approval, public route
+certification, runtime behavior changes, or Recommendation Engine V2 contract
+changes.
 
 The official strategy foundation is:
 
@@ -756,6 +766,11 @@ The V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
 certification-readiness review record is:
 
 - `docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`
+
+The V3 Phase 12 Team Operations Bullpen Readiness formal certification plan
+and rollout prerequisites record is:
+
+- `docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2987,6 +3002,56 @@ Phase 11 recommended next milestone:
 BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites
 ```
 
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification
+Plan and Rollout Prerequisites is complete.
+
+The V3 Phase 12 record is:
+
+- `docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`
+
+Phase 12 defines the formal certification plan required before the internal,
+non-production, uncertified Team Operations Bullpen Readiness route and
+Dashboard UI can move into a later formal certification review.
+
+Phase 12 defines:
+
+- current feature status
+- relationship to V3 Phases 4-11
+- certification objective
+- certification non-goals
+- backend certification checklist
+- frontend certification checklist
+- accessibility certification checklist
+- governance certification checklist
+- data freshness certification checklist
+- trust metadata certification checklist
+- refusal and fail-closed certification checklist
+- V2 regression certification checklist
+- monitoring artifact requirements
+- evidence packet requirements
+- rollout prerequisites
+- certification stop conditions
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 12 does not grant production certification, production rollout approval,
+public route certification, runtime behavior changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+ranking behavior, selection behavior, prediction behavior, best option
+behavior, preferred option behavior, recommended option behavior, hidden
+priority ordering, pitcher-level advice, or matchup advice.
+
+Phase 12 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3101,7 +3166,8 @@ Bullpen Readiness frontend integration plan, or V3 Phase 9 Team Operations
 Bullpen Readiness frontend client normalization and contract tests, or V3
 Phase 10 Team Operations Bullpen Readiness Dashboard UI integration, or V3
 Phase 11 Team Operations Bullpen Readiness Dashboard UI certification-readiness
-review, or V2
+review, or V3 Phase 12 Team Operations Bullpen Readiness formal certification
+plan and rollout prerequisites, or V2
 production fail-closed communication and freshness metadata remediation. Phase
 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
@@ -3133,6 +3199,13 @@ certification, production rollout, public exposure, backend route changes,
 frontend implementation changes, Recommendation Engine V2 contract changes,
 pitcher ranking, pitcher selection, pitcher recommendation, prediction
 behavior, hidden priority ordering, pitcher-level advice, or matchup advice.
+V3 Phase 12 authorizes only the formal certification plan and rollout
+prerequisite checklist for Team Operations Bullpen Readiness. It does not
+authorize production certification, production rollout, public exposure,
+runtime behavior changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

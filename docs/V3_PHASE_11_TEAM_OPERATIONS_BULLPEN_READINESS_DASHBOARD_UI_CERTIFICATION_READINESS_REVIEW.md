@@ -571,3 +571,34 @@ The next milestone should define the formal certification plan, certification
 evidence checklist, browser/mobile/accessibility evidence requirements,
 production rollout prerequisites, monitoring evidence requirements, and final
 stop conditions before any production certification review is attempted.
+
+## Phase 12 Follow-Up
+
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification
+Plan and Rollout Prerequisites is complete.
+
+The Phase 12 record is:
+
+- `docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`
+
+Phase 12 converts the Phase 11 readiness decision into the formal
+certification checklist and rollout prerequisite plan required before Team
+Operations Bullpen Readiness can enter a later certification review.
+
+Phase 12 covers backend, frontend, accessibility, governance, freshness,
+trust, refusal/fail-closed, V2 regression, monitoring artifact, lifecycle
+evidence packet, rollout prerequisite, and stop-condition requirements.
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 12 does not grant production certification, production rollout approval,
+public route certification, runtime behavior changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+ranking behavior, selection behavior, prediction behavior,
+best/preferred/recommended behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.

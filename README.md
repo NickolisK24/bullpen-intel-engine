@@ -141,6 +141,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
 | BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration | Complete / Internal UI / Uncertified |
 | BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review | Ready for Formal Certification Planning |
+| BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -318,7 +319,11 @@ today:
   reviews that Dashboard UI for certification readiness, classifying it as
   `READY_FOR_FORMAL_CERTIFICATION_PLANNING` while preserving internal,
   non-production, uncertified status and withholding production certification
-  and rollout approval.
+  and rollout approval. V3 Phase 12 is complete and defines the formal
+  certification checklist, evidence packet requirements, monitoring artifact
+  requirements, rollout prerequisites, and stop conditions required before any
+  formal certification review or production rollout decision can be attempted.
+  It does not grant production certification or rollout approval.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -439,7 +444,10 @@ today:
   [`docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`](docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md),
   and the completed V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
   certification-readiness review in
-  [`docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`](docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md).
+  [`docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`](docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md),
+  and the completed V3 Phase 12 Team Operations Bullpen Readiness formal
+  certification plan and rollout prerequisites in
+  [`docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`](docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -850,6 +858,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   frontend test coverage, V2 regression review, and
   `READY_FOR_FORMAL_CERTIFICATION_PLANNING` decision without production
   certification.
+- [`docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`](docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md)
+  — completed V3 Phase 12 formal certification plan and rollout prerequisite
+  checklist for Team Operations Bullpen Readiness, including backend,
+  frontend, accessibility, governance, freshness, trust, refusal/fail-closed,
+  V2 regression, monitoring artifact, evidence packet, rollout prerequisite,
+  and stop-condition requirements without production certification.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
