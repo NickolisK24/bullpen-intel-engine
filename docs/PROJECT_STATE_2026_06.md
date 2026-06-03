@@ -133,6 +133,7 @@ It does not rank the bullpen or select the final pitcher.
 | Governance Framework | ✓ Complete |
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
 | Recommendation Engine V1 Candidate Evaluation Layout Remediation | Complete |
+| Dashboard and Bullpen Loading Performance Remediation | Complete |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
@@ -790,6 +791,38 @@ The active V1 and V2 governance guarantees remain:
 ranking_applied = false
 selection_made = false
 ```
+
+Dashboard and Bullpen Loading Performance Remediation improves the loading
+paths that affected Dashboard and Bullpen perceived production quality before
+Phase 11 mobile/accessibility validation.
+
+The performance remediation updates:
+
+- `backend/services/availability_snapshot.py`
+- `backend/api/bullpen.py`
+- `backend/api/recommendations.py`
+- `backend/tests/test_availability_snapshot_mode.py`
+- `backend/tests/test_recommendation_v2_api_contract.py`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/utils/api.js`
+- `frontend/tests/recommendationV2Api.test.mjs`
+- `frontend/tests/syncStatus.test.mjs`
+
+The root cause was repeated per-pitcher availability evidence queries for
+broad bullpen views, full internal V2 context serialization before public API
+response shaping, and a duplicate Dashboard sync-status request.
+
+The remediation batches availability evidence reads, uses lean public V2 API
+serialization, reuses the Dashboard sync-status request for the trust strip,
+and de-duplicates concurrent identical frontend GET requests.
+
+Measured local endpoint averages improved from 470.4 ms to 42.5 ms for
+Dashboard overview, 490.7 ms to 54.1 ms for stale-included Bullpen fatigue
+data, and 1625.1 ms to 419.0 ms for V2 bullpen-state output.
+
+The performance remediation does not change recommendation logic, fatigue
+formulas, V1 behavior, V2 governance behavior, API route shape, ranking,
+selection, prediction, or best/preferred/recommended pitcher behavior.
 
 ## Future Expansion Boundary
 

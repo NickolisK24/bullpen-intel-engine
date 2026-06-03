@@ -10,7 +10,7 @@ import { StatCard, LoadingPane, ErrorState, FatigueBar, RiskBadge, SectionHeader
 import { riskColor } from '../../utils/formatters'
 import { Link } from 'react-router-dom'
 import SeasonBanner from './SeasonBanner'
-import SyncStatus from './SyncStatus'
+import { SyncStatusContent } from './SyncStatus'
 import FatigueInsightCard from './FatigueInsightCard'
 import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
@@ -95,7 +95,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="mt-3">
-          <SyncStatus />
+          <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
         </div>
       </div>
 

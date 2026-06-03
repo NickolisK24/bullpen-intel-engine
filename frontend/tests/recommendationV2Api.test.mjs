@@ -255,3 +255,31 @@ test('fetches the approved V2 bullpen-state endpoint and returns normalized cont
   assert.equal(view.governance.selectionMade, false)
   assert.deepEqual(view.trustMetadata, baseV2Response.trust_metadata)
 })
+
+test('deduplicates concurrent identical V2 bullpen-state GET requests', async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  let callCount = 0
+  globalThis.fetch = async (url, options) => {
+    callCount += 1
+    assert.equal(url, `/api${RECOMMENDATION_V2_BULLPEN_STATE_ROUTE}?limit=25`)
+    assert.equal(options.method, undefined)
+
+    return {
+      ok: true,
+      json: async () => baseV2Response,
+    }
+  }
+
+  const [first, second] = await Promise.all([
+    getRecommendationV2BullpenState({ limit: 25 }),
+    getRecommendationV2BullpenState({ limit: 25 }),
+  ])
+
+  assert.equal(callCount, 1)
+  assert.equal(first.governance.rankingApplied, false)
+  assert.equal(second.governance.selectionMade, false)
+})

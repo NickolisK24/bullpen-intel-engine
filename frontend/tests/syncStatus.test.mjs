@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
+import { readFile } from 'node:fs/promises'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
@@ -24,6 +25,10 @@ const {
 
 const htmlIncludes = (html, text) => html.includes(text)
 const now = Date.parse('2026-06-02T12:00:00Z')
+const dashboardSource = await readFile(
+  new URL('../src/components/dashboard/Dashboard.jsx', import.meta.url),
+  'utf8',
+)
 
 test('renders sync and data-through dates when both are available', () => {
   const data = {
@@ -188,4 +193,9 @@ test('renders no data loaded when metadata and data are unavailable', () => {
   )
 
   assert.ok(htmlIncludes(html, 'No data loaded'))
+})
+
+test('Dashboard reuses its sync status request for the trust strip', () => {
+  assert.ok(dashboardSource.includes('SyncStatusContent'))
+  assert.equal(dashboardSource.includes('<SyncStatus />'), false)
 })

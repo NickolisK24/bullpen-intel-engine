@@ -6,6 +6,7 @@ workload snapshot mode is explicitly non-current and exists only for
 admin/development validation and threshold review.
 """
 
+from collections import defaultdict
 from datetime import date, timedelta
 
 from sqlalchemy import desc
@@ -101,6 +102,23 @@ def latest_game_date_for(pitcher_id):
     )
 
 
+def latest_game_dates_for(pitcher_ids):
+    pitcher_ids = [pitcher_id for pitcher_id in pitcher_ids if pitcher_id is not None]
+    if not pitcher_ids:
+        return {}
+
+    rows = (
+        db.session.query(
+            GameLog.pitcher_id,
+            db.func.max(GameLog.game_date),
+        )
+        .filter(GameLog.pitcher_id.in_(pitcher_ids))
+        .group_by(GameLog.pitcher_id)
+        .all()
+    )
+    return {pitcher_id: latest_game_date for pitcher_id, latest_game_date in rows}
+
+
 def logs_for_availability_window(pitcher_id, reference_date):
     window_start = reference_date - timedelta(days=4)
     return (
@@ -115,6 +133,45 @@ def logs_for_availability_window(pitcher_id, reference_date):
     )
 
 
+def logs_for_availability_windows(pitcher_ids, evaluation_dates):
+    pitcher_ids = [pitcher_id for pitcher_id in pitcher_ids if pitcher_id is not None]
+    if not pitcher_ids:
+        return {}
+
+    valid_dates = [
+        evaluation_date
+        for evaluation_date in evaluation_dates.values()
+        if evaluation_date is not None
+    ]
+    if not valid_dates:
+        return {pitcher_id: [] for pitcher_id in pitcher_ids}
+
+    earliest_window_start = min(valid_dates) - timedelta(days=4)
+    latest_window_end = max(valid_dates)
+    rows = (
+        GameLog.query
+        .filter(
+            GameLog.pitcher_id.in_(pitcher_ids),
+            GameLog.game_date >= earliest_window_start,
+            GameLog.game_date <= latest_window_end,
+        )
+        .order_by(GameLog.pitcher_id, desc(GameLog.game_date))
+        .all()
+    )
+
+    grouped = defaultdict(list)
+    for log in rows:
+        evaluation_date = evaluation_dates.get(log.pitcher_id)
+        if evaluation_date is None:
+            continue
+
+        window_start = evaluation_date - timedelta(days=4)
+        if window_start <= log.game_date <= evaluation_date:
+            grouped[log.pitcher_id].append(log)
+
+    return {pitcher_id: grouped.get(pitcher_id, []) for pitcher_id in pitcher_ids}
+
+
 def evaluation_date_for_mode(mode, latest_game_date, current_reference_date=None):
     current_reference_date = current_reference_date or date.today()
     if mode == LATEST_WORKLOAD_SNAPSHOT_MODE:
@@ -122,15 +179,7 @@ def evaluation_date_for_mode(mode, latest_game_date, current_reference_date=None
     return current_reference_date
 
 
-def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
-    current_reference_date = reference_date or date.today()
-    latest_game_date = latest_game_date_for(pitcher.id)
-    evaluation_date = evaluation_date_for_mode(
-        mode,
-        latest_game_date=latest_game_date,
-        current_reference_date=current_reference_date,
-    )
-    logs = logs_for_availability_window(pitcher.id, evaluation_date)
+def _classified_record(score, pitcher, latest_game_date, evaluation_date, logs, mode):
     availability = classify_availability(
         score=score,
         game_logs=logs,
@@ -152,8 +201,52 @@ def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAIL
     }
 
 
-def classify_latest_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
+def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
+    current_reference_date = reference_date or date.today()
+    latest_game_date = latest_game_date_for(pitcher.id)
+    evaluation_date = evaluation_date_for_mode(
+        mode,
+        latest_game_date=latest_game_date,
+        current_reference_date=current_reference_date,
+    )
+    logs = logs_for_availability_window(pitcher.id, evaluation_date)
+    return _classified_record(
+        score=score,
+        pitcher=pitcher,
+        latest_game_date=latest_game_date,
+        evaluation_date=evaluation_date,
+        logs=logs,
+        mode=mode,
+    )
+
+
+def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
+    rows = list(rows or [])
+    current_reference_date = reference_date or date.today()
+    pitcher_ids = [pitcher.id for _score, pitcher in rows]
+    latest_game_dates = latest_game_dates_for(pitcher_ids)
+    evaluation_dates = {
+        pitcher.id: evaluation_date_for_mode(
+            mode,
+            latest_game_date=latest_game_dates.get(pitcher.id),
+            current_reference_date=current_reference_date,
+        )
+        for _score, pitcher in rows
+    }
+    logs_by_pitcher = logs_for_availability_windows(pitcher_ids, evaluation_dates)
+
     return [
-        classify_fatigue_row(score, pitcher, reference_date=reference_date, mode=mode)
+        _classified_record(
+            score=score,
+            pitcher=pitcher,
+            latest_game_date=latest_game_dates.get(pitcher.id),
+            evaluation_date=evaluation_dates[pitcher.id],
+            logs=logs_by_pitcher.get(pitcher.id, []),
+            mode=mode,
+        )
         for score, pitcher in rows
     ]
+
+
+def classify_latest_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
+    return classify_fatigue_rows(rows, reference_date=reference_date, mode=mode)

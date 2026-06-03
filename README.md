@@ -88,6 +88,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Governance Framework | ✓ Complete |
 | Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
 | Recommendation Engine V1 Candidate Evaluation Layout Remediation | Complete |
+| Dashboard and Bullpen Loading Performance Remediation | Complete |
 | Recommendation Engine V2 Strategy | Scope Definition Active |
 | Recommendation Engine V2 Governance Boundaries | Documented |
 | Recommendation Engine V2 Architecture | Documented |
@@ -457,6 +458,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
   governance compliance, and V1 logic preservation.
+- [`docs/DASHBOARD_BULLPEN_LOADING_PERFORMANCE_REMEDIATION.md`](docs/DASHBOARD_BULLPEN_LOADING_PERFORMANCE_REMEDIATION.md)
+  — completed Dashboard and Bullpen loading performance remediation record for
+  batched availability evidence loading, lean V2 API serialization, duplicate
+  sync-status request removal, and governance preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_POLICY.md`](docs/RECOMMENDATION_ENGINE_V1_POLICY.md)
   — authoritative policy for trust-first recommendation eligibility,
   exclusions, refusal conditions, categories, explanations, limitations, and
@@ -511,6 +516,10 @@ backend-only API contract exposure layer, and the Phase 9 frontend client
 integration layer, and the Phase 10 governed frontend rendering layer
 complete, with Phase 10A desktop layout remediation and Phase 10B Bullpen
 selected-pitcher layout remediation complete.
+Dashboard and Bullpen loading performance remediation is also complete, with
+batched availability evidence loading, lean public V2 serialization, duplicate
+Dashboard sync-status request removal, and concurrent GET de-duplication in
+the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
 intelligence, readiness visibility, mobile/accessibility certification, and

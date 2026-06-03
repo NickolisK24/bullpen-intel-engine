@@ -9,6 +9,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from recommendation import v2_governance_errors, v2_trust_metadata_errors
+from recommendation.v2_assembly import V2ContextAssembly
 from services.availability import ACTIVE_WINDOW_DAYS
 from utils.db import db
 
@@ -219,6 +220,28 @@ class TestRecommendationEngineV2ApiContract:
 
         assert FORBIDDEN_OUTPUT_KEYS.isdisjoint(keys)
         assert 'ranked_candidates' not in keys
+        assert_v2_governance(payload)
+
+    def test_v2_route_avoids_full_internal_context_serialization(self, client, monkeypatch):
+        with client.application.app_context():
+            add_scored_pitcher('Alpha Arm', seed=1)
+
+        def fail_full_internal_serialization(self):
+            raise AssertionError('public V2 route should use lean API serialization')
+
+        monkeypatch.setattr(
+            V2ContextAssembly,
+            'to_dict',
+            fail_full_internal_serialization,
+        )
+
+        response = client.get(f'{ROUTE}?team_id=7')
+        payload = response.get_json()
+
+        assert response.status_code == 200
+        assert payload['ranking_applied'] is False
+        assert payload['selection_made'] is False
+        assert payload['bullpen_state']['candidate_groups']
         assert_v2_governance(payload)
 
     def test_missing_evidence_returns_fail_closed_api_response(self, client):

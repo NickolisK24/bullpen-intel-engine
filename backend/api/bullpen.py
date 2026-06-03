@@ -15,6 +15,7 @@ from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     LATEST_WORKLOAD_SNAPSHOT_MODE,
     availability_mode_metadata,
+    classify_fatigue_rows,
     classify_latest_fatigue_rows,
     latest_fatigue_rows as availability_latest_fatigue_rows,
 )
@@ -180,12 +181,19 @@ def get_fatigue_scores():
     query   = query.order_by(desc(FatigueScore.raw_score)).limit(limit)
     results = query.all()
 
+    records = classify_fatigue_rows(
+        results,
+        mode=CURRENT_AVAILABILITY_MODE,
+    )
+
     data = []
-    for score, pitcher in results:
+    for record in records:
+        score = record['score']
+        pitcher = record['pitcher']
         data.append({
             **score.to_dict(),
             'pitcher': pitcher.to_dict(),
-            'availability': _availability_for(pitcher.id, score),
+            'availability': record['availability'],
         })
     if not with_meta:
         return jsonify(data)
@@ -562,11 +570,23 @@ def get_team_bullpen(team_id):
 
     results = query.order_by(desc(FatigueScore.raw_score)).all()
 
+    availability_rows = [
+        (score, pitcher)
+        for pitcher, score in results
+    ]
+    availability_by_pitcher = {
+        record['pitcher_id']: record['availability']
+        for record in classify_fatigue_rows(
+            availability_rows,
+            mode=CURRENT_AVAILABILITY_MODE,
+        )
+    }
+
     return jsonify([
         {
             'pitcher': pitcher.to_dict(),
             'fatigue': score.to_dict() if score else None,
-            'availability': _availability_for(pitcher.id, score),
+            'availability': availability_by_pitcher.get(pitcher.id),
         }
         for pitcher, score in results
     ])

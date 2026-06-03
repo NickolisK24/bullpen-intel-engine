@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 import models.prospect  # noqa: F401  (register on db.metadata)
 from api.bullpen import bullpen_bp
@@ -139,6 +140,41 @@ def test_current_mode_remains_calendar_based_and_can_be_available(client):
     assert records[0]['availability']['availability_status'] == 'Available'
     assert records[0]['availability']['confidence'] == 'high'
     assert records[0]['availability']['data_state'] == 'fresh'
+
+
+def test_current_mode_batches_availability_evidence_queries(client):
+    with client.application.app_context():
+        ref = date.today()
+        for seed in range(1, 6):
+            _add_pitcher(
+                f'Current Batch Arm {seed}',
+                latest_game_date=ref - timedelta(days=seed % 4),
+                raw_score=18.0 + seed,
+                log_pitches=[8 + seed],
+                mlb_seed=seed,
+            )
+
+        rows = latest_fatigue_rows()
+        game_log_selects = []
+
+        def collect_game_log_selects(_conn, _cursor, statement, _params, _context, _executemany):
+            normalized = ' '.join(statement.lower().split())
+            if normalized.startswith('select') and 'from game_logs' in normalized:
+                game_log_selects.append(normalized)
+
+        event.listen(db.engine, 'before_cursor_execute', collect_game_log_selects)
+        try:
+            records = classify_latest_fatigue_rows(
+                rows,
+                reference_date=ref,
+                mode=CURRENT_AVAILABILITY_MODE,
+            )
+        finally:
+            event.remove(db.engine, 'before_cursor_execute', collect_game_log_selects)
+
+    assert len(records) == 5
+    assert all(record['availability']['data_state'] == 'fresh' for record in records)
+    assert len(game_log_selects) <= 2
 
 
 def test_snapshot_mode_uses_latest_workload_date_and_non_current_metadata(client):

@@ -133,7 +133,7 @@ def get_v2_bullpen_state():
             },
         )
 
-    payload = _v2_api_response_payload(assembly.to_dict())
+    payload = _v2_api_response_payload(_v2_public_assembly_payload(assembly))
     return jsonify(payload)
 
 
@@ -267,6 +267,39 @@ def _v2_api_response_payload(assembly_payload):
     require_v2_governance_safe(payload)
     require_v2_trust_metadata(payload)
     return payload
+
+
+def _v2_public_assembly_payload(assembly):
+    """Build only the internal fields needed by the public V2 API contract."""
+    return {
+        'metadata': dict(assembly.metadata),
+        'recommendation_context': assembly.recommendation_context.to_dict(),
+        'bullpen_state': {
+            'bullpen_status': assembly.bullpen_state.bullpen_status,
+            'inventory': dict(assembly.bullpen_state.inventory),
+            'stress': dict(assembly.bullpen_state.stress),
+        },
+        'team_context': {
+            'leverage_inventory': dict(assembly.team_context.leverage_inventory),
+            'stress_indicators': dict(assembly.team_context.stress_indicators),
+        },
+        'candidate_groups': [
+            _v2_public_candidate_group_payload(group)
+            for group in assembly.candidate_groups
+        ],
+    }
+
+
+def _v2_public_candidate_group_payload(group):
+    return {
+        'group_id': group.group_id,
+        'label': group.label,
+        'criteria': list(group.criteria),
+        'candidate_count': len(group.candidates),
+        'neutral_sequence_basis': group.neutral_sequence_basis,
+        'candidates': [dict(candidate) for candidate in group.candidates],
+        'confidence': group.context.confidence.value,
+    }
 
 
 def _v2_api_bullpen_state(

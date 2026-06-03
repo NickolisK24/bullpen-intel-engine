@@ -9,6 +9,7 @@ const BASE = import.meta.env.VITE_API_BASE_URL
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_API_TOKEN
 export const RECOMMENDATION_CANDIDATE_ROUTE = '/recommendations/candidate'
 export const RECOMMENDATION_V2_BULLPEN_STATE_ROUTE = '/recommendations/v2/bullpen-state'
+const inFlightGetRequests = new Map()
 
 const RECOMMENDATION_V2_REQUIRED_TOP_LEVEL_FIELDS = [
   'scope',
@@ -143,14 +144,31 @@ function buildQuery(params = {}) {
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
   if (ADMIN_TOKEN) headers['X-Admin-Token'] = ADMIN_TOKEN
-  try {
-    const res = await fetch(`${BASE}${path}`, { ...options, headers })
-    if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
-    return await res.json()
-  } catch (err) {
-    console.error(`[API] ${path}`, err)
-    throw err
+  const method = String(options.method || 'GET').toUpperCase()
+  const dedupeKey = method === 'GET' && !options.body ? `${BASE}${path}` : null
+  if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
+    return inFlightGetRequests.get(dedupeKey)
   }
+
+  const requestPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE}${path}`, { ...options, headers })
+      if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
+      return await res.json()
+    } catch (err) {
+      console.error(`[API] ${path}`, err)
+      throw err
+    } finally {
+      if (dedupeKey) {
+        inFlightGetRequests.delete(dedupeKey)
+      }
+    }
+  })()
+
+  if (dedupeKey) {
+    inFlightGetRequests.set(dedupeKey, requestPromise)
+  }
+  return requestPromise
 }
 
 // ── Health ─────────────────────────────────────────────────
