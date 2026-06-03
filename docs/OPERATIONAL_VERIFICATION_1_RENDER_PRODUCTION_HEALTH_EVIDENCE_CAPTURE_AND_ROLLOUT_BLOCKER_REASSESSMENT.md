@@ -324,6 +324,29 @@ That milestone should:
 - produce a controlled rollout decision without granting full production
   rollout automatically
 
+## Post-Verification Rollout Reassessment
+
+V3 Phase 18 completed the post-verification manual review and controlled
+rollout reassessment.
+
+Phase 18 accepts this document's production health finding:
+
+```text
+environment: production
+debug: false
+```
+
+Phase 18 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW
+```
+
+The deployment-configuration blocker remains cleared, but controlled rollout is
+still not approved because rendered Dashboard review, browser review,
+mobile/responsive review, accessibility smoke review, explicit maintainer
+confirmation, and deployed protected endpoint confirmation remain pending.
+
 ## Governance Confirmation
 
 Operational Verification 1 preserves:

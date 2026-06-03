@@ -150,6 +150,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
 | Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
 | Operational Verification 1 Render Production Health Evidence Capture | Production Health Verified / Deployment Config Blocker Cleared |
+| BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment | Blocked Pending Manual Review / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -366,7 +367,12 @@ today:
   deployed Render health evidence reporting `environment = production` and
   `debug = false`; the deployment-configuration blocker is cleared, but
   controlled rollout remains unapproved pending rendered Dashboard, mobile,
-  accessibility, maintainer, and protected admin-endpoint evidence.
+  accessibility, maintainer, and protected admin-endpoint evidence. V3 Phase
+  18 is complete and reassesses controlled rollout after production health
+  verification; the decision is
+  `CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW` because rendered
+  Dashboard, browser, mobile/responsive, accessibility, explicit maintainer,
+  and deployed protected endpoint evidence remain pending.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -984,6 +990,14 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
 - [`docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md`](docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md)
   — retained monitoring artifact for production health verification,
   environment/debug values, rollout impact, and follow-up actions.
+- [`docs/V3_PHASE_18_TEAM_OPERATIONS_BULLPEN_READINESS_MANUAL_REVIEW_AND_CONTROLLED_ROLLOUT_REASSESSMENT.md`](docs/V3_PHASE_18_TEAM_OPERATIONS_BULLPEN_READINESS_MANUAL_REVIEW_AND_CONTROLLED_ROLLOUT_REASSESSMENT.md)
+  — completed V3 Phase 18 manual review and controlled rollout reassessment
+  for Team Operations Bullpen Readiness, clearing the deployment-configuration
+  blocker while keeping controlled rollout blocked pending manual evidence.
+- [`docs/monitoring/team_operations_bullpen_readiness/PHASE_18_MANUAL_REVIEW_AND_ROLLOUT_REASSESSMENT_ARTIFACT.md`](docs/monitoring/team_operations_bullpen_readiness/PHASE_18_MANUAL_REVIEW_AND_ROLLOUT_REASSESSMENT_ARTIFACT.md)
+  — retained Phase 18 monitoring artifact recording production health
+  verification status, pending manual review evidence, protected endpoint
+  review status, governance status, and the blocked rollout decision.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1153,9 +1167,12 @@ Operational Remediation 1 is complete and confirms the repository production
 configuration path returns production/debug-safe health locally. Operational
 Verification 1 is complete and retains deployed production health evidence
 showing `environment: production` and `debug: false`, so deployment
-configuration no longer remains the active rollout blocker.
-Controlled rollout still is not approved until rendered Dashboard, mobile,
-accessibility, maintainer, and protected admin-endpoint evidence is retained.
+configuration no longer remains the active rollout blocker. Controlled rollout
+still is not approved until rendered Dashboard, mobile, accessibility,
+maintainer, and protected admin-endpoint evidence is retained. V3 Phase 18 is
+complete and records the post-verification controlled rollout reassessment. The
+decision remains `CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW`; full
+production rollout is not approved.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
