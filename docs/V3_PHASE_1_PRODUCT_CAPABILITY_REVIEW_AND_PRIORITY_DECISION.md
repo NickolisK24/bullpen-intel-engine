@@ -586,3 +586,25 @@ The next milestone should remain planning-only unless a separate implementation
 phase is explicitly authorized. It should define the Team Operations Bullpen
 Readiness capability in enough detail to decide whether implementation is
 safe, valuable, and governable.
+
+## V3 Phase 2 Follow-Up
+
+V3 Phase 2 has completed the Team Operations Bullpen Readiness capability
+definition:
+
+- `docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`
+
+Phase 2 defines the allowed inputs, prohibited inputs, allowed outputs,
+prohibited outputs, readiness vocabulary, constraint vocabulary, coverage
+vocabulary, workload vocabulary, trust metadata, freshness metadata, refusal
+metadata, fail-closed requirements, explainability requirements, testing
+requirements, accessibility requirements, certification requirements, risks,
+mitigations, and non-goals for the selected capability.
+
+The next planning milestone after Phase 2 is:
+
+```text
+BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan
+```
+
+This follow-up does not authorize implementation or runtime behavior changes.

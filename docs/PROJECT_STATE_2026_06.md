@@ -174,6 +174,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
+| BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -432,6 +433,13 @@ experimental surfaces, legacy surfaces, data availability, implementation risk,
 governance risk, portfolio value, and baseball operations value. It recommends
 Team Operations Bullpen Readiness planning as the next product direction
 without authorizing runtime behavior.
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness capability definition
+is complete and defines the selected capability's allowed inputs, prohibited
+inputs, allowed outputs, prohibited outputs, readiness vocabulary, constraint
+vocabulary, coverage vocabulary, workload vocabulary, trust metadata,
+freshness metadata, refusal metadata, fail-closed requirements, testing
+requirements, accessibility requirements, certification requirements, and
+non-goals before any implementation work.
 
 The official strategy foundation is:
 
@@ -601,6 +609,11 @@ record is:
 The V3 Phase 1 product capability review and priority decision record is:
 
 - `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
+
+The V3 Phase 2 Team Operations Bullpen Readiness capability definition record
+is:
+
+- `docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2236,6 +2249,91 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 1. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition
+is complete.
+
+The V3 Phase 2 record is:
+
+- `docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`
+
+Phase 2 defines:
+
+- Team Operations Bullpen Readiness capability scope
+- user-facing purpose
+- baseball operations purpose
+- allowed inputs
+- prohibited inputs
+- allowed outputs
+- prohibited outputs
+- readiness concepts and readiness status vocabulary
+- constraint vocabulary
+- coverage vocabulary
+- workload vocabulary
+- trust metadata requirements
+- freshness metadata requirements
+- refusal metadata requirements
+- fail-closed requirements
+- explainability requirements
+- governance boundaries
+- API contract planning
+- frontend presentation planning
+- testing requirements
+- accessibility requirements
+- certification requirements
+- risks and mitigations
+- non-goals
+
+Phase 2 capability definition:
+
+```text
+TEAM_OPERATIONS_BULLPEN_READINESS
+```
+
+Recommended next milestone:
+
+```text
+BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan
+```
+
+Phase 2 is planning-only. It does not authorize implementation, runtime
+behavior changes, API contract changes, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, database schema changes,
+lifecycle promotion, production rollout, Prospect Pipeline promotion, or Game
+Context Intelligence implementation.
+
+Phase 2 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 2 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, or Recommendation Engine V1 behavior.
+
+Phase 2 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-2-readiness-definition
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 2. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -2271,9 +2369,10 @@ citation backfill and stewardship review, or Phase 27 lifecycle evidence
 section-level citation map, or Phase 28 evidence ownership, monitoring
 artifact, and test mapping closeout, or Phase 29 governance hardening closeout
 and V3 readiness decision, or V3 Phase 1 product capability review and
-priority decision. Phase 29 authorizes V3 product capability planning only.
-V3 Phase 1 selects the next planning direction only. It does not authorize V3
-runtime implementation.
+priority decision, or V3 Phase 2 Team Operations Bullpen Readiness capability
+definition. Phase 29 authorizes V3 product capability planning only. V3 Phase
+1 selects the next planning direction only. V3 Phase 2 defines the selected
+capability only. It does not authorize V3 runtime implementation.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
