@@ -138,6 +138,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration | Complete / Internal / Uncertified |
 | BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review | Ready for Frontend Integration Planning |
 | BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan | Complete / Planning Only |
+| BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -301,7 +302,11 @@ today:
   frontend integration plan for future Dashboard presentation, including client
   normalization, summary-first rendering, expand-on-demand evidence,
   trust/freshness/refusal visibility, accessibility, mobile behavior, neutral
-  language rules, and frontend tests without adding UI.
+  language rules, and frontend tests without adding UI. V3 Phase 9 is complete
+  and adds frontend client normalization and contract tests for the internal
+  Team Operations Bullpen Readiness route without adding Dashboard UI,
+  production certification, public exposure, or Recommendation Engine V2
+  contract changes.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -413,7 +418,10 @@ today:
   [`docs/V3_PHASE_7_TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE_CERTIFICATION_READINESS_REVIEW.md`](docs/V3_PHASE_7_TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE_CERTIFICATION_READINESS_REVIEW.md),
   and the completed V3 Phase 8 Team Operations Bullpen Readiness frontend
   integration plan in
-  [`docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`](docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md).
+  [`docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`](docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md),
+  and the completed V3 Phase 9 Team Operations Bullpen Readiness frontend
+  client normalization and contract tests in
+  [`docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`](docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -806,6 +814,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   summary-first rendering, expand-on-demand evidence, metadata presentation,
   accessibility, mobile behavior, neutral language rules, and frontend tests
   without runtime UI changes.
+- [`docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`](docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md)
+  — completed V3 Phase 9 Team Operations Bullpen Readiness frontend client
+  normalization and contract tests for the internal route, including governed
+  success, degraded, refused, missing-field, malformed-governance, unknown
+  vocabulary, and internal-status handling without Dashboard UI changes.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -944,7 +957,12 @@ including governed Dashboard placement, client normalization, component
 architecture, summary-first rendering, expand-on-demand evidence,
 trust/freshness/refusal presentation, accessibility, mobile behavior, neutral
 language rules, prohibited UI patterns, and frontend test requirements without
-adding UI or production certification.
+adding UI or production certification. V3 Phase 9 is complete and adds the
+frontend client normalization layer and contract tests for the internal route,
+including success, degraded, refused, missing-field, malformed-governance,
+unknown-vocabulary, and internal-status handling without Dashboard UI,
+production certification, public exposure, or Recommendation Engine V2 contract
+changes.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

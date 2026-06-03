@@ -660,3 +660,32 @@ The next milestone should implement only the frontend client normalization layer
 and focused tests for the internal readiness route. Dashboard UI rendering
 should remain a later separately authorized milestone after the client contract
 is proven safe.
+
+## Phase 9 Follow-Up
+
+The recommended Phase 9 milestone is complete:
+
+```text
+V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS_COMPLETE
+```
+
+Phase 9 adds the frontend client normalization layer and focused contract tests
+for the internal Team Operations Bullpen Readiness route. It preserves the
+internal, non-production, uncertified route status and does not add Dashboard
+UI, public exposure, production certification, production rollout, or
+Recommendation Engine V2 contract changes.
+
+The Phase 9 completion record is:
+
+- `docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+It does not introduce ranking behavior, selection behavior, prediction
+behavior, best/preferred/recommended behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
