@@ -510,3 +510,36 @@ The next milestone should capture actual deployed-environment route/UI
 evidence, browser visual evidence, mobile viewport evidence, manual
 accessibility evidence, and explicit maintainer retention confirmation before
 reopening the controlled rollout decision.
+
+## Phase 17 Follow-Up Status
+
+Phase 17 completed the deployment-environment manual review follow-up and
+retained deployed API evidence for the Team Operations Bullpen Readiness
+surface.
+
+Phase 17 records:
+
+- `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
+
+Phase 17 retained:
+
+- deployed frontend shell reachability.
+- deployed backend health route reachability.
+- deployed Team Operations Bullpen Readiness route reachability.
+- deployed prohibited-query refusal and fail-closed behavior.
+- deployed governance flags preserving `ranking_applied === false` and
+  `selection_made === false`.
+
+Phase 17 did not unblock controlled rollout because the deployed backend
+health route reported `environment = development` and `debug = true`, and
+rendered Dashboard, browser, mobile, accessibility, and explicit maintainer
+evidence remain pending.
+
+Phase 17 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_DEPLOYMENT_EVIDENCE
+```
+
+Full production rollout remains not approved.

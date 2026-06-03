@@ -386,3 +386,67 @@ Required follow-up actions:
 9. Re-run frontend validation after any remediation.
 10. Reopen controlled rollout decision only after required manual evidence is
     retained.
+
+## Phase 17 Follow-Up
+
+Phase 17 follow-up artifact:
+
+```text
+docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md
+```
+
+Phase 17 retained deployed API evidence:
+
+```text
+GET https://baseballos.vercel.app
+HTTP status: 200
+```
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+HTTP status: 200
+status: ok
+environment: development
+debug: true
+```
+
+```text
+GET https://baseballos-api.onrender.com/api/team-operations/bullpen-readiness
+HTTP status: 200
+contract_state: degraded
+readiness.status_code: data_limited
+route_metadata.exposure: internal
+route_metadata.production_status: non_production
+route_metadata.certification_status: uncertified
+route_metadata.public_certified: false
+ranking_applied: false
+selection_made: false
+```
+
+```text
+GET https://baseballos-api.onrender.com/api/team-operations/bullpen-readiness?best=true
+HTTP status: 400
+contract_state: refused
+refusal.reason: forbidden_request_parameter
+fail_closed.failed_closed: true
+fail_closed.critical_failure: true
+ranking_applied: false
+selection_made: false
+```
+
+Phase 17 follow-up decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_DEPLOYMENT_EVIDENCE
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Rationale:
+
+- deployed API evidence was retained.
+- deployed backend health reported development/debug state.
+- rendered Dashboard evidence remains pending.
+- manual browser evidence remains pending.
+- mobile/responsive evidence remains pending.
+- accessibility smoke-review evidence remains pending.
+- explicit maintainer-review evidence remains pending.

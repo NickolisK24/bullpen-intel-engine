@@ -191,6 +191,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring | Ready With Pending Manual Evidence / Full Rollout Not Approved |
 | BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision | Blocked Pending Manual Evidence / Full Rollout Not Approved |
 | BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
+| BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -564,6 +565,12 @@ route, prohibited-query refusal, and frontend reachability evidence. Browser,
 mobile, accessibility, deployment-environment, and explicit maintainer-review
 evidence remain pending, so controlled rollout remains blocked and full
 production rollout remains not approved.
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness deployment
+environment manual review is complete and retains deployed backend health,
+readiness route, prohibited-query refusal, and frontend shell reachability
+evidence. Controlled rollout remains blocked because the deployed backend
+reports development/debug state and rendered Dashboard, browser, mobile,
+accessibility, and explicit maintainer-review evidence remain pending.
 
 The official strategy foundation is:
 
@@ -820,6 +827,12 @@ manual smoke review records are:
 
 - `docs/V3_PHASE_16_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW.md`
 - `docs/monitoring/team_operations_bullpen_readiness/PHASE_16_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_ARTIFACT.md`
+
+The V3 Phase 17 Team Operations Bullpen Readiness deployment environment
+manual review records are:
+
+- `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -3357,6 +3370,90 @@ Phase 16 recommended next milestone:
 BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
 ```
 
+```text
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
+```
+
+## BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
+
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment
+Manual Review is complete.
+
+The V3 Phase 17 records are:
+
+- `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
+
+Phase 17 retains deployed HTTP/API evidence:
+
+- deployed frontend shell returned HTTP 200.
+- deployed backend health route returned HTTP 200.
+- deployed Team Operations Bullpen Readiness route returned a governed degraded
+  readiness payload.
+- deployed prohibited query intent returned a governed refused fail-closed
+  payload.
+
+Phase 17 also records a deployment-state blocker:
+
+```text
+DEPLOYED_BACKEND_REPORTS_DEVELOPMENT_DEBUG_STATE
+```
+
+The deployed backend health route reported:
+
+```text
+environment: development
+debug: true
+```
+
+Rendered Dashboard review, manual browser review, mobile/responsive review,
+manual accessibility smoke review, and explicit maintainer-review evidence
+remain pending. Those gaps remain blocking for controlled rollout approval.
+
+Phase 17 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_DEPLOYMENT_EVIDENCE
+```
+
+Phase 17 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 17 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 17 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 17 does not authorize controlled rollout, full production rollout,
+public route certification, route exposure changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+fatigue formula changes, availability threshold changes, ranking behavior,
+selection behavior, prediction behavior, best option behavior, preferred
+option behavior, recommended option behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Phase 17 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Deployment Configuration Remediation and Manual Browser Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3477,8 +3574,9 @@ Readiness formal certification review, or V3 Phase 14 Team Operations Bullpen
 Readiness controlled rollout and monitoring, or V3 Phase 15 Team Operations
 Bullpen Readiness deployment smoke review and controlled rollout decision, or
 V3 Phase 16 Team Operations Bullpen Readiness deployment evidence and manual
-smoke review, or V2 production fail-closed communication and freshness metadata
-remediation. Phase 29 authorizes V3 product capability
+smoke review, or V3 Phase 17 Team Operations Bullpen Readiness deployment
+environment manual review, or V2 production fail-closed communication and
+freshness metadata remediation. Phase 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
 defines the selected capability only. V3 Phase 3 defines implementation
 planning only. V3 Phase 4 defines contract and certification planning only.
@@ -3546,6 +3644,15 @@ backend route changes, frontend implementation changes, Recommendation Engine
 V2 contract changes, pitcher ranking, pitcher selection, pitcher
 recommendation, prediction behavior, hidden priority ordering, pitcher-level
 advice, or matchup advice.
+V3 Phase 17 authorizes only deployed-environment evidence capture, retained
+monitoring artifact creation, validation-result retention, and a controlled
+rollout decision for Team Operations Bullpen Readiness. It does not authorize
+controlled rollout approval while deployment configuration and manual evidence
+remain pending, full production rollout, public exposure, route exposure
+changes, backend route changes, frontend implementation changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
