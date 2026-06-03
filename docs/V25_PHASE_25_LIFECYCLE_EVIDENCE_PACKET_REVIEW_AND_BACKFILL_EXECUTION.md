@@ -534,13 +534,23 @@ which is expected and is not a project failure.
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review
 ```
 
-Phase 26 should add exact packet-level citations for existing production
-evidence, then begin targeted owner, runbook, metadata, test, migration, and
-retention evidence backfill for the highest-priority prototype, experimental,
-and legacy packets without changing runtime behavior.
+Phase 26 performs the first production-focused evidence citation backfill and
+stewardship review, adding document-level source references for certified V2
+production evidence and identifying remaining uncited packet evidence.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map
+```
+
+Phase 27 should convert Phase 26 document-level citations into packet-level
+section references, map production evidence to specific backend and frontend
+test files, and define the retained monitoring artifact format without changing
+runtime behavior.
