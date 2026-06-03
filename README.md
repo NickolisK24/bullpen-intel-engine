@@ -111,6 +111,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
+| Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -192,7 +193,9 @@ today:
   selected-pitcher detail surface, and embedded V1 Candidate Evaluation
   surface. Phase 12 compiles backend, API, frontend, trust, freshness,
   refusal, fail-closed, mobile, accessibility, and V1 regression evidence and
-  classifies V2 as ready for formal certification review. No
+  classifies V2 as ready for formal certification review. Phase 13 formally
+  certifies the implemented and governed V2 scope as production-ready while
+  leaving production rollout to a separate governed decision. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -236,7 +239,9 @@ today:
   and the completed Phase 11 record in
   [`docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md),
   and the completed Phase 12 certification readiness record in
-  [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md),
+  and the completed Phase 13 formal certification record in
+  [`docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -475,6 +480,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   backend/API/frontend evidence, trust/freshness/refusal/fail-closed evidence,
   governance compliance, V1 regression evidence, known limitations, and the
   readiness classification for formal certification review.
+- [`docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md)
+  — completed V2 Phase 13 formal certification record for the implemented and
+  governed V2 scope, certification decision, backend/API/frontend evidence,
+  trust/freshness/refusal/fail-closed evidence, anti-ranking and
+  anti-selection validation, V1 regression validation, known limitations, and
+  post-certification boundaries.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -539,14 +550,16 @@ complete, with Phase 10A desktop layout remediation and Phase 10B Bullpen
 selected-pitcher layout remediation complete, and Phase 11 mobile and
 accessibility validation complete. Phase 12 certification readiness validation
 is complete and classifies V2 as ready for formal certification review, not
-production certified.
+production certified. Phase 13 formal certification review is complete and
+certifies the implemented and governed V2 scope as production-ready; production
+rollout still requires a separate governed rollout decision.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
 the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, formal certification review, and broader
+intelligence, readiness visibility, production rollout review, and broader
 explainability while preserving V1 trust protections. No V2 ranking,
 final pitcher choice, or prediction behavior exists. Beyond
 that, see **Product Direction** above: usage

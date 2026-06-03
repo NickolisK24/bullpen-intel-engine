@@ -1014,6 +1014,24 @@ formal certification review.
 
 ## 20. Phase 13: Certification Review
 
+**Implementation status**
+
+Complete.
+
+Recommendation Engine V2 Phase 13 Formal Certification Review is complete.
+The implemented and governed V2 scope is formally certified as:
+
+```text
+CERTIFIED_PRODUCTION_READY
+```
+
+This certification does not approve production rollout. Production rollout
+remains a separate governed Phase 14 decision.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
+
 **Goal**
 
 Review the completed implementation against the V2 certification requirements.
@@ -1321,21 +1339,25 @@ Production certified requires:
 - certification review completed
 - all certification requirements passed
 - documentation updated
+
+Production certification does not itself approve rollout. Production rollout
+requires:
+
 - user approval granted
 - production rollout decision recorded
 
 Production certification must be evidence-based and must preserve the full V2
-governance package.
+governance package. Production rollout must be recorded separately.
 
 ## 31. Next Milestone
 
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 13 Formal Certification Review
+Recommendation Engine V2 Phase 14 Production Rollout Decision
 ```
 
-This milestone may begin only after the user explicitly approves formal
-certification review. Phase 13 must audit the completed V2 implementation
-against the approved V2 certification requirements and preserve all Phase 1
-through Phase 12 safeguards.
+This milestone may begin only after the user explicitly approves production
+rollout decision review. Phase 14 must decide whether the certified V2 system
+is approved, deferred, or rejected for production rollout while preserving all
+Phase 1 through Phase 13 safeguards.

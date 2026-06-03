@@ -156,6 +156,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
+| Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -341,7 +342,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 12 Status
+## Recommendation Engine V2 Strategy and Phase 13 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -354,7 +355,8 @@ work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
 client integration work, Phase 10 governed frontend rendering work, and Phase
 10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
 layout remediation work, and Phase 11 mobile/accessibility validation work,
-and Phase 12 certification readiness validation work.
+Phase 12 certification readiness validation work, and Phase 13 formal
+certification review work.
 
 The official strategy foundation is:
 
@@ -443,6 +445,10 @@ The Phase 11 completion record is:
 The Phase 12 certification readiness record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
+
+The Phase 13 formal certification record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -909,6 +915,46 @@ This means V2 is ready to enter formal certification review. It does not mean
 V2 is production certified, does not approve production rollout, and does not
 add product behavior.
 
+Recommendation Engine V2 Phase 13 Formal Certification Review certifies the
+implemented and governed V2 scope as production-ready.
+
+The Phase 13 formal certification record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
+
+Phase 13 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+69 passed, 0 failed
+```
+
+Phase 13 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v2-formal-certification
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The Phase 13 formal certification decision is:
+
+```text
+CERTIFIED_PRODUCTION_READY
+```
+
+This certifies the implemented and governed V2 scope only. Production rollout
+still requires a separate governed rollout decision.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -929,5 +975,6 @@ This project state document does not authorize further Recommendation Engine
 API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
 surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
 selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
-and Phase 12 certification readiness validation, pitcher ranking, pitcher
-ordering, scoring, or final pitcher selection.
+Phase 12 certification readiness validation, and Phase 13 formal
+certification review, pitcher ranking, pitcher ordering, scoring, final
+pitcher selection, or production rollout.
