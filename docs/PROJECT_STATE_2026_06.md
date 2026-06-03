@@ -179,6 +179,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
 | BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
+| BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -466,6 +467,12 @@ certification requirements are complete and establish the official readiness
 route strategy, request contract, response contract, metadata contracts,
 fail-closed contract, and backend/frontend/accessibility/governance
 certification gates without changing runtime behavior.
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness backend domain
+foundation is complete and implements the separate backend Team Operations
+domain package, contract constants, metadata objects, deterministic readiness
+assembly, fail-closed behavior, and focused backend tests without registering a
+route, adding frontend behavior, or changing the certified Recommendation
+Engine V2 contract.
 
 The official strategy foundation is:
 
@@ -659,6 +666,11 @@ The V3 Phase 4 Team Operations Bullpen Readiness API contract and
 certification requirements record is:
 
 - `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
+
+The V3 Phase 5 Team Operations Bullpen Readiness backend domain foundation
+record is:
+
+- `docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2548,6 +2560,61 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 4. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain
+Foundation is complete.
+
+The V3 Phase 5 record is:
+
+- `docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md`
+
+Phase 5 implements:
+
+- separate `backend/team_operations` domain package
+- Team Operations readiness contract constants
+- trust metadata contract object
+- freshness metadata contract object
+- refusal metadata contract object
+- fail-closed metadata contract object
+- deterministic `assemble_bullpen_readiness(...)` assembly function
+- team-level readiness payload
+- constraint summary structure
+- workload pressure structure
+- availability distribution structure
+- coverage inventory structure
+- handedness coverage structure
+- explanation and limitation structures
+- fail-closed behavior for missing trust metadata
+- fail-closed behavior for missing freshness metadata
+- fail-closed behavior for explicit refusal input
+- backend domain tests
+
+Phase 5 does not register:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+The route remains planned by Phase 4 and should be integrated only in a later
+bounded milestone.
+
+Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 5 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+frontend runtime behavior, or Recommendation Engine V2 contract changes.
+
+Phase 5 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -2654,12 +2721,15 @@ and V3 readiness decision, or V3 Phase 1 product capability review and
 priority decision, or V3 Phase 2 Team Operations Bullpen Readiness capability
 definition, or V3 Phase 3 Team Operations Bullpen Readiness implementation
 plan, or V3 Phase 4 Team Operations Bullpen Readiness API contract and
-certification requirements, or V2 production fail-closed communication and
+certification requirements, or V3 Phase 5 Team Operations Bullpen Readiness
+backend domain foundation, or V2 production fail-closed communication and
 freshness metadata remediation. Phase 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
 defines the selected capability only. V3 Phase 3 defines implementation
-planning only. V3 Phase 4 defines contract and certification planning only. It
-does not authorize V3 runtime implementation.
+planning only. V3 Phase 4 defines contract and certification planning only.
+V3 Phase 5 authorizes only the backend Team Operations domain foundation and
+tests. It does not authorize route registration, public exposure, frontend
+runtime behavior, or production rollout.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

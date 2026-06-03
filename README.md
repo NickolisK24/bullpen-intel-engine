@@ -134,6 +134,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
 | BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
+| BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -281,6 +282,10 @@ today:
   behavior. V3 Phase 4 is complete and establishes the official Team
   Operations Bullpen Readiness API contract and certification requirements for
   future implementation, preserving the certified V2 recommendation contract.
+  V3 Phase 5 is complete and adds the separate backend Team Operations domain
+  foundation, deterministic readiness assembly, metadata contracts,
+  fail-closed handling, and focused backend tests without registering a route
+  or changing frontend behavior.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -749,6 +754,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   certification requirements, official route strategy, request/response
   contract, readiness metadata contracts, fail-closed contract, response
   examples, and backend/frontend/accessibility/governance certification gates.
+- [`docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md`](docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md)
+  — completed V3 Phase 5 Team Operations Bullpen Readiness backend domain
+  foundation, contract constants, metadata objects, deterministic assembly,
+  fail-closed behavior, focused backend tests, and no route/frontend exposure.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -872,7 +881,10 @@ capability, including the preferred separate Team Operations backend/API
 architecture, governed response contract, Dashboard integration plan, testing
 strategy, certification strategy, and rollout path. V3 Phase 4 is complete and
 establishes the official readiness API contract and certification requirements
-for the separate Team Operations route.
+for the separate Team Operations route. V3 Phase 5 is complete and implements
+the separate backend domain foundation with governed readiness contracts,
+deterministic assembly, fail-closed behavior, and backend tests, without
+registering the route or adding frontend behavior.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
