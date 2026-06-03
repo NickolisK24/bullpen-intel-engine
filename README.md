@@ -127,6 +127,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
+| BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -252,7 +253,10 @@ today:
   Dashboard V2 and V2 bullpen-state API surfaces where current records support
   that specificity. V2.5 Phase 28 assigns packet-level retention ownership,
   defines evidence cadence and monitoring artifact format, and maps production
-  governance evidence to exact test files and test names where available.
+  governance evidence to exact test files and test names where available. V2.5
+  Phase 29 formally closes the governance hardening program and classifies the
+  remaining operational retention gaps as non-blocking for V3 product
+  capability planning.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -337,7 +341,10 @@ today:
   [`docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`](docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md),
   and the completed V2.5 Phase 28 evidence ownership, monitoring artifact, and
   test mapping closeout in
-  [`docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`](docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md).
+  [`docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`](docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md),
+  and the completed V2.5 Phase 29 governance hardening closeout and V3
+  readiness decision in
+  [`docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`](docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -418,6 +425,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md
     ├── V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md
     ├── V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md
+    ├── V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -670,6 +678,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 28 closeout for production evidence ownership,
   monitoring artifact format, retention cadence, exact test mapping, and
   remaining operational retention risks.
+- [`docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`](docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md)
+  — completed V2.5 Phase 29 formal governance hardening closeout, gap
+  classification, V3 product capability planning readiness, and certified V2
+  boundary preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -774,7 +786,9 @@ production evidence citations to source-document sections where current records
 support section-level proof. Phase 28 is complete and assigns production
 evidence retention ownership, defines monitoring artifact format, and maps
 current production governance evidence to exact test files and test names where
-available.
+available. Phase 29 is complete and formally closes the V2.5 governance
+hardening program, with V3 product capability planning ready under the existing
+governance gates.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

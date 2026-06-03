@@ -172,6 +172,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
+| BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -419,6 +420,11 @@ mapping closeout is complete and assigns production packet retention ownership,
 defines evidence retention cadence, defines the monitoring artifact format, and
 maps certified production governance evidence to exact test files and test names
 where current tests support that mapping.
+BaseballOS V2.5 Phase 29 governance hardening closeout and V3 readiness
+decision is complete and formally closes the V2.5 governance hardening
+initiative. Remaining operational retention gaps are classified as non-blocking
+for governance closeout, and V3 product capability planning is ready under the
+existing governance gates.
 
 The official strategy foundation is:
 
@@ -579,6 +585,11 @@ The V2.5 Phase 28 evidence ownership, monitoring artifact, and test mapping
 closeout record is:
 
 - `docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`
+
+The V2.5 Phase 29 governance hardening closeout and V3 readiness decision
+record is:
+
+- `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2054,6 +2065,89 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 28. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness
+Decision formally closes the V2.5 governance hardening initiative.
+
+The Phase 29 closeout record is:
+
+- `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
+
+Phase 29 reviews:
+
+- lifecycle enforcement
+- lifecycle auditability
+- evidence packets
+- evidence reviews
+- citation mapping
+- ownership assignment
+- retention cadence
+- stewardship process
+- test traceability
+
+Phase 29 closeout decision is:
+
+```text
+V2_5_GOVERNANCE_HARDENING_CLOSEOUT_APPROVED
+```
+
+Phase 29 V3 readiness decision is:
+
+```text
+V3_PRODUCT_CAPABILITY_PLANNING_READY_WITH_GOVERNANCE_GATES
+```
+
+Blocking risks:
+
+```text
+NONE_IDENTIFIED_FOR_V2_5_GOVERNANCE_CLOSEOUT
+```
+
+Remaining non-blocking risks:
+
+- first dated operational monitoring artifact is not retained
+- runtime telemetry evidence is not documented
+- continuous-integration artifact publication is not documented
+- optional Dashboard operating checklist is not retained
+- owner-transition procedure is not documented
+
+These are operational retention risks. They do not block governance closeout or
+V3 product capability planning, but they must be addressed before claiming
+complete operational monitoring evidence.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 29 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 29 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-29-governance-closeout
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 29. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -2087,7 +2181,9 @@ lifecycle evidence packet template and initial backfill, or Phase 25 lifecycle
 evidence packet review and backfill execution, or Phase 26 lifecycle evidence
 citation backfill and stewardship review, or Phase 27 lifecycle evidence
 section-level citation map, or Phase 28 evidence ownership, monitoring
-artifact, and test mapping closeout.
+artifact, and test mapping closeout, or Phase 29 governance hardening closeout
+and V3 readiness decision. Phase 29 authorizes V3 product capability planning
+only. It does not authorize V3 runtime implementation.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

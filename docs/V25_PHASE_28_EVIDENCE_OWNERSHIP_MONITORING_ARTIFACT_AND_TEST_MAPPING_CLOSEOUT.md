@@ -489,13 +489,24 @@ regressions.
 
 ## Recommended Next Milestone
 
+Completed follow-up layer:
+
+```text
+BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision
+```
+
+Phase 29 formally closes the V2.5 governance hardening program, classifies
+remaining operational retention gaps as blocking or non-blocking, and records
+V3 product capability planning readiness without changing runtime behavior.
+
 Recommended next milestone:
 
 ```text
-BaseballOS V2.6 Product Capability Planning Restart
+BaseballOS V3 Product Capability Planning
 ```
 
-The V2.6 planning restart should use the completed V2.5 governance hardening
-records as entry criteria before proposing any new product capability, runtime
-behavior, API exposure, recommendation behavior, ranking behavior, selection
-behavior, prediction behavior, or production-surface expansion.
+V3 product capability planning should use the completed V2.5 governance
+hardening records as entry criteria before proposing any new product
+capability, runtime behavior, API exposure, recommendation behavior, ranking
+behavior, selection behavior, prediction behavior, or production-surface
+expansion.
