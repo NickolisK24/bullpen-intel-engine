@@ -929,3 +929,33 @@ The next milestone should remain documentation and contract planning unless
 implementation is explicitly authorized. It should define the exact future API
 contract, response schema, forbidden fields, certification requirements, and
 evidence requirements before runtime work begins.
+
+## V3 Phase 4 Follow-Up
+
+V3 Phase 4 has completed the Team Operations Bullpen Readiness API contract and
+certification requirements:
+
+- `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
+
+Phase 4 establishes the official separate Team Operations route strategy:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+Phase 4 defines the request contract, response contract, readiness status
+contract, constraint contract, workload pressure contract, availability
+distribution contract, coverage inventory contract, handedness coverage
+contract, explanation contract, limitation contract, trust metadata contract,
+freshness metadata contract, refusal metadata contract, governance metadata
+contract, fail-closed contract, response examples, and certification
+requirements for backend, frontend, accessibility, governance, testing, and
+rollout review.
+
+The next milestone after Phase 4 is:
+
+```text
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation
+```
+
+This follow-up does not authorize runtime behavior changes.

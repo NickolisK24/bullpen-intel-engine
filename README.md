@@ -133,6 +133,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
+| BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -277,7 +278,9 @@ today:
   certification gates before any implementation work. V3 Phase 3 is complete
   and converts that definition into a backend, API, frontend, testing,
   certification, and rollout implementation plan without changing runtime
-  behavior.
+  behavior. V3 Phase 4 is complete and establishes the official Team
+  Operations Bullpen Readiness API contract and certification requirements for
+  future implementation, preserving the certified V2 recommendation contract.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -374,7 +377,10 @@ today:
   [`docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`](docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md),
   and the completed V3 Phase 3 Team Operations Bullpen Readiness
   implementation plan in
-  [`docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`](docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md).
+  [`docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`](docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md),
+  and the completed V3 Phase 4 Team Operations Bullpen Readiness API contract
+  and certification requirements in
+  [`docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`](docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -459,6 +465,7 @@ bullpen-intel-engine/
     ├── V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md
     ├── V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md
     ├── V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md
+    ├── V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -737,6 +744,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   proposed response contract, frontend presentation approach, test strategy,
   certification strategy, rollout strategy, and governance boundary
   preservation.
+- [`docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`](docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md)
+  — completed V3 Phase 4 Team Operations Bullpen Readiness API contract and
+  certification requirements, official route strategy, request/response
+  contract, readiness metadata contracts, fail-closed contract, response
+  examples, and backend/frontend/accessibility/governance certification gates.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -858,7 +870,9 @@ no-ranking, no-selection, no-prediction, and no decision-language boundaries.
 V3 Phase 3 is complete and defines the implementation plan for that readiness
 capability, including the preferred separate Team Operations backend/API
 architecture, governed response contract, Dashboard integration plan, testing
-strategy, certification strategy, and rollout path.
+strategy, certification strategy, and rollout path. V3 Phase 4 is complete and
+establishes the official readiness API contract and certification requirements
+for the separate Team Operations route.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

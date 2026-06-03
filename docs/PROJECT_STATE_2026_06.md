@@ -178,6 +178,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
+| BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -460,6 +461,11 @@ BaseballOS V3 Phase 3 Team Operations Bullpen Readiness implementation plan is
 complete and converts the Phase 2 definition into a concrete backend, API,
 frontend, testing, certification, and rollout plan without changing runtime
 behavior.
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements are complete and establish the official readiness
+route strategy, request contract, response contract, metadata contracts,
+fail-closed contract, and backend/frontend/accessibility/governance
+certification gates without changing runtime behavior.
 
 The official strategy foundation is:
 
@@ -648,6 +654,11 @@ The V3 Phase 3 Team Operations Bullpen Readiness implementation plan record
 is:
 
 - `docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`
+
+The V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements record is:
+
+- `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2449,6 +2460,94 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 3. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract And
+Certification Requirements is complete.
+
+The V3 Phase 4 record is:
+
+- `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
+
+Phase 4 defines:
+
+- Team Operations API strategy
+- endpoint strategy
+- route naming decision
+- request contract
+- response contract
+- readiness status contract
+- constraint contract
+- workload pressure contract
+- availability distribution contract
+- coverage inventory contract
+- handedness coverage contract
+- explanation contract
+- limitation contract
+- trust metadata contract
+- freshness metadata contract
+- refusal metadata contract
+- governance metadata contract
+- fail-closed contract
+- successful, degraded, and refusal response examples
+- backend certification requirements
+- frontend certification requirements
+- accessibility certification requirements
+- governance certification requirements
+- testing certification requirements
+- rollout certification requirements
+- risks and mitigations
+
+Phase 4 chosen route strategy:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+Phase 4 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation
+```
+
+Phase 4 is planning-only. It does not authorize implementation, runtime
+behavior changes, API route registration, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, database schema changes,
+lifecycle promotion, production rollout, Prospect Pipeline promotion, or Game
+Context Intelligence implementation.
+
+Phase 4 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 4 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, matchup advice, or Recommendation Engine
+V1 behavior.
+
+Phase 4 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-4-contract
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 4. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -2554,11 +2653,13 @@ artifact, and test mapping closeout, or Phase 29 governance hardening closeout
 and V3 readiness decision, or V3 Phase 1 product capability review and
 priority decision, or V3 Phase 2 Team Operations Bullpen Readiness capability
 definition, or V3 Phase 3 Team Operations Bullpen Readiness implementation
-plan, or V2 production fail-closed communication and freshness metadata
-remediation. Phase 29 authorizes V3 product capability planning only. V3 Phase 1
-selects the next planning direction only. V3 Phase 2 defines the selected
-capability only. V3 Phase 3 defines implementation planning only. It does not
-authorize V3 runtime implementation.
+plan, or V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements, or V2 production fail-closed communication and
+freshness metadata remediation. Phase 29 authorizes V3 product capability
+planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
+defines the selected capability only. V3 Phase 3 defines implementation
+planning only. V3 Phase 4 defines contract and certification planning only. It
+does not authorize V3 runtime implementation.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
