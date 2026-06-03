@@ -128,6 +128,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
+| Recommendation Engine V2 Production Fail-Closed Diagnosis | Complete / Remediation Planning |
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
@@ -259,7 +260,10 @@ today:
   governance evidence to exact test files and test names where available. V2.5
   Phase 29 formally closes the governance hardening program and classifies the
   remaining operational retention gaps as non-blocking for V3 product
-  capability planning. V3 Phase 1 is complete and neutrally evaluates current
+  capability planning. A June 3, 2026 V2 production fail-closed diagnosis
+  finds the production degraded fail-closed state is correctly triggered by
+  stale source evidence while Dashboard communication needs a bounded
+  remediation plan. V3 Phase 1 is complete and neutrally evaluates current
   product paths, selecting Team Operations Bullpen Readiness planning as the
   best next product direction based on current evidence, data availability,
   implementation risk, governance risk, portfolio value, and baseball
@@ -708,6 +712,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 29 formal governance hardening closeout, gap
   classification, V3 product capability planning readiness, and certified V2
   boundary preservation.
+- [`docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`](docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md)
+  — completed V2 production fail-closed diagnosis finding that the degraded
+  fail-closed state is correctly triggered by stale source evidence while
+  user-facing communication needs a bounded remediation plan.
 - [`docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`](docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md)
   — completed V3 Phase 1 product capability review and priority decision,
   neutral option matrix, Team Operations Bullpen Readiness planning
@@ -828,7 +836,10 @@ evidence retention ownership, defines monitoring artifact format, and maps
 current production governance evidence to exact test files and test names where
 available. Phase 29 is complete and formally closes the V2.5 governance
 hardening program, with V3 product capability planning ready under the existing
-governance gates. V3 Phase 1 is complete and selects Team Operations Bullpen
+governance gates. The V2 production fail-closed diagnosis is complete and
+classifies the observed production state as correctly degraded by stale source
+evidence, with UI communication and freshness metadata as the recommended
+remediation path. V3 Phase 1 is complete and selects Team Operations Bullpen
 Readiness planning as the next product direction after reviewing current
 certified capabilities, prototype surfaces, experimental surfaces, legacy
 surfaces, data availability, implementation risk, governance risk, portfolio

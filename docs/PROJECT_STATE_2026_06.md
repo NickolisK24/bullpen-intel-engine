@@ -173,6 +173,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
+| Recommendation Engine V2 Production Fail-Closed Diagnosis | Complete / Remediation Planning |
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
@@ -287,6 +288,10 @@ status, or manager intent.
 - No private clubhouse, medical, travel, or manager-intent data is available.
 - No Statcast, Hawk-Eye biomechanics, Stuff+, or pitch-quality modeling is used.
 - Role-aware starter/reliever handling remains limited.
+- The V2 production fail-closed surface currently communicates degraded
+  source-freshness refusal too generically. The June 3, 2026 diagnosis finds
+  the fail-closed behavior correct, but recommends a bounded UI and freshness
+  metadata remediation plan.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
@@ -428,6 +433,10 @@ decision is complete and formally closes the V2.5 governance hardening
 initiative. Remaining operational retention gaps are classified as non-blocking
 for governance closeout, and V3 product capability planning is ready under the
 existing governance gates.
+The Recommendation Engine V2 production fail-closed diagnosis is complete and
+finds that the observed production degraded fail-closed state is correctly
+triggered by stale source evidence while Dashboard communication and V2
+freshness metadata need a bounded remediation plan.
 BaseballOS V3 Phase 1 product capability review and priority decision is
 complete and neutrally evaluates the current program state, prototype surfaces,
 experimental surfaces, legacy surfaces, data availability, implementation risk,
@@ -610,6 +619,10 @@ The V2.5 Phase 29 governance hardening closeout and V3 readiness decision
 record is:
 
 - `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
+
+The Recommendation Engine V2 production fail-closed diagnosis record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`
 
 The V3 Phase 1 product capability review and priority decision record is:
 
@@ -2424,6 +2437,36 @@ Result: Passed after targeted documentation staging.
 
 Root `npm test` is not required for Phase 3. No root `package.json` exists,
 which is expected and is not a project failure.
+
+## V2 Production Fail-Closed Diagnosis
+
+Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
+
+The diagnosis record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`
+
+The diagnosis decision is:
+
+```text
+Fail-closed functioning correctly but UI communication insufficient
+```
+
+The diagnosis finds that the observed production `FAIL-CLOSED` surface is a
+degraded non-critical response triggered by stale source evidence, not by trust
+metadata failure, ranking behavior, selection behavior, prediction behavior, or
+global sync-status failure.
+
+The recommended next milestone is:
+
+```text
+V2 Production Fail-Closed Communication and Freshness Metadata Remediation Plan
+```
+
+This diagnosis does not change backend recommendation logic, API contracts,
+trust logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, or recommended option behavior.
 
 ## Future Expansion Boundary
 
