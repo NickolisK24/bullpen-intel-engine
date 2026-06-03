@@ -126,6 +126,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution | Complete |
 | BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
+| BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -249,7 +250,9 @@ today:
   references where current records support them. V2.5 Phase 27 converts those
   production citations into section-level citation maps for the certified
   Dashboard V2 and V2 bullpen-state API surfaces where current records support
-  that specificity.
+  that specificity. V2.5 Phase 28 assigns packet-level retention ownership,
+  defines evidence cadence and monitoring artifact format, and maps production
+  governance evidence to exact test files and test names where available.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -331,7 +334,10 @@ today:
   [`docs/V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md`](docs/V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md),
   and the completed V2.5 Phase 27 lifecycle evidence section-level citation
   map in
-  [`docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`](docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md).
+  [`docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`](docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md),
+  and the completed V2.5 Phase 28 evidence ownership, monitoring artifact, and
+  test mapping closeout in
+  [`docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`](docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -411,6 +417,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_25_LIFECYCLE_EVIDENCE_PACKET_REVIEW_AND_BACKFILL_EXECUTION.md
     ├── V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md
     ├── V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md
+    ├── V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -659,6 +666,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 27 section-level citation map for certified
   production evidence, stewardship traceability, remaining uncited evidence,
   and governance closeout readiness.
+- [`docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`](docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md)
+  — completed V2.5 Phase 28 closeout for production evidence ownership,
+  monitoring artifact format, retention cadence, exact test mapping, and
+  remaining operational retention risks.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -760,7 +771,10 @@ readiness classifications for the first formal backfill execution pass. V2.5
 Phase 26 is complete and performs the first citation backfill and stewardship
 review for certified production evidence. Phase 27 is complete and maps those
 production evidence citations to source-document sections where current records
-support section-level proof.
+support section-level proof. Phase 28 is complete and assigns production
+evidence retention ownership, defines monitoring artifact format, and maps
+current production governance evidence to exact test files and test names where
+available.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

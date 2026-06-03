@@ -171,6 +171,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution | Complete |
 | BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
+| BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -413,6 +414,11 @@ complete and converts production evidence citations for Dashboard V2 Bullpen
 Intelligence and `/api/recommendations/v2/bullpen-state` from document-level
 references to source-document section references wherever current records
 support that specificity.
+BaseballOS V2.5 Phase 28 evidence ownership, monitoring artifact, and test
+mapping closeout is complete and assigns production packet retention ownership,
+defines evidence retention cadence, defines the monitoring artifact format, and
+maps certified production governance evidence to exact test files and test names
+where current tests support that mapping.
 
 The official strategy foundation is:
 
@@ -568,6 +574,11 @@ record is:
 The V2.5 Phase 27 lifecycle evidence section-level citation map record is:
 
 - `docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`
+
+The V2.5 Phase 28 evidence ownership, monitoring artifact, and test mapping
+closeout record is:
+
+- `docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1952,6 +1963,97 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 27. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test
+Mapping Closeout closes the remaining production evidence-quality gaps
+identified in Phase 27 where current records and tests support closeout.
+
+The Phase 28 closeout record is:
+
+- `docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`
+
+Phase 28 focuses exclusively on:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+
+Phase 28 establishes:
+
+- evidence ownership model
+- packet-level owner assignment
+- evidence retention cadence
+- evidence retention responsibility matrix
+- monitoring artifact format
+- monitoring artifact retention requirements
+- test mapping methodology
+- exact test-file, test-name, and assertion-group mapping where available
+- production surface test mapping
+- Dashboard V2 runbook evidence assessment
+- API-to-frontend accessibility field traceability assessment
+- remaining unmapped evidence
+- governance closeout readiness assessment
+
+Phase 28 owner and retention closeout is:
+
+| Surface | Maintainer Of Record | Evidence Collection Owner | Packet-Level Retention Owner | Retention Cadence |
+|---------|----------------------|---------------------------|------------------------------|-------------------|
+| Dashboard V2 Bullpen Intelligence | Nikko | Frontend governance | Documentation governance under Nikko | Monthly while V2.5 closeout remains active; before lifecycle movement; after certification, rollout, monitoring, or test mapping changes. |
+| `/api/recommendations/v2/bullpen-state` | Nikko | Backend governance | Documentation governance under Nikko | Monthly while V2.5 closeout remains active; before lifecycle movement; after certification, rollout, monitoring, contract, or test mapping changes. |
+
+Phase 28 maps exact production evidence tests in:
+
+- `backend/tests/test_recommendation_v2_api_contract.py`
+- `frontend/tests/recommendationV2Api.test.mjs`
+- `frontend/tests/recommendationV2Rendering.test.mjs`
+
+Supporting internal V2 backend suites are identified for context assembly,
+inventory visibility, neutral intelligence, team bullpen context, trust
+metadata integration, and refusal/fail-closed behavior.
+
+Phase 28 defines a retained monitoring artifact format, but the first dated
+operational monitoring artifact is still missing. Runtime telemetry feed
+evidence and continuous-integration artifact publication are also not yet
+documented.
+
+Phase 28 governance closeout readiness is:
+
+```text
+V2_5_GOVERNANCE_HARDENING_CLOSEOUT = APPROPRIATE_WITH_OPERATIONAL_RETENTION_RISK
+```
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 28 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 28 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-28-evidence-closeout
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 28. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1984,7 +2086,8 @@ or Phase 23 lifecycle evidence backfill and owner assignment plan, or Phase 24
 lifecycle evidence packet template and initial backfill, or Phase 25 lifecycle
 evidence packet review and backfill execution, or Phase 26 lifecycle evidence
 citation backfill and stewardship review, or Phase 27 lifecycle evidence
-section-level citation map.
+section-level citation map, or Phase 28 evidence ownership, monitoring
+artifact, and test mapping closeout.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
