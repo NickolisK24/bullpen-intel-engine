@@ -143,6 +143,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review | Ready for Formal Certification Planning |
 | BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
 | BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review | Certified With Non-Blocking Operational Gaps / Rollout Not Approved |
+| BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring | Ready With Pending Manual Evidence / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -328,7 +329,12 @@ today:
   is complete and formally certifies Team Operations Bullpen Readiness with
   non-blocking operational gaps while keeping the route and UI internal,
   non-production, and uncertified until a separate rollout decision. Production
-  rollout is not approved.
+  rollout is not approved. V3 Phase 14 is complete and creates the controlled
+  rollout plan, monitoring artifact format, first retained monitoring artifact
+  stub, rollback criteria, stop conditions, and post-rollout observation
+  requirements. The controlled rollout decision is
+  `CONTROLLED_ROLLOUT_READY_WITH_PENDING_MANUAL_EVIDENCE`; full production
+  rollout remains not approved.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -455,7 +461,10 @@ today:
   [`docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`](docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md),
   and the completed V3 Phase 13 Team Operations Bullpen Readiness formal
   certification review in
-  [`docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`](docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md).
+  [`docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`](docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md),
+  and the completed V3 Phase 14 Team Operations Bullpen Readiness controlled
+  rollout and monitoring plan in
+  [`docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`](docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -878,6 +887,16 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   accessibility, governance, freshness, trust, refusal/fail-closed, V2
   regression, monitoring artifact, evidence packet, certification decision,
   rollout status, and remaining operational gaps.
+- [`docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`](docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md)
+  — completed V3 Phase 14 controlled rollout planning and monitoring artifact
+  framework for Team Operations Bullpen Readiness, including rollout stages,
+  deployment smoke-review checklist, manual browser/mobile/accessibility
+  checklists, monitoring artifact format, initial artifact stub, rollback
+  criteria, stop conditions, and rollout decision.
+- [`docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md`](docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md)
+  — initial retained monitoring artifact stub for Team Operations Bullpen
+  Readiness with pending deployment, browser, mobile, accessibility, and
+  maintainer-review evidence fields.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1026,7 +1045,9 @@ panel. V3 Phase 11 is complete and classifies that UI as ready for formal
 certification planning only. V3 Phase 12 is complete and defines formal
 certification and rollout prerequisites. V3 Phase 13 is complete and certifies
 Team Operations Bullpen Readiness with non-blocking operational gaps while
-withholding production rollout approval.
+withholding production rollout approval. V3 Phase 14 is complete and creates
+the controlled rollout plan plus the initial monitoring artifact stub while
+keeping full production rollout unapproved.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

@@ -188,6 +188,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review | Ready for Formal Certification Planning |
 | BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
 | BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review | Certified With Non-Blocking Operational Gaps / Rollout Not Approved |
+| BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring | Ready With Pending Manual Evidence / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -545,6 +546,12 @@ domain, internal route, frontend client normalization, and Dashboard UI with
 non-blocking operational gaps. It does not approve production rollout. The
 route and UI remain internal, non-production, and uncertified until a separate
 rollout decision.
+BaseballOS V3 Phase 14 Team Operations Bullpen Readiness controlled rollout
+and monitoring is complete and creates the controlled rollout plan, monitoring
+artifact format, initial retained artifact stub, rollback criteria, stop
+conditions, and post-rollout observation requirements. The controlled rollout
+decision is `CONTROLLED_ROLLOUT_READY_WITH_PENDING_MANUAL_EVIDENCE`. Full
+production rollout remains not approved.
 
 The official strategy foundation is:
 
@@ -783,6 +790,12 @@ The V3 Phase 13 Team Operations Bullpen Readiness formal certification review
 record is:
 
 - `docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`
+
+The V3 Phase 14 Team Operations Bullpen Readiness controlled rollout and
+monitoring records are:
+
+- `docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -3124,6 +3137,68 @@ Phase 13 recommended next milestone:
 BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout Planning and Monitoring Artifact Capture
 ```
 
+## BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring
+
+BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout
+and Monitoring is complete.
+
+The V3 Phase 14 records are:
+
+- `docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md`
+
+Phase 14 creates the controlled rollout planning and monitoring artifact
+framework required after Phase 13 formal certification. It defines controlled
+rollout stages, deployment smoke-review requirements, manual browser review
+requirements, mobile review requirements, accessibility review requirements,
+monitoring artifact format, initial retained artifact stub, evidence retention
+requirements, rollback criteria, stop conditions, and post-rollout observation
+requirements.
+
+Phase 14 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_READY_WITH_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 14 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 14 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 14 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 14 does not authorize full production rollout, public route
+certification, route exposure changes, backend route changes, frontend
+implementation changes, Recommendation Engine V2 contract changes, fatigue
+formula changes, availability threshold changes, ranking behavior, selection
+behavior, prediction behavior, best option behavior, preferred option
+behavior, recommended option behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+
+Phase 14 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3240,7 +3315,8 @@ Phase 10 Team Operations Bullpen Readiness Dashboard UI integration, or V3
 Phase 11 Team Operations Bullpen Readiness Dashboard UI certification-readiness
 review, or V3 Phase 12 Team Operations Bullpen Readiness formal certification
 plan and rollout prerequisites, or V3 Phase 13 Team Operations Bullpen
-Readiness formal certification review, or V2
+Readiness formal certification review, or V3 Phase 14 Team Operations Bullpen
+Readiness controlled rollout and monitoring, or V2
 production fail-closed communication and freshness metadata remediation. Phase
 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
@@ -3283,6 +3359,14 @@ the formal certification review and certification decision for Team Operations
 Bullpen Readiness. It does not authorize production rollout, public exposure,
 route exposure changes, backend route changes, frontend implementation
 changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice. V3 Phase 14 authorizes
+only controlled rollout planning, monitoring artifact format creation, initial
+monitoring artifact stub retention, rollback criteria, stop conditions, and
+post-rollout observation requirements for Team Operations Bullpen Readiness.
+It does not authorize full production rollout, public exposure, route exposure
+changes, backend route changes, frontend implementation changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher
 selection, pitcher recommendation, prediction behavior, hidden priority
 ordering, pitcher-level advice, or matchup advice.
 
