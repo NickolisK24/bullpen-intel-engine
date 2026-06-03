@@ -170,6 +170,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill | Complete |
 | BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution | Complete |
 | BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
+| BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -407,6 +408,11 @@ BaseballOS V2.5 Phase 26 lifecycle evidence citation backfill and stewardship
 review is complete and performs the first production-focused citation review
 for certified V2 evidence, replacing broad packet claims with documented source
 references where current records support them.
+BaseballOS V2.5 Phase 27 lifecycle evidence section-level citation mapping is
+complete and converts production evidence citations for Dashboard V2 Bullpen
+Intelligence and `/api/recommendations/v2/bullpen-state` from document-level
+references to source-document section references wherever current records
+support that specificity.
 
 The official strategy foundation is:
 
@@ -558,6 +564,10 @@ The V2.5 Phase 26 lifecycle evidence citation backfill and stewardship review
 record is:
 
 - `docs/V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md`
+
+The V2.5 Phase 27 lifecycle evidence section-level citation map record is:
+
+- `docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1864,6 +1874,84 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 26. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map
+converts the Phase 26 production citation backfill from document-level
+references to source-document section references wherever current records
+support that specificity.
+
+The Phase 27 section-level citation map record is:
+
+- `docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`
+
+Phase 27 focuses exclusively on:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+
+Phase 27 establishes:
+
+- stewardship review follow-up
+- citation mapping methodology
+- section-level citation standards
+- production surface citation inventory
+- certification citation map
+- governance citation map
+- testing citation map
+- accessibility citation map
+- rollout citation map
+- monitoring citation map
+- evidence retention citation map
+- remaining uncited evidence inventory
+- citation quality assessment
+- stewardship readiness reassessment
+
+Phase 27 stewardship reassessment is:
+
+| Surface | Phase 27 Reassessment |
+|---------|-----------------------|
+| Dashboard V2 Bullpen Intelligence | STEWARDSHIP_READY_WITH_SECTION_LEVEL_CITATION_GAPS |
+| `/api/recommendations/v2/bullpen-state` | STEWARDSHIP_READY_WITH_SECTION_LEVEL_CITATION_GAPS |
+
+Phase 27 improves traceability for certification, governance, rollout,
+monitoring expectations, accessibility, and retained source documents. It
+still preserves exact test-file/test-name mapping, packet-level retention
+owners, packet retention cadence, Dashboard runbook evidence, and dated
+operational monitoring artifacts as remaining evidence gaps.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 27 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 27 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-27-citation-map
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 27. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1895,7 +1983,8 @@ enforcement checklist, or Phase 22 lifecycle review log and adoption audit,
 or Phase 23 lifecycle evidence backfill and owner assignment plan, or Phase 24
 lifecycle evidence packet template and initial backfill, or Phase 25 lifecycle
 evidence packet review and backfill execution, or Phase 26 lifecycle evidence
-citation backfill and stewardship review.
+citation backfill and stewardship review, or Phase 27 lifecycle evidence
+section-level citation map.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

@@ -448,7 +448,7 @@ that is expected and is not a project failure.
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map
@@ -458,3 +458,14 @@ Phase 27 should convert Phase 26 document-level citations into packet-level
 section references, map production evidence to specific backend and frontend
 test files, and define the retained monitoring artifact format without changing
 runtime behavior.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 28 Lifecycle Evidence Packet Closeout and Retention Owner Assignment
+```
+
+Phase 28 should assign packet-level retention owners, define retained monitoring
+artifact format, map production evidence to exact test file and test names, and
+determine whether the lifecycle governance evidence track is ready for closeout
+without changing runtime behavior.
