@@ -148,6 +148,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
 | BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
 | Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
+| Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -356,6 +357,12 @@ today:
   selecting the development configuration. Team Operations Bullpen Readiness
   rollout remains blocked until the deployed backend reports production health
   evidence with debug disabled and manual rollout evidence is retained.
+  Operational Remediation 1 is complete and classifies the required remediation
+  as `EXTERNAL_DEPLOYMENT_CONFIG_REQUIRED`: local production-mode health
+  verifies `environment = production` and `debug = false`, while deployed health
+  still reports `environment = development` and `debug = true`. Render must set
+  `APP_ENV=production` with required production variables before V3 rollout
+  review can resume.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -962,6 +969,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   `environment: development` / `debug: true` health finding, concluding the
   deployment configuration is incorrect and keeping Team Operations Bullpen
   Readiness rollout blocked pending production configuration remediation.
+- [`docs/OPERATIONAL_REMEDIATION_1_DEPLOYMENT_PRODUCTION_CONFIG_HEALTH_VERIFICATION.md`](docs/OPERATIONAL_REMEDIATION_1_DEPLOYMENT_PRODUCTION_CONFIG_HEALTH_VERIFICATION.md)
+  — completed operational remediation record defining the Render production
+  environment variables, health verification target, local production-mode
+  health result, external deployment action, and continued rollout blocker.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1127,6 +1138,11 @@ and explicit maintainer evidence remain pending. Operational Review 1 is
 complete and concludes the deployed backend selected development configuration,
 not a production-safe configuration. Controlled rollout remains blocked until
 deployment configuration is remediated and health/manual evidence is retained.
+Operational Remediation 1 is complete and confirms the repository production
+configuration path returns production/debug-safe health locally, but deployed
+Render health still does not meet the production target. Controlled rollout
+remains blocked until Render production variables are corrected and deployed
+health verifies `environment: production` and `debug: false`.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

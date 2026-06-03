@@ -295,6 +295,29 @@ configured for one-command production deployment.
   switch and the production safety checks, but full deployment (host setup,
   managed Postgres, a production scheduler) is still future work.
 
+### Render production configuration checklist
+
+For the hosted backend on Render, the service environment must include:
+
+| Variable | Required production expectation |
+| --- | --- |
+| `APP_ENV` | `production` |
+| `SECRET_KEY` | Strong, unique, non-default secret |
+| `DATABASE_URL` | Hosted PostgreSQL connection string |
+| `ADMIN_API_TOKEN` | Non-empty token for protected operational endpoints |
+
+After any Render environment change, redeploy or restart the backend and verify:
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+status: ok
+environment: production
+debug: false
+```
+
+If deployed health reports `environment: development` or `debug: true`, the
+deployment must not be treated as production-safe rollout evidence.
+
 ### Automated daily sync (production)
 
 In hosted production (frontend on Vercel, backend on Render), don't rely on the

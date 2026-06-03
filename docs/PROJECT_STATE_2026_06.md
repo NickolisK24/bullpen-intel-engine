@@ -193,6 +193,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
 | BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
 | Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
+| Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -3563,6 +3564,85 @@ Operational Review 1 recommended next milestone:
 Operational Remediation 1 - Deployment Production Configuration Correction and Health Verification
 ```
 
+## Operational Remediation 1 Deployment Production Config Health Verification
+
+Operational Remediation 1 Deployment Production Configuration Correction and
+Health Verification is complete.
+
+The remediation record is:
+
+- `docs/OPERATIONAL_REMEDIATION_1_DEPLOYMENT_PRODUCTION_CONFIG_HEALTH_VERIFICATION.md`
+
+Remediation assessment:
+
+```text
+EXTERNAL_DEPLOYMENT_CONFIG_REQUIRED
+```
+
+Operational Remediation 1 finds:
+
+- repository production-mode health verification succeeds when
+  `APP_ENV=production`, `DATABASE_URL`, `SECRET_KEY`, and `ADMIN_API_TOKEN` are
+  supplied.
+- local `/api/health` reports `environment = production` and `debug = false`
+  under those process-level production variables.
+- deployed `/api/health` still reports `environment = development` and
+  `debug = true`.
+- no repository runtime fix is required for the immediate remediation because
+  the repository-controlled production config path behaves as expected.
+- Render service environment variables must be corrected externally before
+  controlled rollout can be reopened.
+
+Required Render production health target:
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+status: ok
+environment: production
+debug: false
+```
+
+Required external deployment actions:
+
+- set `APP_ENV=production` in the Render backend service.
+- confirm `SECRET_KEY` is strong and non-default.
+- confirm `DATABASE_URL` points to hosted PostgreSQL.
+- confirm `ADMIN_API_TOKEN` is set.
+- redeploy or restart the backend service.
+- retain deployed health evidence after remediation.
+
+Operational Remediation 1 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Operational Remediation 1 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+- V3 Team Operations Bullpen Readiness remains internal, non-production, and
+  uncertified
+
+Rollout impact decision:
+
+```text
+CONTROLLED_ROLLOUT_REMAINS_BLOCKED
+```
+
+Operational Remediation 1 recommended next milestone:
+
+```text
+Operational Verification 1 - Render Production Health Evidence Capture and Rollout Blocker Reassessment
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3772,6 +3852,14 @@ backend route changes, frontend implementation changes, Recommendation Engine
 V2 contract changes, pitcher ranking, pitcher selection, pitcher
 recommendation, prediction behavior, hidden priority ordering, pitcher-level
 advice, or matchup advice.
+Operational Remediation 1 authorizes only repository-controlled documentation,
+deployment configuration guidance, local production-mode health verification,
+external Render variable requirements, and rollout-blocker retention. It does
+not authorize controlled rollout approval, full production rollout, public
+exposure, route exposure changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

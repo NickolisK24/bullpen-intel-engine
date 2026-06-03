@@ -538,6 +538,26 @@ retain `/api/health` evidence, verify protected write/admin endpoint behavior,
 rerun backend and frontend validation, and then decide whether V3 Phase 18
 manual browser review can proceed.
 
+## Operational Remediation 1 Follow-Up
+
+Operational Remediation 1 is complete in:
+
+```text
+docs/OPERATIONAL_REMEDIATION_1_DEPLOYMENT_PRODUCTION_CONFIG_HEALTH_VERIFICATION.md
+```
+
+Remediation assessment:
+
+```text
+EXTERNAL_DEPLOYMENT_CONFIG_REQUIRED
+```
+
+The follow-up confirms the repository production configuration path returns
+`environment = production` and `debug = false` when required production
+variables are supplied locally. The deployed backend still reports
+`environment = development` and `debug = true`, so Render environment variables
+must be corrected externally before controlled rollout can be reopened.
+
 ## Governance Confirmation
 
 Operational Review 1 preserves:
