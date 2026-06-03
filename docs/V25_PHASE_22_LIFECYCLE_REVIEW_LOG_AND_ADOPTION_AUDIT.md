@@ -344,12 +344,23 @@ Result: Passed after targeted documentation staging.
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan
 ```
 
-Phase 23 should turn the Phase 22 adoption findings into owner, runbook,
-metadata, test, and migration-evidence backfill tasks for the current
-prototype, experimental, and legacy surfaces.
+Phase 23 turns the Phase 22 adoption findings into a structured ownership,
+runbook, metadata, test, governance, certification, and migration-evidence
+backfill framework for the current prototype, experimental, supported, and
+legacy surfaces.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill
+```
+
+Phase 24 should convert the Phase 23 framework into reusable evidence packet
+templates and begin backfilling the highest-priority owner, runbook, metadata,
+test, and migration records without changing runtime behavior.

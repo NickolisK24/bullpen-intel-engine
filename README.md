@@ -121,6 +121,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
+| BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -230,7 +231,10 @@ today:
   production promotion, deprecation, removal, and intelligence-surface review.
   V2.5 Phase 22 adds the lifecycle review log and adoption audit layer that
   records checklist usage, evidence requirements, surface-by-surface review
-  findings, and remaining owner/runbook/metadata/test evidence gaps.
+  findings, and remaining owner/runbook/metadata/test evidence gaps. V2.5
+  Phase 23 converts those findings into the owner assignment, evidence gap,
+  promotion-readiness, and evidence acquisition framework required before any
+  prototype, experimental, or legacy lifecycle movement can proceed.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -297,7 +301,10 @@ today:
   and the completed V2.5 Phase 21 lifecycle enforcement checklist in
   [`docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`](docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md),
   and the completed V2.5 Phase 22 lifecycle review log and adoption audit in
-  [`docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`](docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md).
+  [`docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`](docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md),
+  and the completed V2.5 Phase 23 lifecycle evidence backfill and owner
+  assignment plan in
+  [`docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`](docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -372,6 +379,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md
     ├── V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md
     ├── V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md
+    ├── V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -600,6 +608,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 22 audit layer for lifecycle review logging,
   checklist adoption evidence, surface-by-surface readiness findings, and
   owner/runbook/metadata/test evidence requirements.
+- [`docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`](docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md)
+  — completed V2.5 Phase 23 framework for owner assignment, evidence backfill,
+  evidence gap inventory, promotion-readiness review, and acquisition
+  priorities before lifecycle movement.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -690,7 +702,9 @@ is complete and converts that lifecycle policy into enforceable checklists for
 promotion, production eligibility, deprecation, removal, and intelligence
 surface review. V2.5 Phase 22 is complete and adds the lifecycle review log
 and adoption audit layer that proves checklist usage and evidence gaps are
-tracked before any future lifecycle movement.
+tracked before any future lifecycle movement. V2.5 Phase 23 is complete and
+converts those audit findings into a structured owner assignment and evidence
+backfill plan for prototype, experimental, supported, and legacy surfaces.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

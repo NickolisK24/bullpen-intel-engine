@@ -166,6 +166,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
 | BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
+| BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -387,6 +388,10 @@ eligibility, deprecation, removal, and future intelligence-surface review.
 BaseballOS V2.5 Phase 22 lifecycle review log and adoption audit is complete
 and adds the auditable record layer for checklist usage, evidence requirements,
 surface-by-surface readiness findings, and remaining adoption risks.
+BaseballOS V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan
+is complete and converts those adoption findings into a structured owner,
+runbook, metadata, test, governance, certification, and migration-evidence
+framework before any future lifecycle movement.
 
 The official strategy foundation is:
 
@@ -519,6 +524,10 @@ The V2.5 Phase 21 lifecycle enforcement checklist record is:
 The V2.5 Phase 22 lifecycle review log and adoption audit record is:
 
 - `docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`
+
+The V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan is:
+
+- `docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1505,6 +1514,81 @@ git diff --cached --check
 Result: Passed after targeted documentation staging.
 ```
 
+BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan
+converts the Phase 22 adoption audit findings into a structured evidence
+acquisition framework.
+
+The Phase 23 plan is:
+
+- `docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`
+
+Phase 23 requires every future lifecycle movement to resolve or explicitly
+record:
+
+- surface owner and owning area
+- evidence collection owner
+- runbook and maintenance expectations
+- trust, freshness, refusal, and fail-closed metadata evidence where applicable
+- test evidence for normal, stale, missing, malformed, unsupported, and
+  governance-unsafe behavior where applicable
+- governance review evidence, including ranking, selection, prediction, and
+  best/preferred/recommended behavior review
+- certification evidence before production eligibility
+- rollout evidence before production eligibility
+- legacy consumer, migration, notice, and approval evidence before deprecation
+  or removal
+
+Phase 23 surface-by-surface evidence review confirms:
+
+- certified V2 production remains unchanged
+- supported surfaces need stronger runbook and evidence-retention records
+  before any production classification
+- Prospect Pipeline UI, Prospect APIs, and Dashboard Pipeline Snapshot remain
+  PROTOTYPE and fail Prototype -> Experimental evidence readiness
+- Fatigue-to-ERA insight, latest-workload snapshot mode, MLB passthrough
+  helpers, and threshold experimentation tooling remain EXPERIMENTAL and fail
+  Experimental -> Supported evidence readiness
+- metadata-less fatigue array response and standalone fatigue recalculation
+  script remain LEGACY and need consumer, replacement, migration, and retirement
+  evidence before deprecation
+
+Phase 23 explicitly confirms no current prototype or experimental surface is
+promotion-ready.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 23 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 23 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-23-evidence-backfill
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 23. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1533,5 +1617,7 @@ post-rollout monitoring and boundary review, or Phase 18 maintenance warning
 remediation review, or Phase 19 prototype surface maintenance review, or
 Phase 20 prototype promotion and deprecation policy, or Phase 21 lifecycle
 enforcement checklist, or Phase 22 lifecycle review log and adoption audit,
-pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
-automated decision behavior.
+or Phase 23 lifecycle evidence backfill and owner assignment plan.
+
+This project state document also does not authorize pitcher ranking, pitcher
+ordering, scoring, final pitcher selection, or new automated decision behavior.
