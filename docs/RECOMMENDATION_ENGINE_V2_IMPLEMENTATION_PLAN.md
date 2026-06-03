@@ -1148,17 +1148,95 @@ inventory category summaries first and exposing full membership on demand.
 - `ranking_applied === false` remains visible.
 - `selection_made === false` remains visible.
 
-## 22. Phase 15: Production Rollout Decision
+## 22. V2.5 Phase 15: Intelligence Presentation Optimization
+
+**Implementation status**
+
+Complete.
+
+BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization is complete.
+This post-certification usability milestone audits the full Dashboard V2
+intelligence surface and reduces raw-structure exposure beyond inventory while
+preserving all certified V2 transparency and governance guarantees.
+
+Completion record:
+
+- `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
+
+**Goal**
+
+Reduce initial Dashboard V2 page length and cognitive load by presenting
+intelligence summaries before high-volume details across all V2 dashboard
+sections.
+
+**Allowed work**
+
+- Summary-first presentation.
+- Progressive disclosure UX.
+- Collapsible sections.
+- Expandable details.
+- Show-more patterns.
+- Member visibility controls.
+- Information-density optimization.
+- Mobile presentation improvements.
+- Frontend tests.
+- Documentation updates.
+
+**Forbidden work**
+
+- Do not change backend logic.
+- Do not change API contracts.
+- Do not change recommendation logic.
+- Do not change trust logic.
+- Do not change freshness logic.
+- Do not change refusal logic.
+- Do not add ranking, selection, prediction, or final pitcher choice UI.
+
+**Dependencies**
+
+- Phase 13 certification review complete.
+- V2.5 Phase 14 inventory presentation optimization complete.
+- Certified V2 frontend contract remains active.
+
+**Required tests**
+
+- Frontend rendering tests for collapsed and expanded intelligence sections.
+- Summary visibility tests.
+- Detail accessibility tests.
+- Trust and freshness preservation tests.
+- Refusal, limitation, explanation, and fail-closed visibility tests.
+- Prohibited decision-language scans.
+- High-volume mobile-length reduction tests.
+
+**Documentation updates**
+
+- Produce the Phase 15 intelligence presentation optimization record.
+- Update README, project state, and roadmap docs.
+
+**Exit criteria**
+
+- Dashboard V2 sections are audited and classified.
+- Verbose sections are collapsed by default.
+- Counts, summaries, state, trust, freshness, limitations, explanations, and
+  refusal summaries are visible.
+- Full detail remains available on demand.
+- Initial high-volume intelligence text is reduced by at least 80%.
+- V2 behavior remains within certified scope.
+- `ranking_applied === false` remains visible.
+- `selection_made === false` remains visible.
+
+## 23. Phase 16: Production Rollout Decision
 
 **Goal**
 
 Make a governed production rollout decision after implementation,
-certification, and post-certification inventory usability work are complete.
+certification, and post-certification usability work are complete.
 
 **Allowed work**
 
 - Review certification evidence.
 - Review Phase 14 usability evidence.
+- Review Phase 15 usability evidence.
 - Confirm documentation is complete.
 - Confirm feature visibility is controlled.
 - Confirm production risk is acceptable.
@@ -1176,10 +1254,12 @@ certification, and post-certification inventory usability work are complete.
 
 - Phase 13 certification review complete.
 - V2.5 Phase 14 inventory presentation optimization complete.
+- V2.5 Phase 15 intelligence presentation optimization complete.
 
 **Required tests**
 
-- Final verification tests selected from certification and Phase 14 evidence.
+- Final verification tests selected from certification, Phase 14, and Phase 15
+  evidence.
 - Smoke checks appropriate to deployment scope.
 
 **Documentation updates**
@@ -1193,7 +1273,7 @@ certification, and post-certification inventory usability work are complete.
 - Production status is documented.
 - V2 behavior remains within certified scope.
 
-## 23. Dependency Map
+## 24. Dependency Map
 
 Implementation order must remain sequential unless an approved implementation
 review explicitly narrows a phase without weakening governance.
@@ -1214,7 +1294,8 @@ Phase 0 Repo Hygiene
   -> Phase 12 Certification Readiness Validation
   -> Phase 13 Certification Review
   -> V2.5 Phase 14 Inventory Presentation Optimization
-  -> Phase 15 Production Rollout Decision
+  -> V2.5 Phase 15 Intelligence Presentation Optimization
+  -> Phase 16 Production Rollout Decision
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1222,7 +1303,7 @@ exist before frontend rendering. Frontend rendering must exist before mobile and
 accessibility certification. All runtime implementation must pass tests before
 certification review.
 
-## 24. Expected File/Module Areas
+## 25. Expected File/Module Areas
 
 Future implementation may touch these areas, subject to phase approval:
 
@@ -1252,7 +1333,7 @@ directories as part of V2 feature work:
 If those files appear in `git status`, they must be treated as unrelated drift
 unless explicitly approved for a separate maintenance task.
 
-## 25. Testing Plan
+## 26. Testing Plan
 
 Required test categories:
 
@@ -1284,7 +1365,7 @@ Testing expectations:
   imply ranking or selection.
 - V1 tests must continue to pass without weakening assertions.
 
-## 26. Rollout and Visibility Strategy
+## 27. Rollout and Visibility Strategy
 
 V2 should roll out only after implementation completion and certification
 review. The preferred visibility path is:
@@ -1298,7 +1379,7 @@ review. The preferred visibility path is:
 Rollout must preserve user decision authority. V2 output may organize,
 summarize, and explain bullpen information. It must not choose, rank, or decide.
 
-## 27. Feature Flag Strategy
+## 28. Feature Flag Strategy
 
 V2 should use a controlled visibility mechanism until production certification
 is complete.
@@ -1315,7 +1396,7 @@ The flag or visibility mechanism must not bypass governance checks. Hidden or
 disabled V2 code must still preserve no-ranking, no-selection, trust metadata,
 freshness, limitations, explanations, and refusal behavior.
 
-## 28. Risk Controls
+## 29. Risk Controls
 
 Scope creep controls:
 
@@ -1368,7 +1449,7 @@ Worktree drift controls:
 - Stage named files only when unrelated drift exists.
 - Keep generated frontend artifacts and dependency drift out of V2 commits.
 
-## 29. Implementation Stop Conditions
+## 30. Implementation Stop Conditions
 
 Implementation must stop if:
 
@@ -1386,7 +1467,7 @@ Implementation must stop if:
 
 Stop conditions require review before implementation continues.
 
-## 30. Definition of Implementation Complete
+## 31. Definition of Implementation Complete
 
 Implementation complete means:
 
@@ -1405,7 +1486,7 @@ Implementation complete means:
 
 Implementation complete does not mean production certified.
 
-## 31. Definition of Production Certified
+## 32. Definition of Production Certified
 
 Production certified requires:
 
@@ -1423,15 +1504,15 @@ requires:
 Production certification must be evidence-based and must preserve the full V2
 governance package. Production rollout must be recorded separately.
 
-## 32. Next Milestone
+## 33. Next Milestone
 
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 15 Production Rollout Decision
+Recommendation Engine V2 Phase 16 Production Rollout Decision
 ```
 
 This milestone may begin only after the user explicitly approves production
-rollout decision review. Phase 15 must decide whether the certified V2 system
+rollout decision review. Phase 16 must decide whether the certified V2 system
 is approved, deferred, or rejected for production rollout while preserving all
-Phase 1 through Phase 14 safeguards.
+Phase 1 through Phase 15 safeguards.

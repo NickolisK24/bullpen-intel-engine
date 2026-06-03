@@ -135,6 +135,60 @@ function inventoryFreshnessRows(item) {
   ]
 }
 
+function stableDetailKey(value, fallback, index) {
+  return String(value || fallback || `detail-${index}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function candidateGroupKey(group, index) {
+  return stableDetailKey(group.group_id || group.label, 'candidate-group', index)
+}
+
+function candidateGroupSummaryText(group) {
+  if (group.description) return group.description
+
+  const explanations = asArray(group.explanations).map(messageFrom).filter(Boolean)
+  if (explanations.length) return explanations[0]
+
+  const limitations = asArray(group.limitations).map(messageFrom).filter(Boolean)
+  if (limitations.length) return limitations[0]
+
+  const refusalReasons = asArray(group.refusal_reasons).map(messageFrom).filter(Boolean)
+  if (refusalReasons.length) return refusalReasons[0]
+
+  return 'Neutral group reported by the V2 contract.'
+}
+
+function candidateGroupFreshnessRows(group) {
+  const freshness = asObject(group.freshness)
+  return [
+    { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
+    { label: 'Data Through', value: displayValue(freshness.data_through) },
+    { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
+    { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
+    { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
+  ]
+}
+
+function detailCountLabel(count, singular, plural = `${singular}s`) {
+  return `${displayValue(count, '0')} ${count === 1 ? singular : plural}`
+}
+
+function messageSummary(messages) {
+  if (!messages.length) return null
+  if (messages.length === 1) return messages[0]
+  return `${messages.length} entries. First: ${messages[0]}`
+}
+
+function sumRowCounts(rows) {
+  return rows.reduce((total, row) => {
+    const numeric = Number(row.count)
+    return Number.isFinite(numeric) ? total + numeric : total
+  }, 0)
+}
+
 function getDiagnosticCount(view = {}) {
   return (
     asArray(view.missingFields).length
@@ -271,20 +325,97 @@ function GovernanceRows({ rows }) {
   )
 }
 
-function MessageList({ title, messages, emptyText }) {
+function DetailToggleButton({ expanded, controls, onClick }) {
+  return (
+    <button
+      type="button"
+      className="mt-3 w-full rounded border border-dirt bg-field/60 px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onClick}
+    >
+      {expanded ? 'Collapse Details' : 'View Details'}
+    </button>
+  )
+}
+
+function DetailMessageGroup({ title, messages, emptyText = 'None reported.' }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{title}</div>
+      {messages.length ? (
+        <ul className="space-y-2">
+          {messages.map((message) => (
+            <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/30 px-3 py-2 text-xs leading-relaxed text-chalk300">
+              {message}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="font-mono text-xs text-chalk500">{emptyText}</div>
+      )}
+    </div>
+  )
+}
+
+function DetailRows({ title, rows }) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{title}</div>
+      {rows.length ? (
+        <div className="grid gap-2">
+          {rows.map((row) => (
+            <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/30 px-3 py-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{row.label}</span>
+              <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="font-mono text-xs text-chalk500">Unavailable</div>
+      )}
+    </div>
+  )
+}
+
+function MessageList({ title, messages, emptyText, initiallyExpanded = false }) {
   const id = sectionId(title)
+  const detailId = `${id}-details`
+  const [expanded, setExpanded] = useState(initiallyExpanded)
+  const summary = messageSummary(messages)
 
   return (
     <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby={id}>
       <h3 id={id} className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</h3>
       {messages.length ? (
-        <ul className="space-y-2">
-          {messages.map((message) => (
-            <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-sm leading-relaxed text-chalk300">
-              {message}
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="rounded border border-dirt bg-chalk/20 px-3 py-2">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">
+              {detailCountLabel(messages.length, 'entry', 'entries')}
+            </div>
+            <div className="v2-governed-panel__text mt-1 text-sm leading-relaxed text-chalk300">
+              {summary}
+            </div>
+          </div>
+          {messages.length > 1 && (
+            <>
+              <DetailToggleButton
+                expanded={expanded}
+                controls={detailId}
+                onClick={() => setExpanded((current) => !current)}
+              />
+              {expanded && (
+                <ul id={detailId} className="mt-3 space-y-2">
+                  {messages.map((message) => (
+                    <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-sm leading-relaxed text-chalk300">
+                      {message}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </>
       ) : (
         <div className="font-mono text-xs text-chalk500">{emptyText}</div>
       )}
@@ -357,7 +488,7 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                 aria-controls={detailId}
                 onClick={() => toggleInventory(key)}
               >
-                {expanded ? 'Collapse' : 'View Members'}
+                {expanded ? 'Collapse Details' : 'View Details'}
               </button>
               {expanded && (
                 <div id={detailId} className="mt-3 min-w-0 rounded border border-dirt bg-field/45 p-3">
@@ -432,39 +563,110 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
   )
 }
 
-function CandidateGroups({ groups }) {
+function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState(
+    () => new Set(initialExpandedCandidateGroupKeys),
+  )
+
+  const toggleGroup = (key) => {
+    setExpandedGroupKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
   return (
     <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-candidate-groups">
       <h3 id="recommendation-v2-candidate-groups" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Neutral Candidate Groups</h3>
       {groups.length ? (
         <div className="grid gap-3">
-          {groups.map((group) => (
-            <div key={group.group_id || group.label} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
+          {groups.map((group, index) => {
+            const key = candidateGroupKey(group, index)
+            const expanded = expandedGroupKeys.has(key)
+            const detailId = `recommendation-v2-candidate-group-${key}-details`
+            const candidates = asArray(group.candidates)
+            const eligibility = asArray(group.eligibility_basis).map(messageFrom).filter(Boolean)
+            const explanations = asArray(group.explanations).map(messageFrom).filter(Boolean)
+            const limitations = asArray(group.limitations).map(messageFrom).filter(Boolean)
+            const refusalReasons = asArray(group.refusal_reasons).map(messageFrom).filter(Boolean)
+            const freshness = asObject(group.freshness)
+
+            return (
+              <div key={key} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="v2-governed-panel__text text-sm font-semibold text-chalk200">{group.label || toTitle(group.group_id)}</div>
-                  {group.description && (
-                    <div className="v2-governed-panel__text mt-1 text-xs leading-relaxed text-chalk500">{group.description}</div>
-                  )}
+                  <div className="v2-governed-panel__text mt-1 font-mono text-[11px] text-chalk500">
+                    {detailCountLabel(group.candidate_count ?? candidates.length, 'member')}
+                  </div>
                 </div>
                 <div className="shrink-0 rounded border border-dirt bg-field/50 px-2 py-1 font-mono text-xs text-chalk300">
                   {displayValue(group.candidate_count, asArray(group.candidates).length)}
                 </div>
               </div>
-              <div className="v2-governed-panel__text mt-2 font-mono text-[11px] text-chalk600">
-                Ordering policy: {orderingPolicyLabel(group.ordering)}
+              <div className="v2-governed-panel__text mt-3 text-xs leading-relaxed text-chalk500">
+                {candidateGroupSummaryText(group)}
               </div>
-              {asArray(group.candidates).length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {asArray(group.candidates).map((candidate) => (
-                    <span key={`${candidate.pitcher_id || candidate.display_name}`} className="rounded border border-dirt bg-field/50 px-2 py-1 font-mono text-[11px] text-chalk300">
-                      {candidate.display_name || candidate.pitcher_id}
-                    </span>
-                  ))}
+              <div className="mt-3 grid gap-2">
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Ordering</span>
+                  <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
+                    {orderingPolicyLabel(group.ordering)}
+                  </span>
+                </div>
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Confidence</span>
+                  <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
+                    {displayValue(group.confidence, 'Unavailable')}
+                  </span>
+                </div>
+                <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Freshness</span>
+                  <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
+                    {displayValue(freshness.freshness_state || freshness.state || freshness.state_code)}
+                  </span>
+                </div>
+              </div>
+              <DetailToggleButton
+                expanded={expanded}
+                controls={detailId}
+                onClick={() => toggleGroup(key)}
+              />
+              {expanded && (
+                <div id={detailId} className="mt-3 min-w-0 rounded border border-dirt bg-field/45 p-3">
+                  <div className="grid gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
+                        Group Members ({candidates.length})
+                      </div>
+                      {candidates.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {candidates.map((candidate) => (
+                            <span key={`${candidate.pitcher_id || candidate.display_name}`} className="rounded border border-dirt bg-chalk/30 px-2 py-1 font-mono text-[11px] text-chalk300">
+                              {candidate.display_name || candidate.pitcher_id}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="font-mono text-xs text-chalk500">No group members reported.</div>
+                      )}
+                    </div>
+                    <DetailMessageGroup title="Eligibility Basis" messages={eligibility} emptyText="No eligibility basis reported." />
+                    <DetailRows title="Group Freshness" rows={candidateGroupFreshnessRows(group)} />
+                    <DetailMessageGroup title="Explanations" messages={explanations} emptyText="No explanations reported." />
+                    <DetailMessageGroup title="Limitations" messages={limitations} emptyText="No limitations reported." />
+                    <DetailMessageGroup title="Refusal" messages={refusalReasons} emptyText="No refusal metadata reported." />
+                  </div>
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <div className="font-mono text-xs text-chalk500">No neutral groups available from the current contract state.</div>
@@ -473,40 +675,72 @@ function CandidateGroups({ groups }) {
   )
 }
 
-function TeamContext({ context }) {
+function TeamContext({ context, initialExpandedTeamContextKeys = [] }) {
   const availabilityRows = getDistributionRows(context.availability_distribution)
   const workloadRows = getDistributionRows(context.workload_distribution)
   const readiness = asArray(context.readiness_indicators)
   const stress = asArray(context.stress_indicators)
+  const [expandedContextKeys, setExpandedContextKeys] = useState(
+    () => new Set(initialExpandedTeamContextKeys),
+  )
+
+  const toggleContext = (key) => {
+    setExpandedContextKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
 
   return (
     <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-team-context">
       <h3 id="recommendation-v2-team-context" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Team Context</h3>
       <div className="v2-governed-panel__team-grid gap-4">
-        <Distribution title="Availability" rows={availabilityRows} />
-        <Distribution title="Workload" rows={workloadRows} />
+        <Distribution title="Availability" rows={availabilityRows} expanded={expandedContextKeys.has('availability')} onToggle={() => toggleContext('availability')} />
+        <Distribution title="Workload" rows={workloadRows} expanded={expandedContextKeys.has('workload')} onToggle={() => toggleContext('workload')} />
       </div>
       <div className="v2-governed-panel__team-grid mt-4 gap-4">
-        <SimpleItems title="Readiness" items={readiness} />
-        <SimpleItems title="Stress" items={stress} />
+        <SimpleItems title="Readiness" items={readiness} expanded={expandedContextKeys.has('readiness')} onToggle={() => toggleContext('readiness')} />
+        <SimpleItems title="Stress" items={stress} expanded={expandedContextKeys.has('stress')} onToggle={() => toggleContext('stress')} />
       </div>
     </section>
   )
 }
 
-function Distribution({ title, rows }) {
+function Distribution({ title, rows, expanded, onToggle }) {
+  const key = stableDetailKey(title, 'distribution', 0)
+  const detailId = `recommendation-v2-team-context-${key}-details`
+  const total = sumRowCounts(rows)
+
   return (
     <div className="min-w-0">
       <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{title}</div>
       {rows.length ? (
-        <div className="space-y-2">
-          {rows.map((row) => (
-            <div key={row.key} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
-              <span className="v2-governed-panel__text font-mono text-xs text-chalk400">{row.label}</span>
-              <span className="shrink-0 font-mono text-xs font-semibold text-chalk200">{displayValue(row.count)}</span>
+        <>
+          <div className="rounded border border-dirt bg-chalk/20 px-3 py-2">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">
+              {detailCountLabel(rows.length, 'category', 'categories')}
             </div>
-          ))}
-        </div>
+            <div className="v2-governed-panel__text mt-1 text-sm leading-relaxed text-chalk300">
+              {total > 0 ? `${displayValue(total)} total reported across ${title.toLowerCase()} context.` : `${title} context is available.`}
+            </div>
+          </div>
+          <DetailToggleButton expanded={expanded} controls={detailId} onClick={onToggle} />
+          {expanded && (
+            <div id={detailId} className="mt-3 space-y-2">
+              {rows.map((row) => (
+                <div key={row.key} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
+                  <span className="v2-governed-panel__text font-mono text-xs text-chalk400">{row.label}</span>
+                  <span className="shrink-0 font-mono text-xs font-semibold text-chalk200">{displayValue(row.count)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <div className="font-mono text-xs text-chalk500">Unavailable</div>
       )}
@@ -514,18 +748,39 @@ function Distribution({ title, rows }) {
   )
 }
 
-function SimpleItems({ title, items }) {
+function SimpleItems({ title, items, expanded, onToggle }) {
+  const key = stableDetailKey(title, 'items', 0)
+  const detailId = `recommendation-v2-team-context-${key}-details`
+  const messages = items.map((item) => messageFrom(item) || displayValue(item)).filter(Boolean)
+
   return (
     <div className="min-w-0">
       <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{title}</div>
-      {items.length ? (
-        <div className="space-y-2">
-          {items.map((item) => (
-            <div key={messageFrom(item) || JSON.stringify(item)} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-xs text-chalk300">
-              {messageFrom(item) || displayValue(item)}
+      {messages.length ? (
+        <>
+          <div className="rounded border border-dirt bg-chalk/20 px-3 py-2">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">
+              {detailCountLabel(messages.length, 'indicator')}
             </div>
-          ))}
-        </div>
+            <div className="v2-governed-panel__text mt-1 text-sm leading-relaxed text-chalk300">
+              {messageSummary(messages)}
+            </div>
+          </div>
+          {messages.length > 1 && (
+            <>
+              <DetailToggleButton expanded={expanded} controls={detailId} onClick={onToggle} />
+              {expanded && (
+                <div id={detailId} className="mt-3 space-y-2">
+                  {messages.map((message) => (
+                    <div key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-xs text-chalk300">
+                      {message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
       ) : (
         <div className="font-mono text-xs text-chalk500">Unavailable</div>
       )}
@@ -539,6 +794,9 @@ export default function RecommendationV2BullpenStatePanel({
   error = null,
   onRetry,
   initialExpandedInventoryKeys = [],
+  initialExpandedCandidateGroupKeys = [],
+  initialExpandedTeamContextKeys = [],
+  initialExpandedMessageSections = [],
 }) {
   if (loading) {
     return (
@@ -640,15 +898,15 @@ export default function RecommendationV2BullpenStatePanel({
         {!view.isUnavailable && (
           <>
             <InventorySummary inventory={view.inventory} initialExpandedInventoryKeys={initialExpandedInventoryKeys} />
-            <TeamContext context={view.teamContext} />
-            <CandidateGroups groups={view.candidateGroups} />
+            <TeamContext context={view.teamContext} initialExpandedTeamContextKeys={initialExpandedTeamContextKeys} />
+            <CandidateGroups groups={view.candidateGroups} initialExpandedCandidateGroupKeys={initialExpandedCandidateGroupKeys} />
           </>
         )}
 
         <div className="v2-governed-panel__message-grid gap-4">
-          <MessageList title="Limitations" messages={view.limitationMessages} emptyText="No limitations reported." />
-          <MessageList title="Explanations" messages={view.explanationMessages} emptyText="No explanations reported." />
-          <MessageList title="Refusal" messages={view.refusalMessages} emptyText="No refusal metadata reported." />
+          <MessageList title="Limitations" messages={view.limitationMessages} emptyText="No limitations reported." initiallyExpanded={initialExpandedMessageSections.includes('limitations')} />
+          <MessageList title="Explanations" messages={view.explanationMessages} emptyText="No explanations reported." initiallyExpanded={initialExpandedMessageSections.includes('explanations')} />
+          <MessageList title="Refusal" messages={view.refusalMessages} emptyText="No refusal metadata reported." initiallyExpanded={initialExpandedMessageSections.includes('refusal')} />
         </div>
       </div>
     </section>

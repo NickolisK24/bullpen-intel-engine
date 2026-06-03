@@ -196,7 +196,9 @@ test('renders governed V2 bullpen intelligence in available state', () => {
   assert.ok(htmlIncludes(html, 'Inventory'))
   assert.ok(htmlIncludes(html, 'Team Context'))
   assert.ok(htmlIncludes(html, 'Neutral Candidate Groups'))
-  assert.ok(htmlIncludes(html, 'Candidate Member'))
+  assert.ok(htmlIncludes(html, 'Available Candidates'))
+  assert.ok(htmlIncludes(html, '1 member'))
+  assert.ok(htmlIncludes(html, 'Candidates grouped by current availability category.'))
   assert.ok(htmlIncludes(html, 'Ordering applied'))
   assert.ok(htmlIncludes(html, 'Automated decision made'))
   assert.ok(htmlIncludes(html, 'neutral source order'))
@@ -214,7 +216,7 @@ test('renders inventory summary cards collapsed by default with counts and metad
   assert.ok(htmlIncludes(html, 'medium'))
   assert.ok(htmlIncludes(html, 'Freshness'))
   assert.ok(htmlIncludes(html, 'current'))
-  assert.ok(htmlIncludes(html, 'View Members'))
+  assert.ok(htmlIncludes(html, 'View Details'))
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
   assert.ok(!htmlIncludes(html, 'Inventory Member'))
   assert.ok(!htmlIncludes(html, 'Members (1)'))
@@ -234,6 +236,143 @@ test('renders expanded inventory membership, evidence, trust, and freshness on d
   assert.ok(htmlIncludes(html, '2026-06-02'))
   assert.ok(htmlIncludes(html, 'Synced'))
   assert.ok(htmlIncludes(html, '2026-06-02T11:55:00Z'))
+})
+
+test('renders candidate groups collapsed by default with summaries and metadata visible', () => {
+  const html = renderPanel(availableState)
+
+  assert.ok(htmlIncludes(html, 'Available Candidates'))
+  assert.ok(htmlIncludes(html, '1 member'))
+  assert.ok(htmlIncludes(html, 'Candidates grouped by current availability category.'))
+  assert.ok(htmlIncludes(html, 'Ordering'))
+  assert.ok(htmlIncludes(html, 'neutral source order'))
+  assert.ok(htmlIncludes(html, 'Confidence'))
+  assert.ok(htmlIncludes(html, 'medium'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'current'))
+  assert.ok(htmlIncludes(html, 'View Details'))
+  assert.ok(!htmlIncludes(html, 'Candidate Member'))
+  assert.ok(!htmlIncludes(html, 'Group Members (1)'))
+  assert.ok(!htmlIncludes(html, 'Eligibility Basis'))
+})
+
+test('renders expanded candidate group membership, evidence, freshness, and refusal metadata on demand', () => {
+  const candidateDetailState = {
+    ...availableState,
+    bullpenState: {
+      ...availableState.bullpenState,
+      candidate_groups: [
+        {
+          ...availableState.bullpenState.candidate_groups[0],
+          explanations: ['Candidate grouping evidence remains inspectable.'],
+          limitations: ['Candidate limitation remains inspectable.'],
+          refusal_reasons: ['Candidate refusal metadata remains inspectable.'],
+          freshness: {
+            freshness_state: 'current',
+            data_through: '2026-06-02',
+            sync_timestamp: '2026-06-02T11:55:00Z',
+          },
+        },
+      ],
+    },
+  }
+  const html = renderPanel(candidateDetailState, {
+    initialExpandedCandidateGroupKeys: ['available-candidates'],
+  })
+
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(html, 'Collapse Details'))
+  assert.ok(htmlIncludes(html, 'Group Members (1)'))
+  assert.ok(htmlIncludes(html, 'Candidate Member'))
+  assert.ok(htmlIncludes(html, 'Eligibility Basis'))
+  assert.ok(htmlIncludes(html, 'availability_status_available'))
+  assert.ok(htmlIncludes(html, 'Group Freshness'))
+  assert.ok(htmlIncludes(html, 'Data Through'))
+  assert.ok(htmlIncludes(html, '2026-06-02'))
+  assert.ok(htmlIncludes(html, 'Synced'))
+  assert.ok(htmlIncludes(html, '2026-06-02T11:55:00Z'))
+  assert.ok(htmlIncludes(html, 'Candidate grouping evidence remains inspectable.'))
+  assert.ok(htmlIncludes(html, 'Candidate limitation remains inspectable.'))
+  assert.ok(htmlIncludes(html, 'Candidate refusal metadata remains inspectable.'))
+})
+
+test('summarizes team context by default and expands distributions and indicators on demand', () => {
+  const teamContextState = {
+    ...availableState,
+    bullpenState: {
+      ...availableState.bullpenState,
+      team_context: {
+        ...availableState.bullpenState.team_context,
+        availability_distribution: {
+          green_lane: 2,
+          amber_lane: 1,
+        },
+        workload_distribution: {
+          fresh_workload: 1,
+          watched_workload: 2,
+        },
+        readiness_indicators: [
+          { message: 'Readiness summary one remains visible.' },
+          { message: 'Readiness detail two remains inspectable.' },
+        ],
+        stress_indicators: [
+          { message: 'Stress summary one remains visible.' },
+          { message: 'Stress detail two remains inspectable.' },
+        ],
+      },
+    },
+  }
+
+  const collapsedHtml = renderPanel(teamContextState)
+  const expandedHtml = renderPanel(teamContextState, {
+    initialExpandedTeamContextKeys: ['availability', 'workload', 'readiness', 'stress'],
+  })
+
+  assert.ok(htmlIncludes(collapsedHtml, '2 categories'))
+  assert.ok(htmlIncludes(collapsedHtml, '3 total reported across availability context.'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Readiness summary one remains visible.'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Stress summary one remains visible.'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Green Lane'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Watched Workload'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Readiness detail two remains inspectable.'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Stress detail two remains inspectable.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Green Lane'))
+  assert.ok(htmlIncludes(expandedHtml, 'Watched Workload'))
+  assert.ok(htmlIncludes(expandedHtml, 'Readiness detail two remains inspectable.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Stress detail two remains inspectable.'))
+})
+
+test('summarizes long limitation, explanation, and refusal lists until expanded', () => {
+  const verboseMessageState = {
+    ...availableState,
+    limitations: [
+      { message: 'Limitation summary one remains visible.' },
+      { message: 'Limitation detail two remains inspectable.' },
+    ],
+    explanations: [
+      { message: 'Explanation summary one remains visible.' },
+      { message: 'Explanation detail two remains inspectable.' },
+    ],
+    refusalReasons: [
+      { message: 'Refusal summary one remains visible.' },
+      { message: 'Refusal detail two remains inspectable.' },
+    ],
+  }
+
+  const collapsedHtml = renderPanel(verboseMessageState)
+  const expandedHtml = renderPanel(verboseMessageState, {
+    initialExpandedMessageSections: ['limitations', 'explanations', 'refusal'],
+  })
+
+  assert.ok(htmlIncludes(collapsedHtml, '2 entries. First: Limitation summary one remains visible.'))
+  assert.ok(htmlIncludes(collapsedHtml, '2 entries. First: Explanation summary one remains visible.'))
+  assert.ok(htmlIncludes(collapsedHtml, '2 entries. First: Refusal summary one remains visible.'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Limitation detail two remains inspectable.'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Explanation detail two remains inspectable.'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Refusal detail two remains inspectable.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Limitation detail two remains inspectable.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Explanation detail two remains inspectable.'))
+  assert.ok(htmlIncludes(expandedHtml, 'Refusal detail two remains inspectable.'))
 })
 
 test('keeps high-volume inventory short until mobile users expand details', () => {
@@ -295,6 +434,74 @@ test('keeps high-volume inventory short until mobile users expand details', () =
   assert.ok(htmlIncludes(expandedText, 'Monitor Pitcher 284'))
   assert.ok(htmlIncludes(expandedText, 'Limited Pitcher 088'))
   assert.ok(reduction >= 0.8, `expected at least 80% initial inventory text reduction, got ${Math.round(reduction * 100)}%`)
+})
+
+test('keeps high-volume intelligence surfaces short until mobile users expand details', () => {
+  const makeCandidates = (count) => Array.from({ length: count }, (_, index) => ({
+    pitcher_id: `candidate-${index + 1}`,
+    display_name: `Candidate Pitcher ${String(index + 1).padStart(3, '0')}`,
+  }))
+  const makeMessages = (prefix, count) => Array.from({ length: count }, (_, index) => ({
+    message: `${prefix} detail ${String(index + 1).padStart(2, '0')} remains inspectable.`,
+  }))
+  const highVolumeState = {
+    ...availableState,
+    limitations: makeMessages('Limitation', 30),
+    explanations: makeMessages('Explanation', 30),
+    refusalReasons: makeMessages('Refusal', 30),
+    bullpenState: {
+      ...availableState.bullpenState,
+      candidate_groups: [
+        {
+          ...availableState.bullpenState.candidate_groups[0],
+          candidate_count: 160,
+          candidates: makeCandidates(160),
+          explanations: ['High-volume candidate grouping evidence remains inspectable.'],
+          limitations: ['High-volume candidate limitation remains inspectable.'],
+          refusal_reasons: ['High-volume candidate refusal metadata remains inspectable.'],
+        },
+      ],
+      team_context: {
+        ...availableState.bullpenState.team_context,
+        availability_distribution: {
+          green_lane: 50,
+          amber_lane: 40,
+          slate_lane: 30,
+          white_lane: 20,
+        },
+        workload_distribution: {
+          fresh_workload: 60,
+          watched_workload: 40,
+          limited_workload: 20,
+          unavailable_workload: 10,
+        },
+        readiness_indicators: makeMessages('Readiness', 20),
+        stress_indicators: makeMessages('Stress', 20),
+      },
+    },
+  }
+
+  const collapsedText = visibleText(renderPanel(highVolumeState))
+  const expandedText = visibleText(renderPanel(highVolumeState, {
+    initialExpandedCandidateGroupKeys: ['available-candidates'],
+    initialExpandedTeamContextKeys: ['availability', 'workload', 'readiness', 'stress'],
+    initialExpandedMessageSections: ['limitations', 'explanations', 'refusal'],
+  }))
+  const reduction = 1 - (collapsedText.length / expandedText.length)
+
+  assert.ok(htmlIncludes(collapsedText, '160 members'))
+  assert.ok(htmlIncludes(collapsedText, '4 categories'))
+  assert.ok(htmlIncludes(collapsedText, '30 entries. First: Limitation detail 01 remains inspectable.'))
+  assert.ok(!htmlIncludes(collapsedText, 'Candidate Pitcher 001'))
+  assert.ok(!htmlIncludes(collapsedText, 'Green Lane'))
+  assert.ok(!htmlIncludes(collapsedText, 'Readiness detail 20 remains inspectable.'))
+  assert.ok(!htmlIncludes(collapsedText, 'Refusal detail 30 remains inspectable.'))
+  assert.ok(htmlIncludes(expandedText, 'Candidate Pitcher 001'))
+  assert.ok(htmlIncludes(expandedText, 'Candidate Pitcher 160'))
+  assert.ok(htmlIncludes(expandedText, 'Green Lane'))
+  assert.ok(htmlIncludes(expandedText, 'Readiness detail 20 remains inspectable.'))
+  assert.ok(htmlIncludes(expandedText, 'Refusal detail 30 remains inspectable.'))
+  assert.ok(reduction >= 0.8, `expected at least 80% initial intelligence text reduction, got ${Math.round(reduction * 100)}%`)
 })
 
 test('uses container-aware V2 layout classes for desktop readability', () => {
@@ -438,7 +645,9 @@ test('view model allows negative governance disclaimers in metadata', () => {
   }
 
   const view = getRecommendationV2BullpenStateView(disclaimerState)
-  const html = renderPanel(disclaimerState)
+  const html = renderPanel(disclaimerState, {
+    initialExpandedMessageSections: ['limitations', 'explanations'],
+  })
 
   assert.equal(view.contractState, 'available')
   assert.equal(view.hiddenUnsafeLanguage, false)

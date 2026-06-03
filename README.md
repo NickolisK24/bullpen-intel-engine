@@ -113,6 +113,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -199,7 +200,10 @@ today:
   leaving production rollout to a separate governed decision. V2.5 Phase 14
   optimizes certified inventory presentation so summary cards show category
   counts, trust state, freshness state, and evidence summaries first, with
-  full inventory membership available on demand. No
+  full inventory membership available on demand. V2.5 Phase 15 audits the full
+  Dashboard V2 intelligence surface and makes candidate groups, team context,
+  limitations, explanations, and refusal details summary-first with expansion
+  on demand. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -247,7 +251,9 @@ today:
   and the completed Phase 13 formal certification record in
   [`docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`](docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md),
   and the completed V2.5 Phase 14 inventory presentation record in
-  [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md).
+  [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md),
+  and the completed V2.5 Phase 15 intelligence presentation record in
+  [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -313,6 +319,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md
     ├── RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md
     ├── V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md
+    ├── V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -502,6 +509,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   collapsible inventory membership, count visibility, preserved evidence,
   preserved trust/freshness metadata, mobile page-length reduction, and
   governance compliance.
+- [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md)
+  — completed V2.5 Phase 15 record for full Dashboard V2 intelligence
+  presentation audit, summary-first candidate groups, collapsible team
+  context, collapsible limitation/explanation/refusal details, mobile
+  page-length reduction, transparency preservation, and governance compliance.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -571,6 +583,10 @@ certifies the implemented and governed V2 scope as production-ready; production
 rollout still requires a separate governed rollout decision. V2.5 Phase 14 is
 complete and reduces initial inventory page length by rendering category
 summaries first, with full membership and evidence available through expansion.
+V2.5 Phase 15 is complete and reduces full Dashboard V2 intelligence density
+by rendering candidate groups, team context, limitations, explanations, and
+refusal details as summaries first, with complete detail available through
+expansion.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

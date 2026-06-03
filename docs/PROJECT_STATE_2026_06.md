@@ -158,6 +158,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -358,7 +359,8 @@ client integration work, Phase 10 governed frontend rendering work, and Phase
 layout remediation work, and Phase 11 mobile/accessibility validation work,
 Phase 12 certification readiness validation work, and Phase 13 formal
 certification review work. BaseballOS V2.5 Phase 14 inventory presentation
-optimization is also complete as a post-certification usability milestone.
+optimization and V2.5 Phase 15 intelligence presentation optimization are also
+complete as post-certification usability milestones.
 
 The official strategy foundation is:
 
@@ -455,6 +457,10 @@ The Phase 13 formal certification record is:
 The V2.5 Phase 14 inventory presentation optimization record is:
 
 - `docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`
+
+The V2.5 Phase 15 intelligence presentation optimization record is:
+
+- `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -985,6 +991,32 @@ Phase 14 did not touch backend files, API contracts, recommendation logic,
 trust logic, freshness logic, refusal logic, ranking behavior, selection
 behavior, prediction behavior, or Recommendation Engine V1 behavior.
 
+BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization audits the
+full Dashboard V2 intelligence surface and reduces raw-structure exposure
+beyond inventory. Candidate groups, team context distributions and indicators,
+limitations, explanations, and refusal details now render summary-first by
+default with full detail available through expansion.
+
+The Phase 15 intelligence presentation record is:
+
+- `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
+
+Phase 15 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 15 did not touch backend files, API contracts, recommendation logic,
+trust logic, freshness logic, refusal logic, ranking behavior, selection
+behavior, prediction behavior, or Recommendation Engine V1 behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1006,6 +1038,7 @@ API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
 surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
 selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
 Phase 12 certification readiness validation, and Phase 13 formal
-certification review, and V2.5 Phase 14 inventory presentation optimization,
+certification review, V2.5 Phase 14 inventory presentation optimization, and
+V2.5 Phase 15 intelligence presentation optimization,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or
 production rollout.

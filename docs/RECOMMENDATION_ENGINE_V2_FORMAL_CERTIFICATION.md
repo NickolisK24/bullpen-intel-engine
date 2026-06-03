@@ -478,17 +478,24 @@ Post-certification changes must not add:
 Any expansion beyond the certified scope requires separate governance,
 implementation, testing, certification, and rollout review.
 
-## 19. Next Recommended Milestone
+## 19. Post-Certification Usability Path
 
-The next post-certification milestone is:
+The completed post-certification usability milestones are:
 
 ```text
 BaseballOS V2.5 Phase 14 Inventory Presentation Optimization
+BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization
 ```
 
 Phase 14 improves certified inventory usability before production rollout
-decision review. It reduces initial inventory page length while preserving
-full membership visibility, trust metadata, freshness metadata, refusal
+decision review. It reduces initial inventory page length while preserving full
+membership visibility, trust metadata, freshness metadata, refusal metadata,
+and the certified no-ranking and no-selection guarantees.
+
+Phase 15 improves certified Dashboard V2 intelligence presentation before
+production rollout decision review. It reduces raw-structure exposure across
+candidate groups, team context, limitations, explanations, and refusal details
+while preserving detail inspection, trust metadata, freshness metadata, refusal
 metadata, and the certified no-ranking and no-selection guarantees.
 
 Production rollout decision review remains a later governed milestone.
