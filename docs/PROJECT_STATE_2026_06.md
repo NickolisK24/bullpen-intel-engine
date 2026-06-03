@@ -163,6 +163,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
 | BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
 | BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
+| BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -374,7 +375,10 @@ current backend validation warning debt without changing certified
 Recommendation Engine behavior. BaseballOS V2.5 Phase 19 prototype surface
 maintenance review is complete and classifies production, supported,
 prototype, experimental, legacy, and deprecated surfaces without expanding
-Recommendation Engine behavior.
+Recommendation Engine behavior. BaseballOS V2.5 Phase 20 prototype promotion
+and deprecation policy is complete and defines the official lifecycle gates
+for promotion, support, production approval, legacy classification,
+deprecation, removal, and intelligence-surface governance.
 
 The official strategy foundation is:
 
@@ -491,6 +495,10 @@ The V2.5 Phase 18 maintenance warning remediation review record is:
 The V2.5 Phase 19 prototype surface maintenance review record is:
 
 - `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
+
+The V2.5 Phase 20 prototype promotion and deprecation policy record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1256,6 +1264,57 @@ Pipeline must not be promoted to production until it has an explicit
 promotion contract covering provenance, freshness, limitations, refusal,
 fail-closed behavior, and trust metadata.
 
+BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy creates
+the official lifecycle policy for current and future surfaces.
+
+The Phase 20 policy record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+Phase 20 defines these lifecycle transitions:
+
+```text
+Prototype -> Experimental -> Supported -> Production
+Production -> Legacy -> Deprecated -> Removed
+```
+
+Phase 20 promotion requirements include:
+
+- defined purpose and ownership before prototype promotion
+- documentation and limitations before experimental support
+- test coverage and governance review before supported status
+- API/frontend contract review where applicable
+- certification review and production readiness review before production
+- trust, freshness, refusal, fail-closed, anti-ranking, anti-selection, and
+  anti-prediction review for intelligence surfaces
+
+Phase 20 deprecation requirements include:
+
+- replacement or strategic retirement before production becomes legacy
+- documented migration path before legacy becomes deprecated
+- completed migration window and governance approval before removal
+
+Phase 20 current-surface review finds no classification correction is required.
+Prospect Pipeline remains PROTOTYPE. Fatigue-to-ERA insight, latest-workload
+snapshot mode, MLB passthrough helpers, and threshold experimentation
+surfaces remain EXPERIMENTAL. Metadata-less fatigue array response and the
+standalone fatigue recalculation script remain LEGACY.
+
+Phase 20 validation:
+
+```text
+npm test
+77 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-promotion-policy
+278 passed, 0 failed
+```
+
+Phase 20 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, or Recommendation
+Engine V1 behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1281,6 +1340,7 @@ certification review, V2.5 Phase 14 inventory presentation optimization, and
 V2.5 Phase 15 intelligence presentation optimization, production rollout
 within the Phase 16-approved current certified V2 experience, or Phase 17
 post-rollout monitoring and boundary review, or Phase 18 maintenance warning
-remediation review, or Phase 19 prototype surface maintenance review,
+remediation review, or Phase 19 prototype surface maintenance review, or
+Phase 20 prototype promotion and deprecation policy,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.

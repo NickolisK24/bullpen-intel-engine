@@ -1479,7 +1479,70 @@ warning remediation.
 - Safe low-risk cleanup is validated.
 - V2 governance guarantees remain unchanged.
 
-## 27. Dependency Map
+## 27. Phase 20: Prototype Promotion and Deprecation Policy
+
+**Status**
+
+BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy is
+complete.
+
+The completed Phase 20 record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+**Goal**
+
+Create the official lifecycle policy for prototype promotion, experimental
+support, production eligibility, legacy classification, deprecation, removal,
+and intelligence-surface governance gates.
+
+**Allowed work**
+
+- Governance policy creation.
+- Lifecycle policy creation.
+- Promotion criteria.
+- Deprecation criteria.
+- Documentation updates.
+
+**Forbidden work**
+
+- Do not add product features.
+- Do not change recommendation logic.
+- Do not change fatigue formulas.
+- Do not change API contracts.
+- Do not add ranking, selection, prediction, or final pitcher choice behavior.
+
+**Completed policy**
+
+- Defined `Prototype -> Experimental -> Supported -> Production`.
+- Defined `Production -> Legacy -> Deprecated -> Removed`.
+- Defined minimum promotion criteria for each lifecycle step.
+- Defined deprecation and removal criteria.
+- Defined intelligence-surface requirements for trust, freshness, refusal,
+  fail-closed, anti-ranking, anti-selection, and anti-prediction review.
+- Reviewed current prototype and experimental surfaces and found no
+  classification correction required.
+
+**Required tests**
+
+- Frontend regression suite.
+- Full backend regression suite.
+- Diff whitespace checks.
+
+**Documentation updates**
+
+- Record lifecycle policy.
+- Record current-surface promotion paths and blockers.
+- Update current project state and roadmap surfaces.
+
+**Exit criteria**
+
+- Promotion policy is documented.
+- Deprecation policy is documented.
+- Current prototype and experimental promotion blockers are documented.
+- V2 governance guarantees remain unchanged.
+
+## 28. Dependency Map
 
 Implementation order must remain sequential unless an approved implementation
 review explicitly narrows a phase without weakening governance.
@@ -1506,6 +1569,7 @@ Phase 0 Repo Hygiene
   -> Phase 18 Maintenance Warning Remediation Review
   -> Phase 19 Prototype Surface Maintenance Review
   -> Phase 20 Prototype Promotion and Deprecation Policy
+  -> Phase 21 Lifecycle Enforcement Checklist
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1513,7 +1577,7 @@ exist before frontend rendering. Frontend rendering must exist before mobile and
 accessibility certification. All runtime implementation must pass tests before
 certification review.
 
-## 28. Expected File/Module Areas
+## 29. Expected File/Module Areas
 
 Future implementation may touch these areas, subject to phase approval:
 
@@ -1543,7 +1607,7 @@ directories as part of V2 feature work:
 If those files appear in `git status`, they must be treated as unrelated drift
 unless explicitly approved for a separate maintenance task.
 
-## 29. Testing Plan
+## 30. Testing Plan
 
 Required test categories:
 
@@ -1575,7 +1639,7 @@ Testing expectations:
   imply ranking or selection.
 - V1 tests must continue to pass without weakening assertions.
 
-## 30. Rollout and Visibility Strategy
+## 31. Rollout and Visibility Strategy
 
 V2 should roll out only after implementation completion and certification
 review. The preferred visibility path is:
@@ -1589,7 +1653,7 @@ review. The preferred visibility path is:
 Rollout must preserve user decision authority. V2 output may organize,
 summarize, and explain bullpen information. It must not choose, rank, or decide.
 
-## 31. Feature Flag Strategy
+## 32. Feature Flag Strategy
 
 V2 should use a controlled visibility mechanism until production certification
 is complete.
@@ -1606,7 +1670,7 @@ The flag or visibility mechanism must not bypass governance checks. Hidden or
 disabled V2 code must still preserve no-ranking, no-selection, trust metadata,
 freshness, limitations, explanations, and refusal behavior.
 
-## 32. Risk Controls
+## 33. Risk Controls
 
 Scope creep controls:
 
@@ -1659,7 +1723,7 @@ Worktree drift controls:
 - Stage named files only when unrelated drift exists.
 - Keep generated frontend artifacts and dependency drift out of V2 commits.
 
-## 33. Implementation Stop Conditions
+## 34. Implementation Stop Conditions
 
 Implementation must stop if:
 
@@ -1677,7 +1741,7 @@ Implementation must stop if:
 
 Stop conditions require review before implementation continues.
 
-## 34. Definition of Implementation Complete
+## 35. Definition of Implementation Complete
 
 Implementation complete means:
 
@@ -1696,7 +1760,7 @@ Implementation complete means:
 
 Implementation complete does not mean production certified.
 
-## 35. Definition of Production Certified
+## 36. Definition of Production Certified
 
 Production certified requires:
 
@@ -1714,16 +1778,16 @@ requires:
 Production certification must be evidence-based and must preserve the full V2
 governance package. Production rollout must be recorded separately.
 
-## 36. Next Milestone
+## 37. Next Milestone
 
 The next milestone is:
 
 ```text
-BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy
+BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist
 ```
 
-This milestone may begin after Phase 19 prototype surface maintenance review
-remains validated. Phase 20 should define how prototype surfaces may be
-promoted, deprecated, retired, or kept explicitly out of the certified
-Recommendation Engine V2 production boundary. It should not expand
+This milestone may begin after Phase 20 prototype promotion and deprecation
+policy remains validated. Phase 21 should convert the lifecycle policy into a
+repeatable checklist for future pull requests, route additions, prototype
+promotions, deprecations, and production-surface changes. It should not expand
 Recommendation Engine behavior.

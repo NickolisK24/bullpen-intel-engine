@@ -593,3 +593,26 @@ rank-style labels in the Bullpen team view and Dashboard prototype Pipeline
 Snapshot were changed to neutral summary/highlight language.
 
 Phase 19 does not expand certification scope or production rollout approval.
+
+## 24. Prototype Promotion and Deprecation Policy
+
+The completed prototype promotion and deprecation policy record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+Phase 20 establishes the lifecycle policy for moving surfaces through:
+
+```text
+Prototype -> Experimental -> Supported -> Production
+Production -> Legacy -> Deprecated -> Removed
+```
+
+The policy requires governance review, certification review, and rollout
+review before future production promotion. Future intelligence surfaces must
+define trust metadata, freshness metadata, refusal behavior, fail-closed
+behavior, anti-ranking review, anti-selection review, and anti-prediction
+review before production eligibility.
+
+Phase 20 confirms no Phase 19 surface classification correction is required.
+
+Phase 20 does not expand certification scope or production rollout approval.
