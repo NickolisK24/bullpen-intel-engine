@@ -188,6 +188,9 @@ test('RecommendationPitcherDetailSection renders in the pitcher detail context',
   assert.ok(htmlIncludes(html, 'aria-describedby="recommendation-detail-description"'))
   assert.ok(htmlIncludes(html, 'aria-controls="recommendation-detail-result"'))
   assert.ok(htmlIncludes(html, 'aria-label="Evaluate recommendation candidate for Example Pitcher"'))
+  assert.ok(htmlIncludes(html, 'aria-live="polite"'))
+  assert.ok(htmlIncludes(html, 'aria-atomic="true"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Recommendation trust freshness refusal and metadata"'))
   assert.ok(htmlIncludes(html, 'No Final Pitcher Selection Made'))
   assert.ok(htmlIncludes(html, 'No Bullpen Ranking Applied'))
   assert.ok(htmlIncludes(html, 'No candidate evaluation available'))
@@ -315,25 +318,37 @@ test('RecommendationPitcherDetailSection preserves mobile-safe layout structure'
 })
 
 test('Bullpen selected-pitcher layout uses readable panel widths instead of cramped fixed splits', async () => {
-  const [bullpenSource, panelSource, cssSource] = await Promise.all([
+  const [bullpenSource, pitcherDetailSource, panelSource, cssSource] = await Promise.all([
     readFile(new URL('../src/components/bullpen/Bullpen.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/recommendations/RecommendationPanel.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/index.css', import.meta.url), 'utf8'),
   ])
 
+  assert.ok(bullpenSource.includes('useRef'))
   assert.ok(bullpenSource.includes('2xl:flex-row'))
   assert.ok(bullpenSource.includes('max-w-[100rem]'))
   assert.ok(bullpenSource.includes('lg:w-full'))
   assert.ok(bullpenSource.includes('2xl:w-[36rem]'))
+  assert.ok(bullpenSource.includes('onKeyDown'))
+  assert.ok(bullpenSource.includes('tabIndex={0}'))
+  assert.ok(bullpenSource.includes('aria-selected'))
+  assert.ok(bullpenSource.includes('role="region"'))
+  assert.ok(bullpenSource.includes('detailRegionRef.current?.focus()'))
+  assert.ok(pitcherDetailSource.includes('aria-label="Close selected pitcher detail"'))
   assert.ok(!bullpenSource.includes('lg:w-[60%]'))
   assert.ok(!bullpenSource.includes('lg:w-[38%]'))
   assert.ok(panelSource.includes('recommendation-panel__layout'))
   assert.ok(panelSource.includes('recommendation-panel--embedded'))
   assert.ok(panelSource.includes('recommendation-panel__layout--embedded'))
   assert.ok(panelSource.includes('recommendation-panel__trust-grid'))
+  assert.ok(panelSource.includes('aria-atomic="true"'))
+  assert.ok(panelSource.includes('Recommendation trust freshness refusal and metadata'))
   assert.ok(!panelSource.includes('xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]'))
   assert.ok(!panelSource.includes('xl:grid-cols-1'))
   assert.ok(cssSource.includes('.recommendation-detail-panel'))
+  assert.ok(cssSource.includes('button:focus-visible'))
+  assert.ok(cssSource.includes('tr[tabindex]:focus-visible'))
   assert.ok(cssSource.includes('.recommendation-panel--embedded .recommendation-panel__layout'))
   assert.ok(cssSource.includes('.recommendation-panel--standalone .recommendation-panel__layout--standalone'))
   assert.ok(cssSource.includes('@container (min-width: 42rem)'))

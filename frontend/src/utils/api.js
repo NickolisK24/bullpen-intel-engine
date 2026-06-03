@@ -124,10 +124,28 @@ function getMalformedFields(response = {}) {
   if (hasOwn(response, 'refusal_reasons') && !Array.isArray(response.refusal_reasons)) {
     fields.push('refusal_reasons')
   }
-  if (hasOwn(response, 'fail_closed') && typeof response.fail_closed !== 'boolean') {
+  if (
+    hasOwn(response, 'fail_closed')
+    && typeof response.fail_closed !== 'boolean'
+    && !isObject(response.fail_closed)
+  ) {
     fields.push('fail_closed')
   }
   return fields
+}
+
+function isFailClosedMetadata(value) {
+  if (value === true) return true
+  if (!isObject(value)) return false
+
+  return (
+    value.failed_closed === true
+    || value.critical_failure === true
+    || value.governance_state === 'failed_closed'
+    || value.state === 'degraded'
+    || value.state === 'refused'
+    || value.state === 'failed_closed'
+  )
 }
 
 function buildQuery(params = {}) {
@@ -281,7 +299,7 @@ export function normalizeRecommendationV2BullpenStateResponse(response = {}) {
     && malformedFields.length === 0
     && forbiddenFieldPaths.length === 0
   )
-  const isFailClosed = isContractSafe && response.fail_closed === true
+  const isFailClosed = isContractSafe && isFailClosedMetadata(response.fail_closed)
   const contractState = isContractSafe
     ? (isFailClosed ? 'fail_closed' : 'available')
     : 'unavailable'
@@ -306,6 +324,7 @@ export function normalizeRecommendationV2BullpenStateResponse(response = {}) {
     confidence: hasOwn(response, 'confidence') ? response.confidence : null,
     dataState: hasOwn(response, 'data_state') ? response.data_state : null,
     generatedAt: hasOwn(response, 'generated_at') ? response.generated_at : null,
+    failClosed: hasOwn(response, 'fail_closed') ? response.fail_closed : null,
     freshness: isObject(response?.freshness) ? response.freshness : null,
     limitations: Array.isArray(response?.limitations) ? response.limitations : null,
     explanations: Array.isArray(response?.explanations) ? response.explanations : null,

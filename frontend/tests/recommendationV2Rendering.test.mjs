@@ -25,6 +25,10 @@ const panelSource = await readFile(
   new URL('../src/components/recommendations/RecommendationV2BullpenStatePanel.jsx', import.meta.url),
   'utf8',
 )
+const cssSource = await readFile(
+  new URL('../src/index.css', import.meta.url),
+  'utf8',
+)
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -211,6 +215,26 @@ test('uses container-aware V2 layout classes for desktop readability', () => {
   assert.equal(panelSource.includes('md:grid-cols-3'), false)
 })
 
+test('renders mobile and accessibility anchors for governed V2 metadata', () => {
+  const html = renderPanel(availableState)
+
+  assert.ok(htmlIncludes(html, 'aria-labelledby="recommendation-v2-heading"'))
+  assert.ok(htmlIncludes(html, 'aria-describedby="recommendation-v2-description"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-heading"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-governance"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-trust"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-freshness"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-limitations"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-explanations"'))
+  assert.ok(htmlIncludes(html, 'id="recommendation-v2-refusal"'))
+  assert.ok(htmlIncludes(html, 'aria-label="V2 contract state: Available"'))
+  assert.ok(htmlIncludes(html, 'aria-live="polite"'))
+  assert.ok(htmlIncludes(html, 'aria-atomic="true"'))
+  assert.ok(cssSource.includes('button:focus-visible'))
+  assert.ok(cssSource.includes('[tabindex]:focus-visible'))
+  assert.ok(cssSource.includes('.v2-governed-panel__metadata-grid > *'))
+})
+
 test('renders fail-closed state with refusal metadata visible', () => {
   const failClosedState = {
     ...availableState,
@@ -218,6 +242,13 @@ test('renders fail-closed state with refusal metadata visible', () => {
     isFailClosed: true,
     confidence: 'low',
     dataState: 'stale',
+    freshness: {
+      data_through: '2026-05-01',
+      state: 'missing',
+      state_code: 'MISSING',
+      stale_warning: null,
+      missing_data_warning: 'Some source evidence is missing or incomplete.',
+    },
     bullpenState: null,
     refusalReasons: [
       {
@@ -232,6 +263,10 @@ test('renders fail-closed state with refusal metadata visible', () => {
   const html = renderPanel(failClosedState)
 
   assert.ok(htmlIncludes(html, 'Fail-Closed'))
+  assert.ok(htmlIncludes(html, 'missing'))
+  assert.ok(htmlIncludes(html, 'Some source evidence is missing or incomplete.'))
+  assert.ok(htmlIncludes(html, 'role="alert"'))
+  assert.ok(htmlIncludes(html, 'aria-live="assertive"'))
   assert.ok(htmlIncludes(html, 'Refusal'))
   assert.ok(htmlIncludes(html, 'Current bullpen-state output is refused because data is stale.'))
   assert.ok(htmlIncludes(html, 'No inventory summary available.'))
@@ -251,6 +286,8 @@ test('renders unavailable state without rendering withheld bullpen details', () 
   const html = renderPanel(unavailableState)
 
   assert.ok(htmlIncludes(html, 'Contract Unavailable'))
+  assert.ok(htmlIncludes(html, 'role="alert"'))
+  assert.ok(htmlIncludes(html, 'aria-live="assertive"'))
   assert.ok(htmlIncludes(html, 'Diagnostics detected: 3'))
   assert.ok(htmlIncludes(html, 'Bullpen state output is withheld from this surface.'))
   assert.ok(!htmlIncludes(html, 'Example Pitcher'))
@@ -278,6 +315,45 @@ test('view model with unsafe display language becomes unavailable', () => {
   assert.equal(view.bullpenState, null)
 })
 
+test('view model allows negative governance disclaimers in metadata', () => {
+  const disclaimerState = {
+    ...availableState,
+    limitations: [
+      ...availableState.limitations,
+      {
+        limitation_id: 'not_performance_forecast',
+        message: 'Not a performance forecast.',
+        severity: 'informational',
+        applies_to: 'recommendation_context',
+      },
+    ],
+    explanations: [
+      ...availableState.explanations,
+      {
+        explanation_id: 'no_automated_decision',
+        message: 'Context was assembled from existing evidence without ranking or selection.',
+        applies_to: 'bullpen_state',
+      },
+      {
+        explanation_id: 'missing_workload_history',
+        message: 'Missing workload history or fatigue score.',
+        applies_to: 'bullpen_state',
+      },
+    ],
+  }
+
+  const view = getRecommendationV2BullpenStateView(disclaimerState)
+  const html = renderPanel(disclaimerState)
+
+  assert.equal(view.contractState, 'available')
+  assert.equal(view.hiddenUnsafeLanguage, false)
+  assert.ok(htmlIncludes(html, 'Not a performance forecast.'))
+  assert.ok(htmlIncludes(html, 'without ranking or selection.'))
+  assert.ok(htmlIncludes(html, 'Missing workload history or fatigue score.'))
+  assert.ok(htmlIncludes(html, 'Trust'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+})
+
 test('rendered V2 panel avoids prohibited decision language', () => {
   const text = visibleText(renderPanel(availableState))
 
@@ -291,7 +367,10 @@ test('renders loading and error states without exposing unsafe claims', () => {
   const errorHtml = renderPanel(null, { error: 'network unavailable' })
 
   assert.ok(htmlIncludes(loadingHtml, 'Loading V2 bullpen intelligence...'))
+  assert.ok(htmlIncludes(loadingHtml, 'role="status"'))
+  assert.ok(htmlIncludes(loadingHtml, 'aria-busy="true"'))
   assert.ok(htmlIncludes(errorHtml, 'V2 bullpen intelligence could not be loaded.'))
+  assert.ok(htmlIncludes(errorHtml, 'role="alert"'))
   assert.ok(!htmlIncludes(errorHtml, 'network unavailable'))
 })
 

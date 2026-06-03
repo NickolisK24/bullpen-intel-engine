@@ -1,7 +1,7 @@
 // Red-tinted error card. Renders a Try Again button if an onRetry handler is provided.
 export default function ErrorState({ message, onRetry }) {
   return (
-    <div className="flex items-center justify-center py-10">
+    <div className="flex items-center justify-center py-10" role="alert">
       <div className="w-full max-w-md rounded-lg border border-red-500/30 bg-red-500/5 p-6 text-center">
         <div className="flex justify-center mb-3">
           <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 border border-red-500/30">

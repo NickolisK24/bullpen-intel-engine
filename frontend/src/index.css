@@ -31,6 +31,18 @@
     overflow-x: hidden;
   }
 
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid rgba(245, 166, 35, 0.8);
+    outline-offset: 2px;
+  }
+
+  tr[tabindex]:focus-visible {
+    outline-offset: -2px;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: var(--field); }
@@ -61,6 +73,7 @@
      forcing viewport-width grid breakpoints inside a narrow panel. */
   .v2-governed-panel {
     container-type: inline-size;
+    max-width: 100%;
   }
   .v2-governed-panel__metadata-grid,
   .v2-governed-panel__state-grid,
@@ -88,6 +101,13 @@
     overflow-wrap: break-word;
     word-break: normal;
   }
+  .v2-governed-panel__metadata-grid > *,
+  .v2-governed-panel__state-grid > *,
+  .v2-governed-panel__inventory-grid > *,
+  .v2-governed-panel__team-grid > *,
+  .v2-governed-panel__message-grid > * {
+    min-width: 0;
+  }
 
   /* Bullpen selected-pitcher recommendation detail
      Keeps metadata readable when the detail card is rendered as a constrained
@@ -95,6 +115,7 @@
   .recommendation-detail-panel,
   .recommendation-panel {
     container-type: inline-size;
+    max-width: 100%;
   }
   .recommendation-detail-panel__trust-grid,
   .recommendation-panel__layout,
@@ -135,6 +156,11 @@
     min-width: 0;
     overflow-wrap: break-word;
     word-break: normal;
+  }
+  .recommendation-detail-panel__trust-grid > *,
+  .recommendation-panel__layout > *,
+  .recommendation-panel__trust-grid > * {
+    min-width: 0;
   }
 
   /* ── Stat Chip ── */

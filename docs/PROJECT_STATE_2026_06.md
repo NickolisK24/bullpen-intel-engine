@@ -154,6 +154,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
 | Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
+| Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -339,7 +340,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 10 Status
+## Recommendation Engine V2 Strategy and Phase 11 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -351,7 +352,7 @@ integration work, and Phase 7 backend-only refusal/fail-closed integration
 work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
 client integration work, Phase 10 governed frontend rendering work, and Phase
 10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
-layout remediation work.
+layout remediation work, and Phase 11 mobile/accessibility validation work.
 
 The official strategy foundation is:
 
@@ -432,6 +433,10 @@ The Phase 10A completion record is:
 The Phase 10B completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
+
+The Phase 11 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -824,6 +829,37 @@ The performance remediation does not change recommendation logic, fatigue
 formulas, V1 behavior, V2 governance behavior, API route shape, ranking,
 selection, prediction, or best/preferred/recommended pitcher behavior.
 
+Recommendation Engine V2 Phase 11 Mobile Accessibility Validation validates
+and improves the governed frontend surfaces after the Phase 10, Phase 10A,
+Phase 10B, V1 Candidate Evaluation layout, and loading-performance
+remediations.
+
+The Phase 11 validation updates:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/components/recommendations/RecommendationPitcherDetailSection.jsx`
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/components/bullpen/Bullpen.jsx`
+- `frontend/src/components/bullpen/PitcherDetail.jsx`
+- `frontend/src/components/UI/LoadingPane.jsx`
+- `frontend/src/components/UI/ErrorState.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationV2Rendering.test.mjs`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+Phase 11 validates the Dashboard V2 panel, Bullpen selected-pitcher detail
+surface, and embedded Recommendation Engine V1 Candidate Evaluation surface
+at mobile and tablet widths. It adds or preserves explicit V2 section
+headings, status and alert semantics, fail-closed announcements, visible
+focus treatment, keyboard access to selected-pitcher detail, focus transfer
+when the detail surface opens, and embedded V1 trust/freshness/refusal
+metadata labeling.
+
+The Phase 11 validation does not change recommendation logic, fatigue
+formulas, backend behavior, API behavior, V1 behavior, V2 governance behavior,
+ranking, selection, prediction, or best/preferred/recommended pitcher
+behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -842,6 +878,7 @@ Possible future expansion areas include:
 
 This project state document does not authorize further Recommendation Engine
 API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
-surfaces beyond the governed Phase 10 rendering layer and Phase 10B Bullpen
-selected-pitcher layout remediation, pitcher ranking, pitcher ordering,
-scoring, or final pitcher selection.
+surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
+selected-pitcher layout remediation, and Phase 11 mobile/accessibility
+validation, pitcher ranking, pitcher ordering, scoring, or final pitcher
+selection.

@@ -14,6 +14,13 @@ const FORBIDDEN_DISPLAY_TERMS = [
   /\bforecast\b/i,
 ]
 
+const SAFE_GOVERNANCE_DISCLAIMER_PATTERNS = [
+  /\b(?:fatigue|workload)\s+score\b/ig,
+  /\bnot\s+(?:a|an)?\s*[^.]*\b(?:forecast|projection|prediction)\b[^.]*\.?/ig,
+  /\b(?:does not|do not|did not|must not|cannot|can't|should not|will not|without)\b[^.]*\b(?:rank|ranking|select|selection|recommend|recommended|prediction|predict|projection|project|forecast|score)\b[^.]*\.?/ig,
+  /\bno\b[^.]*\b(?:rank|ranking|selection|select|recommendation|recommend|prediction|projection|forecast|score|winner|pick)\b[^.]*\.?/ig,
+]
+
 function asArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -38,6 +45,13 @@ function displayValue(value, fallback = 'Unavailable') {
   return String(value)
 }
 
+function sectionId(label) {
+  return `recommendation-v2-${String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')}`
+}
+
 function orderingPolicyLabel(value) {
   if (!value) return 'neutral'
   const text = String(value)
@@ -52,10 +66,14 @@ function messageFrom(item) {
 
 function hasForbiddenDisplayText(value) {
   if (typeof value === 'string') {
-    if (/non[-_ ]?ranking|input[-_ ]?order[-_ ]?non[-_ ]?ranking/i.test(value)) {
+    let text = String(value)
+    if (/non[-_ ]?ranking|input[-_ ]?order[-_ ]?non[-_ ]?ranking/i.test(text)) {
       return false
     }
-    return FORBIDDEN_DISPLAY_TERMS.some((pattern) => pattern.test(value))
+    SAFE_GOVERNANCE_DISCLAIMER_PATTERNS.forEach((pattern) => {
+      text = text.replace(pattern, '')
+    })
+    return FORBIDDEN_DISPLAY_TERMS.some((pattern) => pattern.test(text))
   }
   if (Array.isArray(value)) {
     return value.some(hasForbiddenDisplayText)
@@ -156,7 +174,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
       { label: 'Generated', value: displayValue(trustMetadata.generated_at || state.generatedAt) },
     ],
     freshnessRows: [
-      { label: 'Freshness', value: displayValue(freshness.freshness_state) },
+      { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
       { label: 'Data Through', value: displayValue(freshness.data_through) },
       { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
       { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
@@ -173,9 +191,11 @@ export function getRecommendationV2BullpenStateView(state = null) {
 }
 
 function MetadataGrid({ title, rows }) {
+  const id = sectionId(title)
+
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby={id}>
+      <h3 id={id} className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</h3>
       <div className="v2-governed-panel__metadata-grid gap-2">
         {rows.map((row) => (
           <div key={row.label} className="min-w-0">
@@ -184,14 +204,14 @@ function MetadataGrid({ title, rows }) {
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
 function GovernanceRows({ rows }) {
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Governance</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-governance">
+      <h3 id="recommendation-v2-governance" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Governance</h3>
       <div className="v2-governed-panel__metadata-grid gap-2">
         {rows.map((row) => (
           <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
@@ -202,14 +222,16 @@ function GovernanceRows({ rows }) {
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
 function MessageList({ title, messages, emptyText }) {
+  const id = sectionId(title)
+
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby={id}>
+      <h3 id={id} className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</h3>
       {messages.length ? (
         <ul className="space-y-2">
           {messages.map((message) => (
@@ -221,14 +243,14 @@ function MessageList({ title, messages, emptyText }) {
       ) : (
         <div className="font-mono text-xs text-chalk500">{emptyText}</div>
       )}
-    </div>
+    </section>
   )
 }
 
 function InventorySummary({ inventory }) {
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Inventory</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-inventory">
+      <h3 id="recommendation-v2-inventory" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Inventory</h3>
       {inventory.length ? (
         <div className="v2-governed-panel__inventory-grid gap-3">
           {inventory.map((item) => (
@@ -262,14 +284,14 @@ function InventorySummary({ inventory }) {
       ) : (
         <div className="font-mono text-xs text-chalk500">No inventory summary available.</div>
       )}
-    </div>
+    </section>
   )
 }
 
 function CandidateGroups({ groups }) {
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Neutral Candidate Groups</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-candidate-groups">
+      <h3 id="recommendation-v2-candidate-groups" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Neutral Candidate Groups</h3>
       {groups.length ? (
         <div className="grid gap-3">
           {groups.map((group) => (
@@ -303,7 +325,7 @@ function CandidateGroups({ groups }) {
       ) : (
         <div className="font-mono text-xs text-chalk500">No neutral groups available from the current contract state.</div>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -314,8 +336,8 @@ function TeamContext({ context }) {
   const stress = asArray(context.stress_indicators)
 
   return (
-    <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-      <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Team Context</div>
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-team-context">
+      <h3 id="recommendation-v2-team-context" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Team Context</h3>
       <div className="v2-governed-panel__team-grid gap-4">
         <Distribution title="Availability" rows={availabilityRows} />
         <Distribution title="Workload" rows={workloadRows} />
@@ -324,7 +346,7 @@ function TeamContext({ context }) {
         <SimpleItems title="Readiness" items={readiness} />
         <SimpleItems title="Stress" items={stress} />
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -375,7 +397,13 @@ export default function RecommendationV2BullpenStatePanel({
 }) {
   if (loading) {
     return (
-      <section className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden">
+      <section
+        className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="Loading V2 bullpen intelligence"
+      >
         <LoadingPane message="Loading V2 bullpen intelligence..." />
       </section>
     )
@@ -383,7 +411,11 @@ export default function RecommendationV2BullpenStatePanel({
 
   if (error) {
     return (
-      <section className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden">
+      <section
+        className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden"
+        role="alert"
+        aria-label="V2 bullpen intelligence unavailable"
+      >
         <ErrorState message="V2 bullpen intelligence could not be loaded." onRetry={onRetry} />
       </section>
     )
@@ -392,25 +424,37 @@ export default function RecommendationV2BullpenStatePanel({
   const view = getRecommendationV2BullpenStateView(state)
 
   return (
-    <section className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+    <section
+      className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0"
+      style={{ animationFillMode: 'forwards' }}
+      aria-labelledby="recommendation-v2-heading"
+      aria-describedby="recommendation-v2-description"
+    >
       <div className="border-b border-dirt bg-chalk/20 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="font-mono text-xs uppercase tracking-widest text-chalk400">{view.title}</div>
-            <h2 className="mt-1 font-display text-2xl tracking-wider text-chalk100">Bullpen State</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
+            <h2 id="recommendation-v2-heading" className="mt-1 font-display text-2xl tracking-wider text-chalk100">Bullpen State</h2>
+            <p id="recommendation-v2-description" className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
               Governed bullpen visibility from the V2 contract. This surface summarizes context and evidence only.
             </p>
           </div>
-          <div className={`shrink-0 self-start rounded border px-3 py-2 font-mono text-xs uppercase tracking-widest ${view.statusTone}`}>
+          <div
+            className={`shrink-0 self-start rounded border px-3 py-2 font-mono text-xs uppercase tracking-widest ${view.statusTone}`}
+            aria-label={`V2 contract state: ${view.statusLabel}`}
+          >
             {view.statusLabel}
           </div>
         </div>
       </div>
 
       <div className="space-y-5 p-4 sm:p-5 lg:p-6">
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {`V2 bullpen intelligence ${view.statusLabel}. ranking_applied ${displayValue(state?.governance?.rankingApplied, 'missing')}. selection_made ${displayValue(state?.governance?.selectionMade, 'missing')}.`}
+        </div>
+
         {view.isUnavailable && (
-          <div className="min-w-0 rounded border border-red-500/35 bg-red-500/5 p-4">
+          <div className="min-w-0 rounded border border-red-500/35 bg-red-500/5 p-4" role="alert" aria-live="assertive">
             <div className="font-mono text-xs uppercase tracking-widest text-red-300">Contract Unavailable</div>
             <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk400">
               Required V2 metadata is missing, malformed, or outside governed display boundaries.
@@ -425,7 +469,7 @@ export default function RecommendationV2BullpenStatePanel({
         )}
 
         {view.isFailClosed && (
-          <div className="min-w-0 rounded border border-amber/40 bg-amber/5 p-4">
+          <div className="min-w-0 rounded border border-amber/40 bg-amber/5 p-4" role="alert" aria-live="assertive">
             <div className="font-mono text-xs uppercase tracking-widest text-amber">Fail-Closed</div>
             <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk400">
               V2 declined full bullpen-state output and preserved refusal metadata for review.
@@ -434,14 +478,14 @@ export default function RecommendationV2BullpenStatePanel({
         )}
 
         {view.bullpenState && (
-          <div className="min-w-0 rounded border border-dirt bg-field/35 p-4">
-            <div className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">State</div>
+          <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-state">
+            <h3 id="recommendation-v2-state" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">State</h3>
             <div className="v2-governed-panel__state-grid gap-3">
               <StatusCell label="Status" value={view.bullpenState.status} />
               <StatusCell label="Stress" value={view.bullpenState.stress_level} />
               <StatusCell label="Readiness" value={view.bullpenState.readiness_summary} />
             </div>
-          </div>
+          </section>
         )}
 
         <GovernanceRows rows={view.governanceRows} />

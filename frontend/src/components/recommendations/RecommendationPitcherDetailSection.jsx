@@ -77,7 +77,7 @@ export default function RecommendationPitcherDetailSection({
           disabled={isLoading}
           aria-label={`Evaluate recommendation candidate for ${candidateName}`}
           aria-controls="recommendation-detail-result"
-          className="inline-flex min-h-10 w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-2 text-center font-mono text-xs font-semibold uppercase tracking-wider text-amber transition hover:bg-amber/15 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-2 text-center font-mono text-xs font-semibold uppercase tracking-wider text-amber transition hover:bg-amber/15 focus-visible:ring-2 focus-visible:ring-amber/70 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
         >
           {isLoading ? 'Evaluating...' : 'Evaluate Candidate'}
         </button>
@@ -88,7 +88,7 @@ export default function RecommendationPitcherDetailSection({
         <TrustMarker label="Ranking" value="No Bullpen Ranking Applied" />
       </div>
 
-      <div className="sr-only" aria-live="polite">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
         {isLoading
           ? 'Candidate evaluation loading.'
           : response

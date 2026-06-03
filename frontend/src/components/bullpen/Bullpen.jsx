@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
@@ -126,6 +126,7 @@ function PitcherView({
 }) {
   const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
+  const detailRegionRef = useRef(null)
 
   // Compute counts from the full dataset, BEFORE filtering — tab labels
   // describe what's available, not what's currently shown.
@@ -185,6 +186,23 @@ function PitcherView({
 
   // Reset page to 1 when filters change (so filtering doesn't drop you onto an empty page)
   useEffect(() => { setPage(1) }, [riskFilter, availabilityFilter, selectedTeam, sortBy, searchTerm, includeStale])
+
+  useEffect(() => {
+    if (selectedPitcher) {
+      detailRegionRef.current?.focus()
+    }
+  }, [selectedPitcher])
+
+  const toggleSelectedPitcher = (row) => {
+    setSelected(selectedPitcher?.pitcher_id === row.pitcher_id ? null : row)
+  }
+
+  const handlePitcherRowKeyDown = (event, row) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      toggleSelectedPitcher(row)
+    }
+  }
 
   const thStyle = (key) =>
     `cursor-pointer select-none ${sortBy === key ? 'text-amber' : 'text-chalk400'} hover:text-chalk200 transition-colors`
@@ -281,8 +299,12 @@ function PitcherView({
                   {visible.map(row => (
                     <tr
                       key={row.id || row.pitcher_id}
-                      onClick={() => setSelected(selectedPitcher?.pitcher_id === row.pitcher_id ? null : row)}
-                      className={selectedPitcher?.pitcher_id === row.pitcher_id ? 'bg-amber/5 border-l-2 border-l-amber' : ''}
+                      onClick={() => toggleSelectedPitcher(row)}
+                      onKeyDown={(event) => handlePitcherRowKeyDown(event, row)}
+                      tabIndex={0}
+                      aria-selected={selectedPitcher?.pitcher_id === row.pitcher_id}
+                      aria-label={`Open pitcher detail for ${row.pitcher?.full_name ?? 'pitcher'}`}
+                      className={`${selectedPitcher?.pitcher_id === row.pitcher_id ? 'bg-amber/5 border-l-2 border-l-amber' : ''} focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70`}
                     >
                       <td className="text-chalk200 font-medium">{row.pitcher?.full_name ?? '—'}</td>
                       <td className="font-mono text-xs text-chalk400">{row.pitcher?.team_abbreviation}</td>
@@ -318,7 +340,13 @@ function PitcherView({
             so selecting a pitcher always reveals the detail (it was hidden
             below the lg breakpoint before). PitcherDetail's header ✕ closes it. */}
         {selectedPitcher && (
-          <div className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 lg:static lg:inset-auto lg:z-auto lg:w-full lg:max-w-none lg:overflow-visible lg:bg-transparent lg:p-0 2xl:w-[36rem] 2xl:shrink-0">
+          <div
+            ref={detailRegionRef}
+            tabIndex={-1}
+            role="region"
+            aria-label={`Selected pitcher detail for ${selectedPitcher.pitcher?.full_name ?? 'pitcher'}`}
+            className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:static lg:inset-auto lg:z-auto lg:w-full lg:max-w-none lg:overflow-visible lg:bg-transparent lg:p-0 2xl:w-[36rem] 2xl:shrink-0"
+          >
             <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={() => setSelected(null)} />
           </div>
         )}

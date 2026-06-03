@@ -5,7 +5,12 @@ export default function LoadingPane({ message = 'Loading...', label }) {
   const text = message ?? label ?? 'Loading...'
 
   return (
-    <div className="flex flex-col items-center justify-center gap-5 py-20 text-chalk400">
+    <div
+      className="flex flex-col items-center justify-center gap-5 py-20 text-chalk400"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
       {/* Pulsing baseball diamond */}
       <div className="relative flex items-center justify-center w-20 h-20">
         <span

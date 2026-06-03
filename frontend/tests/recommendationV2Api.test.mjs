@@ -140,6 +140,7 @@ test('normalizes a successful V2 bullpen-state response without ranking or selec
   assert.deepEqual(view.explanations, baseV2Response.explanations)
   assert.deepEqual(view.refusalReasons, [])
   assert.deepEqual(view.trustMetadata, baseV2Response.trust_metadata)
+  assert.equal(view.failClosed, false)
   assert.equal(view.bullpenState.candidate_groups[0].ordering, 'input_order_non_ranking')
   assert.deepEqual(view.missingFields, [])
   assert.deepEqual(view.malformedFields, [])
@@ -174,7 +175,53 @@ test('preserves fail-closed refusal metadata as a contract-safe state', () => {
   assert.equal(view.governance.rankingApplied, false)
   assert.equal(view.governance.selectionMade, false)
   assert.deepEqual(view.refusalReasons, failClosedResponse.refusal_reasons)
+  assert.equal(view.failClosed, true)
   assert.equal(view.bullpenState, null)
+})
+
+test('accepts structured fail-closed metadata from the V2 bullpen-state contract', () => {
+  const failClosedResponse = {
+    ...baseV2Response,
+    confidence: 'low',
+    data_state: 'missing',
+    freshness: {
+      sync_timestamp: null,
+      data_through: '2026-05-01',
+      state: 'missing',
+      state_code: 'MISSING',
+      stale_warning: null,
+      missing_data_warning: 'Some source evidence is missing or incomplete.',
+    },
+    fail_closed: {
+      failed_closed: true,
+      state: 'degraded',
+      governance_state: 'failed_closed',
+      ranking_applied: false,
+      selection_made: false,
+      reason_codes: ['data_state_missing'],
+      safe_partial_output_allowed: true,
+    },
+    refusal_reasons: [
+      {
+        refusal_id: 'missing_data_state',
+        reason: 'data_state_missing',
+        message: 'V2 context is degraded or refused because source data state is missing.',
+        applies_to: 'bullpen_state',
+      },
+    ],
+  }
+
+  const view = normalizeRecommendationV2BullpenStateResponse(failClosedResponse)
+
+  assert.equal(view.contractState, 'fail_closed')
+  assert.equal(view.isContractSafe, true)
+  assert.equal(view.isFailClosed, true)
+  assert.deepEqual(view.failClosed, failClosedResponse.fail_closed)
+  assert.deepEqual(view.freshness, failClosedResponse.freshness)
+  assert.deepEqual(view.refusalReasons, failClosedResponse.refusal_reasons)
+  assert.deepEqual(view.malformedFields, [])
+  assert.equal(view.governance.rankingApplied, false)
+  assert.equal(view.governance.selectionMade, false)
 })
 
 test('marks responses with missing governance fields unavailable without defaults', () => {

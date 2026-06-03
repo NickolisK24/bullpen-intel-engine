@@ -324,6 +324,7 @@ function StatusContent({ view, error, onRetry }) {
       data-recommendation-state={view.mode}
       role={view.mode === 'refusal' ? 'alert' : 'status'}
       aria-live="polite"
+      aria-atomic="true"
     >
       <div className="font-mono text-[11px] uppercase tracking-wider text-chalk400">Recommendation Status Area</div>
       <div className="mt-1 text-lg font-semibold text-chalk100">{view.statusLabel}</div>
@@ -430,7 +431,7 @@ export default function RecommendationPanel({
           </SectionCard>
         </div>
 
-        <aside className="min-w-0 space-y-4">
+        <aside className="min-w-0 space-y-4" aria-label="Recommendation trust freshness refusal and metadata">
           <SectionCard title="Trust And Freshness">
             <div className="recommendation-panel__trust-grid gap-3">
               <FieldBadge label="Confidence" value={view.trust.confidence} />

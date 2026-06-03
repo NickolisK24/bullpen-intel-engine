@@ -82,7 +82,14 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             {pitcher?.jersey_number && <><span>·</span><span>#{pitcher.jersey_number}</span></>}
           </div>
         </div>
-        <button onClick={onClose} className="shrink-0 text-chalk400 hover:text-chalk200 text-lg leading-none">✕</button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close selected pitcher detail"
+          className="shrink-0 rounded px-2 py-1 text-lg leading-none text-chalk400 hover:text-chalk200 focus-visible:ring-2 focus-visible:ring-amber/70"
+        >
+          ✕
+        </button>
       </div>
 
       {cf ? (
