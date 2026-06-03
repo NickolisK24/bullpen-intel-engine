@@ -427,6 +427,29 @@ only. It must use the V2.5 governance hardening records as entry criteria and
 must not implement runtime behavior until a separately reviewed implementation
 phase is authorized.
 
+## V3 Phase 1 Follow-Up
+
+V3 product capability planning has begun through:
+
+- `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
+
+V3 Phase 1 performs a neutral review of current certified capabilities,
+prototype surfaces, experimental surfaces, legacy surfaces, data availability,
+implementation risk, governance risk, portfolio value, and baseball operations
+value.
+
+V3 Phase 1 recommends:
+
+```text
+TEAM_OPERATIONS_BULLPEN_READINESS_PLANNING
+```
+
+This follow-up does not reopen V2.5 governance hardening and does not authorize
+V3 runtime implementation. Any future implementation phase must still satisfy
+the lifecycle, evidence, owner, contract, trust, freshness, refusal,
+fail-closed, anti-ranking, anti-selection, anti-prediction, test,
+certification, and rollout gates applicable to the proposed surface.
+
 ## Formal Conclusion
 
 BaseballOS V2.5 governance hardening is formally closed.

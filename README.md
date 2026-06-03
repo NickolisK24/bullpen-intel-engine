@@ -128,6 +128,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
+| BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -256,7 +257,11 @@ today:
   governance evidence to exact test files and test names where available. V2.5
   Phase 29 formally closes the governance hardening program and classifies the
   remaining operational retention gaps as non-blocking for V3 product
-  capability planning.
+  capability planning. V3 Phase 1 is complete and neutrally evaluates current
+  product paths, selecting Team Operations Bullpen Readiness planning as the
+  best next product direction based on current evidence, data availability,
+  implementation risk, governance risk, portfolio value, and baseball
+  operations value.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -344,7 +349,10 @@ today:
   [`docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`](docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md),
   and the completed V2.5 Phase 29 governance hardening closeout and V3
   readiness decision in
-  [`docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`](docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md).
+  [`docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`](docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md),
+  and the completed V3 Phase 1 product capability review and priority decision
+  in
+  [`docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`](docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -426,6 +434,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md
     ├── V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md
     ├── V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md
+    ├── V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -682,6 +691,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 29 formal governance hardening closeout, gap
   classification, V3 product capability planning readiness, and certified V2
   boundary preservation.
+- [`docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`](docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md)
+  — completed V3 Phase 1 product capability review and priority decision,
+  neutral option matrix, Team Operations Bullpen Readiness planning
+  recommendation, and governance boundary preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -788,7 +801,11 @@ evidence retention ownership, defines monitoring artifact format, and maps
 current production governance evidence to exact test files and test names where
 available. Phase 29 is complete and formally closes the V2.5 governance
 hardening program, with V3 product capability planning ready under the existing
-governance gates.
+governance gates. V3 Phase 1 is complete and selects Team Operations Bullpen
+Readiness planning as the next product direction after reviewing current
+certified capabilities, prototype surfaces, experimental surfaces, legacy
+surfaces, data availability, implementation risk, governance risk, portfolio
+value, and baseball operations value.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

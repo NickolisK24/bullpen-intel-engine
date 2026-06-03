@@ -173,6 +173,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
+| BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -425,6 +426,12 @@ decision is complete and formally closes the V2.5 governance hardening
 initiative. Remaining operational retention gaps are classified as non-blocking
 for governance closeout, and V3 product capability planning is ready under the
 existing governance gates.
+BaseballOS V3 Phase 1 product capability review and priority decision is
+complete and neutrally evaluates the current program state, prototype surfaces,
+experimental surfaces, legacy surfaces, data availability, implementation risk,
+governance risk, portfolio value, and baseball operations value. It recommends
+Team Operations Bullpen Readiness planning as the next product direction
+without authorizing runtime behavior.
 
 The official strategy foundation is:
 
@@ -590,6 +597,10 @@ The V2.5 Phase 29 governance hardening closeout and V3 readiness decision
 record is:
 
 - `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
+
+The V3 Phase 1 product capability review and priority decision record is:
+
+- `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2148,6 +2159,83 @@ Result: Passed after targeted documentation staging.
 Root `npm test` is not required for Phase 29. No root `package.json` exists,
 which is expected and is not a project failure.
 
+BaseballOS V3 Phase 1 Product Capability Review and Priority Decision is
+complete.
+
+The V3 Phase 1 record is:
+
+- `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
+
+Phase 1 reviews:
+
+- current certified production capabilities
+- current prototype surfaces
+- current experimental surfaces
+- current legacy surfaces
+- Recommendation Engine V1 and V2 gaps
+- Availability Engine gaps
+- Dashboard and Bullpen Intelligence gaps
+- Prospect Pipeline readiness
+- Team Operations Intelligence readiness
+- Game Context Intelligence readiness
+- additional product paths discovered from repository and documentation review
+- implementation risk
+- governance risk
+- data availability
+- portfolio value
+- baseball operations value
+
+Phase 1 product direction decision is:
+
+```text
+TEAM_OPERATIONS_BULLPEN_READINESS_PLANNING
+```
+
+Recommended next milestone:
+
+```text
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition
+```
+
+The recommendation is planning-only. It does not authorize implementation,
+runtime behavior changes, API contract changes, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, lifecycle promotion,
+production expansion, Prospect Pipeline production work, or Game Context
+Intelligence implementation.
+
+Phase 1 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 1 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, or Recommendation Engine V1 behavior.
+
+Phase 1 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-1-product-review
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 1. No root `package.json` exists,
+which is expected and is not a project failure.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -2182,8 +2270,10 @@ evidence packet review and backfill execution, or Phase 26 lifecycle evidence
 citation backfill and stewardship review, or Phase 27 lifecycle evidence
 section-level citation map, or Phase 28 evidence ownership, monitoring
 artifact, and test mapping closeout, or Phase 29 governance hardening closeout
-and V3 readiness decision. Phase 29 authorizes V3 product capability planning
-only. It does not authorize V3 runtime implementation.
+and V3 readiness decision, or V3 Phase 1 product capability review and
+priority decision. Phase 29 authorizes V3 product capability planning only.
+V3 Phase 1 selects the next planning direction only. It does not authorize V3
+runtime implementation.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
