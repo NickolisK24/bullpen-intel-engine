@@ -115,6 +115,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
+| BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -205,7 +206,10 @@ today:
   Dashboard V2 intelligence surface and makes candidate groups, team context,
   limitations, explanations, and refusal details summary-first with expansion
   on demand. V2.5 Phase 16 approves the current certified V2 Dashboard
-  experience for production rollout within the implemented scope only. No
+  experience for production rollout within the implemented scope only. V2.5
+  Phase 17 establishes post-rollout monitoring, warning review, and boundary
+  review procedures to protect the approved system from governance,
+  contract, UX, and technical-debt regressions. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -524,6 +528,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   certified V2 Dashboard experience for production rollout while preserving
   the no-ranking, no-selection, no-prediction, trust, freshness, refusal, and
   fail-closed boundaries.
+- [`docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`](docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md)
+  — completed V2.5 Phase 17 post-rollout monitoring and boundary review record
+  for governance drift, contract drift, UX drift, technical-debt warnings,
+  regression protection, and continued production boundary preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -598,14 +606,16 @@ by rendering candidate groups, team context, limitations, explanations, and
 refusal details as summaries first, with complete detail available through
 expansion. V2.5 Phase 16 is complete and approves the current certified V2
 Dashboard experience for production rollout within the implemented scope only.
+V2.5 Phase 17 is complete and establishes post-rollout monitoring, warning
+review, regression-protection review, and boundary review for the approved
+production scope.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
 the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, post-rollout monitoring, certified
-inventory usability, and broader
+intelligence, readiness visibility, certified inventory usability, and broader
 explainability while preserving V1 trust protections. No V2 ranking,
 final pitcher choice, or prediction behavior exists. Beyond
 that, see **Product Direction** above: usage

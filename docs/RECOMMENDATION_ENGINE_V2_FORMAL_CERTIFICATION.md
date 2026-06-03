@@ -525,3 +525,26 @@ not approve additional V2 endpoints, additional V2 feature surfaces, pitcher
 ranking, pitcher ordering, automated pitcher selection, prediction, score
 ordering, best/preferred/recommended pitcher behavior, or new recommendation
 logic.
+
+## 21. Post-Rollout Monitoring and Boundary Review
+
+The completed post-rollout monitoring and boundary review record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
+Phase 17 records the current V2 rollout status, governance review, contract
+review, UX review, technical-debt review, warning review, regression
+protection review, monitoring recommendations, future risk assessment, and
+boundary review decision.
+
+The Phase 17 boundary review decision is:
+
+```text
+BOUNDARY_REVIEW_PASSED
+```
+
+Phase 17 does not expand certification scope or production rollout approval.
+It confirms that the current approved V2 experience remains bounded to
+descriptive bullpen-state intelligence, neutral grouping, inventory visibility,
+team-context visibility, trust/freshness/refusal/fail-closed transparency, and
+user-controlled detail expansion.

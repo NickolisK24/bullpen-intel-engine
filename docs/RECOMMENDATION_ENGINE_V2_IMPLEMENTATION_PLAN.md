@@ -1295,6 +1295,15 @@ certification, and post-certification usability work are complete.
 
 ## 24. Phase 17: Post-Rollout Monitoring and Boundary Review
 
+**Status**
+
+BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review is
+complete.
+
+The completed Phase 17 record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
 **Goal**
 
 Monitor the approved V2 production experience and preserve the Phase 16
@@ -1326,9 +1335,12 @@ boundary after rollout.
 
 **Required tests**
 
-- Select validation based on observed production changes, if any.
-- Re-run frontend and backend governance tests before any follow-up change is
-  merged.
+- Frontend regression suite.
+- Full backend regression suite.
+- Diff whitespace checks.
+- Existing frontend and backend governance tests cover anti-ranking,
+  anti-selection, anti-prediction, trust metadata, freshness metadata, refusal
+  metadata, and fail-closed behavior.
 
 **Documentation updates**
 
@@ -1341,6 +1353,7 @@ boundary after rollout.
 - Any rollout issues are classified.
 - Any required remediation is explicitly scoped.
 - V2 behavior remains within the Phase 16-approved scope.
+- Boundary review decision is recorded as `BOUNDARY_REVIEW_PASSED`.
 
 ## 25. Dependency Map
 
@@ -1366,6 +1379,7 @@ Phase 0 Repo Hygiene
   -> V2.5 Phase 15 Intelligence Presentation Optimization
   -> Phase 16 Production Rollout Decision
   -> Phase 17 Post-Rollout Monitoring and Boundary Review
+  -> Phase 18 Maintenance Warning Remediation Review
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1579,9 +1593,10 @@ governance package. Production rollout must be recorded separately.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 17 Post-Rollout Monitoring and Boundary Review
+Recommendation Engine V2 Phase 18 Maintenance Warning Remediation Review
 ```
 
-This milestone may begin after the Phase 16-approved current certified V2
-experience remains enabled in production. Phase 17 must monitor production
-behavior and preserve all Phase 1 through Phase 16 safeguards.
+This milestone may begin after Phase 17 boundary review remains passed. Phase
+18 should address SQLAlchemy and datetime warning remediation planning,
+dependency-upgrade readiness, and continued V2 regression protection without
+expanding the approved Recommendation Engine V2 feature surface.

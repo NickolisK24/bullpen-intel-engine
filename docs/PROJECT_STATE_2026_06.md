@@ -160,6 +160,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
+| BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -364,6 +365,8 @@ optimization and V2.5 Phase 15 intelligence presentation optimization are also
 complete as post-certification usability milestones. BaseballOS V2.5 Phase 16
 production rollout decision is complete and approves the current certified V2
 Dashboard experience for production rollout within the implemented scope only.
+BaseballOS V2.5 Phase 17 post-rollout monitoring and boundary review is also
+complete and preserves the approved V2 production boundary.
 
 The official strategy foundation is:
 
@@ -468,6 +471,10 @@ The V2.5 Phase 15 intelligence presentation optimization record is:
 The V2.5 Phase 16 production rollout decision record is:
 
 - `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+The V2.5 Phase 17 post-rollout monitoring and boundary review record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1072,6 +1079,61 @@ recommendation logic, trust logic, freshness logic, refusal logic, ranking
 behavior, selection behavior, prediction behavior, or Recommendation Engine V1
 behavior.
 
+BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review evaluates
+the approved V2 production boundary after rollout approval. It reviews
+governance drift, contract drift, UX drift, warning classes, existing
+regression protection, and future monitoring requirements.
+
+The Phase 17 post-rollout monitoring and boundary review record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
+The Phase 17 boundary review decision is:
+
+```text
+BOUNDARY_REVIEW_PASSED
+```
+
+Phase 17 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 17 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-post-rollout
+```
+
+Result:
+
+```text
+278 passed, 0 failed, 139 warnings
+```
+
+Phase 17 did not discover a regression-protection gap. Existing frontend and
+backend tests already cover anti-ranking, anti-selection, anti-prediction,
+trust metadata, freshness metadata, refusal metadata, fail-closed behavior,
+collapsed/expanded V2 inventory and intelligence presentation, and prohibited
+decision-language rendering.
+
+The warning review classifies SQLAlchemy and datetime deprecation warnings as
+maintenance items to monitor, not current V2 governance blockers. Local
+pytest cache/temp permission warnings and frontend generated/dependency drift
+remain unstaged local artifacts.
+
+Phase 17 did not touch backend source files, frontend source files, API
+contracts, recommendation logic, trust logic, freshness logic, refusal logic,
+ranking behavior, selection behavior, prediction behavior, fatigue formulas,
+or Recommendation Engine V1 behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1094,7 +1156,8 @@ surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
 selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
 Phase 12 certification readiness validation, and Phase 13 formal
 certification review, V2.5 Phase 14 inventory presentation optimization, and
-V2.5 Phase 15 intelligence presentation optimization, or production rollout
-beyond the Phase 16-approved current certified V2 experience,
+V2.5 Phase 15 intelligence presentation optimization, production rollout
+within the Phase 16-approved current certified V2 experience, or Phase 17
+post-rollout monitoring and boundary review,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.
