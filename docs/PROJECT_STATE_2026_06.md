@@ -155,6 +155,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
+| Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -340,7 +341,7 @@ explanations, limitations, category eligibility, refusal reasons,
 does not perform ranking, scoring, bullpen comparison, route navigation, or
 final pitcher selection.
 
-## Recommendation Engine V2 Strategy and Phase 11 Status
+## Recommendation Engine V2 Strategy and Phase 12 Status
 
 Recommendation Engine V2 has completed strategy, governance boundaries,
 architecture, contracts, certification planning, implementation readiness,
@@ -352,7 +353,8 @@ integration work, and Phase 7 backend-only refusal/fail-closed integration
 work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
 client integration work, Phase 10 governed frontend rendering work, and Phase
 10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
-layout remediation work, and Phase 11 mobile/accessibility validation work.
+layout remediation work, and Phase 11 mobile/accessibility validation work,
+and Phase 12 certification readiness validation work.
 
 The official strategy foundation is:
 
@@ -437,6 +439,10 @@ The Phase 10B completion record is:
 The Phase 11 completion record is:
 
 - `docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`
+
+The Phase 12 certification readiness record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -860,6 +866,49 @@ formulas, backend behavior, API behavior, V1 behavior, V2 governance behavior,
 ranking, selection, prediction, or best/preferred/recommended pitcher
 behavior.
 
+Recommendation Engine V2 Phase 12 Certification Readiness Validation compiles
+backend, API, frontend, governed rendering, mobile, accessibility, trust,
+freshness, refusal, fail-closed, and V1 regression evidence for the
+implemented V2 system.
+
+The Phase 12 readiness record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
+
+Phase 12 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+69 passed, 0 failed
+```
+
+Phase 12 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v2-certification
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The Phase 12 readiness classification is:
+
+```text
+READY_FOR_CERTIFICATION_REVIEW
+```
+
+This means V2 is ready to enter formal certification review. It does not mean
+V2 is production certified, does not approve production rollout, and does not
+add product behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -879,6 +928,6 @@ Possible future expansion areas include:
 This project state document does not authorize further Recommendation Engine
 API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
 surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
-selected-pitcher layout remediation, and Phase 11 mobile/accessibility
-validation, pitcher ranking, pitcher ordering, scoring, or final pitcher
-selection.
+selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
+and Phase 12 certification readiness validation, pitcher ranking, pitcher
+ordering, scoring, or final pitcher selection.

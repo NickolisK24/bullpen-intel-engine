@@ -933,54 +933,84 @@ Verify mobile and accessibility behavior preserves governance guarantees.
 - Accessibility text remains governance-safe.
 - Trust metadata, limitations, and refusal states remain accessible.
 
-## 19. Phase 12: Test Expansion
+## 19. Phase 12: Certification Readiness Validation
+
+**Implementation status**
+
+Complete.
+
+Recommendation Engine V2 Phase 12 is complete as a certification-readiness
+validation milestone. It compiles backend, API, frontend, governed rendering,
+mobile, accessibility, trust, freshness, refusal, fail-closed, and V1
+regression evidence for the completed V2 system.
+
+The Phase 12 readiness classification is:
+
+```text
+READY_FOR_CERTIFICATION_REVIEW
+```
+
+This means V2 may enter formal certification review. It does not mean V2 is
+production certified, does not approve production rollout, and does not add
+product behavior.
+
+Completion record:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
 
 **Goal**
 
-Expand test coverage to prove V2 behavior satisfies governance, contract, and
-certification requirements.
+Validate that the completed V2 implementation has enough evidence to enter
+formal certification review.
 
 **Allowed work**
 
-- Add backend unit tests.
-- Add API contract tests.
-- Add frontend rendering tests.
-- Add mobile layout checks.
-- Add accessibility checks.
-- Add governance language scans.
-- Add anti-ranking tests.
-- Add anti-selection tests.
-- Add freshness tests.
-- Add refusal/fail-closed tests.
-- Add V1 regression tests.
+- Compile certification readiness evidence.
+- Review backend, API, frontend, mobile, accessibility, trust, freshness,
+  refusal, fail-closed, and V1 regression evidence.
+- Add focused validation tests only if readiness gaps are found.
+- Update project-state and README surfaces.
 
 **Forbidden work**
 
+- Do not add new recommendation behavior.
 - Do not weaken existing V1 tests to make V2 pass.
-- Do not replace governance assertions with snapshot-only coverage.
-- Do not skip refusal, freshness, limitation, or explanation coverage.
+- Do not change API contracts except to document existing implemented
+  behavior.
+- Do not introduce ranking, selection, prediction, score, best, preferred, or
+  recommended-pitcher behavior.
 
 **Dependencies**
 
 - Phases 1 through 11.
 - Certification requirements.
+- Recent V1 Candidate Evaluation layout remediation.
+- Dashboard and Bullpen loading performance remediation.
 
 **Required tests**
 
-- All required V2 test categories.
+- Frontend tests.
+- Full backend tests.
 - Existing V1 tests.
-- Any lightweight documentation validation required for updated docs.
+- V2 API, frontend, trust, freshness, refusal, fail-closed, anti-ranking, and
+  anti-selection coverage.
 
 **Documentation updates**
 
-- Update certification evidence notes with executed test commands and results.
+- Produce the Phase 12 certification readiness validation record.
+- Update `README.md`.
+- Update `docs/PROJECT_STATE_2026_06.md`.
+- Update this implementation plan.
 
 **Exit criteria**
 
-- Required V2 tests pass.
+- Required frontend tests pass.
+- Required backend tests pass.
 - V1 regression tests pass.
-- Anti-ranking and anti-selection audits pass.
+- Anti-ranking and anti-selection evidence passes.
 - Fail-closed paths are covered.
+- Certification blockers, if any, are documented.
+- Final readiness classification is recorded.
 
 ## 20. Phase 13: Certification Review
 
@@ -1008,7 +1038,7 @@ Review the completed implementation against the V2 certification requirements.
 
 **Dependencies**
 
-- Phase 12 test expansion complete.
+- Phase 12 certification readiness validation complete.
 - `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
 
 **Required tests**
@@ -1090,7 +1120,7 @@ Phase 0 Repo Hygiene
   -> Phase 9 Frontend Client
   -> Phase 10 Frontend Rendering
   -> Phase 11 Mobile and Accessibility
-  -> Phase 12 Test Expansion
+  -> Phase 12 Certification Readiness Validation
   -> Phase 13 Certification Review
   -> Phase 14 Production Rollout Decision
 ```
@@ -1302,9 +1332,10 @@ governance package.
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 11 Mobile and Accessibility Validation
+Recommendation Engine V2 Phase 13 Formal Certification Review
 ```
 
-This milestone may begin only after the user explicitly approves
-implementation. Phase 11 remains governed by the approved V2 frontend contract
-and must preserve all Phase 1 through Phase 10B safeguards.
+This milestone may begin only after the user explicitly approves formal
+certification review. Phase 13 must audit the completed V2 implementation
+against the approved V2 certification requirements and preserve all Phase 1
+through Phase 12 safeguards.

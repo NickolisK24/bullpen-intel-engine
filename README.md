@@ -110,6 +110,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
 | Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
+| Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -189,7 +190,9 @@ today:
   sections remain readable. Phase 11 validates and improves mobile and
   accessibility behavior across the Dashboard V2 panel, Bullpen
   selected-pitcher detail surface, and embedded V1 Candidate Evaluation
-  surface. No
+  surface. Phase 12 compiles backend, API, frontend, trust, freshness,
+  refusal, fail-closed, mobile, accessibility, and V1 regression evidence and
+  classifies V2 as ready for formal certification review. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -231,7 +234,9 @@ today:
   and the completed V1 Candidate Evaluation layout remediation record in
   [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md),
   and the completed Phase 11 record in
-  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md).
+  [`docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`](docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md),
+  and the completed Phase 12 certification readiness record in
+  [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -465,6 +470,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   the Dashboard V2 panel, Bullpen selected-pitcher detail surface, embedded V1
   Candidate Evaluation surface, trust/freshness/refusal visibility, keyboard
   access, focus visibility, governance compliance, and V1 preservation.
+- [`docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`](docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md)
+  — completed V2 Phase 12 record for certification readiness validation,
+  backend/API/frontend evidence, trust/freshness/refusal/fail-closed evidence,
+  governance compliance, V1 regression evidence, known limitations, and the
+  readiness classification for formal certification review.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -527,15 +537,17 @@ backend-only API contract exposure layer, and the Phase 9 frontend client
 integration layer, and the Phase 10 governed frontend rendering layer
 complete, with Phase 10A desktop layout remediation and Phase 10B Bullpen
 selected-pitcher layout remediation complete, and Phase 11 mobile and
-accessibility validation complete.
+accessibility validation complete. Phase 12 certification readiness validation
+is complete and classifies V2 as ready for formal certification review, not
+production certified.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
 the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, mobile/accessibility certification, and
-broader explainability while preserving V1 trust protections. No V2 ranking,
+intelligence, readiness visibility, formal certification review, and broader
+explainability while preserving V1 trust protections. No V2 ranking,
 final pitcher choice, or prediction behavior exists. Beyond
 that, see **Product Direction** above: usage
 simulation, role-aware fatigue, exports/API, and real prospect ingestion -
