@@ -706,3 +706,28 @@ explicitly authorized. It should translate this capability definition into an
 implementation plan with proposed surfaces, API contract options, frontend
 presentation options, test plan, lifecycle evidence requirements, and
 certification gates.
+
+## V3 Phase 3 Follow-Up
+
+V3 Phase 3 has completed the Team Operations Bullpen Readiness implementation
+plan:
+
+- `docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`
+
+Phase 3 defines the proposed backend architecture, proposed domain module
+structure, proposed API endpoint plan, proposed response contract, allowed and
+prohibited input data, readiness status calculation plan, constraint detection
+plan, workload pressure summary plan, coverage inventory plan, handedness
+coverage plan, availability distribution plan, trust metadata plan, freshness
+metadata plan, refusal and fail-closed plan, explainability plan, frontend
+integration plan, dashboard presentation plan, accessibility plan, test
+strategy, certification strategy, rollout strategy, risks, mitigations, and
+implementation sequence.
+
+The next planning milestone after Phase 3 is:
+
+```text
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract And Certification Requirements
+```
+
+This follow-up does not authorize implementation or runtime behavior changes.

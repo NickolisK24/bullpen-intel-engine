@@ -130,6 +130,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
+| BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -266,7 +267,10 @@ today:
   allowed inputs, prohibited inputs, allowed outputs, prohibited outputs,
   readiness vocabulary, metadata requirements, refusal behavior, fail-closed
   requirements, testing expectations, accessibility expectations, and
-  certification gates before any implementation work.
+  certification gates before any implementation work. V3 Phase 3 is complete
+  and converts that definition into a backend, API, frontend, testing,
+  certification, and rollout implementation plan without changing runtime
+  behavior.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -360,7 +364,10 @@ today:
   [`docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`](docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md),
   and the completed V3 Phase 2 Team Operations Bullpen Readiness capability
   definition in
-  [`docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`](docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md).
+  [`docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`](docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md),
+  and the completed V3 Phase 3 Team Operations Bullpen Readiness
+  implementation plan in
+  [`docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`](docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -444,6 +451,7 @@ bullpen-intel-engine/
     ├── V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md
     ├── V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md
     ├── V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md
+    ├── V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -708,6 +716,12 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V3 Phase 2 Team Operations Bullpen Readiness capability
   definition, allowed/prohibited behavior, readiness vocabulary, metadata
   requirements, refusal/fail-closed requirements, and certification gates.
+- [`docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`](docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md)
+  — completed V3 Phase 3 Team Operations Bullpen Readiness implementation
+  plan, proposed backend architecture, proposed API endpoint strategy,
+  proposed response contract, frontend presentation approach, test strategy,
+  certification strategy, rollout strategy, and governance boundary
+  preservation.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -821,6 +835,10 @@ surfaces, data availability, implementation risk, governance risk, portfolio
 value, and baseball operations value. V3 Phase 2 is complete and defines that
 readiness capability before implementation, preserving the existing
 no-ranking, no-selection, no-prediction, and no decision-language boundaries.
+V3 Phase 3 is complete and defines the implementation plan for that readiness
+capability, including the preferred separate Team Operations backend/API
+architecture, governed response contract, Dashboard integration plan, testing
+strategy, certification strategy, and rollout path.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
