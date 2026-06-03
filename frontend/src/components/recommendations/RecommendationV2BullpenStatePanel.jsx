@@ -226,6 +226,60 @@ function getDiagnosticCount(view = {}) {
   )
 }
 
+function failClosedPrimaryReason(failClosed, statusMetadata) {
+  return (
+    failClosed.primary_reason_code
+    || statusMetadata.fail_closed_reason_code
+    || asArray(failClosed.reason_codes)[0]
+    || 'Not reported'
+  )
+}
+
+function failClosedAlertLabel(failClosed, statusMetadata) {
+  return displayValue(
+    failClosed.display_label || statusMetadata.display_label,
+    'Fail-Closed',
+  )
+}
+
+function failClosedStatusLabel(failClosed, statusMetadata) {
+  const label = failClosedAlertLabel(failClosed, statusMetadata)
+  if (/data freshness protection active/i.test(label)) {
+    return 'Freshness Protected'
+  }
+  if (/trust protection active/i.test(label)) {
+    return 'Trust Protected'
+  }
+  return label
+}
+
+function failClosedReasonSummary(failClosed, statusMetadata) {
+  return displayValue(
+    failClosed.reason_summary || statusMetadata.reason_summary,
+    'V2 fail-closed protection is active and refusal metadata is preserved.',
+  )
+}
+
+function failClosedWithheldSummary(failClosed, statusMetadata) {
+  return displayValue(
+    failClosed.withheld_summary || statusMetadata.withheld_summary,
+    'Bullpen state output is controlled by the current V2 protection state.',
+  )
+}
+
+function failClosedRows(failClosed, statusMetadata, freshness) {
+  return [
+    { label: 'Fail-closed state', value: displayValue(failClosed.state || statusMetadata.fail_closed_state) },
+    { label: 'Reason code', value: displayValue(failClosedPrimaryReason(failClosed, statusMetadata)) },
+    { label: 'Freshness failed', value: displayValue(failClosed.freshness_failed ?? statusMetadata.freshness_failed) },
+    { label: 'Trust failed', value: displayValue(failClosed.trust_failed ?? statusMetadata.trust_failed) },
+    { label: 'Partial context safe', value: displayValue(failClosed.partial_context_safe ?? statusMetadata.partial_context_safe) },
+    { label: 'Source freshness', value: displayValue(freshness.source_freshness_status || statusMetadata.source_freshness_status) },
+    { label: 'Aggregate freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
+    { label: 'Synced', value: displayValue(freshness.sync_timestamp || statusMetadata.sync_timestamp) },
+  ]
+}
+
 export function getRecommendationV2BullpenStateView(state = null) {
   if (!state) {
     return {
@@ -236,6 +290,10 @@ export function getRecommendationV2BullpenStateView(state = null) {
       title: 'V2 Bullpen Intelligence',
       statusLabel: 'Unavailable',
       statusTone: 'border-dirt bg-field/40 text-chalk400',
+      failClosedLabel: null,
+      failClosedReasonSummary: null,
+      failClosedWithheldSummary: null,
+      failClosedRows: [],
       trustRows: [],
       freshnessRows: [],
       diagnosticCount: 0,
@@ -272,6 +330,9 @@ export function getRecommendationV2BullpenStateView(state = null) {
 
   const trustMetadata = asObject(state.trustMetadata)
   const freshness = asObject(state.freshness)
+  const failClosed = asObject(state.failClosed)
+  const statusMetadata = asObject(state.statusMetadata)
+  const failClosedLabel = failClosedAlertLabel(failClosed, statusMetadata)
 
   return {
     contractState,
@@ -279,18 +340,22 @@ export function getRecommendationV2BullpenStateView(state = null) {
     isFailClosed,
     isUnavailable,
     title: 'V2 Bullpen Intelligence',
-    statusLabel: isFailClosed ? 'Fail-Closed' : isUnavailable ? 'Unavailable' : 'Available',
+    statusLabel: isFailClosed ? failClosedStatusLabel(failClosed, statusMetadata) : isUnavailable ? 'Unavailable' : 'Available',
     statusTone,
+    failClosedLabel,
+    failClosedReasonSummary: failClosedReasonSummary(failClosed, statusMetadata),
+    failClosedWithheldSummary: failClosedWithheldSummary(failClosed, statusMetadata),
+    failClosedRows: isFailClosed ? failClosedRows(failClosed, statusMetadata, freshness) : [],
     hiddenUnsafeLanguage: unsafeVisibleLanguage,
     diagnosticCount: getDiagnosticCount(state) + (unsafeVisibleLanguage ? 1 : 0),
     governanceRows: [
       {
-        label: 'Ordering applied',
+        label: 'ranking_applied',
         value: displayValue(state.governance?.rankingApplied, 'missing'),
         safe: state.governance?.rankingApplied === false,
       },
       {
-        label: 'Automated decision made',
+        label: 'selection_made',
         value: displayValue(state.governance?.selectionMade, 'missing'),
         safe: state.governance?.selectionMade === false,
       },
@@ -303,8 +368,12 @@ export function getRecommendationV2BullpenStateView(state = null) {
     ],
     freshnessRows: [
       { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
+      { label: 'Source Freshness', value: displayValue(freshness.source_freshness_status || statusMetadata.source_freshness_status) },
+      { label: 'Aggregate V2 Freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
       { label: 'Data Through', value: displayValue(freshness.data_through) },
       { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
+      { label: 'Overall Sync', value: displayValue(freshness.overall_sync_status || statusMetadata.overall_sync_status) },
+      { label: 'Sync Current', value: displayValue(freshness.overall_sync_current ?? statusMetadata.overall_sync_current) },
       { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
       { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
     ],
@@ -1058,10 +1127,21 @@ export default function RecommendationV2BullpenStatePanel({
 
         {view.isFailClosed && (
           <div className="min-w-0 rounded border border-amber/40 bg-amber/5 p-4" role="alert" aria-live="assertive">
-            <div className="font-mono text-xs uppercase tracking-widest text-amber">Fail-Closed</div>
+            <div className="font-mono text-xs uppercase tracking-widest text-amber">{view.failClosedLabel}</div>
             <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk400">
-              V2 declined full bullpen-state output and preserved refusal metadata for review.
+              {view.failClosedReasonSummary}
             </p>
+            <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk500">
+              {view.failClosedWithheldSummary}
+            </p>
+            <div className="v2-governed-panel__metadata-grid mt-3 gap-2">
+              {view.failClosedRows.map((row) => (
+                <div key={row.label} className="min-w-0">
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{row.label}</div>
+                  <div className="v2-governed-panel__text mt-0.5 font-mono text-xs text-chalk200">{row.value}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

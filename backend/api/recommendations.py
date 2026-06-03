@@ -23,6 +23,8 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
+from services import sync as sync_service
+from services import sync_metadata
 
 
 recommendations_bp = Blueprint('recommendations', __name__)
@@ -107,6 +109,7 @@ def get_v2_bullpen_state():
     team_id = request.args.get('team_id', type=int)
     limit = _v2_limit_from_request()
     unsafe_request_errors = _v2_unsafe_request_errors(request.args)
+    sync_status = _v2_sync_status_payload()
 
     if unsafe_request_errors:
         assembly = assemble_v2_context(
@@ -122,7 +125,10 @@ def get_v2_bullpen_state():
             mode=CURRENT_AVAILABILITY_MODE,
         )
         assembly = assemble_v2_context(
-            tuple(_v2_candidate_from_record(record) for record in records),
+            tuple(
+                _v2_candidate_from_record(record, sync_status=sync_status)
+                for record in records
+            ),
             team_id=team_id,
             team_name=_v2_team_name_from_rows(rows),
             generated_at=_v2_generated_at(rows),
@@ -130,10 +136,14 @@ def get_v2_bullpen_state():
                 'api_endpoint': V2_BULLPEN_STATE_ENDPOINT,
                 'api_contract': V2_CONTRACT_DOCUMENT,
                 'engine_version': V2_API_ENGINE_VERSION,
+                'sync_status': sync_status,
             },
         )
 
-    payload = _v2_api_response_payload(_v2_public_assembly_payload(assembly))
+    payload = _v2_api_response_payload(
+        _v2_public_assembly_payload(assembly),
+        sync_status=sync_status,
+    )
     return jsonify(payload)
 
 
@@ -161,7 +171,8 @@ def _v2_unsafe_request_candidate_payload(args):
     }
 
 
-def _v2_candidate_from_record(record):
+def _v2_candidate_from_record(record, *, sync_status=None):
+    sync_status = dict(sync_status or {})
     availability = dict(record.get('availability') or {})
     inputs = dict(availability.get('inputs') or {})
     latest_game_date = record.get('latest_game_date')
@@ -171,8 +182,13 @@ def _v2_candidate_from_record(record):
         or _iso_or_none(latest_game_date)
         or inputs.get('latest_game_date')
     )
-    availability['latest_sync_status'] = availability.get('latest_sync_status')
-    availability['last_successful_sync'] = availability.get('last_successful_sync')
+    availability['latest_sync_status'] = (
+        availability.get('latest_sync_status') or sync_status.get('status')
+    )
+    availability['last_successful_sync'] = (
+        availability.get('last_successful_sync')
+        or sync_status.get('last_successful_sync')
+    )
 
     pitcher = record.get('pitcher')
     return RecommendationCandidate(
@@ -215,12 +231,43 @@ def _v2_generated_at(rows):
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _v2_api_response_payload(assembly_payload):
+def _v2_sync_status_payload():
+    try:
+        return sync_metadata.build_sync_status_payload(
+            legacy_status=sync_service.read_status(),
+        )
+    except Exception:
+        return {
+            'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
+            'last_sync': None,
+            'last_successful_sync': None,
+            'finished_at': None,
+            'data': {
+                'game_logs': None,
+                'latest_game_date': None,
+                'latest_workload_date': None,
+                'latest_fatigue_calculated_at': None,
+            },
+            'freshness': {
+                'is_current': False,
+                'label': 'Sync metadata unavailable.',
+                'limitations': ['Could not read sync status metadata.'],
+            },
+        }
+
+
+def _v2_api_response_payload(assembly_payload, *, sync_status=None):
+    sync_status = dict(sync_status or {})
     context = dict(assembly_payload.get('recommendation_context') or {})
     metadata = dict(assembly_payload.get('metadata') or {})
+    sync_status = sync_status or dict(metadata.get('sync_status') or {})
     refusal_fail_closed = dict(metadata.get('refusal_fail_closed') or {})
     critical_failure = bool(refusal_fail_closed.get('critical_failure'))
-    freshness = _v2_api_freshness(context.get('freshness'))
+    freshness = _v2_api_freshness(
+        context.get('freshness'),
+        sync_status=sync_status,
+        data_state=context.get('data_state'),
+    )
     limitations = [
         _v2_api_limitation(item)
         for item in context.get('limitations') or []
@@ -235,6 +282,18 @@ def _v2_api_response_payload(assembly_payload):
     ]
     trust_metadata = _v2_api_trust_metadata(context, refusal_fail_closed)
 
+    fail_closed = _v2_api_fail_closed(
+        refusal_fail_closed,
+        trust_metadata=trust_metadata,
+        freshness=freshness,
+    )
+    status_metadata = _v2_api_status_metadata(
+        freshness=freshness,
+        fail_closed=fail_closed,
+        trust_metadata=trust_metadata,
+        sync_status=sync_status,
+    )
+
     payload = {
         'scope': 'bullpen_state',
         'ranking_applied': False,
@@ -243,13 +302,11 @@ def _v2_api_response_payload(assembly_payload):
         'data_state': context.get('data_state'),
         'generated_at': context.get('generated_at'),
         'freshness': freshness,
+        'status_metadata': status_metadata,
         'limitations': limitations,
         'explanations': explanations,
         'refusal_reasons': refusal_reasons,
-        'fail_closed': _v2_api_fail_closed(
-            refusal_fail_closed,
-            trust_metadata=trust_metadata,
-        ),
+        'fail_closed': fail_closed,
         'trust_metadata': trust_metadata,
         'bullpen_state': (
             None
@@ -339,16 +396,39 @@ def _v2_api_bullpen_state(
     }
 
 
-def _v2_api_freshness(freshness):
+def _v2_api_freshness(freshness, *, sync_status=None, data_state=None):
     freshness = dict(freshness or {})
+    sync_status = dict(sync_status or {})
+    sync_data = dict(sync_status.get('data') or {})
+    sync_freshness = dict(sync_status.get('freshness') or {})
+    aggregate_state = freshness.get('state')
+    source_status = data_state or aggregate_state
+    sync_timestamp = (
+        freshness.get('last_successful_sync')
+        or sync_status.get('last_successful_sync')
+    )
     return {
-        'sync_timestamp': freshness.get('last_successful_sync'),
+        'sync_timestamp': sync_timestamp,
         'data_through': freshness.get('data_through'),
         'freshness_state': freshness.get('state'),
         'state_code': freshness.get('state_code'),
         'stale_warning': freshness.get('stale_warning'),
         'missing_data_warning': freshness.get('missing_data_warning'),
         'limitations': list(freshness.get('limitations') or []),
+        'overall_sync_status': sync_status.get('status'),
+        'overall_sync_current': sync_freshness.get('is_current'),
+        'overall_sync_label': sync_freshness.get('label'),
+        'overall_sync_data_through': sync_data.get('latest_game_date'),
+        'overall_sync_latest_workload_date': sync_data.get('latest_workload_date'),
+        'overall_sync_latest_fatigue_calculated_at': (
+            sync_data.get('latest_fatigue_calculated_at')
+        ),
+        'source_freshness_status': source_status,
+        'aggregate_v2_freshness_status': aggregate_state,
+        'freshness_failed': _v2_freshness_failed(
+            {'freshness_state': aggregate_state},
+            (),
+        ),
     }
 
 
@@ -392,21 +472,176 @@ def _v2_explanation_evidence(details):
     return evidence
 
 
-def _v2_api_fail_closed(refusal_fail_closed, *, trust_metadata):
+def _v2_api_fail_closed(refusal_fail_closed, *, trust_metadata, freshness):
+    reason_codes = list(refusal_fail_closed.get('reason_codes') or [])
+    trust_failed = _v2_trust_failed(refusal_fail_closed, reason_codes)
+    freshness_failed = _v2_freshness_failed(freshness, reason_codes)
+    safe_partial = bool(refusal_fail_closed.get('safe_partial_output_allowed'))
+    primary_reason = reason_codes[0] if reason_codes else None
     return {
         'state': refusal_fail_closed.get('state'),
         'failed_closed': bool(refusal_fail_closed.get('failed_closed')),
         'critical_failure': bool(refusal_fail_closed.get('critical_failure')),
-        'safe_partial_output_allowed': bool(
-            refusal_fail_closed.get('safe_partial_output_allowed')
+        'safe_partial_output_allowed': safe_partial,
+        'partial_context_safe': safe_partial,
+        'reason_codes': reason_codes,
+        'primary_reason_code': primary_reason,
+        'reason_summary': _v2_fail_closed_reason_summary(
+            reason_codes,
+            trust_failed=trust_failed,
+            freshness_failed=freshness_failed,
         ),
-        'reason_codes': list(refusal_fail_closed.get('reason_codes') or []),
+        'display_label': _v2_fail_closed_display_label(
+            refusal_fail_closed,
+            trust_failed=trust_failed,
+            freshness_failed=freshness_failed,
+        ),
+        'withheld_summary': _v2_withheld_summary(
+            refusal_fail_closed,
+            safe_partial=safe_partial,
+            trust_failed=trust_failed,
+            freshness_failed=freshness_failed,
+        ),
+        'trust_failed': trust_failed,
+        'freshness_failed': freshness_failed,
         'source_evidence_state': refusal_fail_closed.get('source_evidence_state'),
         'governance_state': refusal_fail_closed.get('governance_state'),
         'trust_metadata': dict(trust_metadata),
         'ranking_applied': False,
         'selection_made': False,
     }
+
+
+def _v2_api_status_metadata(*, freshness, fail_closed, trust_metadata, sync_status):
+    sync_status = dict(sync_status or {})
+    return {
+        'overall_sync_status': freshness.get('overall_sync_status'),
+        'overall_sync_current': freshness.get('overall_sync_current'),
+        'overall_sync_label': freshness.get('overall_sync_label'),
+        'sync_timestamp': freshness.get('sync_timestamp'),
+        'sync_data_through': freshness.get('overall_sync_data_through'),
+        'source_freshness_status': freshness.get('source_freshness_status'),
+        'aggregate_v2_freshness_status': (
+            freshness.get('aggregate_v2_freshness_status')
+        ),
+        'fail_closed_state': fail_closed.get('state'),
+        'fail_closed_reason_code': fail_closed.get('primary_reason_code'),
+        'reason_summary': fail_closed.get('reason_summary'),
+        'trust_status': 'failed' if fail_closed.get('trust_failed') else 'passed',
+        'freshness_status': (
+            'failed' if fail_closed.get('freshness_failed') else 'passed'
+        ),
+        'trust_failed': bool(fail_closed.get('trust_failed')),
+        'freshness_failed': bool(fail_closed.get('freshness_failed')),
+        'safe_partial_output_allowed': bool(
+            fail_closed.get('safe_partial_output_allowed')
+        ),
+        'partial_context_safe': bool(fail_closed.get('partial_context_safe')),
+        'withheld_summary': fail_closed.get('withheld_summary'),
+        'sync_source': (dict(sync_status.get('sync') or {}).get('source')),
+        'ranking_applied': False,
+        'selection_made': False,
+        'trust_metadata': dict(trust_metadata),
+    }
+
+
+def _v2_trust_failed(refusal_fail_closed, reason_codes):
+    if int(refusal_fail_closed.get('trust_validation_error_count') or 0) > 0:
+        return True
+    trust_codes = {'malformed_evidence', 'unsupported_trust_fields'}
+    return any(
+        code in trust_codes
+        or (str(code).startswith('missing_') and str(code).endswith('_metadata'))
+        for code in reason_codes
+    )
+
+
+def _v2_freshness_failed(freshness, reason_codes):
+    state = str(
+        freshness.get('freshness_state')
+        or freshness.get('aggregate_v2_freshness_status')
+        or freshness.get('state')
+        or ''
+    ).lower()
+    if state in {'stale', 'missing', 'incomplete', 'historical', 'unknown'}:
+        return True
+    return any(str(code).startswith('data_state_') for code in reason_codes)
+
+
+def _v2_fail_closed_reason_summary(
+    reason_codes,
+    *,
+    trust_failed,
+    freshness_failed,
+):
+    reason_codes = tuple(reason_codes or ())
+    if 'data_state_stale' in reason_codes:
+        return (
+            'Source freshness is stale. V2 is preserving fail-closed '
+            'protection while displaying degraded context only.'
+        )
+    if 'data_state_missing' in reason_codes:
+        return (
+            'Source evidence is missing or incomplete. V2 is preserving '
+            'fail-closed protection before full context is shown.'
+        )
+    if 'governance_unsafe_source_evidence' in reason_codes:
+        return (
+            'Unsupported decision-style fields were rejected. V2 output is '
+            'withheld to preserve governance boundaries.'
+        )
+    if trust_failed:
+        return (
+            'Required trust metadata failed validation. V2 output is withheld '
+            'until trust metadata is represented.'
+        )
+    if freshness_failed:
+        return (
+            'Source freshness is degraded. V2 is preserving fail-closed '
+            'protection while exposing refusal metadata.'
+        )
+    if reason_codes:
+        return (
+            'V2 fail-closed protection is active for the reported refusal '
+            'reason.'
+        )
+    return 'No fail-closed refusal reason is active.'
+
+
+def _v2_fail_closed_display_label(
+    refusal_fail_closed,
+    *,
+    trust_failed,
+    freshness_failed,
+):
+    if freshness_failed and not trust_failed:
+        return 'Data freshness protection active'
+    if trust_failed:
+        return 'Trust protection active'
+    if refusal_fail_closed.get('failed_closed'):
+        return 'Fail-closed protection active'
+    return 'V2 contract available'
+
+
+def _v2_withheld_summary(
+    refusal_fail_closed,
+    *,
+    safe_partial,
+    trust_failed,
+    freshness_failed,
+):
+    if bool(refusal_fail_closed.get('critical_failure')):
+        if trust_failed:
+            return 'Bullpen state output is withheld because trust metadata failed.'
+        return 'Bullpen state output is withheld because the failure is critical.'
+    if safe_partial and freshness_failed:
+        return (
+            'Current-state interpretation is withheld; degraded context remains '
+            'visible with refusal metadata.'
+        )
+    if safe_partial:
+        return 'Degraded context remains visible with refusal metadata.'
+    return 'No V2 bullpen context is withheld.'
 
 
 def _v2_api_trust_metadata(context, refusal_fail_closed):

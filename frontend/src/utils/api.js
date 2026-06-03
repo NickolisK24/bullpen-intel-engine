@@ -326,6 +326,7 @@ export function normalizeRecommendationV2BullpenStateResponse(response = {}) {
     generatedAt: hasOwn(response, 'generated_at') ? response.generated_at : null,
     failClosed: hasOwn(response, 'fail_closed') ? response.fail_closed : null,
     freshness: isObject(response?.freshness) ? response.freshness : null,
+    statusMetadata: isObject(response?.status_metadata) ? response.status_metadata : null,
     limitations: Array.isArray(response?.limitations) ? response.limitations : null,
     explanations: Array.isArray(response?.explanations) ? response.explanations : null,
     refusalReasons: Array.isArray(response?.refusal_reasons) ? response.refusal_reasons : null,

@@ -8,6 +8,7 @@ from api.recommendations import recommendations_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.sync_run import SyncRun
 from recommendation import v2_governance_errors, v2_trust_metadata_errors
 from recommendation.v2_assembly import V2ContextAssembly
 from services.availability import ACTIVE_WINDOW_DAYS
@@ -118,6 +119,30 @@ def add_scored_pitcher(
     )
     db.session.commit()
     return pitcher
+
+
+def add_successful_sync_run(
+    *,
+    started_at=datetime(2026, 6, 3, 7, 30, 0),
+    completed_at=datetime(2026, 6, 3, 7, 44, 27),
+):
+    db.session.add(
+        SyncRun(
+            started_at=started_at,
+            completed_at=completed_at,
+            status='success',
+            source='scheduled',
+            latest_game_date=date.today(),
+            latest_workload_date=date.today(),
+            latest_fatigue_calculated_at=completed_at,
+            records_processed=12,
+            new_logs_added=6,
+            pitchers_updated=2,
+            errors=0,
+            created_at=started_at,
+        )
+    )
+    db.session.commit()
 
 
 def v1_candidate_payload():
@@ -261,19 +286,41 @@ class TestRecommendationEngineV2ApiContract:
 
     def test_stale_evidence_returns_explicit_refusal_metadata(self, client):
         with client.application.app_context():
+            add_successful_sync_run()
             add_scored_pitcher(
                 'Stale Arm',
                 seed=1,
                 days_since_last_game=ACTIVE_WINDOW_DAYS + 5,
             )
+            add_scored_pitcher('Fresh Arm', seed=2, days_since_last_game=1)
 
         payload = client.get(f'{ROUTE}?team_id=7').get_json()
 
         assert payload['data_state'] == 'stale'
         assert payload['freshness']['freshness_state'] == 'stale'
+        assert payload['freshness']['source_freshness_status'] == 'stale'
+        assert payload['freshness']['aggregate_v2_freshness_status'] == 'stale'
+        assert payload['freshness']['overall_sync_status'] == 'success'
+        assert payload['freshness']['overall_sync_current'] is True
+        assert payload['freshness']['sync_timestamp'] == '2026-06-03T07:44:27'
         assert payload['fail_closed']['failed_closed'] is True
         assert payload['fail_closed']['state'] == 'degraded'
+        assert payload['fail_closed']['critical_failure'] is False
+        assert payload['fail_closed']['safe_partial_output_allowed'] is True
+        assert payload['fail_closed']['partial_context_safe'] is True
+        assert payload['fail_closed']['trust_failed'] is False
+        assert payload['fail_closed']['freshness_failed'] is True
+        assert payload['fail_closed']['primary_reason_code'] == 'data_state_stale'
+        assert 'Source freshness is stale.' in payload['fail_closed']['reason_summary']
         assert 'data_state_stale' in payload['fail_closed']['reason_codes']
+        assert payload['status_metadata']['overall_sync_status'] == 'success'
+        assert payload['status_metadata']['sync_timestamp'] == '2026-06-03T07:44:27'
+        assert payload['status_metadata']['source_freshness_status'] == 'stale'
+        assert payload['status_metadata']['aggregate_v2_freshness_status'] == 'stale'
+        assert payload['status_metadata']['fail_closed_reason_code'] == 'data_state_stale'
+        assert payload['status_metadata']['trust_status'] == 'passed'
+        assert payload['status_metadata']['freshness_status'] == 'failed'
+        assert payload['status_metadata']['partial_context_safe'] is True
         assert any(
             refusal['reason'] == 'data_state_stale'
             for refusal in payload['refusal_reasons']

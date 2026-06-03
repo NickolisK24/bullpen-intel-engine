@@ -199,8 +199,8 @@ test('renders governed V2 bullpen intelligence in available state', () => {
   assert.ok(htmlIncludes(html, 'Available Candidates'))
   assert.ok(htmlIncludes(html, '1 member'))
   assert.ok(htmlIncludes(html, 'Candidates grouped by current availability category.'))
-  assert.ok(htmlIncludes(html, 'Ordering applied'))
-  assert.ok(htmlIncludes(html, 'Automated decision made'))
+  assert.ok(htmlIncludes(html, 'ranking_applied'))
+  assert.ok(htmlIncludes(html, 'selection_made'))
   assert.ok(htmlIncludes(html, 'neutral source order'))
   assert.ok(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent or warm-up activity.'))
@@ -643,34 +643,91 @@ test('renders fail-closed state with refusal metadata visible', () => {
     confidence: 'low',
     dataState: 'stale',
     freshness: {
-      data_through: '2026-05-01',
-      state: 'missing',
-      state_code: 'MISSING',
-      stale_warning: null,
-      missing_data_warning: 'Some source evidence is missing or incomplete.',
+      sync_timestamp: '2026-06-03T07:44:27',
+      data_through: '2026-06-02',
+      freshness_state: 'stale',
+      source_freshness_status: 'stale',
+      aggregate_v2_freshness_status: 'stale',
+      overall_sync_status: 'success',
+      overall_sync_current: true,
+      stale_warning: 'Some source evidence is stale.',
+      missing_data_warning: null,
+    },
+    statusMetadata: {
+      overall_sync_status: 'success',
+      overall_sync_current: true,
+      sync_timestamp: '2026-06-03T07:44:27',
+      sync_data_through: '2026-06-02',
+      source_freshness_status: 'stale',
+      aggregate_v2_freshness_status: 'stale',
+      fail_closed_state: 'degraded',
+      fail_closed_reason_code: 'data_state_stale',
+      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
+      trust_status: 'passed',
+      freshness_status: 'failed',
+      trust_failed: false,
+      freshness_failed: true,
+      safe_partial_output_allowed: true,
+      partial_context_safe: true,
+      withheld_summary: 'Current-state interpretation is withheld; degraded context remains visible with refusal metadata.',
+      ranking_applied: false,
+      selection_made: false,
+    },
+    failClosed: {
+      failed_closed: true,
+      state: 'degraded',
+      critical_failure: false,
+      safe_partial_output_allowed: true,
+      partial_context_safe: true,
+      reason_codes: ['data_state_stale'],
+      primary_reason_code: 'data_state_stale',
+      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
+      display_label: 'Data freshness protection active',
+      withheld_summary: 'Current-state interpretation is withheld; degraded context remains visible with refusal metadata.',
+      trust_failed: false,
+      freshness_failed: true,
     },
     bullpenState: null,
     refusalReasons: [
       {
         refusal_id: 'stale_freshness',
-        reason: 'freshness_stale',
-        message: 'Current bullpen-state output is refused because data is stale.',
+        reason: 'data_state_stale',
+        message: 'V2 context is degraded or refused because source data state is stale.',
         applies_to: 'bullpen_state',
       },
     ],
   }
 
+  const view = getRecommendationV2BullpenStateView(failClosedState)
   const html = renderPanel(failClosedState)
 
-  assert.ok(htmlIncludes(html, 'Fail-Closed'))
-  assert.ok(htmlIncludes(html, 'missing'))
-  assert.ok(htmlIncludes(html, 'Some source evidence is missing or incomplete.'))
+  assert.equal(view.statusLabel, 'Freshness Protected')
+  assert.ok(htmlIncludes(html, 'Data freshness protection active'))
+  assert.ok(htmlIncludes(html, 'Fail-closed state'))
+  assert.ok(htmlIncludes(html, 'degraded'))
+  assert.ok(htmlIncludes(html, 'Reason code'))
+  assert.ok(htmlIncludes(html, 'data_state_stale'))
+  assert.ok(htmlIncludes(html, 'Source freshness is stale.'))
+  assert.ok(htmlIncludes(html, '2026-06-03T07:44:27'))
+  assert.ok(htmlIncludes(html, 'Source Freshness'))
+  assert.ok(htmlIncludes(html, 'Aggregate V2 Freshness'))
+  assert.ok(htmlIncludes(html, 'Overall Sync'))
+  assert.ok(htmlIncludes(html, 'Trust failed'))
+  assert.ok(htmlIncludes(html, 'false'))
+  assert.ok(htmlIncludes(html, 'Freshness failed'))
+  assert.ok(htmlIncludes(html, 'true'))
+  assert.ok(htmlIncludes(html, 'Partial context safe'))
+  assert.ok(htmlIncludes(html, 'ranking_applied'))
+  assert.ok(htmlIncludes(html, 'selection_made'))
+  assert.ok(htmlIncludes(html, 'Some source evidence is stale.'))
   assert.ok(htmlIncludes(html, 'role="alert"'))
   assert.ok(htmlIncludes(html, 'aria-live="assertive"'))
   assert.ok(htmlIncludes(html, 'Refusal'))
-  assert.ok(htmlIncludes(html, 'Current bullpen-state output is refused because data is stale.'))
+  assert.ok(htmlIncludes(html, 'V2 context is degraded or refused because source data state is stale.'))
   assert.ok(htmlIncludes(html, 'No inventory summary available.'))
   assert.ok(htmlIncludes(html, 'No neutral groups available from the current contract state.'))
+  assert.ok(!htmlIncludes(html, 'V2 declined full bullpen-state output'))
+  assert.ok(!htmlIncludes(html, 'broken'))
 })
 
 test('renders unavailable state without rendering withheld bullpen details', () => {

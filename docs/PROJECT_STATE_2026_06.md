@@ -174,6 +174,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
 | BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
 | Recommendation Engine V2 Production Fail-Closed Diagnosis | Complete / Remediation Planning |
+| Recommendation Engine V2 Production Fail-Closed Communication and Freshness Metadata Remediation | Complete |
 | BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
 | BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
@@ -288,10 +289,11 @@ status, or manager intent.
 - No private clubhouse, medical, travel, or manager-intent data is available.
 - No Statcast, Hawk-Eye biomechanics, Stuff+, or pitch-quality modeling is used.
 - Role-aware starter/reliever handling remains limited.
-- The V2 production fail-closed surface currently communicates degraded
-  source-freshness refusal too generically. The June 3, 2026 diagnosis finds
-  the fail-closed behavior correct, but recommends a bounded UI and freshness
-  metadata remediation plan.
+- The V2 production fail-closed communication limitation identified on June 3,
+  2026 is remediated with explicit sync, source-freshness, aggregate V2
+  freshness, trust, reason-code, and safe partial-output metadata. Remaining
+  risk is operational monitoring if source evidence stays stale after normal
+  sync.
 - Warm-up workload and bullpen phone activity are not modeled.
 - Prospect Pipeline remains a prototype with sample data, not a live
   minor-league data product.
@@ -437,6 +439,10 @@ The Recommendation Engine V2 production fail-closed diagnosis is complete and
 finds that the observed production degraded fail-closed state is correctly
 triggered by stale source evidence while Dashboard communication and V2
 freshness metadata need a bounded remediation plan.
+The Recommendation Engine V2 production fail-closed communication and freshness
+metadata remediation is also complete and improves Dashboard communication
+without changing Recommendation Engine logic, candidate grouping, fatigue
+formulas, or fail-closed criteria.
 BaseballOS V3 Phase 1 product capability review and priority decision is
 complete and neutrally evaluates the current program state, prototype surfaces,
 experimental surfaces, legacy surfaces, data availability, implementation risk,
@@ -623,6 +629,11 @@ record is:
 The Recommendation Engine V2 production fail-closed diagnosis record is:
 
 - `docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`
+
+The Recommendation Engine V2 production fail-closed communication and freshness
+metadata remediation record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md`
 
 The V3 Phase 1 product capability review and priority decision record is:
 
@@ -2468,6 +2479,44 @@ trust logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
 behavior, ranking behavior, selection behavior, prediction behavior, best
 option behavior, preferred option behavior, or recommended option behavior.
 
+## V2 Production Fail-Closed Communication and Freshness Metadata Remediation
+
+Recommendation Engine V2 Production Fail-Closed Communication and Freshness
+Metadata Remediation is complete.
+
+The remediation record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md`
+
+The remediation implements the diagnosis-recommended next milestone by exposing
+sync status, sync timestamp, source freshness status, aggregate V2 freshness
+status, fail-closed reason code, user-facing reason summary, trust failure
+status, freshness failure status, and safe partial-output status in the V2
+bullpen-state response and Dashboard rendering.
+
+The remediated Dashboard communication uses the degraded freshness-protection
+state instead of presenting the surface as generically broken when stale source
+freshness is the active refusal reason.
+
+The remediation preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+It does not change backend recommendation logic, API eligibility, candidate
+grouping, trust criteria, freshness criteria, refusal criteria, fail-closed
+criteria, fatigue formulas, ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, or matchup advice.
+
+The recommended next milestone is:
+
+```text
+V2 Production Fail-Closed Monitoring and Source-Freshness Distribution Review
+```
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -2505,7 +2554,8 @@ artifact, and test mapping closeout, or Phase 29 governance hardening closeout
 and V3 readiness decision, or V3 Phase 1 product capability review and
 priority decision, or V3 Phase 2 Team Operations Bullpen Readiness capability
 definition, or V3 Phase 3 Team Operations Bullpen Readiness implementation
-plan. Phase 29 authorizes V3 product capability planning only. V3 Phase 1
+plan, or V2 production fail-closed communication and freshness metadata
+remediation. Phase 29 authorizes V3 product capability planning only. V3 Phase 1
 selects the next planning direction only. V3 Phase 2 defines the selected
 capability only. V3 Phase 3 defines implementation planning only. It does not
 authorize V3 runtime implementation.
