@@ -21,6 +21,9 @@ environment: production
 debug: false
 ```
 
+Operational Verification 1 later verified that deployed health target. The
+remaining rollout blockers are now non-configuration evidence gaps.
+
 This remediation does not modify runtime behavior.
 
 ## 1. Remediation Purpose
@@ -253,6 +256,42 @@ DEPLOYED_PRODUCTION_HEALTH_TARGET_NOT_MET
 
 The deployed backend must remain a rollout blocker until Render configuration is
 corrected and the health target is reverified.
+
+## Operational Verification 1 Follow-Up
+
+Operational Verification 1 is complete in:
+
+```text
+docs/OPERATIONAL_VERIFICATION_1_RENDER_PRODUCTION_HEALTH_EVIDENCE_CAPTURE_AND_ROLLOUT_BLOCKER_REASSESSMENT.md
+docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md
+```
+
+Verification conclusion:
+
+```text
+DEPLOYMENT_CONFIGURATION_VERIFIED_CORRECT
+```
+
+Retained production health evidence:
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+status: ok
+environment: production
+debug: false
+```
+
+Deployment-configuration blocker reassessment:
+
+```text
+Should deployment configuration remain a rollout blocker?
+NO
+```
+
+Controlled rollout is still not approved by Operational Verification 1.
+Remaining evidence must cover rendered Dashboard review, mobile/responsive
+review, accessibility smoke review, explicit maintainer review, and protected
+write/admin endpoint gating confirmation.
 
 ## 11. V2 Impact Review
 

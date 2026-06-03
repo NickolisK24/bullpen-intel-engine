@@ -149,6 +149,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
 | Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
 | Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
+| Operational Verification 1 Render Production Health Evidence Capture | Production Health Verified / Deployment Config Blocker Cleared |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -359,10 +360,13 @@ today:
   evidence with debug disabled and manual rollout evidence is retained.
   Operational Remediation 1 is complete and classifies the required remediation
   as `EXTERNAL_DEPLOYMENT_CONFIG_REQUIRED`: local production-mode health
-  verifies `environment = production` and `debug = false`, while deployed health
-  still reports `environment = development` and `debug = true`. Render must set
-  `APP_ENV=production` with required production variables before V3 rollout
-  review can resume.
+  verified `environment = production` and `debug = false`, while deployed
+  health still reported `environment = development` and `debug = true` at
+  remediation time. Operational Verification 1 is complete and captures
+  deployed Render health evidence reporting `environment = production` and
+  `debug = false`; the deployment-configuration blocker is cleared, but
+  controlled rollout remains unapproved pending rendered Dashboard, mobile,
+  accessibility, maintainer, and protected admin-endpoint evidence.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -973,6 +977,13 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed operational remediation record defining the Render production
   environment variables, health verification target, local production-mode
   health result, external deployment action, and continued rollout blocker.
+- [`docs/OPERATIONAL_VERIFICATION_1_RENDER_PRODUCTION_HEALTH_EVIDENCE_CAPTURE_AND_ROLLOUT_BLOCKER_REASSESSMENT.md`](docs/OPERATIONAL_VERIFICATION_1_RENDER_PRODUCTION_HEALTH_EVIDENCE_CAPTURE_AND_ROLLOUT_BLOCKER_REASSESSMENT.md)
+  — completed operational verification record retaining Render production
+  health evidence and clearing the deployment-configuration blocker without
+  approving controlled rollout.
+- [`docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md`](docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md)
+  — retained monitoring artifact for production health verification,
+  environment/debug values, rollout impact, and follow-up actions.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1139,10 +1150,12 @@ complete and concludes the deployed backend selected development configuration,
 not a production-safe configuration. Controlled rollout remains blocked until
 deployment configuration is remediated and health/manual evidence is retained.
 Operational Remediation 1 is complete and confirms the repository production
-configuration path returns production/debug-safe health locally, but deployed
-Render health still does not meet the production target. Controlled rollout
-remains blocked until Render production variables are corrected and deployed
-health verifies `environment: production` and `debug: false`.
+configuration path returns production/debug-safe health locally. Operational
+Verification 1 is complete and retains deployed production health evidence
+showing `environment: production` and `debug: false`, so deployment
+configuration no longer remains the active rollout blocker.
+Controlled rollout still is not approved until rendered Dashboard, mobile,
+accessibility, maintainer, and protected admin-endpoint evidence is retained.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
