@@ -151,6 +151,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
 | Operational Verification 1 Render Production Health Evidence Capture | Production Health Verified / Deployment Config Blocker Cleared |
 | BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment | Blocked Pending Manual Review / Full Rollout Not Approved |
+| BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval | Controlled Rollout Approved / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -372,7 +373,12 @@ today:
   verification; the decision is
   `CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW` because rendered
   Dashboard, browser, mobile/responsive, accessibility, explicit maintainer,
-  and deployed protected endpoint evidence remain pending.
+  and deployed protected endpoint evidence remain pending. V3 Phase 19 is
+  complete and records maintainer-confirmed blocker satisfaction for manual
+  Dashboard review, browser review, responsive review, accessibility smoke
+  review, protected operational endpoint review, and governance invariants. The
+  decision is `CONTROLLED_ROLLOUT_APPROVED`; full production rollout remains
+  not approved.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -998,6 +1004,14 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — retained Phase 18 monitoring artifact recording production health
   verification status, pending manual review evidence, protected endpoint
   review status, governance status, and the blocked rollout decision.
+- [`docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md`](docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md)
+  — completed V3 Phase 19 controlled rollout approval record for Team
+  Operations Bullpen Readiness, approving constrained controlled rollout while
+  keeping full production rollout unapproved.
+- [`docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md`](docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md)
+  — retained Phase 19 monitoring artifact recording blocker satisfaction,
+  rollout audience, rollout restrictions, monitoring requirements, rollback
+  criteria, and governance status.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -1172,7 +1186,10 @@ still is not approved until rendered Dashboard, mobile, accessibility,
 maintainer, and protected admin-endpoint evidence is retained. V3 Phase 18 is
 complete and records the post-verification controlled rollout reassessment. The
 decision remains `CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW`; full
-production rollout is not approved.
+production rollout is not approved. V3 Phase 19 is complete and records that
+all identified controlled-rollout blockers have been satisfied. Team Operations
+Bullpen Readiness remains certified with non-blocking operational gaps and is
+approved for controlled rollout only; full production rollout is not approved.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
