@@ -40,6 +40,18 @@ Each inventory category initially shows:
 Inventory membership, full evidence, inventory freshness rows, and limitations
 remain available through an expansion control on each category card.
 
+## Production Corrective Note
+
+A later Dashboard production UX remediation found that the live V2 panel also
+needed nested controls inside expanded inventory category details. The
+corrective record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
+That remediation keeps Phase 14's summary-first default and adds
+member-specific, evidence-specific, and limitation-specific disclosure inside
+expanded inventory details.
+
 ## Preserved Transparency
 
 Phase 14 hides high-volume membership by default, but it does not remove it.

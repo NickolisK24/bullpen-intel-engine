@@ -509,6 +509,13 @@ candidate groups, team context, limitations, explanations, and refusal details
 while preserving detail inspection, trust metadata, freshness metadata, refusal
 metadata, and the certified no-ranking and no-selection guarantees.
 
+A later Dashboard V2 collapsible remediation corrects the live production UX
+implementation by adding nested member/detail controls and structured Team
+Context indicator summaries without changing certified Recommendation Engine
+behavior:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
 Production rollout decision review was completed in BaseballOS V2.5 Phase 16.
 
 ## 20. Production Rollout Decision

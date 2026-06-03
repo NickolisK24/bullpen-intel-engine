@@ -480,6 +480,10 @@ The V2.5 Phase 15 intelligence presentation optimization record is:
 
 - `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
 
+The Dashboard V2 collapsible remediation record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
 The V2.5 Phase 16 production rollout decision record is:
 
 - `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
@@ -1039,6 +1043,16 @@ The Phase 15 intelligence presentation record is:
 
 - `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
 
+A later Dashboard V2 production UX remediation corrects the live collapsible
+implementation without creating a new roadmap phase. It adds nested
+member/detail controls for inventory and candidate groups, structured Team
+Context indicator summaries for live count-object payloads, and validation
+that high-volume names and details remain hidden until explicit expansion.
+
+The Dashboard V2 collapsible remediation record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
 Phase 15 validation ran:
 
 ```text
@@ -1054,6 +1068,21 @@ Result:
 Phase 15 did not touch backend files, API contracts, recommendation logic,
 trust logic, freshness logic, refusal logic, ranking behavior, selection
 behavior, prediction behavior, or Recommendation Engine V1 behavior.
+
+Dashboard V2 collapsible remediation validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+78 passed, 0 failed
+```
+
+Backend tests were not required for the remediation because no backend files
+were touched.
 
 BaseballOS V2.5 Phase 16 Production Rollout Decision evaluates the certified
 V2 system, current Dashboard and Bullpen surfaces, performance remediation,

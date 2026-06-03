@@ -223,13 +223,23 @@ test('renders inventory summary cards collapsed by default with counts and metad
 })
 
 test('renders expanded inventory membership, evidence, trust, and freshness on demand', () => {
-  const html = renderPanel(availableState, { initialExpandedInventoryKeys: ['available-inventory'] })
+  const summaryHtml = renderPanel(availableState, {
+    initialExpandedInventoryKeys: ['available-inventory'],
+  })
+  const html = renderPanel(availableState, {
+    initialExpandedInventoryKeys: ['available-inventory'],
+    initialExpandedInventoryDetailKeys: ['available-inventory:members', 'available-inventory:evidence'],
+  })
 
-  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
-  assert.ok(htmlIncludes(html, 'Collapse'))
-  assert.ok(htmlIncludes(html, 'Members (1)'))
+  assert.ok(htmlIncludes(summaryHtml, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(summaryHtml, 'Hide Details'))
+  assert.ok(htmlIncludes(summaryHtml, 'Members (1)'))
+  assert.ok(htmlIncludes(summaryHtml, 'View Members'))
+  assert.ok(!htmlIncludes(summaryHtml, 'Inventory Member'))
   assert.ok(htmlIncludes(html, 'Inventory Member'))
+  assert.ok(htmlIncludes(html, 'Hide Members'))
   assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Hide Evidence'))
   assert.ok(htmlIncludes(html, 'Availability category is Available.'))
   assert.ok(htmlIncludes(html, 'Inventory Freshness'))
   assert.ok(htmlIncludes(html, 'Data Through'))
@@ -264,6 +274,10 @@ test('renders expanded candidate group membership, evidence, freshness, and refu
       candidate_groups: [
         {
           ...availableState.bullpenState.candidate_groups[0],
+          eligibility_basis: [
+            'availability_status_available',
+            'secondary eligibility detail remains inspectable.',
+          ],
           explanations: ['Candidate grouping evidence remains inspectable.'],
           limitations: ['Candidate limitation remains inspectable.'],
           refusal_reasons: ['Candidate refusal metadata remains inspectable.'],
@@ -278,14 +292,30 @@ test('renders expanded candidate group membership, evidence, freshness, and refu
   }
   const html = renderPanel(candidateDetailState, {
     initialExpandedCandidateGroupKeys: ['available-candidates'],
+    initialExpandedCandidateDetailKeys: [
+      'available-candidates:members',
+      'available-candidates:eligibility',
+      'available-candidates:explanations',
+      'available-candidates:limitations',
+      'available-candidates:refusal',
+    ],
+  })
+  const summaryHtml = renderPanel(candidateDetailState, {
+    initialExpandedCandidateGroupKeys: ['available-candidates'],
   })
 
-  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
-  assert.ok(htmlIncludes(html, 'Collapse Details'))
-  assert.ok(htmlIncludes(html, 'Group Members (1)'))
+  assert.ok(htmlIncludes(summaryHtml, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(summaryHtml, 'Hide Details'))
+  assert.ok(htmlIncludes(summaryHtml, 'Group Members (1)'))
+  assert.ok(htmlIncludes(summaryHtml, 'View Members'))
+  assert.ok(!htmlIncludes(summaryHtml, 'Candidate Member'))
+  assert.ok(!htmlIncludes(summaryHtml, 'secondary eligibility detail remains inspectable.'))
   assert.ok(htmlIncludes(html, 'Candidate Member'))
+  assert.ok(htmlIncludes(html, 'Hide Members'))
   assert.ok(htmlIncludes(html, 'Eligibility Basis'))
   assert.ok(htmlIncludes(html, 'availability_status_available'))
+  assert.ok(htmlIncludes(html, 'secondary eligibility detail remains inspectable.'))
+  assert.ok(htmlIncludes(html, 'Hide Eligibility'))
   assert.ok(htmlIncludes(html, 'Group Freshness'))
   assert.ok(htmlIncludes(html, 'Data Through'))
   assert.ok(htmlIncludes(html, '2026-06-02'))
@@ -340,6 +370,45 @@ test('summarizes team context by default and expands distributions and indicator
   assert.ok(htmlIncludes(expandedHtml, 'Watched Workload'))
   assert.ok(htmlIncludes(expandedHtml, 'Readiness detail two remains inspectable.'))
   assert.ok(htmlIncludes(expandedHtml, 'Stress detail two remains inspectable.'))
+})
+
+test('summarizes structured team context indicators without dumping count objects', () => {
+  const structuredContextState = {
+    ...availableState,
+    bullpenState: {
+      ...availableState.bullpenState,
+      team_context: {
+        ...availableState.bullpenState.team_context,
+        readiness_indicators: {
+          available_or_monitor_count: 704,
+          limited_or_avoid_count: 0,
+          confidence_counts: {
+            high: 0,
+            low: 704,
+          },
+        },
+        stress_indicators: {
+          stress_level: 'elevated',
+          stale_missing_or_incomplete_count: 704,
+          stress_basis: 'availability_status_data_state_and_workload_inputs',
+        },
+      },
+    },
+  }
+
+  const collapsedHtml = renderPanel(structuredContextState)
+  const expandedHtml = renderPanel(structuredContextState, {
+    initialExpandedTeamContextKeys: ['readiness', 'stress'],
+  })
+
+  assert.ok(htmlIncludes(collapsedHtml, '3 indicators'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Available Or Monitor Count: 704'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Stress Level: elevated'))
+  assert.ok(htmlIncludes(collapsedHtml, 'View Indicators'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Confidence Counts Low: 704'))
+  assert.ok(!htmlIncludes(collapsedHtml, 'Stress Basis: availability_status_data_state_and_workload_inputs'))
+  assert.ok(htmlIncludes(expandedHtml, 'Confidence Counts Low: 704'))
+  assert.ok(htmlIncludes(expandedHtml, 'Stress Basis: availability_status_data_state_and_workload_inputs'))
 })
 
 test('summarizes long limitation, explanation, and refusal lists until expanded', () => {
@@ -423,6 +492,14 @@ test('keeps high-volume inventory short until mobile users expand details', () =
   const collapsedText = visibleText(renderPanel(highVolumeState))
   const expandedText = visibleText(renderPanel(highVolumeState, {
     initialExpandedInventoryKeys: ['available-inventory', 'monitor-inventory', 'limited-inventory'],
+    initialExpandedInventoryDetailKeys: [
+      'available-inventory:members',
+      'monitor-inventory:members',
+      'limited-inventory:members',
+    ],
+  }))
+  const outerExpandedText = visibleText(renderPanel(highVolumeState, {
+    initialExpandedInventoryKeys: ['available-inventory', 'monitor-inventory', 'limited-inventory'],
   }))
   const reduction = 1 - (collapsedText.length / expandedText.length)
 
@@ -430,6 +507,8 @@ test('keeps high-volume inventory short until mobile users expand details', () =
   assert.ok(htmlIncludes(collapsedText, '284 Monitor'))
   assert.ok(htmlIncludes(collapsedText, '88 Limited'))
   assert.ok(!htmlIncludes(collapsedText, 'Available Pitcher 001'))
+  assert.ok(htmlIncludes(outerExpandedText, 'View Members'))
+  assert.ok(!htmlIncludes(outerExpandedText, 'Available Pitcher 001'))
   assert.ok(htmlIncludes(expandedText, 'Available Pitcher 001'))
   assert.ok(htmlIncludes(expandedText, 'Monitor Pitcher 284'))
   assert.ok(htmlIncludes(expandedText, 'Limited Pitcher 088'))
@@ -456,9 +535,10 @@ test('keeps high-volume intelligence surfaces short until mobile users expand de
           ...availableState.bullpenState.candidate_groups[0],
           candidate_count: 160,
           candidates: makeCandidates(160),
-          explanations: ['High-volume candidate grouping evidence remains inspectable.'],
-          limitations: ['High-volume candidate limitation remains inspectable.'],
-          refusal_reasons: ['High-volume candidate refusal metadata remains inspectable.'],
+          eligibility_basis: makeMessages('Eligibility', 25),
+          explanations: makeMessages('Candidate explanation', 25),
+          limitations: makeMessages('Candidate limitation', 25),
+          refusal_reasons: makeMessages('Candidate refusal', 25),
         },
       ],
       team_context: {
@@ -484,8 +564,18 @@ test('keeps high-volume intelligence surfaces short until mobile users expand de
   const collapsedText = visibleText(renderPanel(highVolumeState))
   const expandedText = visibleText(renderPanel(highVolumeState, {
     initialExpandedCandidateGroupKeys: ['available-candidates'],
+    initialExpandedCandidateDetailKeys: [
+      'available-candidates:members',
+      'available-candidates:eligibility',
+      'available-candidates:explanations',
+      'available-candidates:limitations',
+      'available-candidates:refusal',
+    ],
     initialExpandedTeamContextKeys: ['availability', 'workload', 'readiness', 'stress'],
     initialExpandedMessageSections: ['limitations', 'explanations', 'refusal'],
+  }))
+  const outerExpandedText = visibleText(renderPanel(highVolumeState, {
+    initialExpandedCandidateGroupKeys: ['available-candidates'],
   }))
   const reduction = 1 - (collapsedText.length / expandedText.length)
 
@@ -496,8 +586,16 @@ test('keeps high-volume intelligence surfaces short until mobile users expand de
   assert.ok(!htmlIncludes(collapsedText, 'Green Lane'))
   assert.ok(!htmlIncludes(collapsedText, 'Readiness detail 20 remains inspectable.'))
   assert.ok(!htmlIncludes(collapsedText, 'Refusal detail 30 remains inspectable.'))
+  assert.ok(htmlIncludes(outerExpandedText, 'View Members'))
+  assert.ok(htmlIncludes(outerExpandedText, 'View Eligibility'))
+  assert.ok(htmlIncludes(outerExpandedText, 'View Refusal'))
+  assert.ok(!htmlIncludes(outerExpandedText, 'Candidate Pitcher 001'))
+  assert.ok(!htmlIncludes(outerExpandedText, 'Eligibility detail 25 remains inspectable.'))
+  assert.ok(!htmlIncludes(outerExpandedText, 'Candidate refusal detail 25 remains inspectable.'))
   assert.ok(htmlIncludes(expandedText, 'Candidate Pitcher 001'))
   assert.ok(htmlIncludes(expandedText, 'Candidate Pitcher 160'))
+  assert.ok(htmlIncludes(expandedText, 'Eligibility detail 25 remains inspectable.'))
+  assert.ok(htmlIncludes(expandedText, 'Candidate refusal detail 25 remains inspectable.'))
   assert.ok(htmlIncludes(expandedText, 'Green Lane'))
   assert.ok(htmlIncludes(expandedText, 'Readiness detail 20 remains inspectable.'))
   assert.ok(htmlIncludes(expandedText, 'Refusal detail 30 remains inspectable.'))

@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import { LoadingPane, ErrorState } from '../UI'
 
+const SUMMARY_TEXT_LIMIT = 180
+
 const FORBIDDEN_DISPLAY_TERMS = [
   /\bbest\b/i,
   /\btop\b/i,
@@ -64,6 +66,13 @@ function messageFrom(item) {
   if (typeof item === 'string') return item
   if (!item || typeof item !== 'object') return null
   return item.message || item.reason || item.limitation_id || item.explanation_id || item.refusal_id || null
+}
+
+function compactText(value, maxLength = SUMMARY_TEXT_LIMIT) {
+  const text = displayValue(value, '').replace(/\s+/g, ' ').trim()
+  if (!text) return null
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 3).trim()}...`
 }
 
 function hasForbiddenDisplayText(value) {
@@ -178,8 +187,8 @@ function detailCountLabel(count, singular, plural = `${singular}s`) {
 
 function messageSummary(messages) {
   if (!messages.length) return null
-  if (messages.length === 1) return messages[0]
-  return `${messages.length} entries. First: ${messages[0]}`
+  if (messages.length === 1) return compactText(messages[0])
+  return `${messages.length} entries. First: ${compactText(messages[0])}`
 }
 
 function sumRowCounts(rows) {
@@ -187,6 +196,26 @@ function sumRowCounts(rows) {
     const numeric = Number(row.count)
     return Number.isFinite(numeric) ? total + numeric : total
   }, 0)
+}
+
+function contextIndicatorMessages(value) {
+  const arrayValue = asArray(value)
+  if (arrayValue.length) {
+    return arrayValue.map((item) => messageFrom(item) || displayValue(item)).filter(Boolean)
+  }
+
+  const objectValue = asObject(value)
+  return Object.entries(objectValue).flatMap(([key, item]) => {
+    if (Array.isArray(item)) {
+      return [`${toTitle(key)}: ${detailCountLabel(item.length, 'entry', 'entries')}`]
+    }
+    if (item && typeof item === 'object') {
+      return Object.entries(item).map(([nestedKey, nestedValue]) => (
+        `${toTitle(key)} ${toTitle(nestedKey)}: ${displayValue(nestedValue)}`
+      ))
+    }
+    return [`${toTitle(key)}: ${displayValue(item)}`]
+  })
 }
 
 function getDiagnosticCount(view = {}) {
@@ -325,7 +354,21 @@ function GovernanceRows({ rows }) {
   )
 }
 
-function DetailToggleButton({ expanded, controls, onClick }) {
+function detailExpansionKey(parentKey, detailKey) {
+  return `${parentKey}:${detailKey}`
+}
+
+function hasInitialDetailExpansion(initialExpandedDetailKeys = [], parentKey, detailKey) {
+  return initialExpandedDetailKeys.includes(detailExpansionKey(parentKey, detailKey))
+}
+
+function DetailToggleButton({
+  expanded,
+  controls,
+  onClick,
+  expandLabel = 'View Details',
+  collapseLabel = 'Hide Details',
+}) {
   return (
     <button
       type="button"
@@ -334,8 +377,51 @@ function DetailToggleButton({ expanded, controls, onClick }) {
       aria-controls={controls}
       onClick={onClick}
     >
-      {expanded ? 'Collapse Details' : 'View Details'}
+      {expanded ? collapseLabel : expandLabel}
     </button>
+  )
+}
+
+function CollapsibleDetailBlock({
+  title,
+  detailId,
+  countLabel = null,
+  summary = null,
+  emptyText = 'None reported.',
+  children,
+  initiallyExpanded = false,
+  expandLabel = 'View Details',
+  collapseLabel = 'Hide Details',
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded)
+  const hasChildren = Boolean(children)
+
+  return (
+    <div className="min-w-0 rounded border border-dirt bg-chalk/20 px-3 py-2">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{title}</div>
+      {countLabel && (
+        <div className="v2-governed-panel__text mt-1 font-mono text-[11px] text-chalk500">{countLabel}</div>
+      )}
+      <div className="v2-governed-panel__text mt-1 text-xs leading-relaxed text-chalk300">
+        {summary || emptyText}
+      </div>
+      {hasChildren && (
+        <>
+          <DetailToggleButton
+            expanded={expanded}
+            controls={detailId}
+            onClick={() => setExpanded((current) => !current)}
+            expandLabel={expandLabel}
+            collapseLabel={collapseLabel}
+          />
+          {expanded && (
+            <div id={detailId} className="mt-3 min-w-0">
+              {children}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -423,7 +509,11 @@ function MessageList({ title, messages, emptyText, initiallyExpanded = false }) 
   )
 }
 
-function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
+function InventorySummary({
+  inventory,
+  initialExpandedInventoryKeys = [],
+  initialExpandedInventoryDetailKeys = [],
+}) {
   const [expandedInventoryKeys, setExpandedInventoryKeys] = useState(
     () => new Set(initialExpandedInventoryKeys),
   )
@@ -452,6 +542,9 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
             const members = asArray(item.members)
             const evidence = asArray(item.evidence).map(messageFrom).filter(Boolean)
             const limitations = asArray(item.limitations).map(messageFrom).filter(Boolean)
+            const memberDetailId = `${detailId}-members`
+            const evidenceDetailId = `${detailId}-evidence`
+            const limitationDetailId = `${detailId}-limitations`
 
             return (
               <div key={key} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
@@ -488,15 +581,21 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                 aria-controls={detailId}
                 onClick={() => toggleInventory(key)}
               >
-                {expanded ? 'Collapse Details' : 'View Details'}
+                {expanded ? 'Hide Details' : 'View Details'}
               </button>
               {expanded && (
                 <div id={detailId} className="mt-3 min-w-0 rounded border border-dirt bg-field/45 p-3">
                   <div className="grid gap-3">
-                    <div className="min-w-0">
-                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-                        Members ({members.length})
-                      </div>
+                    <CollapsibleDetailBlock
+                      title={`Members (${members.length})`}
+                      detailId={memberDetailId}
+                      countLabel={detailCountLabel(members.length, 'member')}
+                      summary={members.length ? 'Full inventory membership remains available on demand.' : 'No members reported.'}
+                      emptyText="No members reported."
+                      expandLabel="View Members"
+                      collapseLabel="Hide Members"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedInventoryDetailKeys, key, 'members')}
+                    >
                       {members.length ? (
                         <div className="flex flex-wrap gap-2">
                           {members.map((member) => (
@@ -505,13 +604,19 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                             </span>
                           ))}
                         </div>
-                      ) : (
-                        <div className="font-mono text-xs text-chalk500">No members reported.</div>
-                      )}
-                    </div>
+                      ) : null}
+                    </CollapsibleDetailBlock>
 
-                    <div className="min-w-0">
-                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Evidence</div>
+                    <CollapsibleDetailBlock
+                      title="Evidence"
+                      detailId={evidenceDetailId}
+                      countLabel={detailCountLabel(evidence.length, 'entry', 'entries')}
+                      summary={messageSummary(evidence) || 'No evidence reported.'}
+                      emptyText="No evidence reported."
+                      expandLabel="View Evidence"
+                      collapseLabel="Hide Evidence"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedInventoryDetailKeys, key, 'evidence')}
+                    >
                       {evidence.length ? (
                         <ul className="space-y-2">
                           {evidence.map((message) => (
@@ -520,10 +625,8 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                             </li>
                           ))}
                         </ul>
-                      ) : (
-                        <div className="font-mono text-xs text-chalk500">No evidence reported.</div>
-                      )}
-                    </div>
+                      ) : null}
+                    </CollapsibleDetailBlock>
 
                     <div className="min-w-0">
                       <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Inventory Freshness</div>
@@ -538,8 +641,16 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                     </div>
 
                     {limitations.length > 0 && (
-                      <div className="min-w-0">
-                        <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">Limitations</div>
+                      <CollapsibleDetailBlock
+                        title="Limitations"
+                        detailId={limitationDetailId}
+                        countLabel={detailCountLabel(limitations.length, 'entry', 'entries')}
+                        summary={messageSummary(limitations)}
+                        emptyText="No limitations reported."
+                        expandLabel="View Limitations"
+                        collapseLabel="Hide Limitations"
+                        initiallyExpanded={hasInitialDetailExpansion(initialExpandedInventoryDetailKeys, key, 'limitations')}
+                      >
                         <ul className="space-y-2">
                           {limitations.map((message) => (
                             <li key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/30 px-3 py-2 text-xs leading-relaxed text-chalk300">
@@ -547,7 +658,7 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
                             </li>
                           ))}
                         </ul>
-                      </div>
+                      </CollapsibleDetailBlock>
                     )}
                   </div>
                 </div>
@@ -563,7 +674,11 @@ function InventorySummary({ inventory, initialExpandedInventoryKeys = [] }) {
   )
 }
 
-function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
+function CandidateGroups({
+  groups,
+  initialExpandedCandidateGroupKeys = [],
+  initialExpandedCandidateDetailKeys = [],
+}) {
   const [expandedGroupKeys, setExpandedGroupKeys] = useState(
     () => new Set(initialExpandedCandidateGroupKeys),
   )
@@ -595,6 +710,11 @@ function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
             const limitations = asArray(group.limitations).map(messageFrom).filter(Boolean)
             const refusalReasons = asArray(group.refusal_reasons).map(messageFrom).filter(Boolean)
             const freshness = asObject(group.freshness)
+            const memberDetailId = `${detailId}-members`
+            const eligibilityDetailId = `${detailId}-eligibility`
+            const explanationDetailId = `${detailId}-explanations`
+            const limitationDetailId = `${detailId}-limitations`
+            const refusalDetailId = `${detailId}-refusal`
 
             return (
               <div key={key} className="min-w-0 rounded border border-dirt bg-chalk/20 p-3">
@@ -640,10 +760,16 @@ function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
               {expanded && (
                 <div id={detailId} className="mt-3 min-w-0 rounded border border-dirt bg-field/45 p-3">
                   <div className="grid gap-3">
-                    <div className="min-w-0">
-                      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-                        Group Members ({candidates.length})
-                      </div>
+                    <CollapsibleDetailBlock
+                      title={`Group Members (${candidates.length})`}
+                      detailId={memberDetailId}
+                      countLabel={detailCountLabel(candidates.length, 'member')}
+                      summary={candidates.length ? 'Full group membership remains available on demand.' : 'No group members reported.'}
+                      emptyText="No group members reported."
+                      expandLabel="View Members"
+                      collapseLabel="Hide Members"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedCandidateDetailKeys, key, 'members')}
+                    >
                       {candidates.length ? (
                         <div className="flex flex-wrap gap-2">
                           {candidates.map((candidate) => (
@@ -652,15 +778,65 @@ function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
                             </span>
                           ))}
                         </div>
-                      ) : (
-                        <div className="font-mono text-xs text-chalk500">No group members reported.</div>
-                      )}
-                    </div>
-                    <DetailMessageGroup title="Eligibility Basis" messages={eligibility} emptyText="No eligibility basis reported." />
+                      ) : null}
+                    </CollapsibleDetailBlock>
+                    <CollapsibleDetailBlock
+                      title="Eligibility Basis"
+                      detailId={eligibilityDetailId}
+                      countLabel={detailCountLabel(eligibility.length, 'entry', 'entries')}
+                      summary={messageSummary(eligibility) || 'No eligibility basis reported.'}
+                      emptyText="No eligibility basis reported."
+                      expandLabel="View Eligibility"
+                      collapseLabel="Hide Eligibility"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedCandidateDetailKeys, key, 'eligibility')}
+                    >
+                      {eligibility.length ? (
+                        <DetailMessageGroup title="Eligibility Basis Details" messages={eligibility} emptyText="No eligibility basis reported." />
+                      ) : null}
+                    </CollapsibleDetailBlock>
                     <DetailRows title="Group Freshness" rows={candidateGroupFreshnessRows(group)} />
-                    <DetailMessageGroup title="Explanations" messages={explanations} emptyText="No explanations reported." />
-                    <DetailMessageGroup title="Limitations" messages={limitations} emptyText="No limitations reported." />
-                    <DetailMessageGroup title="Refusal" messages={refusalReasons} emptyText="No refusal metadata reported." />
+                    <CollapsibleDetailBlock
+                      title="Explanations"
+                      detailId={explanationDetailId}
+                      countLabel={detailCountLabel(explanations.length, 'entry', 'entries')}
+                      summary={messageSummary(explanations) || 'No explanations reported.'}
+                      emptyText="No explanations reported."
+                      expandLabel="View Explanations"
+                      collapseLabel="Hide Explanations"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedCandidateDetailKeys, key, 'explanations')}
+                    >
+                      {explanations.length ? (
+                        <DetailMessageGroup title="Explanation Details" messages={explanations} emptyText="No explanations reported." />
+                      ) : null}
+                    </CollapsibleDetailBlock>
+                    <CollapsibleDetailBlock
+                      title="Limitations"
+                      detailId={limitationDetailId}
+                      countLabel={detailCountLabel(limitations.length, 'entry', 'entries')}
+                      summary={messageSummary(limitations) || 'No limitations reported.'}
+                      emptyText="No limitations reported."
+                      expandLabel="View Limitations"
+                      collapseLabel="Hide Limitations"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedCandidateDetailKeys, key, 'limitations')}
+                    >
+                      {limitations.length ? (
+                        <DetailMessageGroup title="Limitation Details" messages={limitations} emptyText="No limitations reported." />
+                      ) : null}
+                    </CollapsibleDetailBlock>
+                    <CollapsibleDetailBlock
+                      title="Refusal"
+                      detailId={refusalDetailId}
+                      countLabel={detailCountLabel(refusalReasons.length, 'entry', 'entries')}
+                      summary={messageSummary(refusalReasons) || 'No refusal metadata reported.'}
+                      emptyText="No refusal metadata reported."
+                      expandLabel="View Refusal"
+                      collapseLabel="Hide Refusal"
+                      initiallyExpanded={hasInitialDetailExpansion(initialExpandedCandidateDetailKeys, key, 'refusal')}
+                    >
+                      {refusalReasons.length ? (
+                        <DetailMessageGroup title="Refusal Details" messages={refusalReasons} emptyText="No refusal metadata reported." />
+                      ) : null}
+                    </CollapsibleDetailBlock>
                   </div>
                 </div>
               )}
@@ -678,8 +854,8 @@ function CandidateGroups({ groups, initialExpandedCandidateGroupKeys = [] }) {
 function TeamContext({ context, initialExpandedTeamContextKeys = [] }) {
   const availabilityRows = getDistributionRows(context.availability_distribution)
   const workloadRows = getDistributionRows(context.workload_distribution)
-  const readiness = asArray(context.readiness_indicators)
-  const stress = asArray(context.stress_indicators)
+  const readiness = contextIndicatorMessages(context.readiness_indicators)
+  const stress = contextIndicatorMessages(context.stress_indicators)
   const [expandedContextKeys, setExpandedContextKeys] = useState(
     () => new Set(initialExpandedTeamContextKeys),
   )
@@ -704,8 +880,8 @@ function TeamContext({ context, initialExpandedTeamContextKeys = [] }) {
         <Distribution title="Workload" rows={workloadRows} expanded={expandedContextKeys.has('workload')} onToggle={() => toggleContext('workload')} />
       </div>
       <div className="v2-governed-panel__team-grid mt-4 gap-4">
-        <SimpleItems title="Readiness" items={readiness} expanded={expandedContextKeys.has('readiness')} onToggle={() => toggleContext('readiness')} />
-        <SimpleItems title="Stress" items={stress} expanded={expandedContextKeys.has('stress')} onToggle={() => toggleContext('stress')} />
+        <SimpleItems title="Readiness" messages={readiness} expanded={expandedContextKeys.has('readiness')} onToggle={() => toggleContext('readiness')} />
+        <SimpleItems title="Stress" messages={stress} expanded={expandedContextKeys.has('stress')} onToggle={() => toggleContext('stress')} />
       </div>
     </section>
   )
@@ -729,7 +905,13 @@ function Distribution({ title, rows, expanded, onToggle }) {
               {total > 0 ? `${displayValue(total)} total reported across ${title.toLowerCase()} context.` : `${title} context is available.`}
             </div>
           </div>
-          <DetailToggleButton expanded={expanded} controls={detailId} onClick={onToggle} />
+          <DetailToggleButton
+            expanded={expanded}
+            controls={detailId}
+            onClick={onToggle}
+            expandLabel="View Distribution"
+            collapseLabel="Hide Distribution"
+          />
           {expanded && (
             <div id={detailId} className="mt-3 space-y-2">
               {rows.map((row) => (
@@ -748,10 +930,9 @@ function Distribution({ title, rows, expanded, onToggle }) {
   )
 }
 
-function SimpleItems({ title, items, expanded, onToggle }) {
+function SimpleItems({ title, messages, expanded, onToggle }) {
   const key = stableDetailKey(title, 'items', 0)
   const detailId = `recommendation-v2-team-context-${key}-details`
-  const messages = items.map((item) => messageFrom(item) || displayValue(item)).filter(Boolean)
 
   return (
     <div className="min-w-0">
@@ -766,19 +947,21 @@ function SimpleItems({ title, items, expanded, onToggle }) {
               {messageSummary(messages)}
             </div>
           </div>
-          {messages.length > 1 && (
-            <>
-              <DetailToggleButton expanded={expanded} controls={detailId} onClick={onToggle} />
-              {expanded && (
-                <div id={detailId} className="mt-3 space-y-2">
-                  {messages.map((message) => (
-                    <div key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-xs text-chalk300">
-                      {message}
-                    </div>
-                  ))}
+          <DetailToggleButton
+            expanded={expanded}
+            controls={detailId}
+            onClick={onToggle}
+            expandLabel="View Indicators"
+            collapseLabel="Hide Indicators"
+          />
+          {expanded && (
+            <div id={detailId} className="mt-3 space-y-2">
+              {messages.map((message) => (
+                <div key={message} className="v2-governed-panel__text rounded border border-dirt bg-chalk/20 px-3 py-2 text-xs text-chalk300">
+                  {message}
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </>
       ) : (
@@ -794,7 +977,9 @@ export default function RecommendationV2BullpenStatePanel({
   error = null,
   onRetry,
   initialExpandedInventoryKeys = [],
+  initialExpandedInventoryDetailKeys = [],
   initialExpandedCandidateGroupKeys = [],
+  initialExpandedCandidateDetailKeys = [],
   initialExpandedTeamContextKeys = [],
   initialExpandedMessageSections = [],
 }) {
@@ -897,9 +1082,17 @@ export default function RecommendationV2BullpenStatePanel({
 
         {!view.isUnavailable && (
           <>
-            <InventorySummary inventory={view.inventory} initialExpandedInventoryKeys={initialExpandedInventoryKeys} />
+            <InventorySummary
+              inventory={view.inventory}
+              initialExpandedInventoryKeys={initialExpandedInventoryKeys}
+              initialExpandedInventoryDetailKeys={initialExpandedInventoryDetailKeys}
+            />
             <TeamContext context={view.teamContext} initialExpandedTeamContextKeys={initialExpandedTeamContextKeys} />
-            <CandidateGroups groups={view.candidateGroups} initialExpandedCandidateGroupKeys={initialExpandedCandidateGroupKeys} />
+            <CandidateGroups
+              groups={view.candidateGroups}
+              initialExpandedCandidateGroupKeys={initialExpandedCandidateGroupKeys}
+              initialExpandedCandidateDetailKeys={initialExpandedCandidateDetailKeys}
+            />
           </>
         )}
 

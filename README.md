@@ -208,7 +208,10 @@ today:
   full inventory membership available on demand. V2.5 Phase 15 audits the full
   Dashboard V2 intelligence surface and makes candidate groups, team context,
   limitations, explanations, and refusal details summary-first with expansion
-  on demand. V2.5 Phase 16 approves the current certified V2 Dashboard
+  on demand. A later Dashboard V2 collapsible remediation corrects the live
+  production presentation by adding nested member/detail controls for
+  high-volume inventory, candidate, Team Context, limitation, explanation, and
+  refusal surfaces. V2.5 Phase 16 approves the current certified V2 Dashboard
   experience for production rollout within the implemented scope only. V2.5
   Phase 17 establishes post-rollout monitoring, warning review, and boundary
   review procedures to protect the approved system from governance,
@@ -271,6 +274,8 @@ today:
   [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md),
   and the completed V2.5 Phase 15 intelligence presentation record in
   [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md),
+  and the Dashboard V2 collapsible remediation record in
+  [`docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`](docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md),
   and the completed V2.5 Phase 16 production rollout decision in
   [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md),
   and the completed V2.5 Phase 17 post-rollout monitoring and boundary review in
@@ -347,6 +352,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md
     ├── V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md
     ├── V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md
+    ├── V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md
     ├── V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
@@ -542,6 +548,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   presentation audit, summary-first candidate groups, collapsible team
   context, collapsible limitation/explanation/refusal details, mobile
   page-length reduction, transparency preservation, and governance compliance.
+- [`docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`](docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md)
+  — corrective Dashboard V2 production UX record for nested inventory,
+  candidate group, Team Context indicator, limitation, explanation, and
+  refusal disclosure controls while preserving transparency and governance.
 - [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md)
   — completed V2.5 Phase 16 governance decision approving the current
   certified V2 Dashboard experience for production rollout while preserving
@@ -636,8 +646,11 @@ summaries first, with full membership and evidence available through expansion.
 V2.5 Phase 15 is complete and reduces full Dashboard V2 intelligence density
 by rendering candidate groups, team context, limitations, explanations, and
 refusal details as summaries first, with complete detail available through
-expansion. V2.5 Phase 16 is complete and approves the current certified V2
-Dashboard experience for production rollout within the implemented scope only.
+expansion. A Dashboard V2 collapsible remediation later corrects the live
+production panel with nested member/detail controls and structured Team
+Context indicator summaries. V2.5 Phase 16 is complete and approves the
+current certified V2 Dashboard experience for production rollout within the
+implemented scope only.
 V2.5 Phase 17 is complete and establishes post-rollout monitoring, warning
 review, regression-protection review, and boundary review for the approved
 production scope. V2.5 Phase 18 is complete and remediates the current backend

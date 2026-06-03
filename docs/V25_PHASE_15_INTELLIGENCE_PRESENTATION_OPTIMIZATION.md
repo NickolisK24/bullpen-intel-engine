@@ -86,6 +86,19 @@ Frontend coverage verifies at least an 80% reduction in initial rendered text
 for high-volume inventory and high-volume intelligence fixtures before
 expansion.
 
+## Production Corrective Note
+
+A later Dashboard production UX remediation found that the live V2 panel still
+needed nested disclosure inside expanded inventory and candidate group detail
+cards, plus structured Team Context indicator support for live count-object
+payloads. The corrective record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
+That remediation preserves Phase 15's summary-first default while adding
+member-specific and detail-specific controls for inventory, candidate groups,
+Team Context indicators, limitations, explanations, and refusal metadata.
+
 ## Mobile Impact
 
 Mobile users now encounter a substantially shorter initial V2 panel. The
