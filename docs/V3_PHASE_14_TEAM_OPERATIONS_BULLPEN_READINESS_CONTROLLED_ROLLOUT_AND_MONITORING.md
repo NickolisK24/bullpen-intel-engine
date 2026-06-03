@@ -524,3 +524,42 @@ The next milestone should perform the deployment smoke review, manual browser
 review, mobile review, accessibility smoke review, evidence-owner
 confirmation, and a separate controlled rollout decision without granting full
 production rollout unless all evidence supports it.
+
+## Phase 15 Follow-Up
+
+V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and
+Controlled Rollout Decision is complete.
+
+The Phase 15 records are:
+
+- `docs/V3_PHASE_15_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_SMOKE_REVIEW_AND_CONTROLLED_ROLLOUT_DECISION.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_15_DEPLOYMENT_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 15 reviews this Phase 14 rollout plan and the initial monitoring
+artifact stub, retains a deployment smoke-review decision artifact, and
+records that controlled rollout remains blocked because deployment, browser,
+mobile, accessibility, and maintainer-review evidence has not been retained.
+
+Phase 15 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 15 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 15 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+The next rollout decision should not be reopened until actual deployment
+smoke-review evidence, manual browser review evidence, mobile review evidence,
+accessibility smoke-review evidence, and evidence-retention owner confirmation
+are retained.

@@ -189,6 +189,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
 | BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review | Certified With Non-Blocking Operational Gaps / Rollout Not Approved |
 | BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring | Ready With Pending Manual Evidence / Full Rollout Not Approved |
+| BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision | Blocked Pending Manual Evidence / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -3199,6 +3200,67 @@ Phase 14 recommended next milestone:
 BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision
 ```
 
+## BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision
+
+BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke
+Review and Controlled Rollout Decision is complete.
+
+The V3 Phase 15 records are:
+
+- `docs/V3_PHASE_15_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_SMOKE_REVIEW_AND_CONTROLLED_ROLLOUT_DECISION.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_15_DEPLOYMENT_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 15 reviews the Phase 14 rollout plan and initial monitoring artifact,
+retains a deployment smoke-review decision artifact, records backend,
+frontend, repository, governance, fail-closed, and V2 regression validation,
+and determines that controlled rollout remains blocked because actual
+deployment, browser, mobile, accessibility, and maintainer-review evidence has
+not been retained.
+
+Phase 15 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 15 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 15 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 15 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 15 does not authorize controlled rollout, full production rollout,
+public route certification, route exposure changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+fatigue formula changes, availability threshold changes, ranking behavior,
+selection behavior, prediction behavior, best option behavior, preferred
+option behavior, recommended option behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Phase 15 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence Capture and Manual Smoke Review Remediation
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -3316,7 +3378,8 @@ Phase 11 Team Operations Bullpen Readiness Dashboard UI certification-readiness
 review, or V3 Phase 12 Team Operations Bullpen Readiness formal certification
 plan and rollout prerequisites, or V3 Phase 13 Team Operations Bullpen
 Readiness formal certification review, or V3 Phase 14 Team Operations Bullpen
-Readiness controlled rollout and monitoring, or V2
+Readiness controlled rollout and monitoring, or V3 Phase 15 Team Operations
+Bullpen Readiness deployment smoke review and controlled rollout decision, or V2
 production fail-closed communication and freshness metadata remediation. Phase
 29 authorizes V3 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
@@ -3368,7 +3431,15 @@ It does not authorize full production rollout, public exposure, route exposure
 changes, backend route changes, frontend implementation changes,
 Recommendation Engine V2 contract changes, pitcher ranking, pitcher
 selection, pitcher recommendation, prediction behavior, hidden priority
-ordering, pitcher-level advice, or matchup advice.
+ordering, pitcher-level advice, or matchup advice. V3 Phase 15 authorizes
+only deployment smoke-review evidence assessment, retained monitoring artifact
+creation, validation-result retention, and a controlled rollout decision for
+Team Operations Bullpen Readiness. It does not authorize controlled rollout
+approval while manual evidence is pending, full production rollout, public
+exposure, route exposure changes, backend route changes, frontend
+implementation changes, Recommendation Engine V2 contract changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+hidden priority ordering, pitcher-level advice, or matchup advice.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.
