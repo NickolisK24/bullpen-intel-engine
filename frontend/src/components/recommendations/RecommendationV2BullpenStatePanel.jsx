@@ -451,6 +451,45 @@ function DetailToggleButton({
   )
 }
 
+function PanelDisclosure({
+  title,
+  summary,
+  initiallyExpanded = false,
+  children,
+}) {
+  const detailId = sectionId(`${title}-details`)
+  const [expanded, setExpanded] = useState(initiallyExpanded)
+
+  return (
+    <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby={`${detailId}-heading`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 id={`${detailId}-heading`} className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{title}</h3>
+          {summary && (
+            <p className="v2-governed-panel__text mt-1 text-xs leading-relaxed text-chalk500">
+              {summary}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          className="rounded border border-dirt bg-field/60 px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/60 focus:ring-offset-2 focus:ring-offset-dugout"
+          aria-expanded={expanded}
+          aria-controls={detailId}
+          onClick={() => setExpanded(current => !current)}
+        >
+          {expanded ? `Hide ${title}` : `View ${title}`}
+        </button>
+      </div>
+      {expanded && (
+        <div id={detailId} className="mt-4 space-y-4">
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function CollapsibleDetailBlock({
   title,
   detailId,
@@ -1045,6 +1084,7 @@ export default function RecommendationV2BullpenStatePanel({
   loading = false,
   error = null,
   onRetry,
+  compact = false,
   initialExpandedInventoryKeys = [],
   initialExpandedInventoryDetailKeys = [],
   initialExpandedCandidateGroupKeys = [],
@@ -1079,19 +1119,47 @@ export default function RecommendationV2BullpenStatePanel({
   }
 
   const view = getRecommendationV2BullpenStateView(state)
+  const evidenceSections = (
+    <>
+      <MetadataGrid title="Trust" rows={view.trustRows} />
+      <MetadataGrid title="Freshness" rows={view.freshnessRows} />
+
+      {!view.isUnavailable && (
+        <>
+          <InventorySummary
+            inventory={view.inventory}
+            initialExpandedInventoryKeys={initialExpandedInventoryKeys}
+            initialExpandedInventoryDetailKeys={initialExpandedInventoryDetailKeys}
+          />
+          <TeamContext context={view.teamContext} initialExpandedTeamContextKeys={initialExpandedTeamContextKeys} />
+          <CandidateGroups
+            groups={view.candidateGroups}
+            initialExpandedCandidateGroupKeys={initialExpandedCandidateGroupKeys}
+            initialExpandedCandidateDetailKeys={initialExpandedCandidateDetailKeys}
+          />
+        </>
+      )}
+
+      <div className="v2-governed-panel__message-grid gap-4">
+        <MessageList title="Limitations" messages={view.limitationMessages} emptyText="No limitations reported." initiallyExpanded={initialExpandedMessageSections.includes('limitations')} />
+        <MessageList title="Explanations" messages={view.explanationMessages} emptyText="No explanations reported." initiallyExpanded={initialExpandedMessageSections.includes('explanations')} />
+        <MessageList title="Refusal" messages={view.refusalMessages} emptyText="No refusal metadata reported." initiallyExpanded={initialExpandedMessageSections.includes('refusal')} />
+      </div>
+    </>
+  )
 
   return (
     <section
-      className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0"
+      className={`${compact ? 'mb-5' : 'mb-8'} v2-governed-panel card w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0`}
       style={{ animationFillMode: 'forwards' }}
       aria-labelledby="recommendation-v2-heading"
       aria-describedby="recommendation-v2-description"
     >
-      <div className="border-b border-dirt bg-chalk/20 p-5">
+      <div className={`${compact ? 'p-4' : 'p-5'} border-b border-dirt bg-chalk/20`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="font-mono text-xs uppercase tracking-widest text-chalk400">{view.title}</div>
-            <h2 id="recommendation-v2-heading" className="mt-1 font-display text-2xl tracking-wider text-chalk100">Bullpen State</h2>
+            <h2 id="recommendation-v2-heading" className={`${compact ? 'text-xl' : 'text-2xl'} mt-1 font-display tracking-wider text-chalk100`}>Bullpen State</h2>
             <p id="recommendation-v2-description" className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
               Governed bullpen visibility from the V2 contract. This surface summarizes context and evidence only.
             </p>
@@ -1105,7 +1173,7 @@ export default function RecommendationV2BullpenStatePanel({
         </div>
       </div>
 
-      <div className="space-y-5 p-4 sm:p-5 lg:p-6">
+      <div className={`${compact ? 'space-y-4 p-4' : 'space-y-5 p-4 sm:p-5 lg:p-6'}`}>
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           {`V2 bullpen intelligence ${view.statusLabel}. ranking_applied ${displayValue(state?.governance?.rankingApplied, 'missing')}. selection_made ${displayValue(state?.governance?.selectionMade, 'missing')}.`}
         </div>
@@ -1157,30 +1225,15 @@ export default function RecommendationV2BullpenStatePanel({
         )}
 
         <GovernanceRows rows={view.governanceRows} />
-        <MetadataGrid title="Trust" rows={view.trustRows} />
-        <MetadataGrid title="Freshness" rows={view.freshnessRows} />
 
-        {!view.isUnavailable && (
-          <>
-            <InventorySummary
-              inventory={view.inventory}
-              initialExpandedInventoryKeys={initialExpandedInventoryKeys}
-              initialExpandedInventoryDetailKeys={initialExpandedInventoryDetailKeys}
-            />
-            <TeamContext context={view.teamContext} initialExpandedTeamContextKeys={initialExpandedTeamContextKeys} />
-            <CandidateGroups
-              groups={view.candidateGroups}
-              initialExpandedCandidateGroupKeys={initialExpandedCandidateGroupKeys}
-              initialExpandedCandidateDetailKeys={initialExpandedCandidateDetailKeys}
-            />
-          </>
-        )}
-
-        <div className="v2-governed-panel__message-grid gap-4">
-          <MessageList title="Limitations" messages={view.limitationMessages} emptyText="No limitations reported." initiallyExpanded={initialExpandedMessageSections.includes('limitations')} />
-          <MessageList title="Explanations" messages={view.explanationMessages} emptyText="No explanations reported." initiallyExpanded={initialExpandedMessageSections.includes('explanations')} />
-          <MessageList title="Refusal" messages={view.refusalMessages} emptyText="No refusal metadata reported." initiallyExpanded={initialExpandedMessageSections.includes('refusal')} />
-        </div>
+        {compact ? (
+          <PanelDisclosure
+            title="V2 Evidence And Metadata"
+            summary="Trust, freshness, inventory, neutral groups, team context, explanations, limitations, and refusal details remain available on demand."
+          >
+            {evidenceSections}
+          </PanelDisclosure>
+        ) : evidenceSections}
       </div>
     </section>
   )

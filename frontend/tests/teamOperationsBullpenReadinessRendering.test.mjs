@@ -281,6 +281,20 @@ test('keeps internal non-production uncertified status visible', () => {
   assert.ok(htmlIncludes(html, 'Team-level context only.'))
 })
 
+test('renders compact Team Operations summary with evidence collapsed and governance visible', () => {
+  const html = renderPanel(baseState, { compact: true })
+
+  assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
+  assert.ok(htmlIncludes(html, 'Internal / Non-production / Uncertified'))
+  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
+  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  assert.ok(htmlIncludes(html, 'View Context Details'))
+  assert.ok(htmlIncludes(html, 'View Evidence'))
+  assert.ok(htmlIncludes(html, 'View Metadata'))
+  assert.equal(htmlIncludes(html, 'Coverage inventory is represented.'), false)
+  assert.equal(htmlIncludes(html, 'Readiness context is assembled from current bullpen evidence.'), false)
+})
+
 test('renders governance flags and metadata', () => {
   const html = renderPanel(baseState, { initialExpandedSections: ['metadata'] })
 

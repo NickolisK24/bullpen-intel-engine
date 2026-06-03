@@ -83,3 +83,22 @@ test('renders dashboard summary without claiming stale data is current', () => {
   assert.ok(htmlIncludes(html, 'Show inactive pitchers or refresh sync data'))
   assert.doesNotMatch(html, /latest_workload_snapshot/)
 })
+
+test('renders compact availability summary with secondary evidence collapsed', () => {
+  const collapsedHtml = renderToStaticMarkup(
+    React.createElement(AvailabilityDashboardSummary, { summary: staleDominantSummary, compact: true }),
+  )
+  const expandedHtml = renderToStaticMarkup(
+    React.createElement(AvailabilityDashboardSummary, { summary: staleDominantSummary, compact: true, initialDetailsOpen: true }),
+  )
+
+  assert.ok(htmlIncludes(collapsedHtml, 'Availability Summary'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Monitor'))
+  assert.ok(htmlIncludes(collapsedHtml, 'View Availability Evidence'))
+  assert.ok(htmlIncludes(collapsedHtml, 'aria-expanded="false"'))
+  assert.equal(htmlIncludes(collapsedHtml, 'Confidence'), false)
+  assert.equal(htmlIncludes(collapsedHtml, 'Data State'), false)
+  assert.ok(htmlIncludes(expandedHtml, 'Hide Availability Evidence'))
+  assert.ok(htmlIncludes(expandedHtml, 'Confidence'))
+  assert.ok(htmlIncludes(expandedHtml, 'Data State'))
+})

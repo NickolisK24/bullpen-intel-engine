@@ -206,6 +206,20 @@ test('renders governed V2 bullpen intelligence in available state', () => {
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent or warm-up activity.'))
 })
 
+test('renders compact V2 bullpen intelligence with evidence collapsed and governance visible', () => {
+  const html = renderPanel(availableState, { compact: true })
+
+  assert.ok(htmlIncludes(html, 'V2 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'Bullpen State'))
+  assert.ok(htmlIncludes(html, 'ranking_applied'))
+  assert.ok(htmlIncludes(html, 'selection_made'))
+  assert.ok(htmlIncludes(html, 'View V2 Evidence And Metadata'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+  assert.equal(htmlIncludes(html, 'Available Inventory'), false)
+  assert.equal(htmlIncludes(html, 'Neutral Candidate Groups'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'), false)
+})
+
 test('renders inventory summary cards collapsed by default with counts and metadata visible', () => {
   const html = renderPanel(availableState)
 

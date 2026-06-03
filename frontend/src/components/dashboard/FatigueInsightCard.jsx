@@ -51,12 +51,12 @@ function ComparisonCard({ label, era, apps, sublabel, style }) {
   )
 }
 
-export default function FatigueInsightCard() {
+export default function FatigueInsightCard({ embedded = false }) {
   const { data, loading, error, refetch } = useFetch(getFatigueEraInsight)
 
   return (
     <div
-      className="card p-6 mb-8 animate-fade-up opacity-0"
+      className={`${embedded ? 'p-4' : 'p-6 mb-8'} card animate-fade-up opacity-0`}
       style={{ animationDelay: '350ms', animationFillMode: 'forwards' }}
     >
       <SectionHeader
@@ -76,15 +76,15 @@ export default function FatigueInsightCard() {
         />
       ) : (
         <>
-          <p className="text-chalk100 text-lg md:text-xl leading-relaxed font-mono mb-6">
+          <p className="text-chalk100 text-base md:text-lg leading-relaxed font-mono mb-5">
             {data?.headline}
           </p>
 
           {data?.comparison?.pct_difference !== null &&
            data?.comparison?.pct_difference !== undefined && (
-            <div className="flex items-baseline justify-center gap-3 mb-6">
+            <div className="flex items-baseline justify-center gap-3 mb-5">
               <div
-                className="font-display text-7xl md:text-8xl tracking-wider leading-none"
+                className="font-display text-5xl md:text-7xl tracking-wider leading-none"
                 style={{ color: '#fb923c' }}
               >
                 {data.comparison.pct_difference >= 0 ? '+' : ''}{data.comparison.pct_difference}%

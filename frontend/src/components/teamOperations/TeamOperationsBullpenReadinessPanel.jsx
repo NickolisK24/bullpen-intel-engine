@@ -148,6 +148,47 @@ function CountGrid({ title, summary, rows }) {
   )
 }
 
+function CompactMetric({ label, value, subtext = null }) {
+  return (
+    <div className="rounded border border-dirt bg-chalk/30 px-3 py-2">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{label}</div>
+      <div className="mt-1 break-words font-mono text-sm font-semibold text-chalk200">{displayValue(value)}</div>
+      {subtext && <div className="mt-1 text-[11px] leading-relaxed text-chalk500">{subtext}</div>}
+    </div>
+  )
+}
+
+function CompactSnapshot({ view }) {
+  const workload = asObject(view.workloadPressure)
+  const availability = asObject(view.availabilityDistribution)
+  const freshness = asObject(view.freshness)
+  const governance = asObject(view.governance)
+
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <CompactMetric
+        label="Workload"
+        value={workload.pressure_state || workload.pressure_level || 'Not provided'}
+        subtext={workload.summary}
+      />
+      <CompactMetric
+        label="Availability"
+        value={`${countValue(availability.available)} available / ${countValue(availability.total)} total`}
+      />
+      <CompactMetric
+        label="Freshness"
+        value={freshness.freshness_state || freshness.state || 'Not provided'}
+        subtext={freshness.data_through ? `Data through ${freshness.data_through}` : null}
+      />
+      <CompactMetric
+        label="Governance"
+        value={`ranking_applied === ${displayValue(governance.rankingApplied)} / selection_made === ${displayValue(governance.selectionMade)}`}
+        subtext="Team-level context only"
+      />
+    </div>
+  )
+}
+
 function MessageList({ items, emptyLabel = 'No additional evidence provided.' }) {
   const rows = asArray(items)
   if (!rows.length) {
@@ -393,13 +434,14 @@ export default function TeamOperationsBullpenReadinessPanel({
   loading = false,
   error = null,
   onRetry,
+  compact = false,
   initialExpandedSections = [],
 }) {
   const view = getTeamOperationsBullpenReadinessView(state)
 
   return (
     <section
-      className="card mb-8 animate-fade-up opacity-0 delay-3"
+      className={`${compact ? 'mb-5' : 'mb-8'} card animate-fade-up opacity-0 delay-3`}
       style={{ animationFillMode: 'forwards' }}
       aria-labelledby="team-operations-bullpen-readiness-title"
     >
@@ -422,7 +464,7 @@ export default function TeamOperationsBullpenReadinessPanel({
           <ErrorState message={error} onRetry={onRetry} />
         </div>
       ) : (
-        <div className="space-y-5 p-5">
+        <div className={`${compact ? 'space-y-4 p-4' : 'space-y-5 p-5'}`}>
           <div className="rounded border border-dirt bg-dugout/70 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -451,25 +493,29 @@ export default function TeamOperationsBullpenReadinessPanel({
           <ContractWarnings view={view} />
 
           {view.isContractSafe && (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <CountGrid
-                title="Workload Pressure"
-                summary={asObject(view.workloadPressure).summary}
-                rows={view.workloadRows}
-              />
-              <CountGrid
-                title="Availability Distribution"
-                rows={view.availabilityRows}
-              />
-              <CountGrid
-                title="Coverage Inventory"
-                rows={view.coverageRows}
-              />
-              <CountGrid
-                title="Handedness Coverage"
-                rows={view.handednessRows}
-              />
-            </div>
+            compact ? (
+              <CompactSnapshot view={view} />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <CountGrid
+                  title="Workload Pressure"
+                  summary={asObject(view.workloadPressure).summary}
+                  rows={view.workloadRows}
+                />
+                <CountGrid
+                  title="Availability Distribution"
+                  rows={view.availabilityRows}
+                />
+                <CountGrid
+                  title="Coverage Inventory"
+                  rows={view.coverageRows}
+                />
+                <CountGrid
+                  title="Handedness Coverage"
+                  rows={view.handednessRows}
+                />
+              </div>
+            )
           )}
 
           <ToggleSection
@@ -490,6 +536,14 @@ export default function TeamOperationsBullpenReadinessPanel({
               <div className="rounded border border-dirt bg-dugout/70 p-3">
                 <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Availability Distribution</h4>
                 <MetricList rows={view.availabilityRows} />
+              </div>
+              <div className="rounded border border-dirt bg-dugout/70 p-3">
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Coverage Inventory</h4>
+                <MetricList rows={view.coverageRows} />
+              </div>
+              <div className="rounded border border-dirt bg-dugout/70 p-3">
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Handedness Coverage</h4>
+                <MetricList rows={view.handednessRows} />
               </div>
             </div>
           </ToggleSection>

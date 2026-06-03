@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getBullpenOverview,
@@ -39,6 +40,41 @@ const fmtThroughDate = (ymd) => {
   return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`
 }
 
+function DashboardDisclosure({
+  title,
+  summary,
+  children,
+  initiallyExpanded = false,
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded)
+  const id = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-details`
+
+  return (
+    <section className="card mb-5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">{title}</h2>
+          {summary && <p className="mt-1 text-xs leading-relaxed text-chalk600">{summary}</p>}
+        </div>
+        <button
+          type="button"
+          className="rounded border border-dirt bg-field/60 px-3 py-2 text-left font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus:ring-2 focus:ring-amber/60 focus:ring-offset-2 focus:ring-offset-dugout"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded(current => !current)}
+        >
+          {expanded ? `Hide ${title}` : `View ${title}`}
+        </button>
+      </div>
+      {expanded && (
+        <div id={id} className="mt-4">
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function Dashboard() {
   const overview   = useFetch(getBullpenOverview)
   const topFatigue = useFetch(() => getFatigueScores({ limit: 8, risk_level: '', with_meta: true }))
@@ -74,31 +110,28 @@ export default function Dashboard() {
   })()
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
       {/* Hero */}
-      <div className="mb-10 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
-        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-5 sm:p-8 bg-stadium-glow">
+      <div className="mb-5 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+        <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout p-4 sm:p-5 bg-stadium-glow">
           <div className="absolute inset-0 bg-grid-lines bg-grid-lines opacity-100 pointer-events-none" />
-          <div className="relative z-10">
-            <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Command Center</div>
-            <h1 className="font-display text-5xl sm:text-6xl tracking-wider text-chalk100 leading-none mb-3">
-              BASEBALL<span className="text-gradient-amber">OS</span>
-            </h1>
-            <p className="text-chalk400 text-sm max-w-lg font-mono leading-relaxed">
-              Flagship module — the <span className="text-chalk200">Bullpen Intelligence Engine</span>:
-              relief-pitcher workload on live MLB data.<br/>
-              Prospect pipeline is an early prototype · Methodology keeps every number transparent.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
+          <div className="relative z-10 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)] lg:items-start">
+            <div>
+              <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Operational Readiness Dashboard</div>
+              <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
+                BASEBALL<span className="text-gradient-amber">OS</span>
+              </h1>
+              <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
+                Bullpen workload, availability, governed recommendation context, and team operations readiness in one compact view.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
+              </div>
+            </div>
+            <div className="rounded-lg border border-dirt bg-field/65 p-3">
+              <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
             </div>
           </div>
-          <div className="hidden sm:block absolute right-8 top-1/2 -translate-y-1/2 opacity-5">
-            <div className="font-display text-[120px] tracking-widest text-white leading-none select-none">⚾</div>
-          </div>
-        </div>
-        <div className="mt-3">
-          <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
         </div>
       </div>
 
@@ -108,7 +141,7 @@ export default function Dashboard() {
       ) : overview.error ? (
         <ErrorState message={overview.error} onRetry={overview.refetch} />
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           <StatCard label="Active Pitchers" value={overview.data?.total_pitchers}
             sub={overview.data?.scored_pitchers != null ? `${overview.data.scored_pitchers.toLocaleString()} with workload data` : undefined}
             icon="⚾" delay={100} />
@@ -118,13 +151,14 @@ export default function Dashboard() {
         </div>
       )}
 
-      <AvailabilityDashboardSummary summary={overview.data?.availability_summary} />
+      <AvailabilityDashboardSummary summary={overview.data?.availability_summary} compact />
 
       <RecommendationV2BullpenStatePanel
         state={v2BullpenState.data}
         loading={v2BullpenState.loading}
         error={v2BullpenState.error}
         onRetry={v2BullpenState.refetch}
+        compact
       />
 
       <TeamOperationsBullpenReadinessPanel
@@ -132,12 +166,13 @@ export default function Dashboard() {
         loading={teamOperationsReadiness.loading}
         error={teamOperationsReadiness.error}
         onRetry={teamOperationsReadiness.refetch}
+        compact
       />
 
       {/* Risk breakdown bar */}
       {overview.data?.risk_breakdown && (
-        <div className="card p-5 mb-8 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
-          <div className="mb-4">
+        <div className="card p-4 mb-5 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
+          <div className="mb-3">
             <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Risk Distribution</div>
             {overview.data?.scored_pitchers != null && overview.data?.total_pitchers != null && (
               <div className="text-chalk600 font-mono text-[11px] mt-1 leading-relaxed">
@@ -199,9 +234,14 @@ export default function Dashboard() {
       )}
 
       {/* Fatigue → next-appearance ERA insight */}
-      <FatigueInsightCard />
+      <DashboardDisclosure
+        title="Exploratory Fatigue Insight"
+        summary="Correlation study and sample-size detail remain available without dominating the operational dashboard."
+      >
+        <FatigueInsightCard embedded />
+      </DashboardDisclosure>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* High fatigue snapshot */}
         <div className="card animate-fade-up opacity-0 delay-4" style={{ animationFillMode: 'forwards' }}>
           <div className="card-header">
@@ -293,7 +333,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
         {[
           { to: '/bullpen', icon: '🔥', title: 'Bullpen Intelligence', desc: 'Fatigue scoring, team bullpens, pitcher detail', tag: 'Flagship' },
           { to: '/prospects', icon: '📈', title: 'Prospect Pipeline', desc: 'Development tracker — early prototype, sample data', tag: 'Prototype' },
