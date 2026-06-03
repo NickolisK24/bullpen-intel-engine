@@ -838,13 +838,23 @@ which is expected and is not a project failure.
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution
 ```
 
-Phase 25 should review the Phase 24 packet stubs, add precise evidence
-citations where existing records already satisfy packet sections, and begin the
-first evidence backfill pass for high-priority prototype and experimental
-surfaces without changing runtime behavior.
+Phase 25 reviews the Phase 24 packet stubs, records known evidence, identifies
+missing evidence, assigns evidence readiness scores, and classifies current
+packet readiness for the first formal backfill execution pass.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review
+```
+
+Phase 26 should add exact packet-level citations for existing production
+evidence, then begin targeted owner, runbook, metadata, test, migration, and
+retention evidence backfill for the highest-priority prototype, experimental,
+and legacy packets without changing runtime behavior.
