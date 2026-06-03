@@ -314,12 +314,23 @@ git diff --cached --check
 
 ## Recommended Next Milestone
 
-Recommended next milestone:
+Completed follow-up layer:
 
 ```text
 BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit
 ```
 
-Phase 22 should verify that future lifecycle changes reference this checklist
-in project-state records, certification reviews, rollout reviews, deprecation
-records, and removal records before classification changes are accepted.
+Phase 22 verifies that future lifecycle changes must reference this checklist
+through a lifecycle review log, adoption audit checklist, surface-by-surface
+review table, and required owner/runbook/metadata/test/certification evidence
+before classification changes are accepted.
+
+Recommended next milestone:
+
+```text
+BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan
+```
+
+Phase 23 should convert the Phase 22 adoption findings into targeted owner,
+runbook, metadata, test, and migration-evidence backfill tasks for current
+prototype, experimental, and legacy surfaces.

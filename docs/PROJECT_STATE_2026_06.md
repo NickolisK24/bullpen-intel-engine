@@ -165,6 +165,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
+| BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -383,6 +384,9 @@ deprecation, removal, and intelligence-surface governance. BaseballOS V2.5
 Phase 21 lifecycle enforcement checklist is complete and converts those gates
 into operational pass/fail checklists for lifecycle movement, production
 eligibility, deprecation, removal, and future intelligence-surface review.
+BaseballOS V2.5 Phase 22 lifecycle review log and adoption audit is complete
+and adds the auditable record layer for checklist usage, evidence requirements,
+surface-by-surface readiness findings, and remaining adoption risks.
 
 The official strategy foundation is:
 
@@ -511,6 +515,10 @@ The V2.5 Phase 20 prototype promotion and deprecation policy record is:
 The V2.5 Phase 21 lifecycle enforcement checklist record is:
 
 - `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
+
+The V2.5 Phase 22 lifecycle review log and adoption audit record is:
+
+- `docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1417,6 +1425,86 @@ npm test
 278 passed, 0 failed
 ```
 
+BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit establishes
+the auditable adoption layer for Phase 21 checklist enforcement.
+
+The Phase 22 audit record is:
+
+- `docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`
+
+The Phase 22 adoption audit requires every future lifecycle change to retain:
+
+- surface name and classification
+- requested lifecycle transition
+- applicable Phase 21 checklist
+- owner or owning area
+- purpose, audience, limitations, and maintenance expectations
+- backend, frontend, script, report, and contract impact
+- governance, trust, freshness, refusal, fail-closed, and anti-ranking /
+  anti-selection / anti-prediction evidence where applicable
+- test evidence
+- certification and rollout evidence before production eligibility
+- migration, notice, and approval evidence before deprecation or removal
+
+Phase 22 surface-by-surface adoption review confirms:
+
+- certified V2 production remains limited to `GET
+  /api/recommendations/v2/bullpen-state` and the Dashboard V2 Bullpen State
+  panel
+- Dashboard, Bullpen, V1 candidate API and panel, bullpen fatigue APIs, and
+  bullpen read APIs remain accepted production surfaces
+- Methodology, admin sync and recalculation, frontend API normalizers, and
+  availability governance reports/scripts remain supported surfaces
+- Prospect Pipeline UI, Prospect APIs, and Dashboard Pipeline Snapshot remain
+  PROTOTYPE and do not pass Prototype -> Experimental readiness
+- Fatigue-to-ERA insight, latest-workload snapshot mode, MLB passthrough
+  helpers, and threshold experimentation tooling remain EXPERIMENTAL and do
+  not pass Experimental -> Supported readiness
+- metadata-less fatigue array response and standalone fatigue recalculation
+  script remain LEGACY and require consumer/replacement evidence before
+  deprecation
+
+Phase 22 explicitly confirms no current prototype or experimental surface is
+promotion-ready.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 22 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, best option
+behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 22 validation:
+
+```text
+pytest
+Result: Not available on PATH in this shell; no project failure recorded.
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests
+Result: 271 passed before 7 local temp/cache collection errors caused by
+Windows access denial under C:\Users\nikko\AppData\Local\Temp\pytest-of-nikko.
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-22-lifecycle-audit
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1444,6 +1532,6 @@ within the Phase 16-approved current certified V2 experience, or Phase 17
 post-rollout monitoring and boundary review, or Phase 18 maintenance warning
 remediation review, or Phase 19 prototype surface maintenance review, or
 Phase 20 prototype promotion and deprecation policy, or Phase 21 lifecycle
-enforcement checklist,
+enforcement checklist, or Phase 22 lifecycle review log and adoption audit,
 pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
 automated decision behavior.

@@ -120,6 +120,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
 | BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
 | BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
+| BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -227,6 +228,9 @@ today:
   legacy classification, deprecation, and removal. V2.5 Phase 21 converts that
   policy into an operational enforcement checklist for lifecycle movement,
   production promotion, deprecation, removal, and intelligence-surface review.
+  V2.5 Phase 22 adds the lifecycle review log and adoption audit layer that
+  records checklist usage, evidence requirements, surface-by-surface review
+  findings, and remaining owner/runbook/metadata/test evidence gaps.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -291,7 +295,9 @@ today:
   and the completed V2.5 Phase 20 prototype promotion and deprecation policy in
   [`docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`](docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md),
   and the completed V2.5 Phase 21 lifecycle enforcement checklist in
-  [`docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`](docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md).
+  [`docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`](docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md),
+  and the completed V2.5 Phase 22 lifecycle review log and adoption audit in
+  [`docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`](docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -360,6 +366,12 @@ bullpen-intel-engine/
     ├── V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md
     ├── V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md
     ├── V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md
+    ├── V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md
+    ├── V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md
+    ├── V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md
+    ├── V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md
+    ├── V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md
+    ├── V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -584,6 +596,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V2.5 Phase 21 operational checklist for enforcing lifecycle
   promotion, production eligibility, deprecation, removal, and future
   intelligence-surface governance review.
+- [`docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`](docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md)
+  — completed V2.5 Phase 22 audit layer for lifecycle review logging,
+  checklist adoption evidence, surface-by-surface readiness findings, and
+  owner/runbook/metadata/test evidence requirements.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -672,7 +688,9 @@ V2.5 Phase 20 is complete and establishes the official promotion and
 deprecation lifecycle policy for those surface classifications. V2.5 Phase 21
 is complete and converts that lifecycle policy into enforceable checklists for
 promotion, production eligibility, deprecation, removal, and intelligence
-surface review.
+surface review. V2.5 Phase 22 is complete and adds the lifecycle review log
+and adoption audit layer that proves checklist usage and evidence gaps are
+tracked before any future lifecycle movement.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
