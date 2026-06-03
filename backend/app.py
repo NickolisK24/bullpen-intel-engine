@@ -116,11 +116,13 @@ def create_app(config_name=None):
     from api.prospects import prospects_bp
     from api.methodology import methodology_bp
     from api.recommendations import recommendations_bp
+    from api.team_operations import team_operations_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
     app.register_blueprint(methodology_bp, url_prefix='/api/methodology')
     app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
+    app.register_blueprint(team_operations_bp, url_prefix='/api/team-operations')
 
     @app.route('/api/health')
     def health():

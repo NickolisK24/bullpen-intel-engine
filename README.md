@@ -135,6 +135,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
 | BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
 | BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation | Complete |
+| BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration | Complete / Internal / Uncertified |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -285,7 +286,11 @@ today:
   V3 Phase 5 is complete and adds the separate backend Team Operations domain
   foundation, deterministic readiness assembly, metadata contracts,
   fail-closed handling, and focused backend tests without registering a route
-  or changing frontend behavior.
+  or changing frontend behavior. V3 Phase 6 is complete and registers the
+  separate Team Operations Bullpen Readiness Flask route as internal,
+  non-production, and uncertified, with governed request validation,
+  fail-closed behavior, and route tests. It does not add frontend exposure or
+  production certification.
   No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
@@ -758,6 +763,10 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   — completed V3 Phase 5 Team Operations Bullpen Readiness backend domain
   foundation, contract constants, metadata objects, deterministic assembly,
   fail-closed behavior, focused backend tests, and no route/frontend exposure.
+- [`docs/V3_PHASE_6_TEAM_OPERATIONS_BULLPEN_READINESS_INTERNAL_API_ROUTE_INTEGRATION.md`](docs/V3_PHASE_6_TEAM_OPERATIONS_BULLPEN_READINESS_INTERNAL_API_ROUTE_INTEGRATION.md)
+  — completed V3 Phase 6 Team Operations Bullpen Readiness internal route
+  integration, allowed/forbidden query validation, route metadata, fail-closed
+  route behavior, focused backend route tests, and no frontend exposure.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -884,7 +893,10 @@ establishes the official readiness API contract and certification requirements
 for the separate Team Operations route. V3 Phase 5 is complete and implements
 the separate backend domain foundation with governed readiness contracts,
 deterministic assembly, fail-closed behavior, and backend tests, without
-registering the route or adding frontend behavior.
+registering the route or adding frontend behavior. V3 Phase 6 is complete and
+registers that route as an internal, non-production, uncertified Flask surface
+with governed request validation and fail-closed route tests, without frontend
+exposure or production certification.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in

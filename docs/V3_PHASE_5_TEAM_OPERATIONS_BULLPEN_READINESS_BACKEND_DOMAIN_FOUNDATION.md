@@ -320,3 +320,32 @@ The next milestone should integrate the domain foundation through an internal
 or explicitly guarded route, preserve the certified Recommendation Engine V2
 contract, and add route-level forbidden request field and serialization tests
 before any frontend implementation begins.
+
+## Phase 6 Internal Route Integration Follow-Up
+
+BaseballOS V3 Phase 6 is complete and integrates this backend domain foundation
+behind:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+The Phase 6 route is explicitly:
+
+```text
+INTERNAL_NON_PRODUCTION_UNCERTIFIED
+```
+
+Phase 6 creates route-level request validation, source input assembly,
+fail-closed response behavior, route metadata, and focused backend route tests.
+It does not add frontend exposure, production certification, Recommendation
+Engine V2 contract changes, ranking behavior, selection behavior, prediction
+behavior, best/preferred/recommended behavior, pitcher-level advice, or matchup
+advice.
+
+Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
