@@ -454,6 +454,13 @@ CERTIFIED_PRODUCTION_READY
 This decision means V2 is eligible for the next governed milestone:
 production rollout decision review. It does not itself approve rollout.
 
+BaseballOS V2.5 Phase 16 Production Rollout Decision later records the
+separate rollout decision for the current certified V2 scope:
+
+```text
+APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
 ## 18. Post-Certification Boundaries
 
 After certification, V2 must continue to preserve:
@@ -498,4 +505,23 @@ candidate groups, team context, limitations, explanations, and refusal details
 while preserving detail inspection, trust metadata, freshness metadata, refusal
 metadata, and the certified no-ranking and no-selection guarantees.
 
-Production rollout decision review remains a later governed milestone.
+Production rollout decision review was completed in BaseballOS V2.5 Phase 16.
+
+## 20. Production Rollout Decision
+
+The completed production rollout decision record is:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+Phase 16 approves production rollout for the current certified V2 experience
+only:
+
+```text
+APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
+The approval remains bounded to the implemented and governed V2 scope. It does
+not approve additional V2 endpoints, additional V2 feature surfaces, pitcher
+ranking, pitcher ordering, automated pitcher selection, prediction, score
+ordering, best/preferred/recommended pitcher behavior, or new recommendation
+logic.

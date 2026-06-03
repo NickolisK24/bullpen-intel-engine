@@ -1227,6 +1227,26 @@ sections.
 
 ## 23. Phase 16: Production Rollout Decision
 
+**Implementation status**
+
+Complete.
+
+BaseballOS V2.5 Phase 16 Production Rollout Decision is complete.
+
+Completion record:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+Rollout decision:
+
+```text
+APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
+This decision approves production rollout for the current certified V2
+experience only. It does not approve additional V2 endpoints, feature
+surfaces, ranking, selection, prediction, or new recommendation logic.
+
 **Goal**
 
 Make a governed production rollout decision after implementation,
@@ -1273,7 +1293,56 @@ certification, and post-certification usability work are complete.
 - Production status is documented.
 - V2 behavior remains within certified scope.
 
-## 24. Dependency Map
+## 24. Phase 17: Post-Rollout Monitoring and Boundary Review
+
+**Goal**
+
+Monitor the approved V2 production experience and preserve the Phase 16
+boundary after rollout.
+
+**Allowed work**
+
+- Review production V2 endpoint latency.
+- Review fail-closed, unavailable, stale, and degraded output frequency.
+- Review user interaction with inventory and intelligence expansion controls.
+- Document observed rollout issues.
+- Record maintenance follow-up items.
+- Confirm governance boundaries remain intact.
+
+**Forbidden work**
+
+- Do not add new V2 endpoints.
+- Do not add new V2 feature surfaces.
+- Do not change recommendation logic.
+- Do not change trust logic.
+- Do not change freshness logic.
+- Do not change refusal logic.
+- Do not add ranking, selection, prediction, score ordering, or final pitcher
+  choice behavior.
+
+**Dependencies**
+
+- Phase 16 production rollout decision complete.
+
+**Required tests**
+
+- Select validation based on observed production changes, if any.
+- Re-run frontend and backend governance tests before any follow-up change is
+  merged.
+
+**Documentation updates**
+
+- Record production monitoring evidence.
+- Update project state if rollout observations change readiness or risk.
+
+**Exit criteria**
+
+- Production monitoring evidence is documented.
+- Any rollout issues are classified.
+- Any required remediation is explicitly scoped.
+- V2 behavior remains within the Phase 16-approved scope.
+
+## 25. Dependency Map
 
 Implementation order must remain sequential unless an approved implementation
 review explicitly narrows a phase without weakening governance.
@@ -1296,6 +1365,7 @@ Phase 0 Repo Hygiene
   -> V2.5 Phase 14 Inventory Presentation Optimization
   -> V2.5 Phase 15 Intelligence Presentation Optimization
   -> Phase 16 Production Rollout Decision
+  -> Phase 17 Post-Rollout Monitoring and Boundary Review
 ```
 
 Backend foundations must exist before API exposure. API contract behavior must
@@ -1303,7 +1373,7 @@ exist before frontend rendering. Frontend rendering must exist before mobile and
 accessibility certification. All runtime implementation must pass tests before
 certification review.
 
-## 25. Expected File/Module Areas
+## 26. Expected File/Module Areas
 
 Future implementation may touch these areas, subject to phase approval:
 
@@ -1333,7 +1403,7 @@ directories as part of V2 feature work:
 If those files appear in `git status`, they must be treated as unrelated drift
 unless explicitly approved for a separate maintenance task.
 
-## 26. Testing Plan
+## 27. Testing Plan
 
 Required test categories:
 
@@ -1365,7 +1435,7 @@ Testing expectations:
   imply ranking or selection.
 - V1 tests must continue to pass without weakening assertions.
 
-## 27. Rollout and Visibility Strategy
+## 28. Rollout and Visibility Strategy
 
 V2 should roll out only after implementation completion and certification
 review. The preferred visibility path is:
@@ -1379,7 +1449,7 @@ review. The preferred visibility path is:
 Rollout must preserve user decision authority. V2 output may organize,
 summarize, and explain bullpen information. It must not choose, rank, or decide.
 
-## 28. Feature Flag Strategy
+## 29. Feature Flag Strategy
 
 V2 should use a controlled visibility mechanism until production certification
 is complete.
@@ -1396,7 +1466,7 @@ The flag or visibility mechanism must not bypass governance checks. Hidden or
 disabled V2 code must still preserve no-ranking, no-selection, trust metadata,
 freshness, limitations, explanations, and refusal behavior.
 
-## 29. Risk Controls
+## 30. Risk Controls
 
 Scope creep controls:
 
@@ -1449,7 +1519,7 @@ Worktree drift controls:
 - Stage named files only when unrelated drift exists.
 - Keep generated frontend artifacts and dependency drift out of V2 commits.
 
-## 30. Implementation Stop Conditions
+## 31. Implementation Stop Conditions
 
 Implementation must stop if:
 
@@ -1467,7 +1537,7 @@ Implementation must stop if:
 
 Stop conditions require review before implementation continues.
 
-## 31. Definition of Implementation Complete
+## 32. Definition of Implementation Complete
 
 Implementation complete means:
 
@@ -1486,7 +1556,7 @@ Implementation complete means:
 
 Implementation complete does not mean production certified.
 
-## 32. Definition of Production Certified
+## 33. Definition of Production Certified
 
 Production certified requires:
 
@@ -1504,15 +1574,14 @@ requires:
 Production certification must be evidence-based and must preserve the full V2
 governance package. Production rollout must be recorded separately.
 
-## 33. Next Milestone
+## 34. Next Milestone
 
 The next milestone is:
 
 ```text
-Recommendation Engine V2 Phase 16 Production Rollout Decision
+Recommendation Engine V2 Phase 17 Post-Rollout Monitoring and Boundary Review
 ```
 
-This milestone may begin only after the user explicitly approves production
-rollout decision review. Phase 16 must decide whether the certified V2 system
-is approved, deferred, or rejected for production rollout while preserving all
-Phase 1 through Phase 15 safeguards.
+This milestone may begin after the Phase 16-approved current certified V2
+experience remains enabled in production. Phase 17 must monitor production
+behavior and preserve all Phase 1 through Phase 16 safeguards.

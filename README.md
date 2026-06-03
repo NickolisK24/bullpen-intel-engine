@@ -114,6 +114,7 @@ Everything here is implemented and runs against real MLB Stats API data:
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Transparency
@@ -203,7 +204,8 @@ today:
   full inventory membership available on demand. V2.5 Phase 15 audits the full
   Dashboard V2 intelligence surface and makes candidate groups, team context,
   limitations, explanations, and refusal details summary-first with expansion
-  on demand. No
+  on demand. V2.5 Phase 16 approves the current certified V2 Dashboard
+  experience for production rollout within the implemented scope only. No
   ranking UI, final pitcher choice UI, or prediction UI is implemented. Those capabilities
   remain outside the completed Recommendation Engine V1 certification. V1 is
   production-ready for candidate-level evaluation only.
@@ -253,7 +255,9 @@ today:
   and the completed V2.5 Phase 14 inventory presentation record in
   [`docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md),
   and the completed V2.5 Phase 15 intelligence presentation record in
-  [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md).
+  [`docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`](docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md),
+  and the completed V2.5 Phase 16 production rollout decision in
+  [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md).
 - Usage **simulator** and bullpen **planning dashboard**
 - **Role-aware** fatigue (separating starters from relievers)
 - **Reports / exports** and a documented **API platform**
@@ -320,6 +324,7 @@ bullpen-intel-engine/
     ├── RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md
     ├── V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md
     ├── V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md
+    ├── V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md
     ├── BULLPEN_AVAILABILITY_ENGINE_V1.md
     ├── AVAILABILITY_THRESHOLD_TUNING_PLAN.md
     └── SETUP.md                 # Full setup, env reference, and deployment notes
@@ -514,6 +519,11 @@ BaseballOS is an independent project and is not affiliated with or endorsed by M
   presentation audit, summary-first candidate groups, collapsible team
   context, collapsible limitation/explanation/refusal details, mobile
   page-length reduction, transparency preservation, and governance compliance.
+- [`docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`](docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md)
+  — completed V2.5 Phase 16 governance decision approving the current
+  certified V2 Dashboard experience for production rollout while preserving
+  the no-ranking, no-selection, no-prediction, trust, freshness, refusal, and
+  fail-closed boundaries.
 - [`docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md`](docs/RECOMMENDATION_ENGINE_V1_CANDIDATE_EVALUATION_LAYOUT_REMEDIATION.md)
   — completed V1 Candidate Evaluation layout remediation record for the
   embedded selected-pitcher article, single-column embedded rendering,
@@ -586,14 +596,15 @@ summaries first, with full membership and evidence available through expansion.
 V2.5 Phase 15 is complete and reduces full Dashboard V2 intelligence density
 by rendering candidate groups, team context, limitations, explanations, and
 refusal details as summaries first, with complete detail available through
-expansion.
+expansion. V2.5 Phase 16 is complete and approves the current certified V2
+Dashboard experience for production rollout within the implemented scope only.
 Dashboard and Bullpen loading performance remediation is also complete, with
 batched availability evidence loading, lean public V2 serialization, duplicate
 Dashboard sync-status request removal, and concurrent GET de-duplication in
 the frontend API helper.
 Future recommendation expansion may build on those objects and internal
 assembly logic to explore bullpen-level intelligence, team-level stress
-intelligence, readiness visibility, production rollout review, certified
+intelligence, readiness visibility, post-rollout monitoring, certified
 inventory usability, and broader
 explainability while preserving V1 trust protections. No V2 ranking,
 final pitcher choice, or prediction behavior exists. Beyond

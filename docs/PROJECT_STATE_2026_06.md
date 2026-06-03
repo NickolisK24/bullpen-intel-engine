@@ -159,6 +159,7 @@ It does not rank the bullpen or select the final pitcher.
 | Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
 | BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
 | BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -360,7 +361,9 @@ layout remediation work, and Phase 11 mobile/accessibility validation work,
 Phase 12 certification readiness validation work, and Phase 13 formal
 certification review work. BaseballOS V2.5 Phase 14 inventory presentation
 optimization and V2.5 Phase 15 intelligence presentation optimization are also
-complete as post-certification usability milestones.
+complete as post-certification usability milestones. BaseballOS V2.5 Phase 16
+production rollout decision is complete and approves the current certified V2
+Dashboard experience for production rollout within the implemented scope only.
 
 The official strategy foundation is:
 
@@ -461,6 +464,10 @@ The V2.5 Phase 14 inventory presentation optimization record is:
 The V2.5 Phase 15 intelligence presentation optimization record is:
 
 - `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
+
+The V2.5 Phase 16 production rollout decision record is:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -1017,6 +1024,54 @@ Phase 15 did not touch backend files, API contracts, recommendation logic,
 trust logic, freshness logic, refusal logic, ranking behavior, selection
 behavior, prediction behavior, or Recommendation Engine V1 behavior.
 
+BaseballOS V2.5 Phase 16 Production Rollout Decision evaluates the certified
+V2 system, current Dashboard and Bullpen surfaces, performance remediation,
+mobile/accessibility evidence, Phase 14 inventory presentation optimization,
+and Phase 15 intelligence presentation optimization.
+
+The Phase 16 production rollout decision record is:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+The Phase 16 rollout decision is:
+
+```text
+APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
+Phase 16 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 16 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-rollout-decision
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The backend run reported 139 existing deprecation warnings from SQLAlchemy and
+datetime usage. The warnings are maintenance follow-up items, not rollout
+blockers for the current V2 scope.
+
+Phase 16 did not touch backend files, frontend source files, API contracts,
+recommendation logic, trust logic, freshness logic, refusal logic, ranking
+behavior, selection behavior, prediction behavior, or Recommendation Engine V1
+behavior.
+
 ## Future Expansion Boundary
 
 Future recommendation work belongs in Recommendation Engine V2 or later.
@@ -1039,6 +1094,7 @@ surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
 selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
 Phase 12 certification readiness validation, and Phase 13 formal
 certification review, V2.5 Phase 14 inventory presentation optimization, and
-V2.5 Phase 15 intelligence presentation optimization,
-pitcher ranking, pitcher ordering, scoring, final pitcher selection, or
-production rollout.
+V2.5 Phase 15 intelligence presentation optimization, or production rollout
+beyond the Phase 16-approved current certified V2 experience,
+pitcher ranking, pitcher ordering, scoring, final pitcher selection, or new
+automated decision behavior.
