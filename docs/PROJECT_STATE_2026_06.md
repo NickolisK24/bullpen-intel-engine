@@ -182,6 +182,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation | Complete |
 | BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration | Complete / Internal / Uncertified |
 | BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review | Ready for Frontend Integration Planning |
+| BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan | Complete / Planning Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -489,6 +490,15 @@ trust metadata, freshness metadata, refusal metadata, fail-closed behavior,
 anti-ranking, anti-selection, anti-prediction, route tests, domain tests, and
 V2 regression safety. It does not grant production certification or frontend
 implementation authorization.
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness frontend integration
+plan is complete and defines governed Dashboard placement, client/API
+normalization, component architecture, summary-first rendering,
+expand-on-demand evidence, trust metadata presentation, freshness metadata
+presentation, refusal/fail-closed presentation, governance metadata
+presentation, accessibility, mobile behavior, loading/error/degraded states,
+neutral language rules, prohibited UI patterns, frontend tests, and
+certification-readiness requirements without adding UI or changing runtime
+behavior.
 
 The official strategy foundation is:
 
@@ -697,6 +707,11 @@ The V3 Phase 7 Team Operations Bullpen Readiness route certification-readiness
 review record is:
 
 - `docs/V3_PHASE_7_TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE_CERTIFICATION_READINESS_REVIEW.md`
+
+The V3 Phase 8 Team Operations Bullpen Readiness frontend integration plan
+record is:
+
+- `docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload
@@ -2740,6 +2755,55 @@ Phase 7 recommended next milestone:
 BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan
 ```
 
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration
+Plan is complete.
+
+The V3 Phase 8 record is:
+
+- `docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`
+
+Phase 8 defines:
+
+- frontend client strategy
+- API normalization strategy
+- Dashboard placement strategy
+- separate Team Operations component architecture
+- summary-first rendering
+- expand-on-demand evidence
+- trust metadata presentation
+- freshness metadata presentation
+- refusal and fail-closed presentation
+- governance metadata presentation
+- accessibility requirements
+- mobile and responsive requirements
+- loading, error, degraded, refused, and unavailable state handling
+- neutral language rules
+- prohibited UI patterns
+- frontend client, rendering, prohibited-language, and accessibility tests
+- certification-readiness requirements
+
+Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 8 does not introduce or plan ranking behavior, selection behavior,
+prediction behavior, best option behavior, preferred option behavior,
+recommended option behavior, hidden priority ordering, pitcher-level advice, or
+matchup advice.
+
+Phase 8 does not implement frontend UI, frontend client code, backend behavior,
+API contract changes, public route certification, production certification, or
+production rollout.
+
+Phase 8 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -2849,7 +2913,8 @@ plan, or V3 Phase 4 Team Operations Bullpen Readiness API contract and
 certification requirements, or V3 Phase 5 Team Operations Bullpen Readiness
 backend domain foundation, or V3 Phase 6 Team Operations Bullpen Readiness
 internal API route integration, or V3 Phase 7 Team Operations Bullpen
-Readiness route certification-readiness review, or V2 production fail-closed
+Readiness route certification-readiness review, or V3 Phase 8 Team Operations
+Bullpen Readiness frontend integration plan, or V2 production fail-closed
 communication and freshness metadata remediation. Phase 29 authorizes V3
 product capability
 planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
@@ -2862,7 +2927,10 @@ runtime behavior, production certification, or production rollout. V3 Phase 7
 authorizes only certification-readiness documentation for the internal route
 and classifies it as ready for frontend integration planning. It does not
 authorize frontend implementation, public exposure, production certification,
-or production rollout.
+or production rollout. V3 Phase 8 authorizes only frontend integration
+planning for the internal route. It does not authorize frontend implementation,
+frontend client code, public exposure, production certification, or production
+rollout.
 
 This project state document also does not authorize pitcher ranking, pitcher
 ordering, scoring, final pitcher selection, or new automated decision behavior.

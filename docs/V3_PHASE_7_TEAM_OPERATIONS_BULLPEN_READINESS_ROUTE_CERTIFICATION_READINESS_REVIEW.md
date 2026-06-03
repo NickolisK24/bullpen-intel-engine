@@ -565,3 +565,40 @@ The next milestone should plan frontend integration for the internal readiness
 route, including neutral presentation language, metadata visibility,
 fail-closed rendering, accessibility requirements, frontend test coverage, and
 certification gates before any user-facing implementation begins.
+
+## Phase 8 Frontend Integration Plan Follow-Up
+
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration
+Plan is complete.
+
+The Phase 8 record is:
+
+```text
+docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md
+```
+
+Phase 8 defines the governed frontend integration plan for the internal Team
+Operations Bullpen Readiness route, including Dashboard placement, client/API
+normalization, component architecture, summary-first rendering,
+expand-on-demand evidence, trust metadata presentation, freshness metadata
+presentation, refusal/fail-closed presentation, governance metadata
+presentation, accessibility, mobile behavior, neutral language rules,
+prohibited UI patterns, frontend tests, and certification-readiness
+requirements.
+
+Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 8 does not implement frontend UI, frontend client code, backend behavior,
+API contract changes, public route certification, production certification, or
+production rollout.
+
+Recommended next milestone:
+
+```text
+BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests
+```
