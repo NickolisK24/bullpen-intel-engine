@@ -15,6 +15,10 @@ from explanations.availability import (
     build_availability_explanation,
     serialize_availability_explanation,
 )
+from explanations.readiness import (
+    build_readiness_explanation,
+    serialize_readiness_explanation,
+)
 from explanations.contracts import (
     ADVICE_SCOPE,
     ALLOWED_EXPLANATION_SCOPES,
@@ -81,12 +85,14 @@ __all__ = [
     'build_percentage_evidence',
     'build_reason',
     'build_reasons',
+    'build_readiness_explanation',
     'governance_payload_errors',
     'require_governance_payload_safe',
     'require_v4_governance_safe',
     'serialize_explanation',
     'serialize_availability_explanation',
     'stable_json_dumps',
+    'serialize_readiness_explanation',
     'v4_governance_errors',
     'validate_explanation_scope',
     'validate_limitation_type',

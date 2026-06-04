@@ -21,24 +21,25 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 
 ## Active Direction
 
-The next platform capability track is V4 Evidence and Explanation. V4 is
-now moving from certified internal backend Availability Explanation Integration
-into Team Operations Readiness explanation implementation planning. V4 explains
+The next platform capability track is V4 Evidence and Explanation. V4 has
+certified internal backend Availability Explanation Integration and implemented
+an internal backend Team Operations Readiness explanation adapter. V4 explains
 why existing governed states appear without ranking, selecting, predicting,
-recommending, or automating a decision. V4 Phase 10 defines the technical
-architecture for future readiness explanations without implementing runtime
-behavior.
+recommending, or automating a decision. V4 Phase 11 adds backend-only readiness
+explanation generation without API or UI exposure.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 11 - Team Operations Readiness Explanation Implementation
+V4 Phase 12 - Team Operations Readiness Explanation Certification Readiness Review
 ```
 
-The next V4 milestone should implement only an internal backend readiness
-explanation adapter and focused tests. It should not expose API routes, modify
-Dashboard UI, change readiness calculations, change Recommendation Engine
-behavior, approve certification, or approve rollout.
+The next V4 milestone should review readiness explanation coverage, evidence
+attribution, limitation visibility, determinism, governance preservation, and
+readiness behavior preservation before formal certification planning. It should
+not expose API routes, modify Dashboard UI, change readiness calculations,
+change Recommendation Engine behavior, approve certification, or approve
+rollout.
 
 ## Product Tracks
 
@@ -50,12 +51,12 @@ behavior, approve certification, or approve rollout.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation architecture complete / planning only | Implement internal backend readiness explanation adapter only |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation adapter implemented / internal backend only | Complete certification-readiness review before API or UI exposure |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 11 Team Operations readiness explanation implementation.
+1. V4 Phase 12 Team Operations readiness explanation certification-readiness review.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -152,6 +153,11 @@ governance and lifecycle evidence process linked from
   code strategy, limitation strategy, builder integration, object shapes,
   testing architecture, certification architecture, and readiness for Phase 11
   implementation.
+- V4 Phase 11 implemented an internal backend Team Operations Readiness
+  explanation adapter that maps existing readiness payloads into deterministic
+  V4 explanations with governed evidence, reason, limitation, freshness, trust,
+  confidence, and governance metadata without changing readiness behavior or
+  exposing API/UI surfaces.
 
 For detailed milestone history, use:
 

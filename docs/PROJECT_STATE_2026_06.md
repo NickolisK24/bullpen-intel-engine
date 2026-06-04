@@ -228,6 +228,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
 | BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition | Complete / Ready for Architecture Planning |
 | BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture | Complete / Ready for Internal Backend Implementation |
+| BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation | Complete / Internal Backend Adapter Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4994,6 +4995,90 @@ Recommended next milestone:
 V4 Phase 11 - Team Operations Readiness Explanation Implementation
 ```
 
+## BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation
+
+BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation is
+complete.
+
+The implementation record is:
+
+- `docs/V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION.md`
+
+Phase 11 implements an internal backend adapter that converts existing Team
+Operations Bullpen Readiness payloads into deterministic V4 explanation objects.
+
+The adapter consumes existing governed readiness output and maps:
+
+- readiness state
+- workload pressure
+- availability distribution
+- coverage inventory
+- handedness coverage
+- freshness metadata
+- trust metadata
+- confidence metadata
+- refusal/fail-closed context
+- existing readiness limitations
+
+into V4 explanation evidence, reasons, limitations, freshness references, trust
+references, confidence references, and governance payloads.
+
+Supported explanation scopes:
+
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Reason code status:
+
+- no new reason codes were added
+- existing V4 reason codes were reused conservatively
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Phase 11 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 11 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 11 does not modify readiness calculations, readiness status assignment,
+availability calculations, fatigue calculations, Recommendation Engine
+behavior, API routes, API payloads, frontend runtime behavior, Dashboard
+behavior, database schema, certification status, or rollout status.
+
+Focused backend tests cover stable, constrained, stressed, stale freshness,
+partial coverage, limited trust, refused/fail-closed, deterministic, invalid
+input, governance, and prohibited-language paths.
+
+Recommended next milestone:
+
+```text
+V4 Phase 12 - Team Operations Readiness Explanation Certification Readiness Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -5373,6 +5458,18 @@ logic changes, production certification, rollout approval, pitcher ranking,
 pitcher selection, pitcher recommendation, prediction behavior,
 best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
 matchup advice, or decision automation.
+V4 Phase 11 authorizes only internal backend Team Operations Readiness
+explanation adapter implementation, deterministic explanation construction
+from existing readiness payloads, evidence mapping, reason mapping, limitation
+mapping, focused tests, and documentation. It does not authorize API route
+creation or exposure, frontend UI, dashboard behavior changes, database
+migration, readiness calculation changes, readiness status assignment changes,
+availability calculation changes, fatigue calculation changes, Recommendation
+Engine behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

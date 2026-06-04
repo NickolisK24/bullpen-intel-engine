@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation architecture complete / planning only |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation adapter implemented / internal backend only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,9 +38,9 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE_COMPLETE
+V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-READY_FOR_V4_PHASE_11_READINESS_EXPLANATION_IMPLEMENTATION
+READY_FOR_V4_PHASE_12_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW
 ```
 
 ## Core Capabilities
@@ -212,6 +212,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 11 Team Operations readiness explanation implementation](docs/V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION.md)
+  - internal backend adapter that maps existing Team Operations readiness
+  payloads into governed deterministic V4 explanations without API or UI
+  exposure.
 - [V4 Phase 10 Team Operations readiness explanation architecture](docs/V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE.md)
   - technical architecture for future readiness explanation generation,
   evidence mapping, reason code strategy, limitation strategy, builder reuse,
