@@ -219,6 +219,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval | Controlled Rollout Approved / Full Rollout Not Approved |
 | BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review | Ready for Controlled Rollout Observation / Full Rollout Not Approved |
 | BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition | Complete / Planning Only |
+| BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning | Complete / Ready for Phase 3 Planning |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4031,6 +4032,71 @@ Recommended next milestone:
 V4 Phase 2 - Evidence And Explanation Architecture And Contract Planning
 ```
 
+## BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning
+
+BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract
+Planning is complete.
+
+The Phase 2 record is:
+
+- `docs/V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING.md`
+
+Phase 2 status:
+
+```text
+V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_3_IMPLEMENTATION_PLANNING
+```
+
+V4 Phase 2 defines:
+
+- the intended explanation architecture
+- allowed explanation scopes
+- proposed internal explanation object shape
+- reusable evidence item shape
+- stable reason code strategy
+- limitation model
+- required governance contract
+- future API contract candidates
+- future frontend surface candidates
+- certification requirements
+
+V4 Phase 2 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+V4 Phase 2 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 2 does not authorize backend implementation, frontend implementation,
+database migration, runtime behavior changes, API route creation, API contract
+exposure, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, readiness calculation changes, trust
+logic changes, or freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 3 - Evidence And Explanation Implementation Plan
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4294,6 +4360,19 @@ trust logic changes, freshness logic changes, pitcher ranking, pitcher
 selection, pitcher recommendation, prediction behavior, best/preferred arm
 behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
 decision automation.
+V4 Phase 2 authorizes only Evidence and Explanation architecture planning,
+explanation-scope planning, internal object-shape planning, evidence-item
+planning, reason-code planning, limitation-model planning, governance-contract
+planning, API candidate identification, frontend surface candidate
+identification, certification-requirement planning, and implementation-readiness
+decision recording. It does not authorize backend implementation, frontend
+implementation, database migration, runtime behavior changes, API route
+creation, API contract exposure, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, readiness
+calculation changes, trust logic changes, freshness logic changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

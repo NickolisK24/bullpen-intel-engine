@@ -111,6 +111,7 @@ governance, rollout, monitoring, and historical records.
 ## V4 Evidence And Explanation Layer
 
 - [V4 Phase 1 evidence and explanation capability definition](V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION.md)
+- [V4 Phase 2 evidence and explanation architecture and contract planning](V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING.md)
 
 ## Operational Review And Monitoring Evidence
 
