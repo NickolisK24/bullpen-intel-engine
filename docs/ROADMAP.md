@@ -50,16 +50,22 @@ reassesses retained repository evidence, confirms source/test evidence still
 supports compact governed explanation surfaces, and keeps production review
 blocked because runtime screenshots, manual accessibility smoke evidence, live
 fail-closed evidence, and deployed monitoring observations remain incomplete.
+V4 Phase 26 records completed retained runtime evidence, marks desktop,
+mobile, accessibility smoke, fail-closed, governance, Dashboard
+anti-regression, explanation, evidence, metadata, and limitation review as
+PASS, and approves full production rollout for the certified V4 frontend
+explanation surfaces.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 26 - Frontend Explanation Runtime Evidence Capture And Production Review Gate
+V4 Phase 27 - Post-Rollout Monitoring And Governance Preservation Review
 ```
 
-The next V4 milestone should capture actual runtime desktop, mobile,
-responsive, accessibility, fail-closed, governance, and monitoring evidence
-before BaseballOS attempts a separate production rollout review.
+The next V4 milestone should monitor the production rollout, preserve
+governance and fail-closed behavior, confirm explanation-only language remains
+intact, and review any user-facing or operational observations before any V4+
+scope expansion.
 
 ## Product Tracks
 
@@ -71,12 +77,12 @@ before BaseballOS attempts a separate production rollout review.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; controlled rollout approved; evidence reassessment complete; runtime observation evidence still incomplete; full production rollout not approved | Capture runtime evidence before production rollout review |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 26 frontend explanation runtime evidence capture and production review gate.
+1. V4 Phase 27 post-rollout monitoring and governance preservation review.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -90,9 +96,9 @@ before BaseballOS attempts a separate production rollout review.
 These are candidates, not commitments:
 
 - Team Operations Bullpen Readiness full rollout planning.
-- V4 Evidence and Explanation frontend, certification, and rollout work after
-  backend route implementation, route certification planning, formal route
-  certification, frontend integration planning, and separate authorization.
+- Future V4+ explanation scope expansion, new frontend surfaces, or new
+  explanation APIs only after separate planning, certification, and rollout
+  authorization.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -252,6 +258,11 @@ governance and lifecycle evidence process linked from
   governance finding, and kept production rollout review readiness blocked
   because runtime screenshots, manual accessibility smoke evidence, live
   fail-closed evidence, and deployed monitoring observations remain incomplete.
+- V4 Phase 26 formally approved production rollout for certified V4 frontend
+  explanation surfaces after retained runtime evidence passed desktop, mobile,
+  accessibility smoke, fail-closed, governance, Dashboard anti-regression,
+  explanation, evidence, metadata, and limitation review while preserving
+  explanation-only governance boundaries.
 
 For detailed milestone history, use:
 
