@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; explanation API route certification-readiness complete / no frontend or dashboard exposure |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations / no frontend or dashboard exposure |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,11 +38,11 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW_COMPLETE
+V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-INTERNAL_EXPLANATION_API_ROUTES_IMPLEMENTED
-READY_FOR_V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION
+EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+NO_FRONTEND_OR_DASHBOARD_EXPLANATION_EXPOSURE
 ```
 
 ## Core Capabilities
@@ -217,10 +217,12 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
-- [V4 Phase 16 explanation API route certification readiness](docs/V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW.md)
-  - readiness review for certified scope exposure, route coverage, response
-  contracts, fail-closed behavior, governance, determinism, testing, and
-  behavior preservation before formal API certification.
+- [V4 Phase 17 explanation API formal certification](docs/V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md)
+  - certified internal backend API layer for Availability and Team Operations
+    Readiness explanations.
+  - formal certification review for certified scope exposure, route coverage,
+    response contracts, fail-closed behavior, governance, determinism, testing,
+    and behavior preservation.
 - [V4 Phase 15 explanation API route implementation](docs/V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION.md)
   - governed backend API routes for certified V4 Availability and Team
   Operations Readiness explanations, with fail-closed envelopes and no
