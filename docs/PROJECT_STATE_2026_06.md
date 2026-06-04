@@ -220,6 +220,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review | Ready for Controlled Rollout Observation / Full Rollout Not Approved |
 | BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition | Complete / Planning Only |
 | BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning | Complete / Ready for Phase 3 Planning |
+| BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan | Complete / Ready for Backend Domain Foundation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4097,6 +4098,73 @@ Recommended next milestone:
 V4 Phase 3 - Evidence And Explanation Implementation Plan
 ```
 
+## BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan
+
+BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan is
+complete.
+
+The Phase 3 record is:
+
+- `docs/V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN.md`
+
+Phase 3 status:
+
+```text
+V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_4_BACKEND_DOMAIN_FOUNDATION
+```
+
+V4 Phase 3 defines:
+
+- implementation overview
+- proposed V4 phase breakdown
+- backend implementation plan
+- frontend implementation plan
+- internal and future API-facing contract plan
+- testing strategy
+- certification strategy
+- rollout strategy
+- documentation requirements
+- readiness decision for the first implementation phase
+
+V4 Phase 3 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 3 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 3 does not authorize backend implementation, frontend implementation,
+database migration, runtime behavior changes, API route creation, API contract
+exposure, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, readiness calculation changes, trust
+logic changes, or freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 4 - Evidence And Explanation Backend Domain Foundation
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4366,6 +4434,18 @@ planning, reason-code planning, limitation-model planning, governance-contract
 planning, API candidate identification, frontend surface candidate
 identification, certification-requirement planning, and implementation-readiness
 decision recording. It does not authorize backend implementation, frontend
+implementation, database migration, runtime behavior changes, API route
+creation, API contract exposure, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, readiness
+calculation changes, trust logic changes, freshness logic changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 3 authorizes only Evidence and Explanation implementation planning,
+phase sequencing, backend planning, frontend planning, contract planning,
+testing strategy, certification strategy, rollout strategy, documentation
+requirements, and readiness-decision recording for the first backend domain
+foundation milestone. It does not authorize backend implementation, frontend
 implementation, database migration, runtime behavior changes, API route
 creation, API contract exposure, fatigue calculation changes, availability
 calculation changes, Recommendation Engine behavior changes, readiness

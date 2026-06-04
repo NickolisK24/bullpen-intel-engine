@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Architecture and contract planning complete / planning only |
+| V4 Evidence and Explanation Layer | Implementation plan complete / planning only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,8 +38,8 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 planning state:
 
 ```text
-V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING_COMPLETE
-READY_FOR_V4_PHASE_3_IMPLEMENTATION_PLANNING
+V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN_COMPLETE
+READY_FOR_V4_PHASE_4_BACKEND_DOMAIN_FOUNDATION
 ```
 
 ## Core Capabilities
@@ -202,6 +202,9 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 3 evidence and explanation implementation plan](docs/V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN.md)
+  - implementation roadmap, backend plan, frontend plan, testing, certification,
+  and rollout strategy.
 - [V4 Phase 2 evidence and explanation architecture](docs/V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING.md)
   - architecture, scope, object-shape, evidence, contract, and certification planning.
 - [V4 Phase 1 evidence and explanation definition](docs/V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION.md)
