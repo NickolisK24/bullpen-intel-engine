@@ -249,6 +249,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition | Approved / Planning Only |
 | BaseballOS V5 Phase 4 Observation Domain And Contracts | Complete / Backend Contracts Only |
 | BaseballOS V5 Phase 5 Observation Builder Foundation | Complete / Backend Builders Only |
+| BaseballOS V5 Phase 6 Observation API Surface | Complete / Backend Read-Only API Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6667,7 +6668,7 @@ Phase 4 does not authorize:
 Recommended next milestone:
 
 ```text
-V5_PHASE_6_OBSERVATION_API_SURFACE
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
 ```
 
 ## BaseballOS V5 Phase 5 Observation Builder Foundation
@@ -6722,6 +6723,68 @@ Recommended next milestone:
 
 ```text
 V5_PHASE_6_OBSERVATION_API_SURFACE
+```
+
+## BaseballOS V5 Phase 6 Observation API Surface
+
+BaseballOS V5 Phase 6 Observation API Surface is complete.
+
+The Phase 6 record is:
+
+- `docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md`
+
+Phase 6 implements a backend read-only API surface for governed observation
+surfacing. It adds deterministic supplied-state API assembly, `GET
+/api/observations`, `POST /api/observations/preview`, fail-closed API
+responses, governed collection serialization, route registration, and focused
+API tests.
+
+Phase 6 implementation files:
+
+- `backend/api/observations.py`
+- `backend/observations/api_assembly.py`
+- `backend/app.py`
+- `backend/tests/test_observation_api.py`
+
+Phase 6 decision:
+
+```text
+V5_PHASE_6_OBSERVATION_API_SURFACE_COMPLETE
+```
+
+Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 6 route paths:
+
+```text
+GET /api/observations
+POST /api/observations/preview
+```
+
+Phase 6 does not authorize:
+
+- frontend UI
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -7282,6 +7345,18 @@ changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
 selection, pitcher recommendation, matchup advice, best-arm language,
 closer/setup/role advice, prediction behavior, hidden priority ordering,
 pitcher-level advice, or automated decision-making.
+V5 Phase 6 authorizes only the backend read-only observation API surface,
+deterministic supplied-state API assembly, governed collection serialization,
+fail-closed API responses, route registration, focused backend tests, and
+Phase 7 frontend intelligence surface readiness recording. It does not
+authorize frontend UI, database migrations, live runtime integration, runtime
+observation generation from MLB data, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Readiness behavior changes, explanation behavior changes, trust
+logic changes, freshness logic changes, pitcher ranking, pitcher selection,
+pitcher recommendation, matchup advice, best-arm language, closer/setup/role
+advice, prediction behavior, hidden priority ordering, pitcher-level advice,
+or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

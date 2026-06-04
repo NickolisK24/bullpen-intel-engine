@@ -144,6 +144,7 @@ governance, rollout, monitoring, and historical records.
 - [V5 Phase 3 bullpen intelligence surface architecture definition](V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md)
 - [V5 Phase 4 observation domain and contracts](V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md)
 - [V5 Phase 5 observation builder foundation](V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md)
+- [V5 Phase 6 observation API surface](V5_PHASE_6_OBSERVATION_API_SURFACE.md)
 
 ## Operational Review And Monitoring Evidence
 

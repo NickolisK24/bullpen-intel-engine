@@ -189,7 +189,7 @@ Phase 5 does not authorize:
 
 ## 9. Next Phase Boundary
 
-Recommended next milestone:
+Recommended next milestone at Phase 5 closeout:
 
 ```text
 V5_PHASE_6_OBSERVATION_API_SURFACE
@@ -197,6 +197,24 @@ V5_PHASE_6_OBSERVATION_API_SURFACE
 
 Phase 6 may define and expose read-only observation API routes if separately
 authorized. Phase 5 does not expose those routes.
+
+## 10. Phase 6 Follow-Up
+
+V5 Phase 6 implemented the backend read-only observation API surface using the
+Phase 5 builders and Phase 4 contracts. It added deterministic supplied-state
+API assembly, `GET /api/observations`, `POST /api/observations/preview`,
+fail-closed API responses, governed collection serialization, route
+registration, and focused API tests.
+
+Phase 6 did not authorize frontend UI, database migrations, live runtime
+integration, ranking, selection, prediction, matchup advice, pitcher advice,
+or automated decision-making.
+
+Current next milestone:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
+```
 
 ## Final Boundary
 
