@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability explanations certified with non-blocking observations / internal backend only |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation definition complete / planning only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,9 +38,9 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-READY_FOR_V4_PHASE_9_AVAILABILITY_EXPLANATION_API_CONTRACT_PLANNING
+READY_FOR_V4_PHASE_10_READINESS_EXPLANATION_ARCHITECTURE
 ```
 
 ## Core Capabilities
@@ -71,6 +71,15 @@ Certified recommendation and readiness surfaces preserve:
 ```text
 ranking_applied === false
 selection_made === false
+```
+
+V4 explanation surfaces additionally preserve:
+
+```text
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
 ```
 
 BaseballOS does not authorize:
@@ -203,6 +212,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 9 Team Operations readiness explanation definition](docs/V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION.md)
+  - planning record for future readiness explanations, candidate scopes,
+  evidence sources, reason codes, governance boundaries, certification
+  requirements, and readiness for Phase 10 architecture.
 - [V4 Phase 8 availability explanation formal certification](docs/V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md)
   - official certification record for internal backend Availability
   Explanation Integration.

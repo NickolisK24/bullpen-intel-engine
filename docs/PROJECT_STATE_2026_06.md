@@ -226,6 +226,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 6 Availability Explanation Integration | Complete / Internal Backend Availability Adapter Only |
 | BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
 | BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
+| BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition | Complete / Ready for Architecture Planning |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4714,7 +4715,135 @@ rollout approval, or public exposure.
 Recommended next milestone:
 
 ```text
-V4 Phase 9 - Availability Explanation API Contract Planning
+V4 Phase 9 - Team Operations Readiness Explanation Capability Definition
+```
+
+## BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition
+
+BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability
+Definition is complete.
+
+The Phase 9 record is:
+
+- `docs/V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION.md`
+
+Phase 9 status:
+
+```text
+V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_10_READINESS_EXPLANATION_ARCHITECTURE
+```
+
+Phase 9 defines how future V4 explanations should explain Team Operations
+Bullpen Readiness states without implementing readiness explanation logic,
+changing readiness calculations, exposing APIs, adding frontend UI, changing
+dashboard behavior, or expanding rollout status.
+
+Capability summary:
+
+- explain why a Team Operations readiness state appears
+- explain why readiness is degraded, data limited, freshness limited, trust
+  limited, coverage limited, or refused
+- explain workload, coverage, freshness, trust, confidence, limitation, and
+  refusal contributors
+- keep explanations team-level, bullpen-level, or system-level
+- preserve the user as the decision maker
+
+Candidate explanation scopes:
+
+- `readiness_state`
+- `team_readiness_state`
+- `workload_pressure`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+- `confidence_state`
+
+Candidate evidence sources:
+
+- readiness status
+- operational constraints
+- workload pressure state
+- availability distribution
+- fatigue distribution
+- high-risk workload counts
+- role or coverage inventory counts
+- handedness coverage counts
+- freshness metadata
+- trust metadata
+- confidence metadata
+- refusal and fail-closed metadata
+- existing readiness limitations
+- governance metadata
+
+Existing V4 reason codes that may support readiness explanations:
+
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Candidate future readiness-focused reason codes:
+
+- `READINESS_DEGRADED_BY_FRESHNESS`
+- `READINESS_DEGRADED_BY_COVERAGE`
+- `READINESS_DATA_LIMITED`
+- `WORKLOAD_PRESSURE_ELEVATED`
+- `TRUST_LIMITED_FOR_READINESS`
+- `CONFIDENCE_REDUCED`
+- `READINESS_REFUSED_BY_FAIL_CLOSED`
+
+Phase 9 finds the current V4 limitation model sufficient for initial readiness
+explanation architecture planning:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 9 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 9 does not modify runtime behavior, backend behavior, frontend behavior,
+API routes, API response shapes, dashboard behavior, database schema, fatigue
+calculations, availability calculations, Recommendation Engine behavior, Team
+Operations Readiness behavior, trust logic, freshness logic, production
+certification, rollout approval, or public exposure.
+
+Recommended next milestone:
+
+```text
+V4 Phase 10 - Team Operations Readiness Explanation Architecture
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -5067,6 +5196,21 @@ behavior changes, trust logic changes, freshness logic changes, production
 rollout approval, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction behavior, best/preferred arm behavior, hidden priority ordering,
 pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 9 authorizes only Team Operations Readiness explanation capability
+definition, user-question definition, allowed-output definition,
+prohibited-output definition, candidate-scope identification,
+candidate-evidence-source identification, candidate-reason-code identification,
+limitation-model review, governance-boundary definition,
+certification-requirement definition, and implementation-readiness decision
+recording. It does not authorize backend implementation, frontend
+implementation, API route creation or exposure, dashboard behavior changes,
+database migration, runtime behavior changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Bullpen Readiness behavior changes, trust logic changes, freshness
+logic changes, production certification, rollout approval, pitcher ranking,
+pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

@@ -22,20 +22,22 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 ## Active Direction
 
 The next platform capability track is V4 Evidence and Explanation. V4 is
-now in post-certification contract planning for internal backend availability
-explanations. V4 explains why existing governed states appear without ranking,
-selecting, predicting, recommending, or automating a decision. V4 Phase 8 has
-certified Availability Explanation Integration with non-blocking observations.
+now moving from certified internal backend Availability Explanation Integration
+into Team Operations Readiness explanation planning. V4 explains why existing
+governed states appear without ranking, selecting, predicting, recommending, or
+automating a decision. V4 Phase 9 defines how future readiness explanations
+should work before any implementation begins.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 9 - Availability Explanation API Contract Planning
+V4 Phase 10 - Team Operations Readiness Explanation Architecture
 ```
 
-The next V4 milestone should plan the API contract for certified availability
-explanations without implementing the route, frontend integration, dashboard
-exposure, production rollout, or additional explanation categories.
+The next V4 milestone should define the architecture, contracts, adapter
+boundaries, reason mapping, evidence attribution, limitation handling, and tests
+for Team Operations Readiness explanations without implementing backend
+behavior, API routes, frontend integration, dashboard exposure, or rollout.
 
 ## Product Tracks
 
@@ -47,19 +49,19 @@ exposure, production rollout, or additional explanation categories.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability explanations certified with non-blocking observations / internal backend only | Plan API contract before route or UI work |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation definition complete / planning only | Define readiness explanation architecture before implementation |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 9 availability explanation API contract planning.
+1. V4 Phase 10 Team Operations readiness explanation architecture.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
 4. Separate full production rollout decision only if controlled rollout
    evidence supports it.
-5. V4 route or UI work only after backend domain contracts, tests, and
-   certification gates are established.
+5. V4 route or UI work only after architecture, backend contracts, tests, and
+   certification gates are established for the relevant explanation surface.
 
 ## Candidate Future Tracks
 
@@ -139,6 +141,10 @@ governance and lifecycle evidence process linked from
   with non-blocking observations, preserving the explanation-only scope and
   leaving API, frontend, dashboard, rollout, and additional explanation
   categories for future phases.
+- V4 Phase 9 defined the Team Operations Readiness explanation capability,
+  including user questions, allowed and prohibited outputs, candidate scopes,
+  evidence sources, reason codes, limitation model, governance definition,
+  certification requirements, and readiness for Phase 10 architecture.
 
 For detailed milestone history, use:
 
