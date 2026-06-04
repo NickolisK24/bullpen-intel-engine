@@ -41,18 +41,22 @@ monitoring expectations, manual review requirements, observation evidence,
 approval gates, and rollback conditions for those certified frontend
 explanation surfaces. V4 Phase 23 approves controlled rollout for certified
 frontend explanation surfaces while keeping full production rollout not
-approved until observation evidence is retained and reviewed.
+approved until observation evidence is retained and reviewed. V4 Phase 24
+reviews available controlled rollout evidence, finds no critical governance or
+behavior regression in repository-retained records, and identifies incomplete
+desktop, mobile, responsive, accessibility, fail-closed, and monitoring
+observation evidence before production review.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 24 - Frontend Explanation Surface Controlled Rollout Observation Review
+V4 Phase 25 - Frontend Explanation Controlled Rollout Evidence Capture And Reassessment
 ```
 
-The next V4 milestone should capture controlled rollout observation evidence,
-review desktop, mobile, responsive, accessibility, fail-closed, and governance
-checks, evaluate monitoring signals, and determine whether controlled rollout
-can continue, pause, or proceed toward a separate production rollout approval
+The next V4 milestone should retain missing controlled rollout observation
+evidence, create or update a V4 monitoring artifact, review desktop, mobile,
+responsive, accessibility, fail-closed, governance, and monitoring signals, and
+determine whether BaseballOS can proceed to a separate production rollout
 review.
 
 ## Product Tracks
@@ -65,12 +69,12 @@ review.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; controlled rollout approved; full production rollout not approved | Observe controlled rollout and retain monitoring evidence |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; controlled rollout approved; observation review requires retained evidence; full production rollout not approved | Retain observation evidence before production rollout review |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 24 frontend explanation surface controlled rollout observation review.
+1. V4 Phase 25 frontend explanation controlled rollout evidence capture and reassessment.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -236,6 +240,11 @@ governance and lifecycle evidence process linked from
   Availability explanations, shared disclosure, certified explanation APIs,
   monitoring expectations, rollback conditions, required observation evidence,
   and full production rollout boundaries.
+- V4 Phase 24 reviewed available controlled rollout observation evidence for
+  certified frontend explanation surfaces, found no critical governance
+  regression in repository-retained records, identified incomplete retained
+  desktop, mobile, responsive, accessibility, fail-closed, and monitoring
+  evidence, and deferred production rollout review readiness.
 
 For detailed milestone history, use:
 
