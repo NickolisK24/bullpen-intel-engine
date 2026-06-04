@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation adapter implemented / internal backend only |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation certification-readiness complete |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,9 +38,9 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION_COMPLETE
+V4_PHASE_12_TEAM_OPERATIONS_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-READY_FOR_V4_PHASE_12_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW
+READY_FOR_V4_PHASE_13_FORMAL_CERTIFICATION_REVIEW
 ```
 
 ## Core Capabilities
@@ -212,6 +212,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 12 Team Operations readiness explanation certification readiness](docs/V4_PHASE_12_TEAM_OPERATIONS_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md)
+  - readiness review for Team Operations explanation scope coverage, reason
+  mapping, evidence attribution, limitations, governance, determinism, testing,
+  and readiness-engine preservation before formal certification review.
 - [V4 Phase 11 Team Operations readiness explanation implementation](docs/V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION.md)
   - internal backend adapter that maps existing Team Operations readiness
   payloads into governed deterministic V4 explanations without API or UI

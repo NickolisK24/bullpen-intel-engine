@@ -121,6 +121,7 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 9 Team Operations readiness explanation capability definition](V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION.md)
 - [V4 Phase 10 Team Operations readiness explanation architecture](V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE.md)
 - [V4 Phase 11 Team Operations readiness explanation implementation](V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION.md)
+- [V4 Phase 12 Team Operations readiness explanation certification readiness review](V4_PHASE_12_TEAM_OPERATIONS_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md)
 
 ## Operational Review And Monitoring Evidence
 
