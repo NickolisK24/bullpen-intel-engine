@@ -224,6 +224,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation | Complete / Internal Backend Domain Only |
 | BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder | Complete / Internal Backend Builder Only |
 | BaseballOS V4 Phase 6 Availability Explanation Integration | Complete / Internal Backend Availability Adapter Only |
+| BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4505,6 +4506,101 @@ Recommended next milestone:
 V4 Phase 7 - Availability Explanation Certification Readiness Review
 ```
 
+## BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review
+
+BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review
+is complete.
+
+The Phase 7 record is:
+
+- `docs/V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase 7 status:
+
+```text
+V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW_COMPLETE
+```
+
+Certification-readiness decision:
+
+```text
+READY_FOR_V4_PHASE_8_FORMAL_CERTIFICATION_REVIEW
+```
+
+Review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Capability coverage | PASS |
+| Reason mapping | PARTIAL |
+| Evidence attribution | PASS |
+| Limitation handling | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PASS |
+| Availability Engine preservation | PASS |
+
+The reason-mapping review is partial because the internal adapter uses only
+existing Phase 4 reason codes and intentionally does not yet define a positive
+Available-state reason code. Available explanations still carry state,
+evidence, freshness, trust, confidence, and governance metadata.
+
+Critical certification blockers:
+
+```text
+None
+```
+
+Non-critical certification blockers:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- reason-code coverage remains intentionally conservative
+- future public exposure must define whether explanations are embedded in
+  existing availability responses or exposed through a separate explanation
+  contract
+- future UI work must preserve the difference between explaining the existing
+  `Avoid` state and telling a user to avoid a pitcher
+
+V4 Phase 7 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+V4 Phase 7 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 7 does not modify runtime behavior, backend availability behavior,
+fatigue calculations, availability thresholds, status assignment logic, API
+routes, API response shapes, frontend rendering, dashboard behavior,
+recommendation behavior, readiness behavior, database schema, production
+certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 8 - Availability Explanation Formal Certification Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4832,6 +4928,17 @@ production certification, rollout approval, pitcher ranking, pitcher selection,
 pitcher recommendation, prediction behavior, best/preferred arm behavior,
 hidden priority ordering, pitcher-level advice, matchup advice, or decision
 automation.
+V4 Phase 7 authorizes only certification-readiness review documentation for
+internal backend availability explanations. It does not authorize runtime
+behavior changes, API route creation or exposure, frontend UI, dashboard
+behavior changes, database migration, availability threshold changes,
+availability status assignment changes, fatigue calculation changes, readiness
+integration, recommendation integration, Recommendation Engine behavior
+changes, Team Operations Bullpen Readiness behavior changes, trust logic
+changes, freshness logic changes, production certification, rollout approval,
+pitcher ranking, pitcher selection, pitcher recommendation, prediction
+behavior, best/preferred arm behavior, hidden priority ordering, pitcher-level
+advice, matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,
