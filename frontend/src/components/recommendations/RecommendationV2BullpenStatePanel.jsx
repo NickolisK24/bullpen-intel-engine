@@ -1085,6 +1085,7 @@ export default function RecommendationV2BullpenStatePanel({
   error = null,
   onRetry,
   compact = false,
+  embedded = false,
   initialExpandedInventoryKeys = [],
   initialExpandedInventoryDetailKeys = [],
   initialExpandedCandidateGroupKeys = [],
@@ -1092,10 +1093,16 @@ export default function RecommendationV2BullpenStatePanel({
   initialExpandedTeamContextKeys = [],
   initialExpandedMessageSections = [],
 }) {
+  const outerClassName = embedded
+    ? 'v2-governed-panel w-full min-w-0 max-w-full overflow-hidden rounded border border-dirt bg-field/35'
+    : `${compact ? 'mb-5' : 'mb-8'} v2-governed-panel card w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0`
+  const outerStyle = embedded ? undefined : { animationFillMode: 'forwards' }
+
   if (loading) {
     return (
       <section
-        className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden"
+        className={outerClassName}
+        style={outerStyle}
         role="status"
         aria-live="polite"
         aria-busy="true"
@@ -1109,7 +1116,8 @@ export default function RecommendationV2BullpenStatePanel({
   if (error) {
     return (
       <section
-        className="v2-governed-panel card mb-8 w-full min-w-0 max-w-full overflow-hidden"
+        className={outerClassName}
+        style={outerStyle}
         role="alert"
         aria-label="V2 bullpen intelligence unavailable"
       >
@@ -1150,8 +1158,8 @@ export default function RecommendationV2BullpenStatePanel({
 
   return (
     <section
-      className={`${compact ? 'mb-5' : 'mb-8'} v2-governed-panel card w-full min-w-0 max-w-full overflow-hidden animate-fade-up opacity-0`}
-      style={{ animationFillMode: 'forwards' }}
+      className={outerClassName}
+      style={outerStyle}
       aria-labelledby="recommendation-v2-heading"
       aria-describedby="recommendation-v2-description"
     >

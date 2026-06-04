@@ -1,0 +1,204 @@
+import assert from 'node:assert/strict'
+import test, { after } from 'node:test'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createServer } from 'vite'
+
+const server = await createServer({
+  root: process.cwd(),
+  server: { middlewareMode: true },
+  appType: 'custom',
+  logLevel: 'silent',
+})
+
+after(async () => {
+  await server.close()
+})
+
+const {
+  default: OperationalReadinessSection,
+} = await server.ssrLoadModule('/src/components/dashboard/OperationalReadinessSection.jsx')
+
+const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const sanitizedGovernanceText = html => visibleText(html)
+  .replace(/ranking_applied/g, '')
+  .replace(/selection_made/g, '')
+
+const v2State = {
+  contractState: 'available',
+  isContractSafe: true,
+  isFailClosed: false,
+  governance: {
+    rankingApplied: false,
+    selectionMade: false,
+    trustRankingApplied: false,
+    trustSelectionMade: false,
+  },
+  freshness: {
+    freshness_state: 'current',
+    data_through: '2026-06-03',
+    sync_timestamp: '2026-06-03T11:55:00Z',
+  },
+  trustMetadata: {
+    scope: 'bullpen_state',
+    confidence: 'medium',
+    data_state: 'complete',
+    ranking_applied: false,
+    selection_made: false,
+  },
+  bullpenState: {
+    status: 'available_context',
+    stress_level: 'elevated',
+    readiness_summary: 'Current availability inventory can be summarized.',
+    inventory_summary: [],
+    candidate_groups: [],
+    team_context: {},
+  },
+  limitations: [],
+  explanations: [
+    {
+      message: 'Bullpen inventory is summarized from current availability evidence.',
+    },
+  ],
+  refusalReasons: [],
+}
+
+const readinessState = {
+  contractState: 'available',
+  sourceContractState: 'available',
+  isContractSafe: true,
+  isDegraded: false,
+  isRefused: false,
+  isFailClosed: false,
+  isInternal: true,
+  isInternalUncertified: true,
+  governance: {
+    rankingApplied: false,
+    selectionMade: false,
+    trustRankingApplied: false,
+    trustSelectionMade: false,
+  },
+  routeStatus: {
+    exposure: 'internal',
+    productionStatus: 'non_production',
+    certificationStatus: 'uncertified',
+  },
+  readinessStatus: 'operationally_stable',
+  readinessSummary: 'Team-level bullpen readiness is operationally stable.',
+  readiness: {
+    status: 'Operationally Stable',
+    summary: 'Team-level bullpen readiness is operationally stable.',
+  },
+  team: {
+    team_abbreviation: 'SEA',
+  },
+  constraints: [
+    {
+      message: 'Coverage inventory is represented.',
+    },
+  ],
+  workloadPressure: {
+    pressure_level: 'elevated',
+    summary: 'Workload pressure is elevated at the team level.',
+  },
+  availabilityDistribution: {
+    available: 240,
+    monitor: 210,
+    limited: 100,
+    avoid: 20,
+    unavailable: 109,
+    total: 679,
+  },
+  coverageInventory: {
+    active_pitchers: 679,
+    availability_present: 679,
+  },
+  handednessCoverage: {
+    coverage_state: 'represented',
+  },
+  explanations: [
+    {
+      message: 'Readiness context is assembled from current bullpen evidence.',
+    },
+  ],
+  limitations: [],
+  trustMetadata: {
+    confidence: 'medium',
+    data_state: 'complete',
+  },
+  freshness: {
+    freshness_state: 'current',
+    data_through: '2026-06-03',
+  },
+  refusal: {
+    refused: false,
+  },
+  failClosed: {
+    failed_closed: false,
+    state: 'not_failed_closed',
+  },
+}
+
+function renderSection(props = {}) {
+  return renderToStaticMarkup(
+    React.createElement(OperationalReadinessSection, {
+      v2State,
+      readinessState,
+      ...props,
+    }),
+  )
+}
+
+test('renders one compact Operational Readiness summary for V2 and V3 state', () => {
+  const html = renderSection()
+
+  assert.ok(htmlIncludes(html, 'Operational Readiness'))
+  assert.ok(htmlIncludes(html, 'Bullpen State + Team Readiness'))
+  assert.ok(htmlIncludes(html, 'V2 Available'))
+  assert.ok(htmlIncludes(html, 'V3 Available'))
+  assert.ok(htmlIncludes(html, 'State'))
+  assert.ok(htmlIncludes(html, 'Stress'))
+  assert.ok(htmlIncludes(html, 'elevated'))
+  assert.ok(htmlIncludes(html, '240 available / 679 total'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'current'))
+  assert.ok(htmlIncludes(html, 'Governance'))
+  assert.ok(htmlIncludes(html, 'Protected'))
+  assert.ok(htmlIncludes(html, 'Team-level context only. The user remains responsible for bullpen decisions.'))
+})
+
+test('keeps governance invariants visible while details are collapsed', () => {
+  const html = renderSection()
+
+  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
+  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  assert.ok(htmlIncludes(html, 'View Readiness Details'))
+  assert.ok(htmlIncludes(html, 'View Evidence &amp; Metadata'))
+  assert.equal(htmlIncludes(html, 'Coverage inventory is represented.'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'), false)
+})
+
+test('preserves readiness and evidence detail views on demand', () => {
+  const html = renderSection({
+    initialReadinessDetailsOpen: true,
+    initialEvidenceOpen: true,
+  })
+
+  assert.ok(htmlIncludes(html, 'Hide Readiness Details'))
+  assert.ok(htmlIncludes(html, 'Hide Evidence &amp; Metadata'))
+  assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
+  assert.ok(htmlIncludes(html, 'V2 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'View Context Details'))
+  assert.ok(htmlIncludes(html, 'View V2 Evidence And Metadata'))
+})
+
+test('does not introduce prohibited dashboard guidance language', () => {
+  const html = renderSection()
+  const text = sanitizedGovernanceText(html)
+
+  assert.equal(/\bbest\b|\bpreferred\b|\brecommended\b/i.test(text), false)
+  assert.equal(/\bpitcher-level advice\b|\bmatchup advice\b/i.test(text), false)
+  assert.equal(/\brank\b|\branking\b|\bselect\b|\bselection\b|\bpredict\b|\bprediction\b/i.test(text), false)
+})

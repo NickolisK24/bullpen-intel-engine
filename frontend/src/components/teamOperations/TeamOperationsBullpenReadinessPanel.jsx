@@ -435,14 +435,19 @@ export default function TeamOperationsBullpenReadinessPanel({
   error = null,
   onRetry,
   compact = false,
+  embedded = false,
   initialExpandedSections = [],
 }) {
   const view = getTeamOperationsBullpenReadinessView(state)
+  const sectionClassName = embedded
+    ? 'rounded border border-dirt bg-field/35'
+    : `${compact ? 'mb-5' : 'mb-8'} card animate-fade-up opacity-0 delay-3`
+  const sectionStyle = embedded ? undefined : { animationFillMode: 'forwards' }
 
   return (
     <section
-      className={`${compact ? 'mb-5' : 'mb-8'} card animate-fade-up opacity-0 delay-3`}
-      style={{ animationFillMode: 'forwards' }}
+      className={sectionClassName}
+      style={sectionStyle}
       aria-labelledby="team-operations-bullpen-readiness-title"
     >
       <div className="card-header gap-3">

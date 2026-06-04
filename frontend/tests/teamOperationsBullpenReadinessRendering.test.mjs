@@ -366,9 +366,8 @@ test('does not render unsafe guidance language outside required governance flags
 
 test('Dashboard imports the Team Operations readiness panel without breaking V2 Dashboard wiring', () => {
   assert.equal(typeof Dashboard, 'function')
-  assert.ok(dashboardSource.includes('TeamOperationsBullpenReadinessPanel'))
+  assert.ok(dashboardSource.includes('OperationalReadinessSection'))
   assert.ok(dashboardSource.includes('getTeamOperationsBullpenReadiness'))
-  assert.ok(dashboardSource.includes('RecommendationV2BullpenStatePanel'))
   assert.ok(dashboardSource.includes('getRecommendationV2BullpenState'))
 })
 

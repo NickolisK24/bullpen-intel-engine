@@ -16,8 +16,7 @@ import { SyncStatusContent } from './SyncStatus'
 import FatigueInsightCard from './FatigueInsightCard'
 import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
-import { RecommendationV2BullpenStatePanel } from '../recommendations'
-import { TeamOperationsBullpenReadinessPanel } from '../teamOperations'
+import OperationalReadinessSection from './OperationalReadinessSection'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -153,95 +152,100 @@ export default function Dashboard() {
 
       <AvailabilityDashboardSummary summary={overview.data?.availability_summary} compact />
 
-      <RecommendationV2BullpenStatePanel
-        state={v2BullpenState.data}
-        loading={v2BullpenState.loading}
-        error={v2BullpenState.error}
-        onRetry={v2BullpenState.refetch}
-        compact
+      <OperationalReadinessSection
+        v2State={v2BullpenState.data}
+        v2Loading={v2BullpenState.loading}
+        v2Error={v2BullpenState.error}
+        onRetryV2={v2BullpenState.refetch}
+        readinessState={teamOperationsReadiness.data}
+        readinessLoading={teamOperationsReadiness.loading}
+        readinessError={teamOperationsReadiness.error}
+        onRetryReadiness={teamOperationsReadiness.refetch}
       />
 
-      <TeamOperationsBullpenReadinessPanel
-        state={teamOperationsReadiness.data}
-        loading={teamOperationsReadiness.loading}
-        error={teamOperationsReadiness.error}
-        onRetry={teamOperationsReadiness.refetch}
-        compact
-      />
-
-      {/* Risk breakdown bar */}
-      {overview.data?.risk_breakdown && (
-        <div className="card p-4 mb-5 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
-          <div className="mb-3">
-            <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Risk Distribution</div>
-            {overview.data?.scored_pitchers != null && overview.data?.total_pitchers != null && (
-              <div className="text-chalk600 font-mono text-[11px] mt-1 leading-relaxed">
-                <span className="text-chalk400">
-                  {overview.data.total_pitchers.toLocaleString()}
-                </span>{' '}tracked ·{' '}
-                <span className="text-chalk400">
-                  {overview.data.scored_pitchers.toLocaleString()}
-                </span>{' '}with workload data
-                {sync.data?.last_sync && sync.data?.pitchers_updated > 0 && (
-                  <>
-                    {' '}·{' '}
-                    <span className="text-chalk400">{sync.data.pitchers_updated.toLocaleString()}</span>
-                    {' '}refreshed in last sync
-                  </>
-                )}
-                {fmtThroughDate(sync.data?.data?.latest_game_date) && (
-                  <span> · data through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Bar — inline bg colors so Tailwind purge can't remove them */}
-          <div className="flex h-3 rounded-full overflow-hidden w-full">
-            {LEVELS.map((level) => {
-              const count = overview.data.risk_breakdown[level] || 0
-              const total = overview.data.scored_pitchers || 1
-              const pct   = (count / total) * 100
-              if (pct === 0) return null
-              return (
-                <div
-                  key={level}
-                  className="flex-none transition-all duration-700"
-                  style={{ width: `${pct}%`, backgroundColor: RISK_CONFIG[level].bg }}
-                  title={`${level}: ${count}`}
-                />
-              )
-            })}
-          </div>
-
-          {/* Legend */}
-          <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3">
-            {LEVELS.map((level) => {
-              const count = overview.data.risk_breakdown[level] || 0
-              return (
-                <div key={level} className="flex items-center gap-1.5">
-                  <div
-                    className="h-2 w-2 rounded-full flex-none"
-                    style={{ backgroundColor: RISK_CONFIG[level].dot }}
-                  />
-                  <span className={`font-mono text-xs font-semibold ${RISK_CONFIG[level].text}`}>{count}</span>
-                  <span className="text-chalk600 text-xs font-mono">{level}</span>
-                </div>
-              )
-            })}
-          </div>
+      <section className="mb-5" aria-labelledby="operational-insights-heading">
+        <div className="mb-3">
+          <h2 id="operational-insights-heading" className="font-mono text-xs uppercase tracking-widest text-chalk400">
+            Operational Insights
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-chalk600">
+            Risk distribution, exploratory fatigue insight, and supporting snapshots remain available below the primary readiness summary.
+          </p>
         </div>
-      )}
 
-      {/* Fatigue → next-appearance ERA insight */}
-      <DashboardDisclosure
-        title="Exploratory Fatigue Insight"
-        summary="Correlation study and sample-size detail remain available without dominating the operational dashboard."
-      >
-        <FatigueInsightCard embedded />
-      </DashboardDisclosure>
+        {/* Risk breakdown bar */}
+        {overview.data?.risk_breakdown && (
+          <div className="card p-4 mb-4 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
+            <div className="mb-3">
+              <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Risk Distribution</div>
+              {overview.data?.scored_pitchers != null && overview.data?.total_pitchers != null && (
+                <div className="text-chalk600 font-mono text-[11px] mt-1 leading-relaxed">
+                  <span className="text-chalk400">
+                    {overview.data.total_pitchers.toLocaleString()}
+                  </span>{' '}tracked ·{' '}
+                  <span className="text-chalk400">
+                    {overview.data.scored_pitchers.toLocaleString()}
+                  </span>{' '}with workload data
+                  {sync.data?.last_sync && sync.data?.pitchers_updated > 0 && (
+                    <>
+                      {' '}·{' '}
+                      <span className="text-chalk400">{sync.data.pitchers_updated.toLocaleString()}</span>
+                      {' '}refreshed in last sync
+                    </>
+                  )}
+                  {fmtThroughDate(sync.data?.data?.latest_game_date) && (
+                    <span> · data through {fmtThroughDate(sync.data.data.latest_game_date)}</span>
+                  )}
+                </div>
+              )}
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Bar — inline bg colors so Tailwind purge can't remove them */}
+            <div className="flex h-3 rounded-full overflow-hidden w-full">
+              {LEVELS.map((level) => {
+                const count = overview.data.risk_breakdown[level] || 0
+                const total = overview.data.scored_pitchers || 1
+                const pct   = (count / total) * 100
+                if (pct === 0) return null
+                return (
+                  <div
+                    key={level}
+                    className="flex-none transition-all duration-700"
+                    style={{ width: `${pct}%`, backgroundColor: RISK_CONFIG[level].bg }}
+                    title={`${level}: ${count}`}
+                  />
+                )
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3">
+              {LEVELS.map((level) => {
+                const count = overview.data.risk_breakdown[level] || 0
+                return (
+                  <div key={level} className="flex items-center gap-1.5">
+                    <div
+                      className="h-2 w-2 rounded-full flex-none"
+                      style={{ backgroundColor: RISK_CONFIG[level].dot }}
+                    />
+                    <span className={`font-mono text-xs font-semibold ${RISK_CONFIG[level].text}`}>{count}</span>
+                    <span className="text-chalk600 text-xs font-mono">{level}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Fatigue → next-appearance ERA insight */}
+        <DashboardDisclosure
+          title="Exploratory Fatigue Insight"
+          summary="Correlation study and sample-size detail remain available without dominating the operational dashboard."
+        >
+          <FatigueInsightCard embedded />
+        </DashboardDisclosure>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* High fatigue snapshot */}
         <div className="card animate-fade-up opacity-0 delay-4" style={{ animationFillMode: 'forwards' }}>
           <div className="card-header">
@@ -330,7 +334,8 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+      </section>
 
       {/* Quick links */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
