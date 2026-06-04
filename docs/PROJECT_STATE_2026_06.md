@@ -227,6 +227,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
 | BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
 | BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition | Complete / Ready for Architecture Planning |
+| BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture | Complete / Ready for Internal Backend Implementation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4846,6 +4847,153 @@ Recommended next milestone:
 V4 Phase 10 - Team Operations Readiness Explanation Architecture
 ```
 
+## BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture
+
+BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture is
+complete.
+
+The Phase 10 record is:
+
+- `docs/V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE.md`
+
+Phase 10 status:
+
+```text
+V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_11_READINESS_EXPLANATION_IMPLEMENTATION
+```
+
+Phase 10 defines the technical architecture for future Team Operations
+Readiness explanation generation. It does not implement backend behavior,
+frontend behavior, API routes, dashboard rendering, runtime integration,
+database changes, certification, or rollout.
+
+Architecture summary:
+
+- use a bounded future readiness explanation adapter
+- read existing Team Operations Readiness payloads
+- map existing readiness evidence into V4 evidence items
+- map supported readiness conditions into V4 reason codes
+- map data boundaries into V4 limitations
+- reuse V4 deterministic builders and governance defaults
+- return V4 explanation objects without mutating readiness payloads
+
+Participating systems:
+
+- Team Operations Bullpen Readiness
+- Availability Engine as an indirect evidence contributor through existing
+  readiness output
+- V4 Explanation Domain Foundation
+- V4 Deterministic Builder
+- future readiness explanation adapter
+
+Systems that remain unchanged:
+
+- fatigue calculations
+- availability calculations
+- Team Operations Readiness calculations
+- Team Operations Readiness API route behavior
+- Recommendation Engine behavior
+- V3 readiness dashboard behavior
+- database schema
+- frontend rendering
+- rollout status
+
+Scope architecture:
+
+- `readiness_state` as the preferred root explanation scope
+- existing `workload_state`, `coverage_state`, `freshness_state`, and
+  `trust_state` as supporting explanation scopes
+- `team_readiness_state` and `confidence_state` remain candidate scopes only
+  unless future implementation proves current vocabulary insufficient
+
+Evidence mapping architecture includes:
+
+- readiness status
+- operational constraints
+- workload pressure state
+- high-risk workload counts
+- critical workload counts
+- fatigue distribution
+- availability distribution
+- coverage metrics
+- freshness metrics
+- trust metrics
+- confidence metrics
+- refusal metadata
+- fail-closed metadata
+- governance metadata
+
+Reason code architecture uses existing V4 reason codes where possible:
+
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Candidate readiness-focused reason codes remain future candidates only:
+
+- `READINESS_DEGRADED_BY_FRESHNESS`
+- `READINESS_DEGRADED_BY_COVERAGE`
+- `READINESS_DATA_LIMITED`
+- `WORKLOAD_PRESSURE_ELEVATED`
+- `TRUST_LIMITED_FOR_READINESS`
+- `CONFIDENCE_REDUCED`
+- `READINESS_REFUSED_BY_FAIL_CLOSED`
+
+Phase 10 finds the current V4 limitation model sufficient for initial
+implementation planning:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 10 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 10 does not modify runtime behavior, backend behavior, frontend
+behavior, API routes, API response shapes, dashboard behavior, database schema,
+fatigue calculations, availability calculations, Recommendation Engine
+behavior, Team Operations Readiness behavior, trust logic, freshness logic,
+production certification, rollout approval, or public exposure.
+
+Recommended next milestone:
+
+```text
+V4 Phase 11 - Team Operations Readiness Explanation Implementation
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -5202,6 +5350,20 @@ prohibited-output definition, candidate-scope identification,
 candidate-evidence-source identification, candidate-reason-code identification,
 limitation-model review, governance-boundary definition,
 certification-requirement definition, and implementation-readiness decision
+recording. It does not authorize backend implementation, frontend
+implementation, API route creation or exposure, dashboard behavior changes,
+database migration, runtime behavior changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Bullpen Readiness behavior changes, trust logic changes, freshness
+logic changes, production certification, rollout approval, pitcher ranking,
+pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 10 authorizes only Team Operations Readiness explanation architecture
+planning, system-boundary definition, scope architecture planning, evidence
+mapping architecture, reason-code architecture, limitation architecture,
+builder-integration planning, conceptual object-shape planning, testing
+architecture, certification architecture, and implementation-readiness decision
 recording. It does not authorize backend implementation, frontend
 implementation, API route creation or exposure, dashboard behavior changes,
 database migration, runtime behavior changes, fatigue calculation changes,

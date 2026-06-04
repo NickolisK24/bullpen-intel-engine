@@ -23,21 +23,22 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 
 The next platform capability track is V4 Evidence and Explanation. V4 is
 now moving from certified internal backend Availability Explanation Integration
-into Team Operations Readiness explanation planning. V4 explains why existing
-governed states appear without ranking, selecting, predicting, recommending, or
-automating a decision. V4 Phase 9 defines how future readiness explanations
-should work before any implementation begins.
+into Team Operations Readiness explanation implementation planning. V4 explains
+why existing governed states appear without ranking, selecting, predicting,
+recommending, or automating a decision. V4 Phase 10 defines the technical
+architecture for future readiness explanations without implementing runtime
+behavior.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 10 - Team Operations Readiness Explanation Architecture
+V4 Phase 11 - Team Operations Readiness Explanation Implementation
 ```
 
-The next V4 milestone should define the architecture, contracts, adapter
-boundaries, reason mapping, evidence attribution, limitation handling, and tests
-for Team Operations Readiness explanations without implementing backend
-behavior, API routes, frontend integration, dashboard exposure, or rollout.
+The next V4 milestone should implement only an internal backend readiness
+explanation adapter and focused tests. It should not expose API routes, modify
+Dashboard UI, change readiness calculations, change Recommendation Engine
+behavior, approve certification, or approve rollout.
 
 ## Product Tracks
 
@@ -49,12 +50,12 @@ behavior, API routes, frontend integration, dashboard exposure, or rollout.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation definition complete / planning only | Define readiness explanation architecture before implementation |
+| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanation architecture complete / planning only | Implement internal backend readiness explanation adapter only |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 10 Team Operations readiness explanation architecture.
+1. V4 Phase 11 Team Operations readiness explanation implementation.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -69,7 +70,8 @@ These are candidates, not commitments:
 
 - Team Operations Bullpen Readiness full rollout planning.
 - V4 Evidence and Explanation route, frontend, certification, and rollout work
-  after API contract planning and separate authorization.
+  after internal readiness explanation implementation, certification planning,
+  API contract planning, and separate authorization.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -145,6 +147,11 @@ governance and lifecycle evidence process linked from
   including user questions, allowed and prohibited outputs, candidate scopes,
   evidence sources, reason codes, limitation model, governance definition,
   certification requirements, and readiness for Phase 10 architecture.
+- V4 Phase 10 defined the Team Operations Readiness explanation architecture,
+  including systems boundaries, scope architecture, evidence mapping, reason
+  code strategy, limitation strategy, builder integration, object shapes,
+  testing architecture, certification architecture, and readiness for Phase 11
+  implementation.
 
 For detailed milestone history, use:
 
