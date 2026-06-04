@@ -14,6 +14,7 @@ by surface. Detailed evidence remains in the linked source records.
 | Availability Explanation Integration | Certified with non-blocking observations | Internal backend only; API, frontend, dashboard, and rollout not approved | [V4 Phase 8 formal certification](../V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 | Team Operations Readiness Explanations | Certified with non-blocking observations | Internal backend only; API, frontend, dashboard, and rollout not approved | [V4 Phase 13 formal certification](../V4_PHASE_13_TEAM_OPERATIONS_READINESS_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 | V4 Explanation API Layer | Certified with non-blocking observations | Internal backend API only; frontend, dashboard, and rollout not approved | [V4 Phase 17 formal certification](../V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md) |
+| V4 Frontend Explanation Surfaces | Certification readiness complete; formal frontend certification pending | Frontend surfaces implemented; production rollout not approved | [V4 Phase 20 certification readiness review](../V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md) |
 | Prospect Pipeline | Prototype | Not promotion-ready | [V2.5 Phase 19 prototype surface review](../V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md), [V2.5 Phase 23 evidence backfill plan](../V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md) |
 
 ## Mandatory Governance Invariants
@@ -62,6 +63,8 @@ authorize:
 | V4 explanation API route implementation | Complete; internal backend routes implemented for certified explanation types only | [V4 Phase 15 route implementation](../V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION.md) |
 | V4 explanation API route certification readiness | Ready for formal API certification review; not yet formally API-certified | [V4 Phase 16 route certification readiness](../V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW.md) |
 | V4 explanation API formal certification | Certified with non-blocking observations for internal backend API layer only | [V4 Phase 17 formal certification](../V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md) |
+| V4 frontend explanation surface implementation | Complete; compact frontend explanation surfaces implemented without rollout approval | [V4 Phase 19 frontend implementation](../V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION.md) |
+| V4 frontend explanation surface certification readiness | Ready for formal frontend certification review; not yet formally certified | [V4 Phase 20 certification readiness review](../V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md) |
 
 ## Evidence Requirements
 

@@ -129,6 +129,7 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 17 explanation API formal certification review](V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md)
 - [V4 Phase 18 explanation API frontend integration planning](V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md)
 - [V4 Phase 19 frontend explanation surface implementation](V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION.md)
+- [V4 Phase 20 frontend explanation surface certification readiness review](V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md)
 
 ## Operational Review And Monitoring Evidence
 
