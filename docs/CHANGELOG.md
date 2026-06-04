@@ -32,9 +32,14 @@ milestones. It does not replace the detailed evidence records linked from
   trust architecture, severity architecture, fail-closed architecture,
   frontend surface architecture, governance protection layer, and readiness for
   Phase 4 observation domain and contracts.
-- V5 does not authorize implementation, ranking, selection, pitcher
-  recommendations, matchup advice, best-arm language, role advice, prediction,
-  or automated decision-making.
+- Phase 4 implemented the backend observation domain and contract foundation,
+  including governed enum vocabularies, dataclass contracts, serialization
+  helpers, contract validators, prohibited-language safeguards, collection
+  serialization, and focused backend tests.
+- V5 Phase 4 does not authorize observation builders, API routes, frontend UI,
+  database migrations, runtime observation generation, ranking, selection,
+  pitcher recommendations, matchup advice, best-arm language, role advice,
+  prediction, or automated decision-making.
 
 ## V4 - Evidence And Explanation Layer
 

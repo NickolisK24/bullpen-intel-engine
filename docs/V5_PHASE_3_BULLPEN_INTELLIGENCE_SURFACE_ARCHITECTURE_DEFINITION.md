@@ -347,6 +347,21 @@ recommend pitchers, predict outcomes, provide matchup advice, provide role
 advice, or automate decisions unless a later authorization explicitly changes
 that boundary.
 
+## V5 Phase 4 Follow-Up
+
+V5 Phase 4 has completed the backend observation domain and contract
+foundation:
+
+- `docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md`
+
+Phase 4 implements governed observation enum vocabularies, dataclass contracts,
+serialization helpers, contract validators, prohibited-language safeguards,
+collection serialization, and focused backend tests.
+
+This follow-up does not authorize observation builders, API routes, frontend
+UI, database migrations, runtime observation generation, ranking, selection,
+prediction, matchup advice, pitcher advice, or automated decision-making.
+
 ## Success Criteria
 
 V5 Phase 3 is complete when:

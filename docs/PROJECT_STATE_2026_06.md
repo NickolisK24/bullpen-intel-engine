@@ -247,6 +247,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition | Approved / Planning Only |
 | BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy | Approved / Planning Only |
 | BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition | Approved / Planning Only |
+| BaseballOS V5 Phase 4 Observation Domain And Contracts | Complete / Backend Contracts Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6611,6 +6612,63 @@ Recommended next milestone:
 V5 Phase 4 - Observation Domain And Contracts
 ```
 
+## BaseballOS V5 Phase 4 Observation Domain And Contracts
+
+BaseballOS V5 Phase 4 Observation Domain And Contracts is complete.
+
+The Phase 4 record is:
+
+- `docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md`
+
+Phase 4 implements the backend observation domain and contract foundation for
+governed observation surfacing. It adds governed enum vocabularies, dataclass
+contracts, serialization helpers, contract validators, prohibited-language
+safeguards, collection serialization, and focused backend tests.
+
+Phase 4 implementation files:
+
+- `backend/observations/enums.py`
+- `backend/observations/contracts.py`
+- `backend/observations/validators.py`
+- `backend/observations/__init__.py`
+- `backend/tests/test_observation_contracts.py`
+
+Phase 4 decision:
+
+```text
+V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS_COMPLETE
+V5_PHASE_4_BACKEND_FOUNDATION_CERTIFIED
+```
+
+Phase 4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 4 does not authorize:
+
+- observation builders
+- API routes
+- frontend UI
+- database migrations
+- runtime observation generation
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7145,6 +7203,18 @@ logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
 matchup advice, best-arm language, closer/setup/role advice, prediction
 behavior, hidden priority ordering, pitcher-level advice, or automated
 decision-making.
+V5 Phase 4 authorizes only backend observation domain contracts, governed enum
+vocabularies, dataclass contract definitions, serialization helpers, contract
+validators, prohibited-language safeguards, collection serialization, focused
+backend tests, and Phase 5 observation builder foundation readiness recording.
+It does not authorize observation builders, API routes, frontend UI, database
+migrations, runtime observation generation, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Readiness behavior changes, explanation behavior changes, trust
+logic changes, freshness logic changes, pitcher ranking, pitcher selection,
+pitcher recommendation, matchup advice, best-arm language, closer/setup/role
+advice, prediction behavior, hidden priority ordering, pitcher-level advice,
+or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

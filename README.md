@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Phase 3 Architecture Definition Approved |
+| V5 Bullpen Intelligence Surface | Phase 4 Observation Domain Contracts Complete |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md](docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md).
+[docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md](docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md).
 
 ## Core Capabilities
 
@@ -216,23 +216,27 @@ unless implementation files change.
     evidence architecture, trust architecture, severity architecture,
     fail-closed architecture, frontend surface architecture, governance
     protection layer, and Phase 4 boundary.
+- [V5 Phase 4 Observation Domain And Contracts](docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md)
+  - backend observation enums, dataclass contracts, serialization helpers,
+    contract validators, prohibited-language safeguards, and focused tests.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 3 is approved as the architecture definition for governed observation
-surfacing. It defines how trusted platform state may flow through future
-observation builders, evidence references, trust and severity metadata,
-fail-closed handling, and frontend intelligence presentation without creating
-new decisions.
+V5 Phase 4 is complete as the backend observation domain and contract
+foundation for governed observation surfacing. It defines future-safe
+observation enums, dataclass contracts, serialization helpers, validators,
+prohibited-language safeguards, and collection contracts without creating
+runtime observations.
 
-V5 Phase 3 does not authorize implementation. V5 does not authorize ranking,
-selection, prediction, pitcher recommendations, matchup advice, best-arm
-language, role advice, or automated decision-making.
+V5 Phase 4 does not authorize observation builders, API routes, frontend UI,
+database migrations, runtime observation generation, ranking, selection,
+prediction, pitcher recommendations, matchup advice, best-arm language, role
+advice, or automated decision-making.
 
 Recommended next milestone:
 
 ```text
-V5 Phase 4 - Observation Domain And Contracts
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
 ```
 
 ## Author

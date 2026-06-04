@@ -9,8 +9,8 @@ BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
 V2 recommendation governance, completed V2.5 governance hardening, V3 Team
 Operations Bullpen Readiness approved for constrained controlled rollout, V4
 frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface architecture definition approved for planning-only
-observation surfacing.
+Intelligence Surface backend observation domain and contracts complete for
+governed observation surfacing.
 
 Current V3 status:
 
@@ -26,21 +26,21 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 The active platform capability track is V5 Bullpen Intelligence Surface. V5
 converts existing trusted BaseballOS platform state into governed descriptive
 observations without ranking, selecting, predicting, recommending, advising, or
-automating a decision. V5 Phase 3 approves only the architecture definition for
-the governed observation lifecycle, domain model, builder path, evidence,
-trust, severity, fail-closed handling, frontend presentation, and governance
-protection layer.
+automating a decision. V5 Phase 4 implements only the backend observation
+domain and contract foundation: governed enum vocabularies, dataclass
+contracts, serialization helpers, validators, prohibited-language safeguards,
+and focused contract tests.
 
 Recommended next milestone:
 
 ```text
-V5 Phase 4 - Observation Domain And Contracts
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
 ```
 
-The next V5 milestone should define observation domain contracts and controlled
-vocabularies before any observation builders, API routes, frontend surfaces,
-database changes, ranking, selection, recommendation, prediction, or pitcher
-advice are authorized.
+The next V5 milestone may introduce deterministic observation builders from
+existing trusted V1-V4 state. API routes, frontend surfaces, database changes,
+ranking, selection, recommendation, prediction, matchup advice, and pitcher
+advice remain unauthorized.
 
 ## Product Tracks
 
@@ -53,20 +53,20 @@ advice are authorized.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
-| V5 Bullpen Intelligence Surface | Phase 3 architecture definition approved / planning only | Define observation domain contracts before implementation |
+| V5 Bullpen Intelligence Surface | Phase 4 observation domain contracts complete / backend foundation only | Define deterministic observation builders |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V5 Phase 4 observation domain and contracts.
+1. V5 Phase 5 observation builder foundation.
 2. V4 Phase 27 post-rollout monitoring and governance preservation review.
 3. Controlled rollout monitoring artifact retention for V3 readiness.
 4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
 5. Separate full production rollout decision only if controlled rollout
    evidence supports it.
-6. V5 route or UI work only after architecture, observation domain contracts,
-   deterministic builders, tests, and certification gates are established.
+6. V5 route or UI work only after deterministic builders, tests, and
+   certification gates are established.
 
 ## Candidate Future Tracks
 
@@ -260,6 +260,13 @@ governance and lifecycle evidence process linked from
   architecture, fail-closed architecture, frontend surface architecture,
   governance protection layer, and readiness for Phase 4 observation domain
   and contracts without authorizing implementation.
+- V5 Phase 4 implemented the backend observation domain and contract
+  foundation, including governed enum vocabularies, dataclass contracts,
+  serialization helpers, validators, prohibited-language safeguards, collection
+  serialization, and focused tests without authorizing builders, API routes,
+  frontend UI, database migrations, runtime observation generation, ranking,
+  selection, prediction, matchup advice, pitcher advice, or decision
+  automation.
 
 For detailed milestone history, use:
 
