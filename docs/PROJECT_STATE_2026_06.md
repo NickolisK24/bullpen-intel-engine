@@ -233,6 +233,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
 | BaseballOS V4 Phase 14 Explanation API Contract Planning | Complete / Ready for Route Implementation |
 | BaseballOS V4 Phase 15 Explanation API Route Implementation | Complete / Internal Backend Routes Only |
+| BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review | Complete / Ready for Formal API Certification |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5441,6 +5442,99 @@ Recommended next milestone:
 V4 Phase 16 - Explanation API Route Certification Readiness Review
 ```
 
+## BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review
+
+BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review is
+complete.
+
+The review record is:
+
+- `docs/V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase status:
+
+```text
+V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW_COMPLETE
+```
+
+Review status:
+
+```text
+READY_FOR_V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION
+```
+
+Review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Certified scope exposure | PASS |
+| Route coverage | PASS |
+| Response contract | PASS |
+| Fail-closed behavior | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PARTIAL |
+| Behavior preservation | PASS |
+
+Critical blockers:
+
+```text
+None
+```
+
+Non-critical blockers:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- direct forced route-level builder-validation failure test coverage is not
+  currently present
+- explicit malformed `team_id` route testing is not currently present
+- route-level monitoring artifact capture is not implemented because rollout is
+  not in scope
+- availability route determinism depends on identical source evidence and
+  identical runtime date context
+- route status remains `internal_uncertified_route` until formal API
+  certification is completed
+
+Phase 16 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 16 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 16 does not authorize formal API certification, frontend exposure,
+dashboard exposure, route rollout, Recommendation Explanations, Risk
+Distribution Explanations, availability calculation changes, fatigue
+calculation changes, readiness calculation changes, readiness status assignment
+changes, or Recommendation Engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 17 - Explanation API Formal Certification Review
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -5872,6 +5966,17 @@ Distribution Explanations, availability calculation changes, fatigue
 calculation changes, readiness calculation changes, readiness status assignment
 changes, Recommendation Engine behavior changes, trust logic changes, freshness
 logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 16 authorizes only certification-readiness review documentation for
+the internal backend V4 explanation API routes. It does not authorize runtime
+behavior changes, frontend UI, dashboard behavior changes, database migration,
+formal API certification, route rollout, uncertified explanation type exposure,
+future explanation scopes, Recommendation Explanations, Risk Distribution
+Explanations, availability calculation changes, fatigue calculation changes,
+readiness calculation changes, readiness status assignment changes,
+Recommendation Engine behavior changes, trust logic changes, freshness logic
+changes, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction behavior, best/preferred behavior, hidden priority ordering,
 pitcher-level advice, matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
