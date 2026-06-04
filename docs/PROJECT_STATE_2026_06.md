@@ -230,6 +230,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture | Complete / Ready for Internal Backend Implementation |
 | BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation | Complete / Internal Backend Adapter Only |
 | BaseballOS V4 Phase 12 Team Operations Readiness Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
+| BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5165,6 +5166,98 @@ Recommended next milestone:
 V4 Phase 13 - Team Operations Readiness Explanation Formal Certification Review
 ```
 
+## BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review
+
+BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal
+Certification Review is complete.
+
+The formal certification record is:
+
+- `docs/V4_PHASE_13_TEAM_OPERATIONS_READINESS_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md`
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certified status:
+
+```text
+TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Phase 13 certifies internal backend Team Operations Readiness Explanations only.
+
+Certified explanation scopes:
+
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Capability review | PASS |
+| Coverage certification | PASS |
+| Evidence certification | PARTIAL |
+| Limitation certification | PASS |
+| Governance certification | PASS |
+| Determinism certification | PASS |
+| Testing certification | PASS |
+| Readiness Engine preservation certification | PASS |
+
+Phase 13 observations:
+
+- reason-code coverage remains intentionally conservative
+- there is not yet a dedicated `WORKLOAD_PRESSURE_ELEVATED` reason code
+- elevated workload pressure maps to `WORKLOAD_RECENT_USAGE_ELEVATED`
+- operationally stable readiness explanations may have no primary reason code
+  when no limiting evidence is present
+- dedicated fatigue-distribution and risk-distribution evidence is not mapped
+  because the current Team Operations Readiness payload does not expose those
+  objects
+- future API and UI exposure require separate authorization and certification
+
+Phase 13 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 13 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 13 does not authorize API exposure, frontend exposure, dashboard
+exposure, production rollout, Availability Explanations, Recommendation
+Explanations, Risk Distribution Explanations, database changes, runtime
+behavior changes, readiness calculation changes, readiness status assignment
+changes, availability calculation changes, fatigue calculation changes, or
+Recommendation Engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 14 - Team Operations Readiness Explanation API Contract Planning
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -5566,6 +5659,17 @@ changes, freshness logic changes, production certification, rollout approval,
 pitcher ranking, pitcher selection, pitcher recommendation, prediction
 behavior, best/preferred arm behavior, hidden priority ordering, pitcher-level
 advice, matchup advice, or decision automation.
+V4 Phase 13 authorizes only formal certification review documentation and
+certification-status recording for internal backend Team Operations Readiness
+Explanations. It does not authorize runtime behavior changes, API route
+creation or exposure, frontend UI, dashboard behavior changes, database
+migration, readiness calculation changes, readiness status assignment changes,
+availability calculation changes, fatigue calculation changes, Recommendation
+Engine behavior changes, trust logic changes, freshness logic changes,
+production rollout approval, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, best/preferred arm behavior, hidden
+priority ordering, pitcher-level advice, matchup advice, or decision
+automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,
