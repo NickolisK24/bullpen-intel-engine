@@ -115,6 +115,7 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 3 evidence and explanation implementation plan](V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN.md)
 - [V4 Phase 4 evidence and explanation backend domain foundation](V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION.md)
 - [V4 Phase 5 evidence and explanation deterministic builder](V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md)
+- [V4 Phase 6 availability explanation integration](V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md)
 
 ## Operational Review And Monitoring Evidence
 

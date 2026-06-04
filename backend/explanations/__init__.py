@@ -11,6 +11,10 @@ from explanations.builders import (
     serialize_explanation,
     stable_json_dumps,
 )
+from explanations.availability import (
+    build_availability_explanation,
+    serialize_availability_explanation,
+)
 from explanations.contracts import (
     ADVICE_SCOPE,
     ALLOWED_EXPLANATION_SCOPES,
@@ -70,6 +74,7 @@ __all__ = [
     'V4Reason',
     'V4TrustReference',
     'build_evidence_item',
+    'build_availability_explanation',
     'build_explanation',
     'build_limitation',
     'build_numeric_evidence',
@@ -80,6 +85,7 @@ __all__ = [
     'require_governance_payload_safe',
     'require_v4_governance_safe',
     'serialize_explanation',
+    'serialize_availability_explanation',
     'stable_json_dumps',
     'v4_governance_errors',
     'validate_explanation_scope',

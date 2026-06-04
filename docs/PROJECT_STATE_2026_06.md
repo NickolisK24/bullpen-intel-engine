@@ -223,6 +223,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan | Complete / Ready for Backend Domain Foundation |
 | BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation | Complete / Internal Backend Domain Only |
 | BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder | Complete / Internal Backend Builder Only |
+| BaseballOS V4 Phase 6 Availability Explanation Integration | Complete / Internal Backend Availability Adapter Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4285,7 +4286,7 @@ production certification, or rollout approval.
 Recommended next milestone:
 
 ```text
-V4 Phase 6 - Availability Explanation Integration
+V4 Phase 5 - Evidence And Explanation Deterministic Builder
 ```
 
 ## BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder
@@ -4385,6 +4386,123 @@ Recommended next milestone:
 
 ```text
 V4 Phase 6 - Availability Explanation Integration
+```
+
+## BaseballOS V4 Phase 6 Availability Explanation Integration
+
+BaseballOS V4 Phase 6 Availability Explanation Integration is complete.
+
+The Phase 6 record is:
+
+- `docs/V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md`
+
+Phase 6 status:
+
+```text
+V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+INTERNAL_BACKEND_AVAILABILITY_ADAPTER_ONLY
+```
+
+V4 Phase 6 creates:
+
+- `backend/explanations/availability.py`
+- `backend/tests/test_v4_availability_explanation_integration.py`
+- `docs/V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md`
+
+V4 Phase 6 modifies:
+
+- `backend/explanations/__init__.py`
+
+The internal availability explanation adapter:
+
+- accepts existing Availability Engine output dictionaries
+- requires a pitcher subject id
+- preserves `scope = availability_state`
+- preserves `subject_type = pitcher`
+- preserves `state_explained = existing availability status`
+- maps existing status, confidence, data-state, and workload inputs into V4
+  evidence items
+- maps supported availability conditions into Phase 4 reason codes
+- maps missing, stale, incomplete, confidence-limited, and insufficient-context
+  boundaries into Phase 4 limitation types
+- attaches Phase 5 governance defaults
+- returns deterministic `V4Explanation` objects
+- does not mutate the original availability dictionary
+
+Availability states covered:
+
+```text
+Available
+Monitor
+Limited
+Avoid
+Unavailable
+```
+
+Evidence mapped:
+
+- availability status
+- availability confidence
+- availability data state
+- fatigue score when present
+- pitches yesterday when present
+- pitches in 3 days when present
+- pitches in 5 days when present
+- appearances in 3 days when present
+- appearances in 5 days when present
+- days of rest when present
+- back-to-back appearance flag when present
+- three appearances in four days flag when present
+- four appearances in five days flag when present
+
+Limitations supported:
+
+```text
+missing_data
+stale_data
+partial_coverage
+limited_confidence
+insufficient_context
+```
+
+V4 Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+V4 Phase 6 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 6 does not modify `backend/services/availability.py`, fatigue
+calculations, availability thresholds, status assignment logic, API routes, API
+response shapes, frontend rendering, dashboard behavior, recommendation
+behavior, readiness behavior, database schema, production certification, or
+rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 7 - Availability Explanation Certification Readiness Review
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -4702,6 +4820,18 @@ production certification, rollout approval, pitcher ranking, pitcher
 selection, pitcher recommendation, prediction behavior, best/preferred arm
 behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
 decision automation.
+V4 Phase 6 authorizes only internal backend availability explanation adapter
+integration, deterministic explanation construction from existing Availability
+Engine outputs, reason and evidence mapping, limitation mapping, focused tests,
+and documentation. It does not authorize API route creation or exposure,
+frontend UI, dashboard behavior changes, database migration, availability
+threshold changes, availability status assignment changes, fatigue calculation
+changes, readiness integration, recommendation integration, Recommendation
+Engine behavior changes, Team Operations Bullpen Readiness behavior changes,
+production certification, rollout approval, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, best/preferred arm behavior,
+hidden priority ordering, pitcher-level advice, matchup advice, or decision
+automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

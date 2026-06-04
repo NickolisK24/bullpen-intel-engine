@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Deterministic builder complete / internal backend only |
+| V4 Evidence and Explanation Layer | Availability explanation integration complete / internal backend only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,8 +38,8 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER_COMPLETE
-READY_FOR_V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION
+V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION_COMPLETE
+READY_FOR_V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW
 ```
 
 ## Core Capabilities
@@ -202,6 +202,9 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 6 availability explanation integration](docs/V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md)
+  - internal backend adapter that builds governed V4 explanations from existing
+  Availability Engine outputs without changing status behavior.
 - [V4 Phase 5 evidence and explanation deterministic builder](docs/V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md)
   - deterministic builders, evidence helpers, limitation helpers, governance
   defaults, stable IDs, serialization support, and tests.
