@@ -15,6 +15,7 @@ by surface. Detailed evidence remains in the linked source records.
 | Team Operations Readiness Explanations | Certified with non-blocking observations | Internal backend only; API, frontend, dashboard, and rollout not approved | [V4 Phase 13 formal certification](../V4_PHASE_13_TEAM_OPERATIONS_READINESS_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 | V4 Explanation API Layer | Certified with non-blocking observations | Internal backend API only; frontend, dashboard, and rollout not approved | [V4 Phase 17 formal certification](../V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md) |
 | V4 Frontend Explanation Surfaces | Certified with non-blocking observations | Full production rollout approved for certified explanation surfaces | [V4 Phase 21 formal certification](../V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md), [V4 Phase 22 rollout planning](../V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING.md), [V4 Phase 23 controlled rollout decision](../V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION.md), [V4 Phase 24 observation review](../V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION_REVIEW.md), [V4 Phase 25 evidence reassessment](../V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md), [V4 Phase 26 production rollout review](../V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md) |
+| V5 Bullpen Intelligence Surface | Phase 2 observation taxonomy approved | Planning only; implementation and rollout not approved | [V5 Phase 1 capability definition](../V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md), [V5 Phase 2 observation taxonomy](../V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md) |
 | Prospect Pipeline | Prototype | Not promotion-ready | [V2.5 Phase 19 prototype surface review](../V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md), [V2.5 Phase 23 evidence backfill plan](../V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md) |
 
 ## Mandatory Governance Invariants
@@ -71,6 +72,8 @@ authorize:
 | V4 frontend explanation surface controlled rollout observation | Controlled rollout review required; production rollout review not ready | [V4 Phase 24 observation review](../V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION_REVIEW.md) |
 | V4 frontend explanation surface evidence reassessment | Controlled rollout review required; production rollout review not ready | [V4 Phase 25 evidence reassessment](../V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md) |
 | V4 frontend explanation surface production rollout | Full production rollout approved for certified explanation surfaces | [V4 Phase 26 production rollout review](../V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md) |
+| V5 Phase 1 capability definition | Capability definition approved; implementation not authorized | [V5 Phase 1 capability definition](../V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md) |
+| V5 Phase 2 observation taxonomy | Observation taxonomy approved; implementation not authorized | [V5 Phase 2 observation taxonomy](../V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md) |
 
 ## Evidence Requirements
 

@@ -137,6 +137,11 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 25 frontend explanation evidence capture and reassessment](V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md)
 - [V4 Phase 26 production rollout review](V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md)
 
+## V5 Bullpen Intelligence Surface
+
+- [V5 Phase 1 bullpen intelligence surface capability definition](V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md)
+- [V5 Phase 2 bullpen intelligence surface observation taxonomy](V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md)
+
 ## Operational Review And Monitoring Evidence
 
 - [Operational reviews summary](operations/OPERATIONAL_REVIEWS.md)

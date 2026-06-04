@@ -244,6 +244,8 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 24 Frontend Explanation Surface Controlled Rollout Observation Review | Controlled Rollout Review Required / Production Review Not Ready |
 | BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment | Controlled Rollout Review Required / Production Review Not Ready |
 | BaseballOS V4 Phase 26 Production Rollout Review | Production Rollout Approved for Certified Explanation Surfaces |
+| BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition | Approved / Planning Only |
+| BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy | Approved / Planning Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -264,6 +266,9 @@ Trust-first rules currently in force:
   `selection_made=false`.
 - Recommendation Engine V1 must keep confidence, freshness, explanations,
   limitations, and refusal reasons visible.
+- V5 Bullpen Intelligence Surface observations must remain observational,
+  descriptive, trust-aware, explainable, non-prescriptive, and
+  non-predictive.
 - Threshold changes require audit evidence and before/after comparison.
 
 The first governed threshold adoption is complete:
@@ -6439,6 +6444,120 @@ Recommended next milestone:
 V4 Phase 27 - Post-Rollout Monitoring And Governance Preservation Review
 ```
 
+## BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition
+
+BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition is
+approved.
+
+The Phase 1 record is:
+
+- `docs/V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md`
+
+Phase 1 approves only the capability definition for governed observation
+surfacing. V5 may describe inventory observations, readiness observations,
+availability movement observations, workload pressure observations, constraint
+summaries, freshness protection observations, trust-aware warnings, and
+explanation-backed intelligence summaries when derived from existing trusted
+BaseballOS state.
+
+Phase 1 decision:
+
+```text
+V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION_APPROVED
+V5_PHASE_1_CAPABILITY_DEFINITION_APPROVED
+```
+
+Phase 1 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 1 does not authorize:
+
+- backend implementation
+- frontend implementation
+- API contract changes
+- database schema changes
+- runtime behavior changes
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5 Phase 2 - Bullpen Intelligence Surface Observation Taxonomy
+```
+
+## BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy
+
+BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy is
+approved.
+
+The Phase 2 record is:
+
+- `docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md`
+
+Phase 2 approves only the observation taxonomy for governed observation
+surfacing. It defines the authorized V5 observation families, approved trusted
+inputs, expected future output fields, governance boundary matrix, observation
+language rules, fail-closed requirements, and future implementation guidance.
+
+Authorized observation families:
+
+- Inventory Observations
+- Readiness Observations
+- Workload Pressure Observations
+- Constraint Observations
+- Freshness Observations
+- Trust Observations
+- Availability Movement Observations
+- Snapshot Change Observations
+
+Phase 2 decision:
+
+```text
+V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY_APPROVED
+V5_PHASE_2_OBSERVATION_TAXONOMY_APPROVED
+```
+
+Phase 2 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 2 does not authorize:
+
+- backend implementation
+- frontend implementation
+- API contract changes
+- database schema changes
+- runtime behavior changes
+- tests
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5 Phase 3 - Bullpen Intelligence Surface Backend Observation Contracts
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -6931,6 +7050,33 @@ backend behavior changes, frontend redesign, Dashboard redesign, availability
 calculation changes, fatigue calculation changes, readiness calculation
 changes, readiness status assignment changes, Recommendation Engine behavior
 changes, trust logic changes, or freshness logic changes.
+V5 Phase 1 authorizes only Bullpen Intelligence Surface capability definition,
+governance-boundary definition, allowed observation-scope definition,
+prohibited-output definition, trusted-source requirement definition,
+freshness and confidence requirement definition, fail-closed requirement
+definition, certification requirement definition, rollout sequence definition,
+and Phase 2 taxonomy readiness recording. It does not authorize backend
+implementation, frontend implementation, API contract changes, database schema
+changes, runtime behavior changes, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, Team Operations
+Readiness behavior changes, explanation behavior changes, trust logic changes,
+freshness logic changes, pitcher ranking, pitcher selection, pitcher
+recommendation, matchup advice, best-arm language, closer/setup/role advice,
+prediction behavior, hidden priority ordering, pitcher-level advice, or
+automated decision-making.
+V5 Phase 2 authorizes only Bullpen Intelligence Surface observation taxonomy,
+authorized observation-family definition, approved input definition, expected
+future output-field definition, governance boundary matrix documentation,
+observation language rule definition, fail-closed requirement definition,
+future implementation guidance, and Phase 3 backend observation contract
+readiness recording. It does not authorize backend implementation, frontend
+implementation, API contract changes, database schema changes, runtime behavior
+changes, tests, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, Team Operations Readiness behavior
+changes, explanation behavior changes, trust logic changes, freshness logic
+changes, pitcher ranking, pitcher selection, pitcher recommendation, matchup
+advice, best-arm language, closer/setup/role advice, prediction behavior,
+hidden priority ordering, pitcher-level advice, or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

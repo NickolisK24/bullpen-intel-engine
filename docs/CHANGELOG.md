@@ -15,6 +15,36 @@ milestones. It does not replace the detailed evidence records linked from
 - Added [operations/OPERATIONAL_REVIEWS.md](operations/OPERATIONAL_REVIEWS.md)
   for operational review and monitoring evidence summaries.
 
+## V5 - Bullpen Intelligence Surface
+
+- Phase 1 approved the Bullpen Intelligence Surface capability definition as a
+  planning-only governed observation layer.
+- Phase 1 recorded allowed observation scope, prohibited outputs, trusted
+  source requirements, freshness and confidence requirements, fail-closed
+  requirements, certification requirements, rollout sequence, and readiness for
+  Phase 2 observation taxonomy planning.
+- Phase 2 approved the observation taxonomy, including authorized observation
+  families, approved inputs, future output requirements, governance boundary
+  matrix, language rules, fail-closed requirements, and readiness for Phase 3
+  backend observation contract planning.
+- V5 does not authorize implementation, ranking, selection, pitcher
+  recommendations, matchup advice, best-arm language, role advice, prediction,
+  or automated decision-making.
+
+## V4 - Evidence And Explanation Layer
+
+- Phases 1 through 8 defined, implemented, reviewed, and certified internal
+  backend Availability Explanation Integration.
+- Phases 9 through 13 defined, implemented, reviewed, and certified internal
+  backend Team Operations Readiness Explanations.
+- Phases 14 through 17 planned, implemented, reviewed, and certified the
+  internal backend Explanation API layer for certified explanation types.
+- Phases 18 through 21 planned, implemented, reviewed, and certified governed
+  frontend explanation surfaces.
+- Phases 22 through 26 planned controlled rollout, retained observation
+  evidence, reassessed production readiness, and approved full production
+  rollout for certified V4 frontend explanation surfaces.
+
 ## V3 - Team Operations Bullpen Readiness
 
 - Phase 1 completed neutral product capability review and selected Team

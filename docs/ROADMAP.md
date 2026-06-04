@@ -6,9 +6,11 @@ planning context, not an authorization to implement new behavior.
 ## Current Position
 
 BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
-V2 recommendation governance, completed V2.5 governance hardening, and V3 Team
-Operations Bullpen Readiness approved for constrained controlled rollout and
-ready for controlled rollout observation.
+V2 recommendation governance, completed V2.5 governance hardening, V3 Team
+Operations Bullpen Readiness approved for constrained controlled rollout, V4
+frontend explanation surfaces approved for production rollout, and V5 Bullpen
+Intelligence Surface observation taxonomy approved for planning-only
+observation surfacing.
 
 Current V3 status:
 
@@ -21,51 +23,22 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 
 ## Active Direction
 
-The next platform capability track is V4 Evidence and Explanation. V4 has
-certified internal backend Availability Explanation Integration and internal
-backend Team Operations Readiness Explanations. V4 explains why existing
-governed states appear without ranking, selecting, predicting, recommending, or
-automating a decision. V4 Phase 17 certifies the internal backend Explanation
-API layer with non-blocking observations for certified Availability and Team
-Operations Readiness explanations. V4 Phase 18 defines frontend integration
-planning for those certified APIs using progressive disclosure, compact
-governance display, fail-closed UI behavior, and dashboard anti-regression
-rules. V4 Phase 19 implements the first governed frontend explanation
-surfaces, adding compact `Why this state?` and `Why this availability?`
-actions without changing backend behavior, API contracts, recommendation
-behavior, or Dashboard structure beyond the planned surfaces. V4 Phase 20
-reviews those frontend surfaces for certification readiness, and V4 Phase 21
-certifies them with non-blocking observations while leaving rollout approval
-for a later milestone. V4 Phase 22 defines controlled rollout strategy,
-monitoring expectations, manual review requirements, observation evidence,
-approval gates, and rollback conditions for those certified frontend
-explanation surfaces. V4 Phase 23 approves controlled rollout for certified
-frontend explanation surfaces while keeping full production rollout not
-approved until observation evidence is retained and reviewed. V4 Phase 24
-reviews available controlled rollout evidence, finds no critical governance or
-behavior regression in repository-retained records, and identifies incomplete
-desktop, mobile, responsive, accessibility, fail-closed, and monitoring
-observation evidence before production review. V4 Phase 25 captures and
-reassesses retained repository evidence, confirms source/test evidence still
-supports compact governed explanation surfaces, and keeps production review
-blocked because runtime screenshots, manual accessibility smoke evidence, live
-fail-closed evidence, and deployed monitoring observations remain incomplete.
-V4 Phase 26 records completed retained runtime evidence, marks desktop,
-mobile, accessibility smoke, fail-closed, governance, Dashboard
-anti-regression, explanation, evidence, metadata, and limitation review as
-PASS, and approves full production rollout for the certified V4 frontend
-explanation surfaces.
+The active platform capability track is V5 Bullpen Intelligence Surface. V5
+converts existing trusted BaseballOS platform state into governed descriptive
+observations without ranking, selecting, predicting, recommending, advising, or
+automating a decision. V5 Phase 2 approves only the observation taxonomy and
+governance boundary for authorized observation families.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 27 - Post-Rollout Monitoring And Governance Preservation Review
+V5 Phase 3 - Bullpen Intelligence Surface Backend Observation Contracts
 ```
 
-The next V4 milestone should monitor the production rollout, preserve
-governance and fail-closed behavior, confirm explanation-only language remains
-intact, and review any user-facing or operational observations before any V4+
-scope expansion.
+The next V5 milestone should define deterministic backend observation contracts
+before any observation builders, API routes, frontend surfaces, database
+changes, ranking, selection, recommendation, prediction, or pitcher advice are
+authorized.
 
 ## Product Tracks
 
@@ -78,18 +51,20 @@ scope expansion.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
+| V5 Bullpen Intelligence Surface | Phase 2 observation taxonomy approved / planning only | Define backend observation contracts before implementation |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 27 post-rollout monitoring and governance preservation review.
-2. Controlled rollout monitoring artifact retention for V3 readiness.
-3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
+1. V5 Phase 3 backend observation contracts.
+2. V4 Phase 27 post-rollout monitoring and governance preservation review.
+3. Controlled rollout monitoring artifact retention for V3 readiness.
+4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
-4. Separate full production rollout decision only if controlled rollout
+5. Separate full production rollout decision only if controlled rollout
    evidence supports it.
-5. V4 route or UI work only after architecture, backend contracts, tests, and
-   certification gates are established for the relevant explanation surface.
+6. V5 route or UI work only after observation taxonomy, architecture, backend
+   contracts, tests, and certification gates are established.
 
 ## Candidate Future Tracks
 
@@ -99,6 +74,10 @@ These are candidates, not commitments:
 - Future V4+ explanation scope expansion, new frontend surfaces, or new
   explanation APIs only after separate planning, certification, and rollout
   authorization.
+- V5 architecture, backend observation contracts, deterministic observation
+  builders, read-only API surface, frontend intelligence surface, governance
+  validation, certification, controlled rollout review, and production approval
+  review.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -263,6 +242,16 @@ governance and lifecycle evidence process linked from
   accessibility smoke, fail-closed, governance, Dashboard anti-regression,
   explanation, evidence, metadata, and limitation review while preserving
   explanation-only governance boundaries.
+- V5 Phase 1 approved the Bullpen Intelligence Surface capability definition,
+  allowed observational scope, prohibited outputs, trusted-source requirements,
+  freshness and confidence requirements, fail-closed requirements,
+  certification requirements, rollout sequence, and readiness for Phase 2
+  observation taxonomy planning without authorizing implementation.
+- V5 Phase 2 approved the Bullpen Intelligence Surface observation taxonomy,
+  including authorized observation families, approved inputs, expected future
+  output fields, governance boundary matrix, observation language rules,
+  fail-closed requirements, and readiness for Phase 3 backend observation
+  contract planning without authorizing implementation.
 
 For detailed milestone history, use:
 

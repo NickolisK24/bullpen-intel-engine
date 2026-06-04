@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Next Planned Phase |
+| V5 Bullpen Intelligence Surface | Phase 2 Observation Taxonomy Approved |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md](docs/V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md).
+[docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md](docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md).
 
 ## Core Capabilities
 
@@ -205,14 +205,29 @@ unless implementation files change.
 - [V4 Production Rollout Review](docs/V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md)
   - full production rollout approval record for certified V4 explanation
     surfaces.
+- [V5 Phase 1 Capability Definition](docs/V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md)
+  - governed Bullpen Intelligence Surface capability boundary and Phase 2
+    taxonomy entry point.
+- [V5 Phase 2 Observation Taxonomy](docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md)
+  - authorized observation families, language rules, input boundaries,
+    output expectations, and fail-closed requirements.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 is the next planned phase for governed intelligence surfacing. It is expected
-to focus on inventory shifts, readiness observations, constraint summaries,
-bullpen pressure observations, and trust-aware insights.
+V5 Phase 2 is approved as the observation taxonomy for governed observation
+surfacing. V5 may describe inventory, readiness, workload pressure, constraint,
+freshness, trust, availability movement, and snapshot change observations when
+derived from existing trusted platform state.
 
-V5 does not authorize ranking, selection, prediction, or pitcher advice.
+V5 Phase 2 does not authorize implementation. V5 does not authorize ranking,
+selection, prediction, pitcher recommendations, matchup advice, best-arm
+language, role advice, or automated decision-making.
+
+Recommended next milestone:
+
+```text
+V5 Phase 3 - Bullpen Intelligence Surface Backend Observation Contracts
+```
 
 ## Author
 
