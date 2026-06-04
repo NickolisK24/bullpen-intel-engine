@@ -1,5 +1,16 @@
 """V4 Evidence and Explanation backend domain exports."""
 
+from explanations.builders import (
+    build_evidence_item,
+    build_explanation,
+    build_limitation,
+    build_numeric_evidence,
+    build_percentage_evidence,
+    build_reason,
+    build_reasons,
+    serialize_explanation,
+    stable_json_dumps,
+)
 from explanations.contracts import (
     ADVICE_SCOPE,
     ALLOWED_EXPLANATION_SCOPES,
@@ -58,9 +69,18 @@ __all__ = [
     'V4Limitation',
     'V4Reason',
     'V4TrustReference',
+    'build_evidence_item',
+    'build_explanation',
+    'build_limitation',
+    'build_numeric_evidence',
+    'build_percentage_evidence',
+    'build_reason',
+    'build_reasons',
     'governance_payload_errors',
     'require_governance_payload_safe',
     'require_v4_governance_safe',
+    'serialize_explanation',
+    'stable_json_dumps',
     'v4_governance_errors',
     'validate_explanation_scope',
     'validate_limitation_type',

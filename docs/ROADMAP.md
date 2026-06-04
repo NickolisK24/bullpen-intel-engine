@@ -22,22 +22,22 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 ## Active Direction
 
 The next platform capability track is V4 Evidence and Explanation. V4 is
-now in internal backend-domain implementation and is intended to explain why
-existing governed states appear without ranking, selecting, predicting,
-recommending, or automating a decision. V4 Phase 4 has completed the backend
-domain foundation with internal contracts, reason codes, limitations,
-governance payloads, validation, serialization, and tests.
+now in internal backend implementation and is intended to explain why existing
+governed states appear without ranking, selecting, predicting, recommending,
+or automating a decision. V4 Phase 5 has completed deterministic builders over
+the Phase 4 domain contracts with evidence helpers, limitation helpers,
+governance defaults, stable IDs, serialization support, and tests.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 5 - Evidence And Explanation Deterministic Builder
+V4 Phase 6 - Availability Explanation Integration
 ```
 
-The next V4 milestone should add deterministic builder functions over safe
-internal inputs or fixtures using the Phase 4 domain contracts without adding
-public API routes, frontend UI, database migrations, runtime integration, or
-rollout authorization.
+The next V4 milestone should use the deterministic builder to attach internal
+V4 explanations to an existing governed availability state without changing
+availability calculations, recommendation behavior, readiness behavior, public
+API routes, frontend UI, database schema, or rollout authorization.
 
 ## Product Tracks
 
@@ -49,12 +49,12 @@ rollout authorization.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Backend domain foundation complete / internal only | Build deterministic explanation builders before route or UI work |
+| V4 Evidence and Explanation Layer | Deterministic builder complete / internal backend only | Integrate availability explanations before route or UI work |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 5 evidence and explanation deterministic builder.
+1. V4 Phase 6 availability explanation integration.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -69,7 +69,7 @@ These are candidates, not commitments:
 
 - Team Operations Bullpen Readiness full rollout planning.
 - V4 Evidence and Explanation route, frontend, certification, and rollout work
-  after deterministic builders and separate authorization.
+  after availability integration and separate authorization.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -126,6 +126,9 @@ governance and lifecycle evidence process linked from
   explanation objects, evidence items, reason codes, limitation types,
   governance payloads, validation helpers, deterministic serialization, and
   focused backend tests.
+- V4 Phase 5 implemented deterministic explanation builders, evidence helpers,
+  limitation helpers, reason helpers, governance defaults, stable generated IDs,
+  serialization support, and focused backend tests.
 
 For detailed milestone history, use:
 

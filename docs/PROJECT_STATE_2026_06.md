@@ -222,6 +222,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning | Complete / Ready for Phase 3 Planning |
 | BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan | Complete / Ready for Backend Domain Foundation |
 | BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation | Complete / Internal Backend Domain Only |
+| BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder | Complete / Internal Backend Builder Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4284,7 +4285,106 @@ production certification, or rollout approval.
 Recommended next milestone:
 
 ```text
-V4 Phase 5 - Evidence And Explanation Deterministic Builder
+V4 Phase 6 - Availability Explanation Integration
+```
+
+## BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder
+
+BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder is
+complete.
+
+The Phase 5 record is:
+
+- `docs/V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md`
+
+Phase 5 status:
+
+```text
+V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER_COMPLETE
+```
+
+Implementation status:
+
+```text
+BACKEND_BUILDER_ONLY
+```
+
+V4 Phase 5 creates:
+
+- `backend/explanations/builders.py`
+- `backend/tests/test_v4_explanations_deterministic_builder.py`
+- `docs/V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md`
+
+V4 Phase 5 modifies:
+
+- `backend/explanations/__init__.py`
+
+The deterministic builder layer includes:
+
+- reusable explanation creation through `build_explanation(...)`
+- generic evidence construction through `build_evidence_item(...)`
+- numeric evidence construction through `build_numeric_evidence(...)`
+- percentage evidence construction through `build_percentage_evidence(...)`
+- limitation construction through `build_limitation(...)`
+- reason construction through `build_reason(...)` and `build_reasons(...)`
+- governance default attachment through `V4GovernancePayload()`
+- deterministic generated explanation IDs
+- deterministic generated evidence IDs
+- stable JSON serialization support through `stable_json_dumps(...)`
+- JSON-compatible explanation serialization through `serialize_explanation(...)`
+- fail-closed validation for unsupported scopes, subject types, reason codes,
+  limitation types, malformed references, and invalid evidence values
+
+Generated governance defaults are:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+The deterministic ID approach uses canonical JSON with sorted keys, compact
+separators, ASCII-safe output, and a SHA-256 digest prefix. Evidence IDs use the
+`evidence:<type>:<digest>` shape. Explanation IDs use the
+`explanation:<scope>:<subject_type>:<subject_id>:<digest>` shape. Identical
+controlled inputs produce identical objects, IDs, dictionaries, and stable JSON
+strings.
+
+V4 Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 5 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 5 does not implement API routes, frontend UI, database migration,
+availability integration, readiness integration, recommendation integration,
+dashboard behavior, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 6 - Availability Explanation Integration
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -4581,6 +4681,19 @@ reason code constants, limitation type constants, governance payloads,
 freshness references, trust references, confidence references, validation
 helpers, deterministic serialization, focused tests, and documentation. It
 does not authorize API routes, frontend UI, database migration, availability
+integration, readiness integration, recommendation integration, dashboard
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 5 authorizes only deterministic builders, evidence helpers,
+limitation helpers, reason helpers, governance default attachment,
+deterministic ID generation, serialization support, focused tests, and
+documentation for the internal backend Evidence and Explanation layer. It does
+not authorize API routes, frontend UI, database migration, availability
 integration, readiness integration, recommendation integration, dashboard
 behavior changes, fatigue calculation changes, availability calculation
 changes, Recommendation Engine behavior changes, Team Operations Bullpen
