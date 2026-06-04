@@ -217,6 +217,7 @@ It does not rank the bullpen or select the final pitcher.
 | Operational Verification 1 Render Production Health Evidence Capture | Production Health Verified / Deployment Config Blocker Cleared |
 | BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment | Blocked Pending Manual Review / Full Rollout Not Approved |
 | BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval | Controlled Rollout Approved / Full Rollout Not Approved |
+| BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review | Ready for Controlled Rollout Observation / Full Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -3895,6 +3896,64 @@ Recommended next milestone:
 V3 Phase 20 - Team Operations Bullpen Readiness Controlled Rollout Observation Review
 ```
 
+## BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review
+
+BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review is
+complete.
+
+The Phase 20 record is:
+
+- `docs/V3_PHASE_20_CONTROLLED_ROLLOUT_OBSERVATION_READINESS_REVIEW.md`
+
+Phase 20 observation readiness decision:
+
+```text
+READY_FOR_CONTROLLED_ROLLOUT_OBSERVATION
+```
+
+Full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 20 confirms that deployment health, production configuration,
+governance invariants, Dashboard structure, and retained Phase 19 approval
+evidence are sufficient to begin controlled rollout observation under existing
+restrictions.
+
+Phase 20 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 20 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no recommendation behavior exists
+- no best/preferred/recommended behavior exists for bullpen choice
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+
+Phase 20 does not authorize full production rollout, backend behavior changes,
+frontend behavior changes, Dashboard redesign, API contract changes, fatigue
+calculation changes, availability calculation changes, Recommendation Engine
+behavior changes, readiness calculation changes, trust logic changes, freshness
+logic changes, database schema changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Recommended next milestone:
+
+```text
+V3 Phase 21 - Controlled Rollout Observation Evidence Capture
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4136,6 +4195,16 @@ route changes, frontend implementation changes, Recommendation Engine V2
 contract changes, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction behavior, hidden priority ordering, pitcher-level advice, or
 matchup advice.
+V3 Phase 20 authorizes only controlled rollout observation readiness review,
+documentation updates, observation target definition, and readiness-decision
+recording. It does not authorize full production rollout, public production
+certification language, backend behavior changes, frontend behavior changes,
+Dashboard redesign, API contract changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes,
+readiness calculation changes, trust logic changes, freshness logic changes,
+database schema changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

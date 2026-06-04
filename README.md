@@ -30,6 +30,7 @@ Current V3 rollout state:
 
 ```text
 CONTROLLED_ROLLOUT_APPROVED
+READY_FOR_CONTROLLED_ROLLOUT_OBSERVATION
 FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 ```
 
@@ -193,8 +194,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V3 Phase 20 controlled rollout observation readiness](docs/V3_PHASE_20_CONTROLLED_ROLLOUT_OBSERVATION_READINESS_REVIEW.md)
+  - current controlled rollout observation readiness record.
 - [V3 Phase 19 controlled rollout approval](docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md)
-  - current controlled rollout approval record.
+  - controlled rollout approval record.
 - [Phase 19 monitoring artifact](docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md)
   - retained controlled rollout evidence artifact.
 
