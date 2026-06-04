@@ -238,6 +238,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning | Complete / Ready for Frontend Explanation Surface Implementation |
 | BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation | Complete / Frontend Surfaces Implemented / Ready for Certification Readiness Review |
 | BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review | Complete / Ready for Formal Frontend Certification Review |
+| BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification Review | Certified with Non-Blocking Observations / Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5894,6 +5895,96 @@ Recommended next milestone:
 
 ```text
 V4 Phase 21 - Frontend Explanation Surface Formal Certification Review
+```
+
+## BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification Review
+
+BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification
+Review is complete.
+
+The certification record is:
+
+- `docs/V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md`
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Rollout status:
+
+```text
+PRODUCTION_ROLLOUT_NOT_APPROVED
+CONTROLLED_ROLLOUT_PLANNING_PENDING
+```
+
+Certified frontend scope:
+
+- Operational Readiness explanation surface
+- selected pitcher Availability explanation surface
+- shared explanation disclosure component
+- frontend API normalization for certified explanation routes
+- fail-closed explanation rendering
+- governance-safe explanation presentation
+
+Phase 21 certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Certification scope | PASS |
+| Surface coverage | PASS |
+| Certified API usage | PASS |
+| Progressive disclosure | PASS |
+| Fail-closed rendering | PASS |
+| Governance | PASS |
+| UX anti-regression | PASS |
+| Testing | PASS |
+| Behavior preservation | PASS |
+
+Phase 21 confirms frontend explanation surfaces preserve:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 21 confirms the certified frontend explanation surfaces do not introduce
+or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- dashboard redesign
+- production rollout approval
+
+Certification findings:
+
+- Critical findings: `NONE`
+- Non-critical findings: `NONE`
+- Observations:
+  - browser/device smoke evidence remains manual
+  - accessibility validation remains limited and should be retained in later
+    rollout planning
+  - future explanation surfaces are not yet implemented
+  - production rollout is not approved by this certification
+
+Recommended next milestone:
+
+```text
+V4 Phase 22 - Frontend Explanation Surface Rollout Planning and Monitoring
 ```
 
 ## V2 Production Fail-Closed Diagnosis
