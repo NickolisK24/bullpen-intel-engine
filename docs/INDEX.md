@@ -132,6 +132,7 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 20 frontend explanation surface certification readiness review](V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md)
 - [V4 Phase 21 frontend explanation surface formal certification review](V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md)
 - [V4 Phase 22 frontend explanation rollout planning and monitoring](V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING.md)
+- [V4 Phase 23 frontend explanation controlled rollout decision](V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION.md)
 
 ## Operational Review And Monitoring Evidence
 

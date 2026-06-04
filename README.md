@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations |
+| V4 Evidence and Explanation Layer | Certified with non-blocking observations / frontend explanation controlled rollout approved |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -40,13 +40,14 @@ Current V4 implementation state:
 ```text
 V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
 V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING_COMPLETE
+V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 FRONTEND_EXPLANATION_SURFACES_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-FRONTEND_EXPLANATION_SURFACE_CONTROLLED_ROLLOUT_NOT_YET_APPROVED
-FRONTEND_EXPLANATION_SURFACE_PRODUCTION_ROLLOUT_NOT_APPROVED
-READY_FOR_V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT
+FRONTEND_EXPLANATION_SURFACE_CONTROLLED_ROLLOUT_APPROVED
+FRONTEND_EXPLANATION_SURFACE_FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+READY_FOR_V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION
 ```
 
 ## Core Capabilities
@@ -221,6 +222,11 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 23 frontend explanation controlled rollout decision](docs/V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION.md)
+  - controlled rollout approval for certified frontend explanation surfaces,
+    with rollout scope, governance validation, monitoring expectations,
+    rollback conditions, required observation evidence, and full production
+    rollout boundaries.
 - [V4 Phase 22 frontend explanation rollout planning and monitoring](docs/V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING.md)
   - rollout strategy, monitoring expectations, rollback conditions, manual
     review requirements, observation evidence requirements, approval gates, and
