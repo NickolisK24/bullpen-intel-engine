@@ -236,6 +236,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review | Complete / Ready for Formal API Certification |
 | BaseballOS V4 Phase 17 Explanation API Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend API Only |
 | BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning | Complete / Ready for Frontend Explanation Surface Implementation |
+| BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation | Complete / Frontend Surfaces Implemented / Ready for Certification Readiness Review |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5732,6 +5733,89 @@ Recommended next milestone:
 
 ```text
 V4 Phase 19 - Frontend Explanation Surface Implementation
+```
+
+## BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation
+
+BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation is
+complete.
+
+The implementation record is:
+
+- `docs/V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION.md`
+
+Phase status:
+
+```text
+V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+FRONTEND_SURFACE_IMPLEMENTED
+BACKEND_UNCHANGED
+API_CONTRACTS_UNCHANGED
+DASHBOARD_REDESIGN_NOT_PERFORMED
+PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Implemented frontend surfaces:
+
+- Operational Readiness `Why this state?` action
+- selected pitcher detail `Why this availability?` action
+- shared V4 explanation disclosure component
+- certified explanation API client normalization
+- governed fail-closed explanation display
+- compact governance strip and detailed governance disclosure
+
+Certified API routes consumed:
+
+```text
+GET /api/explanations/team-readiness
+GET /api/explanations/team-readiness/<scope>
+GET /api/explanations/availability/<pitcher_id>
+```
+
+Phase 19 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 19 does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- Dashboard redesign
+- production rollout approval
+
+Anti-regression summary:
+
+- explanation details remain hidden until user action
+- full evidence blocks are not rendered inline on the Dashboard by default
+- per-pitcher explanation stacks were not added to the Dashboard
+- availability explanation access is limited to selected pitcher detail
+- governance is visible in compact form without repeating large audit blocks
+
+Recommended next milestone:
+
+```text
+V4 Phase 20 - Frontend Explanation Surface Certification Readiness Review
 ```
 
 ## V2 Production Fail-Closed Diagnosis

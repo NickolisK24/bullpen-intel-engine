@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations / no frontend or dashboard exposure |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations / first governed frontend surfaces implemented |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,12 +38,12 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING_COMPLETE
+V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-FRONTEND_EXPLANATION_INTEGRATION_PLANNED
-READY_FOR_V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION
+FRONTEND_EXPLANATION_SURFACES_IMPLEMENTED
+READY_FOR_V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW
 ```
 
 ## Core Capabilities
@@ -64,9 +64,9 @@ READY_FOR_V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION
 - Team Operations Bullpen Readiness as a team-level readiness surface for
   operational context, workload pressure, constraints, availability
   distribution, and coverage visibility.
-- Governed V4 explanation API routes for certified Availability and Team
-  Operations Readiness explanations, with internal route status and no
-  frontend or dashboard exposure.
+- Governed V4 explanation surfaces for certified Availability and Team
+  Operations Readiness APIs, using compact progressive disclosure and
+  fail-closed display.
 - Protected operational endpoints for sync and recalculation.
 - Scheduled sync support through GitHub Actions.
 
@@ -218,6 +218,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 19 frontend explanation surface implementation](docs/V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION.md)
+  - governed frontend explanation surfaces for Operational Readiness and
+    selected pitcher availability, using compact progressive disclosure,
+    fail-closed handling, and governance-safe messaging.
 - [V4 Phase 18 explanation API frontend integration planning](docs/V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md)
   - governed frontend integration plan for certified explanation APIs, with
     progressive disclosure, fail-closed UI, governance display, and dashboard

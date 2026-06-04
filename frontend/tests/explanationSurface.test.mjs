@@ -1,0 +1,325 @@
+import assert from 'node:assert/strict'
+import test, { after } from 'node:test'
+import { readFile } from 'node:fs/promises'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createServer } from 'vite'
+
+const server = await createServer({
+  root: process.cwd(),
+  server: { middlewareMode: true },
+  appType: 'custom',
+  logLevel: 'silent',
+})
+
+after(async () => {
+  await server.close()
+})
+
+const {
+  default: ExplanationDisclosure,
+} = await server.ssrLoadModule('/src/components/explanations/ExplanationDisclosure.jsx')
+const {
+  default: OperationalReadinessSection,
+} = await server.ssrLoadModule('/src/components/dashboard/OperationalReadinessSection.jsx')
+const {
+  normalizeV4ExplanationApiResponse,
+} = await server.ssrLoadModule('/src/utils/api.js')
+const pitcherDetailSource = await readFile(
+  new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url),
+  'utf8',
+)
+const operationalReadinessSource = await readFile(
+  new URL('../src/components/dashboard/OperationalReadinessSection.jsx', import.meta.url),
+  'utf8',
+)
+
+const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+const withoutGovernanceSentence = html => visibleText(html)
+  .replace(/No ranking, selection, recommendation, or prediction applied\./g, '')
+  .replace(/recommendation_made/g, '')
+  .replace(/prediction_made/g, '')
+  .replace(/ranking_applied/g, '')
+  .replace(/selection_made/g, '')
+
+const governance = {
+  ranking_applied: false,
+  selection_made: false,
+  recommendation_made: false,
+  prediction_made: false,
+  decision_scope: 'explanation_only',
+  advice_scope: 'none',
+}
+
+const explanationEnvelope = {
+  status: 'ok',
+  explanation_type: 'team_readiness_explanation',
+  certification_status: 'certified_with_non_blocking_observations',
+  route_status: 'internal_uncertified_route',
+  explanation: {
+    explanation_id: 'readiness_state_example',
+    scope: 'readiness_state',
+    subject_type: 'bullpen',
+    subject_id: 'team:SEA',
+    state_explained: 'operationally_stable',
+    summary: 'This readiness state reflects workload, freshness, coverage, and trust evidence.',
+    primary_reasons: [
+      {
+        code: 'READINESS_DEGRADED_BY_LIMITATIONS',
+        scope: 'readiness_state',
+        label: 'Readiness context reviewed',
+        summary: 'Visible readiness context explains the current state.',
+        display_safe: true,
+        certification_required: true,
+      },
+    ],
+    supporting_evidence: [
+      {
+        evidence_id: 'availability_distribution_total',
+        evidence_type: 'count',
+        label: 'Availability distribution total',
+        value: 6,
+        unit: 'pitchers',
+        source: 'team_operations_readiness',
+        freshness: {
+          status: 'current',
+          data_through: '2026-06-03',
+          last_sync_at: '2026-06-03T11:45:00Z',
+        },
+        trust_status: 'trusted',
+        impact: 'Supports team-level readiness context.',
+      },
+    ],
+    limitations: [
+      {
+        limitation_type: 'insufficient_context',
+        severity: 'informational',
+        summary: 'Manager intent is not represented.',
+        affected_scopes: ['readiness_state'],
+        requires_refusal: false,
+      },
+    ],
+    freshness: {
+      status: 'current',
+      data_through: '2026-06-03',
+      last_sync_at: '2026-06-03T11:45:00Z',
+    },
+    trust: {
+      status: 'trusted',
+      source: 'team_operations_readiness',
+      certification_status: 'certified_with_non_blocking_observations',
+    },
+    confidence: {
+      level: 'medium',
+      summary: 'Explanation confidence reflects current source evidence.',
+    },
+    governance,
+    generated_at: '2026-06-03T12:00:00Z',
+  },
+  governance,
+}
+
+const failClosedEnvelope = {
+  status: 'unavailable',
+  explanation_type: 'team_readiness_explanation',
+  certification_status: 'certified_with_non_blocking_observations',
+  route_status: 'internal_uncertified_route',
+  explanation: null,
+  limitations: [
+    {
+      limitation_type: 'missing_data',
+      label: 'Required explanation inputs are unavailable',
+      summary: 'Team Operations readiness explanation cannot be generated because source records are unavailable.',
+    },
+  ],
+  refusal: {
+    refused: true,
+    reason_code: 'missing_source_data',
+    summary: 'Team Operations readiness explanation cannot be generated because source records are unavailable.',
+  },
+  governance,
+}
+
+const v2State = {
+  contractState: 'available',
+  isContractSafe: true,
+  isFailClosed: false,
+  governance: {
+    rankingApplied: false,
+    selectionMade: false,
+  },
+  bullpenState: {
+    status: 'available_context',
+    stress_level: 'elevated',
+  },
+  freshness: {
+    freshness_state: 'current',
+  },
+}
+
+const readinessState = {
+  contractState: 'available',
+  sourceContractState: 'available',
+  isContractSafe: true,
+  isDegraded: false,
+  isRefused: false,
+  isFailClosed: false,
+  isInternal: true,
+  isInternalUncertified: true,
+  governance: {
+    rankingApplied: false,
+    selectionMade: false,
+    trustRankingApplied: false,
+    trustSelectionMade: false,
+  },
+  routeStatus: {
+    exposure: 'internal',
+    productionStatus: 'non_production',
+    certificationStatus: 'uncertified',
+  },
+  readinessStatus: 'operationally_stable',
+  readinessSummary: 'Team-level bullpen readiness is operationally stable.',
+  readiness: {
+    status: 'Operationally Stable',
+    summary: 'Team-level bullpen readiness is operationally stable.',
+  },
+  team: {
+    team_id: 7,
+    team_abbreviation: 'SEA',
+  },
+  workloadPressure: {
+    pressure_level: 'elevated',
+    summary: 'Workload pressure is elevated at the team level.',
+  },
+  availabilityDistribution: {
+    available: 240,
+    total: 679,
+  },
+  freshness: {
+    freshness_state: 'current',
+    data_through: '2026-06-03',
+  },
+}
+
+function renderDisclosure(props = {}) {
+  return renderToStaticMarkup(
+    React.createElement(ExplanationDisclosure, {
+      fetchExplanation: async () => normalizeV4ExplanationApiResponse(explanationEnvelope),
+      ...props,
+    }),
+  )
+}
+
+function renderOperationalReadiness(props = {}) {
+  return renderToStaticMarkup(
+    React.createElement(OperationalReadinessSection, {
+      v2State,
+      readinessState,
+      ...props,
+    }),
+  )
+}
+
+test('renders compact Why this state action while explanation details stay closed', () => {
+  const html = renderDisclosure({
+    initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
+  })
+
+  assert.ok(htmlIncludes(html, 'Why this state?'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+  assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
+  assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
+  assert.equal(htmlIncludes(html, 'Availability distribution total'), false)
+})
+
+test('opens explanation detail surface with summary and reasons when disclosure is active', () => {
+  const html = renderDisclosure({
+    initialOpen: true,
+    initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
+  })
+
+  assert.ok(htmlIncludes(html, 'Hide Explanation'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+  assert.ok(htmlIncludes(html, explanationEnvelope.explanation.summary))
+  assert.ok(htmlIncludes(html, 'Readiness context reviewed'))
+  assert.ok(htmlIncludes(html, 'Visible readiness context explains the current state.'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'Freshness / Trust / Confidence'))
+})
+
+test('renders evidence and limitations inside the opened explanation detail surface', () => {
+  const html = renderDisclosure({
+    initialOpen: true,
+    initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
+  })
+
+  assert.ok(htmlIncludes(html, 'Availability distribution total'))
+  assert.ok(htmlIncludes(html, '6 pitchers'))
+  assert.ok(htmlIncludes(html, 'Manager intent is not represented.'))
+  assert.ok(htmlIncludes(html, 'medium'))
+  assert.ok(htmlIncludes(html, 'current'))
+})
+
+test('renders fail-closed explanation responses safely', () => {
+  const html = renderDisclosure({
+    initialOpen: true,
+    initialExplanation: normalizeV4ExplanationApiResponse(failClosedEnvelope),
+  })
+
+  assert.ok(htmlIncludes(html, 'Explanation unavailable for this state.'))
+  assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable or not certified for this request.'))
+  assert.ok(htmlIncludes(html, 'missing_source_data'))
+  assert.ok(htmlIncludes(html, 'Required explanation inputs are unavailable'))
+  assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
+})
+
+test('keeps governance-safe messaging visible in explanation details', () => {
+  const html = renderDisclosure({
+    initialOpen: true,
+    initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
+  })
+
+  assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
+  assert.ok(htmlIncludes(html, 'ranking_applied'))
+  assert.ok(htmlIncludes(html, 'selection_made'))
+  assert.ok(htmlIncludes(html, 'recommendation_made'))
+  assert.ok(htmlIncludes(html, 'prediction_made'))
+  assert.ok(htmlIncludes(html, 'explanation_only'))
+  assert.ok(htmlIncludes(html, 'none'))
+})
+
+test('does not render prohibited explanation surface language', () => {
+  const html = renderDisclosure({
+    initialOpen: true,
+    initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
+  })
+  const text = withoutGovernanceSentence(html)
+
+  assert.equal(/\buse this pitcher\b|\bbest option\b|\bpreferred arm\b|\brecommended arm\b|\bchoose this option\b|\bmatchup advice\b/i.test(text), false)
+})
+
+test('Operational Readiness renders the Why this state action without inline evidence by default', () => {
+  const html = renderOperationalReadiness()
+
+  assert.ok(htmlIncludes(html, 'Why this state?'))
+  assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
+  assert.equal(htmlIncludes(html, 'Availability distribution total'), false)
+  assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
+  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
+  assert.ok(htmlIncludes(html, 'selection_made === false'))
+})
+
+test('Operational Readiness uses the certified team readiness explanation client', () => {
+  assert.ok(operationalReadinessSource.includes('getTeamReadinessExplanation'))
+  assert.ok(operationalReadinessSource.includes('Why this state?'))
+  assert.equal(/risk_distribution|recommendation_explanation/.test(operationalReadinessSource), false)
+})
+
+test('Pitcher detail uses the certified availability explanation client without dashboard card stacks', () => {
+  assert.ok(pitcherDetailSource.includes('getAvailabilityExplanation'))
+  assert.ok(pitcherDetailSource.includes('Why this availability?'))
+  assert.equal(/per-pitcher explanation card stacks|comparison/i.test(pitcherDetailSource), false)
+})
