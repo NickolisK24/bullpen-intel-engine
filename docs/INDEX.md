@@ -127,6 +127,7 @@ governance, rollout, monitoring, and historical records.
 - [V4 Phase 15 explanation API route implementation](V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION.md)
 - [V4 Phase 16 explanation API route certification readiness review](V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW.md)
 - [V4 Phase 17 explanation API formal certification review](V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md)
+- [V4 Phase 18 explanation API frontend integration planning](V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md)
 
 ## Operational Review And Monitoring Evidence
 
