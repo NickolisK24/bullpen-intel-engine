@@ -242,6 +242,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 22 Frontend Explanation Surface Rollout Planning And Monitoring | Complete / Ready for Controlled Rollout Review |
 | BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout Decision | Controlled Rollout Approved / Full Production Rollout Not Approved |
 | BaseballOS V4 Phase 24 Frontend Explanation Surface Controlled Rollout Observation Review | Controlled Rollout Review Required / Production Review Not Ready |
+| BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment | Controlled Rollout Review Required / Production Review Not Ready |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6279,6 +6280,82 @@ Recommended next milestone:
 V4 Phase 25 - Frontend Explanation Controlled Rollout Evidence Capture And Reassessment
 ```
 
+## BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment
+
+BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment
+is complete.
+
+The Phase 25 record is:
+
+- `docs/V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md`
+
+Phase 25 reassesses the evidence gaps identified in Phase 24 for certified
+frontend explanation surfaces. It reviews retained repository source and test
+evidence for:
+
+- Operational Readiness explanation disclosure
+- selected pitcher Availability explanation disclosure
+- shared V4 explanation disclosure behavior
+- fail-closed frontend rendering
+- governance-safe frontend messaging
+- Dashboard anti-regression protections
+
+Evidence decisions:
+
+| Evidence area | Decision |
+| --- | --- |
+| Desktop Browser Evidence | PARTIAL |
+| Mobile / Responsive Evidence | PARTIAL |
+| Accessibility Smoke Evidence | PARTIAL |
+| Fail-Closed Evidence | PARTIAL |
+| Governance Evidence | PASS |
+| Dashboard Anti-Regression Evidence | PARTIAL |
+| Monitoring Reassessment | PARTIAL |
+
+Phase 25 controlled rollout reassessment decision:
+
+```text
+CONTROLLED_ROLLOUT_REVIEW_REQUIRED
+```
+
+Phase 25 production review readiness decision:
+
+```text
+NOT_READY_FOR_V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW
+```
+
+Phase 25 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 25 does not authorize:
+
+- frontend changes
+- backend changes
+- API changes
+- Dashboard redesign
+- production rollout approval
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+
+Recommended next milestone:
+
+```text
+V4 Phase 26 - Frontend Explanation Runtime Evidence Capture And Production Review Gate
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -6747,6 +6824,19 @@ changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
 selection, pitcher recommendation, prediction behavior, best/preferred
 behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
 decision automation.
+V4 Phase 25 authorizes only frontend explanation controlled rollout evidence
+capture, repository-retained source/test evidence reassessment, observation
+finding classification, controlled rollout reassessment, production review
+readiness recording, and documentation updates. It does not authorize frontend
+changes, backend changes, API changes, Dashboard redesign, runtime behavior
+changes, database migration, production rollout approval, uncertified
+explanation scope exposure, future explanation surfaces, Recommendation
+Explanations, Risk Distribution Explanations, availability calculation
+changes, fatigue calculation changes, readiness calculation changes, readiness
+status assignment changes, Recommendation Engine behavior changes, trust logic
+changes, freshness logic changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, best/preferred behavior, hidden priority
+ordering, pitcher-level advice, matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

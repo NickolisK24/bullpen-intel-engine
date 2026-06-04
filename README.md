@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Certified with non-blocking observations / frontend explanation controlled rollout approved |
+| V4 Evidence and Explanation Layer | Certified with non-blocking observations / controlled rollout review required before production review |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -42,6 +42,7 @@ V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
 V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING_COMPLETE
 V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION_COMPLETE
 V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION_REVIEW_COMPLETE
+V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
@@ -49,7 +50,7 @@ FRONTEND_EXPLANATION_SURFACES_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 FRONTEND_EXPLANATION_SURFACE_CONTROLLED_ROLLOUT_APPROVED
 FRONTEND_EXPLANATION_SURFACE_CONTROLLED_ROLLOUT_REVIEW_REQUIRED
 FRONTEND_EXPLANATION_SURFACE_FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
-NOT_READY_FOR_V4_PHASE_25_PRODUCTION_ROLLOUT_REVIEW
+NOT_READY_FOR_V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW
 ```
 
 ## Core Capabilities
@@ -224,6 +225,11 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 25 frontend explanation evidence capture and reassessment](docs/V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md)
+  - source/test evidence reassessment for certified frontend explanation
+    surfaces, with retained runtime screenshot evidence still incomplete,
+    controlled rollout review still required, and production-review readiness
+    deferred.
 - [V4 Phase 24 frontend explanation controlled rollout observation review](docs/V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION_REVIEW.md)
   - controlled rollout observation review for certified frontend explanation
     surfaces, with PASS/PARTIAL findings, no critical governance regression,
