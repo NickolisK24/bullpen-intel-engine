@@ -143,6 +143,7 @@ governance, rollout, monitoring, and historical records.
 - [V5 Phase 2 bullpen intelligence surface observation taxonomy](V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md)
 - [V5 Phase 3 bullpen intelligence surface architecture definition](V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md)
 - [V5 Phase 4 observation domain and contracts](V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md)
+- [V5 Phase 5 observation builder foundation](V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md)
 
 ## Operational Review And Monitoring Evidence
 

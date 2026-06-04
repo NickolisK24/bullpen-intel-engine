@@ -36,8 +36,11 @@ milestones. It does not replace the detailed evidence records linked from
   including governed enum vocabularies, dataclass contracts, serialization
   helpers, contract validators, prohibited-language safeguards, collection
   serialization, and focused backend tests.
-- V5 Phase 4 does not authorize observation builders, API routes, frontend UI,
-  database migrations, runtime observation generation, ranking, selection,
+- Phase 5 implemented deterministic backend observation builders, static
+  supplied-state inputs, fail-closed suppression, evidence propagation, trust
+  and freshness propagation, collection assembly, and focused backend tests.
+- V5 Phase 5 does not authorize API routes, frontend UI, database migrations,
+  live runtime integration, runtime observation generation, ranking, selection,
   pitcher recommendations, matchup advice, best-arm language, role advice,
   prediction, or automated decision-making.
 

@@ -248,6 +248,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy | Approved / Planning Only |
 | BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition | Approved / Planning Only |
 | BaseballOS V5 Phase 4 Observation Domain And Contracts | Complete / Backend Contracts Only |
+| BaseballOS V5 Phase 5 Observation Builder Foundation | Complete / Backend Builders Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6666,7 +6667,61 @@ Phase 4 does not authorize:
 Recommended next milestone:
 
 ```text
-V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
+V5_PHASE_6_OBSERVATION_API_SURFACE
+```
+
+## BaseballOS V5 Phase 5 Observation Builder Foundation
+
+BaseballOS V5 Phase 5 Observation Builder Foundation is complete.
+
+The Phase 5 record is:
+
+- `docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md`
+
+Phase 5 implements deterministic backend observation builders for governed
+observation surfacing. It adds supplied-state builders, fail-closed
+suppression, evidence propagation, trust and freshness propagation, collection
+assembly, and focused backend tests.
+
+Phase 5 implementation files:
+
+- `backend/observations/builders.py`
+- `backend/observations/__init__.py`
+- `backend/tests/test_observation_builders.py`
+
+Phase 5 decision:
+
+```text
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION_COMPLETE
+```
+
+Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 5 does not authorize:
+
+- API routes
+- frontend UI
+- database migrations
+- live runtime integration
+- runtime observation generation
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_6_OBSERVATION_API_SURFACE
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -7215,6 +7270,18 @@ logic changes, freshness logic changes, pitcher ranking, pitcher selection,
 pitcher recommendation, matchup advice, best-arm language, closer/setup/role
 advice, prediction behavior, hidden priority ordering, pitcher-level advice,
 or automated decision-making.
+V5 Phase 5 authorizes only deterministic backend observation builders,
+supplied-state observation inputs, fail-closed suppression, evidence
+propagation, trust and freshness propagation, collection assembly, package
+exports, focused backend tests, and Phase 6 observation API surface readiness
+recording. It does not authorize API routes, frontend UI, database migrations,
+live runtime integration, runtime observation generation, fatigue calculation
+changes, availability calculation changes, Recommendation Engine behavior
+changes, Team Operations Readiness behavior changes, explanation behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

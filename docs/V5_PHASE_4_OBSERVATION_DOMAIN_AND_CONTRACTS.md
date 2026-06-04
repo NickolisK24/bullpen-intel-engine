@@ -224,7 +224,7 @@ Phase 4 does not authorize:
 
 ## 8. Next Phase Boundary
 
-Recommended next milestone:
+Recommended next milestone at Phase 4 closeout:
 
 ```text
 V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
@@ -238,6 +238,23 @@ invariants unless a later governance record explicitly changes that boundary.
 Phase 5 must still not expose API routes, frontend UI, database migrations,
 ranking, selection, prediction, matchup advice, pitcher advice, or automated
 decision-making unless separately authorized.
+
+## 9. Phase 5 Follow-Up
+
+V5 Phase 5 implemented deterministic backend observation builders from
+explicit supplied trusted state while preserving the Phase 4 contracts,
+validators, serialization guarantees, prohibited-language safeguards, and
+governance invariants.
+
+Phase 5 did not authorize API routes, frontend UI, database migrations, live
+runtime integration, ranking, selection, prediction, matchup advice, pitcher
+advice, or automated decision-making.
+
+Current next milestone:
+
+```text
+V5_PHASE_6_OBSERVATION_API_SURFACE
+```
 
 ## Final Boundary
 

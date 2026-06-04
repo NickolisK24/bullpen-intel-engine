@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Phase 4 Observation Domain Contracts Complete |
+| V5 Bullpen Intelligence Surface | Phase 5 Observation Builder Foundation Complete |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md](docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md).
+[docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md](docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md).
 
 ## Core Capabilities
 
@@ -219,24 +219,28 @@ unless implementation files change.
 - [V5 Phase 4 Observation Domain And Contracts](docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md)
   - backend observation enums, dataclass contracts, serialization helpers,
     contract validators, prohibited-language safeguards, and focused tests.
+- [V5 Phase 5 Observation Builder Foundation](docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md)
+  - deterministic backend observation builders, static supplied-state
+    contracts, fail-closed suppression, evidence propagation, and focused
+    builder tests.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 4 is complete as the backend observation domain and contract
-foundation for governed observation surfacing. It defines future-safe
-observation enums, dataclass contracts, serialization helpers, validators,
-prohibited-language safeguards, and collection contracts without creating
-runtime observations.
+V5 Phase 5 is complete as the backend observation builder foundation for
+governed observation surfacing. It introduces deterministic builders that
+convert explicit supplied trusted state into Phase 4 observation contracts with
+fail-closed suppression when evidence, freshness, confidence, trust status, or
+contract validation is missing or unsafe.
 
-V5 Phase 4 does not authorize observation builders, API routes, frontend UI,
-database migrations, runtime observation generation, ranking, selection,
+V5 Phase 5 does not authorize API routes, frontend UI, database migrations,
+live runtime integration, runtime observation generation, ranking, selection,
 prediction, pitcher recommendations, matchup advice, best-arm language, role
 advice, or automated decision-making.
 
 Recommended next milestone:
 
 ```text
-V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
+V5_PHASE_6_OBSERVATION_API_SURFACE
 ```
 
 ## Author
