@@ -234,6 +234,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 14 Explanation API Contract Planning | Complete / Ready for Route Implementation |
 | BaseballOS V4 Phase 15 Explanation API Route Implementation | Complete / Internal Backend Routes Only |
 | BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review | Complete / Ready for Formal API Certification |
+| BaseballOS V4 Phase 17 Explanation API Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend API Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5535,6 +5536,112 @@ Recommended next milestone:
 V4 Phase 17 - Explanation API Formal Certification Review
 ```
 
+## BaseballOS V4 Phase 17 Explanation API Formal Certification Review
+
+BaseballOS V4 Phase 17 Explanation API Formal Certification Review is
+complete.
+
+The formal certification record is:
+
+- `docs/V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md`
+
+Phase status:
+
+```text
+V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+```
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certification scope:
+
+- Availability Explanation API
+- Team Operations Readiness Explanation API
+- governed response envelopes
+- fail-closed response envelopes
+- certified explanation type enforcement
+- certified readiness scope enforcement
+- internal backend API behavior only
+
+Certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Certification scope | PASS |
+| Certified scope exposure | PASS |
+| Route coverage | PASS |
+| Response contract | PASS |
+| Fail-closed behavior | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PARTIAL |
+| Behavior preservation | PASS |
+
+Critical findings:
+
+```text
+None
+```
+
+Non-critical findings:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- direct forced route-level builder-validation exception coverage is not
+  currently present
+- explicit malformed `team_id` route coverage is not currently present
+- availability determinism depends on identical source evidence and identical
+  runtime date context
+- route status remains internal until separate rollout planning changes route
+  exposure status
+- frontend explanation surfaces and Dashboard explanation UI remain
+  intentionally unimplemented
+- route-level monitoring artifacts remain future rollout work
+
+Phase 17 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 17 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 17 does not authorize frontend exposure, Dashboard exposure, production
+rollout, future explanation scopes, Recommendation Explanations, Risk
+Distribution Explanations, availability calculation changes, fatigue
+calculation changes, readiness calculation changes, readiness status assignment
+changes, Recommendation Engine behavior changes, database behavior changes, or
+source-engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 18 - Explanation API Frontend Integration Planning
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -5979,6 +6086,18 @@ Recommendation Engine behavior changes, trust logic changes, freshness logic
 changes, pitcher ranking, pitcher selection, pitcher recommendation,
 prediction behavior, best/preferred behavior, hidden priority ordering,
 pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 17 authorizes only formal certification review documentation and
+certification-status recording for the internal backend V4 Explanation API
+Layer. It does not authorize runtime behavior changes, frontend UI, Dashboard
+behavior changes, database migration, route rollout, public exposure,
+uncertified explanation type exposure, future explanation scopes,
+Recommendation Explanations, Risk Distribution Explanations, availability
+calculation changes, fatigue calculation changes, readiness calculation
+changes, readiness status assignment changes, Recommendation Engine behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

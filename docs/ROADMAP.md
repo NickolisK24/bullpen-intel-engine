@@ -25,19 +25,20 @@ The next platform capability track is V4 Evidence and Explanation. V4 has
 certified internal backend Availability Explanation Integration and internal
 backend Team Operations Readiness Explanations. V4 explains why existing
 governed states appear without ranking, selecting, predicting, recommending, or
-automating a decision. V4 Phase 15 implements internal governed backend routes
-for certified explanation exposure without frontend or Dashboard UI, and V4
-Phase 16 finds those routes ready for formal API certification review.
+automating a decision. V4 Phase 17 certifies the internal backend Explanation
+API layer with non-blocking observations for certified Availability and Team
+Operations Readiness explanations. Frontend and Dashboard explanation exposure
+remain unimplemented and unauthorized.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 17 - Explanation API Formal Certification Review
+V4 Phase 18 - Explanation API Frontend Integration Planning
 ```
 
-The next V4 milestone should formally certify, partially certify, or reject the
-internal explanation API route surface before any frontend or Dashboard exposure
-is planned.
+The next V4 milestone should plan how certified explanation API payloads could
+be consumed safely by frontend surfaces before any UI implementation is
+authorized.
 
 ## Product Tracks
 
@@ -49,12 +50,12 @@ is planned.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; explanation API route certification-readiness complete / no frontend or Dashboard exposure | Complete formal API certification before UI exposure |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations / no frontend or Dashboard exposure | Plan frontend integration before UI exposure |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 17 explanation API formal certification review.
+1. V4 Phase 18 explanation API frontend integration planning.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -69,8 +70,8 @@ These are candidates, not commitments:
 
 - Team Operations Bullpen Readiness full rollout planning.
 - V4 Evidence and Explanation frontend, certification, and rollout work after
-  backend route implementation, route certification planning, route
-  certification review, and separate authorization.
+  backend route implementation, route certification planning, formal route
+  certification, frontend integration planning, and separate authorization.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -181,6 +182,12 @@ governance and lifecycle evidence process linked from
   behavior preservation, a PARTIAL testing observation for direct forced
   builder-validation exception coverage, and readiness for Phase 17 formal API
   certification review.
+- V4 Phase 17 certified the internal backend Explanation API layer with
+  non-blocking observations, preserving certified scope exposure, governed
+  success and fail-closed envelopes, deterministic behavior, and source-engine
+  behavior preservation while leaving frontend, Dashboard, rollout,
+  Recommendation Explanations, Risk Distribution Explanations, and future
+  explanation scopes for future phases.
 
 For detailed milestone history, use:
 
