@@ -218,6 +218,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment | Blocked Pending Manual Review / Full Rollout Not Approved |
 | BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval | Controlled Rollout Approved / Full Rollout Not Approved |
 | BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review | Ready for Controlled Rollout Observation / Full Rollout Not Approved |
+| BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition | Complete / Planning Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -3954,6 +3955,82 @@ Recommended next milestone:
 V3 Phase 21 - Controlled Rollout Observation Evidence Capture
 ```
 
+## BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition
+
+BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition is
+complete.
+
+The Phase 1 record is:
+
+- `docs/V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION.md`
+
+V4 capability track:
+
+```text
+V4_EVIDENCE_AND_EXPLANATION_LAYER
+```
+
+Phase 1 status:
+
+```text
+V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION_COMPLETE
+```
+
+Implementation status:
+
+```text
+PLANNING_ONLY
+```
+
+V4 is defined as the next explanation-focused platform layer. Its purpose is
+to answer why an existing governed BaseballOS state exists, what evidence
+supports that state, and what limitations affect confidence.
+
+V4 may explain:
+
+- availability states
+- readiness states
+- workload states
+- risk or availability distributions
+- freshness contributors
+- trust contributors
+- coverage contributors
+- limitation contributors
+- refusal and fail-closed contributors
+
+V4 may not decide.
+
+V4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+V4 Phase 1 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred/recommended arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 1 does not authorize backend implementation, frontend implementation,
+database changes, API contract changes, runtime behavior changes, fatigue
+calculation changes, availability calculation changes, Recommendation Engine
+behavior changes, readiness calculation changes, trust logic changes, or
+freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 2 - Evidence And Explanation Architecture And Contract Planning
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4205,6 +4282,18 @@ readiness calculation changes, trust logic changes, freshness logic changes,
 database schema changes, pitcher ranking, pitcher selection, pitcher
 recommendation, prediction behavior, hidden priority ordering, pitcher-level
 advice, or matchup advice.
+V4 Phase 1 authorizes only Evidence and Explanation capability definition,
+allowed-output definition, prohibited-output definition, governance-boundary
+definition, candidate-surface identification, data-requirement identification,
+API-consideration identification, certification-requirement definition, and
+success-criteria definition. It does not authorize backend implementation,
+frontend implementation, database changes, API contract changes, runtime
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, readiness calculation changes,
+trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

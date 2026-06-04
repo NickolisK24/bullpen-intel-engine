@@ -106,6 +106,11 @@ governance, rollout, monitoring, and historical records.
 - [V3 Phase 17 deployment environment manual review](V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md)
 - [V3 Phase 18 manual review and controlled rollout reassessment](V3_PHASE_18_TEAM_OPERATIONS_BULLPEN_READINESS_MANUAL_REVIEW_AND_CONTROLLED_ROLLOUT_REASSESSMENT.md)
 - [V3 Phase 19 controlled rollout approval](V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md)
+- [V3 Phase 20 controlled rollout observation readiness](V3_PHASE_20_CONTROLLED_ROLLOUT_OBSERVATION_READINESS_REVIEW.md)
+
+## V4 Evidence And Explanation Layer
+
+- [V4 Phase 1 evidence and explanation capability definition](V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION.md)
 
 ## Operational Review And Monitoring Evidence
 
