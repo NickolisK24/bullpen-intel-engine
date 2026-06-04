@@ -1,10 +1,11 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getPitcherFatigue } from '../../utils/api'
+import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
 import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
 import AvailabilitySummary from './AvailabilitySummary'
 import { RecommendationPitcherDetailSection } from '../recommendations'
+import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine,
@@ -114,6 +115,13 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           )}
 
           <AvailabilitySummary availability={availability} />
+
+          <ExplanationDisclosure
+            buttonLabel="Why this availability?"
+            contextLabel="Availability explanation"
+            disabled={!pitcherId}
+            fetchExplanation={() => getAvailabilityExplanation(pitcherId)}
+          />
 
           <RecommendationPitcherDetailSection pitcherDetail={data} />
 

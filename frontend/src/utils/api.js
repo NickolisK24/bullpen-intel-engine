@@ -11,6 +11,8 @@ export const RECOMMENDATION_CANDIDATE_ROUTE = '/recommendations/candidate'
 export const RECOMMENDATION_V2_BULLPEN_STATE_ROUTE = '/recommendations/v2/bullpen-state'
 export const TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE =
   '/team-operations/bullpen-readiness'
+export const EXPLANATION_AVAILABILITY_ROUTE_PREFIX = '/explanations/availability'
+export const EXPLANATION_TEAM_READINESS_ROUTE = '/explanations/team-readiness'
 const inFlightGetRequests = new Map()
 
 const RECOMMENDATION_V2_REQUIRED_TOP_LEVEL_FIELDS = [
@@ -206,6 +208,117 @@ const TEAM_OPERATIONS_BULLPEN_READINESS_FORBIDDEN_TEXT_TERMS = [
   /\bbest\b/i,
   /\bpreferred\b/i,
   /\brecommended\b/i,
+]
+
+const CERTIFIED_EXPLANATION_TYPES = new Set([
+  'availability_explanation',
+  'team_readiness_explanation',
+])
+
+const CERTIFIED_TEAM_READINESS_EXPLANATION_SCOPES = new Set([
+  'readiness_state',
+  'workload_state',
+  'coverage_state',
+  'freshness_state',
+  'trust_state',
+])
+
+const V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS = [
+  'ranking_applied',
+  'selection_made',
+  'recommendation_made',
+  'prediction_made',
+  'decision_scope',
+  'advice_scope',
+]
+
+const V4_EXPLANATION_REQUIRED_SUCCESS_ENVELOPE_FIELDS = [
+  'status',
+  'explanation_type',
+  'certification_status',
+  'route_status',
+  'explanation',
+  'governance',
+]
+
+const V4_EXPLANATION_REQUIRED_UNAVAILABLE_ENVELOPE_FIELDS = [
+  'status',
+  'explanation_type',
+  'certification_status',
+  'route_status',
+  'explanation',
+  'limitations',
+  'refusal',
+  'governance',
+]
+
+const V4_EXPLANATION_REQUIRED_EXPLANATION_FIELDS = [
+  'explanation_id',
+  'scope',
+  'subject_type',
+  'subject_id',
+  'state_explained',
+  'summary',
+  'primary_reasons',
+  'supporting_evidence',
+  'limitations',
+  'freshness',
+  'trust',
+  'confidence',
+  'governance',
+]
+
+const V4_EXPLANATION_FORBIDDEN_FIELD_KEYS = new Set([
+  'best_arm',
+  'best_candidate',
+  'best_pitcher',
+  'game_outcome_prediction',
+  'game_prediction',
+  'hidden_priority_ordering',
+  'injury_prediction',
+  'matchup',
+  'matchup_advice',
+  'outcome_prediction',
+  'performance_forecast',
+  'performance_prediction',
+  'pitcher_choice',
+  'predicted_injury',
+  'predicted_performance',
+  'predicted_saves',
+  'prediction',
+  'preferred_option',
+  'preferred_pitcher',
+  'priority',
+  'priority_score',
+  'projected_outcome',
+  'projected_performance',
+  'rank',
+  'ranking',
+  'recommended_option',
+  'recommended_pitcher',
+  'save_prediction',
+  'score',
+  'score_ordering',
+  'selected_candidate',
+  'selected_candidate_id',
+  'selected_pitcher',
+  'selected_pitcher_id',
+  'top_candidate',
+  'winner',
+])
+
+const V4_EXPLANATION_GOVERNANCE_FIELD_EXCEPTIONS = new Set([
+  ...V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS,
+])
+
+const V4_EXPLANATION_FORBIDDEN_TEXT_TERMS = [
+  /\buse this pitcher\b/i,
+  /\bavoid this pitcher\b/i,
+  /\bbest option\b/i,
+  /\bpreferred arm\b/i,
+  /\brecommended arm\b/i,
+  /\bchoose this option\b/i,
+  /\bmatchup advice\b/i,
 ]
 
 function isObject(value) {
@@ -805,6 +918,306 @@ export function normalizeTeamOperationsBullpenReadinessResponse(response = {}) {
 export const getTeamOperationsBullpenReadiness = async (params = {}) => {
   const response = await request(`${TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE}${buildQuery(params)}`)
   return normalizeTeamOperationsBullpenReadinessResponse(response)
+}
+
+// ── V4 Certified Explanations ──────────────────────────────
+function v4GovernanceDefaults() {
+  return {
+    ranking_applied: false,
+    selection_made: false,
+    recommendation_made: false,
+    prediction_made: false,
+    decision_scope: 'explanation_only',
+    advice_scope: 'none',
+  }
+}
+
+function isV4GovernanceSafe(governance = null) {
+  return (
+    isObject(governance)
+    && governance.ranking_applied === false
+    && governance.selection_made === false
+    && governance.recommendation_made === false
+    && governance.prediction_made === false
+    && governance.decision_scope === 'explanation_only'
+    && governance.advice_scope === 'none'
+  )
+}
+
+function getV4ExplanationMalformedFields(response = {}) {
+  if (!isObject(response)) return ['response']
+
+  const fields = []
+  const status = response.status
+  const explanation = isObject(response.explanation) ? response.explanation : null
+
+  for (const field of ['status', 'explanation_type', 'certification_status', 'route_status']) {
+    if (hasOwn(response, field) && typeof response[field] !== 'string') {
+      fields.push(field)
+    }
+  }
+
+  if (hasOwn(response, 'governance') && !isObject(response.governance)) {
+    fields.push('governance')
+  }
+  if (hasOwn(response, 'limitations') && !Array.isArray(response.limitations)) {
+    fields.push('limitations')
+  }
+  if (hasOwn(response, 'refusal') && !isObject(response.refusal)) {
+    fields.push('refusal')
+  }
+  if (status === 'ok' && !isObject(response.explanation)) {
+    fields.push('explanation')
+  }
+  if (status === 'unavailable' && response.explanation !== null) {
+    fields.push('explanation')
+  }
+
+  if (explanation) {
+    for (const field of [
+      'explanation_id',
+      'scope',
+      'subject_type',
+      'subject_id',
+      'state_explained',
+      'summary',
+    ]) {
+      if (hasOwn(explanation, field) && typeof explanation[field] !== 'string') {
+        fields.push(`explanation.${field}`)
+      }
+    }
+
+    for (const field of ['primary_reasons', 'supporting_evidence', 'limitations']) {
+      if (hasOwn(explanation, field) && !Array.isArray(explanation[field])) {
+        fields.push(`explanation.${field}`)
+      }
+    }
+
+    for (const field of ['freshness', 'trust', 'confidence', 'governance']) {
+      if (hasOwn(explanation, field) && !isObject(explanation[field])) {
+        fields.push(`explanation.${field}`)
+      }
+    }
+  }
+
+  for (const [path, governance] of [
+    ['governance', response.governance],
+    ['explanation.governance', explanation?.governance],
+  ]) {
+    if (!isObject(governance)) continue
+    for (const field of V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS) {
+      if (!hasOwn(governance, field)) continue
+      const value = governance[field]
+      if (
+        ['ranking_applied', 'selection_made', 'recommendation_made', 'prediction_made']
+          .includes(field)
+        && typeof value !== 'boolean'
+      ) {
+        fields.push(`${path}.${field}`)
+      }
+      if (
+        ['decision_scope', 'advice_scope'].includes(field)
+        && typeof value !== 'string'
+      ) {
+        fields.push(`${path}.${field}`)
+      }
+    }
+  }
+
+  return fields
+}
+
+function buildClientFailClosedExplanationEnvelope({
+  explanationType,
+  reasonCode,
+  summary,
+  limitationType = 'uncertified_source',
+  certificationStatus = 'certified_with_non_blocking_observations',
+}) {
+  return {
+    status: 'unavailable',
+    explanation_type: explanationType,
+    certification_status: certificationStatus,
+    route_status: 'client_guarded_unavailable',
+    explanation: null,
+    limitations: [
+      {
+        limitation_type: limitationType,
+        label: 'Explanation unavailable',
+        summary,
+      },
+    ],
+    refusal: {
+      refused: true,
+      reason_code: reasonCode,
+      summary,
+    },
+    governance: v4GovernanceDefaults(),
+  }
+}
+
+export function normalizeV4ExplanationApiResponse(response = {}) {
+  const status = typeof response?.status === 'string' ? response.status : null
+  const explanationType = typeof response?.explanation_type === 'string'
+    ? response.explanation_type
+    : null
+  const explanation = isObject(response?.explanation) ? response.explanation : null
+  const envelopeGovernance = isObject(response?.governance) ? response.governance : null
+  const explanationGovernance = isObject(explanation?.governance)
+    ? explanation.governance
+    : null
+  const successMissingFields = status === 'ok'
+    ? [
+      ...getMissingFields(response, V4_EXPLANATION_REQUIRED_SUCCESS_ENVELOPE_FIELDS),
+      ...getMissingFields(explanation, V4_EXPLANATION_REQUIRED_EXPLANATION_FIELDS, 'explanation.'),
+      ...getMissingFields(envelopeGovernance, V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS, 'governance.'),
+      ...getMissingFields(explanationGovernance, V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS, 'explanation.governance.'),
+    ]
+    : []
+  const unavailableMissingFields = status === 'unavailable'
+    ? [
+      ...getMissingFields(response, V4_EXPLANATION_REQUIRED_UNAVAILABLE_ENVELOPE_FIELDS),
+      ...getMissingFields(envelopeGovernance, V4_EXPLANATION_REQUIRED_GOVERNANCE_FIELDS, 'governance.'),
+    ]
+    : []
+  const missingFields = status === 'ok'
+    ? successMissingFields
+    : (status === 'unavailable' ? unavailableMissingFields : ['status'])
+  const malformedFields = getV4ExplanationMalformedFields(response)
+  const forbiddenFieldPaths = collectForbiddenFieldPaths(
+    response,
+    [],
+    V4_EXPLANATION_FORBIDDEN_FIELD_KEYS,
+    V4_EXPLANATION_GOVERNANCE_FIELD_EXCEPTIONS,
+  )
+  const forbiddenTextPaths = collectForbiddenTextPaths(
+    response,
+    [],
+    V4_EXPLANATION_FORBIDDEN_TEXT_TERMS,
+  )
+
+  const isCertifiedType = CERTIFIED_EXPLANATION_TYPES.has(explanationType)
+  const isUnsupportedScope = Boolean(
+    explanationType === 'team_readiness_explanation'
+    && explanation
+    && !CERTIFIED_TEAM_READINESS_EXPLANATION_SCOPES.has(explanation.scope),
+  )
+  const governanceSafe = (
+    isV4GovernanceSafe(envelopeGovernance)
+    && (
+      !explanation
+      || isV4GovernanceSafe(explanationGovernance)
+    )
+  )
+  const hasStableStatus = status === 'ok' || status === 'unavailable'
+  const isContractSafe = (
+    hasStableStatus
+    && governanceSafe
+    && isCertifiedType
+    && !isUnsupportedScope
+    && missingFields.length === 0
+    && malformedFields.length === 0
+    && forbiddenFieldPaths.length === 0
+    && forbiddenTextPaths.length === 0
+  )
+  const isFailClosed = status === 'unavailable'
+  const contractState = isContractSafe
+    ? (isFailClosed ? 'unavailable' : 'available')
+    : 'unavailable'
+  const limitations = explanation
+    ? (Array.isArray(explanation.limitations) ? explanation.limitations : [])
+    : (Array.isArray(response?.limitations) ? response.limitations : [])
+
+  return {
+    endpoint: explanationType,
+    contractState,
+    status,
+    explanationType,
+    certificationStatus: typeof response?.certification_status === 'string'
+      ? response.certification_status
+      : null,
+    routeStatus: typeof response?.route_status === 'string'
+      ? response.route_status
+      : null,
+    isContractSafe,
+    isFailClosed,
+    isCertifiedType,
+    isInternalUncertified: response?.route_status === 'internal_uncertified_route',
+    governanceSafe,
+    governance: {
+      rankingApplied: envelopeGovernance?.ranking_applied,
+      selectionMade: envelopeGovernance?.selection_made,
+      recommendationMade: envelopeGovernance?.recommendation_made,
+      predictionMade: envelopeGovernance?.prediction_made,
+      decisionScope: envelopeGovernance?.decision_scope,
+      adviceScope: envelopeGovernance?.advice_scope,
+      rankingAppliedIsFalse: envelopeGovernance?.ranking_applied === false,
+      selectionMadeIsFalse: envelopeGovernance?.selection_made === false,
+      recommendationMadeIsFalse: envelopeGovernance?.recommendation_made === false,
+      predictionMadeIsFalse: envelopeGovernance?.prediction_made === false,
+    },
+    missingFields,
+    malformedFields,
+    forbiddenFieldPaths,
+    forbiddenTextPaths,
+    isUnsupportedScope,
+    explanation: isContractSafe && explanation ? explanation : null,
+    summary: isContractSafe && explanation ? explanation.summary : null,
+    stateExplained: isContractSafe && explanation ? explanation.state_explained : null,
+    scope: isContractSafe && explanation ? explanation.scope : null,
+    subjectType: isContractSafe && explanation ? explanation.subject_type : null,
+    subjectId: isContractSafe && explanation ? explanation.subject_id : null,
+    primaryReasons: isContractSafe && explanation && Array.isArray(explanation.primary_reasons)
+      ? explanation.primary_reasons
+      : [],
+    supportingEvidence: isContractSafe && explanation && Array.isArray(explanation.supporting_evidence)
+      ? explanation.supporting_evidence
+      : [],
+    limitations,
+    freshness: isContractSafe && isObject(explanation?.freshness) ? explanation.freshness : null,
+    trust: isContractSafe && isObject(explanation?.trust) ? explanation.trust : null,
+    confidence: isContractSafe && isObject(explanation?.confidence) ? explanation.confidence : null,
+    refusal: isObject(response?.refusal) ? response.refusal : null,
+    generatedAt: isContractSafe && typeof explanation?.generated_at === 'string'
+      ? explanation.generated_at
+      : null,
+  }
+}
+
+export const getAvailabilityExplanation = async (pitcherId) => {
+  if (pitcherId === undefined || pitcherId === null || pitcherId === '') {
+    return normalizeV4ExplanationApiResponse(buildClientFailClosedExplanationEnvelope({
+      explanationType: 'availability_explanation',
+      reasonCode: 'missing_subject',
+      summary: 'Availability explanation cannot be requested without a pitcher identifier.',
+      limitationType: 'missing_data',
+    }))
+  }
+
+  const response = await request(`${EXPLANATION_AVAILABILITY_ROUTE_PREFIX}/${encodeURIComponent(pitcherId)}`)
+  return normalizeV4ExplanationApiResponse(response)
+}
+
+export const getTeamReadinessExplanation = async (params = {}) => {
+  const { scope = 'readiness_state', ...queryParams } = params || {}
+  const normalizedScope = scope || 'readiness_state'
+  if (!CERTIFIED_TEAM_READINESS_EXPLANATION_SCOPES.has(normalizedScope)) {
+    return normalizeV4ExplanationApiResponse(buildClientFailClosedExplanationEnvelope({
+      explanationType: 'team_readiness_explanation',
+      reasonCode: 'unsupported_scope',
+      summary: 'The requested readiness explanation scope is not certified for frontend exposure.',
+      limitationType: 'uncertified_source',
+    }))
+  }
+
+  const route = normalizedScope === 'readiness_state'
+    ? EXPLANATION_TEAM_READINESS_ROUTE
+    : `${EXPLANATION_TEAM_READINESS_ROUTE}/${encodeURIComponent(normalizedScope)}`
+  const response = await request(`${route}${buildQuery({
+    team_id: queryParams.team_id,
+    team_abbreviation: queryParams.team_abbreviation,
+  })}`)
+  return normalizeV4ExplanationApiResponse(response)
 }
 
 // ── Prospects ───────────────────────────────────────────────

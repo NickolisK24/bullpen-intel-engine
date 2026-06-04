@@ -6,6 +6,8 @@ import RecommendationV2BullpenStatePanel, {
 import TeamOperationsBullpenReadinessPanel, {
   getTeamOperationsBullpenReadinessView,
 } from '../teamOperations/TeamOperationsBullpenReadinessPanel'
+import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
+import { getTeamReadinessExplanation } from '../../utils/api'
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -35,6 +37,14 @@ function metricLabel(value) {
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function teamReadinessExplanationParams(readinessView) {
+  const team = asObject(readinessView.team)
+  return {
+    team_id: team.team_id,
+    team_abbreviation: team.team_abbreviation,
+  }
 }
 
 function CompactMetric({ label, value, subtext = null, tone = 'border-dirt bg-chalk/30 text-chalk200' }) {
@@ -184,6 +194,15 @@ export default function OperationalReadinessSection({
             </div>
           </div>
         </div>
+
+        <ExplanationDisclosure
+          buttonLabel="Why this state?"
+          contextLabel="Team Operations readiness explanation"
+          disabled={readinessLoading}
+          fetchExplanation={() => getTeamReadinessExplanation(
+            teamReadinessExplanationParams(readinessView),
+          )}
+        />
 
         {(v2Error || readinessError) && (
           <div className="rounded border border-red-400/35 bg-red-400/10 p-3" role="status" aria-live="polite">
