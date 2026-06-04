@@ -250,6 +250,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 4 Observation Domain And Contracts | Complete / Backend Contracts Only |
 | BaseballOS V5 Phase 5 Observation Builder Foundation | Complete / Backend Builders Only |
 | BaseballOS V5 Phase 6 Observation API Surface | Complete / Backend Read-Only API Only |
+| BaseballOS V5 Phase 7 Frontend Intelligence Surface | Complete / Frontend Read-Only Surface Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6787,6 +6788,73 @@ Recommended next milestone:
 V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
 ```
 
+## BaseballOS V5 Phase 7 Frontend Intelligence Surface
+
+BaseballOS V5 Phase 7 Frontend Intelligence Surface is complete.
+
+The Phase 7 record is:
+
+- `docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md`
+
+Phase 7 implements a frontend read-only Bullpen Intelligence surface for
+governed observation surfacing. It adds `GET /api/observations` client
+normalization, a Dashboard panel, evidence display, limitation display, trust
+status, freshness status, confidence status, explanation references,
+empty/protected state handling, API failure handling, and focused frontend
+tests.
+
+Phase 7 implementation files:
+
+- `frontend/src/types/observations.js`
+- `frontend/src/components/observations/BullpenIntelligencePanel.jsx`
+- `frontend/src/utils/api.js`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/bullpenIntelligencePanel.test.mjs`
+
+Phase 7 decision:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE_COMPLETE
+```
+
+Phase 7 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 7 frontend route consumption:
+
+```text
+GET /api/observations
+```
+
+Phase 7 does not authorize:
+
+- backend decision logic
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+- production certification
+- controlled rollout approval
+- production rollout approval
+
+Recommended next milestone:
+
+```text
+V5_PHASE_8_GOVERNANCE_CERTIFICATION
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7357,6 +7425,20 @@ logic changes, freshness logic changes, pitcher ranking, pitcher selection,
 pitcher recommendation, matchup advice, best-arm language, closer/setup/role
 advice, prediction behavior, hidden priority ordering, pitcher-level advice,
 or automated decision-making.
+V5 Phase 7 authorizes only the frontend read-only Bullpen Intelligence surface,
+frontend observation types, `GET /api/observations` client normalization,
+Dashboard panel integration, evidence and limitation display, trust/freshness/
+confidence display, empty/protected state handling, API failure handling,
+focused frontend tests, and Phase 8 governance certification readiness
+recording. It does not authorize backend decision logic, database migrations,
+live runtime integration, runtime observation generation from MLB data,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, production rollout, or automated
+decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

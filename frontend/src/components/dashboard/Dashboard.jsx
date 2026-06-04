@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getBullpenOverview,
+  getBullpenObservations,
   getFatigueScores,
   getPipelineOverview,
   getRecommendationV2BullpenState,
@@ -17,6 +18,7 @@ import FatigueInsightCard from './FatigueInsightCard'
 import AvailabilityDashboardSummary from './AvailabilityDashboardSummary'
 import { getBullpenEmptyState } from '../bullpen/emptyState'
 import OperationalReadinessSection from './OperationalReadinessSection'
+import BullpenIntelligencePanel from '../observations/BullpenIntelligencePanel'
 
 // Defined outside component so Tailwind scanner can see these classes
 const RISK_CONFIG = {
@@ -81,6 +83,7 @@ export default function Dashboard() {
   const sync       = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
+  const bullpenObservations = useFetch(getBullpenObservations)
   const topFatigueRows = Array.isArray(topFatigue.data) ? topFatigue.data : (topFatigue.data?.data || [])
   const topFatigueMeta = Array.isArray(topFatigue.data) ? null : topFatigue.data?.meta
   const topFatigueEmpty = getBullpenEmptyState({
@@ -161,6 +164,13 @@ export default function Dashboard() {
         readinessLoading={teamOperationsReadiness.loading}
         readinessError={teamOperationsReadiness.error}
         onRetryReadiness={teamOperationsReadiness.refetch}
+      />
+
+      <BullpenIntelligencePanel
+        state={bullpenObservations.data}
+        loading={bullpenObservations.loading}
+        error={bullpenObservations.error}
+        onRetry={bullpenObservations.refetch}
       />
 
       <section className="mb-5" aria-labelledby="operational-insights-heading">

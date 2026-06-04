@@ -43,10 +43,15 @@ milestones. It does not replace the detailed evidence records linked from
   `GET /api/observations`, `POST /api/observations/preview`, deterministic
   supplied-state assembly, fail-closed API responses, governed serialization,
   route registration, and focused API tests.
-- V5 Phase 6 does not authorize frontend UI, database migrations, live runtime
-  integration, runtime observation generation from MLB data, ranking, selection,
-  pitcher recommendations, matchup advice, best-arm language, role advice,
-  prediction, or automated decision-making.
+- Phase 7 implemented the frontend read-only Bullpen Intelligence surface,
+  including `GET /api/observations` client normalization, Dashboard panel
+  rendering, evidence, limitations, trust, freshness, confidence, explanation
+  references, empty/protected states, API failure handling, and focused
+  frontend tests.
+- V5 Phase 7 does not authorize backend decision logic, database migrations,
+  live runtime integration, runtime observation generation from MLB data,
+  ranking, selection, pitcher recommendations, matchup advice, best-arm
+  language, role advice, prediction, or automated decision-making.
 
 ## V4 - Evidence And Explanation Layer
 

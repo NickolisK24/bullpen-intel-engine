@@ -109,6 +109,39 @@
     min-width: 0;
   }
 
+  /* V5 governed observation panel */
+  .bullpen-intelligence-panel {
+    container-type: inline-size;
+    max-width: 100%;
+  }
+  .bullpen-intelligence-panel__metadata-grid,
+  .bullpen-intelligence-panel__observation-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @container (min-width: 44rem) {
+    .bullpen-intelligence-panel__metadata-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 64rem) {
+    .bullpen-intelligence-panel__metadata-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .bullpen-intelligence-panel__observation-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .bullpen-intelligence-panel__text {
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+  .bullpen-intelligence-panel__metadata-grid > *,
+  .bullpen-intelligence-panel__observation-grid > * {
+    min-width: 0;
+  }
+
   /* Bullpen selected-pitcher recommendation detail
      Keeps metadata readable when the detail card is rendered as a constrained
      right rail instead of a full-page panel. */

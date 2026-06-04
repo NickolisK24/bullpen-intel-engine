@@ -1,3 +1,12 @@
+import {
+  BULLPEN_OBSERVATIONS_ROUTE,
+  OBSERVATION_FORBIDDEN_FIELD_KEYS,
+  OBSERVATION_FORBIDDEN_TEXT_TERMS,
+  OBSERVATION_GOVERNANCE_FIELD_EXCEPTIONS,
+  OBSERVATION_ITEM_REQUIRED_FIELDS,
+  OBSERVATION_RESPONSE_REQUIRED_FIELDS,
+} from '../types/observations'
+
 const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
@@ -13,6 +22,7 @@ export const TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE =
   '/team-operations/bullpen-readiness'
 export const EXPLANATION_AVAILABILITY_ROUTE_PREFIX = '/explanations/availability'
 export const EXPLANATION_TEAM_READINESS_ROUTE = '/explanations/team-readiness'
+export const BULLPEN_INTELLIGENCE_OBSERVATIONS_ROUTE = BULLPEN_OBSERVATIONS_ROUTE
 const inFlightGetRequests = new Map()
 
 const RECOMMENDATION_V2_REQUIRED_TOP_LEVEL_FIELDS = [
@@ -918,6 +928,231 @@ export function normalizeTeamOperationsBullpenReadinessResponse(response = {}) {
 export const getTeamOperationsBullpenReadiness = async (params = {}) => {
   const response = await request(`${TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE}${buildQuery(params)}`)
   return normalizeTeamOperationsBullpenReadinessResponse(response)
+}
+
+// ── V5 Bullpen Intelligence Observations ───────────────────
+function getBullpenObservationMalformedFields(response = {}) {
+  if (!isObject(response)) return ['response']
+
+  const fields = []
+  const stringFields = [
+    'status',
+    'collection_id',
+    'generated_at',
+    'trust_status',
+  ]
+  const booleanFields = ['ranking_applied', 'selection_made']
+  const arrayFields = [
+    'observations',
+    'limitations',
+    'suppression_reasons',
+  ]
+  const objectFields = [
+    'freshness',
+    'confidence',
+    'route_metadata',
+  ]
+
+  for (const field of stringFields) {
+    if (hasOwn(response, field) && typeof response[field] !== 'string') {
+      fields.push(field)
+    }
+  }
+  for (const field of booleanFields) {
+    if (hasOwn(response, field) && typeof response[field] !== 'boolean') {
+      fields.push(field)
+    }
+  }
+  for (const field of arrayFields) {
+    if (hasOwn(response, field) && !Array.isArray(response[field])) {
+      fields.push(field)
+    }
+  }
+  for (const field of objectFields) {
+    if (hasOwn(response, field) && !isObject(response[field])) {
+      fields.push(field)
+    }
+  }
+  if (
+    hasOwn(response, 'observation_count')
+    && typeof response.observation_count !== 'number'
+  ) {
+    fields.push('observation_count')
+  }
+  if (
+    hasOwn(response, 'suppressed_count')
+    && typeof response.suppressed_count !== 'number'
+  ) {
+    fields.push('suppressed_count')
+  }
+
+  const observations = Array.isArray(response?.observations)
+    ? response.observations
+    : []
+  observations.forEach((observation, index) => {
+    if (!isObject(observation)) {
+      fields.push(`observations.${index}`)
+      return
+    }
+
+    for (const field of [
+      'observation_id',
+      'observation_type',
+      'family',
+      'severity',
+      'title',
+      'summary',
+      'trust_status',
+    ]) {
+      if (hasOwn(observation, field) && typeof observation[field] !== 'string') {
+        fields.push(`observations.${index}.${field}`)
+      }
+    }
+    for (const field of ['ranking_applied', 'selection_made']) {
+      if (hasOwn(observation, field) && typeof observation[field] !== 'boolean') {
+        fields.push(`observations.${index}.${field}`)
+      }
+    }
+    for (const field of ['evidence', 'limitations']) {
+      if (hasOwn(observation, field) && !Array.isArray(observation[field])) {
+        fields.push(`observations.${index}.${field}`)
+      }
+    }
+    for (const field of ['confidence', 'freshness']) {
+      if (hasOwn(observation, field) && !isObject(observation[field])) {
+        fields.push(`observations.${index}.${field}`)
+      }
+    }
+    if (
+      hasOwn(observation, 'explanation_reference')
+      && observation.explanation_reference !== null
+      && typeof observation.explanation_reference !== 'string'
+    ) {
+      fields.push(`observations.${index}.explanation_reference`)
+    }
+  })
+
+  return fields
+}
+
+function collectGovernanceFlagValues(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectGovernanceFlagValues(item))
+  }
+  if (!isObject(value)) return []
+
+  return Object.entries(value).flatMap(([key, child]) => {
+    const childValues = collectGovernanceFlagValues(child)
+    if (key === 'ranking_applied' || key === 'selection_made') {
+      return [child, ...childValues]
+    }
+    return childValues
+  })
+}
+
+export function normalizeBullpenObservationsResponse(response = {}) {
+  const observations = Array.isArray(response?.observations)
+    ? response.observations
+    : []
+  const topLevelMissingFields = getMissingFields(
+    response,
+    OBSERVATION_RESPONSE_REQUIRED_FIELDS,
+  )
+  const observationMissingFields = observations.flatMap((observation, index) => (
+    getMissingFields(
+      observation,
+      OBSERVATION_ITEM_REQUIRED_FIELDS,
+      `observations.${index}.`,
+    )
+  ))
+  const missingFields = [...topLevelMissingFields, ...observationMissingFields]
+  const malformedFields = getBullpenObservationMalformedFields(response)
+  const forbiddenFieldPaths = collectForbiddenFieldPaths(
+    response,
+    [],
+    OBSERVATION_FORBIDDEN_FIELD_KEYS,
+    OBSERVATION_GOVERNANCE_FIELD_EXCEPTIONS,
+  )
+  const forbiddenTextPaths = collectForbiddenTextPaths(
+    response,
+    [],
+    OBSERVATION_FORBIDDEN_TEXT_TERMS,
+  )
+  const governanceFlagValues = collectGovernanceFlagValues(response)
+  const governanceSafe = (
+    response?.ranking_applied === false
+    && response?.selection_made === false
+    && governanceFlagValues.every(value => value === false)
+  )
+  const isContractSafe = (
+    governanceSafe
+    && missingFields.length === 0
+    && malformedFields.length === 0
+    && forbiddenFieldPaths.length === 0
+    && forbiddenTextPaths.length === 0
+  )
+  const isFailClosed = Boolean(
+    response?.status === 'fail_closed'
+    || response?.trust_status === 'fail_closed'
+    || (
+      response?.suppressed_count > 0
+      && observations.length === 0
+    ),
+  )
+  const isEmpty = observations.length === 0
+  const contractState = isContractSafe
+    ? (isFailClosed ? 'fail_closed' : (isEmpty ? 'empty' : 'available'))
+    : 'unavailable'
+
+  return {
+    endpoint: BULLPEN_INTELLIGENCE_OBSERVATIONS_ROUTE,
+    contractState,
+    isContractSafe,
+    isFailClosed,
+    isEmpty,
+    governanceSafe,
+    governance: {
+      rankingApplied: response?.ranking_applied,
+      selectionMade: response?.selection_made,
+      rankingAppliedIsFalse: response?.ranking_applied === false,
+      selectionMadeIsFalse: response?.selection_made === false,
+    },
+    missingFields,
+    malformedFields,
+    forbiddenFieldPaths,
+    forbiddenTextPaths,
+    status: typeof response?.status === 'string' ? response.status : null,
+    collectionId: typeof response?.collection_id === 'string'
+      ? response.collection_id
+      : null,
+    observationCount: typeof response?.observation_count === 'number'
+      ? response.observation_count
+      : observations.length,
+    observations: isContractSafe ? observations : [],
+    freshness: isObject(response?.freshness) ? response.freshness : null,
+    confidence: isObject(response?.confidence) ? response.confidence : null,
+    limitations: Array.isArray(response?.limitations) && isContractSafe
+      ? response.limitations
+      : [],
+    trustStatus: typeof response?.trust_status === 'string'
+      ? response.trust_status
+      : null,
+    generatedAt: typeof response?.generated_at === 'string'
+      ? response.generated_at
+      : null,
+    suppressedCount: typeof response?.suppressed_count === 'number'
+      ? response.suppressed_count
+      : 0,
+    suppressionReasons: Array.isArray(response?.suppression_reasons)
+      ? response.suppression_reasons
+      : [],
+    routeMetadata: isObject(response?.route_metadata) ? response.route_metadata : null,
+  }
+}
+
+export const getBullpenObservations = async () => {
+  const response = await request(BULLPEN_INTELLIGENCE_OBSERVATIONS_ROUTE)
+  return normalizeBullpenObservationsResponse(response)
 }
 
 // ── V4 Certified Explanations ──────────────────────────────

@@ -213,23 +213,32 @@ Phase 6 does not authorize:
 - prediction
 - automated decision-making
 
-## 8. Next Phase Boundary
+## 8. Phase 7 Follow-Up
+
+Phase 7 now implements the authorized frontend read-only intelligence surface:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE_COMPLETE
+```
+
+The Phase 7 frontend surface consumes `GET /api/observations` and displays
+governed descriptive observations with evidence, limitations, trust,
+freshness, confidence, explanation references, and preserved governance flags.
 
 Recommended next milestone:
 
 ```text
-V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
+V5_PHASE_8_GOVERNANCE_CERTIFICATION
 ```
 
-Phase 7 may add frontend UI consuming the governed API if separately
-authorized. Phase 6 does not add frontend UI.
+Phase 8 should certify the combined backend, API, and frontend V5 surface
+before any controlled rollout or production approval.
 
 ## Final Boundary
 
-This document certifies only the V5 Phase 6 backend read-only observation API
+This document records only the V5 Phase 6 backend read-only observation API
 surface.
 
-It does not certify frontend surfaces, live runtime observations, controlled
-rollout, production rollout, ranking, selection, prediction, pitcher
-recommendations, matchup advice, best-arm language, role advice, or automated
-decision-making.
+It does not certify live runtime observations, controlled rollout, production
+rollout, ranking, selection, prediction, pitcher recommendations, matchup
+advice, best-arm language, role advice, or automated decision-making.

@@ -9,7 +9,7 @@ BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
 V2 recommendation governance, completed V2.5 governance hardening, V3 Team
 Operations Bullpen Readiness approved for constrained controlled rollout, V4
 frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface backend read-only observation API surface complete for
+Intelligence Surface frontend read-only observation surface complete for
 governed observation surfacing.
 
 Current V3 status:
@@ -26,21 +26,21 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 The active platform capability track is V5 Bullpen Intelligence Surface. V5
 converts existing trusted BaseballOS platform state into governed descriptive
 observations without ranking, selecting, predicting, recommending, advising, or
-automating a decision. V5 Phase 6 implements only the backend read-only
-observation API surface: deterministic supplied-state assembly, governed
-collection serialization, fail-closed API responses, route registration, and
-focused API governance tests.
+automating a decision. V5 Phase 7 implements the read-only frontend Bullpen
+Intelligence panel: `GET /api/observations` consumption, frontend contract
+guarding, governed observation rendering, empty/protected states, API failure
+handling, and focused frontend governance tests.
 
 Recommended next milestone:
 
 ```text
-V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
+V5_PHASE_8_GOVERNANCE_CERTIFICATION
 ```
 
-The next V5 milestone may add frontend UI consuming the governed observation
-API if separately authorized. Database changes, live runtime integration,
-ranking, selection, recommendation, prediction, matchup advice, and pitcher
-advice remain unauthorized.
+The next V5 milestone should certify the combined backend, API, and frontend
+surface before any rollout approval. Database changes, live runtime
+integration, ranking, selection, recommendation, prediction, matchup advice,
+and pitcher advice remain unauthorized.
 
 ## Product Tracks
 
@@ -53,12 +53,12 @@ advice remain unauthorized.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
-| V5 Bullpen Intelligence Surface | Phase 6 observation API surface complete / backend API only | Define frontend intelligence surface |
+| V5 Bullpen Intelligence Surface | Phase 7 frontend intelligence surface complete / read-only UI only | Certify backend, API, and frontend governance |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V5 Phase 7 frontend intelligence surface.
+1. V5 Phase 8 governance certification.
 2. V4 Phase 27 post-rollout monitoring and governance preservation review.
 3. Controlled rollout monitoring artifact retention for V3 readiness.
 4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
@@ -76,8 +76,8 @@ These are candidates, not commitments:
 - Future V4+ explanation scope expansion, new frontend surfaces, or new
   explanation APIs only after separate planning, certification, and rollout
   authorization.
-- V5 frontend intelligence surface, governance validation, certification,
-  controlled rollout review, and production approval review.
+- V5 governance certification, controlled rollout review, and production
+  approval review.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -278,6 +278,13 @@ governance and lifecycle evidence process linked from
   authorizing frontend UI, database migrations, live runtime integration,
   ranking, selection, prediction, matchup advice, pitcher advice, or decision
   automation.
+- V5 Phase 7 implemented the frontend read-only Bullpen Intelligence surface,
+  including `GET /api/observations` client normalization, a Dashboard panel,
+  evidence, limitations, trust, freshness, confidence, explanation-reference
+  display, empty/protected states, API failure handling, and focused frontend
+  tests without authorizing backend decision logic, database migrations, live
+  runtime integration, ranking, selection, prediction, matchup advice, pitcher
+  advice, or decision automation.
 
 For detailed milestone history, use:
 

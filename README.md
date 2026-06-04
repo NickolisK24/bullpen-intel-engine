@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Phase 6 Observation API Surface Complete |
+| V5 Bullpen Intelligence Surface | Phase 7 Frontend Intelligence Surface Complete |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md](docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md).
+[docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md](docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md).
 
 ## Core Capabilities
 
@@ -53,8 +53,8 @@ and
   context.
 - V4 explanation surfaces for certified Availability and Team Operations
   Readiness APIs, using compact progressive disclosure and fail-closed display.
-- V5 read-only observation API surface for governed Bullpen Intelligence
-  observations from deterministic supplied state.
+- V5 read-only observation API and frontend Bullpen Intelligence panel for
+  governed descriptive observations from deterministic supplied state.
 - Protected operational endpoints for sync and recalculation.
 - Scheduled sync support through GitHub Actions.
 
@@ -228,23 +228,28 @@ unless implementation files change.
 - [V5 Phase 6 Observation API Surface](docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md)
   - read-only backend observation API route, preview route, response contract,
     fail-closed behavior, governance tests, and Phase 7 frontend boundary.
+- [V5 Phase 7 Frontend Intelligence Surface](docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md)
+  - read-only Dashboard panel consuming `GET /api/observations`, frontend
+    contract guard, evidence, limitations, trust, freshness, confidence, and
+    governance display.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 6 is complete as the backend read-only observation API surface for
-governed observation surfacing. It exposes deterministic supplied-state
-observations at `GET /api/observations` and a read-only validation preview at
-`POST /api/observations/preview`.
+V5 Phase 7 is complete as the frontend read-only intelligence surface for
+governed observation surfacing. The Dashboard panel consumes deterministic
+supplied-state observations from `GET /api/observations` and displays evidence,
+limitations, trust, freshness, confidence, explanation references, and the
+preserved governance flags.
 
-V5 Phase 6 does not authorize frontend UI, database migrations, live runtime
-integration, runtime observation generation from MLB data, ranking, selection,
-prediction, pitcher recommendations, matchup advice, best-arm language, role
-advice, or automated decision-making.
+V5 Phase 7 does not authorize backend decision logic, database migrations, live
+runtime integration, runtime observation generation from MLB data, ranking,
+selection, prediction, pitcher recommendations, matchup advice, best-arm
+language, role advice, or automated decision-making.
 
 Recommended next milestone:
 
 ```text
-V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
+V5_PHASE_8_GOVERNANCE_CERTIFICATION
 ```
 
 ## Author
