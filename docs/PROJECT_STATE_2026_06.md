@@ -221,6 +221,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition | Complete / Planning Only |
 | BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning | Complete / Ready for Phase 3 Planning |
 | BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan | Complete / Ready for Backend Domain Foundation |
+| BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation | Complete / Internal Backend Domain Only |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -4165,6 +4166,127 @@ Recommended next milestone:
 V4 Phase 4 - Evidence And Explanation Backend Domain Foundation
 ```
 
+## BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation
+
+BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation is
+complete.
+
+The Phase 4 record is:
+
+- `docs/V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION.md`
+
+Phase 4 status:
+
+```text
+V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+BACKEND_DOMAIN_FOUNDATION_ONLY
+```
+
+V4 Phase 4 creates:
+
+- `backend/explanations/__init__.py`
+- `backend/explanations/contracts.py`
+- `backend/tests/test_v4_explanations_domain_foundation.py`
+
+The backend domain foundation includes:
+
+- explanation scope vocabulary
+- subject type vocabulary
+- evidence item representation
+- explanation object representation
+- stable reason code definitions
+- stable limitation type definitions
+- governance payload object
+- freshness reference object
+- trust reference object
+- confidence object
+- validation helpers
+- deterministic JSON-compatible serialization
+- focused backend tests
+
+Supported scopes:
+
+```text
+availability_state
+workload_state
+readiness_state
+risk_distribution
+freshness_state
+trust_state
+coverage_state
+```
+
+Supported subject types:
+
+```text
+pitcher
+team
+bullpen
+distribution
+system
+```
+
+Supported reason codes:
+
+```text
+WORKLOAD_RECENT_USAGE_ELEVATED
+FRESHNESS_STALE_SOURCE
+COVERAGE_PARTIAL
+TRUST_LIMITED
+AVAILABILITY_MONITOR_THRESHOLD_MET
+READINESS_DEGRADED_BY_LIMITATIONS
+```
+
+Supported limitation types:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+V4 Phase 4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 4 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 4 does not implement API routes, frontend UI, database migration,
+availability integration, readiness integration, recommendation integration,
+dashboard behavior, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 5 - Evidence And Explanation Deterministic Builder
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -4453,6 +4575,20 @@ calculation changes, trust logic changes, freshness logic changes, pitcher
 ranking, pitcher selection, pitcher recommendation, prediction behavior,
 best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
 matchup advice, or decision automation.
+V4 Phase 4 authorizes only the internal backend Evidence and Explanation
+domain foundation, including domain contracts, scope and subject vocabularies,
+reason code constants, limitation type constants, governance payloads,
+freshness references, trust references, confidence references, validation
+helpers, deterministic serialization, focused tests, and documentation. It
+does not authorize API routes, frontend UI, database migration, availability
+integration, readiness integration, recommendation integration, dashboard
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

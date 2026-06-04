@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Implementation plan complete / planning only |
+| V4 Evidence and Explanation Layer | Backend domain foundation complete / internal only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -35,11 +35,11 @@ READY_FOR_CONTROLLED_ROLLOUT_OBSERVATION
 FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 ```
 
-Current V4 planning state:
+Current V4 implementation state:
 
 ```text
-V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN_COMPLETE
-READY_FOR_V4_PHASE_4_BACKEND_DOMAIN_FOUNDATION
+V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION_COMPLETE
+READY_FOR_V4_PHASE_5_DETERMINISTIC_BUILDER
 ```
 
 ## Core Capabilities
@@ -202,6 +202,9 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 4 evidence and explanation backend domain foundation](docs/V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION.md)
+  - internal backend domain contracts, reason codes, limitations, governance
+  payloads, validation, serialization, and tests.
 - [V4 Phase 3 evidence and explanation implementation plan](docs/V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN.md)
   - implementation roadmap, backend plan, frontend plan, testing, certification,
   and rollout strategy.
