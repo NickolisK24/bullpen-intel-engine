@@ -39,12 +39,14 @@ Current V4 implementation state:
 
 ```text
 V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 FRONTEND_EXPLANATION_SURFACES_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+FRONTEND_EXPLANATION_SURFACE_CONTROLLED_ROLLOUT_NOT_YET_APPROVED
 FRONTEND_EXPLANATION_SURFACE_PRODUCTION_ROLLOUT_NOT_APPROVED
-READY_FOR_V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING
+READY_FOR_V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT
 ```
 
 ## Core Capabilities
@@ -219,6 +221,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 22 frontend explanation rollout planning and monitoring](docs/V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING.md)
+  - rollout strategy, monitoring expectations, rollback conditions, manual
+    review requirements, observation evidence requirements, approval gates, and
+    readiness for controlled rollout.
 - [V4 Phase 21 frontend explanation formal certification](docs/V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md)
   - formal certification record for frontend explanation surfaces, with
     certified API usage, progressive disclosure, fail-closed behavior,
