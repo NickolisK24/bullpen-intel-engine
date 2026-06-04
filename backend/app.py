@@ -117,12 +117,14 @@ def create_app(config_name=None):
     from api.methodology import methodology_bp
     from api.recommendations import recommendations_bp
     from api.team_operations import team_operations_bp
+    from api.explanations import explanations_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
     app.register_blueprint(methodology_bp, url_prefix='/api/methodology')
     app.register_blueprint(recommendations_bp, url_prefix='/api/recommendations')
     app.register_blueprint(team_operations_bp, url_prefix='/api/team-operations')
+    app.register_blueprint(explanations_bp, url_prefix='/api/explanations')
 
     @app.route('/api/health')
     def health():

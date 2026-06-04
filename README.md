@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; API contract planning complete / no route implemented |
+| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; internal backend explanation routes implemented / no frontend or dashboard exposure |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,10 +38,11 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING_COMPLETE
+V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-READY_FOR_V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION
+INTERNAL_EXPLANATION_API_ROUTES_IMPLEMENTED
+READY_FOR_V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW
 ```
 
 ## Core Capabilities
@@ -62,6 +63,9 @@ READY_FOR_V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION
 - Team Operations Bullpen Readiness as a team-level readiness surface for
   operational context, workload pressure, constraints, availability
   distribution, and coverage visibility.
+- Governed V4 explanation API routes for certified Availability and Team
+  Operations Readiness explanations, with internal route status and no
+  frontend or dashboard exposure.
 - Protected operational endpoints for sync and recalculation.
 - Scheduled sync support through GitHub Actions.
 
@@ -213,6 +217,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 15 explanation API route implementation](docs/V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION.md)
+  - governed backend API routes for certified V4 Availability and Team
+  Operations Readiness explanations, with fail-closed envelopes and no
+  frontend or dashboard exposure.
 - [V4 Phase 14 explanation API contract planning](docs/V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING.md)
   - governed API contract plan for exposing certified V4 Availability and Team
   Operations Readiness explanations without implementing routes or UI.
