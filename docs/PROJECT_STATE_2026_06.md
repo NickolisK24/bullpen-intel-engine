@@ -237,6 +237,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 17 Explanation API Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend API Only |
 | BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning | Complete / Ready for Frontend Explanation Surface Implementation |
 | BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation | Complete / Frontend Surfaces Implemented / Ready for Certification Readiness Review |
+| BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review | Complete / Ready for Formal Frontend Certification Review |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5816,6 +5817,83 @@ Recommended next milestone:
 
 ```text
 V4 Phase 20 - Frontend Explanation Surface Certification Readiness Review
+```
+
+## BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review
+
+BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness
+Review is complete.
+
+The review record is:
+
+- `docs/V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md`
+
+Review decision:
+
+```text
+READY_FOR_V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION
+```
+
+Certification status:
+
+```text
+FRONTEND_EXPLANATION_SURFACES_NOT_FORMALLY_CERTIFIED
+FORMAL_FRONTEND_CERTIFICATION_REVIEW_PENDING
+PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 20 review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Surface coverage | PASS |
+| Certified API consumption | PASS |
+| Progressive disclosure | PASS |
+| Fail-closed UI | PASS |
+| Governance | PASS |
+| UX anti-regression | PASS |
+| Testing | PASS |
+| Behavior preservation | PASS |
+
+Phase 20 confirms frontend explanation surfaces preserve:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 20 confirms the UI does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- dashboard redesign
+- production rollout approval
+
+Non-blocking observations:
+
+- formal frontend certification should retain final browser review evidence for
+  opened explanation disclosures
+- formal frontend certification should retain accessibility smoke evidence for
+  keyboard operation, focus visibility, and screen-reader-safe status language
+- production rollout remains outside the Phase 20 readiness review
+
+Recommended next milestone:
+
+```text
+V4 Phase 21 - Frontend Explanation Surface Formal Certification Review
 ```
 
 ## V2 Production Fail-Closed Diagnosis
