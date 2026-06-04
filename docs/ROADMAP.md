@@ -25,20 +25,18 @@ The next platform capability track is V4 Evidence and Explanation. V4 has
 certified internal backend Availability Explanation Integration and internal
 backend Team Operations Readiness Explanations. V4 explains why existing
 governed states appear without ranking, selecting, predicting, recommending, or
-automating a decision. V4 Phase 14 defines the governed API contract plan for
-certified explanation exposure without implementing routes or UI.
+automating a decision. V4 Phase 15 implements internal governed backend routes
+for certified explanation exposure without frontend or Dashboard UI.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 15 - Explanation API Route Implementation
+V4 Phase 16 - Explanation API Route Certification Readiness Review
 ```
 
-The next V4 milestone should implement backend route integration for certified
-Availability and Team Operations Readiness explanations only, keeping routes
-internal or uncertified until route certification and without modifying
-Dashboard UI, source engine calculations, Recommendation Engine behavior, or
-rollout status.
+The next V4 milestone should review whether the internal explanation API routes
+are ready for formal route certification review before any frontend or
+Dashboard exposure is planned.
 
 ## Product Tracks
 
@@ -50,12 +48,12 @@ rollout status.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; API contract planning complete / no route implemented | Implement backend explanation route integration before UI exposure |
+| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; internal backend explanation routes implemented / no frontend or Dashboard exposure | Complete route certification-readiness review before UI exposure |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 15 explanation API route implementation.
+1. V4 Phase 16 explanation API route certification-readiness review.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -172,6 +170,10 @@ governance and lifecycle evidence process linked from
   routes, shared response shape, fail-closed response shape, safe error
   handling, governance requirements, testing requirements, certification
   boundaries, and readiness for Phase 15 route implementation.
+- V4 Phase 15 implemented governed internal backend API routes for certified
+  V4 Availability and Team Operations Readiness explanations, including shared
+  success and fail-closed envelopes, certified scope allowlists, safe request
+  validation, route tests, and no frontend or Dashboard exposure.
 
 For detailed milestone history, use:
 
