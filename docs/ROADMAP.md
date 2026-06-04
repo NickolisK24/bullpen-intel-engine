@@ -39,18 +39,21 @@ certifies them with non-blocking observations while leaving rollout approval
 for a later milestone. V4 Phase 22 defines controlled rollout strategy,
 monitoring expectations, manual review requirements, observation evidence,
 approval gates, and rollback conditions for those certified frontend
-explanation surfaces.
+explanation surfaces. V4 Phase 23 approves controlled rollout for certified
+frontend explanation surfaces while keeping full production rollout not
+approved until observation evidence is retained and reviewed.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 23 - Frontend Explanation Surface Controlled Rollout
+V4 Phase 24 - Frontend Explanation Surface Controlled Rollout Observation Review
 ```
 
-The next V4 milestone should execute the controlled rollout approval review,
-capture retained manual evidence, create or update monitoring artifacts,
-evaluate rollback conditions, and determine whether certified frontend
-explanation surfaces may enter controlled rollout.
+The next V4 milestone should capture controlled rollout observation evidence,
+review desktop, mobile, responsive, accessibility, fail-closed, and governance
+checks, evaluate monitoring signals, and determine whether controlled rollout
+can continue, pause, or proceed toward a separate production rollout approval
+review.
 
 ## Product Tracks
 
@@ -62,12 +65,12 @@ explanation surfaces may enter controlled rollout.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; rollout planning complete | Execute controlled rollout approval review |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; controlled rollout approved; full production rollout not approved | Observe controlled rollout and retain monitoring evidence |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 23 frontend explanation surface controlled rollout review.
+1. V4 Phase 24 frontend explanation surface controlled rollout observation review.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -228,6 +231,11 @@ governance and lifecycle evidence process linked from
   requirements, monitoring expectations, rollback conditions, observation
   evidence requirements, approval gates, certification preservation, and
   readiness for Phase 23 controlled rollout review.
+- V4 Phase 23 approved controlled rollout for certified frontend explanation
+  surfaces, including Operational Readiness explanations, selected pitcher
+  Availability explanations, shared disclosure, certified explanation APIs,
+  monitoring expectations, rollback conditions, required observation evidence,
+  and full production rollout boundaries.
 
 For detailed milestone history, use:
 

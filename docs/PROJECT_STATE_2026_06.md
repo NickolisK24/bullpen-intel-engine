@@ -240,6 +240,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review | Complete / Ready for Formal Frontend Certification Review |
 | BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification Review | Certified with Non-Blocking Observations / Rollout Not Approved |
 | BaseballOS V4 Phase 22 Frontend Explanation Surface Rollout Planning And Monitoring | Complete / Ready for Controlled Rollout Review |
+| BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout Decision | Controlled Rollout Approved / Full Production Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6070,6 +6071,115 @@ Recommended next milestone:
 
 ```text
 V4 Phase 23 - Frontend Explanation Surface Controlled Rollout
+```
+
+## BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout Decision
+
+BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout
+Decision is complete.
+
+The controlled rollout decision record is:
+
+- `docs/V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION.md`
+
+Controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+```
+
+Production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 23 rollout scope:
+
+- Operational Readiness explanation surface
+- selected pitcher Availability explanation surface
+- shared explanation disclosure component
+- certified explanation APIs consumed by frontend explanation surfaces
+- frontend API normalization for certified explanation routes
+- fail-closed explanation rendering
+- governance-safe explanation presentation
+
+Phase 23 certification summary:
+
+- Availability Explanation Integration remains certified with non-blocking
+  observations.
+- Team Operations Readiness Explanations remain certified with non-blocking
+  observations.
+- Explanation APIs remain certified with non-blocking observations.
+- Frontend explanation surfaces remain certified with non-blocking
+  observations.
+
+Phase 23 controlled rollout audience:
+
+- maintainer
+- internal review
+- limited evaluation users when explicitly included by the maintainer
+
+Phase 23 required observation evidence:
+
+- desktop browser review
+- mobile browser review
+- responsive validation
+- accessibility smoke review
+- fail-closed validation
+- governance validation
+
+Phase 23 monitoring expectations:
+
+- Explanation API failures
+- frontend failures
+- governance regressions
+- Dashboard growth regressions
+- accessibility observations
+- user confusion indicators
+
+Phase 23 rollback conditions include:
+
+- recommendation-like behavior
+- ranking, selection, prediction, pitcher advice, matchup advice, or decision
+  automation
+- missing or malformed governance fields
+- fail-closed behavior that fabricates content
+- unsupported or uncertified explanation API consumption
+- Dashboard usability regression
+- accessibility regression
+- explanation-induced Dashboard clutter
+
+Phase 23 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 23 does not authorize:
+
+- unrestricted production release
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- dashboard redesign
+
+Recommended next milestone:
+
+```text
+V4 Phase 24 - Frontend Explanation Surface Controlled Rollout Observation Review
 ```
 
 ## V2 Production Fail-Closed Diagnosis
