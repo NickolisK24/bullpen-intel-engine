@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Phase 2 Observation Taxonomy Approved |
+| V5 Bullpen Intelligence Surface | Phase 3 Architecture Definition Approved |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md](docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md).
+[docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md](docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md).
 
 ## Core Capabilities
 
@@ -211,22 +211,28 @@ unless implementation files change.
 - [V5 Phase 2 Observation Taxonomy](docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md)
   - authorized observation families, language rules, input boundaries,
     output expectations, and fail-closed requirements.
+- [V5 Phase 3 Architecture Definition](docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md)
+  - governed observation lifecycle, domain architecture, builder architecture,
+    evidence architecture, trust architecture, severity architecture,
+    fail-closed architecture, frontend surface architecture, governance
+    protection layer, and Phase 4 boundary.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 2 is approved as the observation taxonomy for governed observation
-surfacing. V5 may describe inventory, readiness, workload pressure, constraint,
-freshness, trust, availability movement, and snapshot change observations when
-derived from existing trusted platform state.
+V5 Phase 3 is approved as the architecture definition for governed observation
+surfacing. It defines how trusted platform state may flow through future
+observation builders, evidence references, trust and severity metadata,
+fail-closed handling, and frontend intelligence presentation without creating
+new decisions.
 
-V5 Phase 2 does not authorize implementation. V5 does not authorize ranking,
+V5 Phase 3 does not authorize implementation. V5 does not authorize ranking,
 selection, prediction, pitcher recommendations, matchup advice, best-arm
 language, role advice, or automated decision-making.
 
 Recommended next milestone:
 
 ```text
-V5 Phase 3 - Bullpen Intelligence Surface Backend Observation Contracts
+V5 Phase 4 - Observation Domain And Contracts
 ```
 
 ## Author

@@ -26,7 +26,12 @@ milestones. It does not replace the detailed evidence records linked from
 - Phase 2 approved the observation taxonomy, including authorized observation
   families, approved inputs, future output requirements, governance boundary
   matrix, language rules, fail-closed requirements, and readiness for Phase 3
-  backend observation contract planning.
+  architecture definition.
+- Phase 3 approved the architecture definition, including the observation
+  lifecycle, domain architecture, builder architecture, evidence architecture,
+  trust architecture, severity architecture, fail-closed architecture,
+  frontend surface architecture, governance protection layer, and readiness for
+  Phase 4 observation domain and contracts.
 - V5 does not authorize implementation, ranking, selection, pitcher
   recommendations, matchup advice, best-arm language, role advice, prediction,
   or automated decision-making.

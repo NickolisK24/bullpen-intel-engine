@@ -680,13 +680,29 @@ V5 Phase 2 is complete when:
 Recommended next milestone:
 
 ```text
-V5 Phase 3 - Bullpen Intelligence Surface Backend Observation Contracts
+V5 Phase 3 - Bullpen Intelligence Surface Architecture Definition
 ```
 
-Phase 3 should define deterministic backend observation contracts without
-building observation generators, API routes, frontend surfaces, database
-changes, runtime behavior changes, ranking, selection, recommendation,
-prediction, or pitcher advice.
+Phase 3 should define the governed observation lifecycle, domain architecture,
+builder architecture, evidence architecture, trust architecture, severity
+architecture, fail-closed architecture, frontend surface architecture, and
+governance protection layer without building observation generators, API
+routes, frontend surfaces, database changes, runtime behavior changes, ranking,
+selection, recommendation, prediction, or pitcher advice.
+
+## V5 Phase 3 Follow-Up
+
+V5 Phase 3 has completed the Bullpen Intelligence Surface architecture
+definition:
+
+- `docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md`
+
+Phase 3 defines the observation lifecycle, domain architecture, builder
+architecture, evidence architecture, trust architecture, severity architecture,
+fail-closed architecture, frontend surface architecture, governance protection
+layer, and Phase 4 boundary.
+
+This follow-up does not authorize implementation or runtime behavior changes.
 
 ## Final Boundary
 
