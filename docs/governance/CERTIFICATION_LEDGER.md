@@ -11,18 +11,29 @@ by surface. Detailed evidence remains in the linked source records.
 | Recommendation Engine V2 / Dashboard V2 bullpen-state intelligence | Certified / production ready | Production rollout approved for implemented scope | [V2 formal certification](../RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md), [V2.5 Phase 16 rollout decision](../V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md) |
 | V2.5 governance hardening | Complete | Governance closeout complete | [V2.5 Phase 29 closeout](../V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md) |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps | Controlled rollout approved; full production rollout not approved | [V3 Phase 13 certification review](../V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md), [V3 Phase 19 controlled rollout approval](../V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md) |
+| Availability Explanation Integration | Certified with non-blocking observations | Internal backend only; API, frontend, dashboard, and rollout not approved | [V4 Phase 8 formal certification](../V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 | Prospect Pipeline | Prototype | Not promotion-ready | [V2.5 Phase 19 prototype surface review](../V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md), [V2.5 Phase 23 evidence backfill plan](../V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md) |
 
 ## Mandatory Governance Invariants
 
-The certified recommendation and readiness surfaces preserve:
+The certified recommendation, readiness, and explanation surfaces preserve:
 
 ```text
 ranking_applied === false
 selection_made === false
 ```
 
-The certified recommendation and readiness surfaces do not authorize:
+The certified V4 explanation surface additionally preserves:
+
+```text
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+The certified recommendation, readiness, and explanation surfaces do not
+authorize:
 
 - ranking behavior
 - selection behavior
@@ -43,6 +54,7 @@ The certified recommendation and readiness surfaces do not authorize:
 | V3 readiness formal certification | Certified with non-blocking operational gaps | [V3 Phase 13 certification review](../V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md) |
 | V3 readiness controlled rollout | Controlled rollout approved | [V3 Phase 19 controlled rollout approval](../V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md) |
 | V3 readiness full production rollout | Not approved | [V3 Phase 19 controlled rollout approval](../V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md) |
+| V4 availability explanation certification | Certified with non-blocking observations for internal backend integration only | [V4 Phase 8 formal certification](../V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 
 ## Evidence Requirements
 

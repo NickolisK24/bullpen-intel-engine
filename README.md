@@ -24,7 +24,7 @@ remains the decision maker.
 | Recommendation Engine V1 | Certified / production ready |
 | Recommendation Engine V2 / Dashboard V2 | Certified / production rollout approved for implemented scope |
 | Team Operations Bullpen Readiness | Certified with non-blocking operational gaps / controlled rollout approved |
-| V4 Evidence and Explanation Layer | Availability explanation certification-readiness complete / internal backend only |
+| V4 Evidence and Explanation Layer | Availability explanations certified with non-blocking observations / internal backend only |
 | Prospect Pipeline | Prototype |
 
 Current V3 rollout state:
@@ -38,8 +38,9 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW_COMPLETE
-READY_FOR_V4_PHASE_8_FORMAL_CERTIFICATION_REVIEW
+V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+READY_FOR_V4_PHASE_9_AVAILABILITY_EXPLANATION_API_CONTRACT_PLANNING
 ```
 
 ## Core Capabilities
@@ -202,6 +203,9 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 8 availability explanation formal certification](docs/V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md)
+  - official certification record for internal backend Availability
+  Explanation Integration.
 - [V4 Phase 7 availability explanation certification readiness](docs/V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md)
   - readiness review for availability explanation coverage, reason mapping,
   evidence attribution, limitations, governance, determinism, testing, and
