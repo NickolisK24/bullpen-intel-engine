@@ -38,11 +38,12 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 Current V4 implementation state:
 
 ```text
-V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING_COMPLETE
 AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
 EXPLANATION_API_LAYER_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
-NO_FRONTEND_OR_DASHBOARD_EXPLANATION_EXPOSURE
+FRONTEND_EXPLANATION_INTEGRATION_PLANNED
+READY_FOR_V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION
 ```
 
 ## Core Capabilities
@@ -217,6 +218,10 @@ MLB.
   certification, production, rollout, and governance state by surface.
 - [Operational reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
+- [V4 Phase 18 explanation API frontend integration planning](docs/V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md)
+  - governed frontend integration plan for certified explanation APIs, with
+    progressive disclosure, fail-closed UI, governance display, and dashboard
+    anti-regression rules.
 - [V4 Phase 17 explanation API formal certification](docs/V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md)
   - certified internal backend API layer for Availability and Team Operations
     Readiness explanations.

@@ -235,6 +235,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 15 Explanation API Route Implementation | Complete / Internal Backend Routes Only |
 | BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review | Complete / Ready for Formal API Certification |
 | BaseballOS V4 Phase 17 Explanation API Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend API Only |
+| BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning | Complete / Ready for Frontend Explanation Surface Implementation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5642,6 +5643,97 @@ Recommended next milestone:
 V4 Phase 18 - Explanation API Frontend Integration Planning
 ```
 
+## BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning
+
+BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning is
+complete.
+
+The planning record is:
+
+- `docs/V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md`
+
+Phase status:
+
+```text
+V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING_COMPLETE
+```
+
+Planning status:
+
+```text
+PLANNING_ONLY
+NO_FRONTEND_IMPLEMENTATION
+NO_BACKEND_IMPLEMENTATION
+NO_API_IMPLEMENTATION
+NO_DASHBOARD_CHANGES
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION
+```
+
+Phase 18 defines:
+
+- Availability explanation frontend access planning
+- Team Operations Readiness explanation frontend access planning
+- shared explanation UI patterns
+- default visibility rules
+- progressive disclosure strategy
+- evidence and limitation display strategy
+- fail-closed UI behavior
+- compact governance display
+- Dashboard UX anti-regression rules
+- frontend contract requirements
+- frontend testing requirements
+
+Phase 18 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 18 does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- Dashboard redesign
+- uncertified explanation types
+
+UX anti-regression summary:
+
+- do not add full explanation blocks directly to the Dashboard by default
+- do not display full evidence lists inline by default
+- do not repeat full governance text across multiple large sections
+- do not add certification notes as default Dashboard content
+- do not create one explanation card per pitcher on the main Dashboard
+- do not create comparison tables for explanation content
+- prefer drawers, modals, or compact expandable panels for evidence detail
+- keep the first viewport focused on operational state
+- preserve mobile page length by lazy-loading and collapsing detail surfaces
+
+Recommended next milestone:
+
+```text
+V4 Phase 19 - Frontend Explanation Surface Implementation
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -6090,6 +6182,18 @@ V4 Phase 17 authorizes only formal certification review documentation and
 certification-status recording for the internal backend V4 Explanation API
 Layer. It does not authorize runtime behavior changes, frontend UI, Dashboard
 behavior changes, database migration, route rollout, public exposure,
+uncertified explanation type exposure, future explanation scopes,
+Recommendation Explanations, Risk Distribution Explanations, availability
+calculation changes, fatigue calculation changes, readiness calculation
+changes, readiness status assignment changes, Recommendation Engine behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 18 authorizes only frontend integration planning documentation for the
+certified V4 Explanation API layer. It does not authorize frontend
+implementation, backend implementation, API implementation, Dashboard redesign,
+runtime behavior changes, database migration, route rollout, public exposure,
 uncertified explanation type exposure, future explanation scopes,
 Recommendation Explanations, Risk Distribution Explanations, availability
 calculation changes, fatigue calculation changes, readiness calculation

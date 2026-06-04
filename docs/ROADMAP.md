@@ -27,18 +27,20 @@ backend Team Operations Readiness Explanations. V4 explains why existing
 governed states appear without ranking, selecting, predicting, recommending, or
 automating a decision. V4 Phase 17 certifies the internal backend Explanation
 API layer with non-blocking observations for certified Availability and Team
-Operations Readiness explanations. Frontend and Dashboard explanation exposure
-remain unimplemented and unauthorized.
+Operations Readiness explanations. V4 Phase 18 defines frontend integration
+planning for those certified APIs using progressive disclosure, compact
+governance display, fail-closed UI behavior, and dashboard anti-regression
+rules.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 18 - Explanation API Frontend Integration Planning
+V4 Phase 19 - Frontend Explanation Surface Implementation
 ```
 
-The next V4 milestone should plan how certified explanation API payloads could
-be consumed safely by frontend surfaces before any UI implementation is
-authorized.
+The next V4 milestone should implement only the planned governed frontend
+explanation surface, without changing backend behavior, API contracts,
+Dashboard structure beyond the planned surface, or explanation governance.
 
 ## Product Tracks
 
@@ -50,12 +52,12 @@ authorized.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations / no frontend or Dashboard exposure | Plan frontend integration before UI exposure |
+| V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, and explanation API layer certified with non-blocking observations; frontend integration planned / no UI implemented yet | Implement governed frontend explanation surface only after Phase 18 plan |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 18 explanation API frontend integration planning.
+1. V4 Phase 19 frontend explanation surface implementation.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -188,6 +190,12 @@ governance and lifecycle evidence process linked from
   behavior preservation while leaving frontend, Dashboard, rollout,
   Recommendation Explanations, Risk Distribution Explanations, and future
   explanation scopes for future phases.
+- V4 Phase 18 defined governed frontend integration planning for certified
+  explanation APIs, including candidate surfaces, default visibility,
+  progressive disclosure, Availability and Team Operations Readiness UI
+  strategy, fail-closed UI behavior, compact governance display, Dashboard
+  anti-regression rules, frontend contract requirements, test requirements, and
+  readiness for Phase 19 frontend explanation surface implementation.
 
 For detailed milestone history, use:
 
