@@ -25,19 +25,20 @@ The next platform capability track is V4 Evidence and Explanation. V4 has
 certified internal backend Availability Explanation Integration and internal
 backend Team Operations Readiness Explanations. V4 explains why existing
 governed states appear without ranking, selecting, predicting, recommending, or
-automating a decision. V4 Phase 13 certifies readiness explanations with
-non-blocking observations and without API or UI exposure.
+automating a decision. V4 Phase 14 defines the governed API contract plan for
+certified explanation exposure without implementing routes or UI.
 
 Recommended next milestone:
 
 ```text
-V4 Phase 14 - Team Operations Readiness Explanation API Contract Planning
+V4 Phase 15 - Explanation API Route Implementation
 ```
 
-The next V4 milestone should plan the API contract for certified internal
-backend Team Operations Readiness explanations without implementing a route,
-modifying Dashboard UI, changing readiness calculations, changing
-Recommendation Engine behavior, or approving rollout.
+The next V4 milestone should implement backend route integration for certified
+Availability and Team Operations Readiness explanations only, keeping routes
+internal or uncertified until route certification and without modifying
+Dashboard UI, source engine calculations, Recommendation Engine behavior, or
+rollout status.
 
 ## Product Tracks
 
@@ -49,12 +50,12 @@ Recommendation Engine behavior, or approving rollout.
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
-| V4 Evidence and Explanation Layer | Availability explanations certified; Team Operations readiness explanations certified with non-blocking observations / internal backend only | Plan API contract before route or UI exposure |
+| V4 Evidence and Explanation Layer | Availability and Team Operations readiness explanations certified; API contract planning complete / no route implemented | Implement backend explanation route integration before UI exposure |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V4 Phase 14 Team Operations readiness explanation API contract planning.
+1. V4 Phase 15 explanation API route implementation.
 2. Controlled rollout monitoring artifact retention for V3 readiness.
 3. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
@@ -68,9 +69,9 @@ Recommendation Engine behavior, or approving rollout.
 These are candidates, not commitments:
 
 - Team Operations Bullpen Readiness full rollout planning.
-- V4 Evidence and Explanation route, frontend, certification, and rollout work
-  after internal readiness explanation implementation, certification planning,
-  API contract planning, and separate authorization.
+- V4 Evidence and Explanation frontend, certification, and rollout work after
+  backend route implementation, route certification planning, route
+  certification review, and separate authorization.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -166,6 +167,11 @@ governance and lifecycle evidence process linked from
   with non-blocking observations, preserving explanation-only governance and
   leaving API, frontend, dashboard, rollout, Risk Distribution Explanations, and
   future readiness expansion areas for future phases.
+- V4 Phase 14 defined governed API contract planning for certified V4
+  Availability and Team Operations Readiness explanations, including candidate
+  routes, shared response shape, fail-closed response shape, safe error
+  handling, governance requirements, testing requirements, certification
+  boundaries, and readiness for Phase 15 route implementation.
 
 For detailed milestone history, use:
 

@@ -57,6 +57,7 @@ authorize:
 | V3 readiness full production rollout | Not approved | [V3 Phase 19 controlled rollout approval](../V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md) |
 | V4 availability explanation certification | Certified with non-blocking observations for internal backend integration only | [V4 Phase 8 formal certification](../V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
 | V4 Team Operations readiness explanation certification | Certified with non-blocking observations for internal backend explanations only | [V4 Phase 13 formal certification](../V4_PHASE_13_TEAM_OPERATIONS_READINESS_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md) |
+| V4 explanation API contract planning | Complete; route implementation not yet performed | [V4 Phase 14 API contract planning](../V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING.md) |
 
 ## Evidence Requirements
 

@@ -231,6 +231,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation | Complete / Internal Backend Adapter Only |
 | BaseballOS V4 Phase 12 Team Operations Readiness Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
 | BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
+| BaseballOS V4 Phase 14 Explanation API Contract Planning | Complete / Ready for Route Implementation |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -5255,7 +5256,97 @@ Recommendation Engine behavior changes.
 Recommended next milestone:
 
 ```text
-V4 Phase 14 - Team Operations Readiness Explanation API Contract Planning
+V4 Phase 14 - Explanation API Contract Planning
+```
+
+## BaseballOS V4 Phase 14 Explanation API Contract Planning
+
+BaseballOS V4 Phase 14 Explanation API Contract Planning is complete.
+
+The planning record is:
+
+- `docs/V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING.md`
+
+Phase status:
+
+```text
+V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING_COMPLETE
+```
+
+Implementation status:
+
+```text
+PLANNING_ONLY
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION
+```
+
+Phase 14 defines governed API contract planning for certified V4 explanations
+only.
+
+Certified explanation types eligible for future route planning:
+
+- `availability_explanation`
+- `team_readiness_explanation`
+
+Candidate route contracts planned:
+
+- `GET /api/explanations/availability/:pitcher_id`
+- `GET /api/explanations/team-readiness`
+- `GET /api/explanations/team-readiness/:scope`
+
+Shared contract areas defined:
+
+- certified explanation type boundaries
+- candidate route purpose and subject type
+- expected safe inputs
+- prohibited query intent
+- shared successful response shape
+- fail-closed response shape
+- safe error handling recommendations
+- envelope-level and explanation-level governance metadata
+- certification boundary for future explanation types
+- future route testing requirements
+
+Phase 14 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 14 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 14 does not authorize API route implementation, frontend exposure,
+dashboard exposure, uncertified explanation scopes, Recommendation
+Explanations, Risk Distribution Explanations, database persistence, rollout
+approval, source engine behavior changes, Availability Engine behavior
+changes, Team Operations Readiness behavior changes, Recommendation Engine
+behavior changes, fatigue calculation changes, or availability calculation
+changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 15 - Explanation API Route Implementation
 ```
 
 ## V2 Production Fail-Closed Diagnosis
@@ -5670,6 +5761,16 @@ production rollout approval, pitcher ranking, pitcher selection, pitcher
 recommendation, prediction behavior, best/preferred arm behavior, hidden
 priority ordering, pitcher-level advice, matchup advice, or decision
 automation.
+V4 Phase 14 authorizes only explanation API contract planning documentation for
+certified V4 Availability and Team Operations Readiness explanations. It does
+not authorize runtime behavior changes, API route implementation, frontend UI,
+dashboard behavior changes, database migration, availability calculation
+changes, fatigue calculation changes, readiness calculation changes, readiness
+status assignment changes, Recommendation Engine behavior changes, trust logic
+changes, freshness logic changes, rollout approval, uncertified explanation
+scope exposure, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred arm behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,
