@@ -186,9 +186,34 @@ Phase 8 should certify the combined backend contract, deterministic builders,
 API surface, frontend client, frontend panel, fail-closed behavior, and
 governance safeguards before any rollout approval.
 
+## 8. Phase 8 Follow-Up
+
+V5 Phase 8 Governance Certification is complete:
+
+```text
+V5_PHASE_8_GOVERNANCE_CERTIFIED
+CONTROLLED_ROLLOUT_READY
+```
+
+The Phase 8 record is:
+
+- `docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md`
+
+Phase 8 certifies the combined contracts, builders, API surface, frontend
+surface, tests, documentation, fail-closed behavior, trust/freshness/
+confidence propagation, and prohibited behavior safeguards.
+
+Current next milestone:
+
+```text
+V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+```
+
 ## Final Boundary
 
 This document records frontend implementation only. It does not certify the
 full V5 Bullpen Intelligence Surface for production rollout and does not
 authorize ranking, selection, prediction, pitcher recommendations, matchup
-advice, best-arm language, role advice, or automated decision-making.
+advice, best-arm language, role advice, or automated decision-making. The
+separate Phase 8 record certifies governance and marks the surface
+controlled-rollout ready, without approving full production rollout.

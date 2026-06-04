@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Phase 7 Frontend Intelligence Surface Complete |
+| V5 Bullpen Intelligence Surface | Governance Certified / Controlled Rollout Ready |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md](docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md).
+[docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md](docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md).
 
 ## Core Capabilities
 
@@ -232,16 +232,20 @@ unless implementation files change.
   - read-only Dashboard panel consuming `GET /api/observations`, frontend
     contract guard, evidence, limitations, trust, freshness, confidence, and
     governance display.
+- [V5 Phase 8 Governance Certification](docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md)
+  - full V5 governance certification across contracts, builders, API,
+    frontend surface, fail-closed behavior, trust, freshness, confidence, and
+    prohibited behavior review.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 7 is complete as the frontend read-only intelligence surface for
-governed observation surfacing. The Dashboard panel consumes deterministic
-supplied-state observations from `GET /api/observations` and displays evidence,
-limitations, trust, freshness, confidence, explanation references, and the
-preserved governance flags.
+V5 Phase 8 governance certification is complete. The combined contracts,
+builders, read-only API, frontend panel, documentation, and tests are certified
+as governed observation surfacing, with evidence, limitations, trust,
+freshness, confidence, explanation references, and preserved governance flags.
 
-V5 Phase 7 does not authorize backend decision logic, database migrations, live
+V5 Phase 8 marks the surface controlled-rollout ready. It does not authorize
+full production rollout, backend decision logic, database migrations, live
 runtime integration, runtime observation generation from MLB data, ranking,
 selection, prediction, pitcher recommendations, matchup advice, best-arm
 language, role advice, or automated decision-making.
@@ -249,7 +253,7 @@ language, role advice, or automated decision-making.
 Recommended next milestone:
 
 ```text
-V5_PHASE_8_GOVERNANCE_CERTIFICATION
+V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
 ```
 
 ## Author

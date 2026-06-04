@@ -251,6 +251,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 5 Observation Builder Foundation | Complete / Backend Builders Only |
 | BaseballOS V5 Phase 6 Observation API Surface | Complete / Backend Read-Only API Only |
 | BaseballOS V5 Phase 7 Frontend Intelligence Surface | Complete / Frontend Read-Only Surface Only |
+| BaseballOS V5 Phase 8 Governance Certification | Governance Certified / Controlled Rollout Ready |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6855,6 +6856,73 @@ Recommended next milestone:
 V5_PHASE_8_GOVERNANCE_CERTIFICATION
 ```
 
+## BaseballOS V5 Phase 8 Governance Certification
+
+BaseballOS V5 Phase 8 Governance Certification is complete.
+
+The Phase 8 record is:
+
+- `docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md`
+
+Phase 8 certifies the governed Bullpen Intelligence Surface across Phase 4
+contracts, Phase 5 deterministic builders, Phase 6 read-only API surface,
+Phase 7 frontend surface, documentation, tests, fail-closed behavior, trust,
+freshness, confidence, and prohibited behavior safeguards.
+
+Phase 8 decision:
+
+```text
+V5_PHASE_8_GOVERNANCE_CERTIFIED
+```
+
+Phase 8 rollout readiness state:
+
+```text
+CONTROLLED_ROLLOUT_READY
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 8 reviewed:
+
+- backend observation contracts
+- deterministic observation builders
+- `GET /api/observations`
+- `POST /api/observations/preview`
+- frontend Bullpen Intelligence panel
+- frontend observation client normalization
+- evidence, limitations, trust, freshness, confidence, and explanation display
+- allowed and forbidden language tests
+- fail-closed API, builder, contract, and frontend states
+
+Phase 8 does not authorize:
+
+- full production rollout
+- backend decision logic
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7439,6 +7507,18 @@ pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
 best-arm language, closer/setup/role advice, prediction behavior, hidden
 priority ordering, pitcher-level advice, production rollout, or automated
 decision-making.
+V5 Phase 8 authorizes only governance certification documentation, status
+recording, certification-ledger updates, and controlled-rollout readiness
+classification for the governed Bullpen Intelligence Surface. It does not
+authorize full production rollout, backend decision logic, database migrations,
+live runtime integration, runtime observation generation from MLB data,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, controlled rollout expansion, or
+automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

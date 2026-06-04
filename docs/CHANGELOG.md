@@ -48,10 +48,14 @@ milestones. It does not replace the detailed evidence records linked from
   rendering, evidence, limitations, trust, freshness, confidence, explanation
   references, empty/protected states, API failure handling, and focused
   frontend tests.
-- V5 Phase 7 does not authorize backend decision logic, database migrations,
-  live runtime integration, runtime observation generation from MLB data,
-  ranking, selection, pitcher recommendations, matchup advice, best-arm
-  language, role advice, prediction, or automated decision-making.
+- Phase 8 certified the combined V5 governance boundary across contracts,
+  builders, read-only API, frontend surface, documentation, fail-closed
+  behavior, trust, freshness, confidence, and prohibited behavior safeguards.
+- V5 Phase 8 marks the surface controlled-rollout ready. It does not authorize
+  full production rollout, backend decision logic, database migrations, live
+  runtime integration, runtime observation generation from MLB data, ranking,
+  selection, pitcher recommendations, matchup advice, best-arm language, role
+  advice, prediction, or automated decision-making.
 
 ## V4 - Evidence And Explanation Layer
 
