@@ -252,6 +252,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 6 Observation API Surface | Complete / Backend Read-Only API Only |
 | BaseballOS V5 Phase 7 Frontend Intelligence Surface | Complete / Frontend Read-Only Surface Only |
 | BaseballOS V5 Phase 8 Governance Certification | Governance Certified / Controlled Rollout Ready |
+| BaseballOS V5 Phase 9 Controlled Rollout Review | Controlled Rollout Approved / Full Production Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6923,6 +6924,52 @@ Recommended next milestone:
 V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
 ```
 
+## BaseballOS V5 Phase 9 Controlled Rollout Review
+
+BaseballOS V5 Phase 9 Controlled Rollout Review is complete.
+
+The Phase 9 record is:
+
+- `docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md`
+
+Phase 9 reviews the governed Bullpen Intelligence Surface across contracts,
+deterministic builders, read-only API routes, frontend rendering,
+documentation, tests, fail-closed behavior, trust, freshness, confidence,
+evidence, limitations, and preserved governance flags.
+
+Phase 9 decision:
+
+```text
+V5_PHASE_9_CONTROLLED_ROLLOUT_APPROVED
+```
+
+Phase 9 rollout state:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 9 approved controlled rollout only. It does not authorize full
+production rollout, backend decision logic, database migrations, live runtime
+integration, runtime observation generation from MLB data, API expansion,
+frontend feature expansion, new observation families, ranking, selection,
+pitcher recommendations, matchup advice, best-arm language, role advice,
+prediction, or automated decision-making.
+
+Next milestone:
+
+```text
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7519,6 +7566,19 @@ pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
 best-arm language, closer/setup/role advice, prediction behavior, hidden
 priority ordering, pitcher-level advice, controlled rollout expansion, or
 automated decision-making.
+V5 Phase 9 authorizes only controlled rollout approval documentation, status
+recording, certification-ledger updates, controlled rollout monitoring
+expectations, retained evidence requirements, and Phase 10 production rollout
+review readiness recording for the certified Bullpen Intelligence Surface. It
+does not authorize full production rollout, backend decision logic, database
+migrations, live runtime integration, runtime observation generation from MLB
+data, API expansion, frontend feature expansion, new observation families,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

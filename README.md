@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Governance Certified / Controlled Rollout Ready |
+| V5 Bullpen Intelligence Surface | Controlled Rollout Approved / Production Rollout Not Approved |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md](docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md).
+[docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md](docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md).
 
 ## Core Capabilities
 
@@ -236,24 +236,27 @@ unless implementation files change.
   - full V5 governance certification across contracts, builders, API,
     frontend surface, fail-closed behavior, trust, freshness, confidence, and
     prohibited behavior review.
+- [V5 Phase 9 Controlled Rollout Review](docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md)
+  - controlled rollout approval for the certified V5 Bullpen Intelligence
+    Surface, while keeping full production rollout unapproved.
 
 ## Next Phase: V5 Bullpen Intelligence Surface
 
-V5 Phase 8 governance certification is complete. The combined contracts,
-builders, read-only API, frontend panel, documentation, and tests are certified
-as governed observation surfacing, with evidence, limitations, trust,
-freshness, confidence, explanation references, and preserved governance flags.
+V5 Phase 9 controlled rollout review is complete. The certified contracts,
+builders, read-only API, frontend panel, documentation, and tests have been
+reviewed for controlled rollout, with evidence, limitations, trust, freshness,
+confidence, explanation references, and preserved governance flags.
 
-V5 Phase 8 marks the surface controlled-rollout ready. It does not authorize
-full production rollout, backend decision logic, database migrations, live
-runtime integration, runtime observation generation from MLB data, ranking,
-selection, prediction, pitcher recommendations, matchup advice, best-arm
-language, role advice, or automated decision-making.
+V5 Phase 9 approves controlled rollout only. It does not authorize full
+production rollout, backend decision logic, database migrations, live runtime
+integration, runtime observation generation from MLB data, ranking, selection,
+prediction, pitcher recommendations, matchup advice, best-arm language, role
+advice, or automated decision-making.
 
-Recommended next milestone:
+Next milestone:
 
 ```text
-V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
 ```
 
 ## Author

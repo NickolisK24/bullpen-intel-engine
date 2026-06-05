@@ -9,8 +9,8 @@ BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
 V2 recommendation governance, completed V2.5 governance hardening, V3 Team
 Operations Bullpen Readiness approved for constrained controlled rollout, V4
 frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface governance certified and ready for controlled rollout
-review.
+Intelligence Surface controlled rollout approved while production rollout
+remains unapproved.
 
 Current V3 status:
 
@@ -26,22 +26,22 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 The active platform capability track is V5 Bullpen Intelligence Surface. V5
 converts existing trusted BaseballOS platform state into governed descriptive
 observations without ranking, selecting, predicting, recommending, advising, or
-automating a decision. V5 Phase 8 certifies the combined backend contracts,
-deterministic builders, read-only API, frontend Bullpen Intelligence panel,
-documentation, fail-closed behavior, trust/freshness/confidence propagation,
-and prohibited behavior safeguards.
+automating a decision. V5 Phase 9 approves controlled rollout for the certified
+backend contracts, deterministic builders, read-only API, frontend Bullpen
+Intelligence panel, documentation, fail-closed behavior,
+trust/freshness/confidence propagation, and prohibited behavior safeguards.
 
-Recommended next milestone:
+Next milestone:
 
 ```text
-V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
 ```
 
-The next V5 milestone should review controlled rollout readiness, retained
-evidence requirements, monitoring expectations, rollback criteria, manual
-browser evidence, and accessibility smoke evidence. Full production rollout,
-database changes, live runtime integration, ranking, selection, recommendation,
-prediction, matchup advice, and pitcher advice remain unauthorized.
+The next V5 milestone should review controlled rollout evidence, monitoring
+observations, rollback criteria, manual browser evidence, and accessibility
+smoke evidence before any production rollout decision. Database changes, live
+runtime integration, ranking, selection, recommendation, prediction, matchup
+advice, and pitcher advice remain unauthorized.
 
 ## Product Tracks
 
@@ -54,12 +54,13 @@ prediction, matchup advice, and pitcher advice remain unauthorized.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
-| V5 Bullpen Intelligence Surface | Governance certified / controlled rollout ready | Review controlled rollout readiness before any production approval |
+| V5 Bullpen Intelligence Surface | Governance certified / controlled rollout approved | Review retained controlled rollout evidence before any production approval |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V5 Phase 9 controlled rollout review.
+1. V5 Phase 10 production rollout review after retained controlled rollout
+   evidence exists.
 2. V4 Phase 27 post-rollout monitoring and governance preservation review.
 3. Controlled rollout monitoring artifact retention for V3 readiness.
 4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
@@ -77,7 +78,7 @@ These are candidates, not commitments:
 - Future V4+ explanation scope expansion, new frontend surfaces, or new
   explanation APIs only after separate planning, certification, and rollout
   authorization.
-- V5 controlled rollout review and production approval review.
+- V5 production approval review after retained controlled rollout evidence.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -289,6 +290,9 @@ governance and lifecycle evidence process linked from
   boundary across contracts, builders, API, frontend rendering, tests, and
   documentation, preserving false ranking and selection flags and marking the
   surface controlled-rollout ready without approving full production rollout.
+- V5 Phase 9 approved controlled rollout for the certified Bullpen Intelligence
+  Surface while preserving false ranking and selection flags and keeping full
+  production rollout unapproved.
 
 For detailed milestone history, use:
 

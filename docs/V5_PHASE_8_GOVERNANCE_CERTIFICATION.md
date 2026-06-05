@@ -317,23 +317,34 @@ Rationale:
 
 ## 12. Next Phase Boundary
 
-Recommended next milestone:
+Phase 9 follow-up:
 
 ```text
-V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+V5_PHASE_9_CONTROLLED_ROLLOUT_APPROVED
+CONTROLLED_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 ```
 
-Phase 9 may review controlled rollout readiness, evidence retention,
-monitoring requirements, manual browser evidence, accessibility smoke evidence,
-rollback criteria, and post-rollout observation requirements.
+The Phase 9 record is:
 
-Phase 9 must not approve full production rollout unless a later separate
-production approval review satisfies its evidence requirements.
+- `docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md`
+
+Next milestone:
+
+```text
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
+```
+
+Phase 10 may review production rollout readiness only after controlled rollout
+evidence, manual browser evidence, accessibility smoke evidence, fail-closed
+evidence, governance-copy evidence, and preserved false-flag evidence are
+retained.
 
 ## Final Boundary
 
-This document certifies V5 Bullpen Intelligence Surface governance and marks
-the surface controlled-rollout ready.
+This document certifies V5 Bullpen Intelligence Surface governance. A separate
+Phase 9 review approves controlled rollout while keeping full production
+rollout unapproved.
 
 It does not authorize full production rollout, live runtime observation
 generation, database changes, backend decision logic, ranking, selection,

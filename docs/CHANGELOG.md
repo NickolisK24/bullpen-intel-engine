@@ -51,11 +51,15 @@ milestones. It does not replace the detailed evidence records linked from
 - Phase 8 certified the combined V5 governance boundary across contracts,
   builders, read-only API, frontend surface, documentation, fail-closed
   behavior, trust, freshness, confidence, and prohibited behavior safeguards.
-- V5 Phase 8 marks the surface controlled-rollout ready. It does not authorize
-  full production rollout, backend decision logic, database migrations, live
-  runtime integration, runtime observation generation from MLB data, ranking,
-  selection, pitcher recommendations, matchup advice, best-arm language, role
-  advice, prediction, or automated decision-making.
+- Phase 9 approved controlled rollout for the certified V5 Bullpen
+  Intelligence Surface after reviewing contracts, builders, read-only API,
+  frontend rendering, documentation, tests, fail-closed behavior, trust,
+  freshness, confidence, and preserved governance flags.
+- V5 Phase 9 keeps full production rollout unapproved and does not authorize
+  backend decision logic, database migrations, live runtime integration,
+  runtime observation generation from MLB data, ranking, selection, pitcher
+  recommendations, matchup advice, best-arm language, role advice, prediction,
+  or automated decision-making.
 
 ## V4 - Evidence And Explanation Layer
 
