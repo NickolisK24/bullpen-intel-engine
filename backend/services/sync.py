@@ -305,6 +305,8 @@ def run_daily_sync(app, days_back: int = 7):
                 pitchers_updated=pitchers_updated,
                 errors=pull['errors'],
                 error_message=status['message'] or None,
+                source=sync_metadata.SOURCE_SCHEDULED,
+                started_at=started_at.replace(tzinfo=None),
             )
 
     except Exception as e:
@@ -315,6 +317,8 @@ def run_daily_sync(app, days_back: int = 7):
             sync_metadata.finish_sync_run(
                 sync_run_id,
                 status=sync_metadata.STATUS_FAILED,
+                source=sync_metadata.SOURCE_SCHEDULED,
+                started_at=started_at.replace(tzinfo=None),
                 errors=1,
                 error_message=str(e),
             )
@@ -336,12 +340,15 @@ def write_status(status: dict) -> None:
     can serve it. Used by both the daily APScheduler job and manual POSTs
     so both code paths produce a consistent dashboard pill.
     """
-    _ensure_logs_dir()
+    # Best-effort cache only. This file must NEVER gate the durable sync_runs
+    # write — a read-only filesystem (mkdir/open failure) here is non-fatal and
+    # is swallowed so it can never break or precede the durable record.
     try:
+        _ensure_logs_dir()
         with open(STATUS_FILE, 'w', encoding='utf-8') as fh:
             json.dump(status, fh, indent=2)
     except OSError as e:
-        # Non-fatal — sync itself succeeded, we just couldn't persist.
+        # Non-fatal — sync itself succeeded, we just couldn't persist the cache.
         logging.getLogger('baseballos.sync').warning(
             'Could not write status file: %s', e
         )
