@@ -21,8 +21,8 @@ const {
   getTeamOperationsBullpenReadinessView,
 } = await server.ssrLoadModule('/src/components/teamOperations/TeamOperationsBullpenReadinessPanel.jsx')
 const { default: Dashboard } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
-const dashboardSource = await readFile(
-  new URL('../src/components/dashboard/Dashboard.jsx', import.meta.url),
+const dataTrustSource = await readFile(
+  new URL('../src/components/trust/DataTrust.jsx', import.meta.url),
   'utf8',
 )
 
@@ -391,11 +391,14 @@ test('does not render unsafe guidance language outside required governance flags
   assert.equal(/\brank\b|\branking\b|\bselect\b|\bselection\b/i.test(text), false)
 })
 
-test('Dashboard imports the Team Operations readiness panel without breaking V2 Dashboard wiring', () => {
+test('Data & Trust page wires the Team Operations readiness panel and V2 state', () => {
+  // The operational readiness / governance panel relocated from the Dashboard
+  // to the Data & Trust page during the dashboard realignment. The Dashboard
+  // still loads as a component; the panel wiring now lives on Data & Trust.
   assert.equal(typeof Dashboard, 'function')
-  assert.ok(dashboardSource.includes('OperationalReadinessSection'))
-  assert.ok(dashboardSource.includes('getTeamOperationsBullpenReadiness'))
-  assert.ok(dashboardSource.includes('getRecommendationV2BullpenState'))
+  assert.ok(dataTrustSource.includes('OperationalReadinessSection'))
+  assert.ok(dataTrustSource.includes('getTeamOperationsBullpenReadiness'))
+  assert.ok(dataTrustSource.includes('getRecommendationV2BullpenState'))
 })
 
 test('derives unavailable view state for unsafe normalized payloads', () => {

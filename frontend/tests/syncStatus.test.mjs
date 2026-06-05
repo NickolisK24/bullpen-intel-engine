@@ -25,8 +25,8 @@ const {
 
 const htmlIncludes = (html, text) => html.includes(text)
 const now = Date.parse('2026-06-02T12:00:00Z')
-const dashboardSource = await readFile(
-  new URL('../src/components/dashboard/Dashboard.jsx', import.meta.url),
+const dataTrustSource = await readFile(
+  new URL('../src/components/trust/DataTrust.jsx', import.meta.url),
   'utf8',
 )
 
@@ -195,7 +195,10 @@ test('renders no data loaded when metadata and data are unavailable', () => {
   assert.ok(htmlIncludes(html, 'No data loaded'))
 })
 
-test('Dashboard reuses its sync status request for the trust strip', () => {
-  assert.ok(dashboardSource.includes('SyncStatusContent'))
-  assert.equal(dashboardSource.includes('<SyncStatus />'), false)
+test('Data & Trust page reuses its sync status request for the trust strip', () => {
+  // The freshness/sync detail relocated from the Dashboard to the Data & Trust
+  // page; it still renders via the shared SyncStatusContent (no duplicate
+  // self-fetching <SyncStatus /> instance).
+  assert.ok(dataTrustSource.includes('SyncStatusContent'))
+  assert.equal(dataTrustSource.includes('<SyncStatus />'), false)
 })

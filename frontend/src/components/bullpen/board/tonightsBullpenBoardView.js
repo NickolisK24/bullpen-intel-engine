@@ -88,6 +88,32 @@ export function getRoleView(role) {
   }
 }
 
+// Bullpen-wide usage-role composition (counts per role), for the dashboard.
+// Descriptive only — neutral tones, never ordered by "value".
+export function getRolesSummaryView(roles) {
+  const order = Array.isArray(roles?.order) && roles.order.length
+    ? roles.order
+    : Object.keys(ROLE_SHORT_LABELS)
+  const counts = roles?.counts || {}
+  const total = typeof roles?.total === 'number'
+    ? roles.total
+    : order.reduce((sum, key) => sum + (Number(counts[key]) || 0), 0)
+  return {
+    total,
+    rows: order.map(key => {
+      const muted = key === 'insufficient_data' || key === 'low_unclear'
+      return {
+        key,
+        label: ROLE_SHORT_LABELS[key] || key,
+        count: Number(counts[key]) || 0,
+        tone: muted
+          ? { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }
+          : { borderColor: 'rgba(129,140,248,0.40)', backgroundColor: 'rgba(129,140,248,0.12)', color: '#c7d2fe' },
+      }
+    }),
+  }
+}
+
 export function getBoardCardView(card) {
   const badge = getAvailabilityBadgeView(card?.availability_status)
   const dataState = String(card?.data_state || 'unknown').toLowerCase()

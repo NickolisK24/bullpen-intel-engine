@@ -42,6 +42,16 @@ ROLE_LONG = 'long_multi_inning'
 ROLE_LOW = 'low_unclear'
 ROLE_INSUFFICIENT = 'insufficient_data'
 
+# Canonical display order for role summaries.
+ROLE_KEYS = [
+    ROLE_LATE,
+    ROLE_SETUP,
+    ROLE_MIDDLE,
+    ROLE_LONG,
+    ROLE_LOW,
+    ROLE_INSUFFICIENT,
+]
+
 ROLE_LABELS = {
     ROLE_LATE: 'Late-Inning / High-Leverage Pattern',
     ROLE_SETUP: 'Setup / Bridge Pattern',

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
@@ -25,8 +26,14 @@ const VIEW_MODES   = [
 ]
 const PAGE_SIZE = 50
 
+const VALID_VIEWS = new Set(VIEW_MODES.map(m => m.id))
+
 export default function Bullpen() {
-  const [viewMode, setViewMode]           = useState('board')
+  const location = useLocation()
+  // Allow the dashboard's Quick Actions to deep-link to a specific tab,
+  // e.g. /bullpen?view=compare. Defaults to Tonight's Board.
+  const requestedView = new URLSearchParams(location.search).get('view')
+  const [viewMode, setViewMode]           = useState(VALID_VIEWS.has(requestedView) ? requestedView : 'board')
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
   const [selectedPitcher, setSelected]    = useState(null)

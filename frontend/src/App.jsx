@@ -4,6 +4,7 @@ import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
 import Prospects from './components/prospects/Prospects'
 import Methodology from './components/methodology/Methodology'
+import DataTrust from './components/trust/DataTrust'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/bullpen"     element={<Bullpen />} />
             <Route path="/prospects"   element={<Prospects />} />
             <Route path="/methodology" element={<Methodology />} />
+            <Route path="/trust"       element={<DataTrust />} />
           </Routes>
         </main>
       </div>
