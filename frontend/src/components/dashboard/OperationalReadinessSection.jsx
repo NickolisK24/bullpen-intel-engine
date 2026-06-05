@@ -13,6 +13,10 @@ function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
 function displayValue(value, fallback = 'Not provided') {
   if (value === false) return 'false'
   if (value === true) return 'true'
@@ -39,6 +43,37 @@ function metricLabel(value) {
     .trim()
 }
 
+function rowValue(rows, label) {
+  return asArray(rows).find(row => row.label === label)?.value
+}
+
+function availabilityShape(availability) {
+  const rows = [
+    ['Available', availability.available],
+    ['Monitor', availability.monitor],
+    ['Limited', availability.limited],
+    ['Avoid', availability.avoid],
+    ['Unavailable', availability.unavailable],
+  ].map(([label, value]) => ({
+    label,
+    count: Number.isFinite(Number(value)) ? Number(value) : 0,
+  }))
+  const total = Number.isFinite(Number(availability.total))
+    ? Number(availability.total)
+    : rows.reduce((sum, row) => sum + row.count, 0)
+  const largest = rows.reduce((current, row) => (
+    row.count > current.count ? row : current
+  ), rows[0])
+
+  return {
+    largest,
+    total,
+    label: largest.count > 0
+      ? `${largest.label}: ${countValue(largest.count)} / ${countValue(total)} total`
+      : `0 / ${countValue(total)} total`,
+  }
+}
+
 function teamReadinessExplanationParams(readinessView) {
   const team = asObject(readinessView.team)
   return {
@@ -47,7 +82,30 @@ function teamReadinessExplanationParams(readinessView) {
   }
 }
 
-function CompactMetric({ label, value, subtext = null, tone = 'border-dirt bg-chalk/30 text-chalk200' }) {
+function HeroMetric({
+  label,
+  value,
+  subtext = null,
+  eyebrow = null,
+  tone = 'border-dirt bg-field/60 text-chalk100',
+}) {
+  return (
+    <div className={`min-w-0 rounded-lg border p-4 ${tone}`}>
+      {eyebrow && (
+        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+          {eyebrow}
+        </div>
+      )}
+      <div className="mt-1 font-mono text-xs uppercase tracking-widest text-chalk400">{label}</div>
+      <div className="mt-2 break-words font-display text-3xl tracking-wide text-chalk100 md:text-4xl">
+        {value}
+      </div>
+      {subtext && <div className="mt-2 text-sm leading-relaxed text-chalk500">{subtext}</div>}
+    </div>
+  )
+}
+
+function SnapshotMetric({ label, value, subtext = null, tone = 'border-dirt bg-chalk/30 text-chalk200' }) {
   return (
     <div className={`min-w-0 rounded border px-3 py-2 ${tone}`}>
       <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
@@ -111,19 +169,49 @@ export default function OperationalReadinessSection({
   const availability = asObject(readinessView.availabilityDistribution)
   const workload = asObject(readinessView.workloadPressure)
   const freshness = asObject(readinessView.freshness)
+  const trustMetadata = asObject(readinessView.trustMetadata)
   const v2Governance = asObject(v2State?.governance)
   const readinessGovernance = asObject(readinessView.governance)
   const rankingApplied = v2Governance.rankingApplied ?? readinessGovernance.rankingApplied
   const selectionMade = v2Governance.selectionMade ?? readinessGovernance.selectionMade
   const v2LoadState = v2Loading ? 'loading' : v2Error ? 'error' : v2View.isFailClosed ? 'protected' : 'ready'
   const readinessLoadState = readinessLoading ? 'loading' : readinessError ? 'error' : readinessView.isRefused || readinessView.isFailClosed ? 'protected' : 'ready'
-  const operationalState = v2Loading || readinessLoading
+  const bullpenStateLabel = v2Loading
     ? 'Loading'
-    : v2Error || readinessError
-      ? 'Partial'
-      : v2View.isFailClosed || readinessView.isRefused || readinessView.isFailClosed
-        ? 'Protected'
-        : 'Available'
+    : v2Error
+      ? 'Unavailable'
+      : v2View.statusLabel
+  const bullpenStateDetail = v2View.bullpenState?.status
+    ? `State source: ${metricLabel(v2View.bullpenState.status)}`
+    : 'V2 bullpen state context'
+  const teamReadinessLabel = readinessLoading
+    ? 'Loading'
+    : readinessError
+      ? 'Unavailable'
+      : readinessView.statusLabel
+  const teamReadinessDetail = readinessView.summary || 'Team readiness context'
+  const pressureLabel = metricLabel(
+    v2View.bullpenState?.stress_level
+    || workload.pressure_state
+    || workload.pressure_level,
+  )
+  const availabilitySnapshot = availabilityShape(availability)
+  const freshnessLabel = metricLabel(
+    freshness.freshness_state
+    || freshness.state
+    || rowValue(v2View.freshnessRows, 'Freshness'),
+  )
+  const freshnessDetail = freshness.data_through
+    ? `Data through ${freshness.data_through}`
+    : 'Freshness metadata visible'
+  const trustLabel = metricLabel(
+    trustMetadata.confidence
+    || rowValue(v2View.trustRows, 'Confidence'),
+  )
+  const trustDetail = `Data state ${metricLabel(
+    trustMetadata.data_state
+    || rowValue(v2View.trustRows, 'Data State'),
+  )}`
 
   return (
     <section
@@ -154,34 +242,61 @@ export default function OperationalReadinessSection({
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          <CompactMetric
-            label="State"
-            value={operationalState}
-            subtext={v2View.bullpenState?.status ? metricLabel(v2View.bullpenState.status) : readinessView.statusLabel}
-            tone="border-emerald-400/25 bg-emerald-400/5 text-emerald-300"
-          />
-          <CompactMetric
-            label="Stress"
-            value={metricLabel(v2View.bullpenState?.stress_level || workload.pressure_state || workload.pressure_level)}
-            subtext={workload.summary}
-          />
-          <CompactMetric
-            label="Availability"
-            value={`${countValue(availability.available)} available / ${countValue(availability.total)} total`}
-            subtext="Current team-level distribution"
-          />
-          <CompactMetric
-            label="Freshness"
-            value={metricLabel(freshness.freshness_state || v2View.freshnessRows?.[0]?.value)}
-            subtext={freshness.data_through ? `Data through ${freshness.data_through}` : null}
-          />
-          <CompactMetric
-            label="Governance"
-            value="Protected"
-            subtext="Team-level context only"
-            tone="border-amber/35 bg-amber/10 text-amber"
-          />
+        <div className="rounded-lg border border-dirt bg-field/45 p-4">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+                Operational Snapshot
+              </div>
+              <p className="mt-1 text-sm leading-relaxed text-chalk500">
+                Current bullpen state, readiness, pressure, availability shape, freshness, and trust in one governed view.
+              </p>
+            </div>
+            <div className="font-mono text-[11px] uppercase tracking-wider text-chalk600">
+              Observational context only
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <HeroMetric
+              eyebrow="Current State"
+              label="Bullpen State"
+              value={bullpenStateLabel}
+              subtext={bullpenStateDetail}
+              tone="border-emerald-400/25 bg-emerald-400/5 text-emerald-300"
+            />
+            <HeroMetric
+              eyebrow="Current Readiness"
+              label="Team Readiness"
+              value={teamReadinessLabel}
+              subtext={teamReadinessDetail}
+              tone={readinessTone(readinessLoadState)}
+            />
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <SnapshotMetric
+              label="Workload Pressure"
+              value={pressureLabel}
+              subtext={workload.summary}
+            />
+            <SnapshotMetric
+              label="Availability Concentration"
+              value={availabilitySnapshot.label}
+              subtext="Largest current availability category"
+            />
+            <SnapshotMetric
+              label="Freshness Status"
+              value={freshnessLabel}
+              subtext={freshnessDetail}
+            />
+            <SnapshotMetric
+              label="Trust Status"
+              value={trustLabel}
+              subtext={trustDetail}
+              tone="border-amber/35 bg-amber/10 text-amber"
+            />
+          </div>
         </div>
 
         <div className="rounded border border-dirt bg-dugout/70 p-3">

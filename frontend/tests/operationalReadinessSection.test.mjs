@@ -23,6 +23,7 @@ const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const sanitizedGovernanceText = html => visibleText(html)
+  .replace(/No ranking, selection, recommendation, or prediction applied\./g, '')
   .replace(/ranking_applied/g, '')
   .replace(/selection_made/g, '')
 
@@ -151,21 +152,29 @@ function renderSection(props = {}) {
   )
 }
 
-test('renders one compact Operational Readiness summary for V2 and V3 state', () => {
+test('renders the Operational Readiness hero and snapshot for V2 and V3 state', () => {
   const html = renderSection()
 
   assert.ok(htmlIncludes(html, 'Operational Readiness'))
   assert.ok(htmlIncludes(html, 'Bullpen State + Team Readiness'))
   assert.ok(htmlIncludes(html, 'V2 Available'))
   assert.ok(htmlIncludes(html, 'V3 Available'))
-  assert.ok(htmlIncludes(html, 'State'))
-  assert.ok(htmlIncludes(html, 'Stress'))
+  assert.ok(htmlIncludes(html, 'Operational Snapshot'))
+  assert.ok(htmlIncludes(html, 'Observational context only'))
+  assert.ok(htmlIncludes(html, 'Current State'))
+  assert.ok(htmlIncludes(html, 'Bullpen State'))
+  assert.ok(htmlIncludes(html, 'State source: available context'))
+  assert.ok(htmlIncludes(html, 'Current Readiness'))
+  assert.ok(htmlIncludes(html, 'Team Readiness'))
+  assert.ok(htmlIncludes(html, 'Operationally Stable'))
+  assert.ok(htmlIncludes(html, 'Workload Pressure'))
   assert.ok(htmlIncludes(html, 'elevated'))
-  assert.ok(htmlIncludes(html, '240 available / 679 total'))
-  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'Availability Concentration'))
+  assert.ok(htmlIncludes(html, 'Available: 240 / 679 total'))
+  assert.ok(htmlIncludes(html, 'Freshness Status'))
   assert.ok(htmlIncludes(html, 'current'))
-  assert.ok(htmlIncludes(html, 'Governance'))
-  assert.ok(htmlIncludes(html, 'Protected'))
+  assert.ok(htmlIncludes(html, 'Trust Status'))
+  assert.ok(htmlIncludes(html, 'Data state complete'))
   assert.ok(htmlIncludes(html, 'Team-level context only. The user remains responsible for bullpen decisions.'))
 })
 
