@@ -398,13 +398,19 @@ def sync_recent_logs():
         pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
         db.session.rollback()
-        sync_metadata.finish_sync_run(
+        # Durable first, and self-healing: writes a failed row even if the start
+        # row never persisted, so the failure is recorded in sync_runs (not only
+        # the cache file).
+        failed_run = sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
             errors=1,
             error_message=str(e),
+            source=source,
+            started_at=started.replace(tzinfo=None),
         )
-        # Persist failure status so the dashboard reflects the bad state.
+        # Persist failure status so the dashboard reflects the bad state. The
+        # file write is best-effort and never gates the durable row above.
         sync_service.write_status({
             'last_sync':       started.isoformat(),
             'status':          sync_metadata.STATUS_FAILED,
@@ -419,7 +425,9 @@ def sync_recent_logs():
     # Live mode: score against today — same behavior as before.
     fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
     finished        = datetime.now(timezone.utc)
-    sync_metadata.finish_sync_run(
+    # Durable first (self-healing if the start row never persisted), then the
+    # best-effort cache file. The durable row is the source of truth.
+    completed_run = sync_metadata.finish_sync_run(
         sync_run_id,
         status=sync_metadata.STATUS_SUCCESS,
         completed_at=finished.replace(tzinfo=None),
@@ -427,7 +435,10 @@ def sync_recent_logs():
         new_logs_added=pull['new_logs_added'],
         pitchers_updated=fatigue_updated,
         errors=pull['errors'],
+        source=source,
+        started_at=started.replace(tzinfo=None),
     )
+    persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
 
     # Mirror what the daily APScheduler job writes so /sync/status stays accurate.
     sync_service.write_status({
@@ -446,7 +457,8 @@ def sync_recent_logs():
         'fatigue_recalculated': fatigue_updated,
         'errors':               pull['errors'],
         'synced_at':            finished.isoformat(),
-        'sync_run_id':          sync_run_id,
+        'sync_run_id':          persisted_run_id,
+        'sync_run_persisted':   persisted_run_id is not None,
         'days_back':            days_back,
     })
 

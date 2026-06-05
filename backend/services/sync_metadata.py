@@ -59,6 +59,14 @@ def collect_data_metadata():
 
 def start_sync_run(source=SOURCE_MANUAL, started_at=None):
     started_at = started_at or _now()
+    # Start from a clean transaction. If an earlier statement in this request
+    # left the session in an aborted/poisoned state (a classic Postgres
+    # "current transaction is aborted" trap), the insert below would otherwise
+    # fail silently and we would never write a durable row.
+    try:
+        db.session.rollback()
+    except SQLAlchemyError:
+        pass
     try:
         run = SyncRun(
             started_at=started_at,
@@ -71,7 +79,8 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None):
         return run.id
     except SQLAlchemyError as exc:
         db.session.rollback()
-        logger.warning('Could not persist sync start metadata: %s', exc)
+        # Loud: a failed durable write must not hide behind the legacy file.
+        logger.error('Could not persist sync start metadata: %s', exc)
         return None
 
 
@@ -84,15 +93,36 @@ def finish_sync_run(
     pitchers_updated=0,
     errors=0,
     error_message=None,
+    source=SOURCE_MANUAL,
+    started_at=None,
 ):
-    if not sync_run_id:
-        return None
+    """
+    Record the outcome of a sync as a durable sync_runs row.
 
+    Self-healing: if ``sync_run_id`` is missing or the row cannot be found
+    (e.g. ``start_sync_run`` failed to persist), a brand-new row is created with
+    the final status. This guarantees that every completed or failed sync leaves
+    at least one durable row, so the freshness chain never has to fall back to the
+    legacy status file simply because the start write hiccuped.
+    """
     completed_at = completed_at or _now()
     try:
-        run = db.session.get(SyncRun, sync_run_id)
+        db.session.rollback()
+    except SQLAlchemyError:
+        pass
+    try:
+        run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
         if run is None:
-            return None
+            # Self-heal: start never persisted (or the id was lost). Create the
+            # durable row now so the sync is never recorded only in the file.
+            run = SyncRun(
+                started_at=started_at or completed_at,
+                status=status,
+                source=source,
+                created_at=started_at or completed_at,
+            )
+            db.session.add(run)
+
         metadata = collect_data_metadata()
         run.completed_at = completed_at
         run.status = status
@@ -108,7 +138,7 @@ def finish_sync_run(
         return run
     except SQLAlchemyError as exc:
         db.session.rollback()
-        logger.warning('Could not persist sync completion metadata: %s', exc)
+        logger.error('Could not persist sync completion metadata: %s', exc)
         return None
 
 
@@ -193,6 +223,7 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         errors = latest_run.errors or 0
         message = _run_message(latest_run)
         sync_block = latest_run.to_dict()
+        metadata_source = 'sync_runs'
     elif legacy_status.get('last_sync'):
         status = _normalize_legacy_status(legacy_status.get('status'))
         last_sync = legacy_status.get('last_sync')
@@ -208,6 +239,7 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             'completed_at': finished_at,
             'status': status,
         }
+        metadata_source = 'legacy_status_file'
     else:
         status = STATUS_METADATA_UNAVAILABLE if metadata['game_logs'] else STATUS_NEVER
         last_sync = None
@@ -221,6 +253,7 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             else legacy_status.get('message', 'No sync has run yet.')
         )
         sync_block = None
+        metadata_source = 'none'
 
     if successful_run:
         last_successful_sync = _iso(successful_run.completed_at or successful_run.started_at)
@@ -237,6 +270,9 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
 
     return {
         'status': status,
+        # Which store actually answered: durable 'sync_runs', the cache
+        # 'legacy_status_file', or 'none'. Durable always wins when present.
+        'metadata_source': metadata_source,
         'last_sync': last_sync,
         'last_successful_sync': last_successful_sync,
         'pitchers_updated': pitchers_updated,
