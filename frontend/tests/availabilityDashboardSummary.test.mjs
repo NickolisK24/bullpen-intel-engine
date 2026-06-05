@@ -52,6 +52,7 @@ const staleDominantSummary = {
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
 test('formats current-mode availability summary distributions', () => {
   const view = getAvailabilityDashboardSummaryView(staleDominantSummary)
@@ -62,6 +63,9 @@ test('formats current-mode availability summary distributions', () => {
   assert.equal(view.totalPitchers, 704)
   assert.equal(view.limitedByData, true)
   assert.equal(view.statusRows.find(row => row.label === 'Monitor').count, 704)
+  assert.equal(view.statusTotal, 704)
+  assert.equal(view.dominantStatus.label, 'Monitor')
+  assert.equal(view.operationalSummary, 'Availability inventory is currently concentrated in Monitor status.')
   assert.equal(view.confidenceRows.find(row => row.label === 'Low').count, 704)
   assert.equal(view.dataStateRows.find(row => row.label === 'Stale').count, 640)
   assert.equal(view.dataStateRows.find(row => row.label === 'Missing').count, 64)
@@ -93,6 +97,15 @@ test('renders compact availability summary with secondary evidence collapsed', (
   )
 
   assert.ok(htmlIncludes(collapsedHtml, 'Availability Summary'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Availability Distribution'))
+  assert.ok(htmlIncludes(collapsedHtml, 'role="img"'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Availability inventory is currently concentrated in Monitor status.'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Available: 0'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Monitor: 704'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Limited: 0'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Avoid: 0'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Unavailable: 0'))
+  assert.ok(htmlIncludes(collapsedHtml, '100%'))
   assert.ok(htmlIncludes(collapsedHtml, 'Monitor'))
   assert.ok(htmlIncludes(collapsedHtml, 'View Availability Evidence'))
   assert.ok(htmlIncludes(collapsedHtml, 'aria-expanded="false"'))
@@ -101,4 +114,13 @@ test('renders compact availability summary with secondary evidence collapsed', (
   assert.ok(htmlIncludes(expandedHtml, 'Hide Availability Evidence'))
   assert.ok(htmlIncludes(expandedHtml, 'Confidence'))
   assert.ok(htmlIncludes(expandedHtml, 'Data State'))
+})
+
+test('availability distribution summary avoids recommendation language', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(AvailabilityDashboardSummary, { summary: staleDominantSummary, compact: true }),
+  )
+  const text = visibleText(html)
+
+  assert.equal(/\buse\b|\bbest\b|\bpreferred\b|\brecommended\b|\bmanager should\b/i.test(text), false)
 })

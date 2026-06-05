@@ -2,6 +2,10 @@ import { useState } from 'react'
 
 import { getAvailabilityDashboardSummaryView } from './availabilityDashboardSummaryView'
 
+function getPct(count, total) {
+  return total > 0 ? Math.round((count / total) * 100) : 0
+}
+
 function DistributionRows({ title, rows, total }) {
   return (
     <div>
@@ -42,6 +46,80 @@ function DistributionRows({ title, rows, total }) {
   )
 }
 
+function AvailabilityDistributionBar({ rows, total, summary }) {
+  const maxCount = rows.reduce((max, row) => Math.max(max, row.count), 0)
+
+  return (
+    <section className="rounded border border-dirt bg-chalk/25 p-3" aria-label="Availability distribution">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">
+            Availability Distribution
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-chalk500">{summary}</p>
+        </div>
+        <div className="shrink-0 font-mono text-[11px] text-chalk600">
+          {total.toLocaleString()} status records
+        </div>
+      </div>
+
+      <div
+        className="mt-3 flex h-3 overflow-hidden rounded-full border border-dirt bg-dirt"
+        role="img"
+        aria-label={`Availability distribution. ${summary}`}
+      >
+        {rows.map((row) => {
+          const pct = total > 0 ? (row.count / total) * 100 : 0
+          return (
+            <div
+              key={row.key}
+              className="h-full"
+              style={{
+                width: `${pct}%`,
+                backgroundColor: row.style.color || '#94a3b8',
+              }}
+              title={`${row.label}: ${row.count.toLocaleString()} (${Math.round(pct)}%)`}
+            />
+          )
+        })}
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+        {rows.map((row) => {
+          const pct = getPct(row.count, total)
+          const isLargest = maxCount > 0 && row.count === maxCount
+          return (
+            <div
+              key={row.key}
+              className="rounded border px-2.5 py-2"
+              style={{
+                borderColor: isLargest ? row.style.borderColor : undefined,
+                backgroundColor: isLargest ? row.style.backgroundColor : undefined,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: row.style.color || '#94a3b8' }}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate font-mono text-[11px] text-chalk400">
+                    {row.label}: {row.count.toLocaleString()}
+                  </span>
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-chalk600">
+                  {pct}%
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function AvailabilityDashboardSummary({ summary, compact = false, initialDetailsOpen = false }) {
   const [detailsOpen, setDetailsOpen] = useState(initialDetailsOpen)
 
@@ -67,21 +145,11 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {view.statusRows.map(row => (
-            <div key={row.key} className="rounded border border-dirt bg-chalk/30 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: row.style.color || '#94a3b8' }}
-                  aria-hidden="true"
-                />
-                <span className="truncate font-mono text-[10px] uppercase tracking-wider text-chalk600">{row.label}</span>
-              </div>
-              <div className="mt-1 font-mono text-base font-semibold text-chalk200">{row.count.toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
+        <AvailabilityDistributionBar
+          rows={view.statusRows}
+          total={view.statusTotal}
+          summary={view.operationalSummary}
+        />
 
         <button
           type="button"

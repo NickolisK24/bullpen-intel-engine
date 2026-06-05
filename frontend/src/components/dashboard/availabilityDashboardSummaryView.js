@@ -66,6 +66,31 @@ function getPrimaryTrustNote(summary, limitedByData) {
   return notes[0] || 'Availability summary is based on current-mode classifier output.'
 }
 
+function getDominantStatusRow(rows = []) {
+  return rows.reduce((dominant, row) => {
+    if (!dominant) return row
+    return row.count > dominant.count ? row : dominant
+  }, null)
+}
+
+function getOperationalSummary(rows = [], total = 0) {
+  if (total <= 0) {
+    return 'No classified availability records are available for this summary.'
+  }
+
+  const dominant = getDominantStatusRow(rows)
+  if (!dominant || dominant.count <= 0) {
+    return 'Availability inventory has no populated status category in this summary.'
+  }
+
+  const pct = Math.round((dominant.count / total) * 100)
+  if (pct >= 50) {
+    return `Availability inventory is currently concentrated in ${dominant.label} status.`
+  }
+
+  return 'Availability inventory is distributed across multiple status categories.'
+}
+
 export function getAvailabilityDashboardSummaryView(summary = null) {
   const totalPitchers = Number(summary?.total_pitchers || 0)
   const dataState = summary?.data_state || {}
@@ -75,6 +100,13 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const limitedDataCount = stale + missing + incomplete
   const limitedByData = totalPitchers > 0 && limitedDataCount > totalPitchers / 2
   const isCurrentAvailability = summary?.is_current_availability === true
+  const statusRows = buildRows(
+    summary?.statuses,
+    AVAILABILITY_FILTERS.filter(status => status !== 'ALL'),
+    status => status,
+    status => getAvailabilityBadgeView(status).style,
+  )
+  const statusTotal = statusRows.reduce((total, row) => total + row.count, 0)
 
   return {
     mode: summary?.mode || 'unknown',
@@ -85,12 +117,10 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
     limitedDataCount,
     primaryTrustNote: getPrimaryTrustNote(summary, limitedByData),
     notes: Array.isArray(summary?.notes) ? summary.notes : [],
-    statusRows: buildRows(
-      summary?.statuses,
-      AVAILABILITY_FILTERS.filter(status => status !== 'ALL'),
-      status => status,
-      status => getAvailabilityBadgeView(status).style,
-    ),
+    statusRows,
+    statusTotal,
+    dominantStatus: getDominantStatusRow(statusRows),
+    operationalSummary: getOperationalSummary(statusRows, statusTotal),
     confidenceRows: buildRows(
       summary?.confidence,
       DASHBOARD_CONFIDENCE_ORDER,
