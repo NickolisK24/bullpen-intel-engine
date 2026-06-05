@@ -21,6 +21,7 @@ from services.availability_snapshot import (
 )
 from services.availability_summary import summarize_availability_records
 from services.bullpen_board import build_board_payload
+from services.bullpen_comparison import build_team_comparison
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from services import sync_metadata
@@ -639,22 +640,25 @@ def _board_freshness_block():
         }
 
 
-@bullpen_bp.route('/teams/<int:team_id>/board', methods=['GET'])
-def get_team_bullpen_board(team_id):
-    """
-    Tonight's Bullpen Board — existing availability classifications grouped for a
-    coach-facing read of "what does this bullpen look like tonight?".
+def _team_info_lookup(team_id):
+    """Best-effort {team_id, team_name, team_abbreviation} even with no pitchers in window."""
+    row = (
+        db.session.query(Pitcher.team_id, Pitcher.team_name, Pitcher.team_abbreviation)
+        .filter(Pitcher.team_id == team_id)
+        .first()
+    )
+    if row is None:
+        return {'team_id': team_id, 'team_name': None, 'team_abbreviation': None}
+    return {'team_id': row.team_id, 'team_name': row.team_name, 'team_abbreviation': row.team_abbreviation}
 
-    Presentation only: no ranking, no selection, no recommendation, no
-    prediction. Reuses the same query and Availability Engine V1 output as the
-    bullpen overview, groups pitchers by availability status, and orders them
-    alphabetically within each group.
 
-    Optional query params:
-      - include_stale: when truthy, include pitchers whose most recent
-                       appearance is older than 14 days. Default false.
+def _build_team_board(team_id, include_stale=False, freshness=None):
     """
-    include_stale = _truthy(request.args.get('include_stale'))
+    Build a Tonight's Bullpen Board payload for one team.
+
+    Shared by the board route and the comparison route so both consume the exact
+    same grouped/context output (no duplicate availability calculation).
+    """
     results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
 
     team_info = None
@@ -674,16 +678,77 @@ def get_team_bullpen_board(team_id):
             }
 
     if team_info is None:
-        team_info = {'team_id': team_id, 'team_name': None, 'team_abbreviation': None}
+        team_info = _team_info_lookup(team_id)
 
-    freshness = _board_freshness_block()
-    payload = build_board_payload(
+    freshness = freshness or _board_freshness_block()
+    return build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
         limitations=freshness.get('limitations'),
     )
-    return jsonify(payload)
+
+
+@bullpen_bp.route('/teams/<int:team_id>/board', methods=['GET'])
+def get_team_bullpen_board(team_id):
+    """
+    Tonight's Bullpen Board — existing availability classifications grouped for a
+    coach-facing read of "what does this bullpen look like tonight?".
+
+    Presentation only: no ranking, no selection, no recommendation, no
+    prediction. Reuses the same query and Availability Engine V1 output as the
+    bullpen overview, groups pitchers by availability status, and orders them
+    alphabetically within each group.
+
+    Optional query params:
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
+    """
+    include_stale = _truthy(request.args.get('include_stale'))
+    return jsonify(_build_team_board(team_id, include_stale))
+
+
+@bullpen_bp.route('/teams/compare', methods=['GET'])
+def compare_team_bullpens():
+    """
+    Team Bullpen Comparison — descriptive side-by-side of two team bullpens.
+
+    Aggregates two existing board payloads (V1 groups + V2 team context) into a
+    transparent count comparison answering "which bullpen appears more available
+    tonight?". No team ranking, grading, scoring, matchup, or recommendation —
+    every observation shows both raw counts.
+
+    Required query params:
+      - team_a, team_b: team ids to compare.
+    Optional:
+      - include_stale: include pitchers with no games in the last 14 days.
+    """
+    team_a = request.args.get('team_a', type=int)
+    team_b = request.args.get('team_b', type=int)
+    if team_a is None or team_b is None:
+        abort(400, description='team_a and team_b query parameters are required.')
+
+    include_stale = _truthy(request.args.get('include_stale'))
+    # One freshness read shared by both boards — it is system-wide, not per-team.
+    freshness = _board_freshness_block()
+    board_a = _build_team_board(team_a, include_stale, freshness=freshness)
+    board_b = _build_team_board(team_b, include_stale, freshness=freshness)
+
+    comparison = build_team_comparison(
+        board_a,
+        board_b,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+    return jsonify({
+        'capability': 'team_bullpen_comparison',
+        'generated_at': comparison['generated_at'],
+        'ranking_applied': False,
+        'selection_made': False,
+        'team_a': board_a,
+        'team_b': board_b,
+        'comparison': comparison,
+    })
 
 
 # ─── Stats & Aggregates ───────────────────────────────────────────────────────
