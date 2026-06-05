@@ -375,20 +375,40 @@ Recorded validation:
   the configured frontend suite passed with 135 tests, including the Bullpen
   Intelligence panel coverage.
 
-## 13. Remaining Limitations
+## 13. Phase 11 Evidence Follow-Up
+
+Phase 11 follow-up state:
+
+```text
+V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_RETAINED
+READY_FOR_FULL_PRODUCTION_ROLLOUT_APPROVAL
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 11 resolves the Phase 10 production evidence blocker by retaining manual
+evidence for API behavior, frontend rendering, governance copy, accessibility
+smoke, fail-closed behavior, controlled rollout observation, and preserved
+false governance flags.
+
+Phase 11 does not approve full production rollout. The next approval boundary
+is:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
+```
+
+## 14. Remaining Limitations
 
 Remaining limitations:
 
-- full production rollout is not approved.
+- full production rollout is not approved in Phase 10 or Phase 11.
+- Phase 11 retains manual evidence and clears the production evidence blocker.
+- Phase 12 final approval review remains required.
 - `GET /api/observations` still uses deterministic sample-state observations.
 - live runtime observation generation from MLB data is not approved.
-- production deployment evidence for the V5 panel is not retained.
-- controlled-rollout monitoring evidence is not retained.
-- manual browser evidence for production readiness is not retained.
-- accessibility smoke evidence for production readiness is not retained.
-- live fail-closed evidence for production readiness is not retained.
 
-## 14. Future Expansion Boundaries
+## 15. Future Expansion Boundaries
 
 Future work must not add:
 

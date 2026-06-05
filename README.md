@@ -24,14 +24,14 @@ remains the decision maker.
 | V2 Recommendation Engine | Production Ready |
 | V3 Team Operations Readiness | Controlled Rollout Approved |
 | V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Controlled Rollout Approved / Production Rollout Not Approved |
+| V5 Bullpen Intelligence Surface | Production Evidence Retained / Full Production Approval Pending |
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md](docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md).
+[docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md](docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md).
 
 ## Core Capabilities
 
@@ -242,32 +242,39 @@ unless implementation files change.
 - [V5 Phase 10 Production Rollout Review](docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md)
   - production rollout review for V5, retaining full production rollout as not
     approved pending retained production-readiness evidence.
+- [V5 Phase 11 Production Evidence Review](docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md)
+  - retained manual production evidence for V5 and cleared the Phase 10
+    production evidence blocker while keeping full production rollout pending
+    Phase 12 approval.
 
 ## Current V5 Boundary
 
-V5 Phase 10 production rollout review is complete. The certified contracts,
-builders, read-only API, frontend panel, documentation, and tests remain
-governed, controlled-rollout approved, and bounded by evidence, limitations,
-trust, freshness, confidence, explanation references, and preserved governance
-flags.
+V5 Phase 11 production evidence review is complete. The certified contracts,
+builders, read-only API, frontend panel, documentation, tests, manual API
+evidence, frontend rendering evidence, governance-copy evidence, accessibility
+smoke evidence, fail-closed evidence, controlled rollout observation, and
+preserved governance flags are retained for the full production approval
+review.
 
-V5 Phase 10 does not approve full production rollout because retained
-controlled-rollout monitoring, production browser, accessibility smoke,
-fail-closed, governance-copy, and preserved false-flag evidence is incomplete.
-It does not authorize backend decision logic, database migrations, live runtime
-integration, runtime observation generation from MLB data, ranking, selection,
-prediction, pitcher recommendations, matchup advice, best-arm language, role
-advice, or automated decision-making.
-
-Required evidence before any renewed production approval review:
+V5 Phase 11 clears the Phase 10 production evidence blocker and records:
 
 ```text
-CONTROLLED_ROLLOUT_MONITORING_EVIDENCE
-MANUAL_BROWSER_EVIDENCE
-ACCESSIBILITY_SMOKE_EVIDENCE
-FAIL_CLOSED_EVIDENCE
-GOVERNANCE_COPY_EVIDENCE
-PRESERVED_FALSE_FLAG_EVIDENCE
+V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_RETAINED
+READY_FOR_FULL_PRODUCTION_ROLLOUT_APPROVAL
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Full production rollout is not approved until a separate Phase 12 approval
+review passes. V5 Phase 11 does not authorize backend decision logic, database
+migrations, live runtime integration, runtime observation generation from MLB
+data, ranking, selection, prediction, pitcher recommendations, matchup advice,
+best-arm language, role advice, or automated decision-making.
+
+Next milestone:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
 ```
 
 ## Author

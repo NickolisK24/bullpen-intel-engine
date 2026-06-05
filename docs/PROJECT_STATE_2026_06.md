@@ -254,6 +254,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 8 Governance Certification | Governance Certified / Controlled Rollout Ready |
 | BaseballOS V5 Phase 9 Controlled Rollout Review | Controlled Rollout Approved / Full Production Rollout Not Approved |
 | BaseballOS V5 Phase 10 Production Rollout Review | Review Complete / Full Production Rollout Not Approved |
+| BaseballOS V5 Phase 11 Production Evidence Review | Production Evidence Retained / Ready for Full Production Rollout Approval |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -7020,6 +7021,60 @@ GOVERNANCE_COPY_EVIDENCE
 PRESERVED_FALSE_FLAG_EVIDENCE
 ```
 
+## BaseballOS V5 Phase 11 Production Evidence Review
+
+BaseballOS V5 Phase 11 Production Evidence Review is complete.
+
+The Phase 11 record is:
+
+- `docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md`
+
+Phase 11 is a documentation-only production evidence review for the governed
+Bullpen Intelligence Surface. It records retained manual evidence for API
+behavior, frontend rendering, governance copy, accessibility smoke,
+fail-closed behavior, controlled rollout observation, and preserved false
+governance flags.
+
+Phase 11 decision:
+
+```text
+V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_RETAINED
+READY_FOR_FULL_PRODUCTION_ROLLOUT_APPROVAL
+```
+
+Phase 11 production rollout state:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 11 reviewed manual observations confirming:
+
+- `GET /api/observations` returned governed observation payloads.
+- `ranking_applied` remained false.
+- `selection_made` remained false.
+- observation evidence rendered.
+- observation limitations rendered.
+- trust, freshness, and confidence rendered.
+- frontend governance copy was visible.
+- accessibility smoke was green.
+- `POST /api/observations/preview` with `{}` returned `400 BAD REQUEST`.
+- fail-closed response stated observation output was withheld by the API
+  fail-closed boundary.
+- no recommendation, ranking, selection, matchup advice, pitcher advice, or
+  manager advice was observed.
+
+Phase 11 resolves the Phase 10 production evidence blocker by retaining the
+manual evidence required for a renewed production approval review. It does not
+approve full production rollout.
+
+Next milestone:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7642,6 +7697,20 @@ trust logic changes, freshness logic changes, pitcher ranking, pitcher
 selection, pitcher recommendation, matchup advice, best-arm language,
 closer/setup/role advice, prediction behavior, hidden priority ordering,
 pitcher-level advice, or automated decision-making.
+V5 Phase 11 authorizes only production evidence review documentation, manual
+evidence retention recording, status recording, certification-ledger updates,
+Phase 10 blocker resolution recording, and Phase 12 readiness recording for
+the certified Bullpen Intelligence Surface. It does not authorize full
+production rollout, backend decision logic, backend feature logic, frontend
+logic, frontend feature expansion, API routes, API expansion, database
+changes, database migrations, live runtime integration, runtime observation
+generation from MLB data, new observation families, fatigue calculation
+changes, availability calculation changes, Recommendation Engine behavior
+changes, Team Operations Readiness behavior changes, explanation behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking,
+pitcher selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, manager advice, or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

@@ -9,8 +9,8 @@ BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
 V2 recommendation governance, completed V2.5 governance hardening, V3 Team
 Operations Bullpen Readiness approved for constrained controlled rollout, V4
 frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface controlled rollout approved while Phase 10 retains
-production rollout as not approved pending production-readiness evidence.
+Intelligence Surface production evidence retained while full production
+approval remains pending Phase 12 review.
 
 Current V3 status:
 
@@ -26,20 +26,15 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 The active platform capability track is V5 Bullpen Intelligence Surface. V5
 converts existing trusted BaseballOS platform state into governed descriptive
 observations without ranking, selecting, predicting, recommending, advising, or
-automating a decision. V5 Phase 10 completed production rollout review and
-retained full production rollout as not approved because retained
-controlled-rollout monitoring, production browser, accessibility smoke,
-fail-closed, governance-copy, and preserved false-flag evidence is incomplete.
+automating a decision. V5 Phase 11 retained manual production evidence for API
+behavior, frontend rendering, governance copy, accessibility smoke,
+fail-closed behavior, controlled rollout observation, and preserved false
+governance flags.
 
-Required evidence before any renewed production approval review:
+Next V5 milestone:
 
 ```text
-CONTROLLED_ROLLOUT_MONITORING_EVIDENCE
-MANUAL_BROWSER_EVIDENCE
-ACCESSIBILITY_SMOKE_EVIDENCE
-FAIL_CLOSED_EVIDENCE
-GOVERNANCE_COPY_EVIDENCE
-PRESERVED_FALSE_FLAG_EVIDENCE
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
 ```
 
 Database changes, live runtime integration, ranking, selection,
@@ -57,13 +52,12 @@ unauthorized.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
-| V5 Bullpen Intelligence Surface | Governance certified / controlled rollout approved / production rollout not approved | Retain production-readiness evidence before any renewed production approval review |
+| V5 Bullpen Intelligence Surface | Governance certified / controlled rollout approved / production evidence retained | Phase 12 full production rollout approval review |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V5 controlled rollout monitoring and production-readiness evidence
-   retention.
+1. V5 Phase 12 full production rollout approval review.
 2. V4 Phase 27 post-rollout monitoring and governance preservation review.
 3. Controlled rollout monitoring artifact retention for V3 readiness.
 4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
@@ -81,7 +75,8 @@ These are candidates, not commitments:
 - Future V4+ explanation scope expansion, new frontend surfaces, or new
   explanation APIs only after separate planning, certification, and rollout
   authorization.
-- V5 production approval review after retained controlled rollout evidence.
+- V5 runtime observation generation or rollout expansion only after separate
+  governed approval.
 - Team-level operations intelligence beyond bullpen readiness.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
@@ -299,6 +294,10 @@ governance and lifecycle evidence process linked from
 - V5 Phase 10 completed production rollout review and retained full production
   rollout as not approved because retained production-readiness evidence is
   incomplete.
+- V5 Phase 11 retained manual production evidence, cleared the Phase 10
+  production evidence blocker, and recorded readiness for Phase 12 full
+  production rollout approval review while keeping full production rollout
+  unapproved.
 
 For detailed milestone history, use:
 

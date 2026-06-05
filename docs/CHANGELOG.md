@@ -64,6 +64,12 @@ milestones. It does not replace the detailed evidence records linked from
   rollout as not approved because retained controlled-rollout monitoring,
   production browser, accessibility smoke, fail-closed, governance-copy, and
   preserved false-flag evidence is incomplete.
+- Phase 11 retained manual production evidence for API behavior, frontend
+  rendering, governance copy, accessibility smoke, fail-closed behavior,
+  controlled rollout observation, and preserved false governance flags. Phase
+  11 clears the Phase 10 production evidence blocker and records readiness for
+  Phase 12 full production rollout approval review without approving full
+  production rollout.
 
 ## V4 - Evidence And Explanation Layer
 
