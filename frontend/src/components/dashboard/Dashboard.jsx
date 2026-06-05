@@ -43,17 +43,21 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10">
             <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">
-              Tonight's Bullpen Overview
+              League-Wide Bullpen Overview
             </div>
             <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              Bullpen availability and workload across tracked teams — who's available,
-              how stressed each pen is, and what usage each arm appears suited for.
+              Availability and workload across all tracked MLB bullpens tonight — who's
+              available, how stressed each pen is, and what usage each arm appears suited for.
+              Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span className="rounded border border-amber/30 bg-amber/5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-amber/80">
+                League-Wide · All tracked MLB bullpens
+              </span>
               <SeasonBanner season={season} isLive={isLive} />
               <FreshnessPill
                 dataThrough={dataThrough}
@@ -79,7 +83,7 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
       ) : !data ? null : (
         <>
           {/* Section 2 — Bullpen Snapshot */}
-          <Section title="Bullpen Snapshot" subtitle={`${context.metrics.total} relievers across tracked bullpens`}>
+          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} relievers across all tracked MLB bullpens`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {context.snapshot.map(row => (
                 <div key={row.status} className="card p-4">
@@ -94,7 +98,10 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           </Section>
 
           {/* Section 3 — Bullpen Health */}
-          <Section title="Bullpen Health">
+          <Section
+            title="League-Wide Bullpen Health"
+            subtitle="Aggregated across all tracked MLB bullpens — not a single team. Open Bullpen for one team's health."
+          >
             <div className="card p-4" style={context.tone} role="status" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 font-display text-lg tracking-wide">
@@ -102,7 +109,7 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
                   {context.label || 'Bullpen context unavailable.'}
                 </h3>
                 <span className="font-mono text-[10px] uppercase tracking-widest">
-                  Confidence: {context.confidenceLabel}
+                  League-Wide · Confidence: {context.confidenceLabel}
                 </span>
               </div>
               {context.isDegraded && (
@@ -126,7 +133,10 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           </Section>
 
           {/* Section 4 — Usage Roles Summary */}
-          <Section title="Usage Roles" subtitle="How recently-used arms appear across tracked bullpens (observed, not assigned)">
+          <Section
+            title="League-Wide Usage Roles"
+            subtitle="Observed usage-role distribution across all tracked MLB bullpens — not a single team, and not assigned roles."
+          >
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {roles.rows.map(row => (
                 <div key={row.key} className="card flex items-center justify-between gap-2 p-3" style={row.tone}>
@@ -138,14 +148,17 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           </Section>
 
           {/* Section 5 — Quick Actions */}
-          <Section title="Quick Actions">
+          <Section
+            title="Quick Actions"
+            subtitle="From the league-wide view, drill into a single team, a matchup, or a pitcher."
+          >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ActionCard to="/bullpen?view=board" icon="🔥" title="Tonight's Bullpen Board"
-                desc="Availability groups, pitcher cards, usage roles" />
+                desc="One team's bullpen tonight" />
               <ActionCard to="/bullpen?view=compare" icon="⚖️" title="Compare Bullpens"
                 desc="Two teams, side-by-side" />
               <ActionCard to="/bullpen?view=pitchers" icon="📋" title="Pitcher Details"
-                desc="Per-pitcher fatigue and workload" />
+                desc="One pitcher's fatigue & workload" />
               <ActionCard to="/methodology" icon="📐" title="Methodology"
                 desc="How every number is computed" />
             </div>
