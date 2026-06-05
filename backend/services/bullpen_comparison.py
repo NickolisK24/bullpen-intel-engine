@@ -119,6 +119,7 @@ def _freshness_summary(board):
         'label': freshness.get('label'),
         'data_through': freshness.get('data_through'),
         'last_successful_sync': freshness.get('last_successful_sync'),
+        'sync_status': freshness.get('sync_status'),
     }
 
 

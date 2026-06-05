@@ -1,5 +1,6 @@
 import { formatConfidence, getAvailabilityBadgeView } from '../availabilityView'
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import { getDataProvenance } from './tonightsBullpenBoardView'
 
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
@@ -35,14 +36,17 @@ function safeMetrics(metrics) {
 function freshnessRow(freshness) {
   const f = freshness || {}
   const isCurrent = f.is_current !== false
+  const provenance = getDataProvenance(f)
   return {
     isCurrent,
     isStale: !isCurrent,
     label: f.label || null,
     dataThrough: fmtDataDate(f.data_through) || null,
     lastSync: fmtSyncDate(f.last_successful_sync) || null,
-    healthLabel: isCurrent ? 'Current' : 'Stale',
-    dot: isCurrent ? '#10b981' : '#f5a623',
+    healthLabel: provenance.label,         // "Live data" / "Sample data"
+    provenanceDetail: provenance.detail,
+    throughHint: provenance.throughHint,
+    dot: provenance.tone.dot,
   }
 }
 

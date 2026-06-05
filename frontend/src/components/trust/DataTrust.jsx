@@ -12,6 +12,7 @@ import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSumm
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
 import BullpenIntelligencePanel from '../observations/BullpenIntelligencePanel'
+import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
 // Data & Trust — the home for freshness, confidence, governance protections,
 // evidence, limitations, and diagnostics. The dashboard shows the summaries;
@@ -40,6 +41,25 @@ export default function DataTrust() {
       {/* Freshness & sync */}
       <section className="mb-6" aria-label="Data freshness and sync detail">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness &amp; Sync</h2>
+        {(() => {
+          const provenance = getDataProvenance({
+            data_through: sync.data?.data?.latest_game_date,
+            is_current: sync.data?.freshness?.is_current,
+            sync_status: sync.data?.status,
+          })
+          return (
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <span
+                className="inline-flex items-center gap-2 rounded border px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest"
+                style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
+                {provenance.label}{provenance.detail ? ` · ${provenance.detail}` : ''}
+              </span>
+              <span className="font-mono text-[11px] text-chalk500">{provenance.throughHint}</span>
+            </div>
+          )
+        })()}
         <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
       </section>
 

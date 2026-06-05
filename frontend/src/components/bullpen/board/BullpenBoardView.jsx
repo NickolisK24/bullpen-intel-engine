@@ -5,10 +5,12 @@ import {
   getBoardFreshnessView,
   getBoardGroups,
   getBoardTotals,
+  getDataProvenance,
 } from './tonightsBullpenBoardView'
 
 function FreshnessBanner({ freshness }) {
   const view = getBoardFreshnessView(freshness)
+  const provenance = getDataProvenance(freshness)
   return (
     <div
       className="mb-6 rounded-lg border p-4"
@@ -17,15 +19,14 @@ function FreshnessBanner({ freshness }) {
       aria-live="polite"
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <span className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: view.dot }} aria-hidden="true" />
-          {view.healthLabel}
+        <span
+          className="inline-flex items-center gap-2 rounded border px-2 py-0.5 font-mono text-[11px] uppercase tracking-widest"
+          style={provenance.tone}
+          title={provenance.throughHint}
+        >
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
+          {provenance.label}{provenance.detail ? ` · ${provenance.detail}` : ''}
         </span>
-        {view.dataThrough && (
-          <span className="font-mono text-xs">
-            <span className="text-chalk500">Data through</span> {view.dataThrough}
-          </span>
-        )}
         {view.lastSync && (
           <span className="font-mono text-xs">
             <span className="text-chalk500">Synced</span> {view.lastSync}
@@ -134,8 +135,9 @@ function RoleDisclosure({ role }) {
   )
 }
 
-function PitcherCard({ card }) {
+function PitcherCard({ card, onViewDetails }) {
   const view = getBoardCardView(card)
+  const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
     <div className="rounded-lg border border-dirt bg-field/60 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -163,7 +165,7 @@ function PitcherCard({ card }) {
       )}
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
-        <span>
+        <span title="Fatigue score: 0–100 · higher = heavier recent workload">
           <span className="text-chalk600">Fatigue</span>{' '}
           <span className="text-chalk200">{view.fatigueScore != null ? view.fatigueScore : '—'}</span>
         </span>
@@ -181,11 +183,22 @@ function PitcherCard({ card }) {
 
       <WhyDisclosure reasons={view.reasons} limitations={view.limitations} />
       <RoleDisclosure role={view.role} />
+
+      {canView && (
+        <button
+          type="button"
+          onClick={() => onViewDetails(view.pitcherId)}
+          className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+          aria-label={`View pitcher details for ${view.name}`}
+        >
+          View details →
+        </button>
+      )}
     </div>
   )
 }
 
-function BoardGroup({ group }) {
+function BoardGroup({ group, onViewDetails }) {
   return (
     <section className="card overflow-hidden" aria-label={`${group.label} group`}>
       <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
@@ -206,7 +219,7 @@ function BoardGroup({ group }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {group.pitchers.map(card => (
-              <PitcherCard key={card.pitcher_id ?? card.name} card={card} />
+              <PitcherCard key={card.pitcher_id ?? card.name} card={card} onViewDetails={onViewDetails} />
             ))}
           </div>
         )}
@@ -215,7 +228,7 @@ function BoardGroup({ group }) {
   )
 }
 
-export default function BullpenBoardView({ board }) {
+export default function BullpenBoardView({ board, onSelectPitcher }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
@@ -230,7 +243,7 @@ export default function BullpenBoardView({ board }) {
         </h2>
         <p className="mt-1 text-sm text-chalk400">
           What this bullpen looks like tonight, grouped by availability. {totals.total} pitcher
-          {totals.total === 1 ? '' : 's'} shown.
+          {totals.total === 1 ? '' : 's'} shown. Fatigue score: higher = heavier recent workload.
         </p>
       </div>
 
@@ -244,7 +257,7 @@ export default function BullpenBoardView({ board }) {
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
           {groups.map(group => (
-            <BoardGroup key={group.status} group={group} />
+            <BoardGroup key={group.status} group={group} onViewDetails={onSelectPitcher} />
           ))}
         </div>
       )}

@@ -7,13 +7,18 @@ function FreshnessChip({ label, freshness }) {
     <div className="rounded border border-dirt bg-field/50 px-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-xs text-chalk300">{label}</span>
-        <span className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-chalk400">
+        <span
+          className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-chalk400"
+          title={freshness.throughHint}
+        >
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: freshness.dot }} aria-hidden="true" />
           {freshness.healthLabel}
         </span>
       </div>
       {freshness.dataThrough && (
-        <div className="mt-1 font-mono text-[11px] text-chalk500">Data through {freshness.dataThrough}</div>
+        <div className="mt-1 font-mono text-[11px] text-chalk500" title={freshness.throughHint}>
+          Data through {freshness.dataThrough}
+        </div>
       )}
       {freshness.isStale && (
         <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-amber">
