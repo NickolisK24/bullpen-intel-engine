@@ -3,9 +3,10 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import SeasonBanner from './SeasonBanner'
-import { fmtDataDate, fmtSyncDate } from './syncStatusView'
+import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
+  getDataProvenance,
   getRolesSummaryView,
 } from '../bullpen/board/tonightsBullpenBoardView'
 
@@ -29,7 +30,6 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
   const roles = getRolesSummaryView(data?.roles)
 
   const freshness = data?.freshness || {}
-  const dataThrough = fmtDataDate(freshness.data_through)
   const lastSync = fmtSyncDate(freshness.last_successful_sync)
   const isCurrent = freshness.is_current !== false
   const season = (freshness.data_through || '').slice(0, 4) || '2024'
@@ -60,9 +60,8 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
               </span>
               <SeasonBanner season={season} isLive={isLive} />
               <FreshnessPill
-                dataThrough={dataThrough}
+                provenance={getDataProvenance(freshness)}
                 lastSync={lastSync}
-                isCurrent={isCurrent}
                 confidenceLabel={context.confidenceLabel}
               />
               <Link
@@ -181,16 +180,15 @@ function Section({ title, subtitle, children }) {
   )
 }
 
-function FreshnessPill({ dataThrough, lastSync, isCurrent, confidenceLabel }) {
+function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
   return (
     <div
       className="rounded border px-3 py-2 font-mono text-[11px]"
-      style={isCurrent
-        ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
-        : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }}
+      style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
+      title={provenance.throughHint}
     >
-      <span className="uppercase tracking-widest">{isCurrent ? 'Current' : 'Stale'}</span>
-      {dataThrough && <span className="ml-2 text-chalk300">Data through {dataThrough}</span>}
+      <span className="uppercase tracking-widest">{provenance.label}</span>
+      {provenance.detail && <span className="ml-2 text-chalk300">{provenance.detail}</span>}
       {lastSync && <span className="ml-2 text-chalk500">· Synced {lastSync}</span>}
       <span className="ml-2 text-chalk500">· Confidence {confidenceLabel}</span>
     </div>

@@ -134,6 +134,41 @@ export function getBoardCardView(card) {
   }
 }
 
+export function getDataProvenance(freshness) {
+  const f = freshness || {}
+  const dataThrough = fmtDataDate(f.data_through)
+  const isLive = f.is_current === true && (f.sync_status === 'success' || f.sync_status === 'ok')
+
+  if (!dataThrough) {
+    return {
+      state: 'none',
+      label: 'No data loaded',
+      detail: null,
+      throughHint: 'No games are loaded yet.',
+      isLive: false,
+      tone: { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1', dot: '#94a3b8' },
+    }
+  }
+  if (isLive) {
+    return {
+      state: 'live',
+      label: 'Live data',
+      detail: `through ${dataThrough}`,
+      throughHint: 'Through date = most recent game in the dataset.',
+      isLive: true,
+      tone: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
+    }
+  }
+  return {
+    state: 'sample',
+    label: 'Sample data',
+    detail: `through ${dataThrough}`,
+    throughHint: 'Through date = most recent game in the dataset (historical snapshot, not live).',
+    isLive: false,
+    tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
+  }
+}
+
 export function getBoardFreshnessView(freshness) {
   const f = freshness || {}
   const isCurrent = f.is_current !== false

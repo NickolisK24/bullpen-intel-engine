@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { getTeamBullpenBoard } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenBoardView from './BullpenBoardView'
+import PitcherDetail from '../PitcherDetail'
 
 // Tonight's Bullpen Board lives inside the Bullpen workflow. It receives the
 // shared teams fetch so it does not double-load the team list, manages its own
@@ -11,6 +12,14 @@ export default function TonightsBullpenBoard({ teams }) {
   const teamList = teams?.data || []
   const [selectedTeam, setSelectedTeam] = useState(null)
   const [includeStale, setIncludeStale] = useState(false)
+  // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
+  // board never duplicates that screen.
+  const [detailPitcherId, setDetailPitcherId] = useState(null)
+  const detailRef = useRef(null)
+
+  useEffect(() => {
+    if (detailPitcherId != null) detailRef.current?.focus()
+  }, [detailPitcherId])
 
   // Default to the first team once the list loads so the board shows a bullpen
   // immediately instead of an empty prompt.
@@ -71,7 +80,22 @@ export default function TonightsBullpenBoard({ teams }) {
       ) : board.error ? (
         <ErrorState message={board.error} onRetry={board.refetch} />
       ) : (
-        <BullpenBoardView board={board.data} />
+        <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
+          <div className="min-w-0 flex-1">
+            <BullpenBoardView board={board.data} onSelectPitcher={setDetailPitcherId} />
+          </div>
+          {detailPitcherId != null && (
+            <div
+              ref={detailRef}
+              tabIndex={-1}
+              role="region"
+              aria-label="Selected pitcher detail"
+              className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none lg:static lg:inset-auto lg:z-auto lg:bg-transparent lg:p-0 2xl:w-[34rem] 2xl:shrink-0"
+            >
+              <PitcherDetail pitcherId={detailPitcherId} onClose={() => setDetailPitcherId(null)} />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
