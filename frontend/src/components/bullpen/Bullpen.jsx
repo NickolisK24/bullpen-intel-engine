@@ -21,8 +21,8 @@ const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
   { id: 'board',    label: "Tonight's Board" },
   { id: 'compare',  label: 'Compare Bullpens' },
-  { id: 'pitchers', label: 'Pitchers' },
-  { id: 'teams',    label: 'Team Summary' },
+  { id: 'pitchers', label: 'All Pitchers' },
+  { id: 'teams',    label: 'All Teams' },
 ]
 const PAGE_SIZE = 50
 
