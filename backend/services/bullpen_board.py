@@ -63,6 +63,170 @@ GROUP_META = {
 CAPABILITY = 'tonights_bullpen_board'
 
 
+# ── Team context (Board V2) ────────────────────────────────────────────────
+#
+# Deterministic, transparent team-level context derived ONLY from the group
+# counts produced above. No scoring, ranking, ordering, or recommendation —
+# just a plain-language read of bullpen shape with the numbers that justify it.
+
+# Thresholds, expressed as fractions of the total reliever pool. Centralized so
+# the rules stay explainable and tunable without scattering magic numbers.
+CONSTRAINED_RESTRICTED_PCT = 0.40   # Avoid+Unavailable at/over this → constrained
+MONITOR_DOMINANT_PCT = 0.40         # Monitor at/over this → monitoring
+ELEVATED_RESTRICTED_PCT = 0.20      # Avoid+Unavailable at/over this → elevated
+ELEVATED_LOW_AVAILABLE_PCT = 0.40   # Available under this → elevated
+
+HEALTH_MANAGEABLE = 'manageable'
+HEALTH_MONITORING = 'monitoring'
+HEALTH_ELEVATED = 'elevated'
+HEALTH_CONSTRAINED = 'constrained'
+HEALTH_NO_DATA = 'no_data'
+
+HEALTH_LABELS = {
+    HEALTH_MANAGEABLE: 'Bullpen workload appears manageable.',
+    HEALTH_MONITORING: 'Several relievers require monitoring.',
+    HEALTH_ELEVATED: 'Bullpen workload is elevated.',
+    HEALTH_CONSTRAINED: 'Availability is constrained tonight.',
+    HEALTH_NO_DATA: 'No bullpen availability to summarize tonight.',
+}
+
+METHODOLOGY_REASON = 'Availability classifications are workload-based only.'
+
+
+def _pct(part, total):
+    """Whole-number percentage; 0 when there is nothing to divide."""
+    if not total:
+        return 0
+    return round(part / total * 100)
+
+
+def _monitor_is_dominant(counts):
+    """True when Monitor is the single largest group (strict over the rest)."""
+    monitor = counts[STATUS_MONITOR]
+    if monitor <= 0:
+        return False
+    others = [counts[status] for status in BOARD_GROUP_ORDER if status != STATUS_MONITOR]
+    return all(monitor > other for other in others)
+
+
+def classify_bullpen_health(counts, total):
+    """
+    Deterministic bullpen-health state from group counts.
+
+    Evaluated in a fixed priority order (first match wins) so the result is
+    explainable and stable:
+
+      1. no_data     — no relievers in the freshness window.
+      2. constrained — Avoid+Unavailable >= 40% of the pen, or nobody Available.
+      3. monitoring  — Monitor >= 40% of the pen, or Monitor is the largest group.
+      4. elevated    — Avoid+Unavailable >= 20%, or Available < 40% of the pen.
+      5. manageable  — none of the above (healthy availability, light restriction).
+    """
+    if total == 0:
+        return HEALTH_NO_DATA
+
+    available = counts[STATUS_AVAILABLE]
+    monitor = counts[STATUS_MONITOR]
+    restricted = counts[STATUS_AVOID] + counts[STATUS_UNAVAILABLE]
+
+    if restricted / total >= CONSTRAINED_RESTRICTED_PCT or available == 0:
+        return HEALTH_CONSTRAINED
+    if monitor / total >= MONITOR_DOMINANT_PCT or _monitor_is_dominant(counts):
+        return HEALTH_MONITORING
+    if (
+        restricted / total >= ELEVATED_RESTRICTED_PCT
+        or available / total < ELEVATED_LOW_AVAILABLE_PCT
+    ):
+        return HEALTH_ELEVATED
+    return HEALTH_MANAGEABLE
+
+
+def _health_reasons(state, counts, total, freshness_note=None):
+    """Transparent, count-referencing explanation for a health statement."""
+    reasons = []
+    if state == HEALTH_NO_DATA:
+        reasons.append('No active relievers fall inside the current freshness window.')
+        if freshness_note:
+            reasons.append(freshness_note)
+        return reasons
+
+    available = counts[STATUS_AVAILABLE]
+    monitor = counts[STATUS_MONITOR]
+    restricted = counts[STATUS_AVOID] + counts[STATUS_UNAVAILABLE]
+
+    reasons.append(f'{available} of {total} relievers are Available Tonight.')
+    if restricted == 0:
+        reasons.append('No relievers are marked Avoid or Unavailable.')
+    else:
+        reasons.append(f'{restricted} of {total} relievers are Avoid or Unavailable.')
+    if state in (HEALTH_MONITORING, HEALTH_ELEVATED):
+        reasons.append(f'{monitor} of {total} relievers are in the Monitor group.')
+    reasons.append(METHODOLOGY_REASON)
+    if freshness_note:
+        reasons.append(freshness_note)
+    return reasons
+
+
+def build_team_context(groups, freshness=None):
+    """
+    Team-level bullpen context (Board V2).
+
+    Pure function of the group counts plus the freshness block. Returns
+    descriptive metrics, a deterministic health statement with a transparent
+    explanation, and an honest confidence read. Contains no scores, rankings,
+    orderings, or pitcher-level preferences.
+    """
+    counts = {status: 0 for status in BOARD_GROUP_ORDER}
+    for group in groups:
+        status = group.get('status')
+        if status in counts:
+            counts[status] = int(group.get('count') or 0)
+
+    total = sum(counts.values())
+    restricted = counts[STATUS_AVOID] + counts[STATUS_UNAVAILABLE]
+    state = classify_bullpen_health(counts, total)
+
+    freshness = freshness or {}
+    is_current = freshness.get('is_current', True)
+    limitations = []
+    freshness_note = None
+    if total == 0:
+        confidence = 'none'
+    elif is_current is False:
+        confidence = 'low'
+        freshness_note = (
+            'Latest workload data is outside the active freshness window, '
+            'so this snapshot may not reflect tonight.'
+        )
+        limitations.append(freshness_note)
+    else:
+        confidence = 'high'
+
+    metrics = {
+        'total_relievers': total,
+        'available': counts[STATUS_AVAILABLE],
+        'monitor': counts[STATUS_MONITOR],
+        'limited': counts[STATUS_LIMITED],
+        'avoid': counts[STATUS_AVOID],
+        'unavailable': counts[STATUS_UNAVAILABLE],
+        'restricted': restricted,
+        'pct_available': _pct(counts[STATUS_AVAILABLE], total),
+        'pct_unavailable': _pct(counts[STATUS_UNAVAILABLE], total),
+        'pct_restricted': _pct(restricted, total),
+    }
+
+    return {
+        'metrics': metrics,
+        'health': {
+            'state': state,
+            'label': HEALTH_LABELS[state],
+            'reasons': _health_reasons(state, counts, total, freshness_note),
+        },
+        'confidence': confidence,
+        'limitations': limitations,
+    }
+
+
 def short_reason_for(availability):
     """
     A single, plain-language line summarizing why a pitcher sits in its group.
@@ -188,6 +352,7 @@ def build_board_payload(
     groups = group_cards(cards)
     grouped_total = sum(group['count'] for group in groups)
     generated = generated_at or datetime.now(timezone.utc).isoformat()
+    context = build_team_context(groups, freshness=freshness)
 
     return {
         'capability': CAPABILITY,
@@ -197,6 +362,7 @@ def build_board_payload(
         'ranking_applied': False,
         'selection_made': False,
         'group_order': list(BOARD_GROUP_ORDER),
+        'context': context,
         'groups': groups,
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),

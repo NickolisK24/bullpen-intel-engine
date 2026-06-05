@@ -1,4 +1,5 @@
 import { EmptyState } from '../../UI'
+import BullpenContextSummary from './BullpenContextSummary'
 import {
   getBoardCardView,
   getBoardFreshnessView,
@@ -172,6 +173,8 @@ export default function BullpenBoardView({ board }) {
           {totals.total === 1 ? '' : 's'} shown.
         </p>
       </div>
+
+      <BullpenContextSummary board={board} />
 
       {totals.isEmpty ? (
         <EmptyState
