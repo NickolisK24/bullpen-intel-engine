@@ -81,6 +81,59 @@ function WhyDisclosure({ reasons, limitations }) {
   )
 }
 
+function RoleChip({ role }) {
+  if (!role) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+      style={role.tone}
+      title={`Observed usage role: ${role.label} (confidence: ${role.confidenceLabel})`}
+      aria-label={`Observed usage role: ${role.label}, confidence ${role.confidenceLabel}`}
+    >
+      {role.shortLabel}
+      <span className="opacity-70">· {role.confidenceLabel}</span>
+    </span>
+  )
+}
+
+function RoleDisclosure({ role }) {
+  if (!role) return null
+  return (
+    <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2">
+      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        Usage role
+      </summary>
+      <div className="mt-2 space-y-2">
+        <div className="text-xs leading-relaxed text-chalk200">
+          <span className="text-chalk500">Observed role:</span> {role.label}
+          <span className="ml-1 text-chalk500">({role.confidenceLabel} confidence)</span>
+        </div>
+        {role.reason && <p className="text-xs leading-relaxed text-chalk300">{role.reason}</p>}
+        {role.evidence.length > 0 && (
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Evidence</div>
+            <ul className="mt-1 space-y-1">
+              {role.evidence.map((item, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk300">• {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {role.limitations.length > 0 && (
+          <div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">What this doesn't know</div>
+            <ul className="mt-1 space-y-1">
+              {role.limitations.map((item, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk500">• {item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </details>
+  )
+}
+
 function PitcherCard({ card }) {
   const view = getBoardCardView(card)
   return (
@@ -103,6 +156,12 @@ function PitcherCard({ card }) {
         </span>
       </div>
 
+      {view.role && (
+        <div className="mt-2">
+          <RoleChip role={view.role} />
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
         <span>
           <span className="text-chalk600">Fatigue</span>{' '}
@@ -121,6 +180,7 @@ function PitcherCard({ card }) {
       </div>
 
       <WhyDisclosure reasons={view.reasons} limitations={view.limitations} />
+      <RoleDisclosure role={view.role} />
     </div>
   )
 }

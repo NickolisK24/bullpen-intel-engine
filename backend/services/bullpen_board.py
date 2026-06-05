@@ -263,7 +263,7 @@ def short_reason_for(availability):
     return 'Workload indicators elevated'
 
 
-def build_card(name, pitcher_id, fatigue_score, availability):
+def build_card(name, pitcher_id, fatigue_score, availability, role=None):
     """Build a single display card from existing availability output."""
     availability = availability or {}
     score = None
@@ -283,6 +283,8 @@ def build_card(name, pitcher_id, fatigue_score, availability):
         'data_state': availability.get('data_state'),
         'reasons': list(availability.get('reasons') or []),
         'limitations': list(availability.get('limitations') or []),
+        # Observed usage role (descriptive). May be None if not classified.
+        'role': role,
     }
 
 
@@ -346,6 +348,7 @@ def build_board_payload(
             pitcher_id=record.get('pitcher_id'),
             fatigue_score=record.get('fatigue_score'),
             availability=record.get('availability'),
+            role=record.get('role'),
         )
         for record in records
     ]

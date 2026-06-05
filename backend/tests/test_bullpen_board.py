@@ -267,3 +267,14 @@ class TestBoardEndpoint:
             for card in group['pitchers']:
                 assert 'ranking_applied' not in card
                 assert 'selection_made' not in card
+
+    def test_cards_carry_an_observed_usage_role(self, client):
+        with client.application.app_context():
+            _seed_pitcher('Role Arm', team_id=1)
+        body = client.get('/api/bullpen/teams/1/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        assert cards, 'expected at least one card'
+        for card in cards:
+            assert 'role' in card and card['role'] is not None
+            assert 'role_key' in card['role']
+            assert card['role']['confidence'] in ('high', 'medium', 'low', 'none')
