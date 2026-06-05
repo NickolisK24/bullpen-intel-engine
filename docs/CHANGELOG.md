@@ -70,6 +70,12 @@ milestones. It does not replace the detailed evidence records linked from
   11 clears the Phase 10 production evidence blocker and records readiness for
   Phase 12 full production rollout approval review without approving full
   production rollout.
+- Phase 12 approved full production rollout for the certified V5 Bullpen
+  Intelligence Surface after reviewing Phase 8 governance certification, Phase
+  9 controlled rollout approval, Phase 10 production review, and Phase 11
+  retained production evidence. Future runtime integration, observation-family
+  expansion, ranking, selection, prediction, pitcher advice, matchup advice,
+  manager advice, and automated decision-making remain outside the approval.
 
 ## V4 - Evidence And Explanation Layer
 

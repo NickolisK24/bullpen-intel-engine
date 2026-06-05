@@ -255,6 +255,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 9 Controlled Rollout Review | Controlled Rollout Approved / Full Production Rollout Not Approved |
 | BaseballOS V5 Phase 10 Production Rollout Review | Review Complete / Full Production Rollout Not Approved |
 | BaseballOS V5 Phase 11 Production Evidence Review | Production Evidence Retained / Ready for Full Production Rollout Approval |
+| BaseballOS V5 Phase 12 Full Production Rollout Approval | Full Production Rollout Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -7075,6 +7076,51 @@ Next milestone:
 V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
 ```
 
+## BaseballOS V5 Phase 12 Full Production Rollout Approval
+
+BaseballOS V5 Phase 12 Full Production Rollout Approval is complete.
+
+The Phase 12 record is:
+
+- `docs/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md`
+
+Phase 12 is the final V5 governance approval milestone. It reviews the
+authoritative Phase 8 governance certification, Phase 9 controlled rollout
+review, Phase 10 production rollout review, and Phase 11 production evidence
+review.
+
+Phase 12 decision:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_APPROVED
+```
+
+Approval is granted because:
+
+```text
+GOVERNANCE_CERTIFICATION_PASSED
+CONTROLLED_ROLLOUT_PASSED
+PRODUCTION_REVIEW_PASSED
+EVIDENCE_RETENTION_COMPLETED
+NO_UNRESOLVED_BLOCKERS_REMAIN
+```
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 12 approves full production rollout for the certified V5 Bullpen
+Intelligence Surface only. It does not authorize backend changes, frontend
+changes, API changes, database changes, observation-builder changes, contract
+changes, test changes, feature work, future runtime observation generation
+from MLB data, future observation-family expansion, ranking, selection,
+prediction, pitcher recommendations, matchup advice, manager advice, best-arm
+language, role advice, or automated decision-making.
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7711,6 +7757,19 @@ changes, trust logic changes, freshness logic changes, pitcher ranking,
 pitcher selection, pitcher recommendation, matchup advice, best-arm language,
 closer/setup/role advice, prediction behavior, hidden priority ordering,
 pitcher-level advice, manager advice, or automated decision-making.
+V5 Phase 12 authorizes only full production rollout approval documentation,
+status recording, certification-ledger updates, and production approval
+recording for the certified V5 Bullpen Intelligence Surface. It does not
+authorize backend changes, frontend changes, API changes, database changes,
+observation-builder changes, contract changes, test changes, feature work,
+live runtime integration, runtime observation generation from MLB data, new
+observation families, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Readiness
+behavior changes, explanation behavior changes, trust logic changes, freshness
+logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
+matchup advice, best-arm language, closer/setup/role advice, prediction
+behavior, hidden priority ordering, pitcher-level advice, manager advice, or
+automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,

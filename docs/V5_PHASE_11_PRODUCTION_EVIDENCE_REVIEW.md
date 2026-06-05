@@ -253,8 +253,8 @@ Known limitations:
 - Phase 11 is documentation-only.
 - Phase 11 records manual production evidence; it does not add runtime
   behavior.
-- full production rollout remains not approved until a separate Phase 12
-  approval review passes.
+- at Phase 11 closeout, full production rollout remained not approved until a
+  separate Phase 12 approval review passed.
 - `GET /api/observations` remains bounded to the certified V5 observation API
   surface.
 - live runtime observation generation from MLB data is not approved.
@@ -315,15 +315,17 @@ Next phase:
 V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
 ```
 
-Phase 12 may approve:
+Phase 12 approval follow-up:
 
 ```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVED
 FULL_PRODUCTION_ROLLOUT_APPROVED
 ```
 
-if the final review passes.
-
-Phase 11 does not approve full production rollout.
+Phase 11 did not approve full production rollout by itself. Phase 12 approved
+full production rollout after reviewing Phase 8 governance certification,
+Phase 9 controlled rollout, Phase 10 production review, and Phase 11 retained
+production evidence.
 
 ## Final Boundary
 

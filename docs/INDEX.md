@@ -150,6 +150,7 @@ governance, rollout, monitoring, and historical records.
 - [V5 Phase 9 controlled rollout review](V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md)
 - [V5 Phase 10 production rollout review](V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md)
 - [V5 Phase 11 production evidence review](V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md)
+- [V5 Phase 12 full production rollout approval](V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md)
 
 ## Operational Review And Monitoring Evidence
 

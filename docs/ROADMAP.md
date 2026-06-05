@@ -9,8 +9,7 @@ BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
 V2 recommendation governance, completed V2.5 governance hardening, V3 Team
 Operations Bullpen Readiness approved for constrained controlled rollout, V4
 frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface production evidence retained while full production
-approval remains pending Phase 12 review.
+Intelligence Surface approved for full production rollout.
 
 Current V3 status:
 
@@ -23,18 +22,17 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 
 ## Active Direction
 
-The active platform capability track is V5 Bullpen Intelligence Surface. V5
-converts existing trusted BaseballOS platform state into governed descriptive
-observations without ranking, selecting, predicting, recommending, advising, or
-automating a decision. V5 Phase 11 retained manual production evidence for API
-behavior, frontend rendering, governance copy, accessibility smoke,
-fail-closed behavior, controlled rollout observation, and preserved false
-governance flags.
-
-Next V5 milestone:
+The current platform posture is V5 Bullpen Intelligence Surface full production
+rollout approval. V5 converts existing trusted BaseballOS platform state into
+governed descriptive observations without ranking, selecting, predicting,
+recommending, advising, or automating a decision. V5 Phase 12 approved full
+production rollout after Phase 8 governance certification, Phase 9 controlled
+rollout, Phase 10 production review, and Phase 11 production evidence
+retention.
 
 ```text
-V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_APPROVED
 ```
 
 Database changes, live runtime integration, ranking, selection,
@@ -52,18 +50,18 @@ unauthorized.
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
 | V4 Evidence and Explanation Layer | Availability, Team Operations readiness explanations, explanation API layer, and frontend explanation surfaces certified with non-blocking observations; production rollout approved for certified explanation surfaces | Monitor production rollout and preserve explanation-only governance |
-| V5 Bullpen Intelligence Surface | Governance certified / controlled rollout approved / production evidence retained | Phase 12 full production rollout approval review |
+| V5 Bullpen Intelligence Surface | Governance certified / full production rollout approved | Monitor production rollout and preserve V5 governance boundaries |
 | Prospect Pipeline | Prototype | Keep prototype until ownership, data, runbook, and evidence gaps close |
 
 ## Near-Term Roadmap
 
-1. V5 Phase 12 full production rollout approval review.
+1. V5 post-approval production monitoring and governance preservation.
 2. V4 Phase 27 post-rollout monitoring and governance preservation review.
 3. Controlled rollout monitoring artifact retention for V3 readiness.
 4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
    accessibility issue appears.
-5. Separate full production rollout decision only if controlled rollout
-   evidence supports it.
+5. Separate full production rollout decisions for other surfaces only if
+   controlled rollout evidence supports them.
 6. V5 runtime observation generation or rollout expansion only after separate
    governed approval.
 
@@ -298,6 +296,11 @@ governance and lifecycle evidence process linked from
   production evidence blocker, and recorded readiness for Phase 12 full
   production rollout approval review while keeping full production rollout
   unapproved.
+- V5 Phase 12 approved full production rollout for the certified Bullpen
+  Intelligence Surface while preserving false ranking and selection flags and
+  keeping future runtime integration, observation-family expansion, ranking,
+  selection, prediction, pitcher advice, matchup advice, manager advice, and
+  automated decision-making outside the approval.
 
 For detailed milestone history, use:
 
