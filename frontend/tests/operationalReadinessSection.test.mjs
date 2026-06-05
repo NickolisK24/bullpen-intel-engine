@@ -181,8 +181,10 @@ test('renders the Operational Readiness hero and snapshot for V2 and V3 state', 
 test('keeps governance invariants visible while details are collapsed', () => {
   const html = renderSection()
 
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  // Governance is stated in plain language on the primary surface; the raw
+  // ranking_applied / selection_made booleans live in the API payload and the
+  // Evidence & Metadata drawer.
+  assert.ok(htmlIncludes(html, 'Context only — no pitcher is ranked or selected.'))
   assert.ok(htmlIncludes(html, 'View Readiness Details'))
   assert.ok(htmlIncludes(html, 'View Evidence &amp; Metadata'))
   assert.equal(htmlIncludes(html, 'Coverage inventory is represented.'), false)

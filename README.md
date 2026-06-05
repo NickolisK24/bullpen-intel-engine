@@ -18,13 +18,25 @@ remains the decision maker.
 
 ## Current Platform Status
 
-| Surface | Status |
-| --- | --- |
-| V1 Availability Engine | Production Ready |
-| V2 Recommendation Engine | Production Ready |
-| V3 Team Operations Readiness | Controlled Rollout Approved |
-| V4 Explanation Platform | Full Production Rollout Approved |
-| V5 Bullpen Intelligence Surface | Full Production Rollout Approved |
+Status words below describe **implementation and governance maturity**, not a
+claim that every surface is live on real-time data. The "Data" column states
+what each surface actually runs on today. Rollout/certification labels are
+governance milestones recorded by the project's own ledger, not third-party
+audits.
+
+| Surface | Governance status | Data today |
+| --- | --- | --- |
+| V1 Fatigue + Availability Engine | Implemented, tested | Live MLB game-log data (via sync) |
+| V2 Recommendation Engine | Implemented, tested | Live workload data; presents **governed context/evidence only — it does not rank, select, or name a pitcher** |
+| V3 Team Operations Readiness | Controlled rollout approved | Live workload data |
+| V4 Explanation Platform | Production rollout approved | Derived from live availability/readiness payloads |
+| V5 Bullpen Intelligence Surface | Governance-certified foundation | **Deterministic sample state — not yet wired to live MLB data** |
+
+Legend: *Implemented* = code exists and is exercised by tests; *Tested* = covered
+by the automated suites; *Controlled/Production rollout approved* = governance
+milestone in the certification ledger; *Sample state* = the surface currently
+returns fixed deterministic data, pending separately-authorized live runtime
+integration.
 
 Detailed certification, rollout, and historical phase state is maintained in
 [docs/INDEX.md](docs/INDEX.md),
@@ -47,7 +59,8 @@ and
   confidence, freshness, limitations, and governance metadata.
 - Recommendation Engine V2 governed bullpen-state intelligence with team-level
   context, fail-closed behavior, trust metadata, freshness metadata, and
-  refusal metadata.
+  refusal metadata. It surfaces context and evidence only; it does not rank,
+  select, or name a pitcher to use.
 - Team Operations Readiness as a team-level surface for workload pressure,
   constraints, availability distribution, coverage visibility, and operational
   context.

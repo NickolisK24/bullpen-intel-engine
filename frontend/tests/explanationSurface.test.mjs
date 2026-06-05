@@ -326,8 +326,10 @@ test('Operational Readiness renders the Why this state action without inline evi
   assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  // The Dashboard surface now states governance in plain language; the raw
+  // ranking_applied / selection_made booleans remain in the API payload and in
+  // the Evidence & Metadata drawer rather than as user-facing copy.
+  assert.ok(htmlIncludes(html, 'Context only — no pitcher is ranked or selected.'))
 })
 
 test('Operational Readiness uses the certified team readiness explanation client', () => {

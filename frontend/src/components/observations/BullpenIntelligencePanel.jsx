@@ -15,6 +15,12 @@ const STATUS_LABELS = {
   unavailable: 'Unavailable',
 }
 
+// Plain-language governance reassurance shown on the user-facing surface in
+// place of raw contract fields. The underlying ranking_applied / selection_made
+// values are preserved in the API payload, the normalized view model, and the
+// contract tests — they just don't need to read like debug output here.
+const GOVERNANCE_CONTEXT_COPY = 'Context only — not a ranking or selection.'
+
 function asArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -235,32 +241,22 @@ function ObservationCard({ observation }) {
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2 font-mono text-[11px] text-chalk600">
-        <span>ranking_applied === {displayValue(observation.ranking_applied)}</span>
-        <span>selection_made === {displayValue(observation.selection_made)}</span>
+      <div className="mt-3 font-mono text-[11px] text-chalk600">
+        {GOVERNANCE_CONTEXT_COPY}
       </div>
     </article>
   )
 }
 
-function SafeUnavailableState({ state }) {
-  const diagnostics = [
-    ...asArray(state?.missingFields),
-    ...asArray(state?.malformedFields),
-    ...asArray(state?.forbiddenFieldPaths),
-    ...asArray(state?.forbiddenTextPaths),
-  ]
-
+function SafeUnavailableState() {
   return (
     <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4" role="alert" aria-live="assertive">
       <div className="font-mono text-xs uppercase tracking-widest text-red-300">
         Bullpen observations unavailable
       </div>
       <p className="mt-2 text-sm leading-relaxed text-chalk300">
-        Observation details are withheld because the frontend contract guard did not verify the current payload.
-      </p>
-      <p className="mt-2 font-mono text-[11px] text-chalk600">
-        Diagnostics detected: {diagnostics.length}
+        Observation details are withheld until the latest data passes BaseballOS
+        safety checks. Nothing is shown unless it can be trusted.
       </p>
     </div>
   )
@@ -311,7 +307,7 @@ export default function BullpenIntelligencePanel({
           aria-live="polite"
           aria-atomic="true"
         >
-          GET /api/observations · {statusLabel}
+          {statusLabel}
         </div>
       </div>
 
@@ -321,7 +317,7 @@ export default function BullpenIntelligencePanel({
         ) : error ? (
           <ErrorState message="Bullpen observations could not be loaded safely." onRetry={onRetry} />
         ) : !state || state.contractState === 'unavailable' || !state.isContractSafe ? (
-          <SafeUnavailableState state={state} />
+          <SafeUnavailableState />
         ) : (
           <div className="space-y-4">
             <div className="bullpen-intelligence-panel__metadata-grid gap-3">
@@ -339,7 +335,7 @@ export default function BullpenIntelligencePanel({
               <MetadataCell
                 label="Governance"
                 value="Protected"
-                subtext={`ranking_applied === ${displayValue(state.governance?.rankingApplied)}; selection_made === ${displayValue(state.governance?.selectionMade)}`}
+                subtext={GOVERNANCE_CONTEXT_COPY}
               />
             </div>
 

@@ -459,6 +459,11 @@ def get_sync_status():
     (data present but no sync has run — e.g. after `python seed.py`), and a
     genuinely empty system. The snapshot date is real DB data, never a faked
     sync timestamp.
+
+    Authority: durable sync_runs metadata is the source of truth (see
+    services/sync_metadata.build_sync_status_payload). backend/logs/sync_status.json
+    is cache-only — it is passed in as a fallback and is only consulted when no
+    durable run exists (e.g. the sync_runs migration has not been applied yet).
     """
     legacy_status = sync_service.read_status()
     try:
