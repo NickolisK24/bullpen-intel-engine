@@ -238,6 +238,12 @@ class TestBoardEndpoint:
         # Freshness block is present and carries a data-through anchor.
         assert 'freshness' in body
         assert 'data_through' in body['freshness']
+        # Board V2 context layer rides along on the same response.
+        assert 'context' in body
+        assert body['context']['metrics']['total_relievers'] == 2
+        assert body['context']['health']['state'] in (
+            'manageable', 'monitoring', 'elevated', 'constrained', 'no_data',
+        )
 
     def test_board_excludes_other_teams(self, client):
         with client.application.app_context():

@@ -96,6 +96,60 @@ export function getBoardFreshnessView(freshness) {
   }
 }
 
+// Health-state presentation. The state itself is computed deterministically on
+// the backend; this only maps it to plain styling for the context summary.
+const HEALTH_TONE = {
+  manageable: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
+  monitoring: { borderColor: '#eab30855', backgroundColor: '#eab30812', color: '#fde047', dot: '#eab308' },
+  elevated: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
+  constrained: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5', dot: '#ef4444' },
+  no_data: { borderColor: 'rgba(148,163,184,0.32)', backgroundColor: 'rgba(148,163,184,0.09)', color: '#cbd5e1', dot: '#94a3b8' },
+}
+
+// Snapshot rows mirror the board's five groups, in the same reading order.
+const SNAPSHOT_ROWS = [
+  { status: 'Available', label: 'Available Tonight', key: 'available' },
+  { status: 'Monitor', label: 'Monitor', key: 'monitor' },
+  { status: 'Limited', label: 'Limited', key: 'limited' },
+  { status: 'Avoid', label: 'Avoid', key: 'avoid' },
+  { status: 'Unavailable', label: 'Unavailable', key: 'unavailable' },
+]
+
+export function getBoardContextView(board) {
+  const context = board?.context || {}
+  const metrics = context.metrics || {}
+  const health = context.health || {}
+  const state = health.state || 'no_data'
+  const tone = HEALTH_TONE[state] || HEALTH_TONE.no_data
+  const confidence = context.confidence || 'high'
+
+  const snapshot = SNAPSHOT_ROWS.map(row => ({
+    status: row.status,
+    label: row.label,
+    count: typeof metrics[row.key] === 'number' ? metrics[row.key] : 0,
+    badge: getAvailabilityBadgeView(row.status),
+  }))
+
+  return {
+    hasContext: Boolean(board?.context),
+    state,
+    label: health.label || null,
+    reasons: Array.isArray(health.reasons) ? health.reasons : [],
+    confidence,
+    confidenceLabel: formatConfidence(confidence),
+    isDegraded: confidence === 'low',
+    limitations: Array.isArray(context.limitations) ? context.limitations : [],
+    metrics: {
+      total: typeof metrics.total_relievers === 'number' ? metrics.total_relievers : 0,
+      pctAvailable: typeof metrics.pct_available === 'number' ? metrics.pct_available : 0,
+      pctUnavailable: typeof metrics.pct_unavailable === 'number' ? metrics.pct_unavailable : 0,
+      pctRestricted: typeof metrics.pct_restricted === 'number' ? metrics.pct_restricted : 0,
+    },
+    snapshot,
+    tone,
+  }
+}
+
 export function getBoardTotals(board) {
   const groups = getBoardGroups(board)
   const total = typeof board?.total_pitchers === 'number'

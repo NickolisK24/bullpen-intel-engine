@@ -39,8 +39,76 @@ function buildGroups(cardsByStatus) {
   })
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [] } = {}) {
+function contextFromGroups(groups, freshness) {
+  // Lightweight stand-in mirroring the backend context shape for view tests.
+  const get = status => groups.find(g => g.status === status)?.count || 0
+  const available = get('Available')
+  const monitor = get('Monitor')
+  const limited = get('Limited')
+  const avoid = get('Avoid')
+  const unavailable = get('Unavailable')
+  const total = available + monitor + limited + avoid + unavailable
+  const restricted = avoid + unavailable
+  const isCurrent = freshness ? freshness.is_current !== false : true
+
+  let state = 'manageable'
+  if (total === 0) state = 'no_data'
+  else if (restricted / total >= 0.4 || available === 0) state = 'constrained'
+  else if (monitor / total >= 0.4) state = 'monitoring'
+  else if (restricted / total >= 0.2 || available / total < 0.4) state = 'elevated'
+
+  const labels = {
+    manageable: 'Bullpen workload appears manageable.',
+    monitoring: 'Several relievers require monitoring.',
+    elevated: 'Bullpen workload is elevated.',
+    constrained: 'Availability is constrained tonight.',
+    no_data: 'No bullpen availability to summarize tonight.',
+  }
+  const pct = (part) => (total ? Math.round((part / total) * 100) : 0)
+  const reasons = total === 0
+    ? ['No active relievers fall inside the current freshness window.']
+    : [
+      `${available} of ${total} relievers are Available Tonight.`,
+      restricted === 0
+        ? 'No relievers are marked Avoid or Unavailable.'
+        : `${restricted} of ${total} relievers are Avoid or Unavailable.`,
+      'Availability classifications are workload-based only.',
+    ]
+  const limitations = []
+  let confidence = 'high'
+  if (total === 0) confidence = 'none'
+  else if (!isCurrent) {
+    confidence = 'low'
+    const note = 'Latest workload data is outside the active freshness window, so this snapshot may not reflect tonight.'
+    reasons.push(note)
+    limitations.push(note)
+  }
+
+  return {
+    metrics: {
+      total_relievers: total,
+      available, monitor, limited, avoid, unavailable, restricted,
+      pct_available: pct(available),
+      pct_unavailable: pct(unavailable),
+      pct_restricted: pct(restricted),
+    },
+    health: { state, label: labels[state], reasons },
+    confidence,
+    limitations,
+  }
+}
+
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context } = {}) {
   const groups = buildGroups(cardsByStatus)
+  const resolvedFreshness = freshness || {
+    data_through: '2026-06-04',
+    latest_workload_date: '2026-06-04',
+    last_successful_sync: '2026-06-04T12:00:00+00:00',
+    sync_status: 'success',
+    is_current: true,
+    label: 'Current baseball data through 2026-06-04.',
+    limitations: [],
+  }
   return {
     capability: 'tonights_bullpen_board',
     team: team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' },
@@ -48,6 +116,7 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
     ranking_applied: false,
     selection_made: false,
     group_order: BOARD_GROUP_ORDER,
+    context: context || contextFromGroups(groups, resolvedFreshness),
     groups,
     total_pitchers: groups.reduce((sum, g) => sum + g.count, 0),
     ungrouped_pitchers: 0,
