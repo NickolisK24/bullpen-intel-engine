@@ -20,9 +20,9 @@ from services.availability_snapshot import (
     latest_fatigue_rows as availability_latest_fatigue_rows,
 )
 from services.availability_summary import summarize_availability_records
-from services.bullpen_board import build_board_payload
+from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
 from services.bullpen_comparison import build_team_comparison
-from services.pitcher_role import ROLE_WINDOW_DAYS, classify_usage_role
+from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS, classify_usage_role
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from services import sync_metadata
@@ -811,6 +811,58 @@ def get_stats_overview():
         'avg_fatigue_score': round(float(avg_fatigue), 1),
         'scored_pitchers':   len(latest_scores),
         'availability_summary': summarize_availability_records(availability_records),
+    })
+
+
+@bullpen_bp.route('/dashboard', methods=['GET'])
+def get_bullpen_dashboard():
+    """
+    League-wide bullpen overview for the landing dashboard.
+
+    Reuses existing systems only — Availability Engine V1 (availability summary),
+    the V2 Team Context Layer (bullpen health), and the usage-role classifier —
+    aggregated across all currently-scored pitchers. Presentation/context only:
+    no ranking, selection, recommendation, or prediction.
+    """
+    latest_rows = availability_latest_fatigue_rows()
+    availability_records = classify_latest_fatigue_rows(
+        latest_rows,
+        mode=CURRENT_AVAILABILITY_MODE,
+    )
+    summary = summarize_availability_records(availability_records)
+    status_counts = summary.get('statuses') or {}
+    groups = [
+        {'status': status, 'count': int(status_counts.get(status, 0))}
+        for status in BOARD_GROUP_ORDER
+    ]
+
+    freshness = _board_freshness_block()
+    context = build_team_context(groups, freshness=freshness)
+
+    # Usage-role composition across the same scored-pitcher set (one logs query).
+    pitcher_ids = [pitcher.id for _score, pitcher in latest_rows]
+    logs_by_pitcher = _recent_logs_by_pitcher(pitcher_ids)
+    today = date.today()
+    role_counts = {key: 0 for key in ROLE_KEYS}
+    for pitcher_id in pitcher_ids:
+        role = classify_usage_role(logs_by_pitcher.get(pitcher_id, []), reference_date=today)
+        key = role['role_key']
+        role_counts[key] = role_counts.get(key, 0) + 1
+
+    return jsonify({
+        'capability': 'bullpen_dashboard',
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'ranking_applied': False,
+        'selection_made': False,
+        'scope': 'all_tracked_bullpens',
+        'context': context,
+        'roles': {
+            'order': list(ROLE_KEYS),
+            'counts': role_counts,
+            'total': len(pitcher_ids),
+        },
+        'freshness': freshness,
+        'availability_summary': summary,
     })
 
 

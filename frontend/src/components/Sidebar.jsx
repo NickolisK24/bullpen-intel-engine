@@ -6,6 +6,7 @@ const NAV = [
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
   { to: '/prospects',   icon: '📈', label: 'Pipeline', tag: 'Preview' },
   { to: '/methodology', icon: '📐', label: 'Methodology' },
+  { to: '/trust',       icon: '🛡', label: 'Data & Trust' },
 ]
 
 export default function Sidebar() {
