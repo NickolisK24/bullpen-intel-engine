@@ -119,12 +119,12 @@ export default function Dashboard() {
           <div className="absolute inset-0 bg-grid-lines bg-grid-lines opacity-100 pointer-events-none" />
           <div className="relative z-10 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)] lg:items-start">
             <div>
-              <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Operational Readiness Dashboard</div>
+              <div className="font-mono text-xs text-amber/60 uppercase tracking-widest mb-2">Bullpen Availability &amp; Workload</div>
               <h1 className="font-display text-4xl sm:text-5xl tracking-wider text-chalk100 leading-none mb-2">
                 BASEBALL<span className="text-gradient-amber">OS</span>
               </h1>
               <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-                Bullpen workload, availability, governed recommendation context, and team operations readiness in one compact view.
+                See which relievers are available tonight and how stressed each bullpen is — with the data date and confidence shown.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <SeasonBanner season={seasonInfo.season} isLive={seasonInfo.isLive} />
