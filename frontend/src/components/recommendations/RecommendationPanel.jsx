@@ -348,6 +348,14 @@ function StatusContent({ view, error, onRetry }) {
   )
 }
 
+// NOTE (Phase 1 audit): In the running app this component is only ever mounted
+// embedded, via RecommendationPitcherDetailSection (variant="embedded",
+// showHeader={false}). The default standalone/header configuration below is not
+// currently reachable from any screen; it is retained because the test suite
+// renders it directly and it documents the component's public surface. Promoting
+// the embedded mount to the canonical path (and trimming the standalone layout)
+// is deferred to a separate, test-coupled cleanup pass — see
+// docs/PHASE_1_AUDIT_REMEDIATION_REPORT_2026_06.md.
 export default function RecommendationPanel({
   response = null,
   candidate = null,

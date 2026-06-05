@@ -300,13 +300,10 @@ export default function OperationalReadinessSection({
         </div>
 
         <div className="rounded border border-dirt bg-dugout/70 p-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 font-mono text-xs text-emerald-300">
-              ranking_applied === {displayValue(rankingApplied, 'missing')}
-            </div>
-            <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 font-mono text-xs text-emerald-300">
-              selection_made === {displayValue(selectionMade, 'missing')}
-            </div>
+          <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 font-mono text-xs text-emerald-300">
+            {rankingApplied === false && selectionMade === false
+              ? 'Context only — no pitcher is ranked or selected.'
+              : 'Governance state unavailable for this surface; treat as context only.'}
           </div>
         </div>
 

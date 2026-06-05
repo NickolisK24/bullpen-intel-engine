@@ -30,8 +30,7 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const withoutGovernanceCopy = html => visibleText(html)
   .replace(/Observations are descriptive only and do not rank, select, or recommend pitchers\./g, '')
-  .replace(/ranking_applied === false/g, '')
-  .replace(/selection_made === false/g, '')
+  .replace(/Context only — not a ranking or selection\./g, '')
 
 const baseObservationResponse = {
   capability: 'v5_bullpen_intelligence_surface',
@@ -234,8 +233,10 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Explanation Reference'))
   assert.ok(htmlIncludes(html, 'v5.observations.inventory'))
   assert.ok(htmlIncludes(html, 'Observations are descriptive only and do not rank, select, or recommend pitchers.'))
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  // Plain-language governance reassurance replaces raw contract fields on the
+  // user-facing surface. The governance booleans are still asserted via the
+  // normalized view model above and in the contract tests.
+  assert.ok(htmlIncludes(html, 'Context only — not a ranking or selection.'))
 })
 
 test('caps dashboard observations at three and exposes additional observation access', () => {
@@ -255,8 +256,7 @@ test('caps dashboard observations at three and exposes additional observation ac
   assert.ok(htmlIncludes(html, 'Dashboard observation 3 surfaced.'))
   assert.equal(htmlIncludes(html, 'Dashboard observation 4 surfaced.'), false)
   assert.equal(htmlIncludes(html, 'Dashboard observation 5 surfaced.'), false)
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  assert.ok(htmlIncludes(html, 'Context only — not a ranking or selection.'))
 })
 
 test('renders empty and fail-closed states with safe copy', () => {

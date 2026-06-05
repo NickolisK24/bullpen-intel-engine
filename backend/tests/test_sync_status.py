@@ -169,6 +169,65 @@ class TestSyncStatusSnapshot:
         assert body['message'] == 'MLB API unavailable'
         assert 'The latest sync attempt failed; data may reflect an earlier successful sync.' in body['freshness']['limitations']
 
+    def test_durable_metadata_overrides_a_conflicting_cache_file(self, client):
+        """Durable sync_runs is authoritative; the JSON file is cache-only.
+
+        Regression guard for the freshness finding in
+        backend/reports/data_freshness_validation_summary.md: a stale or
+        conflicting backend/logs/sync_status.json must never override durable
+        metadata, and a successful durable sync must never report
+        status: never / last_sync: null.
+        """
+        # A stale, conflicting cache file that (pre-fix) would have driven the
+        # endpoint. It claims an old failed sync from a different day.
+        sync_service.write_status({
+            'last_sync': '2026-05-20T03:00:00',
+            'status': 'failed',
+            'pitchers_updated': 0,
+            'new_logs_added': 0,
+            'errors': 9,
+            'message': 'stale cache file should not win',
+            'finished_at': '2026-05-20T03:01:00',
+        })
+
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                latest_game_date=date(2026, 5, 31),
+                latest_workload_date=date(2026, 5, 31),
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                pitchers_updated=428,
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.commit()
+
+        res = client.get('/api/bullpen/sync/status')
+        assert res.status_code == 200
+        body = res.get_json()
+
+        # Durable metadata wins; the conflicting cache file is ignored.
+        assert body['status'] == 'success'
+        assert body['last_sync'] == '2026-06-01T21:39:12'
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
+        assert body['pitchers_updated'] == 428
+        assert body['errors'] == 0
+        assert body['message'] != 'stale cache file should not win'
+        # The reported invariant — never null/never when durable metadata exists.
+        assert body['last_sync'] is not None
+        assert body['status'] != 'never'
+
     def test_sync_metadata_service_persists_start_and_completion(self, client):
         with client.application.app_context():
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
