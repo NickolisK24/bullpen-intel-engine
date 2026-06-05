@@ -60,6 +60,10 @@ milestones. It does not replace the detailed evidence records linked from
   runtime observation generation from MLB data, ranking, selection, pitcher
   recommendations, matchup advice, best-arm language, role advice, prediction,
   or automated decision-making.
+- Phase 10 completed production rollout review and retained full production
+  rollout as not approved because retained controlled-rollout monitoring,
+  production browser, accessibility smoke, fail-closed, governance-copy, and
+  preserved false-flag evidence is incomplete.
 
 ## V4 - Evidence And Explanation Layer
 

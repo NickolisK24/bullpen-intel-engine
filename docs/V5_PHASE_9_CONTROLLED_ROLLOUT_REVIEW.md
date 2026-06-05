@@ -347,6 +347,18 @@ Phase 10 must require retained controlled rollout evidence, manual browser
 evidence, accessibility smoke evidence, fail-closed evidence, governance-copy
 evidence, and preserved false-flag evidence.
 
+Phase 10 follow-up:
+
+```text
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW_COMPLETE
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+PRODUCTION_EVIDENCE_REQUIRED
+```
+
+The Phase 10 record is:
+
+- `docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md`
+
 ## Final Boundary
 
 V5 Phase 9 approves controlled rollout for the certified Bullpen Intelligence

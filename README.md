@@ -31,7 +31,7 @@ Detailed certification, rollout, and historical phase state is maintained in
 [docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md](docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md).
+[docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md](docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md).
 
 ## Core Capabilities
 
@@ -239,24 +239,35 @@ unless implementation files change.
 - [V5 Phase 9 Controlled Rollout Review](docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md)
   - controlled rollout approval for the certified V5 Bullpen Intelligence
     Surface, while keeping full production rollout unapproved.
+- [V5 Phase 10 Production Rollout Review](docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md)
+  - production rollout review for V5, retaining full production rollout as not
+    approved pending retained production-readiness evidence.
 
-## Next Phase: V5 Bullpen Intelligence Surface
+## Current V5 Boundary
 
-V5 Phase 9 controlled rollout review is complete. The certified contracts,
-builders, read-only API, frontend panel, documentation, and tests have been
-reviewed for controlled rollout, with evidence, limitations, trust, freshness,
-confidence, explanation references, and preserved governance flags.
+V5 Phase 10 production rollout review is complete. The certified contracts,
+builders, read-only API, frontend panel, documentation, and tests remain
+governed, controlled-rollout approved, and bounded by evidence, limitations,
+trust, freshness, confidence, explanation references, and preserved governance
+flags.
 
-V5 Phase 9 approves controlled rollout only. It does not authorize full
-production rollout, backend decision logic, database migrations, live runtime
+V5 Phase 10 does not approve full production rollout because retained
+controlled-rollout monitoring, production browser, accessibility smoke,
+fail-closed, governance-copy, and preserved false-flag evidence is incomplete.
+It does not authorize backend decision logic, database migrations, live runtime
 integration, runtime observation generation from MLB data, ranking, selection,
 prediction, pitcher recommendations, matchup advice, best-arm language, role
 advice, or automated decision-making.
 
-Next milestone:
+Required evidence before any renewed production approval review:
 
 ```text
-V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
+CONTROLLED_ROLLOUT_MONITORING_EVIDENCE
+MANUAL_BROWSER_EVIDENCE
+ACCESSIBILITY_SMOKE_EVIDENCE
+FAIL_CLOSED_EVIDENCE
+GOVERNANCE_COPY_EVIDENCE
+PRESERVED_FALSE_FLAG_EVIDENCE
 ```
 
 ## Author

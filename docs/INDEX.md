@@ -148,6 +148,7 @@ governance, rollout, monitoring, and historical records.
 - [V5 Phase 7 frontend intelligence surface](V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md)
 - [V5 Phase 8 governance certification](V5_PHASE_8_GOVERNANCE_CERTIFICATION.md)
 - [V5 Phase 9 controlled rollout review](V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md)
+- [V5 Phase 10 production rollout review](V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md)
 
 ## Operational Review And Monitoring Evidence
 

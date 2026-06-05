@@ -253,6 +253,7 @@ It does not rank the bullpen or select the final pitcher.
 | BaseballOS V5 Phase 7 Frontend Intelligence Surface | Complete / Frontend Read-Only Surface Only |
 | BaseballOS V5 Phase 8 Governance Certification | Governance Certified / Controlled Rollout Ready |
 | BaseballOS V5 Phase 9 Controlled Rollout Review | Controlled Rollout Approved / Full Production Rollout Not Approved |
+| BaseballOS V5 Phase 10 Production Rollout Review | Review Complete / Full Production Rollout Not Approved |
 | Prospect Pipeline | Prototype |
 
 ## Trust & Governance Status
@@ -6970,6 +6971,55 @@ Next milestone:
 V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
 ```
 
+## BaseballOS V5 Phase 10 Production Rollout Review
+
+BaseballOS V5 Phase 10 Production Rollout Review is complete.
+
+The Phase 10 record is:
+
+- `docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md`
+
+Phase 10 reviews the governed Bullpen Intelligence Surface across contracts,
+deterministic builders, read-only API routes, frontend rendering,
+documentation, tests, fail-closed behavior, trust, freshness, confidence,
+evidence, limitations, Phase 8 governance certification, Phase 9 controlled
+rollout approval, and preserved governance flags.
+
+Phase 10 decision:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 10 classification:
+
+```text
+PRODUCTION_ROLLOUT_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_REQUIRED
+```
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 10 does not approve full production rollout because retained
+controlled-rollout monitoring, production browser, accessibility smoke,
+fail-closed, governance-copy, and preserved false-flag evidence is incomplete.
+
+Required evidence before any renewed production approval review:
+
+```text
+CONTROLLED_ROLLOUT_MONITORING_EVIDENCE
+MANUAL_BROWSER_EVIDENCE
+ACCESSIBILITY_SMOKE_EVIDENCE
+FAIL_CLOSED_EVIDENCE
+GOVERNANCE_COPY_EVIDENCE
+PRESERVED_FALSE_FLAG_EVIDENCE
+```
+
 ## V2 Production Fail-Closed Diagnosis
 
 Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
@@ -7579,6 +7629,19 @@ explanation behavior changes, trust logic changes, freshness logic changes,
 pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
 best-arm language, closer/setup/role advice, prediction behavior, hidden
 priority ordering, pitcher-level advice, or automated decision-making.
+V5 Phase 10 authorizes only production rollout review documentation, status
+recording, certification-ledger updates, evidence-gap recording, and retained
+production-readiness evidence requirements for the certified Bullpen
+Intelligence Surface. It does not authorize full production rollout, backend
+decision logic, database migrations, live runtime integration, runtime
+observation generation from MLB data, API expansion, frontend feature
+expansion, new observation families, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes,
+Team Operations Readiness behavior changes, explanation behavior changes,
+trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, or automated decision-making.
 The README documentation structure refactor authorizes only documentation
 navigation and onboarding-surface cleanup. It does not authorize backend
 changes, frontend changes, runtime behavior changes, API contract changes,
