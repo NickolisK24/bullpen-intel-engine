@@ -5,6 +5,7 @@ import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHead
 import { riskColor } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
 import TeamComparison from './TeamComparison'
+import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
 import {
@@ -16,13 +17,14 @@ import {
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
+  { id: 'board',    label: "Tonight's Board" },
   { id: 'pitchers', label: 'Pitchers' },
   { id: 'teams',    label: 'Team Summary' },
 ]
 const PAGE_SIZE = 50
 
 export default function Bullpen() {
-  const [viewMode, setViewMode]           = useState('pitchers')
+  const [viewMode, setViewMode]           = useState('board')
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
   const [selectedPitcher, setSelected]    = useState(null)
@@ -92,7 +94,9 @@ export default function Bullpen() {
         }
       />
 
-      {viewMode === 'teams' ? (
+      {viewMode === 'board' ? (
+        <TonightsBullpenBoard teams={teams} />
+      ) : viewMode === 'teams' ? (
         <TeamComparison />
       ) : (
         <PitcherView

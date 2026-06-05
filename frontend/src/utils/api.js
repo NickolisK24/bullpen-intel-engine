@@ -607,6 +607,12 @@ export const getTeamBullpen    = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/bullpen${q ? `?${q}` : ''}`)
 }
+// Tonight's Bullpen Board — existing availability classifications grouped for a
+// coach-facing read. Presentation only (no ranking/selection).
+export const getTeamBullpenBoard = (teamId, params = {}) => {
+  const q = new URLSearchParams(params).toString()
+  return request(`/bullpen/teams/${teamId}/board${q ? `?${q}` : ''}`)
+}
 export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getSyncStatus     = () => request('/bullpen/sync/status')
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')

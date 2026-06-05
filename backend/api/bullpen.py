@@ -20,6 +20,7 @@ from services.availability_snapshot import (
     latest_fatigue_rows as availability_latest_fatigue_rows,
 )
 from services.availability_summary import summarize_availability_records
+from services.bullpen_board import build_board_payload
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from services import sync_metadata
@@ -534,18 +535,14 @@ def get_teams():
     ])
 
 
-@bullpen_bp.route('/teams/<int:team_id>/bullpen', methods=['GET'])
-def get_team_bullpen(team_id):
+def _team_bullpen_rows(team_id, include_stale=False):
     """
-    Get full bullpen overview for a team.
-    Single joined query — no N+1 issue.
+    Latest fatigue + availability for a team's active pitchers.
 
-    Optional query params:
-      - include_stale: when truthy, include pitchers whose most recent
-                       appearance is older than 14 days. Default false.
+    Single joined query (no N+1). Returns the (pitcher, score) result rows and a
+    {pitcher_id: availability} map so the bullpen overview and Tonight's Bullpen
+    Board share one availability calculation instead of duplicating it.
     """
-    include_stale = _truthy(request.args.get('include_stale'))
-
     subq = (
         db.session.query(
             FatigueScore.pitcher_id,
@@ -583,6 +580,21 @@ def get_team_bullpen(team_id):
             mode=CURRENT_AVAILABILITY_MODE,
         )
     }
+    return results, availability_by_pitcher
+
+
+@bullpen_bp.route('/teams/<int:team_id>/bullpen', methods=['GET'])
+def get_team_bullpen(team_id):
+    """
+    Get full bullpen overview for a team.
+    Single joined query — no N+1 issue.
+
+    Optional query params:
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
+    """
+    include_stale = _truthy(request.args.get('include_stale'))
+    results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
 
     return jsonify([
         {
@@ -592,6 +604,86 @@ def get_team_bullpen(team_id):
         }
         for pitcher, score in results
     ])
+
+
+def _board_freshness_block():
+    """
+    Compact freshness/trust block for the board, derived from the same durable
+    sync metadata the dashboard trusts. Never raises — a DB hiccup degrades to a
+    clearly-labelled "unavailable" state instead of failing the board.
+    """
+    try:
+        status_payload = sync_metadata.build_sync_status_payload(
+            legacy_status=sync_service.read_status()
+        )
+        freshness = status_payload.get('freshness') or {}
+        data = status_payload.get('data') or {}
+        return {
+            'data_through': data.get('latest_game_date'),
+            'latest_workload_date': data.get('latest_workload_date'),
+            'last_successful_sync': status_payload.get('last_successful_sync'),
+            'sync_status': status_payload.get('status'),
+            'is_current': freshness.get('is_current', False),
+            'label': freshness.get('label'),
+            'limitations': list(freshness.get('limitations') or []),
+        }
+    except Exception:
+        return {
+            'data_through': None,
+            'latest_workload_date': None,
+            'last_successful_sync': None,
+            'sync_status': None,
+            'is_current': False,
+            'label': 'Freshness metadata unavailable.',
+            'limitations': ['Could not read durable sync metadata.'],
+        }
+
+
+@bullpen_bp.route('/teams/<int:team_id>/board', methods=['GET'])
+def get_team_bullpen_board(team_id):
+    """
+    Tonight's Bullpen Board — existing availability classifications grouped for a
+    coach-facing read of "what does this bullpen look like tonight?".
+
+    Presentation only: no ranking, no selection, no recommendation, no
+    prediction. Reuses the same query and Availability Engine V1 output as the
+    bullpen overview, groups pitchers by availability status, and orders them
+    alphabetically within each group.
+
+    Optional query params:
+      - include_stale: when truthy, include pitchers whose most recent
+                       appearance is older than 14 days. Default false.
+    """
+    include_stale = _truthy(request.args.get('include_stale'))
+    results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
+
+    team_info = None
+    records = []
+    for pitcher, score in results:
+        records.append({
+            'name': pitcher.full_name,
+            'pitcher_id': pitcher.id,
+            'fatigue_score': score.raw_score if score else None,
+            'availability': availability_by_pitcher.get(pitcher.id),
+        })
+        if team_info is None:
+            team_info = {
+                'team_id': pitcher.team_id,
+                'team_name': pitcher.team_name,
+                'team_abbreviation': pitcher.team_abbreviation,
+            }
+
+    if team_info is None:
+        team_info = {'team_id': team_id, 'team_name': None, 'team_abbreviation': None}
+
+    freshness = _board_freshness_block()
+    payload = build_board_payload(
+        team=team_info,
+        records=records,
+        freshness=freshness,
+        limitations=freshness.get('limitations'),
+    )
+    return jsonify(payload)
 
 
 # ─── Stats & Aggregates ───────────────────────────────────────────────────────
