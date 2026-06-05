@@ -57,6 +57,37 @@ function normalizeGroup(group) {
   }
 }
 
+// Observed usage role (Pitcher Usage Role Separation V1). Descriptive only —
+// neutral styling so a role never reads as "better" than another. Defined roles
+// share one neutral tone; low/insufficient roles are muted.
+const ROLE_SHORT_LABELS = {
+  late_high_leverage: 'Late / High-Leverage',
+  setup_bridge: 'Setup / Bridge',
+  middle_relief: 'Middle Relief',
+  long_multi_inning: 'Long / Multi-Inning',
+  low_unclear: 'Low / Unclear Usage',
+  insufficient_data: 'Insufficient Data',
+}
+
+export function getRoleView(role) {
+  if (!role) return null
+  const key = role.role_key || 'insufficient_data'
+  const muted = key === 'insufficient_data' || key === 'low_unclear'
+  return {
+    key,
+    label: role.role || ROLE_SHORT_LABELS[key] || 'Usage role',
+    shortLabel: ROLE_SHORT_LABELS[key] || role.role || 'Usage role',
+    confidence: role.confidence || 'none',
+    confidenceLabel: formatConfidence(role.confidence),
+    reason: role.short_reason || null,
+    evidence: Array.isArray(role.evidence) ? role.evidence : [],
+    limitations: Array.isArray(role.limitations) ? role.limitations : [],
+    tone: muted
+      ? { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }
+      : { borderColor: 'rgba(129,140,248,0.40)', backgroundColor: 'rgba(129,140,248,0.12)', color: '#c7d2fe' },
+  }
+}
+
 export function getBoardCardView(card) {
   const badge = getAvailabilityBadgeView(card?.availability_status)
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
@@ -73,6 +104,7 @@ export function getBoardCardView(card) {
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
     reasons: Array.isArray(card?.reasons) ? card.reasons : [],
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
+    role: getRoleView(card?.role),
   }
 }
 

@@ -22,6 +22,7 @@ from services.availability_snapshot import (
 from services.availability_summary import summarize_availability_records
 from services.bullpen_board import build_board_payload
 from services.bullpen_comparison import build_team_comparison
+from services.pitcher_role import ROLE_WINDOW_DAYS, classify_usage_role
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from services import sync_metadata
@@ -652,14 +653,37 @@ def _team_info_lookup(team_id):
     return {'team_id': row.team_id, 'team_name': row.team_name, 'team_abbreviation': row.team_abbreviation}
 
 
+def _recent_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS):
+    """
+    Recent game logs grouped by pitcher_id, in a single query (no N+1).
+
+    Used to classify observed usage role. Returns {} when there are no pitchers.
+    """
+    if not pitcher_ids:
+        return {}
+    cutoff = date.today() - timedelta(days=days)
+    logs = (
+        GameLog.query
+        .filter(GameLog.pitcher_id.in_(pitcher_ids), GameLog.game_date >= cutoff)
+        .all()
+    )
+    grouped = {}
+    for log in logs:
+        grouped.setdefault(log.pitcher_id, []).append(log)
+    return grouped
+
+
 def _build_team_board(team_id, include_stale=False, freshness=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
 
     Shared by the board route and the comparison route so both consume the exact
-    same grouped/context output (no duplicate availability calculation).
+    same grouped/context output and the same observed-usage-role classification
+    (built once here, no duplicate availability or role calculation).
     """
     results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
+    logs_by_pitcher = _recent_logs_by_pitcher([pitcher.id for pitcher, _ in results])
+    today = date.today()
 
     team_info = None
     records = []
@@ -669,6 +693,10 @@ def _build_team_board(team_id, include_stale=False, freshness=None):
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability_by_pitcher.get(pitcher.id),
+            'role': classify_usage_role(
+                logs_by_pitcher.get(pitcher.id, []),
+                reference_date=today,
+            ),
         })
         if team_info is None:
             team_info = {
