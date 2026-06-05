@@ -1,5 +1,13 @@
 import { useId, useState } from 'react'
 
+import {
+  humanizeLabel,
+  isPlainObject,
+  shouldShowTechnicalKey,
+  summarizeDisplayValue,
+  technicalJson,
+} from '../../utils/displayText'
+
 function asArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -14,16 +22,42 @@ function displayValue(value) {
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return 'Not provided'
   if (Array.isArray(value)) return value.length ? value.map(displayValue).join(', ') : 'None'
-  if (typeof value === 'object') return JSON.stringify(value)
+  if (typeof value === 'object') return summarizeDisplayValue(value)
   return String(value)
 }
 
 function titleCase(value) {
-  return String(value || '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, char => char.toUpperCase())
+  return humanizeLabel(value)
+}
+
+function TechnicalKeyLine({ label = 'Technical key', value }) {
+  if (!shouldShowTechnicalKey(value)) return null
+
+  return (
+    <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-chalk600">
+      {label}: {value}
+    </p>
+  )
+}
+
+function ValueBlock({ value, unit = null }) {
+  const isTechnicalValue = isPlainObject(value) || Array.isArray(value)
+
+  return (
+    <div className="mt-1 break-words font-mono text-xs text-chalk200">
+      <div>{displayValue(value)}{unit ? ` ${unit}` : ''}</div>
+      {isTechnicalValue && (
+        <details className="mt-2 rounded border border-dirt/70 bg-dugout/70 p-2 text-chalk500">
+          <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-chalk600">
+            Technical details
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed">
+            {technicalJson(value)}
+          </pre>
+        </details>
+      )}
+    </div>
+  )
 }
 
 function DetailSection({ title, children, initiallyOpen = false }) {
@@ -80,13 +114,14 @@ function ReasonList({ reasons }) {
     <ul className="space-y-2">
       {items.map((reason, index) => {
         const item = asObject(reason)
+        const labelSource = item.label || item.code || `reason ${index + 1}`
         return (
           <li key={`${item.code || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
             <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {item.label || titleCase(item.code || `reason ${index + 1}`)}
+              {humanizeLabel(labelSource)}
             </div>
             {item.summary && <p className="mt-1 text-sm leading-relaxed text-chalk300">{item.summary}</p>}
-            {item.code && <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{item.code}</p>}
+            <TechnicalKeyLine value={item.code} />
           </li>
         )
       })}
@@ -104,20 +139,21 @@ function EvidenceList({ evidence }) {
     <ul className="space-y-2">
       {items.map((evidenceItem, index) => {
         const item = asObject(evidenceItem)
+        const labelSource = item.label || item.evidence_type || `evidence ${index + 1}`
         return (
           <li key={`${item.evidence_id || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
             <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {item.label || titleCase(item.evidence_type || `evidence ${index + 1}`)}
+              {humanizeLabel(labelSource)}
             </div>
-            <div className="mt-1 break-words font-mono text-xs text-chalk200">
-              {displayValue(item.value)}{item.unit ? ` ${item.unit}` : ''}
-            </div>
+            <TechnicalKeyLine value={labelSource} />
+            <ValueBlock value={item.value} unit={item.unit} />
             {item.impact && <p className="mt-1 text-xs leading-relaxed text-chalk500">{item.impact}</p>}
             {[item.source, item.trust_status].filter(Boolean).length > 0 && (
               <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
                 {[item.source, item.trust_status].filter(Boolean).map(titleCase).join(' / ')}
               </p>
             )}
+            <TechnicalKeyLine label="Source key" value={item.source} />
           </li>
         )
       })}
@@ -135,14 +171,16 @@ function LimitationList({ limitations }) {
     <ul className="space-y-2">
       {items.map((limitation, index) => {
         const item = asObject(limitation)
+        const labelSource = item.label || item.limitation_type || `limitation ${index + 1}`
         return (
           <li key={`${item.limitation_type || item.label || index}`} className="rounded border border-dirt bg-field/60 p-3">
             <div className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
-              {item.label || titleCase(item.limitation_type || `limitation ${index + 1}`)}
+              {humanizeLabel(labelSource)}
             </div>
             <p className="mt-1 text-sm leading-relaxed text-chalk300">
               {item.summary || 'Explanation limitation was returned without additional summary.'}
             </p>
+            <TechnicalKeyLine value={item.limitation_type} />
             {item.severity && <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">{titleCase(item.severity)}</p>}
           </li>
         )
@@ -186,9 +224,12 @@ function UnavailableExplanation({ explanationView }) {
           Required explanation inputs were unavailable or not certified for this request.
         </p>
         {refusal.reason_code && (
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
-            {refusal.reason_code}
-          </p>
+          <>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-chalk600">
+              {humanizeLabel(refusal.reason_code)}
+            </p>
+            <TechnicalKeyLine value={refusal.reason_code} />
+          </>
         )}
       </div>
       <DetailSection title="Limitations" initiallyOpen>

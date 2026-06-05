@@ -1,5 +1,12 @@
 import { useId, useState } from 'react'
 import { ErrorState, LoadingPane } from '../UI'
+import {
+  humanizeLabel,
+  isPlainObject,
+  shouldShowTechnicalKey,
+  summarizeDisplayValue,
+  technicalJson,
+} from '../../utils/displayText'
 
 const DEFAULT_VIEW = {
   contractState: 'unavailable',
@@ -61,16 +68,12 @@ function displayValue(value) {
   if (Array.isArray(value)) {
     return value.length ? value.map(displayValue).join(', ') : 'None'
   }
-  if (typeof value === 'object') return JSON.stringify(value)
+  if (typeof value === 'object') return summarizeDisplayValue(value)
   return String(value)
 }
 
 function titleCase(value) {
-  return String(value || '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, char => char.toUpperCase())
+  return humanizeLabel(value)
 }
 
 function countValue(value) {
@@ -158,6 +161,49 @@ function CompactMetric({ label, value, subtext = null }) {
   )
 }
 
+function TechnicalKeyLine({ label = 'Technical key', value }) {
+  if (!shouldShowTechnicalKey(value)) return null
+
+  return (
+    <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-chalk600">
+      {label}: {value}
+    </p>
+  )
+}
+
+function TechnicalDetails({ value }) {
+  if (!isPlainObject(value) && !Array.isArray(value)) return null
+
+  return (
+    <details className="mt-2 rounded border border-dirt/70 bg-field/60 p-2 font-mono text-chalk500">
+      <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-chalk600">
+        Technical details
+      </summary>
+      <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed">
+        {technicalJson(value)}
+      </pre>
+    </details>
+  )
+}
+
+function EvidenceReference({ evidence }) {
+  if (typeof evidence === 'string') {
+    return (
+      <>
+        <span>{shouldShowTechnicalKey(evidence) ? humanizeLabel(evidence) : evidence}</span>
+        <TechnicalKeyLine label="Source key" value={evidence} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <span>{summarizeDisplayValue(evidence)}</span>
+      <TechnicalDetails value={evidence} />
+    </>
+  )
+}
+
 function CompactSnapshot({ view }) {
   const workload = asObject(view.workloadPressure)
   const availability = asObject(view.availabilityDistribution)
@@ -199,22 +245,34 @@ function MessageList({ items, emptyLabel = 'No additional evidence provided.' })
     <ul className="space-y-2">
       {rows.map((item, index) => {
         const value = asObject(item)
-        const message = value.message || value.summary || displayValue(item)
+        const message = value.message || value.summary || summarizeDisplayValue(item)
         const subtext = [
           value.category,
           value.severity,
           value.applies_to,
           value.affected_area,
         ].filter(Boolean).map(titleCase).join(' / ')
+        const technicalKeys = [
+          value.constraint_id,
+          value.explanation_id,
+          value.limitation_id,
+          value.refusal_id,
+          value.reason_code,
+        ].filter(shouldShowTechnicalKey)
+
         return (
           <li key={`${message}-${index}`} className="rounded border border-dirt bg-dugout/70 p-3">
             <p className="text-sm leading-relaxed text-chalk200">{message}</p>
             {subtext && <p className="mt-1 font-mono text-[11px] uppercase tracking-widest text-chalk600">{subtext}</p>}
+            {technicalKeys.map(key => (
+              <TechnicalKeyLine key={key} value={key} />
+            ))}
+            {!value.message && !value.summary && <TechnicalDetails value={item} />}
             {Array.isArray(value.evidence) && value.evidence.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {value.evidence.map((evidence, evidenceIndex) => (
                   <li key={`${evidence}-${evidenceIndex}`} className="text-xs leading-relaxed text-chalk500">
-                    {displayValue(evidence)}
+                    <EvidenceReference evidence={evidence} />
                   </li>
                 ))}
               </ul>

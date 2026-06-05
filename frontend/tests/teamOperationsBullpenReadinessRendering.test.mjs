@@ -317,6 +317,33 @@ test('renders trust metadata when expanded', () => {
   assert.ok(htmlIncludes(html, 'represented'))
 })
 
+test('humanizes readiness evidence keys while preserving technical keys', () => {
+  const state = clone(baseState)
+  state.constraints[0].evidence = [
+    'coverage_inventory',
+    'trust_metadata_limited',
+    {
+      affected_area: 'trust_metadata',
+      category: 'trust',
+      status_code: 'trust_metadata_limited',
+    },
+  ]
+
+  const html = renderPanel(state, {
+    compact: true,
+    initialExpandedSections: ['context-details', 'metadata'],
+  })
+
+  assert.ok(htmlIncludes(html, 'Coverage Inventory'))
+  assert.ok(htmlIncludes(html, 'Source key: coverage_inventory'))
+  assert.ok(htmlIncludes(html, 'Trust Metadata Limited'))
+  assert.ok(htmlIncludes(html, 'Source key: trust_metadata_limited'))
+  assert.ok(htmlIncludes(html, 'Affected Area: Trust Metadata'))
+  assert.ok(htmlIncludes(html, 'Technical details'))
+  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
+  assert.ok(htmlIncludes(html, 'selection_made === false'))
+})
+
 test('renders freshness metadata when expanded', () => {
   const html = renderPanel(baseState, { initialExpandedSections: ['metadata'] })
 

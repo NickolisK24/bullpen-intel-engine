@@ -1,6 +1,10 @@
 import { useState } from 'react'
 
 import { LoadingPane, ErrorState } from '../UI'
+import {
+  humanizeLabel,
+  summarizeDisplayValue,
+} from '../../utils/displayText'
 
 const SUMMARY_TEXT_LIMIT = 180
 
@@ -34,11 +38,7 @@ function asObject(value) {
 }
 
 function toTitle(value) {
-  return String(value || '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  return humanizeLabel(value, '')
 }
 
 function displayValue(value, fallback = 'Unavailable') {
@@ -46,6 +46,7 @@ function displayValue(value, fallback = 'Unavailable') {
   if (value === true) return 'true'
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'object') return summarizeDisplayValue(value, fallback)
   return String(value)
 }
 
@@ -65,7 +66,12 @@ function orderingPolicyLabel(value) {
 function messageFrom(item) {
   if (typeof item === 'string') return item
   if (!item || typeof item !== 'object') return null
-  return item.message || item.reason || item.limitation_id || item.explanation_id || item.refusal_id || null
+  return (
+    item.message
+    || item.reason
+    || toTitle(item.limitation_id || item.explanation_id || item.refusal_id)
+    || null
+  )
 }
 
 function compactText(value, maxLength = SUMMARY_TEXT_LIMIT) {

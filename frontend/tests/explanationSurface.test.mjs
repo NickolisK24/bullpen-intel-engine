@@ -91,6 +91,19 @@ const explanationEnvelope = {
         trust_status: 'trusted',
         impact: 'Supports team-level readiness context.',
       },
+      {
+        evidence_id: 'data_limited_status_code',
+        evidence_type: 'data_limited_status_code',
+        label: 'data_limited_status_code',
+        value: {
+          affected_area: 'trust_metadata',
+          category: 'trust',
+          status_code: 'trust_metadata_limited',
+        },
+        source: 'explains_workload_state',
+        trust_status: 'trusted',
+        impact: 'Explains a workload-state limitation without changing the decision boundary.',
+      },
     ],
     limitations: [
       {
@@ -231,7 +244,7 @@ test('renders compact Why this state action while explanation details stay close
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
   assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
-  assert.equal(htmlIncludes(html, 'Availability distribution total'), false)
+  assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
 })
 
 test('opens explanation detail surface with summary and reasons when disclosure is active', () => {
@@ -243,7 +256,7 @@ test('opens explanation detail surface with summary and reasons when disclosure 
   assert.ok(htmlIncludes(html, 'Hide Explanation'))
   assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
   assert.ok(htmlIncludes(html, explanationEnvelope.explanation.summary))
-  assert.ok(htmlIncludes(html, 'Readiness context reviewed'))
+  assert.ok(htmlIncludes(html, 'Readiness Context Reviewed'))
   assert.ok(htmlIncludes(html, 'Visible readiness context explains the current state.'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Limitations'))
@@ -256,8 +269,13 @@ test('renders evidence and limitations inside the opened explanation detail surf
     initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
   })
 
-  assert.ok(htmlIncludes(html, 'Availability distribution total'))
+  assert.ok(htmlIncludes(html, 'Availability Distribution Total'))
   assert.ok(htmlIncludes(html, '6 pitchers'))
+  assert.ok(htmlIncludes(html, 'Data Limited Status Code'))
+  assert.ok(htmlIncludes(html, 'Technical key: data_limited_status_code'))
+  assert.ok(htmlIncludes(html, 'Source key: explains_workload_state'))
+  assert.ok(htmlIncludes(html, 'Affected Area: Trust Metadata'))
+  assert.ok(htmlIncludes(html, 'Technical details'))
   assert.ok(htmlIncludes(html, 'Manager intent is not represented.'))
   assert.ok(htmlIncludes(html, 'medium'))
   assert.ok(htmlIncludes(html, 'current'))
@@ -272,7 +290,7 @@ test('renders fail-closed explanation responses safely', () => {
   assert.ok(htmlIncludes(html, 'Explanation unavailable for this state.'))
   assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable or not certified for this request.'))
   assert.ok(htmlIncludes(html, 'missing_source_data'))
-  assert.ok(htmlIncludes(html, 'Required explanation inputs are unavailable'))
+  assert.ok(htmlIncludes(html, 'Required Explanation Inputs Are Unavailable'))
   assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
 })
 
@@ -306,7 +324,7 @@ test('Operational Readiness renders the Why this state action without inline evi
 
   assert.ok(htmlIncludes(html, 'Why this state?'))
   assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
-  assert.equal(htmlIncludes(html, 'Availability distribution total'), false)
+  assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
   assert.ok(htmlIncludes(html, 'ranking_applied === false'))
   assert.ok(htmlIncludes(html, 'selection_made === false'))
