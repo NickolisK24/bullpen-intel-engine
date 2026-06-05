@@ -1,8 +1,12 @@
+import { useState } from 'react'
+
 import { ErrorState, LoadingPane } from '../UI'
 import {
   OBSERVATION_EMPTY_COPY,
   OBSERVATION_GOVERNANCE_COPY,
 } from '../../types/observations'
+
+const DASHBOARD_OBSERVATION_LIMIT = 3
 
 const STATUS_LABELS = {
   available: 'Available',
@@ -48,13 +52,27 @@ function itemSummary(item) {
 
 function MetadataCell({ label, value, subtext }) {
   return (
-    <div className="rounded border border-dirt bg-field/50 p-3 bullpen-intelligence-panel__text">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-chalk200">{displayValue(value)}</div>
+    <div className="rounded border border-dirt bg-field/50 p-2 bullpen-intelligence-panel__text">
+      <div className="font-mono text-[10px] uppercase tracking-wide text-chalk600">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold text-chalk200">{displayValue(value)}</div>
       {subtext && (
-        <div className="mt-1 text-[11px] leading-relaxed text-chalk500">{subtext}</div>
+        <div className="mt-0.5 text-[11px] leading-snug text-chalk500">{subtext}</div>
       )}
     </div>
+  )
+}
+
+function StatusChip({ label, value, detail }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[11px] leading-none text-chalk500 bullpen-intelligence-panel__text">
+      <span className="text-chalk600">{label}:</span>
+      <span className="font-semibold text-chalk200">{displayValue(value)}</span>
+      {detail && (
+        <span className="truncate text-chalk600" title={detail}>
+          {detail}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -64,33 +82,35 @@ function ObservationEvidenceList({ evidence }) {
     return <p className="text-xs text-chalk600">No evidence surfaced for this observation.</p>
   }
 
+  const primaryEvidence = rows[0]
+  const primarySource = primaryEvidence?.source_type || primaryEvidence?.source
+
   return (
-    <div className="space-y-2">
-      {rows.map((item, index) => (
-        <div
-          key={item?.evidence_id || index}
-          className="rounded border border-dirt/80 bg-chalk/25 p-3 bullpen-intelligence-panel__text"
-        >
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-chalk200">
-                {displayValue(item?.label, `Evidence ${index + 1}`)}
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-chalk500">
-                Source: {displayValue(item?.source_type || item?.source)}
-              </div>
-            </div>
-            <div className="font-mono text-xs text-amber">
-              {displayValue(item?.value)}
-            </div>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px] text-chalk600">
+    <div className="rounded border border-dirt/80 bg-chalk/25 p-2 bullpen-intelligence-panel__text">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
+        <span>
+          Primary evidence: {displayValue(primaryEvidence?.label || primaryEvidence?.source)}
+        </span>
+        <span>Evidence count: {rows.length}</span>
+        <span>Evidence source: {displayValue(primarySource)}</span>
+      </div>
+      <div className="mt-2 space-y-1">
+        {rows.map((item, index) => (
+          <div
+            key={item?.evidence_id || index}
+            className="flex flex-wrap gap-x-3 gap-y-1 rounded border border-dirt/60 bg-field/35 px-2 py-1.5 text-xs leading-snug text-chalk500"
+          >
+            <span className="font-semibold text-chalk200">
+              {displayValue(item?.label, `Evidence ${index + 1}`)}:
+            </span>
+            <span className="font-mono text-amber">{displayValue(item?.value)}</span>
+            <span>Source: {displayValue(item?.source_type || item?.source)}</span>
             {item?.freshness_status && <span>Freshness: {displayValue(item.freshness_status)}</span>}
             {item?.data_through && <span>Data Through: {displayValue(item.data_through)}</span>}
             {item?.generated_at && <span>Generated: {displayValue(item.generated_at)}</span>}
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }
@@ -101,22 +121,28 @@ function ObservationLimitations({ limitations }) {
     return <p className="text-xs text-chalk600">No limitations surfaced for this observation.</p>
   }
 
+  const primarySource = rows[0]?.source
+
   return (
-    <ul className="space-y-2">
-      {rows.map((item, index) => (
-        <li
-          key={item?.limitation_type || index}
-          className="rounded border border-dirt/70 bg-field/40 p-3 text-xs leading-relaxed text-chalk400 bullpen-intelligence-panel__text"
-        >
-          <div>{itemSummary(item)}</div>
-          <div className="mt-1 flex flex-wrap gap-2 font-mono text-[11px] text-chalk600">
+    <div className="rounded border border-dirt/70 bg-field/35 p-2 bullpen-intelligence-panel__text">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
+        <span>Limitation count: {rows.length}</span>
+        <span>Limitation source: {displayValue(primarySource)}</span>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {rows.map((item, index) => (
+          <li
+            key={item?.limitation_type || index}
+            className="flex flex-wrap gap-x-3 gap-y-1 rounded border border-dirt/60 bg-black/10 px-2 py-1.5 text-xs leading-snug text-chalk400 bullpen-intelligence-panel__text"
+          >
+            <span>{itemSummary(item)}</span>
             {item?.limitation_type && <span>Type: {labelize(item.limitation_type)}</span>}
             {item?.severity && <span>Severity: {labelize(item.severity)}</span>}
             {item?.source && <span>Source: {displayValue(item.source)}</span>}
-          </div>
-        </li>
-      ))}
-    </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -147,11 +173,16 @@ function CollectionLimitations({ limitations }) {
 }
 
 function ObservationCard({ observation }) {
+  const freshnessDetail = observation.freshness?.data_through
+    ? `Data through ${displayValue(observation.freshness.data_through)}`
+    : observation.freshness?.reason
+  const confidenceDetail = observation.confidence?.reason
+
   return (
-    <article className="rounded-lg border border-dirt bg-field/45 p-4 bullpen-intelligence-panel__text">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <article className="rounded-lg border border-dirt bg-field/45 p-3 bullpen-intelligence-panel__text">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap gap-2 font-mono text-[10px] uppercase tracking-widest">
+          <div className="flex flex-wrap gap-1.5 font-mono text-[10px] uppercase tracking-wide">
             <span className="rounded border border-dirt bg-dugout px-2 py-1 text-chalk500">
               {labelize(observation.family || observation.observation_type)}
             </span>
@@ -159,41 +190,39 @@ function ObservationCard({ observation }) {
               {labelize(observation.severity)}
             </span>
           </div>
-          <h3 className="mt-3 text-lg font-semibold leading-snug text-chalk100">
+          <h3 className="mt-2 text-base font-semibold leading-snug text-chalk100">
             {displayValue(observation.title)}
           </h3>
-          <p className="mt-2 text-sm leading-relaxed text-chalk400">
+          <p className="mt-1 text-sm leading-snug text-chalk400">
             {displayValue(observation.summary)}
           </p>
         </div>
-        <div className="rounded border border-dirt bg-dugout px-3 py-2 font-mono text-[11px] text-chalk500">
-          Trust: {displayValue(observation.trust_status)}
-        </div>
       </div>
 
-      <div className="bullpen-intelligence-panel__metadata-grid mt-4 gap-3">
-        <MetadataCell
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <StatusChip label="Trust" value={observation.trust_status} />
+        <StatusChip
           label="Freshness"
           value={observation.freshness?.status}
-          subtext={observation.freshness?.data_through ? `Data through ${observation.freshness.data_through}` : null}
+          detail={freshnessDetail}
         />
-        <MetadataCell
+        <StatusChip
           label="Confidence"
           value={observation.confidence?.status}
-          subtext={observation.confidence?.reason}
+          detail={confidenceDetail}
         />
       </div>
 
-      <div className="mt-4 grid gap-4">
+      <div className="mt-3 grid gap-3">
         <section aria-label={`${observation.title} evidence`}>
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+          <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-chalk600">
             Evidence
           </div>
           <ObservationEvidenceList evidence={observation.evidence} />
         </section>
 
         <section aria-label={`${observation.title} limitations`}>
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+          <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-chalk600">
             Limitations
           </div>
           <ObservationLimitations limitations={observation.limitations} />
@@ -201,12 +230,12 @@ function ObservationCard({ observation }) {
       </div>
 
       {observation.explanation_reference && (
-        <div className="mt-4 rounded border border-dirt bg-dugout/80 p-3 font-mono text-[11px] leading-relaxed text-chalk500">
+        <div className="mt-3 rounded border border-dirt bg-dugout/80 p-2 font-mono text-[11px] leading-snug text-chalk500">
           Explanation Reference: {displayValue(observation.explanation_reference)}
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2 font-mono text-[11px] text-chalk600">
+      <div className="mt-3 flex flex-wrap gap-2 font-mono text-[11px] text-chalk600">
         <span>ranking_applied === {displayValue(observation.ranking_applied)}</span>
         <span>selection_made === {displayValue(observation.selection_made)}</span>
       </div>
@@ -242,10 +271,19 @@ export default function BullpenIntelligencePanel({
   loading = false,
   error = null,
   onRetry,
+  observationLimit = DASHBOARD_OBSERVATION_LIMIT,
 }) {
+  const [showAllObservations, setShowAllObservations] = useState(false)
   const observations = asArray(state?.observations)
   const statusLabel = STATUS_LABELS[state?.contractState] || 'Not Loaded'
   const emptyOrProtected = Boolean(state?.isEmpty || state?.isFailClosed)
+  const hasObservationLimit =
+    Number.isFinite(observationLimit) && observationLimit > 0 && observations.length > observationLimit
+  const visibleObservations =
+    hasObservationLimit && !showAllObservations
+      ? observations.slice(0, observationLimit)
+      : observations
+  const hiddenObservationCount = Math.max(observations.length - visibleObservations.length, 0)
 
   return (
     <section
@@ -317,13 +355,43 @@ export default function BullpenIntelligencePanel({
                 )}
               </div>
             ) : (
-              <div className="bullpen-intelligence-panel__observation-grid gap-4">
-                {observations.map(observation => (
-                  <ObservationCard
-                    key={observation.observation_id}
-                    observation={observation}
-                  />
-                ))}
+              <div className="space-y-3">
+                {hasObservationLimit && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-dirt bg-field/45 px-3 py-2 font-mono text-[11px] text-chalk500">
+                    <span>
+                      Showing {visibleObservations.length} of {observations.length} governed observations.
+                    </span>
+                    {hiddenObservationCount > 0 ? (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>+{hiddenObservationCount} additional observations available</span>
+                        <button
+                          type="button"
+                          className="rounded border border-dirt bg-dugout px-2 py-1 text-[11px] font-semibold text-chalk300 transition hover:border-amber/40 hover:text-amber"
+                          onClick={() => setShowAllObservations(true)}
+                        >
+                          View All Observations
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="rounded border border-dirt bg-dugout px-2 py-1 text-[11px] font-semibold text-chalk300 transition hover:border-amber/40 hover:text-amber"
+                        onClick={() => setShowAllObservations(false)}
+                      >
+                        Show Fewer Observations
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="bullpen-intelligence-panel__observation-grid gap-3">
+                  {visibleObservations.map(observation => (
+                    <ObservationCard
+                      key={observation.observation_id}
+                      observation={observation}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>

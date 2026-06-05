@@ -125,6 +125,26 @@ function renderPanel(state, props = {}) {
   )
 }
 
+function buildObservation(index) {
+  const sourceObservation = baseObservationResponse.observations[0]
+  return {
+    ...sourceObservation,
+    observation_id: `inventory:test:2026-06-04:${index}`,
+    title: `Dashboard observation ${index} surfaced.`,
+    summary: `Dashboard observation ${index} remains descriptive and governed.`,
+    evidence: sourceObservation.evidence.map(item => ({
+      ...item,
+      evidence_id: `${item.evidence_id}:${index}`,
+      label: `Available inventory count ${index}`,
+      value: index,
+    })),
+    limitations: sourceObservation.limitations.map(item => ({
+      ...item,
+      summary: `Observation ${index} is limited to deterministic supplied state.`,
+    })),
+  }
+}
+
 test('normalizes governed V5 observations without ranking or selection', () => {
   const view = normalizeBullpenObservationsResponse(baseObservationResponse)
 
@@ -197,8 +217,13 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Governed Observations'))
   assert.ok(htmlIncludes(html, 'Availability inventory contracted since the previous snapshot.'))
   assert.ok(htmlIncludes(html, 'Availability inventory changed based on trusted platform state.'))
+  assert.ok(htmlIncludes(html, 'Primary evidence'))
+  assert.ok(htmlIncludes(html, 'Evidence count: 1'))
+  assert.ok(htmlIncludes(html, 'Evidence source: trusted_platform_state'))
   assert.ok(htmlIncludes(html, 'Available inventory count'))
   assert.ok(htmlIncludes(html, 'trusted_platform_state'))
+  assert.ok(htmlIncludes(html, 'Limitation count: 1'))
+  assert.ok(htmlIncludes(html, 'Limitation source: v5_phase_7_frontend_surface'))
   assert.ok(htmlIncludes(html, 'Observation is limited to deterministic supplied state.'))
   assert.ok(htmlIncludes(html, 'Trust Status'))
   assert.ok(htmlIncludes(html, 'Freshness'))
@@ -209,6 +234,27 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Explanation Reference'))
   assert.ok(htmlIncludes(html, 'v5.observations.inventory'))
   assert.ok(htmlIncludes(html, 'Observations are descriptive only and do not rank, select, or recommend pitchers.'))
+  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
+  assert.ok(htmlIncludes(html, 'selection_made === false'))
+})
+
+test('caps dashboard observations at three and exposes additional observation access', () => {
+  const response = {
+    ...baseObservationResponse,
+    observation_count: 5,
+    observations: [1, 2, 3, 4, 5].map(buildObservation),
+  }
+  const state = normalizeBullpenObservationsResponse(response)
+  const html = renderPanel(state)
+
+  assert.ok(htmlIncludes(html, 'Showing 3 of 5 governed observations.'))
+  assert.ok(htmlIncludes(html, '+2 additional observations available'))
+  assert.ok(htmlIncludes(html, 'View All Observations'))
+  assert.ok(htmlIncludes(html, 'Dashboard observation 1 surfaced.'))
+  assert.ok(htmlIncludes(html, 'Dashboard observation 2 surfaced.'))
+  assert.ok(htmlIncludes(html, 'Dashboard observation 3 surfaced.'))
+  assert.equal(htmlIncludes(html, 'Dashboard observation 4 surfaced.'), false)
+  assert.equal(htmlIncludes(html, 'Dashboard observation 5 surfaced.'), false)
   assert.ok(htmlIncludes(html, 'ranking_applied === false'))
   assert.ok(htmlIncludes(html, 'selection_made === false'))
 })
