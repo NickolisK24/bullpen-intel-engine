@@ -6,6 +6,7 @@ import { riskColor } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
 import TeamComparison from './TeamComparison'
 import TonightsBullpenBoard from './board/TonightsBullpenBoard'
+import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
 import {
@@ -18,6 +19,7 @@ import {
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
   { id: 'board',    label: "Tonight's Board" },
+  { id: 'compare',  label: 'Compare Bullpens' },
   { id: 'pitchers', label: 'Pitchers' },
   { id: 'teams',    label: 'Team Summary' },
 ]
@@ -96,6 +98,8 @@ export default function Bullpen() {
 
       {viewMode === 'board' ? (
         <TonightsBullpenBoard teams={teams} />
+      ) : viewMode === 'compare' ? (
+        <TeamBullpenComparison teams={teams} />
       ) : viewMode === 'teams' ? (
         <TeamComparison />
       ) : (
