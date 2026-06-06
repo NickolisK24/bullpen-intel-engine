@@ -22,6 +22,7 @@ from services.availability_snapshot import (
 from services.availability_summary import summarize_availability_records
 from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
 from services.bullpen_comparison import build_team_comparison
+from services.game_context import build_landscape, build_team_game_context
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS, classify_usage_role
 from services.mlb_api import mlb_client
 from services import sync as sync_service
@@ -866,6 +867,10 @@ def get_bullpen_dashboard():
         key = role['role_key']
         role_counts[key] = role_counts.get(key, 0) + 1
 
+    # Tonight's Bullpen Landscape — league orientation, reusing the records we
+    # already classified above (no extra availability pass).
+    landscape = build_landscape(records=availability_records, freshness=freshness)
+
     return jsonify({
         'capability': 'bullpen_dashboard',
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -878,9 +883,33 @@ def get_bullpen_dashboard():
             'counts': role_counts,
             'total': len(pitcher_ids),
         },
+        'landscape': landscape,
         'freshness': freshness,
         'availability_summary': summary,
     })
+
+
+@bullpen_bp.route('/landscape', methods=['GET'])
+def get_bullpen_landscape():
+    """
+    Tonight's Bullpen Landscape — league-wide orientation: which bullpens are
+    most constrained, most available, and carrying the most monitoring, plus a
+    stored games-today anchor. Descriptive and deterministic; no ranking,
+    selection, recommendation, or prediction.
+    """
+    freshness = _board_freshness_block()
+    return jsonify(build_landscape(freshness=freshness))
+
+
+@bullpen_bp.route('/teams/<int:team_id>/game-context', methods=['GET'])
+def get_team_game_context(team_id):
+    """
+    Today's Game Context for one team, derived from stored game logs only (no
+    live schedule call). Frames bullpen availability; not a scoreboard, matchup
+    engine, or prediction. Home/away and scheduled time are reported as missing
+    because the stored game log does not carry them.
+    """
+    return jsonify(build_team_game_context(team_id))
 
 
 # ─── Insights ─────────────────────────────────────────────────────────────────

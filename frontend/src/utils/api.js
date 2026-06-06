@@ -623,6 +623,10 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 // League-wide bullpen landing summary: availability snapshot, Team Context
 // health, and usage-role composition. Context only (no ranking/selection).
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
+// Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
+export const getBullpenLandscape = () => request('/bullpen/landscape')
+// Today's Game Context for one team, derived from stored game logs only.
+export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
 export const getSyncStatus     = () => request('/bullpen/sync/status')
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')
 // No public helper for /bullpen/fatigue/snapshot: latest-workload snapshot mode

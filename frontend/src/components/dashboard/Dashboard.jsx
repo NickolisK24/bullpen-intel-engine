@@ -3,6 +3,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import SeasonBanner from './SeasonBanner'
+import BullpenLandscape from './BullpenLandscape'
 import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
@@ -81,6 +82,9 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
         <ErrorState message={error} onRetry={onRetry} />
       ) : !data ? null : (
         <>
+          {/* Tonight's Bullpen Landscape — first-time league orientation */}
+          <BullpenLandscape landscape={data.landscape} />
+
           {/* Section 2 — Bullpen Snapshot */}
           <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} relievers across all tracked MLB bullpens`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
