@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
-import { getTeamBullpenBoard } from '../../../utils/api'
+import { getTeamBullpenBoard, getTeamGameContext } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenBoardView from './BullpenBoardView'
+import TeamGameContextCard from './TeamGameContextCard'
 import PitcherDetail from '../PitcherDetail'
 
 // Tonight's Bullpen Board lives inside the Bullpen workflow. It receives the
@@ -35,6 +36,12 @@ export default function TonightsBullpenBoard({ teams }) {
       return getTeamBullpenBoard(selectedTeam, includeStale ? { include_stale: true } : {})
     },
     [selectedTeam, includeStale],
+  )
+
+  // Today's Game Context for the selected team (stored game-log only).
+  const gameContext = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamGameContext(selectedTeam)),
+    [selectedTeam],
   )
 
   return (
@@ -82,6 +89,11 @@ export default function TonightsBullpenBoard({ teams }) {
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
+            <TeamGameContextCard
+              gameContext={gameContext.data}
+              loading={gameContext.loading}
+              error={gameContext.error}
+            />
             <BullpenBoardView board={board.data} onSelectPitcher={setDetailPitcherId} />
           </div>
           {detailPitcherId != null && (
