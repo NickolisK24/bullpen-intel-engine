@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
@@ -21,6 +22,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <Analytics />
     </BrowserRouter>
   )
 }
