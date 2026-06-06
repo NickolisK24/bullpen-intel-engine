@@ -6,10 +6,30 @@ import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import PitcherDetail from '../PitcherDetail'
 
+// Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
+// against the loaded team list. Returns the matching team_id, or null.
+export function resolveTeamId(teamList, requested) {
+  if (requested == null) return null
+  const raw = String(requested).trim()
+  if (!raw || !Array.isArray(teamList)) return null
+
+  const asNum = Number(raw)
+  if (Number.isInteger(asNum)) {
+    const byId = teamList.find(team => team.team_id === asNum)
+    if (byId) return byId.team_id
+  }
+  const lower = raw.toLowerCase()
+  const byAbbr = teamList.find(team => (team.team_abbreviation || '').toLowerCase() === lower)
+  if (byAbbr) return byAbbr.team_id
+  const byName = teamList.find(team => (team.team_name || '').toLowerCase() === lower)
+  return byName ? byName.team_id : null
+}
+
 // Tonight's Bullpen Board lives inside the Bullpen workflow. It receives the
 // shared teams fetch so it does not double-load the team list, manages its own
-// single-team selection, and renders the grouped board for that team.
-export default function TonightsBullpenBoard({ teams }) {
+// single-team selection, and renders the grouped board for that team. A
+// `requestedTeam` deep-link (e.g. from the landscape drilldown) preselects a team.
+export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   const teamList = teams?.data || []
   const [selectedTeam, setSelectedTeam] = useState(null)
   const [includeStale, setIncludeStale] = useState(false)
@@ -17,18 +37,32 @@ export default function TonightsBullpenBoard({ teams }) {
   // board never duplicates that screen.
   const [detailPitcherId, setDetailPitcherId] = useState(null)
   const detailRef = useRef(null)
+  // Apply a given requestedTeam deep-link only once, so a later manual team
+  // click is never overridden by the URL.
+  const appliedRequestRef = useRef(null)
 
   useEffect(() => {
     if (detailPitcherId != null) detailRef.current?.focus()
   }, [detailPitcherId])
 
-  // Default to the first team once the list loads so the board shows a bullpen
-  // immediately instead of an empty prompt.
+  // Preselect the deep-linked team (landscape drilldown), once per requested value.
   useEffect(() => {
-    if (selectedTeam == null && teamList.length > 0) {
-      setSelectedTeam(teamList[0].team_id)
+    if (!requestedTeam || teamList.length === 0) return
+    if (appliedRequestRef.current === requestedTeam) return
+    const resolved = resolveTeamId(teamList, requestedTeam)
+    if (resolved != null) {
+      setSelectedTeam(resolved)
+      appliedRequestRef.current = requestedTeam
     }
-  }, [teamList, selectedTeam])
+  }, [requestedTeam, teamList])
+
+  // Default to the first team once the list loads so the board shows a bullpen
+  // immediately — unless a resolvable deep link is pending (avoids a flash).
+  useEffect(() => {
+    if (selectedTeam != null || teamList.length === 0) return
+    if (requestedTeam && resolveTeamId(teamList, requestedTeam) != null) return
+    setSelectedTeam(teamList[0].team_id)
+  }, [teamList, selectedTeam, requestedTeam])
 
   const board = useFetch(
     () => {

@@ -11,11 +11,22 @@ function entryLabel(entry) {
   return entry?.team_abbreviation || entry?.team_name || `Team ${entry?.team_id ?? ''}`.trim()
 }
 
+// Deep-link a landscape team row into its bullpen board, reusing the existing
+// /bullpen?view= deep-link pattern. Prefers the abbreviation (e.g. SF) and falls
+// back to the numeric team id; source=landscape is passed for later UX analytics.
+export function buildLandscapeTeamHref(entry) {
+  const param = entry?.team_abbreviation || (entry?.team_id != null ? String(entry.team_id) : null)
+  if (!param) return null
+  const query = new URLSearchParams({ view: 'board', team: param, source: 'landscape' })
+  return `/bullpen?${query.toString()}`
+}
+
 function mapEntries(list) {
   return (Array.isArray(list) ? list : []).map(entry => ({
     teamId: entry?.team_id,
     label: entryLabel(entry),
     teamName: entry?.team_name || null,
+    teamHref: buildLandscapeTeamHref(entry),
     available: Number(entry?.available) || 0,
     monitor: Number(entry?.monitor) || 0,
     restricted: Number(entry?.restricted) || 0,
