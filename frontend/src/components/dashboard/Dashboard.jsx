@@ -4,6 +4,7 @@ import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
+import DashboardOrientation from './DashboardOrientation'
 import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
@@ -75,6 +76,9 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           </div>
         </div>
       </div>
+
+      {/* Orientation layer — what BaseballOS is + what to do next (always shown) */}
+      <DashboardOrientation />
 
       {loading && !data ? (
         <LoadingPane message="Loading bullpen overview..." />
