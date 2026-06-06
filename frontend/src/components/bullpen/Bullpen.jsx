@@ -30,9 +30,12 @@ const VALID_VIEWS = new Set(VIEW_MODES.map(m => m.id))
 
 export default function Bullpen() {
   const location = useLocation()
-  // Allow the dashboard's Quick Actions to deep-link to a specific tab,
-  // e.g. /bullpen?view=compare. Defaults to Tonight's Board.
-  const requestedView = new URLSearchParams(location.search).get('view')
+  // Allow deep-links to a specific tab and team, e.g. the dashboard Quick Actions
+  // (/bullpen?view=compare) and the landscape team drilldown
+  // (/bullpen?view=board&team=SF). Defaults to Tonight's Board.
+  const searchParams = new URLSearchParams(location.search)
+  const requestedView = searchParams.get('view')
+  const requestedTeam = searchParams.get('team')
   const [viewMode, setViewMode]           = useState(VALID_VIEWS.has(requestedView) ? requestedView : 'board')
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
@@ -104,7 +107,7 @@ export default function Bullpen() {
       />
 
       {viewMode === 'board' ? (
-        <TonightsBullpenBoard teams={teams} />
+        <TonightsBullpenBoard teams={teams} requestedTeam={requestedTeam} />
       ) : viewMode === 'compare' ? (
         <TeamBullpenComparison teams={teams} />
       ) : viewMode === 'teams' ? (

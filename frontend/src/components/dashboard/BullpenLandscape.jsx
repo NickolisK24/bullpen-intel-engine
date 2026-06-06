@@ -1,4 +1,38 @@
+import { Link } from 'react-router-dom'
 import { getLandscapeView } from './bullpenLandscapeView'
+
+// One landscape team row. When a deep link is available it becomes a lightweight
+// clickable link into that team's bullpen board — informational, not a button.
+function EntryRow({ entry, column }) {
+  const content = (
+    <>
+      <span className="truncate font-medium text-chalk200 group-hover:text-amber group-hover:underline" title={entry.teamName || entry.label}>
+        {entry.label}
+      </span>
+      <span className="flex shrink-0 items-baseline gap-1 font-mono text-xs" style={{ color: column.tone.color }}>
+        {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>
+        {entry.teamHref && (
+          <span className="text-chalk600 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">→</span>
+        )}
+      </span>
+    </>
+  )
+
+  if (!entry.teamHref) {
+    return <li className="flex items-baseline justify-between gap-2">{content}</li>
+  }
+  return (
+    <li>
+      <Link
+        to={entry.teamHref}
+        className="group -mx-1 flex cursor-pointer items-baseline justify-between gap-2 rounded px-1 py-0.5 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
+        aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
+      >
+        {content}
+      </Link>
+    </li>
+  )
+}
 
 // Tonight's Bullpen Landscape — league-wide orientation for first-time users.
 // Descriptive context only: it surfaces which bullpens are most constrained /
@@ -14,16 +48,9 @@ function Column({ column }) {
       {column.entries.length === 0 ? (
         <p className="mt-3 text-xs text-chalk600">None right now.</p>
       ) : (
-        <ol className="mt-3 space-y-2">
+        <ol className="mt-3 space-y-1">
           {column.entries.map(entry => (
-            <li key={entry.teamId ?? entry.label} className="flex items-baseline justify-between gap-2">
-              <span className="truncate font-medium text-chalk200" title={entry.teamName || entry.label}>
-                {entry.label}
-              </span>
-              <span className="shrink-0 font-mono text-xs" style={{ color: column.tone.color }}>
-                {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>
-              </span>
-            </li>
+            <EntryRow key={entry.teamId ?? entry.label} entry={entry} column={column} />
           ))}
         </ol>
       )}
