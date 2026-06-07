@@ -20,6 +20,7 @@ from services.mlb_api import mlb_client
 from services.fatigue import calculate_fatigue
 from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
 from services.roster_status_sync import sync_roster_statuses
+from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED, sync_team_assignments
 from utils.time import utc_now_naive
 
 app = create_app()
@@ -81,6 +82,9 @@ def seed_pitchers():
                 team_id=team_id,
                 team_name=team.get('name'),
                 team_abbreviation=team.get('abbreviation'),
+                team_assignment_status=TEAM_ASSIGNMENT_ASSIGNED,
+                team_assignment_source='mlb_stats_api:seed:40Man',
+                team_assignment_updated_at=utc_now_naive(),
                 position=position.get('abbreviation', 'P'),
                 throws=info.get('pitchHand', {}).get('code'),
                 age=info.get('currentAge'),
@@ -354,6 +358,7 @@ if __name__ == '__main__':
 
         try:
             pitchers_seeded = seed_pitchers()
+            team_assignment = sync_team_assignments()
             roster_status = sync_roster_statuses()
             logs_seeded = seed_game_logs()
             fatigue_seeded = seed_fatigue_scores()
@@ -362,6 +367,7 @@ if __name__ == '__main__':
             print("\n" + "=" * 45)
             print("✅ Seed complete!")
             print(f"   Pitchers:  {pitchers_seeded}")
+            print(f"   Team Assignment: {team_assignment['pitchers_refreshed']} refreshed")
             print(f"   Roster Status: {roster_status['pitchers_refreshed']} refreshed")
             print(f"   Game Logs: {logs_seeded}")
             print(f"   Fatigue:   {fatigue_seeded} scored")

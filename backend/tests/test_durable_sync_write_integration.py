@@ -32,6 +32,15 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'sync_recent_logs',
                         lambda days_back=7: {'new_logs_added': 3, 'pitchers_touched': 2, 'errors': 0})
     monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda use_last_game_date=False: 5)
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+    })
     monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 1,
@@ -82,6 +91,7 @@ class TestSuccessfulSync:
         body = res.get_json()
         assert body['sync_run_persisted'] is True
         assert body['sync_run_id'] is not None
+        assert body['team_assignments_refreshed'] == 1
         assert body['roster_statuses_refreshed'] == 1
         assert _count_runs(client) >= 1
 

@@ -7,9 +7,12 @@ class Pitcher(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     mlb_id = db.Column(db.Integer, unique=True, nullable=False)
     full_name = db.Column(db.String(100), nullable=False)
-    team_id = db.Column(db.Integer, nullable=False)
+    team_id = db.Column(db.Integer, nullable=True)
     team_name = db.Column(db.String(100))
     team_abbreviation = db.Column(db.String(10))
+    team_assignment_status = db.Column(db.String(30))
+    team_assignment_source = db.Column(db.String(100))
+    team_assignment_updated_at = db.Column(db.DateTime)
     position = db.Column(db.String(10), default='P')
     throws = db.Column(db.String(1))  # R or L
     age = db.Column(db.Integer)
@@ -33,6 +36,12 @@ class Pitcher(db.Model):
             'team_id': self.team_id,
             'team_name': self.team_name,
             'team_abbreviation': self.team_abbreviation,
+            'team_assignment_status': self.team_assignment_status,
+            'team_assignment_source': self.team_assignment_source,
+            'team_assignment_updated_at': (
+                self.team_assignment_updated_at.isoformat()
+                if self.team_assignment_updated_at else None
+            ),
             'position': self.position,
             'throws': self.throws,
             'age': self.age,

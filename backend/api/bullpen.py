@@ -404,6 +404,7 @@ def sync_recent_logs():
     )
 
     try:
+        team_assignment = sync_service.sync_team_assignments()
         roster = sync_service.sync_roster_statuses()
         pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
@@ -444,7 +445,7 @@ def sync_recent_logs():
         records_processed=pull['new_logs_added'],
         new_logs_added=pull['new_logs_added'],
         pitchers_updated=fatigue_updated,
-        errors=pull['errors'] + roster['errors'],
+        errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
         source=source,
         started_at=started.replace(tzinfo=None),
     )
@@ -456,7 +457,12 @@ def sync_recent_logs():
         'status':          sync_metadata.STATUS_SUCCESS,
         'pitchers_updated': fatigue_updated,
         'new_logs_added':  pull['new_logs_added'],
-        'errors':          pull['errors'] + roster['errors'],
+        'errors':          pull['errors'] + roster['errors'] + team_assignment['errors'],
+        'team_assignments_refreshed': team_assignment['pitchers_refreshed'],
+        'team_assignments_changed': team_assignment['pitchers_changed'],
+        'team_assignments_reassigned': team_assignment['reassigned_count'],
+        'team_assignment_no_organization': team_assignment['no_organization_count'],
+        'team_assignment_unknown': team_assignment['unknown_count'],
         'roster_statuses_refreshed': roster['pitchers_refreshed'],
         'roster_statuses_changed': roster['pitchers_changed'],
         'roster_status_unknown': roster['unknown_count'],
@@ -468,7 +474,13 @@ def sync_recent_logs():
         'status':               'ok',
         'new_logs_added':       pull['new_logs_added'],
         'fatigue_recalculated': fatigue_updated,
-        'errors':               pull['errors'] + roster['errors'],
+        'errors':               pull['errors'] + roster['errors'] + team_assignment['errors'],
+        'team_assignments_refreshed': team_assignment['pitchers_refreshed'],
+        'team_assignments_changed': team_assignment['pitchers_changed'],
+        'team_assignments_reassigned': team_assignment['reassigned_count'],
+        'team_assignment_no_organization': team_assignment['no_organization_count'],
+        'team_assignment_unknown': team_assignment['unknown_count'],
+        'team_assignment_by_status': team_assignment['by_status'],
         'roster_statuses_refreshed': roster['pitchers_refreshed'],
         'roster_statuses_changed': roster['pitchers_changed'],
         'roster_status_unknown': roster['unknown_count'],
@@ -556,6 +568,7 @@ def get_teams():
             db.func.count(Pitcher.id).label('pitcher_count')
         )
         .filter(Pitcher.active == True)
+        .filter(Pitcher.team_id.isnot(None))
         .group_by(Pitcher.team_id, Pitcher.team_name, Pitcher.team_abbreviation)
         .order_by(Pitcher.team_name)
         .all()

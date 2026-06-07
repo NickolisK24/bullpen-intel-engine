@@ -23,6 +23,7 @@ from services import sync_metadata
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
 from services.roster_status_sync import sync_roster_statuses
+from services.team_assignment_sync import sync_team_assignments
 
 
 logger = logging.getLogger(__name__)
@@ -277,6 +278,16 @@ def run_daily_sync(app, days_back: int = 7):
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
             )
+            team_assignment = sync_team_assignments()
+            run_logger.info(
+                'Refreshed team assignment for %s pitchers (%s changed, %s reassigned, %s no org, %s unknown, %s errors)',
+                team_assignment['pitchers_refreshed'],
+                team_assignment['pitchers_changed'],
+                team_assignment['reassigned_count'],
+                team_assignment['no_organization_count'],
+                team_assignment['unknown_count'],
+                team_assignment['errors'],
+            )
             roster = sync_roster_statuses()
             run_logger.info(
                 'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
@@ -291,7 +302,12 @@ def run_daily_sync(app, days_back: int = 7):
                 pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
             )
             status['new_logs_added'] = pull['new_logs_added']
-            status['errors']         = pull['errors'] + roster['errors']
+            status['errors']         = pull['errors'] + roster['errors'] + team_assignment['errors']
+            status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
+            status['team_assignments_changed'] = team_assignment['pitchers_changed']
+            status['team_assignments_reassigned'] = team_assignment['reassigned_count']
+            status['team_assignment_no_organization'] = team_assignment['no_organization_count']
+            status['team_assignment_unknown'] = team_assignment['unknown_count']
             status['roster_statuses_refreshed'] = roster['pitchers_refreshed']
             status['roster_statuses_changed'] = roster['pitchers_changed']
             status['roster_status_unknown'] = roster['unknown_count']
@@ -315,7 +331,7 @@ def run_daily_sync(app, days_back: int = 7):
                 records_processed=pull['new_logs_added'],
                 new_logs_added=pull['new_logs_added'],
                 pitchers_updated=pitchers_updated,
-                errors=pull['errors'] + roster['errors'],
+                errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
                 error_message=status['message'] or None,
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
