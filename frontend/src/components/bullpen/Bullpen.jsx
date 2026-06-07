@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
@@ -10,6 +10,7 @@ import TonightsBullpenBoard from './board/TonightsBullpenBoard'
 import TeamBullpenComparison from './board/TeamBullpenComparison'
 import { getBullpenEmptyState } from './emptyState'
 import AvailabilityBadge from './AvailabilityBadge'
+import PitcherSearch from './PitcherSearch'
 import {
   AVAILABILITY_FILTERS,
   filterRowsByAvailability,
@@ -30,12 +31,16 @@ const VALID_VIEWS = new Set(VIEW_MODES.map(m => m.id))
 
 export default function Bullpen() {
   const location = useLocation()
+  const navigate = useNavigate()
   // Allow deep-links to a specific tab and team, e.g. the dashboard Quick Actions
   // (/bullpen?view=compare) and the landscape team drilldown
   // (/bullpen?view=board&team=SF). Defaults to Tonight's Board.
   const searchParams = new URLSearchParams(location.search)
   const requestedView = searchParams.get('view')
   const requestedTeam = searchParams.get('team')
+  const requestedPitcher = searchParams.get('pitcher')
+  const requestedPitcherId = Number.parseInt(requestedPitcher || '', 10)
+  const hasRequestedPitcher = Number.isFinite(requestedPitcherId) && requestedPitcherId > 0
   const [viewMode, setViewMode]           = useState(VALID_VIEWS.has(requestedView) ? requestedView : 'board')
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
@@ -44,6 +49,8 @@ export default function Bullpen() {
   const [sortBy, setSortBy]               = useState('score')
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
+  const boardDetailRegionRef = useRef(null)
+  const showBoardDetail = viewMode === 'board' && selectedPitcher
 
   const teams    = useFetch(getTeams)
   const allScores = useFetch(
@@ -63,6 +70,46 @@ export default function Bullpen() {
     } finally {
       setRecalcing(false)
     }
+  }
+
+  useEffect(() => {
+    if (
+      viewMode === 'board'
+      && hasRequestedPitcher
+      && selectedPitcher?.pitcher_id !== requestedPitcherId
+    ) {
+      setSelected({ pitcher_id: requestedPitcherId })
+    }
+  }, [hasRequestedPitcher, requestedPitcherId, selectedPitcher?.pitcher_id, viewMode])
+
+  useEffect(() => {
+    if (showBoardDetail) {
+      boardDetailRegionRef.current?.focus()
+    }
+  }, [showBoardDetail, selectedPitcher?.pitcher_id])
+
+  const handlePitcherSearchSelect = (result) => {
+    if (!result?.player_id) return
+    const nextSearchParams = new URLSearchParams(location.search)
+    nextSearchParams.set('view', 'board')
+    nextSearchParams.set('pitcher', String(result.player_id))
+    setSelected({
+      pitcher_id: result.player_id,
+      pitcher: {
+        full_name: result.player_name,
+        team_name: result.team_name,
+        team_abbreviation: result.team_abbreviation,
+      },
+    })
+    navigate(`${location.pathname}?${nextSearchParams.toString()}`)
+  }
+
+  const closeSelectedPitcher = () => {
+    const nextSearchParams = new URLSearchParams(location.search)
+    nextSearchParams.delete('pitcher')
+    const nextQuery = nextSearchParams.toString()
+    setSelected(null)
+    navigate(`${location.pathname}${nextQuery ? `?${nextQuery}` : ''}`, { replace: true })
   }
 
   return (
@@ -107,7 +154,23 @@ export default function Bullpen() {
       />
 
       {viewMode === 'board' ? (
-        <TonightsBullpenBoard teams={teams} requestedTeam={requestedTeam} />
+        <>
+          <PitcherSearch onSelectPitcher={handlePitcherSearchSelect} />
+          <TonightsBullpenBoard teams={teams} requestedTeam={requestedTeam} />
+          {showBoardDetail && (
+            <div
+              ref={boardDetailRegionRef}
+              tabIndex={-1}
+              role="region"
+              aria-label={`Selected pitcher detail for ${selectedPitcher.pitcher?.full_name ?? 'pitcher'}`}
+              className="fixed inset-0 z-40 overflow-y-auto bg-field/95 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber/70 lg:p-6"
+            >
+              <div className="mx-auto max-w-5xl">
+                <PitcherDetail pitcherId={selectedPitcher.pitcher_id} onClose={closeSelectedPitcher} />
+              </div>
+            </div>
+          )}
+        </>
       ) : viewMode === 'compare' ? (
         <TeamBullpenComparison teams={teams} />
       ) : viewMode === 'teams' ? (

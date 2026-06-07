@@ -115,6 +115,18 @@ Bullpen Board cards. Workload signal remains visible separately so a pitcher can
 show `Workload Signal: Available` while final availability is `Unavailable`
 because of roster status.
 
+### Pitcher Search V1
+
+Pitcher Search V1 is implemented as database-backed, team-agnostic pitcher
+discovery from stored BaseballOS records. It supports exact, prefix, partial,
+case-insensitive, and accent-folded name search, returns current team
+assignment, roster status, position, and final roster-adjusted availability,
+and opens the existing Player Detail surface from the Bullpen Board.
+
+Pitcher Search V1 does not call MLB APIs during search requests and does not
+introduce recommendations, rankings, predictions, matchup advice, best-arm
+logic, or automated pitcher selection.
+
 ### Explainability
 
 Availability output includes:
@@ -200,6 +212,7 @@ It does not rank the bullpen or select the final pitcher.
 | Stale Team Ownership Correction | Complete / Active |
 | Bullpen Board Unavailable Pitcher Separation | Complete / Active |
 | Player Detail And Bullpen Board Availability Consistency | Complete / Active |
+| Pitcher Search V1 | Complete / Database-Backed / Team-Agnostic |
 | Explainability | ✓ Complete |
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |

@@ -17,6 +17,9 @@ milestones. It does not replace the detailed evidence records linked from
   inactive/context wording with roster reasons.
 - Aligned Player Detail final availability with Bullpen Board cards while
   keeping workload signal visible separately.
+- Added Pitcher Search V1 as database-backed, team-agnostic pitcher discovery
+  by name, using stored current team assignment, roster status, and final
+  availability without rankings, recommendations, or predictions.
 - Documented current limitations: transaction-event lineage is not yet
   persisted, real-world roster state can move between syncs, and bullpen
   eligibility can still use role/usage evidence where explicit role authority is

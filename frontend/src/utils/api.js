@@ -600,6 +600,10 @@ export const getPitchers       = (params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/pitchers${q ? `?${q}` : ''}`)
 }
+export const searchPitchers    = (params = {}) => {
+  const queryParams = typeof params === 'string' ? { q: params } : params
+  return request(`/pitchers/search${buildQuery(queryParams)}`)
+}
 export const getPitcherLogs    = (id, days = 30) => request(`/bullpen/pitchers/${id}/logs?days=${days}`)
 
 export const getTeams          = () => request('/bullpen/teams')

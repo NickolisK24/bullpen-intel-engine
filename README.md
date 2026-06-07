@@ -31,6 +31,7 @@ audits.
 | V1 Fatigue + Availability Engine | Implemented, tested | Live MLB game-log data (via sync) |
 | Bullpen Board roster-aware availability | Implemented, tested | MLB roster authority plus live workload data |
 | Player Detail final availability | Implemented, tested | Same roster-adjusted final availability semantics as Bullpen Board |
+| Pitcher Search V1 | Implemented, tested | Database-backed pitcher discovery from stored BaseballOS records |
 | V2 Recommendation Engine | Implemented, tested | Live workload data; presents **governed context/evidence only — it does not rank, select, or name a pitcher** |
 | V3 Team Operations Readiness | Controlled rollout approved | Live workload data |
 | V4 Explanation Platform | Production rollout approved | Derived from live availability/readiness payloads |
@@ -67,6 +68,10 @@ and
 - Final availability is roster-status-adjusted. Workload signal remains visible
   separately, and Player Detail uses the same final availability semantics as
   Bullpen Board cards.
+- Pitcher Search V1 for team-agnostic pitcher discovery by name, backed by
+  stored BaseballOS pitcher records, current team assignment, roster status,
+  and final availability. It does not introduce rankings, recommendations, or
+  predictions.
 - Explainable availability output with confidence, data state, reasons,
   limitations, and deterministic inputs.
 - Dashboard trust strip for platform status, sync freshness, baseball
@@ -131,7 +136,6 @@ surfaces combine roster status and workload signal into final availability.
 
 ## Next Priorities
 
-- Pitcher search.
 - Mobile review.
 - Active MLB pitchers versus bullpen arms transparency.
 - Competitive positioning versus Rotowire.
