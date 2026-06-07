@@ -25,6 +25,13 @@ from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build
 from services.bullpen_comparison import build_team_comparison
 from services.game_context import build_landscape, build_team_game_context
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS, classify_usage_role
+from services.roster_status import (
+    allows_default_board,
+    allows_inactive_context,
+    apply_roster_status_to_availability,
+    classify_roster_status,
+    roster_status_summary,
+)
 from services.mlb_api import mlb_client
 from services import sync as sync_service
 from services import sync_metadata
@@ -677,7 +684,7 @@ def _board_usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_sta
     Recent game logs grouped by pitcher_id, in a single query (no N+1).
 
     Used to classify observed usage role and bullpen eligibility. Default board
-    mode uses the recent role window. When inactive pitchers are explicitly
+    mode uses the recent role window. When context pitchers are explicitly
     included, this falls back to each pitcher's latest stored usage so stale
     cards can still be labelled from real evidence instead of empty context.
     """
@@ -697,9 +704,18 @@ def _board_usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_sta
     return grouped
 
 
-def _availability_with_eligibility(availability, eligibility):
-    """Attach eligibility caveats to the existing availability limitations."""
-    merged = dict(availability or {})
+def _merge_limitations(*groups):
+    merged = []
+    for group in groups:
+        for limitation in group or []:
+            if limitation not in merged:
+                merged.append(limitation)
+    return merged
+
+
+def _availability_with_eligibility(availability, eligibility, roster_status=None):
+    """Attach roster-status and eligibility caveats to availability output."""
+    merged = apply_roster_status_to_availability(availability, roster_status)
     limitations = list(merged.get('limitations') or [])
     for limitation in (eligibility or {}).get('limitations') or []:
         if limitation not in limitations:
@@ -721,12 +737,20 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
     today = date.today()
 
     records = []
+    roster_statuses = []
     for pitcher, score in rows:
+        roster_status = classify_roster_status(pitcher)
+        roster_statuses.append(roster_status)
+        if not allows_default_board(roster_status):
+            if not (include_stale and allows_inactive_context(roster_status)):
+                continue
+
         logs = logs_by_pitcher.get(pitcher.id, [])
         eligibility = evaluate_bullpen_eligibility(
             pitcher,
             logs,
             reference_date=today,
+            respect_local_active=not roster_status.get('is_authoritative'),
         )
         if not eligibility.get('eligible'):
             continue
@@ -734,6 +758,7 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
         availability = _availability_with_eligibility(
             availability_by_pitcher.get(pitcher.id),
             eligibility,
+            roster_status,
         )
         records.append({
             'name': pitcher.full_name,
@@ -742,9 +767,10 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
             'availability': availability,
             'role': classify_usage_role(logs, reference_date=today),
             'eligibility': eligibility,
+            'roster_status': roster_status,
             'pitcher': pitcher,
         })
-    return records
+    return records, roster_status_summary(roster_statuses, records)
 
 
 def _eligible_classified_records(rows, include_stale=True):
@@ -765,19 +791,26 @@ def _eligible_classified_records(rows, include_stale=True):
     eligible = []
     for record in classified:
         pitcher = record['pitcher']
+        roster_status = classify_roster_status(pitcher)
+        if not allows_default_board(roster_status):
+            continue
+
         eligibility = evaluate_bullpen_eligibility(
             pitcher,
             logs_by_pitcher.get(pitcher.id, []),
             reference_date=today,
+            respect_local_active=not roster_status.get('is_authoritative'),
         )
         if not eligibility.get('eligible'):
             continue
 
         updated = dict(record)
         updated['eligibility'] = eligibility
+        updated['roster_status'] = roster_status
         updated['availability'] = _availability_with_eligibility(
             updated.get('availability'),
             eligibility,
+            roster_status,
         )
         eligible.append(updated)
     return eligible
@@ -794,7 +827,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None):
     results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
 
     team_info = None
-    records = _eligible_records_for_rows(
+    records, roster_summary = _eligible_records_for_rows(
         results,
         availability_by_pitcher,
         include_stale=include_stale,
@@ -811,11 +844,16 @@ def _build_team_board(team_id, include_stale=False, freshness=None):
         team_info = _team_info_lookup(team_id)
 
     freshness = freshness or _board_freshness_block()
+    limitations = _merge_limitations(
+        freshness.get('limitations'),
+        roster_summary.get('limitations'),
+    )
     return build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
-        limitations=freshness.get('limitations'),
+        limitations=limitations,
+        roster_status=roster_summary,
     )
 
 
@@ -831,8 +869,8 @@ def get_team_bullpen_board(team_id):
     alphabetically within each group.
 
     Optional query params:
-      - include_stale: when truthy, include pitchers whose most recent
-                       appearance is older than 14 days. Default false.
+      - include_stale: include stale workload pitchers and roster-status
+                       context. Default false.
     """
     include_stale = _truthy(request.args.get('include_stale'))
     return jsonify(_build_team_board(team_id, include_stale))
@@ -851,7 +889,7 @@ def compare_team_bullpens():
     Required query params:
       - team_a, team_b: team ids to compare.
     Optional:
-      - include_stale: include pitchers with no games in the last 14 days.
+      - include_stale: include stale workload pitchers and roster-status context.
     """
     team_a = request.args.get('team_a', type=int)
     team_b = request.args.get('team_b', type=int)

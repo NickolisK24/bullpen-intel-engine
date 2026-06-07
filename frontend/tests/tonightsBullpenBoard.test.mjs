@@ -8,6 +8,7 @@ import {
   emptyBoard,
   makeBoard,
   populatedBoard,
+  rosterContextBoard,
   staleBoard,
 } from './fixtures/bullpenBoardFixtures.mjs'
 
@@ -77,9 +78,22 @@ test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Stale'))
   assert.ok(htmlIncludes(html, 'Inactive Context'))
+  assert.ok(htmlIncludes(html, 'Roster Unknown'))
+  assert.ok(htmlIncludes(html, 'Roster status unavailable'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
   assert.ok(htmlIncludes(html, 'Data freshness limits confidence'))
   assert.ok(htmlIncludes(html, 'Historical baseball data through 2026-04-01.'))
+})
+
+test('inactive roster context renders status labels without active availability', () => {
+  const html = render(rosterContextBoard)
+  assert.ok(htmlIncludes(html, 'Graham Ashcraft'))
+  assert.ok(htmlIncludes(html, 'IL-60'))
+  assert.ok(htmlIncludes(html, 'Jose Franco'))
+  assert.ok(htmlIncludes(html, 'Minors'))
+  assert.ok(htmlIncludes(html, 'Availability status: Unavailable'))
+  assert.ok(htmlIncludes(html, 'Inactive context'))
+  assert.ok(!htmlIncludes(html, 'Availability status: Available'))
 })
 
 test('team switching reflects the selected team in the heading', () => {
@@ -109,4 +123,7 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBoardFreshnessView(populatedBoard.freshness).isStale, false)
   assert.equal(view.getBoardFreshnessView(staleBoard.freshness).isStale, true)
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Inactive Context')
+  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).rosterStatus.label, 'Roster Unknown')
+  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, 'IL-60')
+  assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster status unavailable')
 })

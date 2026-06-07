@@ -84,7 +84,7 @@ test('renders dashboard summary without claiming stale data is current', () => {
   assert.ok(htmlIncludes(html, 'Low'))
   assert.ok(htmlIncludes(html, 'Stale'))
   assert.ok(htmlIncludes(html, 'Availability is limited by stale workload data.'))
-  assert.ok(htmlIncludes(html, 'Show inactive pitchers or refresh sync data'))
+  assert.ok(htmlIncludes(html, 'Show stale workload pitchers or refresh sync data'))
   assert.doesNotMatch(html, /latest_workload_snapshot/)
 })
 

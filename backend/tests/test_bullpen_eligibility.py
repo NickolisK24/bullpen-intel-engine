@@ -131,4 +131,4 @@ def test_inactive_relief_context_is_labelled_when_included():
     assert result['eligible'] is True
     assert result['status'] == STATUS_INACTIVE_BULLPEN_RELEVANT
     assert result['confidence'] == 'low'
-    assert any('inactive pitchers are included' in limitation for limitation in result['limitations'])
+    assert any('stale/context pitchers are included' in limitation for limitation in result['limitations'])

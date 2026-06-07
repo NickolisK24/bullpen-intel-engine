@@ -474,11 +474,11 @@ function StaleToggle({ active, onToggle }) {
           )}
         </span>
         <span className="font-mono text-xs" style={{ color: labelColor }}>
-          Show inactive pitchers
+          Show stale workload pitchers
         </span>
       </div>
       <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">
-        Includes pitchers with no games in the last 14 days
+        Includes pitchers outside the active freshness window
       </div>
     </button>
   )

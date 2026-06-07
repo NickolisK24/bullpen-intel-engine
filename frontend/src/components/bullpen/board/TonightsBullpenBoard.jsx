@@ -110,8 +110,11 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
             onChange={() => setIncludeStale(v => !v)}
             className="h-3.5 w-3.5 accent-amber"
           />
-          Include inactive pitchers (no games in the last 14 days)
+          Include inactive/context pitchers
         </label>
+        <div className="mt-1 text-xs leading-relaxed text-chalk500">
+          Roster status and workload freshness are shown separately.
+        </div>
       </div>
 
       {selectedTeam == null ? (

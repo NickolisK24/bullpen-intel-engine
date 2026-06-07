@@ -24,6 +24,14 @@ from services.bullpen_board import (
     group_cards,
     short_reason_for,
 )
+from services.roster_status import (
+    ROSTER_STATUS_UNAVAILABLE_LIMITATION,
+    STATUS_ACTIVE,
+    STATUS_IL_15,
+    STATUS_IL_60,
+    STATUS_MINORS,
+    STATUS_UNKNOWN,
+)
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -202,6 +210,8 @@ def _seed_pitcher(
     days_ago=None,
     active=True,
     position='P',
+    roster_status=None,
+    roster_status_source='test_fixture',
 ):
     """Create a pitcher with a recent game log and a fatigue score."""
     pitcher = Pitcher(
@@ -212,6 +222,9 @@ def _seed_pitcher(
         team_abbreviation=team_abbr,
         position=position,
         active=active,
+        roster_status=roster_status,
+        roster_status_source=roster_status_source if roster_status else None,
+        roster_status_updated_at=datetime.utcnow() if roster_status else None,
     )
     db.session.add(pitcher)
     db.session.commit()
@@ -357,7 +370,120 @@ class TestBoardEndpoint:
 
         assert names == ['Reds Stale Reliever']
         assert cards[0]['eligibility']['status'] == 'inactive_bullpen_relevant'
-        assert any('inactive pitchers are included' in limitation for limitation in cards[0]['limitations'])
+        assert any('stale/context pitchers are included' in limitation for limitation in cards[0]['limitations'])
+
+    def test_il_and_minors_pitchers_are_excluded_from_default_board_counts(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Reds Active Relief Context',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11320,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'Graham Ashcraft',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=668933,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_IL_60,
+            )
+            _seed_pitcher(
+                'Pierce Johnson',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=572955,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 2, 4],
+                roster_status=STATUS_IL_15,
+            )
+            _seed_pitcher(
+                'Connor Phillips',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=683175,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_MINORS,
+            )
+
+        body = client.get('/api/bullpen/teams/113/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        names = [card['name'] for card in cards]
+
+        assert names == ['Reds Active Relief Context']
+        assert body['total_pitchers'] == 1
+        assert body['context']['metrics']['total_relievers'] == 1
+        assert body['roster_status']['excluded_inactive_count'] == 3
+
+    def test_inactive_toggle_shows_roster_status_context_not_available(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Graham Ashcraft',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=668933,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_IL_60,
+            )
+            _seed_pitcher(
+                'Pierce Johnson',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=572955,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 2, 4],
+                roster_status=STATUS_IL_15,
+            )
+            _seed_pitcher(
+                'Jose Franco',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=683742,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_MINORS,
+            )
+
+        body = client.get('/api/bullpen/teams/113/board?include_stale=true').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        by_name = {card['name']: card for card in cards}
+
+        assert set(by_name) == {'Graham Ashcraft', 'Jose Franco', 'Pierce Johnson'}
+        assert by_name['Graham Ashcraft']['availability_status'] == 'Unavailable'
+        assert by_name['Graham Ashcraft']['roster_status']['status'] == STATUS_IL_60
+        assert by_name['Graham Ashcraft']['roster_status']['label'] == 'IL-60'
+        assert by_name['Pierce Johnson']['roster_status']['label'] == 'IL-15'
+        assert by_name['Jose Franco']['roster_status']['label'] == 'Minors'
+        assert all(card['availability_status'] != 'Available' for card in cards)
+        assert body['roster_status']['inactive_context_count'] == 3
+        assert any('context only' in limitation for limitation in body['limitations'])
+
+    def test_unknown_roster_status_surfaces_limitation_without_claiming_active(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Unknown Status Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11321,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+            )
+
+        body = client.get('/api/bullpen/teams/113/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+
+        assert [card['name'] for card in cards] == ['Unknown Status Reliever']
+        assert cards[0]['roster_status']['status'] == STATUS_UNKNOWN
+        assert cards[0]['roster_status']['is_active_mlb'] is None
+        assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in cards[0]['limitations']
+        assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in body['limitations']
+        assert body['roster_status']['authority'] == 'unavailable'
 
     def test_default_bullpen_filtering_is_league_wide_not_reds_only(self, client):
         with client.application.app_context():
@@ -376,6 +502,16 @@ class TestBoardEndpoint:
                 mlb_id=14702,
                 innings=[1.0, 1.0, 0.2],
                 days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'Yankees Optioned Reliever',
+                team_id=147,
+                team_abbr='NYY',
+                mlb_id=14703,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_MINORS,
             )
 
         body = client.get('/api/bullpen/teams/147/board').get_json()

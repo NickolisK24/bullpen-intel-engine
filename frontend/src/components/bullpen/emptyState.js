@@ -35,7 +35,7 @@ export function getBullpenEmptyState({
   if (!includeStale && allRowsCount === 0 && staleFiltered > 0) {
     return {
       title: 'No current pitchers match the freshness filter.',
-      subtitle: 'Enable "Show inactive pitchers" to view all tracked pitchers.',
+      subtitle: 'Enable "Show stale workload pitchers" to view all tracked pitchers.',
     }
   }
 

@@ -6,6 +6,7 @@ import {
   getBoardGroups,
   getBoardTotals,
   getDataProvenance,
+  getRosterStatusSummaryView,
 } from './tonightsBullpenBoardView'
 
 function FreshnessBanner({ freshness }) {
@@ -41,6 +42,46 @@ function FreshnessBanner({ freshness }) {
           Latest workload data is outside the active freshness window — read with caution.
         </p>
       )}
+      {view.limitations.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {view.limitations.map((limitation, index) => (
+            <li key={index} className="text-xs leading-relaxed text-chalk400">• {limitation}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RosterStatusBanner({ summary }) {
+  const view = getRosterStatusSummaryView(summary)
+  if (!view.shouldShow) return null
+  return (
+    <div
+      className="mb-6 rounded-lg border p-4"
+      style={view.tone}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="font-mono text-[11px] uppercase tracking-widest">{view.label}</span>
+        <span className="font-mono text-xs">
+          <span className="text-chalk500">Active MLB</span> {view.activeMlbCount}
+        </span>
+        <span className="font-mono text-xs">
+          <span className="text-chalk500">Unknown</span> {view.unknownCount}
+        </span>
+        {view.inactiveContextCount > 0 && (
+          <span className="font-mono text-xs">
+            <span className="text-chalk500">Inactive context</span> {view.inactiveContextCount}
+          </span>
+        )}
+        {view.excludedInactiveCount > 0 && (
+          <span className="font-mono text-xs">
+            <span className="text-chalk500">Excluded inactive</span> {view.excludedInactiveCount}
+          </span>
+        )}
+      </div>
       {view.limitations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {view.limitations.map((limitation, index) => (
@@ -112,6 +153,21 @@ function EligibilityChip({ eligibility }) {
   )
 }
 
+function RosterStatusChip({ rosterStatus }) {
+  if (!rosterStatus) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+      style={rosterStatus.tone}
+      title={`Roster status: ${rosterStatus.label} (confidence: ${rosterStatus.confidenceLabel})`}
+      aria-label={`Roster status: ${rosterStatus.label}, confidence ${rosterStatus.confidenceLabel}`}
+    >
+      {rosterStatus.label}
+      <span className="opacity-70">· {rosterStatus.confidenceLabel}</span>
+    </span>
+  )
+}
+
 function RoleDisclosure({ role }) {
   if (!role) return null
   return (
@@ -173,8 +229,9 @@ function PitcherCard({ card, onViewDetails }) {
         </span>
       </div>
 
-      {(view.role || view.eligibility) && (
+      {(view.role || view.eligibility || view.rosterStatus) && (
         <div className="mt-2 flex flex-wrap gap-2">
+          <RosterStatusChip rosterStatus={view.rosterStatus} />
           <RoleChip role={view.role} />
           <EligibilityChip eligibility={view.eligibility} />
         </div>
@@ -252,6 +309,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
   return (
     <div>
       <FreshnessBanner freshness={board?.freshness} />
+      <RosterStatusBanner summary={board?.roster_status} />
 
       <div className="mb-5">
         <h2 className="font-display text-2xl tracking-wide text-chalk100">
@@ -268,7 +326,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
       {totals.isEmpty ? (
         <EmptyState
           title="No pitchers to show for this team"
-          subtitle="No active pitchers fall inside the current freshness window. Try including inactive pitchers, or pick another team."
+          subtitle="No active bullpen options are available under the current roster and freshness filters."
         />
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">

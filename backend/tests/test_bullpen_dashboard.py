@@ -12,6 +12,7 @@ from flask import Flask
 
 import services.sync as sync_service
 from services.pitcher_role import ROLE_KEYS
+from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -37,9 +38,12 @@ def client(tmp_path, monkeypatch):
             db.drop_all()
 
 
-def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1):
+def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1, roster_status=None):
     pitcher = Pitcher(mlb_id=mlb_id, full_name=name, team_id=team_id,
-                      team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True)
+                      team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True,
+                      roster_status=roster_status,
+                      roster_status_source='test_fixture' if roster_status else None,
+                      roster_status_updated_at=datetime.utcnow() if roster_status else None)
     db.session.add(pitcher)
     db.session.commit()
     innings_values = innings if isinstance(innings, list) else [innings]
@@ -104,6 +108,41 @@ class TestDashboardEndpoint:
                 mlb_id=11,
                 innings=[1.0, 0.2, 1.0],
                 days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['context']['metrics']['total_relievers'] == 1
+        assert body['roles']['total'] == 1
+        assert body['availability_summary']['total_pitchers'] == 1
+        assert body['landscape']['teams_evaluated'] == 1
+
+    def test_dashboard_counts_exclude_known_inactive_roster_statuses(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Active League Reliever',
+                team_id=1,
+                mlb_id=20,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'IL League Reliever',
+                team_id=2,
+                mlb_id=21,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_IL_15,
+            )
+            _seed_pitcher(
+                'Minors League Reliever',
+                team_id=3,
+                mlb_id=22,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_MINORS,
             )
 
         body = client.get('/api/bullpen/dashboard').get_json()

@@ -169,7 +169,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
               <div className="lg:col-span-2 flex flex-wrap gap-2">
                 {view.limitedByData && (
                   <span className="rounded border border-dirt bg-chalk/30 px-2 py-1 font-mono text-[10px] text-chalk400">
-                    Show inactive pitchers or refresh sync data to inspect historical workload context.
+                    Show stale workload pitchers or refresh sync data to inspect historical workload context.
                   </span>
                 )}
                 {view.notes.slice(1).map((note) => (
@@ -198,7 +198,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           {view.primaryTrustNote}
           {view.limitedByData && (
             <span className="block mt-1 text-chalk400">
-              Show inactive pitchers or refresh sync data to inspect historical workload context.
+              Show stale workload pitchers or refresh sync data to inspect historical workload context.
             </span>
           )}
         </div>

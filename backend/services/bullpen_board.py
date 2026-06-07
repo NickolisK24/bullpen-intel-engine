@@ -263,7 +263,7 @@ def short_reason_for(availability):
     return 'Workload indicators elevated'
 
 
-def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibility=None):
+def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibility=None, roster_status=None):
     """Build a single display card from existing availability output."""
     availability = availability or {}
     score = None
@@ -288,6 +288,8 @@ def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibi
         # Bullpen roster eligibility is descriptive and explains why a pitcher
         # is present on this bullpen-specific surface.
         'eligibility': eligibility,
+        # Roster status is separate from workload freshness and role inference.
+        'roster_status': roster_status,
     }
 
 
@@ -329,6 +331,7 @@ def build_board_payload(
     records,
     freshness=None,
     limitations=None,
+    roster_status=None,
     generated_at=None,
 ):
     """
@@ -353,6 +356,7 @@ def build_board_payload(
             availability=record.get('availability'),
             role=record.get('role'),
             eligibility=record.get('eligibility'),
+            roster_status=record.get('roster_status'),
         )
         for record in records
     ]
@@ -374,5 +378,6 @@ def build_board_payload(
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),
         'freshness': freshness or {},
+        'roster_status': roster_status or {},
         'limitations': list(limitations or []),
     }

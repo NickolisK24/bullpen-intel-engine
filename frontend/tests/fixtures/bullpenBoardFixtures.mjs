@@ -98,8 +98,9 @@ function contextFromGroups(groups, freshness) {
   }
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context } = {}) {
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, rosterStatus } = {}) {
   const groups = buildGroups(cardsByStatus)
+  const totalPitchers = groups.reduce((sum, g) => sum + g.count, 0)
   const resolvedFreshness = freshness || {
     data_through: '2026-06-04',
     latest_workload_date: '2026-06-04',
@@ -118,7 +119,7 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
     group_order: BOARD_GROUP_ORDER,
     context: context || contextFromGroups(groups, resolvedFreshness),
     groups,
-    total_pitchers: groups.reduce((sum, g) => sum + g.count, 0),
+    total_pitchers: totalPitchers,
     ungrouped_pitchers: 0,
     freshness: freshness || {
       data_through: '2026-06-04',
@@ -127,6 +128,17 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
       sync_status: 'success',
       is_current: true,
       label: 'Current baseball data through 2026-06-04.',
+      limitations: [],
+    },
+    roster_status: rosterStatus || {
+      authority: 'available',
+      total_candidates: totalPitchers,
+      known_count: totalPitchers,
+      unknown_count: 0,
+      included_unknown_count: 0,
+      active_mlb_count: totalPitchers,
+      inactive_context_count: 0,
+      excluded_inactive_count: 0,
       limitations: [],
     },
     limitations,
@@ -181,7 +193,18 @@ export const staleBoard = makeBoard({
           confidence: 'low',
           reason: 'No game logs inside the active freshness window.',
           evidence: [],
-          limitations: ['No game logs inside the active freshness window; shown only when inactive pitchers are included.'],
+          limitations: ['No game logs inside the active freshness window; shown only when stale/context pitchers are included.'],
+        },
+        roster_status: {
+          status: 'UNKNOWN',
+          label: 'Roster Unknown',
+          source: 'unavailable',
+          is_authoritative: false,
+          is_active_mlb: null,
+          is_inactive_context: false,
+          confidence: 'low',
+          evidence: [],
+          limitations: ['Roster status unavailable; bullpen eligibility is based on stored usage and position data.'],
         },
       }),
     ],
@@ -194,5 +217,68 @@ export const staleBoard = makeBoard({
     is_current: false,
     label: 'Historical baseball data through 2026-04-01.',
     limitations: ['Latest game date is outside the 14-day freshness window.'],
+  },
+  rosterStatus: {
+    authority: 'unavailable',
+    total_candidates: 1,
+    known_count: 0,
+    unknown_count: 1,
+    included_unknown_count: 1,
+    active_mlb_count: 0,
+    inactive_context_count: 0,
+    excluded_inactive_count: 0,
+    limitations: ['Roster status unavailable; bullpen eligibility is based on stored usage and position data.'],
+  },
+})
+
+export const rosterContextBoard = makeBoard({
+  cardsByStatus: {
+    Unavailable: [
+      card(8, 'Graham Ashcraft', 'Unavailable', {
+        confidence: 'high',
+        short_reason: 'Roster status: IL-60.',
+        reasons: ['Roster status: IL-60.'],
+        limitations: ['Inactive roster-status context is not active planning availability.'],
+        roster_status: {
+          status: 'IL_60',
+          label: 'IL-60',
+          source: 'test_fixture',
+          is_authoritative: true,
+          is_active_mlb: false,
+          is_inactive_context: true,
+          confidence: 'high',
+          evidence: ['Stored roster status: IL-60.'],
+          limitations: [],
+        },
+      }),
+      card(9, 'Jose Franco', 'Unavailable', {
+        confidence: 'high',
+        short_reason: 'Roster status: Minors.',
+        reasons: ['Roster status: Minors.'],
+        limitations: ['Inactive roster-status context is not active planning availability.'],
+        roster_status: {
+          status: 'MINORS',
+          label: 'Minors',
+          source: 'test_fixture',
+          is_authoritative: true,
+          is_active_mlb: false,
+          is_inactive_context: true,
+          confidence: 'high',
+          evidence: ['Stored roster status: Minors.'],
+          limitations: [],
+        },
+      }),
+    ],
+  },
+  rosterStatus: {
+    authority: 'available',
+    total_candidates: 2,
+    known_count: 2,
+    unknown_count: 0,
+    included_unknown_count: 0,
+    active_mlb_count: 0,
+    inactive_context_count: 2,
+    excluded_inactive_count: 0,
+    limitations: ['Inactive roster-status cards are context only and are not active planning availability.'],
   },
 })

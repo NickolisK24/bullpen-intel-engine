@@ -18,6 +18,8 @@ from models.prospect import Prospect
 from models.fatigue_score import FatigueScore
 from services.mlb_api import mlb_client
 from services.fatigue import calculate_fatigue
+from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
+from utils.time import utc_now_naive
 
 app = create_app()
 
@@ -69,6 +71,9 @@ def seed_pitchers():
             if not info:
                 continue
 
+            raw_status = _roster_entry_status(player)
+            roster_status = normalize_roster_status_value(raw_status) if raw_status else None
+
             pitcher = Pitcher(
                 mlb_id=player_id,
                 full_name=info.get('fullName', person.get('fullName', 'Unknown')),
@@ -80,6 +85,13 @@ def seed_pitchers():
                 age=info.get('currentAge'),
                 jersey_number=player.get('jerseyNumber'),
                 active=True,
+                roster_status=(
+                    roster_status
+                    if roster_status and roster_status != STATUS_UNKNOWN
+                    else None
+                ),
+                roster_status_source='mlb_stats_api:40Man' if raw_status else None,
+                roster_status_updated_at=utc_now_naive() if raw_status else None,
             )
             db.session.add(pitcher)
             seeded += 1
@@ -90,6 +102,18 @@ def seed_pitchers():
 
     print(f"\n  ✅ Seeded {seeded} new pitchers")
     return seeded
+
+
+def _roster_entry_status(player):
+    status = player.get('status')
+    if isinstance(status, dict):
+        return (
+            status.get('code')
+            or status.get('description')
+            or status.get('name')
+            or status.get('type')
+        )
+    return status
 
 
 # ─── Game Logs ────────────────────────────────────────────────────────────────

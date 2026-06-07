@@ -111,14 +111,14 @@ def _with_inactive_context(result, latest_game_date, reference_date):
     updated['status'] = STATUS_INACTIVE_BULLPEN_RELEVANT
     updated['confidence'] = 'low'
     limitations = list(updated.get('limitations') or [])
-    limitation = 'No game logs inside the active freshness window; shown only when inactive pitchers are included.'
+    limitation = 'No game logs inside the active freshness window; shown only when stale/context pitchers are included.'
     if limitation not in limitations:
         limitations.append(limitation)
     updated['limitations'] = limitations
     return updated
 
 
-def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None):
+def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None, respect_local_active=True):
     """
     Determine whether a pitcher belongs on default bullpen-specific surfaces.
 
@@ -129,7 +129,7 @@ def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None):
     pos = _position(pitcher)
     active = bool(getattr(pitcher, 'active', True))
 
-    if not active:
+    if respect_local_active and not active:
         return _limited_result(
             STATUS_INACTIVE,
             'Pitcher is not marked active in the local roster model.',

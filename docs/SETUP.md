@@ -126,7 +126,7 @@ from presenting old workload as current availability intelligence.
 Local seed data can be a valid historical snapshot while still falling outside
 that active window. In that case the dashboard can honestly show tracked
 pitchers and game logs while the Bullpen default view says no current pitchers
-match the freshness filter. Use **Show inactive pitchers** to inspect all
+match the freshness filter. Use **Show stale workload pitchers** to inspect all
 tracked pitchers from the local snapshot. If the dashboard itself shows no game
 logs, the database is empty and needs to be seeded or synced.
 
@@ -244,8 +244,8 @@ Stats API. (Seeding makes live network calls and can take a few minutes.)
 
 **Dashboard has pitchers/logs, but the Bullpen page has no current pitchers**
 → Data exists, but every pitcher may be outside the active 14-day freshness
-window for the current calendar date. Enable **Show inactive pitchers** to view
-the stale/inactive snapshot, or run a fresh sync if you expect current-season
+window for the current calendar date. Enable **Show stale workload pitchers** to view
+the stale workload snapshot, or run a fresh sync if you expect current-season
 data.
 
 **CORS error in the browser console**

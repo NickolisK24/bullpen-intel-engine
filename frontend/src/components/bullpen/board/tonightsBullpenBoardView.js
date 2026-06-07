@@ -74,6 +74,30 @@ const ELIGIBILITY_LABELS = {
   uncertain_bullpen_relevance: 'Uncertain Context',
 }
 
+const ROSTER_STATUS_LABELS = {
+  ACTIVE: 'Active MLB',
+  IL_10: 'IL-10',
+  IL_15: 'IL-15',
+  IL_60: 'IL-60',
+  MINORS: 'Minors',
+  OPTIONED: 'Optioned',
+  DFA: 'DFA',
+  NON_ROSTER: 'Non-roster',
+  '40_MAN_ONLY': '40-man context',
+  UNKNOWN: 'Roster Unknown',
+}
+
+const INACTIVE_ROSTER_STATUSES = new Set([
+  'IL_10',
+  'IL_15',
+  'IL_60',
+  'MINORS',
+  'OPTIONED',
+  'DFA',
+  'NON_ROSTER',
+  '40_MAN_ONLY',
+])
+
 export function getEligibilityView(eligibility) {
   if (!eligibility) return null
   const status = eligibility.status || 'bullpen_relevant'
@@ -90,6 +114,60 @@ export function getEligibilityView(eligibility) {
       backgroundColor: 'rgba(245,166,35,0.10)',
       color: '#f5a623',
     },
+  }
+}
+
+export function getRosterStatusView(rosterStatus) {
+  if (!rosterStatus) return null
+  const status = rosterStatus.status || 'UNKNOWN'
+  const isInactive = INACTIVE_ROSTER_STATUSES.has(status)
+  const isUnknown = status === 'UNKNOWN' || rosterStatus.is_authoritative === false
+  const label = rosterStatus.label || ROSTER_STATUS_LABELS[status] || 'Roster status'
+  return {
+    status,
+    label,
+    isInactive,
+    isUnknown,
+    confidence: rosterStatus.confidence || (isUnknown ? 'low' : 'high'),
+    confidenceLabel: formatConfidence(rosterStatus.confidence || (isUnknown ? 'low' : 'high')),
+    source: rosterStatus.source || null,
+    limitations: Array.isArray(rosterStatus.limitations) ? rosterStatus.limitations : [],
+    evidence: Array.isArray(rosterStatus.evidence) ? rosterStatus.evidence : [],
+    tone: isInactive
+      ? { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' }
+      : isUnknown
+        ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
+        : { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' },
+  }
+}
+
+export function getRosterStatusSummaryView(summary) {
+  const payload = summary || {}
+  const limitations = Array.isArray(payload.limitations) ? payload.limitations : []
+  const authority = payload.authority || 'none'
+  const unknownCount = Number(payload.included_unknown_count ?? payload.unknown_count ?? 0)
+  const inactiveContextCount = Number(payload.inactive_context_count || 0)
+  const activeMlbCount = Number(payload.active_mlb_count || 0)
+  const excludedInactiveCount = Number(payload.excluded_inactive_count || 0)
+  const shouldShow = limitations.length > 0 || unknownCount > 0 || inactiveContextCount > 0 || excludedInactiveCount > 0
+  return {
+    shouldShow,
+    authority,
+    label: authority === 'available'
+      ? 'Roster status available'
+      : authority === 'partial'
+        ? 'Roster status partial'
+        : authority === 'unavailable'
+          ? 'Roster status unavailable'
+          : 'Roster status not loaded',
+    activeMlbCount,
+    unknownCount,
+    inactiveContextCount,
+    excludedInactiveCount,
+    limitations,
+    tone: authority === 'available'
+      ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
+      : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
   }
 }
 
@@ -156,6 +234,7 @@ export function getBoardCardView(card) {
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     role: getRoleView(card?.role),
     eligibility: getEligibilityView(card?.eligibility),
+    rosterStatus: getRosterStatusView(card?.roster_status),
   }
 }
 

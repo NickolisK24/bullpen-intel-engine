@@ -15,6 +15,9 @@ class Pitcher(db.Model):
     age = db.Column(db.Integer)
     jersey_number = db.Column(db.String(5))
     active = db.Column(db.Boolean, default=True)
+    roster_status = db.Column(db.String(30))
+    roster_status_source = db.Column(db.String(100))
+    roster_status_updated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=utc_now_naive)
     updated_at = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
@@ -35,6 +38,12 @@ class Pitcher(db.Model):
             'age': self.age,
             'jersey_number': self.jersey_number,
             'active': self.active,
+            'roster_status': self.roster_status,
+            'roster_status_source': self.roster_status_source,
+            'roster_status_updated_at': (
+                self.roster_status_updated_at.isoformat()
+                if self.roster_status_updated_at else None
+            ),
         }
 
     def __repr__(self):
