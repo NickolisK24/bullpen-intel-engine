@@ -2,18 +2,23 @@
 
 ## Executive Summary
 
-BaseballOS has completed the Availability Engine trust foundation and
-Recommendation Engine V1. The platform now moves beyond a fatigue dashboard
-into explainable bullpen availability intelligence and certified
-candidate-level decision support while preserving clear limits around what
-public workload data can and cannot prove.
+BaseballOS has completed the Availability Engine trust foundation, roster
+authority, team-assignment authority, stale ownership correction, unavailable
+pitcher separation, and Player Detail/Bullpen Board availability consistency.
+The platform now presents bullpen availability and workload intelligence with
+explicit roster context, explainable workload signals, freshness visibility, and
+clear limits around what public data can and cannot prove.
 
 The current product identity is:
 
 ```text
-BaseballOS: trust-first bullpen intelligence for workload, availability, and
-freshness-aware decision support.
+BaseballOS: descriptive, explainable, trust-first bullpen availability and
+workload intelligence.
 ```
+
+BaseballOS is not a betting product, prediction system, ranking surface, or
+automated recommendation engine. It does not pick a pitcher, order a bullpen,
+predict outcomes, or replace the user's decision.
 
 The repository remains `bullpen-intel-engine`. Repository structures, package
 names, imports, and deployment configuration should not be renamed solely for
@@ -44,7 +49,8 @@ behavior, selection behavior, prediction behavior, or full production rollout.
 ### Bullpen Intelligence
 
 BaseballOS ingests MLB Stats API rosters and pitching game logs, computes
-fatigue scores, and exposes team, pitcher, and dashboard workload views.
+fatigue scores, stores roster status and team ownership authority, and exposes
+team, pitcher, and dashboard workload views.
 
 ### Fatigue Engine
 
@@ -54,8 +60,9 @@ frequency, and innings load.
 
 ### Availability Engine V1
 
-Availability Engine V1 is implemented. It translates fatigue, rest, recent
-workload, appearance compression, and data state into:
+Availability Engine V1 is implemented. The workload classifier translates
+fatigue, rest, recent workload, appearance compression, and data state into a
+workload signal:
 
 - `Available`
 - `Monitor`
@@ -65,7 +72,48 @@ workload, appearance compression, and data state into:
 
 The classifier is centralized in the backend availability service and is not
 embedded directly in routes. API responses remain backward-compatible by adding
-availability objects rather than replacing fatigue fields.
+availability objects rather than replacing fatigue fields. Current final
+availability is roster-status-adjusted: IL, minors, optioned, DFA, non-roster,
+40-man-only, released/no-organization, and unresolved ownership states cannot
+present as final `Available`.
+
+### Roster Status Authority
+
+Roster status authority is active from MLB Stats API roster endpoints. BaseballOS
+normalizes official roster evidence into:
+
+- `Active MLB`
+- `IL-15`
+- `IL-60`
+- `Minors`
+- `40-Man Only`
+- `Optioned`
+- `DFA`
+- `Non-Roster`
+- `Roster Unknown`
+
+Roster status is separate from workload freshness. Unknown roster status fails
+closed with explicit limitations instead of being promoted to active MLB.
+
+### Team Assignment Authority
+
+Team assignment authority is active. BaseballOS resolves pitcher ownership from
+MLB team rosters and player current-team/status fallback before roster-status
+sync. If a pitcher is released, has no organization, or cannot be resolved
+confidently, stale team assignment is cleared fail-closed rather than preserved
+in team-scoped views.
+
+### Bullpen Board And Player Detail Consistency
+
+The default Bullpen Board shows active bullpen-relevant arms. Clear starters are
+excluded from default bullpen planning, and unavailable pitchers are separated
+from bullpen arms with roster reasons such as `IL-60`, `IL-15`, `Minors`,
+`Optioned`, `DFA`, `Non-Roster`, `40-Man Only`, or `Roster Unknown`.
+
+Player Detail now uses the same final roster-adjusted availability semantics as
+Bullpen Board cards. Workload signal remains visible separately so a pitcher can
+show `Workload Signal: Available` while final availability is `Unavailable`
+because of roster status.
 
 ### Explainability
 
@@ -147,6 +195,11 @@ It does not rank the bullpen or select the final pitcher.
 | Bullpen Intelligence | ✓ Complete |
 | Fatigue Engine | ✓ Complete |
 | Availability Engine | ✓ Complete |
+| Roster Status Authority | Complete / Active |
+| Team Assignment Authority | Complete / Active |
+| Stale Team Ownership Correction | Complete / Active |
+| Bullpen Board Unavailable Pitcher Separation | Complete / Active |
+| Player Detail And Bullpen Board Availability Consistency | Complete / Active |
 | Explainability | ✓ Complete |
 | Trust Layer | ✓ Complete |
 | Freshness Transparency | ✓ Complete |
@@ -267,8 +320,15 @@ Trust-first rules currently in force:
   present.
 - Stale data must not be presented as current availability.
 - Missing data must reduce confidence or alter display.
-- `Unavailable` means workload-unavailable from public data, not injured,
-  medically unavailable, or team-reported unavailable.
+- Workload `Unavailable` means workload-unavailable from public data, not
+  injured, medically unavailable, or team-reported unavailable.
+- Final availability is roster-status-adjusted. IL, minors, optioned, DFA,
+  non-roster, 40-man-only, released/no-organization, and unresolved ownership
+  states cannot display as final `Available`.
+- Workload signal and roster status must remain visible as separate concepts.
+- Roster status must not be inferred from workload freshness.
+- Stale team ownership must be cleared fail-closed when authority cannot resolve
+  current organization.
 - Recommendation wording must not imply private clubhouse, medical, travel, or
   manager-intent knowledge.
 - Recommendation Engine V1 must preserve candidate-level evaluation only.
@@ -298,6 +358,19 @@ Reference artifacts:
 - `backend/reports/availability_unavailable_boundary_review.md`
 - `backend/reports/availability_post_adoption_readiness_certification.md`
 
+## Current Trust State
+
+- Roster authority is active from MLB Stats API roster endpoints.
+- Team assignment authority is active before roster-status sync.
+- Stale ownership correction is active for reassigned, released,
+  no-organization, and unresolved players.
+- Unavailable pitcher separation is active on Bullpen Board.
+- Player Detail and Bullpen Board use the same final roster-adjusted
+  availability semantics.
+- Remaining limitations: transaction-event lineage is not stored, reality can
+  move between syncs, and bullpen eligibility still uses role/usage evidence
+  where explicit bullpen-role authority is unavailable.
+
 ## Freshness & Sync Status
 
 Durable sync metadata is implemented through the `sync_runs` persistence model.
@@ -310,6 +383,23 @@ The backend can separately expose:
 - latest fatigue calculation timestamp
 - sync status
 - freshness limitations
+
+Current sync responsibilities run in this order:
+
+```text
+team assignment sync
+-> roster status sync
+-> game log/workload sync
+-> fatigue/availability calculation
+-> trust/freshness reporting
+```
+
+Team assignment sync resolves current ownership and clears stale team assignment
+before roster status is refreshed. Roster status sync classifies active MLB,
+injured list, minors, optioned, DFA, non-roster, 40-man-only, or unknown state.
+Game-log/workload sync and fatigue calculation produce the workload signal.
+Trust and freshness reporting preserve sync metadata separately from baseball
+data coverage.
 
 The dashboard distinguishes:
 
@@ -349,6 +439,14 @@ Implemented public-facing surfaces:
 - dashboard availability summary
 - dashboard data trust strip
 
+Current availability semantics:
+
+- Final availability is roster-status-adjusted.
+- Workload signal remains visible separately.
+- Bullpen Board cards and Player Detail use the same final availability
+  semantics.
+- IL and other non-active roster states cannot show as final `Available`.
+
 Implemented validation/governance surfaces:
 
 - frontend fixtures for all five statuses
@@ -366,30 +464,34 @@ status, or manager intent.
 
 ## Known Limitations
 
-- No injury, transaction/news, or team-reported availability feed is integrated.
-- No private clubhouse, medical, travel, or manager-intent data is available.
+- Transaction feed lineage is not yet persisted. BaseballOS stores current
+  status and ownership authority, not claim dates, signing dates, release dates,
+  or full status-change history.
+- Real-world roster changes can occur between syncs before BaseballOS refreshes.
+- Bullpen eligibility still uses role and usage evidence where explicit bullpen
+  role labels are unavailable.
+- Starters are intentionally excluded from default bullpen planning, but future
+  transparency counters should separate active MLB pitchers, bullpen arms, and
+  excluded starters more explicitly.
+- No private clubhouse, medical, travel, warm-up, bullpen phone, or
+  manager-intent data is available.
 - No Statcast, Hawk-Eye biomechanics, Stuff+, or pitch-quality modeling is used.
-- Role-aware starter/reliever handling remains limited.
-- The V2 production fail-closed communication limitation identified on June 3,
-  2026 is remediated with explicit sync, source-freshness, aggregate V2
-  freshness, trust, reason-code, and safe partial-output metadata. Remaining
-  risk is operational monitoring if source evidence stays stale after normal
-  sync.
-- Warm-up workload and bullpen phone activity are not modeled.
-- Prospect Pipeline remains a prototype with sample data, not a live
-  minor-league data product.
-- Recommendation Engine V1 is complete, certified, and production-ready for
-  candidate-level evaluation only. Bullpen ranking, pitcher ordering, final
-  pitcher selection, performance forecasting, injury prediction, save
-  prediction, matchup guidance, and black-box or generated baseball opinions
-  remain outside V1. V2 now has backend-only Phase 1 domain objects, Phase 2
-  context assembly, Phase 3 neutral internal intelligence, and Phase 4
-  inventory visibility, Phase 5 team bullpen context, Phase 6 trust metadata
-  integration, Phase 7 refusal/fail-closed integration, and Phase 8 backend
-  API contract exposure for grouped bullpen and team-level visibility without
-  ranking or automated selection.
 - Latest-workload snapshot mode is validation/admin only and must not be treated
   as current availability.
+- Prospect Pipeline remains a prototype with sample data, not a live
+  minor-league data product.
+- Recommendation Engine V1 and V2 remain governed, non-ranking, non-selection
+  surfaces. Bullpen ranking, pitcher ordering, final pitcher selection,
+  performance forecasting, injury prediction, save prediction, matchup guidance,
+  and black-box baseball opinions remain outside the current product authority.
+
+## Next Priorities
+
+- Pitcher search.
+- Mobile review.
+- Active MLB pitchers versus bullpen arms transparency.
+- Competitive positioning versus Rotowire.
+- Optional transaction lineage/history later.
 
 ## Recommendation Engine V1 Completion Status
 

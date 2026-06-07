@@ -117,18 +117,23 @@ Navigate to **http://localhost:5173**. You should see the BaseballOS dashboard.
 If you ran `python seed.py`, the bullpen views will be populated; otherwise the
 dashboard renders with empty states until data is synced.
 
-### Bullpen data freshness in local development
+### Bullpen data, roster status, and freshness in local development
 
-The Bullpen list defaults to active/current workload data: pitchers whose latest
-game log is within the current 14-day freshness window. This protects the page
-from presenting old workload as current availability intelligence.
+The default Bullpen Board shows active bullpen-relevant arms. Clear starters are
+excluded from default bullpen planning, and unavailable pitchers are separated
+from bullpen arms when the board is configured to show them. Unavailable
+pitchers should carry the roster reason, such as IL, minors, optioned, DFA,
+non-roster, 40-man-only, released/no-organization, or unknown ownership when
+applicable.
 
-Local seed data can be a valid historical snapshot while still falling outside
-that active window. In that case the dashboard can honestly show tracked
-pitchers and game logs while the Bullpen default view says no current pitchers
-match the freshness filter. Use **Show stale workload pitchers** to inspect all
-tracked pitchers from the local snapshot. If the dashboard itself shows no game
-logs, the database is empty and needs to be seeded or synced.
+Roster status is separate from workload freshness. Local seed data can be a
+valid historical snapshot while still falling outside the active workload
+freshness window. In that case BaseballOS can honestly show tracked pitchers
+and game logs while current workload signals are stale or limited. Use **Show
+stale workload pitchers** for the workload list or **Show unavailable pitchers**
+on Tonight's Bullpen Board to inspect non-default context. If the dashboard
+itself shows no game logs, the database is empty and needs to be seeded or
+synced.
 
 The dashboard trust strip separates sync metadata from baseball data coverage:
 
@@ -145,6 +150,19 @@ Seeded local snapshots may have game logs and fatigue rows without a durable
 sync run. In that case BaseballOS should show the data-through date and clearly
 state that sync metadata is unavailable rather than implying the database is
 empty.
+
+The normal sync sequence is:
+
+```text
+team assignment sync
+-> roster status sync
+-> game log/workload sync
+-> fatigue and availability calculation
+-> trust/freshness reporting
+```
+
+Team assignment runs first so stale ownership is corrected or cleared
+fail-closed before roster status and bullpen planning views are assembled.
 
 ---
 

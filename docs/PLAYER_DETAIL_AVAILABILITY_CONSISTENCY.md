@@ -28,6 +28,11 @@ Player Detail now treats these as separate concepts:
 For inactive roster statuses, final availability is `Unavailable` even when the
 workload signal is light or moderate.
 
+Current roster-status labels include `Active MLB`, `IL-15`, `IL-60`, `Minors`,
+`40-Man Only`, `Optioned`, `DFA`, `Non-Roster`, and `Roster Unknown`.
+Released/no-organization and unresolved ownership states clear stale team
+assignment fail-closed before team-scoped bullpen planning views are assembled.
+
 Example:
 
 ```text

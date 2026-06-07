@@ -55,8 +55,8 @@ Bullpen Board payload assembly:
 - Recent relief-length usage is bullpen-relevant when explicit roster role data
   is unavailable.
 - Clear starter-length patterns are excluded from default bullpen counts.
-- Inactive or stale bullpen-relevant pitchers are exposed only when inactive
-  pitchers are included, and their cards carry an inactive-context label.
+- Unavailable roster-status pitchers are separated from active bullpen arms and
+  carry the roster reason that makes them unavailable for bullpen planning.
 - Uncertain bullpen eligibility is withheld from default counts unless there is
   enough relief-length evidence to include it with a limitation.
 
@@ -77,23 +77,42 @@ betting, ranking, selection, matchup advice, or recommendation behavior.
 
 - Reds default board excludes clear starters.
 - Reds default board excludes inactive pitchers.
-- Inactive toggle exposes stale bullpen-relevant pitchers with explicit
-  inactive-context labeling.
+- Unavailable-pitchers toggle exposes roster-unavailable pitchers with explicit
+  roster-status labeling.
 - League-wide filtering works on a non-Reds team.
 - Bullpen Board counts and context metrics exclude filtered starters.
 - Broader team pitcher overview still shows the wider pitcher population.
 - Limited relief-usage eligibility is surfaced with limitations.
 - League-wide dashboard bullpen counts exclude clear starters.
-- Frontend board cards render the inactive-context label.
+- Frontend board cards render unavailable-pitcher roster reasons.
 
 ## Remaining Limitations
 
-- The current data model still does not store authoritative IL, optioned,
-  active-roster, probable-starter, or transaction state.
-- Eligibility is inferred from stored roster position and workload shape.
+- Transaction-event lineage is not yet stored, so BaseballOS documents current
+  roster and ownership authority rather than the full reason/date history for
+  every status change.
+- Eligibility is still inferred from stored roster position and workload shape
+  where explicit bullpen-role authority is unavailable.
 - Generic `P` roster positions require conservative usage inference.
 - Edge cases such as openers, bulk relievers, rehab appearances, and recent role
   changes may still require better upstream roster or game-context data.
+
+## Current State After Follow-Up Trust Fixes
+
+Follow-up roster and team-assignment work now supplies the authority this first
+composition fix lacked:
+
+- MLB Stats API roster endpoints provide roster-status authority.
+- MLB team rosters plus player current-team/status fallback provide
+  team-assignment authority.
+- Stale team ownership is corrected or cleared fail-closed during sync.
+- Default Bullpen Board shows active bullpen-relevant arms.
+- Clear starters are excluded from default bullpen planning.
+- Unavailable pitchers are separated from bullpen arms and display roster
+  reasons such as `IL-60`, `IL-15`, `Minors`, `Optioned`, `DFA`,
+  `Non-Roster`, `40-Man Only`, or `Roster Unknown`.
+- Player Detail and Bullpen Board use the same final roster-adjusted
+  availability semantics.
 
 ## Not Reds-Only
 

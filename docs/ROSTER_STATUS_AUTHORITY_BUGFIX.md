@@ -145,14 +145,37 @@ Frontend coverage:
 
 ## Remaining Limitations
 
-- Existing local pitcher rows do not automatically gain authoritative status
-  until roster data is refreshed or backfilled.
-- Current sync still primarily updates workload logs and fatigue scores; roster
-  authority depends on stored roster-status fields being populated.
+- Official roster statuses can change between BaseballOS syncs.
+- Transaction-event lineage is not yet stored, so BaseballOS records current
+  roster status rather than the full status-change history.
 - Unknown roster status remains data-limited. The board does not claim those
   pitchers are active MLB roster options.
-- Official roster statuses can change daily, so roster-status freshness should
-  become its own sync/backfill concern before production reliance.
+- Bullpen role remains inferred from explicit position where available and
+  usage shape where explicit bullpen-role authority is unavailable.
+
+## Current State After Sync Implementation
+
+Roster-status authority is now part of the normal sync path. Team assignment
+sync runs first to correct stale ownership, roster-status sync normalizes MLB
+roster evidence, game-log/workload sync refreshes workload inputs, and fatigue
+calculation produces the workload signal used by final availability.
+
+Current display vocabulary:
+
+- `Active MLB`
+- `IL-15`
+- `IL-60`
+- `Minors`
+- `40-Man Only`
+- `Optioned`
+- `DFA`
+- `Non-Roster`
+- `Roster Unknown`
+
+Final availability is roster-status-adjusted. Known IL, minors, optioned, DFA,
+non-roster, and 40-man-only pitchers cannot show final `Available` on Bullpen
+Board or Player Detail. Workload signal remains visible separately from final
+availability.
 
 ## Trust Impact
 

@@ -4,6 +4,24 @@ This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
 [docs/INDEX.md](INDEX.md).
 
+## June 2026 - Bullpen Trust And Data Quality Cleanup
+
+- Fixed default bullpen roster composition so clear starters are excluded from
+  default bullpen planning.
+- Added roster-status authority from MLB Stats API roster endpoints and
+  normalized current roster states into BaseballOS vocabulary.
+- Added MLB team-assignment authority and stale ownership correction so
+  reassigned, released, no-organization, or unresolved pitchers do not remain
+  attached to stale team boards.
+- Separated unavailable pitchers from active bullpen arms and replaced old
+  inactive/context wording with roster reasons.
+- Aligned Player Detail final availability with Bullpen Board cards while
+  keeping workload signal visible separately.
+- Documented current limitations: transaction-event lineage is not yet
+  persisted, real-world roster state can move between syncs, and bullpen
+  eligibility can still use role/usage evidence where explicit role authority is
+  unavailable.
+
 ## June 2026 - Documentation Structure Refactor
 
 - Refactored README into a concise project front page.

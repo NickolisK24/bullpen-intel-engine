@@ -8,12 +8,12 @@ team filters.
 ## Root Cause
 
 Before this change, ownership was written during seeding from MLB 40-man roster
-data and then effectively treated as static. Roster-status sync checked only
-the team already stored on each pitcher row. When a pitcher moved to another
-organization, the old team roster no longer contained that player, so the row
-could be marked `roster_sync:unavailable` while still retaining the stale
-`team_id`. That allowed stale-team records to remain eligible for team-scoped
-views.
+data and was not refreshed as current team authority. Roster-status sync checked
+only the team already stored on each pitcher row. When a pitcher moved to
+another organization, the old team roster no longer contained that player, so
+the row could be marked `roster_sync:unavailable` while still retaining the
+stale `team_id`. That allowed stale-team records to remain eligible for
+team-scoped views.
 
 Examples that exposed this risk include Joel Kuhnel, Connor Seabold, Simeon
 Woods Richardson, Craig Kimbrel, Trevor Richards, Justin Lawrence, Ryan
@@ -41,7 +41,16 @@ is ambiguous, the row is not left on the stale team.
 
 The sync flow is now:
 
-`MLB authority source -> current team resolution -> team assignment sync -> Pitcher.team_id update -> roster status sync -> views`
+```text
+MLB authority source
+-> current team resolution
+-> team assignment sync
+-> Pitcher.team_id update or fail-closed clearing
+-> roster status sync
+-> game log/workload sync
+-> fatigue and availability calculation
+-> team-scoped views
+```
 
 `services.team_assignment_sync.sync_team_assignments()` runs before
 `sync_roster_statuses()` in both manual and scheduled syncs. It updates:
@@ -96,6 +105,8 @@ This correction protects team-scoped bullpen surfaces from stale ownership:
 - new-team boards receive reassigned players before roster status refresh
 - dashboard landscape grouping uses corrected team ownership
 - sync payloads expose reassigned, no-organization, unknown, and error counts
+- released, no-organization, or unresolved ownership clears stale team
+  assignment fail-closed before bullpen planning views are assembled
 
 ## Remaining Limitations
 
@@ -104,3 +115,6 @@ does not yet store transaction-event lineage, claim dates, signing dates, or
 release dates from the transaction feed. If MLB roster and player lookup data
 are both unavailable or contradictory, BaseballOS clears the stale team and
 marks ownership `UNKNOWN` until a later sync resolves it.
+
+This means BaseballOS can explain the current authoritative ownership state but
+not yet the full transaction history that caused the state change.
