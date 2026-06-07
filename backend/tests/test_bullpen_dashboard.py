@@ -42,9 +42,12 @@ def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1
                       team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True)
     db.session.add(pitcher)
     db.session.commit()
-    db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10,
-                           game_date=date.today() - timedelta(days=days_ago),
-                           pitches_thrown=12, innings_pitched=innings))
+    innings_values = innings if isinstance(innings, list) else [innings]
+    day_values = days_ago if isinstance(days_ago, list) else list(range(days_ago, days_ago + len(innings_values)))
+    for idx, innings_pitched in enumerate(innings_values):
+        db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10 + idx,
+                               game_date=date.today() - timedelta(days=day_values[idx]),
+                               pitches_thrown=12, innings_pitched=innings_pitched, game_type='R'))
     db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=raw_score,
                                 risk_level='LOW', calculated_at=datetime.utcnow()))
     db.session.commit()
@@ -85,3 +88,27 @@ class TestDashboardEndpoint:
         assert 'ranking_applied' not in body['context']
         assert 'selection_made' not in body['context']
         assert body['availability_summary']['total_pitchers'] >= 0
+
+    def test_dashboard_counts_exclude_clear_starters_league_wide(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'League Starter',
+                team_id=1,
+                mlb_id=10,
+                innings=[6.0, 5.1, 6.0],
+                days_ago=[1, 6, 11],
+            )
+            _seed_pitcher(
+                'League Reliever',
+                team_id=2,
+                mlb_id=11,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+            )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['context']['metrics']['total_relievers'] == 1
+        assert body['roles']['total'] == 1
+        assert body['availability_summary']['total_pitchers'] == 1
+        assert body['landscape']['teams_evaluated'] == 1

@@ -76,6 +76,7 @@ test('groups with no pitchers render their own empty copy', () => {
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Stale'))
+  assert.ok(htmlIncludes(html, 'Inactive Context'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
   assert.ok(htmlIncludes(html, 'Data freshness limits confidence'))
   assert.ok(htmlIncludes(html, 'Historical baseball data through 2026-04-01.'))
@@ -107,4 +108,5 @@ test('view helpers group, total, and detect stale freshness deterministically', 
 
   assert.equal(view.getBoardFreshnessView(populatedBoard.freshness).isStale, false)
   assert.equal(view.getBoardFreshnessView(staleBoard.freshness).isStale, true)
+  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Inactive Context')
 })

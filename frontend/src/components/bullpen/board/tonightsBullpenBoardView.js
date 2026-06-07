@@ -69,6 +69,30 @@ const ROLE_SHORT_LABELS = {
   insufficient_data: 'Insufficient Data',
 }
 
+const ELIGIBILITY_LABELS = {
+  inactive_bullpen_relevant: 'Inactive Context',
+  uncertain_bullpen_relevance: 'Uncertain Context',
+}
+
+export function getEligibilityView(eligibility) {
+  if (!eligibility) return null
+  const status = eligibility.status || 'bullpen_relevant'
+  const label = ELIGIBILITY_LABELS[status]
+  if (!label) return null
+  return {
+    status,
+    label,
+    confidence: eligibility.confidence || 'low',
+    confidenceLabel: formatConfidence(eligibility.confidence),
+    reason: eligibility.reason || null,
+    tone: {
+      borderColor: 'rgba(245,166,35,0.45)',
+      backgroundColor: 'rgba(245,166,35,0.10)',
+      color: '#f5a623',
+    },
+  }
+}
+
 export function getRoleView(role) {
   if (!role) return null
   const key = role.role_key || 'insufficient_data'
@@ -131,6 +155,7 @@ export function getBoardCardView(card) {
     reasons: Array.isArray(card?.reasons) ? card.reasons : [],
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     role: getRoleView(card?.role),
+    eligibility: getEligibilityView(card?.eligibility),
   }
 }
 

@@ -16,6 +16,7 @@ import pytest
 from flask import Flask
 
 import services.sync as sync_service
+from services.availability import ACTIVE_WINDOW_DAYS
 from services.bullpen_board import (
     BOARD_GROUP_ORDER,
     build_board_payload,
@@ -189,7 +190,19 @@ def client(tmp_path, monkeypatch):
             db.drop_all()
 
 
-def _seed_pitcher(full_name, team_id=1, team_abbr='TST', mlb_id=None, raw_score=10.0, risk='LOW', games=1):
+def _seed_pitcher(
+    full_name,
+    team_id=1,
+    team_abbr='TST',
+    mlb_id=None,
+    raw_score=10.0,
+    risk='LOW',
+    games=1,
+    innings=None,
+    days_ago=None,
+    active=True,
+    position='P',
+):
     """Create a pitcher with a recent game log and a fatigue score."""
     pitcher = Pitcher(
         mlb_id=mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000,
@@ -197,17 +210,23 @@ def _seed_pitcher(full_name, team_id=1, team_abbr='TST', mlb_id=None, raw_score=
         team_id=team_id,
         team_name=f'Team {team_id}',
         team_abbreviation=team_abbr,
-        active=True,
+        position=position,
+        active=active,
     )
     db.session.add(pitcher)
     db.session.commit()
     today = date.today()
-    for i in range(games):
+    innings = list(innings) if innings is not None else [1.0] * games
+    days_ago = list(days_ago) if days_ago is not None else list(range(1, len(innings) + 1))
+    base_game_pk = (mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000) * 100
+    for i, innings_pitched in enumerate(innings):
         db.session.add(GameLog(
             pitcher_id=pitcher.id,
-            mlb_game_pk=(abs(hash(full_name)) % 100000) + i,
-            game_date=today - timedelta(days=i + 1),
+            mlb_game_pk=base_game_pk + i,
+            game_date=today - timedelta(days=days_ago[i]),
             pitches_thrown=12,
+            innings_pitched=innings_pitched,
+            game_type='R',
         ))
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,
@@ -278,3 +297,131 @@ class TestBoardEndpoint:
             assert 'role' in card and card['role'] is not None
             assert 'role_key' in card['role']
             assert card['role']['confidence'] in ('high', 'medium', 'low', 'none')
+
+    def test_reds_default_board_excludes_clear_starters_and_inactive_pitchers(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Reds Clear Starter',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11301,
+                innings=[6.0, 5.1, 6.0],
+                days_ago=[1, 6, 11],
+            )
+            _seed_pitcher(
+                'Reds Active Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11302,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+            )
+            _seed_pitcher(
+                'Reds Inactive Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11303,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[ACTIVE_WINDOW_DAYS + 5, ACTIVE_WINDOW_DAYS + 7, ACTIVE_WINDOW_DAYS + 9],
+            )
+
+        body = client.get('/api/bullpen/teams/113/board').get_json()
+        names = [card['name'] for group in body['groups'] for card in group['pitchers']]
+
+        assert names == ['Reds Active Reliever']
+        assert body['total_pitchers'] == 1
+        assert body['context']['metrics']['total_relievers'] == 1
+
+    def test_inactive_toggle_labels_stale_bullpen_relevant_pitchers_without_adding_starters(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Reds Stale Starter',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11304,
+                innings=[6.0, 5.0, 6.1],
+                days_ago=[ACTIVE_WINDOW_DAYS + 5, ACTIVE_WINDOW_DAYS + 10, ACTIVE_WINDOW_DAYS + 15],
+            )
+            _seed_pitcher(
+                'Reds Stale Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11305,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[ACTIVE_WINDOW_DAYS + 5, ACTIVE_WINDOW_DAYS + 6, ACTIVE_WINDOW_DAYS + 8],
+            )
+
+        body = client.get('/api/bullpen/teams/113/board?include_stale=true').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        names = [card['name'] for card in cards]
+
+        assert names == ['Reds Stale Reliever']
+        assert cards[0]['eligibility']['status'] == 'inactive_bullpen_relevant'
+        assert any('inactive pitchers are included' in limitation for limitation in cards[0]['limitations'])
+
+    def test_default_bullpen_filtering_is_league_wide_not_reds_only(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Yankees Starter',
+                team_id=147,
+                team_abbr='NYY',
+                mlb_id=14701,
+                innings=[6.0, 5.0, 4.2],
+                days_ago=[1, 6, 11],
+            )
+            _seed_pitcher(
+                'Yankees Reliever',
+                team_id=147,
+                team_abbr='NYY',
+                mlb_id=14702,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+            )
+
+        body = client.get('/api/bullpen/teams/147/board').get_json()
+        names = [card['name'] for group in body['groups'] for card in group['pitchers']]
+
+        assert names == ['Yankees Reliever']
+        assert body['total_pitchers'] == 1
+
+    def test_all_pitchers_team_overview_still_shows_broader_population(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Reds Overview Starter',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11306,
+                innings=[6.0, 5.0, 6.0],
+                days_ago=[1, 6, 11],
+            )
+            _seed_pitcher(
+                'Reds Overview Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11307,
+                innings=[1.0, 1.0, 0.2],
+                days_ago=[1, 3, 5],
+            )
+
+        body = client.get('/api/bullpen/teams/113/bullpen?include_stale=true').get_json()
+        names = [row['pitcher']['full_name'] for row in body]
+
+        assert set(names) == {'Reds Overview Starter', 'Reds Overview Reliever'}
+
+    def test_uncertain_bullpen_eligibility_is_limited_on_cards(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Limited Sample Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11308,
+                innings=[1.0],
+                days_ago=[1],
+            )
+
+        body = client.get('/api/bullpen/teams/113/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+
+        assert [card['name'] for card in cards] == ['Limited Sample Reliever']
+        assert cards[0]['eligibility']['confidence'] == 'low'
+        assert any('limited recent relief-length usage' in limitation for limitation in cards[0]['limitations'])

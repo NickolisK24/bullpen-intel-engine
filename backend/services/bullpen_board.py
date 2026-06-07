@@ -263,7 +263,7 @@ def short_reason_for(availability):
     return 'Workload indicators elevated'
 
 
-def build_card(name, pitcher_id, fatigue_score, availability, role=None):
+def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibility=None):
     """Build a single display card from existing availability output."""
     availability = availability or {}
     score = None
@@ -285,6 +285,9 @@ def build_card(name, pitcher_id, fatigue_score, availability, role=None):
         'limitations': list(availability.get('limitations') or []),
         # Observed usage role (descriptive). May be None if not classified.
         'role': role,
+        # Bullpen roster eligibility is descriptive and explains why a pitcher
+        # is present on this bullpen-specific surface.
+        'eligibility': eligibility,
     }
 
 
@@ -349,6 +352,7 @@ def build_board_payload(
             fatigue_score=record.get('fatigue_score'),
             availability=record.get('availability'),
             role=record.get('role'),
+            eligibility=record.get('eligibility'),
         )
         for record in records
     ]

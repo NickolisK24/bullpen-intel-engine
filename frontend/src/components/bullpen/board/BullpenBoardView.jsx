@@ -97,6 +97,21 @@ function RoleChip({ role }) {
   )
 }
 
+function EligibilityChip({ eligibility }) {
+  if (!eligibility) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+      style={eligibility.tone}
+      title={eligibility.reason || eligibility.label}
+      aria-label={`${eligibility.label}, confidence ${eligibility.confidenceLabel}`}
+    >
+      {eligibility.label}
+      <span className="opacity-70">· {eligibility.confidenceLabel}</span>
+    </span>
+  )
+}
+
 function RoleDisclosure({ role }) {
   if (!role) return null
   return (
@@ -158,9 +173,10 @@ function PitcherCard({ card, onViewDetails }) {
         </span>
       </div>
 
-      {view.role && (
-        <div className="mt-2">
+      {(view.role || view.eligibility) && (
+        <div className="mt-2 flex flex-wrap gap-2">
           <RoleChip role={view.role} />
+          <EligibilityChip eligibility={view.eligibility} />
         </div>
       )}
 
