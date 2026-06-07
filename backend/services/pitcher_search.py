@@ -13,7 +13,7 @@ from sqlalchemy import desc
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability import ACTIVE_WINDOW_DAYS, STATUS_UNAVAILABLE, classify_availability
 from services.roster_status import classify_roster_status, apply_roster_status_to_availability
 from utils.db import db
 
@@ -25,6 +25,10 @@ MIN_SEARCH_QUERY_LENGTH = 2
 TEAM_ASSIGNMENT_ASSIGNED = 'ASSIGNED'
 TEAM_ASSIGNMENT_NO_ORGANIZATION = 'NO_ORGANIZATION'
 TEAM_ASSIGNMENT_UNKNOWN = 'UNKNOWN'
+
+UNRESOLVED_TEAM_ASSIGNMENT_LIMITATION = (
+    'Unavailable due to unresolved team assignment; no current organization is available for bullpen planning.'
+)
 
 
 def _normalize_search_text(value):
@@ -107,12 +111,47 @@ def _final_availability_for(pitcher, score, reference_date=None):
         active_window_days=ACTIVE_WINDOW_DAYS,
     )
     roster_status = classify_roster_status(pitcher)
-    return apply_roster_status_to_availability(workload_signal, roster_status)
+    final_availability = apply_roster_status_to_availability(workload_signal, roster_status)
+    return _apply_team_assignment_to_availability(final_availability, pitcher)
+
+
+def _team_assignment_status(pitcher):
+    return (getattr(pitcher, 'team_assignment_status', None) or '').upper()
+
+
+def _has_authoritative_team_assignment(pitcher):
+    return _team_assignment_status(pitcher) == TEAM_ASSIGNMENT_ASSIGNED
+
+
+def _apply_team_assignment_to_availability(availability, pitcher):
+    if _has_authoritative_team_assignment(pitcher):
+        return availability
+
+    merged = dict(availability or {})
+    reasons = list(merged.get('reasons') or [])
+    limitations = list(merged.get('limitations') or [])
+    assignment_status = _team_assignment_status(pitcher)
+
+    label = {
+        TEAM_ASSIGNMENT_NO_ORGANIZATION: 'No organization',
+        TEAM_ASSIGNMENT_UNKNOWN: 'Team assignment unknown',
+    }.get(assignment_status, 'Team assignment unavailable')
+    reason = f'Team assignment: {label}.'
+
+    if reason not in reasons:
+        reasons.insert(0, reason)
+    if UNRESOLVED_TEAM_ASSIGNMENT_LIMITATION not in limitations:
+        limitations.append(UNRESOLVED_TEAM_ASSIGNMENT_LIMITATION)
+
+    merged['availability_status'] = STATUS_UNAVAILABLE
+    merged['confidence'] = 'low'
+    merged['reasons'] = reasons
+    merged['limitations'] = limitations
+    return merged
 
 
 def _safe_team_fields(pitcher):
-    assignment_status = (pitcher.team_assignment_status or '').upper()
-    if assignment_status in {TEAM_ASSIGNMENT_NO_ORGANIZATION, TEAM_ASSIGNMENT_UNKNOWN}:
+    if not _has_authoritative_team_assignment(pitcher):
         return {
             'team_id': None,
             'team_name': None,

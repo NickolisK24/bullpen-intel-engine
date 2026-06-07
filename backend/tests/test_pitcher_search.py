@@ -11,6 +11,7 @@ from models.pitcher import Pitcher
 from services.pitcher_search import (
     TEAM_ASSIGNMENT_ASSIGNED,
     TEAM_ASSIGNMENT_NO_ORGANIZATION,
+    TEAM_ASSIGNMENT_UNKNOWN,
 )
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15
 from utils.db import db
@@ -205,12 +206,35 @@ def test_pitcher_search_no_organization_clears_stale_team_fields(client):
             team_id=113,
             team_name='Cincinnati Reds',
             team_abbreviation='CIN',
-            roster_status=STATUS_IL_15,
+            roster_status=STATUS_ACTIVE,
             team_assignment_status=TEAM_ASSIGNMENT_NO_ORGANIZATION,
+            raw_score=12.0,
         )
 
     result = search(client, 'released')['results'][0]
 
     assert result['team_id'] is None
     assert result['team_name'] is None
+    assert result['availability'] == 'Unavailable'
+
+
+@pytest.mark.parametrize('assignment_status', [None, TEAM_ASSIGNMENT_UNKNOWN])
+def test_pitcher_search_unresolved_team_assignment_does_not_emit_stale_team(client, assignment_status):
+    with client.application.app_context():
+        seed_pitcher(
+            'Unresolved Pitcher',
+            999202,
+            team_id=113,
+            team_name='Cincinnati Reds',
+            team_abbreviation='CIN',
+            roster_status=STATUS_ACTIVE,
+            team_assignment_status=assignment_status,
+            raw_score=12.0,
+        )
+
+    result = search(client, 'unresolved')['results'][0]
+
+    assert result['team_id'] is None
+    assert result['team_name'] is None
+    assert result['roster_status'] == 'ACTIVE'
     assert result['availability'] == 'Unavailable'
