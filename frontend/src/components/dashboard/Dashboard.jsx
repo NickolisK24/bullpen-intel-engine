@@ -5,6 +5,7 @@ import { LoadingPane, ErrorState } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
+import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
@@ -172,6 +173,14 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           </Section>
         </>
       )}
+
+      <FeedbackCTA
+        compact
+        className="mb-2"
+        eyebrow="User Validation"
+        title="Help shape BaseballOS"
+        body="Share what is useful, unclear, or missing while BaseballOS is being tested with real users."
+      />
     </div>
   )
 }

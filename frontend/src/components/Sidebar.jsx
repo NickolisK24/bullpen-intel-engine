@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import FeedbackLink from './feedback/FeedbackLink'
 
 const NAV = [
   { to: '/',            icon: '⬡',  label: 'Dashboard'   },
@@ -58,6 +59,13 @@ export default function Sidebar() {
             )}
           </NavLink>
         ))}
+        <FeedbackLink
+          className="nav-item"
+          onClick={() => setOpen(false)}
+        >
+          <span className="text-base w-5 text-center">✎</span>
+          <span>Give Feedback</span>
+        </FeedbackLink>
       </nav>
 
       {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
@@ -66,6 +74,12 @@ export default function Sidebar() {
           <div className="text-chalk400 font-medium mb-1">Nikko</div>
           <div>Army Vet · Developer</div>
           <div className="mt-1 text-amber/70">Building to break in.</div>
+          <div className="mt-3 border-t border-dirt pt-3 leading-relaxed">
+            <div className="text-chalk500">Building BaseballOS in public. Have feedback?</div>
+            <FeedbackLink className="mt-1 inline-flex text-amber/80 hover:text-amber hover:underline">
+              Give Feedback
+            </FeedbackLink>
+          </div>
         </div>
       </div>
     </aside>

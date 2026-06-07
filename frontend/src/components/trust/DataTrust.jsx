@@ -12,6 +12,7 @@ import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSumm
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
 import BullpenIntelligencePanel from '../observations/BullpenIntelligencePanel'
+import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
 // Data & Trust — the home for freshness, confidence, governance protections,
@@ -94,6 +95,13 @@ export default function DataTrust() {
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Exploratory Fatigue Insight</h2>
         <FatigueInsightCard embedded />
       </section>
+
+      <FeedbackCTA
+        className="mb-2"
+        eyebrow="Trust Feedback"
+        title="Help improve BaseballOS"
+        body="Tell us what works, what does not, and what would make this more useful."
+      />
     </div>
   )
 }

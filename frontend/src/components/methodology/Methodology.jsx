@@ -1,6 +1,7 @@
 import { useFetch } from '../../hooks/useFetch'
 import { getMethodology } from '../../utils/api'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
+import { FeedbackCTA } from '../feedback/FeedbackLink'
 
 const TIER_HEX = {
   LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
@@ -255,6 +256,12 @@ export default function Methodology() {
           </div>
         </div>
       </section>
+
+      <FeedbackCTA
+        eyebrow="Methodology Feedback"
+        title="Questions or feedback on the methodology?"
+        body="BaseballOS is being refined through real user feedback."
+      />
     </div>
   )
 }
