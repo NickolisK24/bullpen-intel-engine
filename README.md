@@ -1,18 +1,20 @@
 # BaseballOS
 
-Trust-first bullpen intelligence for workload, availability, freshness, and
-governed pitching-staff decision support.
+Trust-first bullpen availability and workload intelligence.
 
 ## What BaseballOS Is
 
-BaseballOS is a full-stack baseball intelligence platform focused on
-relief-pitcher workload. It ingests MLB Stats API data, computes transparent
-fatigue and availability signals, and presents bullpen intelligence with visible
-trust, freshness, refusal, explanation, and governance metadata.
+BaseballOS is a full-stack bullpen availability and workload intelligence
+platform. It ingests MLB Stats API data, computes transparent fatigue,
+roster-adjusted availability, and freshness signals, and presents descriptive
+bullpen intelligence with visible trust, roster, explanation, and governance
+metadata.
 
-BaseballOS is not a black-box prediction system. It does not tell the user who
-to use, rank pitchers, predict outcomes, or hide source freshness. The user
-remains the decision maker.
+BaseballOS is explainable and trust-first. It is not a betting product, a
+black-box prediction system, a pitcher ranking surface, or an automated
+recommendation engine. It does not tell the user who to use, rank pitchers,
+predict outcomes, or hide source freshness. The user remains the decision
+maker.
 
 **Stack:** React + TailwindCSS, Flask + Python, PostgreSQL, MLB Stats API.
 
@@ -27,6 +29,8 @@ audits.
 | Surface | Governance status | Data today |
 | --- | --- | --- |
 | V1 Fatigue + Availability Engine | Implemented, tested | Live MLB game-log data (via sync) |
+| Bullpen Board roster-aware availability | Implemented, tested | MLB roster authority plus live workload data |
+| Player Detail final availability | Implemented, tested | Same roster-adjusted final availability semantics as Bullpen Board |
 | V2 Recommendation Engine | Implemented, tested | Live workload data; presents **governed context/evidence only — it does not rank, select, or name a pitcher** |
 | V3 Team Operations Readiness | Controlled rollout approved | Live workload data |
 | V4 Explanation Platform | Production rollout approved | Derived from live availability/readiness payloads |
@@ -51,6 +55,18 @@ and
   frequency, and innings load.
 - Availability Engine V1 statuses: `Available`, `Monitor`, `Limited`, `Avoid`,
   and `Unavailable`.
+- Roster-status authority from MLB Stats API roster endpoints, normalized into
+  BaseballOS labels such as `Active MLB`, `IL-15`, `IL-60`, `Minors`,
+  `40-Man Only`, `Optioned`, `DFA`, `Non-Roster`, and `Roster Unknown`.
+- Team-assignment authority from MLB team rosters plus player current-team and
+  status fallback, with stale ownership cleared fail-closed when a pitcher has
+  no resolved organization.
+- Bullpen Board default view for active bullpen-relevant arms. Clear starters
+  are excluded from default bullpen planning, and unavailable pitchers are
+  separated from bullpen arms with roster reasons.
+- Final availability is roster-status-adjusted. Workload signal remains visible
+  separately, and Player Detail uses the same final availability semantics as
+  Bullpen Board cards.
 - Explainable availability output with confidence, data state, reasons,
   limitations, and deterministic inputs.
 - Dashboard trust strip for platform status, sync freshness, baseball
@@ -70,6 +86,56 @@ and
   governed descriptive observations from deterministic supplied state.
 - Protected operational endpoints for sync and recalculation.
 - Scheduled sync support through GitHub Actions.
+
+## Current Trust State
+
+- Roster authority is active from MLB Stats API roster endpoints.
+- Team assignment authority is active before roster-status sync.
+- Stale team ownership correction is active and clears no-organization or
+  unresolved ownership fail-closed.
+- Unavailable-pitcher separation is active on Bullpen Board.
+- Player Detail and Bullpen Board use the same roster-adjusted final
+  availability semantics.
+- Transaction-event lineage is not yet persisted; reality can move between
+  syncs; role inference remains usage-based where explicit bullpen-role
+  authority is unavailable.
+
+## Sync Responsibilities
+
+The current production sync path is:
+
+```text
+team assignment sync
+-> roster status sync
+-> game log and workload sync
+-> fatigue and availability calculation
+-> trust and freshness reporting
+```
+
+Team assignment resolves current ownership first so stale team rows do not
+survive into team-scoped boards. Roster status then determines active MLB,
+injured list, minors, optioned, DFA, non-roster, 40-man-only, or unknown state.
+Game-log sync and fatigue calculation supply the workload signal. Availability
+surfaces combine roster status and workload signal into final availability.
+
+## Known Limitations
+
+- Transaction feed lineage is not yet persisted, so BaseballOS records current
+  status and ownership rather than a claim/release/status-change history.
+- Real-world roster changes can occur between syncs before BaseballOS refreshes.
+- Bullpen eligibility still uses role and usage evidence where explicit bullpen
+  role authority is unavailable.
+- Starters are intentionally excluded from default bullpen planning, but future
+  transparency counters should separate active MLB pitchers, bullpen arms, and
+  excluded starters more explicitly.
+
+## Next Priorities
+
+- Pitcher search.
+- Mobile review.
+- Active MLB pitchers versus bullpen arms transparency.
+- Competitive positioning versus Rotowire.
+- Optional transaction lineage/history later.
 
 ## Governance Boundaries
 

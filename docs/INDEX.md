@@ -23,6 +23,12 @@ governance, rollout, monitoring, and historical records.
 ## Current Product Surfaces
 
 - [Bullpen Availability Engine V1](BULLPEN_AVAILABILITY_ENGINE_V1.md)
+- [Bullpen roster composition bugfix](BULLPEN_ROSTER_COMPOSITION_BUGFIX.md)
+- [Roster status authority bugfix](ROSTER_STATUS_AUTHORITY_BUGFIX.md)
+- [Roster status sync implementation](ROSTER_STATUS_SYNC_IMPLEMENTATION.md)
+- [Team assignment authority](TEAM_ASSIGNMENT_AUTHORITY.md)
+- [Bullpen Board roster wording](BULLPEN_BOARD_ROSTER_WORDING.md)
+- [Player Detail availability consistency](PLAYER_DETAIL_AVAILABILITY_CONSISTENCY.md)
 - [Availability threshold tuning plan](AVAILABILITY_THRESHOLD_TUNING_PLAN.md)
 - [Dashboard and Bullpen loading performance remediation](DASHBOARD_BULLPEN_LOADING_PERFORMANCE_REMEDIATION.md)
 - [V2 production fail-closed diagnosis](V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md)

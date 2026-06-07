@@ -6,16 +6,9 @@ The Bullpen Board now has authoritative roster-status data and roster-aware
 filtering. The old wording exposed internal product terminology instead of
 plain baseball language.
 
-The phrase `Inactive Context` was especially unclear because it could read as
-injury status, minor-league status, stale workload data, uncertain bullpen role,
-or unknown roster status.
-
-## Old Wording
-
-- `Inactive Context`
-- `inactive context`
-- `context pitchers`
-- `40-man context`
+The old inactive/context wording was especially unclear because it could read
+as injury status, minor-league status, stale workload data, uncertain bullpen
+role, or unknown roster status.
 
 ## New Wording
 
@@ -34,6 +27,14 @@ the specific roster reason, such as `IL-60`, `IL-15`, `Minors`, `Optioned`,
 
 `Bullpen Arms` identifies active bullpen-relevant pitchers without requiring
 users to understand internal eligibility states.
+
+## Current Board Behavior
+
+The default board shows active bullpen-relevant arms. Clear starters are
+excluded from default bullpen planning. Unavailable pitchers are separated from
+bullpen arms and carry roster reasons, including IL, minors, optioned, DFA,
+non-roster, 40-man-only, released/no-organization, or unknown ownership when
+applicable.
 
 ## Scope
 

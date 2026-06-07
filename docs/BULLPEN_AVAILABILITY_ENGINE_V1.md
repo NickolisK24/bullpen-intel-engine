@@ -30,6 +30,10 @@ Availability Engine V1 is implemented as a completed trust foundation:
   additive availability output.
 - Bullpen rows, filters, pitcher detail views, and dashboard summary surfaces
   present availability without reclassifying in the frontend.
+- The workload classifier's output remains visible as the workload signal.
+  Public final availability is roster-status-adjusted where roster authority
+  shows IL, minors, optioned, DFA, non-roster, 40-man-only, released,
+  no-organization, or unresolved ownership state.
 - Explanations, confidence, data state, limitations, and deterministic inputs
   are part of the contract.
 - Fixture coverage verifies all five statuses even when live local data does
@@ -46,7 +50,9 @@ private team, medical, travel, or manager-intent knowledge.
 
 ## Availability Statuses
 
-Availability labels are workload guidance, not commands. They should be shown
+Availability labels are descriptive status labels, not commands. The workload
+classifier produces a workload signal. Public planning surfaces then apply
+roster-status authority to produce final availability. Both should be shown
 with reasons, confidence, and limitations every time.
 
 ### Available
@@ -137,9 +143,12 @@ unless there is overriding real-world information outside BaseballOS.
 - Back-to-back heavy usage plus critical fatigue score.
 - Three-in-four or four-in-five usage with high pitch volume.
 
-**Trust and limitations:** Unavailable must only mean workload-unavailable based
-on BaseballOS inputs. It must not imply injury, illness, roster inactivation, or
-a team-reported decision.
+**Trust and limitations:** Workload `Unavailable` must only mean
+workload-unavailable based on BaseballOS inputs. Final `Unavailable` can also be
+caused by roster-status authority, such as IL, minors, optioned, DFA,
+non-roster, 40-man-only, released/no-organization, or unknown ownership. It must
+not imply private medical detail, illness, warm-up state, or a team-reported
+usage decision beyond the roster authority BaseballOS stores.
 
 ## Initial Deterministic Rule Inputs
 
@@ -262,7 +271,9 @@ availability filter for Available, Monitor, Limited, Avoid, and Unavailable.
 
 Pitcher detail views include an availability summary with:
 
-- Availability status.
+- Final availability.
+- Roster status.
+- Workload signal.
 - Confidence.
 - Data status.
 - Ordered reasons.
@@ -501,9 +512,16 @@ These rules are non-negotiable for V1:
 - Stale data must not be presented as current availability.
 - The system must distinguish workload-unavailable from unknown due to missing,
   incomplete, stale, or failed data.
+- The system must distinguish workload signal from roster-status-adjusted final
+  availability.
+- IL, minors, optioned, DFA, non-roster, 40-man-only,
+  released/no-organization, and unresolved ownership states must not display as
+  final Available.
 - Recommendation wording must avoid pretending BaseballOS has private
   clubhouse, injury, medical, travel, or manager-intent knowledge.
-- "Unavailable" must be explicitly framed as workload-unavailable.
+- Workload `Unavailable` must be explicitly framed as workload-unavailable.
+- Final `Unavailable` must show roster-status reasons when roster authority
+  overrides the workload signal.
 - "Available" must not imply a guaranteed real-world appearance.
 - If a status changes, the UI should be able to show what input changed.
 - If same-day sync has not run, the system must say so rather than infer today's
@@ -572,12 +590,14 @@ V1 deliberately defers:
 - Injury or news scraping.
 - Private team availability data.
 - Team-reported medical, rest, or usage plans.
+- Transaction-event lineage/history.
 - Stuff+, pitch quality, or command modeling.
 - Statcast or Hawk-Eye biomechanics.
 - Paid licensing integrations.
 - A fully automated manager recommendation engine.
 - A predictive rest-of-series simulator.
-- Role-aware starter versus reliever modeling beyond simple limitations.
+- Explicit bullpen-role authority where MLB roster positions are generic; role
+  and bullpen eligibility can still use usage evidence.
 - Warm-up tracking or bullpen phone activity.
 - Travel, weather, and personal availability context.
 

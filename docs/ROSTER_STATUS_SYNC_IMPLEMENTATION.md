@@ -22,13 +22,19 @@ provider or dependency is introduced.
 ## Sync Flow
 
 ```text
-MLB team roster endpoints
-    -> roster evidence merge by MLB player id
+team assignment sync
+    -> MLB roster evidence merge by MLB player id
     -> roster status normalization
     -> pitchers.roster_status persistence
-    -> board roster-status classification
-    -> bullpen filtering and UI trust labels
+    -> game log/workload sync
+    -> fatigue and availability calculation
+    -> trust/freshness reporting
+    -> board and Player Detail final availability
 ```
+
+Team assignment sync runs before roster-status sync so reassigned, released, or
+unresolved players do not remain attached to stale teams while roster status is
+being refreshed.
 
 Roster sync runs in three places:
 
@@ -41,7 +47,6 @@ Roster sync runs in three places:
 The sync persists these statuses when authority exists:
 
 - `ACTIVE`
-- `IL_10`
 - `IL_15`
 - `IL_60`
 - `MINORS`
@@ -49,6 +54,19 @@ The sync persists these statuses when authority exists:
 - `DFA`
 - `NON_ROSTER`
 - `40_MAN_ONLY`
+- `UNKNOWN`
+
+User-facing BaseballOS labels are:
+
+- `Active MLB`
+- `IL-15`
+- `IL-60`
+- `Minors`
+- `40-Man Only`
+- `Optioned`
+- `DFA`
+- `Non-Roster`
+- `Roster Unknown`
 
 Precedence:
 
@@ -107,6 +125,10 @@ The unavailable-pitchers toggle can surface those pitchers for roster awareness,
 but their cards remain labelled by roster status and are forced to
 `Unavailable` for active planning availability.
 
+Player Detail uses the same final availability semantics as Bullpen Board cards.
+The detail view keeps the workload signal visible separately, but final
+availability is roster-status-adjusted.
+
 ## Validation Fixtures
 
 The Reds examples are covered as regression fixtures only, not hardcoded
@@ -133,9 +155,11 @@ The same sync and filtering logic applies league-wide.
   BaseballOS classifies those rows as `40_MAN_ONLY` rather than active.
 - `fullRoster` membership without active or 40-man membership is treated as
   minors because no stronger active MLB evidence exists.
-- Existing local rows only receive status after seed or sync runs.
 - Transaction feeds are not yet consumed. They remain a future enhancement for
   explaining why a status changed between roster snapshots.
+- Real-world roster changes can occur between syncs before BaseballOS refreshes.
+- Bullpen eligibility still uses role and usage evidence where explicit bullpen
+  role labels are unavailable.
 
 ## Future Enhancements
 

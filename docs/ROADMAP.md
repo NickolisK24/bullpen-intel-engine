@@ -5,11 +5,14 @@ planning context, not an authorization to implement new behavior.
 
 ## Current Position
 
-BaseballOS is a trust-first bullpen intelligence platform with certified V1 and
-V2 recommendation governance, completed V2.5 governance hardening, V3 Team
-Operations Bullpen Readiness approved for constrained controlled rollout, V4
-frontend explanation surfaces approved for production rollout, and V5 Bullpen
-Intelligence Surface approved for full production rollout.
+BaseballOS is a trust-first bullpen availability and workload intelligence
+platform with roster-status authority, team-assignment authority, stale
+ownership correction, unavailable-pitcher separation, Player Detail/Bullpen
+Board final availability consistency, certified V1 and V2 recommendation
+governance, completed V2.5 governance hardening, V3 Team Operations Bullpen
+Readiness approved for constrained controlled rollout, V4 frontend explanation
+surfaces approved for production rollout, and V5 Bullpen Intelligence Surface
+approved for full production rollout.
 
 Current V3 status:
 
@@ -22,30 +25,28 @@ FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
 
 ## Active Direction
 
-The current platform posture is V5 Bullpen Intelligence Surface full production
-rollout approval. V5 converts existing trusted BaseballOS platform state into
-governed descriptive observations without ranking, selecting, predicting,
-recommending, advising, or automating a decision. V5 Phase 12 approved full
-production rollout after Phase 8 governance certification, Phase 9 controlled
-rollout, Phase 10 production review, and Phase 11 production evidence
-retention.
+The current platform posture is production trust hardening after V5 Bullpen
+Intelligence Surface full production rollout approval. The active direction is
+to make bullpen availability easier to inspect while preserving descriptive,
+explainable, trust-first behavior and no ranking, selection, prediction,
+betting, or automated recommendation behavior.
 
 ```text
 V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVED
 FULL_PRODUCTION_ROLLOUT_APPROVED
 ```
 
-Database changes, live runtime integration, ranking, selection,
-recommendation, prediction, matchup advice, and pitcher advice remain
-unauthorized.
+Ranking, selection, recommendation, prediction, matchup advice, pitcher advice,
+betting use cases, and automated decision behavior remain unauthorized.
 
 ## Product Tracks
 
 | Track | Current state | Next decision |
 | --- | --- | --- |
-| Bullpen Intelligence | Complete production foundation | Continue reliability and evidence retention |
+| Bullpen Intelligence | Complete production foundation with roster-aware board semantics | Continue reliability and evidence retention |
 | Fatigue Engine | Complete deterministic workload heuristic | Preserve transparency and avoid prediction claims |
-| Availability Engine V1 | Complete | Maintain threshold governance |
+| Availability Engine V1 | Complete with roster-adjusted final availability on board and detail surfaces | Maintain threshold governance and final/workload separation |
+| Roster and Team Authority | Active roster-status authority, team-assignment authority, and stale ownership correction | Add transaction lineage only after separate approval |
 | Recommendation Engine V1 | Certified / production ready | Preserve candidate-only scope |
 | Recommendation Engine V2 | Certified / production rollout approved | Preserve no-ranking and no-selection boundaries |
 | Team Operations Bullpen Readiness | Certified with non-blocking gaps / controlled rollout approved | Observe controlled rollout before full rollout planning |
@@ -55,15 +56,15 @@ unauthorized.
 
 ## Near-Term Roadmap
 
-1. V5 post-approval production monitoring and governance preservation.
-2. V4 Phase 27 post-rollout monitoring and governance preservation review.
-3. Controlled rollout monitoring artifact retention for V3 readiness.
-4. Post-rollout issue triage if any governance, trust, freshness, refusal, or
-   accessibility issue appears.
-5. Separate full production rollout decisions for other surfaces only if
-   controlled rollout evidence supports them.
-6. V5 runtime observation generation or rollout expansion only after separate
-   governed approval.
+1. Pitcher search.
+2. Mobile review of the current bullpen board and Player Detail availability
+   flow.
+3. Active MLB pitchers versus bullpen arms transparency, including future
+   counters for excluded starters.
+4. Competitive positioning versus Rotowire.
+5. Optional transaction lineage/history after separate approval.
+6. V5 post-approval production monitoring and governance preservation.
+7. V4 Phase 27 post-rollout monitoring and governance preservation review.
 
 ## Candidate Future Tracks
 
@@ -76,6 +77,7 @@ These are candidates, not commitments:
 - V5 runtime observation generation or rollout expansion only after separate
   governed approval.
 - Team-level operations intelligence beyond bullpen readiness.
+- Transaction feed ingestion for roster and ownership lineage.
 - Prospect Pipeline evidence backfill and potential promotion review.
 - Role-aware fatigue distinctions for starters and relievers.
 - Reports, exports, and a documented API platform.
