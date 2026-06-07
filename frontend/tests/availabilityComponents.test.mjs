@@ -53,12 +53,13 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
       React.createElement(AvailabilitySummary, { availability: row.availability }),
     )
 
-    assert.ok(htmlIncludes(html, 'Availability Status'))
+    assert.ok(htmlIncludes(html, 'Final Availability'))
     assert.ok(htmlIncludes(html, status))
+    assert.ok(htmlIncludes(html, 'Roster Status'))
     assert.ok(htmlIncludes(html, 'Confidence'))
     assert.ok(htmlIncludes(html, confidence))
     assert.ok(htmlIncludes(html, 'Data Status'))
-    assert.ok(htmlIncludes(html, 'Reasons'))
+    assert.ok(htmlIncludes(html, 'Final Availability Reasons'))
     assert.ok(htmlIncludes(html, 'Limitations'))
 
     for (const reason of row.availability.reasons) {
@@ -68,4 +69,44 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
       assert.ok(htmlIncludes(html, limitation))
     }
   }
+})
+
+test('AvailabilitySummary separates roster-adjusted final availability from workload signal', () => {
+  const finalAvailability = {
+    availability_status: 'Unavailable',
+    confidence: 'high',
+    data_state: 'fresh',
+    reasons: ['Roster status: IL-60.'],
+    limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
+    roster_status: {
+      status: 'IL_60',
+      label: 'IL-60',
+      confidence: 'high',
+      is_authoritative: true,
+      is_inactive_context: true,
+    },
+  }
+  const workloadSignal = {
+    availability_status: 'Available',
+    confidence: 'high',
+    data_state: 'fresh',
+    reasons: ['Workload is light.'],
+    limitations: ['No injury information available'],
+  }
+
+  const html = renderToStaticMarkup(
+    React.createElement(AvailabilitySummary, {
+      availability: finalAvailability,
+      workloadSignal,
+    }),
+  )
+
+  assert.ok(htmlIncludes(html, 'Final Availability'))
+  assert.ok(htmlIncludes(html, 'Final availability: Unavailable'))
+  assert.ok(htmlIncludes(html, 'Roster Status'))
+  assert.ok(htmlIncludes(html, 'IL-60'))
+  assert.ok(htmlIncludes(html, 'Workload Signal'))
+  assert.ok(htmlIncludes(html, 'Workload signal: Available'))
+  assert.ok(htmlIncludes(html, 'not available for bullpen planning'))
+  assert.equal(htmlIncludes(html, 'Final availability: Available'), false)
 })

@@ -101,6 +101,34 @@ const DATA_STATE_COPY = {
   },
 }
 
+const ROSTER_STATUS_LABELS = {
+  ACTIVE: 'Active MLB',
+  IL_10: 'IL-10',
+  IL_15: 'IL-15',
+  IL_60: 'IL-60',
+  MINORS: 'Minors',
+  OPTIONED: 'Optioned',
+  DFA: 'DFA',
+  NON_ROSTER: 'Non-Roster',
+  '40_MAN_ONLY': '40-Man Only',
+  UNKNOWN: 'Roster Unknown',
+}
+
+export function getRosterStatusSummary(rosterStatus = null) {
+  if (!rosterStatus || typeof rosterStatus !== 'object') {
+    return null
+  }
+  const status = rosterStatus.status || 'UNKNOWN'
+  return {
+    status,
+    label: rosterStatus.label || ROSTER_STATUS_LABELS[status] || 'Roster status',
+    confidenceLabel: formatConfidence(rosterStatus.confidence),
+    source: rosterStatus.source || null,
+    isInactive: rosterStatus.is_inactive_context === true,
+    isAuthoritative: rosterStatus.is_authoritative === true,
+  }
+}
+
 export function normalizeAvailabilityStatus(status) {
   if (!status) return null
   return AVAILABILITY_FILTERS.find(s => s !== 'ALL' && s.toLowerCase() === String(status).toLowerCase()) || null
@@ -162,6 +190,7 @@ export function getAvailabilitySummary(availability = null) {
   const badge = getAvailabilityBadgeView(availability)
   return {
     ...badge,
+    rosterStatus: getRosterStatusSummary(availability?.roster_status),
     confidenceLabel: formatConfidence(availability?.confidence),
     dataStateView: getDataStateView(availability?.data_state),
     reasons: Array.isArray(availability?.reasons) ? availability.reasons : [],

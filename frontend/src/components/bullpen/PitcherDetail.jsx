@@ -44,6 +44,8 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     pitcher,
     current_fatigue: cf,
     availability,
+    workload_signal: workloadSignal,
+    roster_status: rosterStatus,
     recent_logs,
     fatigue_trend,
   } = data || {}
@@ -114,7 +116,11 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             </div>
           )}
 
-          <AvailabilitySummary availability={availability} />
+          <AvailabilitySummary
+            availability={availability}
+            workloadSignal={workloadSignal}
+            rosterStatus={rosterStatus}
+          />
 
           <ExplanationDisclosure
             buttonLabel="Why this availability?"

@@ -1,6 +1,10 @@
 import { getAvailabilityBadgeView, getDataStateView } from './availabilityView'
 
-export default function AvailabilityBadge({ availability, showDataState = false }) {
+export default function AvailabilityBadge({
+  availability,
+  showDataState = false,
+  ariaLabelPrefix = 'Availability status',
+}) {
   const badge = getAvailabilityBadgeView(availability)
   const dataState = String(availability?.data_state || 'unknown').toLowerCase()
   const showStateNote = showDataState && dataState && !['fresh', 'unknown'].includes(dataState)
@@ -12,7 +16,7 @@ export default function AvailabilityBadge({ availability, showDataState = false 
         className="inline-flex min-w-[6.75rem] items-center justify-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide"
         style={badge.style}
         title={badge.tone}
-        aria-label={`Availability status: ${badge.label}`}
+        aria-label={`${ariaLabelPrefix}: ${badge.label}`}
       >
         <span className="h-1.5 w-1.5 rounded-full" style={badge.dotStyle} aria-hidden="true" />
         {badge.label}

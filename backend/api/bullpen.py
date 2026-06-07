@@ -321,10 +321,16 @@ def get_pitcher_fatigue(pitcher_id):
         .all()
     )
 
+    workload_signal = _availability_for(pitcher_id, latest)
+    roster_status = classify_roster_status(pitcher)
+    availability = apply_roster_status_to_availability(workload_signal, roster_status)
+
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         'current_fatigue': latest.to_dict() if latest else None,
-        'availability':    _availability_for(pitcher_id, latest),
+        'availability':    availability,
+        'workload_signal': workload_signal,
+        'roster_status':   roster_status,
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [s.to_dict() for s in history],
     })
