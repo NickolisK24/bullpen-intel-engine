@@ -19,6 +19,7 @@ from models.fatigue_score import FatigueScore
 from services.mlb_api import mlb_client
 from services.fatigue import calculate_fatigue
 from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
+from services.roster_status_sync import sync_roster_statuses
 from utils.time import utc_now_naive
 
 app = create_app()
@@ -353,6 +354,7 @@ if __name__ == '__main__':
 
         try:
             pitchers_seeded = seed_pitchers()
+            roster_status = sync_roster_statuses()
             logs_seeded = seed_game_logs()
             fatigue_seeded = seed_fatigue_scores()
             seed_sample_prospects()
@@ -360,6 +362,7 @@ if __name__ == '__main__':
             print("\n" + "=" * 45)
             print("✅ Seed complete!")
             print(f"   Pitchers:  {pitchers_seeded}")
+            print(f"   Roster Status: {roster_status['pitchers_refreshed']} refreshed")
             print(f"   Game Logs: {logs_seeded}")
             print(f"   Fatigue:   {fatigue_seeded} scored")
             print("=" * 45)

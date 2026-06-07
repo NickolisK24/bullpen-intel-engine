@@ -32,6 +32,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'sync_recent_logs',
                         lambda days_back=7: {'new_logs_added': 3, 'pitchers_touched': 2, 'errors': 0})
     monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda use_last_game_date=False: 5)
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 1,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ACTIVE': 1},
+    })
 
     app = Flask(__name__)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
@@ -75,6 +82,7 @@ class TestSuccessfulSync:
         body = res.get_json()
         assert body['sync_run_persisted'] is True
         assert body['sync_run_id'] is not None
+        assert body['roster_statuses_refreshed'] == 1
         assert _count_runs(client) >= 1
 
     def test_successful_sync_updates_all_fields(self, client):

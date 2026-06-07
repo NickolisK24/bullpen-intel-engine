@@ -22,6 +22,7 @@ from models.game_log import GameLog
 from services import sync_metadata
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
+from services.roster_status_sync import sync_roster_statuses
 
 
 logger = logging.getLogger(__name__)
@@ -276,13 +277,24 @@ def run_daily_sync(app, days_back: int = 7):
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
             )
+            roster = sync_roster_statuses()
+            run_logger.info(
+                'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
+                roster['pitchers_refreshed'],
+                roster['pitchers_changed'],
+                roster['unknown_count'],
+                roster['errors'],
+            )
             pull = sync_recent_logs(days_back=days_back)
             run_logger.info(
                 'Pulled %s new logs (touched %s pitchers, %s errors)',
                 pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
             )
             status['new_logs_added'] = pull['new_logs_added']
-            status['errors']         = pull['errors']
+            status['errors']         = pull['errors'] + roster['errors']
+            status['roster_statuses_refreshed'] = roster['pitchers_refreshed']
+            status['roster_statuses_changed'] = roster['pitchers_changed']
+            status['roster_status_unknown'] = roster['unknown_count']
 
             if pull['new_logs_added'] == 0 and pull['pitchers_touched'] == 0:
                 # Nothing to score against that's new — treat as offseason if
@@ -303,7 +315,7 @@ def run_daily_sync(app, days_back: int = 7):
                 records_processed=pull['new_logs_added'],
                 new_logs_added=pull['new_logs_added'],
                 pitchers_updated=pitchers_updated,
-                errors=pull['errors'],
+                errors=pull['errors'] + roster['errors'],
                 error_message=status['message'] or None,
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),

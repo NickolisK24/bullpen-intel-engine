@@ -404,6 +404,7 @@ def sync_recent_logs():
     )
 
     try:
+        roster = sync_service.sync_roster_statuses()
         pull = sync_service.sync_recent_logs(days_back=days_back)
     except Exception as e:
         db.session.rollback()
@@ -443,7 +444,7 @@ def sync_recent_logs():
         records_processed=pull['new_logs_added'],
         new_logs_added=pull['new_logs_added'],
         pitchers_updated=fatigue_updated,
-        errors=pull['errors'],
+        errors=pull['errors'] + roster['errors'],
         source=source,
         started_at=started.replace(tzinfo=None),
     )
@@ -455,7 +456,10 @@ def sync_recent_logs():
         'status':          sync_metadata.STATUS_SUCCESS,
         'pitchers_updated': fatigue_updated,
         'new_logs_added':  pull['new_logs_added'],
-        'errors':          pull['errors'],
+        'errors':          pull['errors'] + roster['errors'],
+        'roster_statuses_refreshed': roster['pitchers_refreshed'],
+        'roster_statuses_changed': roster['pitchers_changed'],
+        'roster_status_unknown': roster['unknown_count'],
         'message':         '',
         'finished_at':     finished.isoformat(),
     })
@@ -464,7 +468,11 @@ def sync_recent_logs():
         'status':               'ok',
         'new_logs_added':       pull['new_logs_added'],
         'fatigue_recalculated': fatigue_updated,
-        'errors':               pull['errors'],
+        'errors':               pull['errors'] + roster['errors'],
+        'roster_statuses_refreshed': roster['pitchers_refreshed'],
+        'roster_statuses_changed': roster['pitchers_changed'],
+        'roster_status_unknown': roster['unknown_count'],
+        'roster_status_by_status': roster['by_status'],
         'synced_at':            finished.isoformat(),
         'sync_run_id':          persisted_run_id,
         'sync_run_persisted':   persisted_run_id is not None,

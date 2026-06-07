@@ -31,6 +31,9 @@ def test_normalizes_authoritative_active_and_inactive_statuses():
     assert normalize_roster_status_value('DFA') == STATUS_DFA
     assert normalize_roster_status_value('Non-roster') == STATUS_NON_ROSTER
     assert normalize_roster_status_value('40-man only') == STATUS_40_MAN_ONLY
+    assert normalize_roster_status_value('MIN') == STATUS_MINORS
+    assert normalize_roster_status_value('Injured List') == STATUS_IL_15
+    assert normalize_roster_status_value('Optioned to minor league') == STATUS_OPTIONED
 
 
 def test_unknown_status_degrades_with_limitation_not_active_claim():

@@ -67,6 +67,7 @@ _ACTIVE_VALUES = {
     'ACTIVE_MLB',
     'MLB ACTIVE',
     'ON ACTIVE ROSTER',
+    'ACTIVE ROSTER',
 }
 
 _IL_10_VALUES = {
@@ -80,9 +81,11 @@ _IL_10_VALUES = {
 }
 
 _IL_15_VALUES = {
+    'IL',
     'IL15',
     'IL_15',
     'IL-15',
+    'INJURED LIST',
     '15 DAY IL',
     '15-DAY IL',
     '15-DAY INJURED LIST',
@@ -100,18 +103,26 @@ _IL_60_VALUES = {
 }
 
 _MINORS_VALUES = {
+    'MIN',
     'MINORS',
     'MINOR',
     'MINOR LEAGUES',
+    'MINOR LEAGUE',
     'MINOR_LEAGUE',
+    'MINOR LEAGUE ASSIGNMENT',
+    'ASSIGNED TO MINORS',
+    'OUTRIGHTED TO MINORS',
+    'REHAB ASSIGNMENT',
     'MILB',
 }
 
 _OPTIONED_VALUES = {
+    'O',
     'OPTIONED',
     'OPTION',
     'OPT',
     'OPTIONED TO MINORS',
+    'OPTIONED TO MINOR LEAGUE',
 }
 
 _DFA_VALUES = {
@@ -124,7 +135,10 @@ _NON_ROSTER_VALUES = {
     'NON ROSTER',
     'NON-ROSTER',
     'NON_ROSTER',
+    'NON ROSTER INVITEE',
+    'NON-ROSTER INVITEE',
     'NRI',
+    'NR',
 }
 
 _FORTY_MAN_ONLY_VALUES = {
@@ -152,17 +166,27 @@ def _status_from_raw(raw):
     compact = _compact(raw)
     if not normalized:
         return STATUS_UNKNOWN
-    if normalized in _ACTIVE_VALUES or compact in {'ACTIVE', 'ACTIVEMLB'}:
+    if normalized in _ACTIVE_VALUES or compact in {'ACTIVE', 'ACTIVEMLB', 'ACTIVEROSTER'}:
         return STATUS_ACTIVE
     if normalized in _IL_10_VALUES or compact in {'IL10', '10DAYIL', '10DAYINJUREDLIST', 'D10'}:
         return STATUS_IL_10
-    if normalized in _IL_15_VALUES or compact in {'IL15', '15DAYIL', '15DAYINJUREDLIST', 'D15'}:
+    if normalized in _IL_15_VALUES or compact in {'IL', 'IL15', 'INJUREDLIST', '15DAYIL', '15DAYINJUREDLIST', 'D15'}:
         return STATUS_IL_15
     if normalized in _IL_60_VALUES or compact in {'IL60', '60DAYIL', '60DAYINJUREDLIST', 'D60'}:
         return STATUS_IL_60
-    if normalized in _MINORS_VALUES or compact in {'MINORS', 'MINORLEAGUES', 'MINORLEAGUE', 'MILB'}:
+    if normalized in _MINORS_VALUES or compact in {
+        'MIN',
+        'MINORS',
+        'MINORLEAGUES',
+        'MINORLEAGUE',
+        'MINORLEAGUEASSIGNMENT',
+        'ASSIGNEDTOMINORS',
+        'OUTRIGHTEDTOMINORS',
+        'REHABASSIGNMENT',
+        'MILB',
+    }:
         return STATUS_MINORS
-    if normalized in _OPTIONED_VALUES or 'OPTIONED' in normalized:
+    if normalized in _OPTIONED_VALUES or 'OPTIONED' in normalized or 'OPTION' in normalized:
         return STATUS_OPTIONED
     if normalized in _DFA_VALUES or 'DESIGNATED FOR ASSIGNMENT' in normalized:
         return STATUS_DFA

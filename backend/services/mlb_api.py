@@ -35,14 +35,21 @@ class MLBApiClient:
             return []
         return data.get('teams', [])
 
-    def get_team_roster(self, team_id, roster_type='pitchers'):
+    def get_team_roster(self, team_id, roster_type='pitchers', season=None, date=None, hydrate=None):
         """
         Get team roster.
-        roster_type: 'allRoster', 'pitchers', 'active', '40Man'
+        roster_type: 'allRoster', 'pitchers', 'active', '40Man', 'fullRoster',
+        'nonRosterInvitees'
         """
-        data = self._get(f'/teams/{team_id}/roster', params={
-            'rosterType': roster_type
-        })
+        params = {'rosterType': roster_type}
+        if season:
+            params['season'] = season
+        if date:
+            params['date'] = date
+        if hydrate:
+            params['hydrate'] = hydrate
+
+        data = self._get(f'/teams/{team_id}/roster', params=params)
         if not data:
             return []
         return data.get('roster', [])
