@@ -21,7 +21,7 @@ const GROUP_FALLBACK_META = {
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
   Limited: { label: 'Limited', description: 'Recent workload suggests restricted use tonight.' },
   Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable', description: "Should not be counted for tonight's planning." },
+  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen planning." },
 }
 
 const EMPTY_GROUP_COPY = {
@@ -29,7 +29,7 @@ const EMPTY_GROUP_COPY = {
   Monitor: 'No arms need a workload check tonight.',
   Limited: 'No arms are workload-restricted tonight.',
   Avoid: 'No arms are carrying heavy recent use.',
-  Unavailable: 'No arms are ruled out tonight.',
+  Unavailable: 'No unavailable pitchers are shown right now.',
 }
 
 export function getBoardGroups(board) {
@@ -70,8 +70,8 @@ const ROLE_SHORT_LABELS = {
 }
 
 const ELIGIBILITY_LABELS = {
-  inactive_bullpen_relevant: 'Inactive Context',
-  uncertain_bullpen_relevance: 'Uncertain Context',
+  inactive_bullpen_relevant: 'Stale Workload',
+  uncertain_bullpen_relevance: 'Bullpen Role Unclear',
 }
 
 const ROSTER_STATUS_LABELS = {
@@ -82,8 +82,8 @@ const ROSTER_STATUS_LABELS = {
   MINORS: 'Minors',
   OPTIONED: 'Optioned',
   DFA: 'DFA',
-  NON_ROSTER: 'Non-roster',
-  '40_MAN_ONLY': '40-man context',
+  NON_ROSTER: 'Non-Roster',
+  '40_MAN_ONLY': '40-Man Only',
   UNKNOWN: 'Roster Unknown',
 }
 
@@ -145,11 +145,15 @@ export function getRosterStatusSummaryView(summary) {
   const payload = summary || {}
   const limitations = Array.isArray(payload.limitations) ? payload.limitations : []
   const authority = payload.authority || 'none'
+  const totalCandidates = Number(payload.total_candidates || 0)
+  const knownCount = Number(payload.known_count || 0)
   const unknownCount = Number(payload.included_unknown_count ?? payload.unknown_count ?? 0)
   const inactiveContextCount = Number(payload.inactive_context_count || 0)
   const activeMlbCount = Number(payload.active_mlb_count || 0)
   const excludedInactiveCount = Number(payload.excluded_inactive_count || 0)
-  const shouldShow = limitations.length > 0 || unknownCount > 0 || inactiveContextCount > 0 || excludedInactiveCount > 0
+  const unavailablePitchersCount = inactiveContextCount + excludedInactiveCount
+  const coveragePct = totalCandidates > 0 ? Math.round((knownCount / totalCandidates) * 100) : null
+  const shouldShow = totalCandidates > 0 || limitations.length > 0 || unknownCount > 0 || unavailablePitchersCount > 0
   return {
     shouldShow,
     authority,
@@ -164,6 +168,8 @@ export function getRosterStatusSummaryView(summary) {
     unknownCount,
     inactiveContextCount,
     excludedInactiveCount,
+    unavailablePitchersCount,
+    coverageLabel: coveragePct == null ? 'Not loaded' : `${coveragePct}%`,
     limitations,
     tone: authority === 'available'
       ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }

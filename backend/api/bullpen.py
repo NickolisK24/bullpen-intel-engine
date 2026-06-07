@@ -692,9 +692,9 @@ def _board_usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_sta
     Recent game logs grouped by pitcher_id, in a single query (no N+1).
 
     Used to classify observed usage role and bullpen eligibility. Default board
-    mode uses the recent role window. When context pitchers are explicitly
-    included, this falls back to each pitcher's latest stored usage so stale
-    cards can still be labelled from real evidence instead of empty context.
+    mode uses the recent role window. When unavailable or stale pitchers are
+    explicitly included, this falls back to each pitcher's latest stored usage
+    so stale cards can still be labelled from real evidence.
     """
     if not pitcher_ids:
         return {}

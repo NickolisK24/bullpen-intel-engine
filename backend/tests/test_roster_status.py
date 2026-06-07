@@ -59,3 +59,19 @@ def test_stored_il_status_is_authoritative_inactive_context():
     assert result['is_authoritative'] is True
     assert result['is_active_mlb'] is False
     assert result['is_inactive_context'] is True
+
+
+def test_stored_40_man_only_status_uses_baseball_facing_label():
+    result = classify_roster_status(
+        SimpleNamespace(
+            active=True,
+            roster_status='40_MAN_ONLY',
+            roster_status_source='fixture',
+        )
+    )
+
+    assert result['status'] == STATUS_40_MAN_ONLY
+    assert result['label'] == '40-Man Only'
+    assert result['is_authoritative'] is True
+    assert result['is_active_mlb'] is False
+    assert result['is_inactive_context'] is True

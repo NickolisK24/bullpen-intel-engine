@@ -370,7 +370,7 @@ class TestBoardEndpoint:
 
         assert names == ['Reds Stale Reliever']
         assert cards[0]['eligibility']['status'] == 'inactive_bullpen_relevant'
-        assert any('stale/context pitchers are included' in limitation for limitation in cards[0]['limitations'])
+        assert any('unavailable or stale workload pitchers are included' in limitation for limitation in cards[0]['limitations'])
 
     def test_il_and_minors_pitchers_are_excluded_from_default_board_counts(self, client):
         with client.application.app_context():
@@ -462,7 +462,7 @@ class TestBoardEndpoint:
         assert by_name['Jose Franco']['roster_status']['label'] == 'Minors'
         assert all(card['availability_status'] != 'Available' for card in cards)
         assert body['roster_status']['inactive_context_count'] == 3
-        assert any('context only' in limitation for limitation in body['limitations'])
+        assert any('not counted as active bullpen options' in limitation for limitation in body['limitations'])
 
     def test_unknown_roster_status_surfaces_limitation_without_claiming_active(self, client):
         with client.application.app_context():

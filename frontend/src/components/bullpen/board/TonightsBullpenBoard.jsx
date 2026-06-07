@@ -110,10 +110,10 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
             onChange={() => setIncludeStale(v => !v)}
             className="h-3.5 w-3.5 accent-amber"
           />
-          Include inactive/context pitchers
+          Show unavailable pitchers
         </label>
         <div className="mt-1 text-xs leading-relaxed text-chalk500">
-          Roster status and workload freshness are shown separately.
+          These pitchers are shown for roster awareness but are not counted as active bullpen options.
         </div>
       </div>
 

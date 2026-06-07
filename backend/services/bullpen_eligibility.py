@@ -111,7 +111,7 @@ def _with_inactive_context(result, latest_game_date, reference_date):
     updated['status'] = STATUS_INACTIVE_BULLPEN_RELEVANT
     updated['confidence'] = 'low'
     limitations = list(updated.get('limitations') or [])
-    limitation = 'No game logs inside the active freshness window; shown only when stale/context pitchers are included.'
+    limitation = 'No game logs inside the active freshness window; shown only when unavailable or stale workload pitchers are included.'
     if limitation not in limitations:
         limitations.append(limitation)
     updated['limitations'] = limitations

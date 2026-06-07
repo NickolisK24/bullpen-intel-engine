@@ -7,7 +7,7 @@ default bullpen boards, but it did not solve roster-status authority. BaseballOS
 could still show pitcher cards as workload Available, Monitor, or Limited based
 on stored usage while having no authoritative way to know whether those pitchers
 were active MLB bullpen options, on an injured list, in the minors, optioned,
-DFA, non-roster, or only present as 40-man context.
+DFA, non-roster, or only present as 40-man-only roster status.
 
 The key distinction:
 
@@ -96,15 +96,15 @@ It normalizes roster statuses including:
 Board behavior:
 
 - Default boards exclude known inactive roster statuses.
-- The stale/context toggle may include inactive roster-status context cards.
-- Inactive roster-status context cards are forced to `Unavailable`, never
+- The unavailable-pitchers toggle may include unavailable roster-status cards.
+- Unavailable roster-status cards are forced to `Unavailable`, never
   `Available`.
 - Unknown roster status is allowed only as a limited state with this limitation:
   `Roster status unavailable; bullpen eligibility is based on stored usage and position data.`
 - Roster status is exposed separately from freshness, eligibility, role, and
   availability on each board card.
 - Top-level board metadata summarizes roster-status authority, known active
-  counts, unknown counts, inactive context counts, and excluded inactive counts.
+  counts, unknown counts, unavailable pitcher counts, and excluded inactive counts.
 
 Frontend behavior:
 
@@ -112,7 +112,7 @@ Frontend behavior:
   `IL-15`, `Minors`, or `Roster Unknown`.
 - The board now shows a roster-status summary banner when roster authority is
   partial, unavailable, or context-only.
-- The stale/context toggle no longer defines inactive pitchers as "no games in
+- The unavailable-pitchers toggle no longer defines inactive pitchers as "no games in
   the last 14 days."
 
 Ingestion preparation:
@@ -127,7 +127,7 @@ Backend coverage:
 
 - Roster-status normalization and unknown-status limitation.
 - IL pitchers excluded from default board counts.
-- IL pitchers shown as roster context, not Available, when context is included.
+- IL pitchers shown as unavailable pitchers, not Available, when the toggle is included.
 - Minors pitchers excluded by default.
 - Minors pitchers clearly labelled when context is included.
 - Roster status remains distinct from usage freshness.
@@ -139,7 +139,7 @@ Frontend coverage:
 
 - Roster Unknown renders separately from stale workload copy.
 - IL-60 and Minors context labels render on cards.
-- Inactive roster context renders as Unavailable, not Available.
+- Unavailable roster-status cards render as Unavailable, not Available.
 - Roster-status summary copy distinguishes roster authority from workload
   freshness.
 
@@ -157,7 +157,7 @@ Frontend coverage:
 ## Trust Impact
 
 This bugfix prevents the most damaging trust failure: presenting IL, minors,
-optioned, DFA, non-roster, or 40-man-only context as active bullpen
+optioned, DFA, non-roster, or 40-man-only status as active bullpen
 availability when authoritative status data is present.
 
 It also fails closed when status is unknown by surfacing the limitation instead

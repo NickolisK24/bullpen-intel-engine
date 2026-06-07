@@ -47,7 +47,7 @@ STATUS_LABELS = {
     STATUS_OPTIONED: 'Optioned',
     STATUS_DFA: 'DFA',
     STATUS_NON_ROSTER: 'Non-roster',
-    STATUS_40_MAN_ONLY: '40-man context',
+    STATUS_40_MAN_ONLY: '40-Man Only',
     STATUS_UNKNOWN: 'Roster Unknown',
 }
 
@@ -299,7 +299,7 @@ def apply_roster_status_to_availability(availability, roster_status):
         reason = f'Roster status: {label}.'
         if reason not in reasons:
             reasons.insert(0, reason)
-        limitation = 'Inactive roster-status context is not active planning availability.'
+        limitation = 'Unavailable due to roster status; not available for bullpen planning.'
         if limitation not in limitations:
             limitations.append(limitation)
         merged['availability_status'] = STATUS_UNAVAILABLE
@@ -343,7 +343,7 @@ def roster_status_summary(statuses, included_records=None):
     if unknown:
         limitations.append(ROSTER_STATUS_UNAVAILABLE_LIMITATION)
     if included_inactive:
-        limitations.append('Inactive roster-status cards are context only and are not active planning availability.')
+        limitations.append('Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.')
 
     return {
         'authority': authority,

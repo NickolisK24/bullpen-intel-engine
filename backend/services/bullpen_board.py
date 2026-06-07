@@ -55,8 +55,8 @@ GROUP_META = {
         'description': 'Meaningful recent-use load on these arms.',
     },
     STATUS_UNAVAILABLE: {
-        'label': 'Unavailable',
-        'description': "Should not be counted for tonight's planning.",
+        'label': 'Unavailable Pitchers',
+        'description': "Not available for tonight's bullpen planning.",
     },
 }
 

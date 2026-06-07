@@ -8,7 +8,7 @@ const GROUP_META = {
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
   Limited: { label: 'Limited', description: 'Recent workload suggests restricted use tonight.' },
   Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable', description: "Should not be counted for tonight's planning." },
+  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen planning." },
 }
 
 function card(pitcherId, name, status, overrides = {}) {
@@ -193,7 +193,7 @@ export const staleBoard = makeBoard({
           confidence: 'low',
           reason: 'No game logs inside the active freshness window.',
           evidence: [],
-          limitations: ['No game logs inside the active freshness window; shown only when stale/context pitchers are included.'],
+          limitations: ['No game logs inside the active freshness window; shown only when unavailable or stale workload pitchers are included.'],
         },
         roster_status: {
           status: 'UNKNOWN',
@@ -238,7 +238,7 @@ export const rosterContextBoard = makeBoard({
         confidence: 'high',
         short_reason: 'Roster status: IL-60.',
         reasons: ['Roster status: IL-60.'],
-        limitations: ['Inactive roster-status context is not active planning availability.'],
+        limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
         roster_status: {
           status: 'IL_60',
           label: 'IL-60',
@@ -253,9 +253,26 @@ export const rosterContextBoard = makeBoard({
       }),
       card(9, 'Jose Franco', 'Unavailable', {
         confidence: 'high',
+        short_reason: 'Roster status: 40-Man Only.',
+        reasons: ['Roster status: 40-Man Only.'],
+        limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
+        roster_status: {
+          status: '40_MAN_ONLY',
+          label: '40-Man Only',
+          source: 'test_fixture',
+          is_authoritative: true,
+          is_active_mlb: false,
+          is_inactive_context: true,
+          confidence: 'high',
+          evidence: ['Stored roster status: 40-Man Only.'],
+          limitations: [],
+        },
+      }),
+      card(10, 'Connor Phillips', 'Unavailable', {
+        confidence: 'high',
         short_reason: 'Roster status: Minors.',
         reasons: ['Roster status: Minors.'],
-        limitations: ['Inactive roster-status context is not active planning availability.'],
+        limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
         roster_status: {
           status: 'MINORS',
           label: 'Minors',
@@ -272,13 +289,13 @@ export const rosterContextBoard = makeBoard({
   },
   rosterStatus: {
     authority: 'available',
-    total_candidates: 2,
-    known_count: 2,
+    total_candidates: 3,
+    known_count: 3,
     unknown_count: 0,
     included_unknown_count: 0,
     active_mlb_count: 0,
-    inactive_context_count: 2,
+    inactive_context_count: 3,
     excluded_inactive_count: 0,
-    limitations: ['Inactive roster-status cards are context only and are not active planning availability.'],
+    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
   },
 })

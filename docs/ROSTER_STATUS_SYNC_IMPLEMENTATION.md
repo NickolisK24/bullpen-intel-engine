@@ -101,11 +101,11 @@ Default bullpen boards exclude known inactive roster statuses:
 - Optioned
 - DFA
 - Non-roster
-- 40-man-only context
+- 40-Man Only
 
-The inactive/context toggle can surface those pitchers as context, but their
-cards remain labelled by roster status and are forced to `Unavailable` for active
-planning availability.
+The unavailable-pitchers toggle can surface those pitchers for roster awareness,
+but their cards remain labelled by roster status and are forced to
+`Unavailable` for active planning availability.
 
 ## Validation Fixtures
 

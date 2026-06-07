@@ -66,21 +66,20 @@ function RosterStatusBanner({ summary }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="font-mono text-[11px] uppercase tracking-widest">{view.label}</span>
         <span className="font-mono text-xs">
-          <span className="text-chalk500">Active MLB</span> {view.activeMlbCount}
+          <span className="text-chalk500">Bullpen Arms</span> {view.activeMlbCount}
+        </span>
+        <span
+          className="font-mono text-xs"
+          title="Pitchers not currently available for bullpen planning due to roster status."
+        >
+          <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
         </span>
         <span className="font-mono text-xs">
-          <span className="text-chalk500">Unknown</span> {view.unknownCount}
+          <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
         </span>
-        {view.inactiveContextCount > 0 && (
-          <span className="font-mono text-xs">
-            <span className="text-chalk500">Inactive context</span> {view.inactiveContextCount}
-          </span>
-        )}
-        {view.excludedInactiveCount > 0 && (
-          <span className="font-mono text-xs">
-            <span className="text-chalk500">Excluded inactive</span> {view.excludedInactiveCount}
-          </span>
-        )}
+        <span className="font-mono text-xs">
+          <span className="text-chalk500">Roster Unknown</span> {view.unknownCount}
+        </span>
       </div>
       {view.limitations.length > 0 && (
         <ul className="mt-2 space-y-1">

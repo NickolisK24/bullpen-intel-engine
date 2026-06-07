@@ -36,11 +36,11 @@ const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardV
 
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
-  for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
+  for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
-  // Available Tonight must appear before Unavailable on the board.
-  assert.ok(html.indexOf('Available Tonight') < html.indexOf('Unavailable'))
+  // Available Tonight must appear before Unavailable Pitchers on the board.
+  assert.ok(html.indexOf('Available Tonight') < html.lastIndexOf('Unavailable Pitchers'))
 })
 
 test('renders pitcher cards with name, status, fatigue, confidence and short reason', () => {
@@ -71,29 +71,37 @@ test('groups with no pitchers render their own empty copy', () => {
     cardsByStatus: { Available: populatedBoard.groups[0].pitchers },
   })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'No arms are ruled out tonight.')) // Unavailable empty copy
+  assert.ok(htmlIncludes(html, 'No unavailable pitchers are shown right now.'))
 })
 
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Stale'))
-  assert.ok(htmlIncludes(html, 'Inactive Context'))
+  assert.ok(htmlIncludes(html, 'Stale Workload'))
   assert.ok(htmlIncludes(html, 'Roster Unknown'))
   assert.ok(htmlIncludes(html, 'Roster status unavailable'))
+  assert.ok(htmlIncludes(html, 'Bullpen Arms'))
+  assert.ok(htmlIncludes(html, 'Roster Status Coverage'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
   assert.ok(htmlIncludes(html, 'Data freshness limits confidence'))
   assert.ok(htmlIncludes(html, 'Historical baseball data through 2026-04-01.'))
+  assert.ok(!htmlIncludes(html, 'Inactive Context'))
 })
 
-test('inactive roster context renders status labels without active availability', () => {
+test('unavailable roster pitchers render status labels without active availability', () => {
   const html = render(rosterContextBoard)
+  assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
   assert.ok(htmlIncludes(html, 'Graham Ashcraft'))
   assert.ok(htmlIncludes(html, 'IL-60'))
   assert.ok(htmlIncludes(html, 'Jose Franco'))
+  assert.ok(htmlIncludes(html, '40-Man Only'))
+  assert.ok(htmlIncludes(html, 'Connor Phillips'))
   assert.ok(htmlIncludes(html, 'Minors'))
   assert.ok(htmlIncludes(html, 'Availability status: Unavailable'))
-  assert.ok(htmlIncludes(html, 'Inactive context'))
+  assert.ok(htmlIncludes(html, 'not available for bullpen planning'))
   assert.ok(!htmlIncludes(html, 'Availability status: Available'))
+  assert.ok(!htmlIncludes(html, 'Inactive Context'))
+  assert.ok(!htmlIncludes(html, 'inactive context'))
 })
 
 test('team switching reflects the selected team in the heading', () => {
@@ -122,8 +130,11 @@ test('view helpers group, total, and detect stale freshness deterministically', 
 
   assert.equal(view.getBoardFreshnessView(populatedBoard.freshness).isStale, false)
   assert.equal(view.getBoardFreshnessView(staleBoard.freshness).isStale, true)
-  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Inactive Context')
+  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Stale Workload')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).rosterStatus.label, 'Roster Unknown')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, 'IL-60')
+  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man Only')
   assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster status unavailable')
+  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).unavailablePitchersCount, 3)
+  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).coverageLabel, '100%')
 })
