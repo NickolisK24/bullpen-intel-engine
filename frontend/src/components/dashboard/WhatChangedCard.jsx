@@ -17,6 +17,13 @@ function freshnessDate(changes) {
   )
 }
 
+function teamBehindLeagueNote(changes) {
+  const reasonCodes = Array.isArray(changes?.state_reason_codes) ? changes.state_reason_codes : []
+  if (!reasonCodes.includes('team_data_behind_league')) return null
+  const limitations = Array.isArray(changes?.limitations) ? changes.limitations : []
+  return limitations.find(note => note.includes('league data is current through')) || null
+}
+
 function CardStatus({ children }) {
   return (
     <div className="rounded border border-dirt bg-field/50 p-3" role="status" aria-live="polite">
@@ -73,6 +80,7 @@ export function WhatChangedCard({
   const hasFollowedTeam = !!followedTeam
   const state = changes?.state
   const latestDate = formatShortDate(freshnessDate(changes))
+  const behindLeagueNote = teamBehindLeagueNote(changes)
 
   let body = null
   if (!hasFollowedTeam) {
@@ -141,6 +149,11 @@ export function WhatChangedCard({
           )}
         </div>
         {body}
+        {behindLeagueNote && (
+          <p className="mt-3 rounded border border-dirt bg-field/40 p-3 font-mono text-[11px] leading-relaxed text-chalk400">
+            {behindLeagueNote}
+          </p>
+        )}
       </div>
     </section>
   )

@@ -33,28 +33,40 @@ def client(tmp_path, monkeypatch):
             db.drop_all()
 
 
-def _pitcher(name, mlb_id, team_id=1, active=True):
+def _pitcher(
+    name,
+    mlb_id,
+    team_id=1,
+    active=True,
+    position='P',
+    roster_status=None,
+):
     pitcher = Pitcher(
         mlb_id=mlb_id,
         full_name=name,
         team_id=team_id,
         team_name='Test Club',
         team_abbreviation='TST',
-        position='P',
+        position=position,
         active=active,
+        roster_status=roster_status,
+        roster_status_source='test_fixture' if roster_status else None,
+        roster_status_updated_at=datetime.utcnow() if roster_status else None,
     )
     db.session.add(pitcher)
     db.session.commit()
     return pitcher
 
 
-def _log(pitcher, game_date, game_pk, pitches=12):
+def _log(pitcher, game_date, game_pk, pitches=12, innings=1.0, hold=False, save=False):
     db.session.add(GameLog(
         pitcher_id=pitcher.id,
         mlb_game_pk=game_pk,
         game_date=game_date,
         pitches_thrown=pitches,
-        innings_pitched=1.0,
+        innings_pitched=innings,
+        hold=hold,
+        save=save,
         game_type='R',
     ))
     db.session.commit()
@@ -116,6 +128,13 @@ def _recent_dates():
     return anchor, current
 
 
+def _change_ids(body, change_type=None):
+    changes = body.get('pitcher_changes') or []
+    if change_type:
+        changes = [change for change in changes if change['type'] == change_type]
+    return {change['pitcher_id'] for change in changes}
+
+
 class TestTeamChangesEndpoint:
     def test_changes_state_emits_status_change_and_new_appearance(self, client):
         anchor, current = _recent_dates()
@@ -135,6 +154,9 @@ class TestTeamChangesEndpoint:
         assert body['state'] == 'changes'
         assert body['comparison']['anchor_game_date'] == anchor.isoformat()
         assert body['comparison']['current_game_date'] == current.isoformat()
+        assert body['comparison']['label'] == (
+            f'Compared with TST: {anchor:%b} {anchor.day} -> {current:%b} {current.day}'
+        )
 
         status_changes = [
             change for change in body['pitcher_changes']
@@ -251,3 +273,143 @@ class TestTeamChangesEndpoint:
 
         res = client.get('/api/bullpen/teams/1/changes')
         assert res.status_code == 200
+
+    def test_clear_starter_is_excluded_while_reliever_appearance_remains(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            starter = _pitcher('Clear Starter', mlb_id=201, position='SP')
+            reliever = _pitcher('Bullpen Reliever', mlb_id=202)
+
+            _log(starter, anchor, 2010, pitches=92, innings=6.0)
+            _log(starter, current, 2011, pitches=88, innings=6.0)
+            _score(starter, 35.0, anchor)
+            _score(starter, 80.0, current)
+
+            _log(reliever, anchor, 2020, pitches=8, innings=1.0, hold=True)
+            _log(reliever, current, 2021, pitches=18, innings=1.0, hold=True)
+            _score(reliever, 30.0, anchor)
+            _score(reliever, 42.0, current)
+            _successful_sync(current)
+            reliever_id = reliever.id
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        change_names = {change['pitcher_name'] for change in body['pitcher_changes']}
+        assert 'Clear Starter' not in change_names
+        assert 'Bullpen Reliever' in change_names
+        assert _change_ids(body, 'appearance') == {reliever_id}
+
+    def test_board_and_changes_use_same_default_eligible_population(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            starter = _pitcher('Board Starter', mlb_id=211, position='SP')
+            reliever = _pitcher('Board Reliever', mlb_id=212)
+            _log(starter, anchor, 2110, pitches=80, innings=5.0)
+            _log(starter, current, 2111, pitches=82, innings=5.0)
+            _score(starter, 30.0, anchor)
+            _score(starter, 65.0, current)
+
+            _log(reliever, anchor, 2120, pitches=8, innings=1.0, hold=True)
+            _log(reliever, current, 2121, pitches=20, innings=1.0, hold=True)
+            _score(reliever, 30.0, anchor)
+            _score(reliever, 45.0, current)
+            _successful_sync(current)
+
+        board = client.get('/api/bullpen/teams/1/board').get_json()
+        changes = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        board_ids = {
+            card['pitcher_id']
+            for group in board['groups']
+            for card in group['pitchers']
+        }
+        assert board_ids == _change_ids(changes, 'appearance')
+
+    def test_team_summary_is_suppressed_until_current_counts_are_board_safe(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            stable = _pitcher('Stable Current Reliever', mlb_id=215)
+            new_arm = _pitcher('New Current Reliever', mlb_id=216)
+
+            _log(stable, anchor, 2150, pitches=6, innings=1.0, hold=True)
+            _log(stable, current, 2151, pitches=8, innings=1.0, hold=True)
+            _score(stable, 20.0, anchor)
+            _score(stable, 22.0, current)
+
+            _log(new_arm, current, 2160, pitches=7, innings=1.0, hold=True)
+            _score(new_arm, 21.0, current)
+            _successful_sync(current)
+
+        board = client.get('/api/bullpen/teams/1/board').get_json()
+        changes = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert board['total_pitchers'] == 2
+        assert changes['team_summary'] is None
+        assert 'Available arms' not in str(changes)
+        assert _change_ids(changes, 'appearance') == {
+            card['pitcher_id']
+            for group in board['groups']
+            for card in group['pitchers']
+        }
+
+    def test_roster_inactive_reliever_is_excluded_from_changes(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            il_arm = _pitcher('Unavailable Reliever', mlb_id=221, roster_status='IL_15')
+            _log(il_arm, anchor, 2210, pitches=8, innings=1.0, hold=True)
+            _log(il_arm, current, 2211, pitches=18, innings=1.0, hold=True)
+            _score(il_arm, 30.0, anchor)
+            _score(il_arm, 65.0, current)
+            _successful_sync(current)
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert 'Unavailable Reliever' not in {
+            change['pitcher_name'] for change in body['pitcher_changes']
+        }
+
+    def test_team_date_inference_uses_unfiltered_team_game_evidence(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            reliever = _pitcher('Date Reliever', mlb_id=231)
+            starter = _pitcher('Date Starter', mlb_id=232, position='SP')
+            _log(reliever, anchor, 2310, pitches=12, innings=1.0, hold=True)
+            _score(reliever, 35.0, anchor)
+            _score(reliever, 36.0, current)
+
+            _log(starter, current, 2320, pitches=88, innings=6.0)
+            _score(starter, 30.0, current)
+            _successful_sync(current)
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['comparison']['current_game_date'] == current.isoformat()
+        assert body['comparison']['anchor_game_date'] == anchor.isoformat()
+        assert body['pitcher_changes'] == []
+
+    def test_team_local_current_date_reports_when_team_trails_league_data(self, client):
+        anchor, current = _recent_dates()
+        league_current = current + timedelta(days=1)
+        with client.application.app_context():
+            reliever = _pitcher('Behind Reliever', mlb_id=241, team_id=1)
+            _log(reliever, anchor, 2410, pitches=8, innings=1.0, hold=True)
+            _log(reliever, current, 2411, pitches=18, innings=1.0, hold=True)
+            _score(reliever, 30.0, anchor)
+            _score(reliever, 45.0, current)
+
+            league_marker = _pitcher('League Marker', mlb_id=242, team_id=2)
+            _log(league_marker, league_current, 2420, pitches=12, innings=1.0)
+            _successful_sync(league_current)
+
+        body = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert body['state'] == 'changes'
+        assert body['comparison']['current_game_date'] == current.isoformat()
+        assert body['comparison']['global_latest_game_date'] == league_current.isoformat()
+        assert body['comparison']['team_data_behind_league'] is True
+        assert 'team_data_behind_league' in body['state_reason_codes']
+        assert any(
+            f'TST latest game data is {current:%b} {current.day}' in limitation
+            and f'league data is current through {league_current:%b} {league_current.day}' in limitation
+            for limitation in body['limitations']
+        )
