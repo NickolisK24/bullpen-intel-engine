@@ -629,7 +629,7 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
-// Today's Game Context for one team, derived from stored game logs only.
+// Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
 export const getSyncStatus     = () => request('/bullpen/sync/status')
 export const getFatigueEraInsight = () => request('/bullpen/insights/fatigue-era')

@@ -56,8 +56,8 @@ export function SyncStatusContent({ data, loading, error, now }) {
         dot="#8899aa"
         status="Checking"
         metrics={[
-          { label: 'Synced', value: 'Checking sync status', muted: true },
-          { label: 'Data Through', value: 'Checking data coverage', muted: true },
+          { label: 'Last synced', value: 'Checking sync status', muted: true },
+          { label: 'Latest completed MLB data', value: 'Checking data coverage', muted: true },
           { label: 'Refresh Coverage', value: 'Checking refresh count', muted: true },
         ]}
       />
@@ -70,8 +70,8 @@ export function SyncStatusContent({ data, loading, error, now }) {
         status="Limited"
         helper="Sync status unavailable."
         metrics={[
-          { label: 'Synced', value: 'Unavailable', muted: true },
-          { label: 'Data Through', value: 'Unavailable', muted: true },
+          { label: 'Last synced', value: 'Unavailable', muted: true },
+          { label: 'Latest completed MLB data', value: 'Unavailable', muted: true },
           { label: 'Refresh Coverage', value: 'Unavailable', muted: true },
         ]}
       />
@@ -92,8 +92,8 @@ export function SyncStatusContent({ data, loading, error, now }) {
       status={view.healthLabel}
       helper={view.helper}
       metrics={[
-        { label: view.syncLabel === 'No data loaded' ? 'Synced' : view.syncLabel, value: syncValue, muted: !view.syncValue },
-        { label: view.dataLabel || 'Data Through', value: dataValue, muted: !view.dataValue },
+        { label: view.syncLabel === 'No data loaded' ? 'Last synced' : view.syncLabel, value: syncValue, muted: !view.syncValue },
+        { label: view.dataLabel || 'Latest completed MLB data', value: dataValue, muted: !view.dataValue },
         { label: 'Refresh Coverage', value: coverageValue, muted: !view.coverageValue },
       ]}
     />

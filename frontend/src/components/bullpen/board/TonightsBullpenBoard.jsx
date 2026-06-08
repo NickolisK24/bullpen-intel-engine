@@ -72,7 +72,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
     [selectedTeam, includeStale],
   )
 
-  // Today's Game Context for the selected team (stored game-log only).
+  // Game context for the selected team (stored game-log only).
   const gameContext = useFetch(
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamGameContext(selectedTeam)),
     [selectedTeam],

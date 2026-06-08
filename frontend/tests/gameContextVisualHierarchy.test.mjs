@@ -70,14 +70,14 @@ test('the context banner / disclaimer is present', () => {
 test('no_game_found renders a clear, non-technical empty state', () => {
   const html = render({ gameContext: { capability: 'team_game_context', available: false, state: 'no_game_found',
     message: 'No game found in the stored game log for this date.', data_state: 'unavailable', confidence: 'none', missing_fields: [] } })
-  assert.ok(htmlIncludes(html, 'No stored game-log context found for this date.'))
+  assert.ok(htmlIncludes(html, 'No stored game-log context found for this team yet.'))
   assert.ok(htmlIncludes(html, 'Game context helps explain bullpen workload'))  // banner still shown
 })
 
 test('unavailable and loading and null states are clear', () => {
   assert.ok(htmlIncludes(render({ gameContext: { state: 'unavailable', available: false, message: 'Schedule context unavailable.' } }), 'Schedule context unavailable.'))
   assert.ok(htmlIncludes(render({ loading: true }), 'Loading game context'))
-  assert.ok(htmlIncludes(render({ gameContext: null }), 'Schedule context unavailable.'))
+  assert.ok(htmlIncludes(render({ gameContext: null }), 'Schedule data unavailable.'))
 })
 
 test('opponent-missing present state degrades gracefully', () => {

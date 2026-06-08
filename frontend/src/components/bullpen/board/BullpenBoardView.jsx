@@ -26,11 +26,13 @@ function FreshnessBanner({ freshness }) {
           title={provenance.throughHint}
         >
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
-          {provenance.label}{provenance.detail ? ` · ${provenance.detail}` : ''}
+          {provenance.dataThrough
+            ? `Latest completed MLB data: ${provenance.dataThrough}`
+            : 'No completed MLB data loaded'}
         </span>
         {view.lastSync && (
           <span className="font-mono text-xs">
-            <span className="text-chalk500">Synced</span> {view.lastSync}
+            <span className="text-chalk500">Last synced:</span> {view.lastSync}
           </span>
         )}
       </div>

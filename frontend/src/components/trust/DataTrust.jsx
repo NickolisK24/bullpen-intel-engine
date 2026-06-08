@@ -55,7 +55,9 @@ export default function DataTrust() {
                 style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
               >
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
-                {provenance.label}{provenance.detail ? ` · ${provenance.detail}` : ''}
+                {provenance.dataThrough
+                  ? `Latest completed MLB data: ${provenance.dataThrough}`
+                  : 'No completed MLB data loaded'}
               </span>
               <span className="font-mono text-[11px] text-chalk500">{provenance.throughHint}</span>
             </div>

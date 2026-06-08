@@ -50,17 +50,17 @@ test('renders sync and data-through dates when both are available', () => {
     React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
   )
 
-  assert.equal(view.syncLabel, 'Synced')
+  assert.equal(view.syncLabel, 'Last synced')
   assert.equal(view.syncValue, 'June 1, 2026')
-  assert.equal(view.dataLabel, 'Data Through')
+  assert.equal(view.dataLabel, 'Latest completed MLB data')
   assert.equal(view.dataValue, 'May 31, 2026')
   assert.equal(view.healthLabel, 'Healthy')
   assert.equal(view.coverageValue, '428 Pitchers Refreshed')
   assert.ok(htmlIncludes(html, 'Data Status:'))
   assert.ok(htmlIncludes(html, 'Healthy'))
-  assert.ok(htmlIncludes(html, 'Synced:'))
+  assert.ok(htmlIncludes(html, 'Last synced:'))
   assert.ok(htmlIncludes(html, 'June 1, 2026'))
-  assert.ok(htmlIncludes(html, 'Data Through:'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
   assert.ok(htmlIncludes(html, 'Refresh Coverage:'))
   assert.ok(htmlIncludes(html, '428 Pitchers Refreshed'))
@@ -90,7 +90,7 @@ test('renders sync metadata unavailable with data-through date', () => {
   assert.equal(view.healthLabel, 'Limited')
   assert.ok(htmlIncludes(html, 'Sync metadata:'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
-  assert.ok(htmlIncludes(html, 'Data Through:'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
 })
 
@@ -143,9 +143,9 @@ test('renders successful sync without a data-through date', () => {
     React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
   )
 
-  assert.ok(htmlIncludes(html, 'Synced:'))
+  assert.ok(htmlIncludes(html, 'Last synced:'))
   assert.ok(htmlIncludes(html, 'June 1, 2026'))
-  assert.ok(htmlIncludes(html, 'Data Through:'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
 })
 
@@ -172,7 +172,7 @@ test('renders failed sync while preserving data-through date', () => {
 
   assert.ok(htmlIncludes(html, 'Last sync failed:'))
   assert.ok(htmlIncludes(html, 'June 2, 2026'))
-  assert.ok(htmlIncludes(html, 'Data Through:'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
 })
 
