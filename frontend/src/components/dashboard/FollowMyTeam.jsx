@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { useFollowedTeamPreference } from '../../hooks/useFollowedTeamPreference'
-import { getTeamBullpenBoard, getTeams } from '../../utils/api'
+import { getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
 import {
   buildFollowedTeamHref,
   resolveFollowedTeam,
 } from '../../utils/followedTeamPreference'
 import { getBoardContextView } from '../bullpen/board/tonightsBullpenBoardView'
+import WhatChangedCard from './WhatChangedCard'
 
 function teamLabel(team) {
   return team?.team_name || team?.team_abbreviation || 'Followed team'
@@ -211,17 +212,35 @@ export default function FollowMyTeam() {
     [followedTeamId],
   )
 
+  const changes = useFetch(
+    () => (
+      followedTeamId == null
+        ? Promise.resolve(null)
+        : getTeamChanges(followedTeamId)
+    ),
+    [followedTeamId],
+  )
+
   return (
-    <FollowMyTeamCard
-      teams={teamList}
-      teamsLoading={teams.loading}
-      teamsError={teams.error}
-      followedTeam={resolvedFollowedTeam}
-      board={board.data}
-      boardLoading={followedTeamId != null && board.loading}
-      boardError={followedTeamId != null ? board.error : null}
-      onSelectTeam={setFollowedTeam}
-      onClearTeam={clearFollowedTeam}
-    />
+    <>
+      <FollowMyTeamCard
+        teams={teamList}
+        teamsLoading={teams.loading}
+        teamsError={teams.error}
+        followedTeam={resolvedFollowedTeam}
+        board={board.data}
+        boardLoading={followedTeamId != null && board.loading}
+        boardError={followedTeamId != null ? board.error : null}
+        onSelectTeam={setFollowedTeam}
+        onClearTeam={clearFollowedTeam}
+      />
+      <WhatChangedCard
+        followedTeam={resolvedFollowedTeam}
+        changes={changes.data}
+        loading={followedTeamId != null && changes.loading}
+        error={followedTeamId != null ? changes.error : null}
+        onRetry={changes.refetch}
+      />
+    </>
   )
 }

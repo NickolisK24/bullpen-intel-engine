@@ -20,17 +20,17 @@ from services.availability_snapshot import (
     latest_fatigue_rows as availability_latest_fatigue_rows,
 )
 from services.availability_summary import summarize_availability_records
-from services.bullpen_eligibility import evaluate_bullpen_eligibility
 from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
 from services.bullpen_comparison import build_team_comparison
+from services.bullpen_population import (
+    eligible_bullpen_pitcher_contexts,
+    usage_logs_by_pitcher,
+)
 from services.game_context import build_landscape, build_team_game_context
-from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS, classify_usage_role
+from services.pitcher_role import ROLE_KEYS, classify_usage_role
+from services.team_changes import build_team_changes_payload
 from services.roster_status import (
-    allows_default_board,
-    allows_inactive_context,
     apply_roster_status_to_availability,
-    classify_roster_status,
-    roster_status_summary,
 )
 from services.mlb_api import mlb_client
 from services import sync as sync_service
@@ -734,31 +734,6 @@ def _team_info_lookup(team_id):
     return {'team_id': row.team_id, 'team_name': row.team_name, 'team_abbreviation': row.team_abbreviation}
 
 
-def _board_usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=False):
-    """
-    Recent game logs grouped by pitcher_id, in a single query (no N+1).
-
-    Used to classify observed usage role and bullpen eligibility. Default board
-    mode uses the recent role window. When unavailable or stale pitchers are
-    explicitly included, this falls back to each pitcher's latest stored usage
-    so stale cards can still be labelled from real evidence.
-    """
-    if not pitcher_ids:
-        return {}
-    query = GameLog.query.filter(GameLog.pitcher_id.in_(pitcher_ids))
-    if not include_stale:
-        cutoff = date.today() - timedelta(days=days)
-        query = query.filter(GameLog.game_date >= cutoff)
-    logs = query.order_by(GameLog.pitcher_id, desc(GameLog.game_date)).all()
-    grouped = {}
-    for log in logs:
-        bucket = grouped.setdefault(log.pitcher_id, [])
-        if include_stale and len(bucket) >= 10:
-            continue
-        bucket.append(log)
-    return grouped
-
-
 def _merge_limitations(*groups):
     merged = []
     for group in groups:
@@ -784,48 +759,39 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
     Convert (Pitcher, FatigueScore) rows into board records after applying the
     reusable bullpen eligibility filter.
     """
-    pitcher_ids = [pitcher.id for pitcher, _score in rows]
-    logs_by_pitcher = _board_usage_logs_by_pitcher(
-        pitcher_ids,
-        include_stale=include_stale,
-    )
     today = date.today()
+    contexts, roster_summary = eligible_bullpen_pitcher_contexts(
+        [pitcher for pitcher, _score in rows],
+        include_stale=include_stale,
+        reference_date=today,
+    )
+    contexts_by_pitcher = {
+        context['pitcher'].id: context
+        for context in contexts
+    }
 
     records = []
-    roster_statuses = []
     for pitcher, score in rows:
-        roster_status = classify_roster_status(pitcher)
-        roster_statuses.append(roster_status)
-        if not allows_default_board(roster_status):
-            if not (include_stale and allows_inactive_context(roster_status)):
-                continue
-
-        logs = logs_by_pitcher.get(pitcher.id, [])
-        eligibility = evaluate_bullpen_eligibility(
-            pitcher,
-            logs,
-            reference_date=today,
-            respect_local_active=not roster_status.get('is_authoritative'),
-        )
-        if not eligibility.get('eligible'):
+        context = contexts_by_pitcher.get(pitcher.id)
+        if context is None:
             continue
 
         availability = _availability_with_eligibility(
             availability_by_pitcher.get(pitcher.id),
-            eligibility,
-            roster_status,
+            context['eligibility'],
+            context['roster_status'],
         )
         records.append({
             'name': pitcher.full_name,
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability,
-            'role': classify_usage_role(logs, reference_date=today),
-            'eligibility': eligibility,
-            'roster_status': roster_status,
+            'role': classify_usage_role(context['logs'], reference_date=today),
+            'eligibility': context['eligibility'],
+            'roster_status': context['roster_status'],
             'pitcher': pitcher,
         })
-    return records, roster_status_summary(roster_statuses, records)
+    return records, roster_summary
 
 
 def _eligible_classified_records(rows, include_stale=True):
@@ -837,35 +803,30 @@ def _eligible_classified_records(rows, include_stale=True):
         rows,
         mode=CURRENT_AVAILABILITY_MODE,
     )
-    pitcher_ids = [record['pitcher'].id for record in classified]
-    logs_by_pitcher = _board_usage_logs_by_pitcher(
-        pitcher_ids,
-        include_stale=include_stale,
-    )
     today = date.today()
+    contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
+        [record['pitcher'] for record in classified],
+        include_stale=include_stale,
+        reference_date=today,
+    )
+    contexts_by_pitcher = {
+        context['pitcher'].id: context
+        for context in contexts
+    }
     eligible = []
     for record in classified:
         pitcher = record['pitcher']
-        roster_status = classify_roster_status(pitcher)
-        if not allows_default_board(roster_status):
-            continue
-
-        eligibility = evaluate_bullpen_eligibility(
-            pitcher,
-            logs_by_pitcher.get(pitcher.id, []),
-            reference_date=today,
-            respect_local_active=not roster_status.get('is_authoritative'),
-        )
-        if not eligibility.get('eligible'):
+        context = contexts_by_pitcher.get(pitcher.id)
+        if context is None:
             continue
 
         updated = dict(record)
-        updated['eligibility'] = eligibility
-        updated['roster_status'] = roster_status
+        updated['eligibility'] = context['eligibility']
+        updated['roster_status'] = context['roster_status']
         updated['availability'] = _availability_with_eligibility(
             updated.get('availability'),
-            eligibility,
-            roster_status,
+            context['eligibility'],
+            context['roster_status'],
         )
         eligible.append(updated)
     return eligible
@@ -929,6 +890,20 @@ def get_team_bullpen_board(team_id):
     """
     include_stale = _truthy(request.args.get('include_stale'))
     return jsonify(_build_team_board(team_id, include_stale))
+
+
+@bullpen_bp.route('/teams/<int:team_id>/changes', methods=['GET'])
+def get_team_changes(team_id):
+    """
+    What Changed Since Last Game — small followed-team change surface.
+
+    Compares current team bullpen state to the previous completed game date
+    using stored game logs, fatigue-score history, existing availability
+    classification, and durable sync freshness. Presentation only: no ranking,
+    no selection, no recommendation, and no prediction.
+    """
+    freshness = _board_freshness_block()
+    return jsonify(build_team_changes_payload(team_id, freshness=freshness))
 
 
 @bullpen_bp.route('/teams/compare', methods=['GET'])
@@ -1034,7 +1009,7 @@ def get_bullpen_dashboard():
 
     # Usage-role composition across the same bullpen-eligible scored-pitcher set.
     pitcher_ids = [record['pitcher'].id for record in availability_records]
-    logs_by_pitcher = _board_usage_logs_by_pitcher(pitcher_ids, include_stale=True)
+    logs_by_pitcher = usage_logs_by_pitcher(pitcher_ids, include_stale=True)
     today = date.today()
     role_counts = {key: 0 for key in ROLE_KEYS}
     for pitcher_id in pitcher_ids:
