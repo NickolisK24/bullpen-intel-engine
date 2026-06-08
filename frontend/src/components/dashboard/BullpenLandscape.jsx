@@ -1,5 +1,31 @@
 import { Link } from 'react-router-dom'
-import { getLandscapeView } from './bullpenLandscapeView'
+import { getLandscapeView, getStorylines } from './bullpenLandscapeView'
+
+// Tonight's Storylines — a compact, scannable recap of the most notable bullpen
+// situations, summarized from the same landscape data in plain baseball language.
+// Descriptive only: no charts, rankings, recommendations, or predictions.
+function Storylines({ storylines }) {
+  return (
+    <div className="card mb-4 p-4" aria-label="Tonight's Storylines">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
+        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Tonight's Storylines</h3>
+      </div>
+      {storylines.hasStorylines ? (
+        <ul className="mt-3 space-y-1.5">
+          {storylines.items.map((item, index) => (
+            <li key={index} className="flex gap-2 text-sm leading-relaxed text-chalk200">
+              <span className="select-none text-amber" aria-hidden="true">•</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm leading-relaxed text-chalk500">{storylines.fallback}</p>
+      )}
+    </div>
+  )
+}
 
 // One landscape team row. When a deep link is available it becomes a lightweight
 // clickable link into that team's bullpen board — informational, not a button.
@@ -62,6 +88,8 @@ export default function BullpenLandscape({ landscape }) {
   const view = getLandscapeView(landscape)
   if (!view.hasLandscape) return null
 
+  const storylines = getStorylines(landscape)
+
   return (
     <section className="mb-6" aria-label="Tonight's Bullpen Landscape">
       <div className="mb-3">
@@ -77,6 +105,9 @@ export default function BullpenLandscape({ landscape }) {
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Games</span>
         <span className="font-mono text-xs leading-relaxed text-chalk300">{view.games.label}</span>
       </div>
+
+      {/* Quick-read recap, surfaced before the individual situation columns. */}
+      <Storylines storylines={storylines} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {view.columns.map(column => (
