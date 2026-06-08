@@ -27,7 +27,7 @@ from api.bullpen import bullpen_bp
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    # No real sync_status.json → read_status() returns the 'never' sentinel.
+    # No real sync_status.json. The status endpoint must not depend on it.
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
 
     app = Flask(__name__)
@@ -61,10 +61,21 @@ class TestSyncStatusSnapshot:
         # No sync has run...
         assert body['last_sync'] is None
         assert body['status'] == 'metadata_unavailable'
+        assert body['sync_authority'] == 'sync_runs'
+        assert body['metadata_source'] == 'none'
         # ...but the data snapshot is reported honestly from the DB.
         assert body['data']['game_logs'] == 2
         assert body['data']['latest_game_date'] == '2025-09-10'
         assert body['data']['latest_workload_date'] == '2025-09-10'
+        assert body['freshness']['freshness_state'] == 'stale'
+        assert body['freshness']['is_stale'] is True
+        assert body['freshness']['data_age_days'] is not None
+        assert body['freshness']['reason_codes'] == [
+            'durable_sync_metadata_unavailable',
+            'successful_sync_missing',
+            'fatigue_timestamp_missing',
+            'workload_data_outside_active_window',
+        ]
         assert body['freshness']['limitations'] == [
             'Sync metadata unavailable; data coverage is based on game logs.',
             'No durable successful sync timestamp is available.',
@@ -79,11 +90,16 @@ class TestSyncStatusSnapshot:
         assert body['last_sync'] is None
         assert body['last_successful_sync'] is None
         assert body['status'] == 'never'
+        assert body['sync_authority'] == 'sync_runs'
+        assert body['metadata_source'] == 'none'
         assert body['data']['game_logs'] == 0
         assert body['data']['latest_game_date'] is None
         assert body['data']['latest_workload_date'] is None
         assert body['data']['latest_fatigue_calculated_at'] is None
         assert body['freshness']['label'] == 'No baseball workload data loaded.'
+        assert body['freshness']['freshness_state'] == 'missing'
+        assert body['freshness']['is_stale'] is False
+        assert body['freshness']['reason_codes'] == ['workload_data_missing']
 
     def test_reports_sync_timestamp_and_snapshot_date_together(self, client):
         with client.application.app_context():
@@ -117,6 +133,8 @@ class TestSyncStatusSnapshot:
         body = res.get_json()
 
         assert body['status'] == 'success'
+        assert body['sync_authority'] == 'sync_runs'
+        assert body['metadata_source'] == 'sync_runs'
         assert body['last_sync'] == '2026-06-01T21:39:12'
         assert body['last_successful_sync'] == '2026-06-01T21:39:56'
         assert body['pitchers_updated'] == 428
@@ -126,6 +144,9 @@ class TestSyncStatusSnapshot:
         assert body['data']['latest_workload_date'] == '2026-05-31'
         assert body['data']['latest_fatigue_calculated_at'] == '2026-06-01T21:39:55'
         assert body['freshness']['is_current'] is True
+        assert body['freshness']['is_stale'] is False
+        assert body['freshness']['freshness_state'] == 'current'
+        assert body['freshness']['reason_codes'] == []
         assert body['freshness']['limitations'] == []
         assert body['sync']['source'] == 'github_actions'
         assert body['last_successful_sync_run']['status'] == 'success'
@@ -167,7 +188,43 @@ class TestSyncStatusSnapshot:
         assert body['last_sync'] == '2026-06-02T10:00:00'
         assert body['last_successful_sync'] == '2026-06-01T21:39:56'
         assert body['message'] == 'MLB API unavailable'
+        assert body['freshness']['reason_codes'] == ['latest_sync_failed']
         assert 'The latest sync attempt failed; data may reflect an earlier successful sync.' in body['freshness']['limitations']
+
+    def test_local_cache_file_is_not_used_without_durable_metadata(self, client):
+        sync_service.write_status({
+            'last_sync': '2026-06-01T12:00:00',
+            'status': 'success',
+            'pitchers_updated': 999,
+            'new_logs_added': 999,
+            'errors': 0,
+            'message': 'cache should not be authoritative',
+            'finished_at': '2026-06-01T12:01:00',
+        })
+
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.commit()
+
+        res = client.get('/api/bullpen/sync/status')
+        assert res.status_code == 200
+        body = res.get_json()
+
+        assert body['status'] == 'metadata_unavailable'
+        assert body['metadata_source'] == 'none'
+        assert body['sync_authority'] == 'sync_runs'
+        assert body['last_sync'] is None
+        assert body['last_successful_sync'] is None
+        assert body['pitchers_updated'] == 0
+        assert body['message'] != 'cache should not be authoritative'
+        assert body['freshness']['reason_codes'] == [
+            'durable_sync_metadata_unavailable',
+            'successful_sync_missing',
+            'fatigue_timestamp_missing',
+        ]
 
     def test_durable_metadata_overrides_a_conflicting_cache_file(self, client):
         """Durable sync_runs is authoritative; the JSON file is cache-only.

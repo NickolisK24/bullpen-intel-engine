@@ -42,7 +42,14 @@ test('renders sync and data-through dates when both are available', () => {
       latest_workload_date: '2026-05-31',
       latest_fatigue_calculated_at: '2026-06-01T21:39:55',
     },
-    freshness: { is_current: true, label: 'Current baseball data through 2026-05-31.', limitations: [] },
+    freshness: {
+      is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: [],
+      label: 'Current baseball data through 2026-05-31.',
+      limitations: [],
+    },
   }
 
   const view = getSyncStatusView(data, { now })
@@ -77,6 +84,9 @@ test('renders sync metadata unavailable with data-through date', () => {
     },
     freshness: {
       is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: ['durable_sync_metadata_unavailable'],
       label: 'Current baseball data through 2026-05-31.',
       limitations: ['Sync metadata unavailable; data coverage is based on game logs.'],
     },
@@ -94,7 +104,7 @@ test('renders sync metadata unavailable with data-through date', () => {
   assert.ok(htmlIncludes(html, 'May 31, 2026'))
 })
 
-test('labels old sync metadata as stale without changing freshness logic', () => {
+test('does not mark current data stale from sync age alone', () => {
   const data = {
     status: 'success',
     last_sync: '2026-05-30T05:00:00',
@@ -106,7 +116,48 @@ test('labels old sync metadata as stale without changing freshness logic', () =>
       latest_workload_date: '2026-05-31',
       latest_fatigue_calculated_at: '2026-05-30T05:00:00',
     },
-    freshness: { is_current: true, label: 'Current baseball data through 2026-05-31.', limitations: [] },
+    freshness: {
+      is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: [],
+      label: 'Current baseball data through 2026-05-31.',
+      limitations: [],
+    },
+  }
+
+  const view = getSyncStatusView(data, { now })
+  const html = renderToStaticMarkup(
+    React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
+  )
+
+  assert.equal(view.healthLabel, 'Healthy')
+  assert.ok(htmlIncludes(html, 'Data Status:'))
+  assert.ok(htmlIncludes(html, 'Healthy'))
+  assert.ok(htmlIncludes(html, '429 Pitchers Refreshed'))
+})
+
+test('renders stale workload data from backend freshness reason codes', () => {
+  const data = {
+    status: 'success',
+    last_sync: '2026-06-01T21:39:12',
+    last_successful_sync: '2026-06-01T21:39:56',
+    pitchers_updated: 428,
+    data: {
+      game_logs: 35768,
+      latest_game_date: '2026-04-01',
+      latest_workload_date: '2026-04-01',
+      latest_fatigue_calculated_at: '2026-06-01T21:39:55',
+    },
+    freshness: {
+      is_current: false,
+      is_stale: true,
+      freshness_state: 'stale',
+      data_age_days: 62,
+      reason_codes: ['workload_data_outside_active_window'],
+      label: 'Stale baseball data through 2026-04-01.',
+      limitations: ['Latest game date is outside the 14-day freshness window.'],
+    },
   }
 
   const view = getSyncStatusView(data, { now })
@@ -115,9 +166,12 @@ test('labels old sync metadata as stale without changing freshness logic', () =>
   )
 
   assert.equal(view.healthLabel, 'Stale')
+  assert.equal(view.reasonCodes[0], 'workload_data_outside_active_window')
   assert.ok(htmlIncludes(html, 'Data Status:'))
   assert.ok(htmlIncludes(html, 'Stale'))
-  assert.ok(htmlIncludes(html, '429 Pitchers Refreshed'))
+  assert.ok(htmlIncludes(html, 'Stale baseball data through 2026-04-01.'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
+  assert.ok(htmlIncludes(html, 'Apr 1, 2026'))
 })
 
 test('renders successful sync without a data-through date', () => {
@@ -134,6 +188,9 @@ test('renders successful sync without a data-through date', () => {
     },
     freshness: {
       is_current: false,
+      is_stale: false,
+      freshness_state: 'missing',
+      reason_codes: ['workload_data_missing'],
       label: 'No baseball workload data loaded.',
       limitations: ['No game logs are available.'],
     },
@@ -161,6 +218,9 @@ test('renders failed sync while preserving data-through date', () => {
     },
     freshness: {
       is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: ['latest_sync_failed'],
       label: 'Current baseball data through 2026-05-31.',
       limitations: ['The latest sync attempt failed; data may reflect an earlier successful sync.'],
     },
@@ -184,7 +244,14 @@ test('renders no data loaded when metadata and data are unavailable', () => {
         last_sync: null,
         last_successful_sync: null,
         data: { game_logs: 0, latest_game_date: null },
-        freshness: { is_current: false, label: 'No baseball workload data loaded.', limitations: [] },
+        freshness: {
+          is_current: false,
+          is_stale: false,
+          freshness_state: 'missing',
+          reason_codes: ['workload_data_missing'],
+          label: 'No baseball workload data loaded.',
+          limitations: [],
+        },
       },
       loading: false,
       error: null,

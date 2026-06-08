@@ -5,6 +5,7 @@ import { LoadingPane, ErrorState } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
+import FollowMyTeam from './FollowMyTeam'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { fmtSyncDate } from './syncStatusView'
 import {
@@ -80,6 +81,8 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
 
       {/* Orientation layer — what BaseballOS is + what to do next (always shown) */}
       <DashboardOrientation />
+
+      <FollowMyTeam />
 
       {loading && !data ? (
         <LoadingPane message="Loading bullpen overview..." />
@@ -208,6 +211,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
       title={provenance.throughHint}
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span>{provenance.label}</span>
         <span>{dataLine}</span>
         {lastSync && <span className="text-chalk500">· Last synced: {lastSync}</span>}
         <span className="text-chalk500">· Confidence: {confidenceLabel}</span>
