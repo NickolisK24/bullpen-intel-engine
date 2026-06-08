@@ -8,6 +8,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.bullpen_board import BOARD_GROUP_ORDER, build_team_context
+from services.bullpen_population import eligible_bullpen_pitchers
 from utils.db import db
 
 
@@ -24,6 +25,21 @@ STATUS_ORDER = {status: index for index, status in enumerate(BOARD_GROUP_ORDER)}
 
 def _iso_date(value):
     return value.isoformat() if value else None
+
+
+def _date_from_iso(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        return None
+
+
+def _display_date(value):
+    if value is None:
+        return None
+    return f'{value:%b} {value.day}'
 
 
 def _end_of_day(value):
@@ -58,6 +74,10 @@ def _team_info(team_id):
     }
 
 
+def _team_short_name(team):
+    return team.get('team_abbreviation') or team.get('team_name') or f"Team {team.get('team_id')}"
+
+
 def _base_payload(team, freshness=None, generated_at=None):
     return {
         'capability': CAPABILITY,
@@ -70,8 +90,11 @@ def _base_payload(team, freshness=None, generated_at=None):
         'comparison': {
             'anchor_game_date': None,
             'current_game_date': None,
+            'team_latest_game_date': None,
+            'global_latest_game_date': (freshness or {}).get('data_through'),
             'label': None,
             'is_current': bool((freshness or {}).get('is_current') is True),
+            'team_data_behind_league': False,
         },
         'pitcher_changes': [],
         'team_summary': None,
@@ -130,13 +153,27 @@ def _team_game_dates(team_id):
     return [row[0] for row in rows]
 
 
-def _active_team_pitchers(team_id):
+def _comparison_label(team, anchor_date, current_date):
+    team_name = _team_short_name(team)
     return (
-        Pitcher.query
-        .filter(Pitcher.team_id == team_id, Pitcher.active == True)
-        .order_by(Pitcher.full_name)
-        .all()
+        f'Compared with {team_name}: '
+        f'{_display_date(anchor_date)} -> {_display_date(current_date)}'
     )
+
+
+def _team_freshness_notes(team, current_date, freshness):
+    global_latest = _date_from_iso((freshness or {}).get('data_through'))
+    if global_latest is None:
+        global_latest = _date_from_iso((freshness or {}).get('latest_workload_date'))
+    if global_latest is None or current_date is None or current_date >= global_latest:
+        return global_latest, [], []
+
+    team_name = _team_short_name(team)
+    limitation = (
+        f'{team_name} latest game data is {_display_date(current_date)} while '
+        f'league data is current through {_display_date(global_latest)}.'
+    )
+    return global_latest, ['team_data_behind_league'], [limitation]
 
 
 def _latest_scores(pitcher_ids):
@@ -282,13 +319,16 @@ def _appearance_summary(game_date, pitches):
     return f'Pitched {weekday} - {int(pitches)} pitches.'
 
 
-def _appearance_changes(team_id, anchor_date, current_date):
+def _appearance_changes(team_id, anchor_date, current_date, pitcher_ids):
+    if not pitcher_ids:
+        return []
+
     rows = (
         db.session.query(GameLog, Pitcher)
         .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
         .filter(
             Pitcher.team_id == team_id,
-            Pitcher.active == True,
+            Pitcher.id.in_(pitcher_ids),
             GameLog.game_date > anchor_date,
             GameLog.game_date <= current_date,
         )
@@ -393,23 +433,39 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         return payload
 
     current_date = dates[0]
-    payload['comparison']['current_game_date'] = _iso_date(current_date)
+    global_latest_date, team_reason_codes, team_limitations = _team_freshness_notes(
+        team,
+        current_date,
+        freshness,
+    )
+    payload['comparison'].update({
+        'current_game_date': _iso_date(current_date),
+        'team_latest_game_date': _iso_date(current_date),
+        'global_latest_game_date': _iso_date(global_latest_date),
+        'team_data_behind_league': bool(team_reason_codes),
+    })
 
     if len(dates) < 2:
         payload.update({
             'state': STATE_NO_BASELINE,
-            'state_reason_codes': ['previous_team_game_missing'],
-            'limitations': ['No earlier completed game is available for comparison.'],
+            'state_reason_codes': _merge_unique(
+                ['previous_team_game_missing'],
+                team_reason_codes,
+            ),
+            'limitations': _merge_unique(
+                ['No earlier completed game is available for comparison.'],
+                team_limitations,
+            ),
         })
         return payload
 
     anchor_date = dates[1]
     payload['comparison'].update({
         'anchor_game_date': _iso_date(anchor_date),
-        'label': f"since {anchor_date.strftime('%A')}'s game",
+        'label': _comparison_label(team, anchor_date, current_date),
     })
 
-    pitchers = _active_team_pitchers(team_id)
+    pitchers, _roster_summary = eligible_bullpen_pitchers(team_id, include_stale=False)
     pitcher_ids = [pitcher.id for pitcher in pitchers]
     current_scores = _latest_scores(pitcher_ids)
     anchor_scores = _scores_at_or_before(pitcher_ids, anchor_date)
@@ -421,7 +477,7 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         anchor_date,
         current_date,
     )
-    appearance_changes = _appearance_changes(team_id, anchor_date, current_date)
+    appearance_changes = _appearance_changes(team_id, anchor_date, current_date, pitcher_ids)
     team_summary = _team_summary(anchor_statuses, current_statuses, freshness)
 
     pitcher_changes = status_changes + appearance_changes
@@ -431,14 +487,21 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         'limitations': _merge_unique(
             freshness.get('limitations') if freshness else [],
             coverage_limitations,
+            team_limitations,
         ),
     })
 
     if pitcher_changes or team_summary:
         payload['state'] = STATE_CHANGES
-        payload['state_reason_codes'] = ['meaningful_changes_detected']
+        payload['state_reason_codes'] = _merge_unique(
+            ['meaningful_changes_detected'],
+            team_reason_codes,
+        )
     else:
         payload['state'] = STATE_NO_CHANGES
-        payload['state_reason_codes'] = ['no_meaningful_changes_detected']
+        payload['state_reason_codes'] = _merge_unique(
+            ['no_meaningful_changes_detected'],
+            team_reason_codes,
+        )
 
     return payload

@@ -31,8 +31,10 @@ function makeChanges(overrides = {}) {
     comparison: {
       anchor_game_date: '2026-06-06',
       current_game_date: '2026-06-07',
-      label: "since Saturday's game",
+      global_latest_game_date: '2026-06-07',
+      label: 'Compared with ACE: Jun 6 -> Jun 7',
       is_current: true,
+      team_data_behind_league: false,
     },
     team_summary: {
       summary: 'Available arms: 4 -> 2; Bullpen condition moved from manageable to elevated.',
@@ -116,10 +118,43 @@ test('no changes state renders a quiet empty summary', () => {
 test('changes state renders backend team summary and pitcher summaries', () => {
   const html = renderCard({ followedTeam: team, changes: makeChanges() })
 
+  assert.ok(htmlIncludes(html, 'Compared with ACE: Jun 6 -&gt; Jun 7'))
   assert.ok(htmlIncludes(html, 'Available arms: 4 -&gt; 2'))
   assert.ok(htmlIncludes(html, 'Bullpen condition moved from manageable to elevated.'))
   assert.ok(htmlIncludes(html, 'Shift Arm moved from Monitor to Limited.'))
   assert.ok(htmlIncludes(html, 'Pitched Sunday - 24 pitches.'))
+})
+
+test('comparison label is not vague weekday-only copy', () => {
+  const html = renderCard({ followedTeam: team, changes: makeChanges() })
+
+  assert.ok(!htmlIncludes(html, "since Saturday&#x27;s game"))
+  assert.ok(!htmlIncludes(html, "since Saturday's game"))
+  assert.ok(htmlIncludes(html, 'Jun 6'))
+  assert.ok(htmlIncludes(html, 'Jun 7'))
+})
+
+test('team behind league limitation renders with both dates', () => {
+  const html = renderCard({
+    followedTeam: team,
+    changes: makeChanges({
+      state_reason_codes: ['meaningful_changes_detected', 'team_data_behind_league'],
+      comparison: {
+        anchor_game_date: '2026-06-03',
+        current_game_date: '2026-06-05',
+        global_latest_game_date: '2026-06-07',
+        label: 'Compared with ACE: Jun 3 -> Jun 5',
+        is_current: true,
+        team_data_behind_league: true,
+      },
+      limitations: [
+        'ACE latest game data is Jun 5 while league data is current through Jun 7.',
+      ],
+    }),
+  })
+
+  assert.ok(htmlIncludes(html, 'Compared with ACE: Jun 3 -&gt; Jun 5'))
+  assert.ok(htmlIncludes(html, 'ACE latest game data is Jun 5 while league data is current through Jun 7.'))
 })
 
 test('error state can expose retry control', () => {
