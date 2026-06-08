@@ -234,8 +234,8 @@ def recalculate_all_fatigue(use_last_game_date: bool = True):
 def run_daily_sync(app, days_back: int = 7):
     """
     Full daily refresh — pulls new logs, recalculates fatigue using each
-    pitcher's last game date, and writes a status file that the frontend
-    reads via /api/bullpen/sync/status.
+    pitcher's last game date, and records durable sync_runs metadata for
+    /api/bullpen/sync/status.
 
     Safe to call repeatedly. Gracefully handles the offseason (when MLB
     returns no recent games) by writing a status of 'no_games' instead
@@ -364,9 +364,10 @@ def run_daily_sync(app, days_back: int = 7):
 
 def write_status(status: dict) -> None:
     """
-    Persist a sync status dict to STATUS_FILE so /api/bullpen/sync/status
-    can serve it. Used by both the daily APScheduler job and manual POSTs
-    so both code paths produce a consistent dashboard pill.
+    Persist a diagnostic sync status dict to STATUS_FILE.
+
+    Public freshness reporting reads durable sync_runs metadata instead of this
+    local cache file.
     """
     # Best-effort cache only. This file must NEVER gate the durable sync_runs
     # write — a read-only filesystem (mkdir/open failure) here is non-fatal and

@@ -208,6 +208,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
       title={provenance.throughHint}
     >
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span>{provenance.label}</span>
         <span>{dataLine}</span>
         {lastSync && <span className="text-chalk500">· Last synced: {lastSync}</span>}
         <span className="text-chalk500">· Confidence: {confidenceLabel}</span>

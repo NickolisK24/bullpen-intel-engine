@@ -397,8 +397,8 @@ def sync_recent_logs():
       { "days_back": 7 }  — how far back to look for new games (default: 7)
 
     Delegates to services/sync.py so the scheduled daily job and the manual
-    POST go through the exact same code path. Also writes sync_status.json
-    so the dashboard "Last synced" pill reflects manual runs too.
+    POST go through the exact same code path. Durable sync_runs metadata is the
+    freshness authority; the status file write is cache-only.
     """
     body      = request.get_json(silent=True) or {}
     days_back = body.get('days_back', 7)
@@ -457,7 +457,8 @@ def sync_recent_logs():
     )
     persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
 
-    # Mirror what the daily APScheduler job writes so /sync/status stays accurate.
+    # Mirror what the daily APScheduler job writes for local diagnostics. The
+    # public freshness endpoint reads durable sync_runs metadata instead.
     sync_service.write_status({
         'last_sync':       started.isoformat(),
         'status':          sync_metadata.STATUS_SUCCESS,
@@ -512,26 +513,41 @@ def get_sync_status():
 
     Authority: durable sync_runs metadata is the source of truth (see
     services/sync_metadata.build_sync_status_payload). backend/logs/sync_status.json
-    is cache-only — it is passed in as a fallback and is only consulted when no
-    durable run exists (e.g. the sync_runs migration has not been applied yet).
+    is cache-only and is not consulted for public freshness reporting.
     """
-    legacy_status = sync_service.read_status()
     try:
-        return jsonify(sync_metadata.build_sync_status_payload(legacy_status=legacy_status))
+        return jsonify(sync_metadata.build_sync_status_payload())
     except Exception:
         # A DB hiccup must never turn the status pill into a hard error.
-        legacy_status['data'] = {
-            'game_logs': None,
-            'latest_game_date': None,
-            'latest_workload_date': None,
-            'latest_fatigue_calculated_at': None,
-        }
-        legacy_status['freshness'] = {
-            'is_current': False,
-            'label': 'Freshness metadata unavailable.',
-            'limitations': ['Could not read durable sync metadata.'],
-        }
-        return jsonify(legacy_status)
+        return jsonify({
+            'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
+            'sync_authority': 'sync_runs',
+            'metadata_source': 'none',
+            'last_sync': None,
+            'last_successful_sync': None,
+            'pitchers_updated': 0,
+            'new_logs_added': 0,
+            'errors': 0,
+            'message': 'Freshness metadata unavailable.',
+            'finished_at': None,
+            'data': {
+                'game_logs': None,
+                'latest_game_date': None,
+                'latest_workload_date': None,
+                'latest_fatigue_calculated_at': None,
+            },
+            'freshness': {
+                'is_current': False,
+                'is_stale': False,
+                'freshness_state': 'metadata_unavailable',
+                'data_age_days': None,
+                'reason_codes': ['durable_sync_metadata_unavailable'],
+                'label': 'Freshness metadata unavailable.',
+                'limitations': ['Could not read durable sync metadata.'],
+            },
+            'sync': None,
+            'last_successful_sync_run': None,
+        })
 
 
 # ─── Pitchers ─────────────────────────────────────────────────────────────────
@@ -668,9 +684,7 @@ def _board_freshness_block():
     clearly-labelled "unavailable" state instead of failing the board.
     """
     try:
-        status_payload = sync_metadata.build_sync_status_payload(
-            legacy_status=sync_service.read_status()
-        )
+        status_payload = sync_metadata.build_sync_status_payload()
         freshness = status_payload.get('freshness') or {}
         data = status_payload.get('data') or {}
         return {
@@ -678,7 +692,14 @@ def _board_freshness_block():
             'latest_workload_date': data.get('latest_workload_date'),
             'last_successful_sync': status_payload.get('last_successful_sync'),
             'sync_status': status_payload.get('status'),
+            'sync_authority': status_payload.get('sync_authority'),
+            'freshness_state': freshness.get('freshness_state'),
             'is_current': freshness.get('is_current', False),
+            'is_stale': freshness.get('is_stale', False),
+            'data_age_days': freshness.get('data_age_days'),
+            'active_window_days': freshness.get('active_window_days'),
+            'active_cutoff_date': freshness.get('active_cutoff_date'),
+            'reason_codes': list(freshness.get('reason_codes') or []),
             'label': freshness.get('label'),
             'limitations': list(freshness.get('limitations') or []),
         }
@@ -688,7 +709,14 @@ def _board_freshness_block():
             'latest_workload_date': None,
             'last_successful_sync': None,
             'sync_status': None,
+            'sync_authority': 'sync_runs',
+            'freshness_state': 'metadata_unavailable',
             'is_current': False,
+            'is_stale': False,
+            'data_age_days': None,
+            'active_window_days': ACTIVE_WINDOW_DAYS,
+            'active_cutoff_date': None,
+            'reason_codes': ['durable_sync_metadata_unavailable'],
             'label': 'Freshness metadata unavailable.',
             'limitations': ['Could not read durable sync metadata.'],
         }
