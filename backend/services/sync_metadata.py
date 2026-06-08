@@ -32,16 +32,6 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
-def _normalize_legacy_status(status):
-    if status == 'ok':
-        return STATUS_SUCCESS
-    if status == 'error':
-        return STATUS_FAILED
-    if status in ('no_games', STATUS_SUCCESS, STATUS_FAILED, STATUS_RUNNING):
-        return status
-    return status or STATUS_NEVER
-
-
 def collect_data_metadata():
     latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
     latest_fatigue = db.session.query(db.func.max(FatigueScore.calculated_at)).scalar()
@@ -163,47 +153,91 @@ def _run_message(run):
     return run.error_message or ''
 
 
-def _freshness_payload(metadata, status, last_successful_sync, reference_date=None):
+def determine_freshness_state(
+    metadata,
+    *,
+    status,
+    last_successful_sync,
+    reference_date=None,
+):
+    """
+    Determine workload freshness from durable sync metadata and DB coverage.
+
+    The sync timestamp comes only from sync_runs. Workload coverage comes from
+    persisted game/fatigue tables. This function does not infer a successful
+    sync from local files or from data presence.
+    """
     ref = reference_date or date.today()
     latest_game_date = metadata['latest_game_date']
+    latest_workload_date = metadata['latest_workload_date'] or latest_game_date
     latest_fatigue = metadata['latest_fatigue_calculated_at']
     limitations = []
+    reason_codes = []
+    cutoff = ref - timedelta(days=ACTIVE_WINDOW_DAYS)
+    data_age_days = (
+        (ref - latest_workload_date).days
+        if latest_workload_date is not None
+        else None
+    )
 
     if not metadata['game_logs'] or latest_game_date is None:
         return {
             'is_current': False,
+            'is_stale': False,
+            'freshness_state': 'missing',
+            'data_age_days': None,
+            'active_window_days': ACTIVE_WINDOW_DAYS,
+            'active_cutoff_date': cutoff.isoformat(),
+            'reference_date': ref.isoformat(),
+            'reason_codes': ['workload_data_missing'],
             'label': 'No baseball workload data loaded.',
             'limitations': ['No game logs are available.'],
         }
 
-    cutoff = ref - timedelta(days=ACTIVE_WINDOW_DAYS)
-    is_current = latest_game_date >= cutoff
+    is_current = latest_workload_date >= cutoff
+    freshness_state = 'current' if is_current else 'stale'
     label = (
-        f"Current baseball data through {latest_game_date.isoformat()}."
+        f"Current baseball data through {latest_workload_date.isoformat()}."
         if is_current
-        else f"Historical baseball data through {latest_game_date.isoformat()}."
+        else f"Stale baseball data through {latest_workload_date.isoformat()}."
     )
 
     if status == STATUS_METADATA_UNAVAILABLE:
+        reason_codes.append('durable_sync_metadata_unavailable')
         limitations.append('Sync metadata unavailable; data coverage is based on game logs.')
     if last_successful_sync is None:
+        reason_codes.append('successful_sync_missing')
         limitations.append('No durable successful sync timestamp is available.')
     if latest_fatigue is None:
+        reason_codes.append('fatigue_timestamp_missing')
         limitations.append('No fatigue calculation timestamp is available.')
     if not is_current:
+        reason_codes.append('workload_data_outside_active_window')
         limitations.append(f'Latest game date is outside the {ACTIVE_WINDOW_DAYS}-day freshness window.')
     if status == STATUS_FAILED:
+        reason_codes.append('latest_sync_failed')
         limitations.append('The latest sync attempt failed; data may reflect an earlier successful sync.')
+    if status == STATUS_RUNNING:
+        reason_codes.append('latest_sync_running')
+        limitations.append('A sync is currently running; data may reflect the previous completed sync.')
 
     return {
         'is_current': is_current,
+        'is_stale': freshness_state == 'stale',
+        'freshness_state': freshness_state,
+        'data_age_days': data_age_days,
+        'active_window_days': ACTIVE_WINDOW_DAYS,
+        'active_cutoff_date': cutoff.isoformat(),
+        'reference_date': ref.isoformat(),
+        'reason_codes': reason_codes,
         'label': label,
         'limitations': limitations,
     }
 
 
 def build_sync_status_payload(legacy_status=None, reference_date=None):
-    legacy_status = legacy_status or {}
+    # ``legacy_status`` is accepted only for older callers. It is intentionally
+    # ignored so sync_status.json can never become the reporting authority.
     metadata = collect_data_metadata()
     try:
         latest_run = latest_sync_run()
@@ -224,33 +258,17 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         message = _run_message(latest_run)
         sync_block = latest_run.to_dict()
         metadata_source = 'sync_runs'
-    elif legacy_status.get('last_sync'):
-        status = _normalize_legacy_status(legacy_status.get('status'))
-        last_sync = legacy_status.get('last_sync')
-        finished_at = legacy_status.get('finished_at')
-        pitchers_updated = legacy_status.get('pitchers_updated', 0) or 0
-        new_logs_added = legacy_status.get('new_logs_added', 0) or 0
-        errors = legacy_status.get('errors', 0) or 0
-        message = legacy_status.get('message', '') or ''
-        sync_block = {
-            'id': None,
-            'source': 'legacy_status_file',
-            'started_at': last_sync,
-            'completed_at': finished_at,
-            'status': status,
-        }
-        metadata_source = 'legacy_status_file'
     else:
         status = STATUS_METADATA_UNAVAILABLE if metadata['game_logs'] else STATUS_NEVER
         last_sync = None
         finished_at = None
-        pitchers_updated = legacy_status.get('pitchers_updated', 0) or 0
-        new_logs_added = legacy_status.get('new_logs_added', 0) or 0
-        errors = legacy_status.get('errors', 0) or 0
+        pitchers_updated = 0
+        new_logs_added = 0
+        errors = 0
         message = (
             'Sync metadata unavailable.'
             if status == STATUS_METADATA_UNAVAILABLE
-            else legacy_status.get('message', 'No sync has run yet.')
+            else 'No sync has run yet.'
         )
         sync_block = None
         metadata_source = 'none'
@@ -270,8 +288,8 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
 
     return {
         'status': status,
-        # Which store actually answered: durable 'sync_runs', the cache
-        # 'legacy_status_file', or 'none'. Durable always wins when present.
+        'sync_authority': 'sync_runs',
+        # Which durable source actually answered: 'sync_runs' or 'none'.
         'metadata_source': metadata_source,
         'last_sync': last_sync,
         'last_successful_sync': last_successful_sync,
@@ -286,7 +304,7 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             'latest_workload_date': _iso(metadata['latest_workload_date']),
             'latest_fatigue_calculated_at': _iso(metadata['latest_fatigue_calculated_at']),
         },
-        'freshness': _freshness_payload(
+        'freshness': determine_freshness_state(
             metadata,
             status=status,
             last_successful_sync=last_successful_sync,

@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
-from services import sync as sync_service
 from services import sync_metadata
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
@@ -233,12 +232,12 @@ def _route_payload(payload):
 
 def _sync_status_payload():
     try:
-        return sync_metadata.build_sync_status_payload(
-            legacy_status=sync_service.read_status(),
-        )
+        return sync_metadata.build_sync_status_payload()
     except Exception:
         return {
             'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
+            'sync_authority': 'sync_runs',
+            'metadata_source': 'none',
             'last_sync': None,
             'last_successful_sync': None,
             'finished_at': None,
@@ -250,6 +249,10 @@ def _sync_status_payload():
             },
             'freshness': {
                 'is_current': False,
+                'is_stale': False,
+                'freshness_state': 'metadata_unavailable',
+                'data_age_days': None,
+                'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Sync metadata unavailable.',
                 'limitations': ['Could not read sync status metadata.'],
             },
@@ -413,6 +416,13 @@ def _team_operations_freshness_metadata(records, *, sync_status, generated_at):
         'latest_workload_date': latest_workload_date,
         'last_successful_sync': sync_status.get('last_successful_sync'),
         'latest_sync_status': sync_status.get('status'),
+        'sync_authority': sync_status.get('sync_authority'),
+        'sync_metadata_source': sync_status.get('metadata_source'),
+        'is_stale': sync_freshness.get('is_stale'),
+        'data_age_days': sync_freshness.get('data_age_days'),
+        'active_window_days': sync_freshness.get('active_window_days'),
+        'active_cutoff_date': sync_freshness.get('active_cutoff_date'),
+        'reason_codes': list(sync_freshness.get('reason_codes') or []),
         'latest_fatigue_calculated_at': latest_fatigue,
         'generated_at': generated_at,
         'stale_warning': (
