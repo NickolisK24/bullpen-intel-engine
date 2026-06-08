@@ -36,9 +36,7 @@ function makeChanges(overrides = {}) {
       is_current: true,
       team_data_behind_league: false,
     },
-    team_summary: {
-      summary: 'Available arms: 4 -> 2; Bullpen condition moved from manageable to elevated.',
-    },
+    team_summary: null,
     pitcher_changes: [
       {
         type: 'status_change',
@@ -115,12 +113,12 @@ test('no changes state renders a quiet empty summary', () => {
   assert.ok(htmlIncludes(html, 'No meaningful bullpen changes since the last completed game.'))
 })
 
-test('changes state renders backend team summary and pitcher summaries', () => {
+test('changes state renders pitcher summaries without team summary counts', () => {
   const html = renderCard({ followedTeam: team, changes: makeChanges() })
 
   assert.ok(htmlIncludes(html, 'Compared with ACE: Jun 6 -&gt; Jun 7'))
-  assert.ok(htmlIncludes(html, 'Available arms: 4 -&gt; 2'))
-  assert.ok(htmlIncludes(html, 'Bullpen condition moved from manageable to elevated.'))
+  assert.ok(!htmlIncludes(html, 'Available arms:'))
+  assert.ok(!htmlIncludes(html, 'Bullpen condition moved from'))
   assert.ok(htmlIncludes(html, 'Shift Arm moved from Monitor to Limited.'))
   assert.ok(htmlIncludes(html, 'Pitched Sunday - 24 pitches.'))
 })

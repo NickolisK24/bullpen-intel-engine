@@ -485,6 +485,27 @@ class TestBoardEndpoint:
         assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in body['limitations']
         assert body['roster_status']['authority'] == 'unavailable'
 
+    def test_pitcher_detail_endpoint_includes_roster_status_without_500(self, client):
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Detail Active Reliever',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11322,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            pitcher_id = pitcher.id
+
+        response = client.get(f'/api/bullpen/fatigue/{pitcher_id}')
+        body = response.get_json()
+
+        assert response.status_code == 200
+        assert body['pitcher']['id'] == pitcher_id
+        assert body['roster_status']['status'] == STATUS_ACTIVE
+        assert body['availability']['availability_status']
+
     def test_default_bullpen_filtering_is_league_wide_not_reds_only(self, client):
         with client.application.app_context():
             _seed_pitcher(

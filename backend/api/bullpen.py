@@ -31,6 +31,7 @@ from services.pitcher_role import ROLE_KEYS, classify_usage_role
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
     apply_roster_status_to_availability,
+    classify_roster_status,
 )
 from services.mlb_api import mlb_client
 from services import sync as sync_service
@@ -763,6 +764,7 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
     contexts, roster_summary = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
         include_stale=include_stale,
+        include_inactive_context=include_stale,
         reference_date=today,
     )
     contexts_by_pitcher = {
@@ -807,6 +809,7 @@ def _eligible_classified_records(rows, include_stale=True):
     contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
         [record['pitcher'] for record in classified],
         include_stale=include_stale,
+        include_inactive_context=False,
         reference_date=today,
     )
     contexts_by_pitcher = {

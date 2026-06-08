@@ -325,6 +325,33 @@ class TestTeamChangesEndpoint:
         }
         assert board_ids == _change_ids(changes, 'appearance')
 
+    def test_team_summary_is_suppressed_until_current_counts_are_board_safe(self, client):
+        anchor, current = _recent_dates()
+        with client.application.app_context():
+            stable = _pitcher('Stable Current Reliever', mlb_id=215)
+            new_arm = _pitcher('New Current Reliever', mlb_id=216)
+
+            _log(stable, anchor, 2150, pitches=6, innings=1.0, hold=True)
+            _log(stable, current, 2151, pitches=8, innings=1.0, hold=True)
+            _score(stable, 20.0, anchor)
+            _score(stable, 22.0, current)
+
+            _log(new_arm, current, 2160, pitches=7, innings=1.0, hold=True)
+            _score(new_arm, 21.0, current)
+            _successful_sync(current)
+
+        board = client.get('/api/bullpen/teams/1/board').get_json()
+        changes = client.get('/api/bullpen/teams/1/changes').get_json()
+
+        assert board['total_pitchers'] == 2
+        assert changes['team_summary'] is None
+        assert 'Available arms' not in str(changes)
+        assert _change_ids(changes, 'appearance') == {
+            card['pitcher_id']
+            for group in board['groups']
+            for card in group['pitchers']
+        }
+
     def test_roster_inactive_reliever_is_excluded_from_changes(self, client):
         anchor, current = _recent_dates()
         with client.application.app_context():

@@ -44,6 +44,7 @@ def usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=Fals
 def eligible_bullpen_pitcher_contexts(
     pitchers,
     include_stale=False,
+    include_inactive_context=False,
     reference_date=None,
     logs_by_pitcher=None,
 ):
@@ -53,6 +54,8 @@ def eligible_bullpen_pitcher_contexts(
     This is the shared definition used by the Bullpen Board and the What
     Changed card: roster status must permit the default board, and usage must
     pass the bullpen eligibility gate. It does not classify availability.
+    Roster-inactive context is opt-in so stale workload inclusion cannot leak
+    unavailable players into default league-wide counts.
     """
     pitcher_list = list(pitchers or [])
     ref = reference_date or date.today()
@@ -69,7 +72,7 @@ def eligible_bullpen_pitcher_contexts(
         roster_status = classify_roster_status(pitcher)
         roster_statuses.append(roster_status)
         if not allows_default_board(roster_status):
-            if not (include_stale and allows_inactive_context(roster_status)):
+            if not (include_inactive_context and allows_inactive_context(roster_status)):
                 continue
 
         logs = logs_by_pitcher.get(pitcher.id, [])

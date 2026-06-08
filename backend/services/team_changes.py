@@ -1,4 +1,3 @@
-from collections import Counter
 from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import desc
@@ -7,7 +6,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
-from services.bullpen_board import BOARD_GROUP_ORDER, build_team_context
+from services.bullpen_board import BOARD_GROUP_ORDER
 from services.bullpen_population import eligible_bullpen_pitchers
 from utils.db import db
 
@@ -349,60 +348,6 @@ def _appearance_changes(team_id, anchor_date, current_date, pitcher_ids):
     return changes
 
 
-def _groups_from_statuses(statuses):
-    counts = Counter(status for status in statuses if status in STATUS_ORDER)
-    return [
-        {'status': status, 'count': int(counts.get(status, 0))}
-        for status in BOARD_GROUP_ORDER
-    ]
-
-
-def _team_summary(anchor_statuses, current_statuses, freshness):
-    common_ids = set(anchor_statuses) & set(current_statuses)
-    if not common_ids:
-        return None
-
-    anchor_groups = _groups_from_statuses(anchor_statuses[pitcher_id] for pitcher_id in common_ids)
-    current_groups = _groups_from_statuses(current_statuses[pitcher_id] for pitcher_id in common_ids)
-    anchor_context = build_team_context(anchor_groups, freshness=freshness)
-    current_context = build_team_context(current_groups, freshness=freshness)
-
-    anchor_metrics = anchor_context.get('metrics') or {}
-    current_metrics = current_context.get('metrics') or {}
-    anchor_health = anchor_context.get('health') or {}
-    current_health = current_context.get('health') or {}
-
-    summary_parts = []
-    previous_available = anchor_metrics.get('available', 0)
-    current_available = current_metrics.get('available', 0)
-    if previous_available != current_available:
-        summary_parts.append(f'Available arms: {previous_available} -> {current_available}')
-
-    previous_state = anchor_health.get('state')
-    current_state = current_health.get('state')
-    if previous_state and current_state and previous_state != current_state:
-        summary_parts.append(
-            f'Bullpen condition moved from {previous_state} to {current_state}'
-        )
-
-    if not summary_parts:
-        return None
-
-    return {
-        'summary': '; '.join(summary_parts) + '.',
-        'previous': {
-            'available': previous_available,
-            'condition': previous_state,
-            'label': anchor_health.get('label'),
-        },
-        'current': {
-            'available': current_available,
-            'condition': current_state,
-            'label': current_health.get('label'),
-        },
-    }
-
-
 def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     """
     Build the team-scoped "What Changed Since Last Game" payload.
@@ -470,7 +415,7 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     current_scores = _latest_scores(pitcher_ids)
     anchor_scores = _scores_at_or_before(pitcher_ids, anchor_date)
 
-    status_changes, anchor_statuses, current_statuses, coverage_limitations = _status_changes(
+    status_changes, _anchor_statuses, _current_statuses, coverage_limitations = _status_changes(
         pitchers,
         anchor_scores,
         current_scores,
@@ -478,7 +423,9 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         current_date,
     )
     appearance_changes = _appearance_changes(team_id, anchor_date, current_date, pitcher_ids)
-    team_summary = _team_summary(anchor_statuses, current_statuses, freshness)
+    # Suppress team-level summary counts until they can be guaranteed to match
+    # the current board / Follow My Team population for the same data date.
+    team_summary = None
 
     pitcher_changes = status_changes + appearance_changes
     payload.update({
