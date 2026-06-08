@@ -25,6 +25,7 @@ from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build
 from services.bullpen_comparison import build_team_comparison
 from services.game_context import build_landscape, build_team_game_context
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS, classify_usage_role
+from services.team_changes import build_team_changes_payload
 from services.roster_status import (
     allows_default_board,
     allows_inactive_context,
@@ -929,6 +930,20 @@ def get_team_bullpen_board(team_id):
     """
     include_stale = _truthy(request.args.get('include_stale'))
     return jsonify(_build_team_board(team_id, include_stale))
+
+
+@bullpen_bp.route('/teams/<int:team_id>/changes', methods=['GET'])
+def get_team_changes(team_id):
+    """
+    What Changed Since Last Game — small followed-team change surface.
+
+    Compares current team bullpen state to the previous completed game date
+    using stored game logs, fatigue-score history, existing availability
+    classification, and durable sync freshness. Presentation only: no ranking,
+    no selection, no recommendation, and no prediction.
+    """
+    freshness = _board_freshness_block()
+    return jsonify(build_team_changes_payload(team_id, freshness=freshness))
 
 
 @bullpen_bp.route('/teams/compare', methods=['GET'])
