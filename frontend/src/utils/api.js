@@ -617,6 +617,9 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/board${q ? `?${q}` : ''}`)
 }
+// What Changed Since Last Game — followed-team change summary.
+// Descriptive only (no ranking/selection/recommendation).
+export const getTeamChanges = (teamId) => request(`/bullpen/teams/${teamId}/changes`)
 // Team Bullpen Comparison — descriptive side-by-side of two team boards.
 // Aggregates existing board outputs (no ranking/selection/grading).
 export const getTeamBullpenComparison = (teamA, teamB, params = {}) => {
