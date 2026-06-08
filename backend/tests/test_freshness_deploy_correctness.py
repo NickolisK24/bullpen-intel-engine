@@ -3,8 +3,8 @@ Deploy-correctness proof tests for the freshness chain.
 
 These pin the rule that a code deploy (which wipes backend/logs/sync_status.json,
 an ephemeral, gitignored cache) must NOT make healthy data look stale. Durable
-sync_runs metadata is authoritative; the cache file is a lower-priority fallback;
-the generated snapshot label is last.
+sync_runs metadata is authoritative; the cache file is never consulted for
+freshness reporting.
 
 Scenarios mirror the task:
   A. Durable healthy sync + cache file MISSING       -> current/healthy
@@ -35,8 +35,8 @@ from api.bullpen import bullpen_bp
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    # STATUS_FILE points at a path that does not exist -> read_status() returns
-    # the 'never' sentinel, exactly like a fresh container after deploy.
+    # STATUS_FILE points at a path that does not exist, exactly like a fresh
+    # container after deploy. Public freshness reporting must not read it.
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
 
     app = Flask(__name__)

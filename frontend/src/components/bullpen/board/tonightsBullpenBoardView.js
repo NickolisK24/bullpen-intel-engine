@@ -248,6 +248,7 @@ export function getDataProvenance(freshness) {
   const f = freshness || {}
   const dataThrough = fmtDataDate(f.data_through)
   const isLive = f.is_current === true && (f.sync_status === 'success' || f.sync_status === 'ok')
+  const isStale = f.is_stale === true || f.freshness_state === 'stale'
 
   if (!dataThrough) {
     return {
@@ -258,6 +259,17 @@ export function getDataProvenance(freshness) {
       throughHint: 'No completed MLB games are loaded yet.',
       isLive: false,
       tone: { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1', dot: '#94a3b8' },
+    }
+  }
+  if (isStale) {
+    return {
+      state: 'stale',
+      label: 'Stale data',
+      detail: `through ${dataThrough}`,
+      dataThrough,
+      throughHint: f.label || 'Latest completed MLB data is outside the active freshness window.',
+      isLive: false,
+      tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
     }
   }
   if (isLive) {
@@ -284,14 +296,18 @@ export function getDataProvenance(freshness) {
 
 export function getBoardFreshnessView(freshness) {
   const f = freshness || {}
-  const isCurrent = f.is_current !== false
+  const isCurrent = f.is_current !== false && f.is_stale !== true && f.freshness_state !== 'stale'
+  const isStale = f.is_stale === true || f.freshness_state === 'stale' || !isCurrent
   const limitations = Array.isArray(f.limitations) ? f.limitations : []
   return {
     isCurrent,
-    isStale: !isCurrent,
+    isStale,
     dataThrough: fmtDataDate(f.data_through) || null,
     lastSync: fmtSyncDate(f.last_successful_sync) || null,
     syncStatus: f.sync_status || null,
+    freshnessState: f.freshness_state || null,
+    reasonCodes: Array.isArray(f.reason_codes) ? f.reason_codes : [],
+    dataAgeDays: f.data_age_days ?? null,
     label: f.label || null,
     limitations,
     healthLabel: isCurrent ? 'Current' : 'Stale',

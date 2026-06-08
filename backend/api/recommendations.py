@@ -23,7 +23,6 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
-from services import sync as sync_service
 from services import sync_metadata
 
 
@@ -233,12 +232,12 @@ def _v2_generated_at(rows):
 
 def _v2_sync_status_payload():
     try:
-        return sync_metadata.build_sync_status_payload(
-            legacy_status=sync_service.read_status(),
-        )
+        return sync_metadata.build_sync_status_payload()
     except Exception:
         return {
             'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
+            'sync_authority': 'sync_runs',
+            'metadata_source': 'none',
             'last_sync': None,
             'last_successful_sync': None,
             'finished_at': None,
@@ -250,6 +249,10 @@ def _v2_sync_status_payload():
             },
             'freshness': {
                 'is_current': False,
+                'is_stale': False,
+                'freshness_state': 'metadata_unavailable',
+                'data_age_days': None,
+                'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Sync metadata unavailable.',
                 'limitations': ['Could not read sync status metadata.'],
             },
@@ -416,7 +419,13 @@ def _v2_api_freshness(freshness, *, sync_status=None, data_state=None):
         'missing_data_warning': freshness.get('missing_data_warning'),
         'limitations': list(freshness.get('limitations') or []),
         'overall_sync_status': sync_status.get('status'),
+        'overall_sync_authority': sync_status.get('sync_authority'),
+        'overall_sync_metadata_source': sync_status.get('metadata_source'),
         'overall_sync_current': sync_freshness.get('is_current'),
+        'overall_sync_stale': sync_freshness.get('is_stale'),
+        'overall_sync_freshness_state': sync_freshness.get('freshness_state'),
+        'overall_sync_reason_codes': list(sync_freshness.get('reason_codes') or []),
+        'overall_sync_data_age_days': sync_freshness.get('data_age_days'),
         'overall_sync_label': sync_freshness.get('label'),
         'overall_sync_data_through': sync_data.get('latest_game_date'),
         'overall_sync_latest_workload_date': sync_data.get('latest_workload_date'),
@@ -516,7 +525,13 @@ def _v2_api_status_metadata(*, freshness, fail_closed, trust_metadata, sync_stat
     sync_status = dict(sync_status or {})
     return {
         'overall_sync_status': freshness.get('overall_sync_status'),
+        'overall_sync_authority': freshness.get('overall_sync_authority'),
+        'overall_sync_metadata_source': freshness.get('overall_sync_metadata_source'),
         'overall_sync_current': freshness.get('overall_sync_current'),
+        'overall_sync_stale': freshness.get('overall_sync_stale'),
+        'overall_sync_freshness_state': freshness.get('overall_sync_freshness_state'),
+        'overall_sync_reason_codes': freshness.get('overall_sync_reason_codes'),
+        'overall_sync_data_age_days': freshness.get('overall_sync_data_age_days'),
         'overall_sync_label': freshness.get('overall_sync_label'),
         'sync_timestamp': freshness.get('sync_timestamp'),
         'sync_data_through': freshness.get('overall_sync_data_through'),

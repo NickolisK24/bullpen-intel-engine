@@ -1,4 +1,3 @@
-const STALE_HOURS = 36
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -21,6 +20,8 @@ export const fmtDataDate = (ymd) => {
 
 const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
+const staleStates = new Set(['stale', 'historical'])
+const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
 
 export function getSyncStatusView(data, { now = Date.now() } = {}) {
   const status = data?.status
@@ -28,31 +29,44 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
   const successfulSync = data?.last_successful_sync || (successfulStatuses.has(status) ? latestAttempt : null)
   const dataThrough = fmtDataDate(data?.data?.latest_game_date)
   const logCount = data?.data?.game_logs
-  const limitations = data?.freshness?.limitations || []
+  const freshness = data?.freshness || {}
+  const limitations = freshness.limitations || []
+  const reasonCodes = Array.isArray(freshness.reason_codes) ? freshness.reason_codes : []
+  const freshnessState = freshness.freshness_state
+    || freshness.state
+    || (freshness.is_current === true ? 'current' : null)
+  const stale = freshness.is_stale === true
+    || staleStates.has(String(freshnessState || '').toLowerCase())
+    || reasonCodes.includes('workload_data_outside_active_window')
+  const missing = missingStates.has(String(freshnessState || '').toLowerCase())
   const coverageValue = data?.pitchers_updated > 0
     ? `${data.pitchers_updated.toLocaleString()} Pitchers Refreshed`
     : null
 
   if (failedStatuses.has(status)) {
     return {
-      variant: 'failed',
-      healthLabel: 'Limited',
-      dot: '#ef4444',
-      style: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
+      variant: stale ? 'stale' : 'failed',
+      healthLabel: stale ? 'Stale' : 'Limited',
+      dot: stale ? '#f5a623' : '#ef4444',
+      style: stale
+        ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
+        : { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
       syncLabel: 'Last sync failed',
       syncValue: fmtSyncDate(latestAttempt) || 'Latest attempt failed',
       dataLabel: dataThrough ? 'Latest completed MLB data' : null,
       dataValue: dataThrough,
       coverageValue,
-      helper: data?.message || 'Latest sync attempt failed.',
+      helper: stale
+        ? (freshness.label || data?.message || 'Latest sync attempt failed.')
+        : (data?.message || 'Latest sync attempt failed.'),
       limitations,
+      reasonCodes,
+      freshnessState,
     }
   }
 
   if (successfulSync) {
-    const ageHours = (now - new Date(successfulSync).getTime()) / 3_600_000
-    const stale = ageHours > STALE_HOURS
-    const limited = data?.freshness?.is_current === false || limitations.length > 0
+    const limited = stale || missing || freshness.is_current === false || limitations.length > 0
     return {
       variant: stale ? 'stale' : (limited ? 'limited' : 'synced'),
       healthLabel: stale ? 'Stale' : (limited ? 'Limited' : 'Healthy'),
@@ -68,8 +82,12 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
       dataValue: dataThrough,
       coverageValue,
       refreshed: coverageValue,
-      helper: stale ? 'Sync metadata is older than the freshness target.' : data?.freshness?.label,
+      helper: stale
+        ? (freshness.label || 'Workload data is outside the active freshness window.')
+        : freshness.label,
       limitations,
+      reasonCodes,
+      freshnessState,
     }
   }
 
@@ -86,6 +104,8 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
       coverageValue,
       helper: 'Sync metadata unavailable; data coverage is based on game logs.',
       limitations,
+      reasonCodes,
+      freshnessState,
     }
   }
 
@@ -101,5 +121,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
     coverageValue,
     helper: 'No sync metadata or game logs are available.',
     limitations,
+    reasonCodes,
+    freshnessState,
   }
 }
