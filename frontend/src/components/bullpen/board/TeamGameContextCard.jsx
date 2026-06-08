@@ -1,10 +1,11 @@
 import { getTeamGameContextView } from './teamGameContextView'
 
-// Today's Game Context — frames a team's bullpen with its most recent stored
-// game. The opponent/matchup is the hero so a user instantly understands who the
-// bullpen is connected to; trust metadata stays visible but subordinate. Derived
-// from stored game logs only (labelled as such), never a live schedule. Not a
-// scoreboard, matchup engine, or prediction.
+// Game Context — frames a team's bullpen with its upcoming scheduled game or its
+// most recent completed game (the heading reflects which). The opponent/matchup
+// is the hero so a user instantly understands who the bullpen is connected to;
+// trust metadata stays visible but subordinate. Derived from stored game logs
+// only (labelled as such), never a live schedule. Not a scoreboard, matchup
+// engine, or prediction.
 const CONTEXT_BANNER =
   'Game context helps explain bullpen workload and availability. BaseballOS does not provide matchup advice or game predictions.'
 
@@ -54,20 +55,31 @@ function EmptyState({ message }) {
   return <p className="mt-3 text-sm leading-relaxed text-chalk400">{message}</p>
 }
 
+// Truthful, dynamic title. An upcoming scheduled game and a most-recent completed
+// game are distinct states, and we never present a prior final under a "Today"
+// heading. When no game can be resolved, the heading stays neutral and the body
+// explains the unavailable state.
+function cardTitleFor(view, { loading }) {
+  if (loading) return 'Game Context'
+  if (!view.hasContext || !view.isPresent) return 'Game Context'
+  return view.isToday ? 'Upcoming Game Context' : 'Most Recent Completed Game'
+}
+
 export default function TeamGameContextCard({ gameContext, loading = false, error = null }) {
   const view = getTeamGameContextView(gameContext)
+  const title = cardTitleFor(view, { loading })
 
   let body
   if (loading) {
     body = <p className="mt-3 font-mono text-xs text-chalk500">Loading game context…</p>
   } else if (error || !view.hasContext) {
-    body = <EmptyState message="Schedule context unavailable." />
+    body = <EmptyState message="Schedule data unavailable." />
   } else if (!view.isPresent) {
     body = (
       <EmptyState
         message={view.state === 'no_game_found'
-          ? 'No stored game-log context found for this date.'
-          : (view.message || 'Schedule context unavailable.')}
+          ? 'No stored game-log context found for this team yet.'
+          : (view.message || 'Schedule data unavailable.')}
       />
     )
   } else {
@@ -75,9 +87,9 @@ export default function TeamGameContextCard({ gameContext, loading = false, erro
   }
 
   return (
-    <section className="mb-5 rounded-lg border border-dirt bg-field/60 p-4" aria-label="Today's Game Context">
+    <section className="mb-5 rounded-lg border border-dirt bg-field/60 p-4" aria-label={title}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Today's Game Context</h3>
+        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">{title}</h3>
         <span className="rounded border border-dirt bg-dugout px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk500">
           Stored game-log context
         </span>

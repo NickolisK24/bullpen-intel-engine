@@ -66,7 +66,7 @@ test('landscape renders title and the three descriptive callout columns', () => 
 
 test('landscape shows the stored-games anchor honestly (not a live schedule)', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(htmlIncludes(html, 'latest stored slate'))
+  assert.ok(htmlIncludes(html, 'latest completed MLB slate'))
   assert.ok(htmlIncludes(html, 'not a game prediction'))   // required disclaimer
 })
 
@@ -104,7 +104,7 @@ const presentContext = {
 
 test('game-context card shows opponent, date, and stored-context labelling', () => {
   const html = render(React.createElement(TeamGameContextCard, { gameContext: presentContext }))
-  assert.ok(htmlIncludes(html, 'Game Context'))
+  assert.ok(htmlIncludes(html, 'Most Recent Completed Game'))
   assert.ok(htmlIncludes(html, 'Stored game-log context'))
   assert.ok(htmlIncludes(html, 'Rivals'))
   assert.ok(htmlIncludes(html, 'Jun 4, 2026'))
@@ -118,7 +118,7 @@ test('game-context card handles no stored game found', () => {
     gameContext: { capability: 'team_game_context', available: false, state: 'no_game_found',
       message: 'No game found in the stored game log for this date.', data_state: 'unavailable', confidence: 'none', missing_fields: [] },
   }))
-  assert.ok(htmlIncludes(html, 'No stored game-log context found for this date.'))
+  assert.ok(htmlIncludes(html, 'No stored game-log context found for this team yet.'))
 })
 
 test('game-context card handles unavailable context', () => {
@@ -131,7 +131,7 @@ test('game-context card handles unavailable context', () => {
 
 test('game-context card handles loading and missing context', () => {
   assert.ok(htmlIncludes(render(React.createElement(TeamGameContextCard, { loading: true })), 'Loading game context'))
-  assert.ok(htmlIncludes(render(React.createElement(TeamGameContextCard, { gameContext: null })), 'Schedule context unavailable.'))
+  assert.ok(htmlIncludes(render(React.createElement(TeamGameContextCard, { gameContext: null })), 'Schedule data unavailable.'))
 })
 
 test('game-context card contains no affirmative advisory language', () => {

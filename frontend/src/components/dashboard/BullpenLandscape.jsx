@@ -73,9 +73,9 @@ export default function BullpenLandscape({ landscape }) {
       </div>
 
       {/* Stored games anchor */}
-      <div className="mb-4 rounded-lg border border-dirt bg-field/50 px-4 py-2">
+      <div className="mb-4 flex flex-col gap-1 rounded-lg border border-dirt bg-field/50 px-4 py-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
         <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">Games</span>
-        <span className="ml-2 font-mono text-xs text-chalk300">{view.games.label}</span>
+        <span className="font-mono text-xs leading-relaxed text-chalk300">{view.games.label}</span>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

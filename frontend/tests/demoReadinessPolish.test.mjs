@@ -36,18 +36,19 @@ test('getDataProvenance distinguishes live, sample, and no-data', () => {
   assert.equal(view.getDataProvenance({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01' }).label, 'Sample data')
   assert.equal(view.getDataProvenance({ data_through: null }).label, 'No data loaded')
   // The through-date meaning is always explained.
-  assert.ok(view.getDataProvenance({ is_current: false, data_through: '2026-04-01' }).throughHint.includes('most recent game'))
+  assert.ok(view.getDataProvenance({ is_current: false, data_through: '2026-04-01' }).throughHint.includes('most recent completed game'))
 })
 
-test('board banner shows live-data provenance for current data', () => {
+test('board banner states the latest completed MLB data date for current data', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard }))
-  assert.ok(htmlIncludes(html, 'Live data'))
-  assert.ok(htmlIncludes(html, 'through'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
+  assert.ok(htmlIncludes(html, 'Jun 4, 2026'))
 })
 
-test('board banner shows sample-data provenance for historical data', () => {
+test('board banner flags historical data with the stale caution', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: staleBoard }))
-  assert.ok(htmlIncludes(html, 'Sample data'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
+  assert.ok(htmlIncludes(html, 'read with caution'))
 })
 
 test('dashboard hero pill states data provenance plainly', () => {
@@ -58,7 +59,8 @@ test('dashboard hero pill states data provenance plainly', () => {
     freshness: { is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' },
   }
   const html = inRouter(React.createElement(DashboardView, { data }))
-  assert.ok(htmlIncludes(html, 'Live data'))
+  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
+  assert.ok(htmlIncludes(html, 'Last synced:'))
 })
 
 // ── Priority 2: board → pitcher detail ─────────────────────────────────────

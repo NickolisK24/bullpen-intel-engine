@@ -198,16 +198,20 @@ function Section({ title, subtitle, children }) {
 }
 
 function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
+  const dataLine = provenance.dataThrough
+    ? `Latest completed MLB data: ${provenance.dataThrough}`
+    : 'No completed MLB data loaded'
   return (
     <div
-      className="rounded border px-3 py-2 font-mono text-[11px]"
+      className="rounded border px-3 py-2 font-mono text-[11px] leading-relaxed"
       style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
       title={provenance.throughHint}
     >
-      <span className="uppercase tracking-widest">{provenance.label}</span>
-      {provenance.detail && <span className="ml-2 text-chalk300">{provenance.detail}</span>}
-      {lastSync && <span className="ml-2 text-chalk500">· Synced {lastSync}</span>}
-      <span className="ml-2 text-chalk500">· Confidence {confidenceLabel}</span>
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span>{dataLine}</span>
+        {lastSync && <span className="text-chalk500">· Last synced: {lastSync}</span>}
+        <span className="text-chalk500">· Confidence: {confidenceLabel}</span>
+      </span>
     </div>
   )
 }
