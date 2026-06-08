@@ -45,12 +45,15 @@ export function getLandscapeView(landscape) {
 
   let gamesLabel
   if (games.available === false || dataState === 'unavailable') {
-    gamesLabel = games.message || 'Schedule context unavailable'
+    gamesLabel = games.message || 'Schedule data unavailable'
   } else if (games.is_today && games.today_count > 0) {
-    gamesLabel = `${games.today_count} game${games.today_count === 1 ? '' : 's'} in today's stored data`
-  } else {
+    const count = games.today_count
+    gamesLabel = `Today's MLB slate: ${count} game${count === 1 ? '' : 's'}`
+  } else if (asOfDate) {
     const count = games.as_of_count || 0
-    gamesLabel = `No games in today's stored data · latest stored slate ${asOfDate || 'unavailable'} (${count} game${count === 1 ? '' : 's'})`
+    gamesLabel = `Showing bullpen intelligence using latest completed MLB slate: ${asOfDate} (${count} game${count === 1 ? '' : 's'})`
+  } else {
+    gamesLabel = 'Schedule data unavailable'
   }
 
   return {
