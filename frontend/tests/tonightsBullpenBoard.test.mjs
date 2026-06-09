@@ -154,3 +154,11 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).unavailablePitchersCount, 3)
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).coverageLabel, '100%')
 })
+
+test('role authority eligibility caveats render plain labels', () => {
+  // Role Authority V1: only the uncertain roles carry a board caveat.
+  assert.equal(view.getEligibilityView({ status: 'role_ambiguous', confidence: 'high' }).label, 'Swing Role')
+  assert.equal(view.getEligibilityView({ status: 'role_unknown', confidence: 'none' }).label, 'Role Not Established')
+  // Relievers are the default population and need no caveat chip.
+  assert.equal(view.getEligibilityView({ status: 'role_reliever', confidence: 'high' }), null)
+})

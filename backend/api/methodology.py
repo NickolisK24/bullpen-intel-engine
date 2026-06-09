@@ -139,6 +139,35 @@ def get_methodology():
             ],
         },
 
+        'role_authority': {
+            'title': 'Bullpen Role Authority (Starter / Reliever / Ambiguous / Unknown)',
+            'summary': (
+                'Whether a pitcher appears on bullpen surfaces is decided from '
+                'the authoritative MLB gamesStarted signal — did the pitcher '
+                'start the games he appeared in — not from innings-pitched '
+                'guessing. Role is deterministic and explainable: starters are '
+                'excluded, relievers are included, swing/opener profiles are '
+                'shown as Ambiguous with a caveat, and pitchers without enough '
+                'start evidence are Unknown and withheld rather than guessed.'
+            ),
+            'categories': {
+                'Starter': 'Starts the games he appears in; excluded from bullpen counts.',
+                'Reliever': 'Appears out of the bullpen; included.',
+                'Ambiguous': 'Conflicting evidence (swingman/opener); included with a caveat.',
+                'Unknown': 'Evidence absent; withheld from default counts (not assumed a reliever).',
+            },
+            'signals': {
+                'primary': 'gamesStarted pattern over recent appearances',
+                'secondary': 'save / hold relief confirmation',
+                'supporting': 'innings length, used only as an opener tie-breaker — never as the primary signal',
+            },
+            'note': (
+                'Role is separate from roster status (active/IL) and from '
+                'workload availability. Confidence (high/medium/low/none) is '
+                'shown alongside the role.'
+            ),
+        },
+
         'data_sources': [
             {
                 'name': 'MLB Stats API',

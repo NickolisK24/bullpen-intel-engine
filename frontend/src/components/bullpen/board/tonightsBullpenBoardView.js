@@ -72,6 +72,11 @@ const ROLE_SHORT_LABELS = {
 const ELIGIBILITY_LABELS = {
   inactive_bullpen_relevant: 'Stale Workload',
   uncertain_bullpen_relevance: 'Bullpen Role Unclear',
+  // Role Authority V1 caveats (surfaced when role authority drives the board).
+  // Relievers and starters need no chip: relievers are the default population
+  // and starters are excluded, so only the uncertain roles carry a caveat.
+  role_ambiguous: 'Swing Role',
+  role_unknown: 'Role Not Established',
 }
 
 const ROSTER_STATUS_LABELS = {
