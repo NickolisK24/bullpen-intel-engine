@@ -3,55 +3,55 @@ import { getBoardContextView } from './tonightsBullpenBoardView'
 // Team Context Layer (Board V2). Sits between the freshness banner and the
 // availability groups. Presents a deterministic, self-explaining read of
 // bullpen shape — never a ranking, selection, or recommendation.
-export default function BullpenContextSummary({ board }) {
+export default function BullpenContextSummary({ board, showHealthSummary = true }) {
   const view = getBoardContextView(board)
   if (!view.hasContext) return null
 
   return (
-    <section className="mb-6" aria-label="Team bullpen context">
-      {/* Bullpen Health statement */}
-      <div className="rounded-lg border p-4" style={view.tone} role="status" aria-live="polite">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-display text-lg tracking-wide">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: view.tone.dot }} aria-hidden="true" />
-            {view.label || 'Bullpen context unavailable.'}
-          </h3>
-          <span className="font-mono text-[10px] uppercase tracking-widest">
-            Confidence: {view.confidenceLabel}
-          </span>
-        </div>
+    <section className="mb-6" aria-label={showHealthSummary ? 'Team bullpen context' : 'Bullpen availability snapshot'}>
+      {showHealthSummary && (
+        <div className="rounded-lg border p-4" style={view.tone} role="status" aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 font-display text-lg tracking-wide">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: view.tone.dot }} aria-hidden="true" />
+              {view.label || 'Bullpen context unavailable.'}
+            </h3>
+            <span className="font-mono text-[10px] uppercase tracking-widest">
+              Confidence: {view.confidenceLabel}
+            </span>
+          </div>
 
-        {view.isDegraded && (
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-            Lower confidence — read this snapshot with caution.
-          </p>
-        )}
+          {view.isDegraded && (
+            <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
+              Lower confidence - read this snapshot with caution.
+            </p>
+          )}
 
-        {/* Transparency: every statement explains itself. */}
-        {view.reasons.length > 0 && (
-          <details className="mt-3 rounded border border-dirt/60 bg-dugout/50 p-2" open>
-            <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-              Why?
-            </summary>
+          {view.reasons.length > 0 && (
+            <details className="mt-3 rounded border border-dirt/60 bg-dugout/50 p-2" open>
+              <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+                Why?
+              </summary>
+              <ul className="mt-2 space-y-1">
+                {view.reasons.map((reason, index) => (
+                  <li key={index} className="text-xs leading-relaxed text-chalk300">• {reason}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {view.limitations.length > 0 && (
             <ul className="mt-2 space-y-1">
-              {view.reasons.map((reason, index) => (
-                <li key={index} className="text-xs leading-relaxed text-chalk300">• {reason}</li>
+              {view.limitations.map((limitation, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk400">• {limitation}</li>
               ))}
             </ul>
-          </details>
-        )}
-
-        {view.limitations.length > 0 && (
-          <ul className="mt-2 space-y-1">
-            {view.limitations.map((limitation, index) => (
-              <li key={index} className="text-xs leading-relaxed text-chalk400">• {limitation}</li>
-            ))}
-          </ul>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Bullpen Snapshot — descriptive counts only. */}
-      <div className="mt-4 card p-4">
+      <div className={showHealthSummary ? 'mt-4 card p-4' : 'card p-4'}>
         <div className="flex items-baseline justify-between">
           <h4 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Snapshot</h4>
           <span className="font-mono text-[11px] text-chalk500">

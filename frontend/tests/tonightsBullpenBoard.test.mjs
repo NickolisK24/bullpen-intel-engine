@@ -49,6 +49,7 @@ test('renders bullpen stress from the backend payload', () => {
   assert.ok(htmlIncludes(html, 'Bullpen Stress: Elevated'))
   assert.ok(htmlIncludes(html, 'Bullpen workload pressure is elevated.'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
+  assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
   assert.ok(!htmlIncludes(html, 'Stress Score'))
 })
 

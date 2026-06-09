@@ -90,6 +90,14 @@ test('context summary appears above the availability groups on the full board', 
   assert.ok(summaryIdx < groupIdx, 'snapshot should render before the groups')
 })
 
+test('full board uses stress read instead of a duplicate health statement', () => {
+  const html = renderBoard(populatedBoard)
+  assert.ok(htmlIncludes(html, 'Bullpen Stress: Elevated'))
+  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, '2 of 6 relievers are Available Tonight.'))
+  assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
+})
+
 test('context surface exposes no scores, rankings, or governance jargon', () => {
   const html = renderSummary(populatedBoard).toLowerCase()
   for (const term of [
