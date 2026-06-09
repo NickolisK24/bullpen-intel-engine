@@ -23,6 +23,7 @@ from services.availability import (
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
+from services.bullpen_stress import build_bullpen_stress
 
 
 # Canonical group order: least-restricted to most-restricted. This is a fixed
@@ -364,6 +365,7 @@ def build_board_payload(
     grouped_total = sum(group['count'] for group in groups)
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
+    stress = build_bullpen_stress(context)
 
     return {
         'capability': CAPABILITY,
@@ -374,6 +376,7 @@ def build_board_payload(
         'selection_made': False,
         'group_order': list(BOARD_GROUP_ORDER),
         'context': context,
+        'stress': stress,
         'groups': groups,
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),

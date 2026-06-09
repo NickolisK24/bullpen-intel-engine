@@ -120,11 +120,43 @@ test('returning card emphasizes the followed team and links to its board', () =>
 
   assert.ok(htmlIncludes(html, 'Aces'))
   assert.ok(htmlIncludes(html, 'What shape is my bullpen in tonight?'))
+  assert.ok(htmlIncludes(html, 'Bullpen Stress: Manageable'))
+  assert.ok(htmlIncludes(html, 'Bullpen workload is in manageable shape.'))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Available Tonight'))
   assert.ok(htmlIncludes(html, 'Monitor'))
   assert.ok(htmlIncludes(html, 'Open ACE Bullpen Board -&gt;'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=ACE&amp;source=follow-my-team"'))
+  assert.ok(!htmlIncludes(html, 'Stress Score'))
+})
+
+test('followed team stress renders no-read copy when board data is stale', () => {
+  const staleAcesBoard = makeBoard({
+    team: teams[0],
+    cardsByStatus: {
+      Available: [
+        { pitcher_id: 1, name: 'Old Fresh Arm', availability_status: 'Available' },
+      ],
+    },
+    freshness: {
+      data_through: '2026-04-01',
+      latest_workload_date: '2026-04-01',
+      last_successful_sync: null,
+      sync_status: 'metadata_unavailable',
+      is_current: false,
+      label: 'Historical baseball data through 2026-04-01.',
+      limitations: ['Latest game date is outside the 14-day freshness window.'],
+    },
+  })
+  const html = inRouter(React.createElement(FollowMyTeamCard, {
+    teams,
+    followedTeam: teams[0],
+    board: staleAcesBoard,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Bullpen Stress: No Read'))
+  assert.ok(htmlIncludes(html, 'Bullpen stress read is limited by data freshness.'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Stress: Manageable'))
 })
 
 test('returning card includes change and clear controls', () => {
