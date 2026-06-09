@@ -122,6 +122,7 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
                 game_type=game_type,
                 opponent=opponent.get('name'),
                 opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
+                games_started=int(stat.get('gamesStarted', 0) or 0),
                 innings_pitched=float(stat.get('inningsPitched', 0) or 0),
                 pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
                 strikes=int(stat.get('strikes', 0) or 0),

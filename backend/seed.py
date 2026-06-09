@@ -175,6 +175,7 @@ def seed_game_logs():
                     game_date=game_date,
                     opponent=opponent.get('name'),
                     opponent_abbreviation=opponent.get('abbreviation'),
+                    games_started=int(stat.get('gamesStarted', 0) or 0),
                     innings_pitched=float(stat.get('inningsPitched', 0) or 0),
                     pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
                     strikes=int(stat.get('strikes', 0) or 0),

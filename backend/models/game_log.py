@@ -27,6 +27,9 @@ class GameLog(db.Model):
     game_type = db.Column(db.String(2), default='R')
 
     # Pitching stats for this appearance
+    # Authoritative start signal from MLB game logs (gamesStarted: 0/1 per game).
+    # Nullable so existing rows backfill safely; a null reads as "start unknown".
+    games_started = db.Column(db.Integer, nullable=True)
     innings_pitched = db.Column(db.Float, default=0.0)
     pitches_thrown = db.Column(db.Integer, default=0)
     strikes = db.Column(db.Integer, default=0)
@@ -59,6 +62,7 @@ class GameLog(db.Model):
             'game_type': self.game_type,
             'opponent': self.opponent,
             'opponent_abbreviation': self.opponent_abbreviation,
+            'games_started': self.games_started,
             'innings_pitched': self.innings_pitched,
             'pitches_thrown': self.pitches_thrown,
             'strikes': self.strikes,
