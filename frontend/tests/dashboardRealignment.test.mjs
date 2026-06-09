@@ -116,6 +116,10 @@ test('Data & Trust page hosts the relocated trust and governance detail', () => 
   assert.ok(htmlIncludes(html, 'Freshness'))
   assert.ok(htmlIncludes(html, 'Availability Confidence'))
   assert.ok(htmlIncludes(html, 'Exploratory Fatigue Insight'))
+  // The V5 Bullpen Intelligence surface runs on deterministic sample state, so it
+  // is not mounted on the live Trust page until it is wired to live MLB data.
+  assert.ok(!htmlIncludes(html, 'V5 Bullpen Intelligence'))
+  assert.ok(!htmlIncludes(html, 'Governed Observations'))
 })
 
 test('sidebar navigation includes a Data & Trust destination', () => {

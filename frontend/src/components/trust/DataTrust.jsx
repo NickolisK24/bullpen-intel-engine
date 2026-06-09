@@ -1,6 +1,5 @@
 import { useFetch } from '../../hooks/useFetch'
 import {
-  getBullpenObservations,
   getBullpenOverview,
   getRecommendationV2BullpenState,
   getSyncStatus,
@@ -11,7 +10,6 @@ import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
-import BullpenIntelligencePanel from '../observations/BullpenIntelligencePanel'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
@@ -23,7 +21,6 @@ export default function DataTrust() {
   const sync = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
-  const bullpenObservations = useFetch(getBullpenObservations)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -82,14 +79,6 @@ export default function DataTrust() {
         readinessLoading={teamOperationsReadiness.loading}
         readinessError={teamOperationsReadiness.error}
         onRetryReadiness={teamOperationsReadiness.refetch}
-      />
-
-      {/* Observations */}
-      <BullpenIntelligencePanel
-        state={bullpenObservations.data}
-        loading={bullpenObservations.loading}
-        error={bullpenObservations.error}
-        onRetry={bullpenObservations.refetch}
       />
 
       {/* Exploratory study */}
