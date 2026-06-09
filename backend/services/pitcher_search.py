@@ -5,7 +5,7 @@ Search reads BaseballOS pitcher, team-assignment, roster-status, fatigue, and
 game-log records only. It does not refresh or enrich data during the request.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 import unicodedata
 
 from sqlalchemy import desc
@@ -14,6 +14,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, STATUS_UNAVAILABLE, classify_availability
+from services.availability_reference_date import product_current_date
 from services.roster_status import classify_roster_status, apply_roster_status_to_availability
 from utils.db import db
 
@@ -78,7 +79,7 @@ def _latest_fatigue_score(pitcher_id):
 
 
 def _availability_context(pitcher_id, reference_date=None):
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     latest_game_date = (
         db.session.query(db.func.max(GameLog.game_date))
         .filter(GameLog.pitcher_id == pitcher_id)
@@ -106,7 +107,7 @@ def _final_availability_for(pitcher, score, reference_date=None):
     workload_signal = classify_availability(
         score=score,
         game_logs=logs,
-        reference_date=reference_date or date.today(),
+        reference_date=reference_date or product_current_date(),
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
     )

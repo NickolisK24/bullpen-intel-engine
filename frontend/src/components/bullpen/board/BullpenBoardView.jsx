@@ -1,4 +1,5 @@
 import { EmptyState } from '../../UI'
+import BullpenStressSummary from './BullpenStressSummary'
 import BullpenContextSummary from './BullpenContextSummary'
 import {
   getBoardCardView,
@@ -306,6 +307,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
+  const hasStress = Boolean(board?.stress)
 
   return (
     <div>
@@ -322,7 +324,9 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
         </p>
       </div>
 
-      <BullpenContextSummary board={board} />
+      <BullpenStressSummary stress={board?.stress} />
+
+      <BullpenContextSummary board={board} showHealthSummary={!hasStress} />
 
       {totals.isEmpty ? (
         <EmptyState

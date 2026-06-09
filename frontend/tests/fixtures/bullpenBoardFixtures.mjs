@@ -98,7 +98,55 @@ function contextFromGroups(groups, freshness) {
   }
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, rosterStatus } = {}) {
+function stressFromContext(context) {
+  const state = context?.health?.state || 'no_data'
+  const confidence = context?.confidence || 'none'
+  const isStale = confidence === 'low'
+  const meta = {
+    manageable: {
+      label: 'Manageable',
+      summary: 'Bullpen workload is in manageable shape.',
+      tone: 'manageable',
+    },
+    monitoring: {
+      label: 'Monitoring',
+      summary: 'Several arms require monitoring.',
+      tone: 'monitoring',
+    },
+    elevated: {
+      label: 'Elevated',
+      summary: 'Bullpen workload pressure is elevated.',
+      tone: 'elevated',
+    },
+    constrained: {
+      label: 'Constrained',
+      summary: 'Bullpen options are constrained.',
+      tone: 'constrained',
+    },
+    no_data: {
+      label: 'No Read',
+      summary: 'Not enough current bullpen data to assess stress.',
+      tone: 'muted',
+    },
+  }
+  const base = meta[state] || meta.no_data
+  return {
+    state,
+    label: isStale && state !== 'no_data' ? 'No Read' : base.label,
+    summary: isStale && state !== 'no_data'
+      ? 'Bullpen stress read is limited by data freshness.'
+      : base.summary,
+    reasons: context?.health?.reasons || [],
+    reason_codes: [state === 'no_data' ? 'no_current_bullpen_data' : `fixture_${state}`],
+    confidence,
+    is_stale: isStale,
+    limitations: context?.limitations || [],
+    tone: isStale ? 'muted' : base.tone,
+    source: 'team_context.health',
+  }
+}
+
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterStatus } = {}) {
   const groups = buildGroups(cardsByStatus)
   const totalPitchers = groups.reduce((sum, g) => sum + g.count, 0)
   const resolvedFreshness = freshness || {
@@ -110,6 +158,7 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
     label: 'Current baseball data through 2026-06-04.',
     limitations: [],
   }
+  const resolvedContext = context || contextFromGroups(groups, resolvedFreshness)
   return {
     capability: 'tonights_bullpen_board',
     team: team || { team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' },
@@ -117,7 +166,8 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
     ranking_applied: false,
     selection_made: false,
     group_order: BOARD_GROUP_ORDER,
-    context: context || contextFromGroups(groups, resolvedFreshness),
+    context: resolvedContext,
+    stress: stress || stressFromContext(resolvedContext),
     groups,
     total_pitchers: totalPitchers,
     ungrouped_pitchers: 0,

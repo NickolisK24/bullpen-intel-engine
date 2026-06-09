@@ -167,6 +167,9 @@ class TestPayload:
         assert payload['ungrouped_pitchers'] == 0
         assert payload['freshness'] == freshness
         assert payload['limitations'] == ['x']
+        assert payload['stress']['state'] == payload['context']['health']['state']
+        assert payload['stress']['label'] == 'Monitoring'
+        assert 'score' not in payload['stress']
 
     def test_empty_team_still_returns_all_groups(self):
         payload = build_board_payload(
@@ -276,6 +279,8 @@ class TestBoardEndpoint:
         assert body['context']['health']['state'] in (
             'manageable', 'monitoring', 'elevated', 'constrained', 'no_data',
         )
+        assert body['stress']['state'] == body['context']['health']['state']
+        assert body['stress']['summary']
 
     def test_board_excludes_other_teams(self, client):
         with client.application.app_context():

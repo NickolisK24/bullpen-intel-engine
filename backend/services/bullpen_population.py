@@ -1,9 +1,10 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
 from sqlalchemy import desc
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from services.availability_reference_date import product_current_date
 from services.bullpen_eligibility import evaluate_bullpen_eligibility
 from services.pitcher_role import ROLE_WINDOW_DAYS
 from services.roster_status import (
@@ -26,7 +27,7 @@ def usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=Fals
     if not pitcher_ids:
         return {}
 
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     query = GameLog.query.filter(GameLog.pitcher_id.in_(pitcher_ids))
     if not include_stale:
         query = query.filter(GameLog.game_date >= ref - timedelta(days=days))
@@ -58,7 +59,7 @@ def eligible_bullpen_pitcher_contexts(
     unavailable players into default league-wide counts.
     """
     pitcher_list = list(pitchers or [])
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     if logs_by_pitcher is None:
         logs_by_pitcher = usage_logs_by_pitcher(
             [pitcher.id for pitcher in pitcher_list],

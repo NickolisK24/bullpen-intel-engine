@@ -15,13 +15,12 @@ is labelled live / historical / stale / unavailable, never silently presented as
 current. No live network call is made here.
 """
 
-from datetime import date
-
 from sqlalchemy import desc
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import product_current_date
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     classify_latest_fatigue_rows,
@@ -34,6 +33,10 @@ from utils.db import db
 # Stored game logs never carry these — reported honestly as missing.
 GAME_LOG_MISSING_FIELDS = ['home_away', 'scheduled_time']
 SOURCE_LABEL = 'Stored game-log context'
+
+
+def _default_reference_date():
+    return product_current_date()
 
 
 def _data_state_for(days_ago):
@@ -87,7 +90,7 @@ def build_team_game_context(team_id, reference_date=None):
       * 'no_game_found'    — the team exists but has no stored game.
       * 'unavailable'      — no team/schedule context is available at all.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or _default_reference_date()
     team = _team_identity(team_id)
 
     latest_game_date = (
@@ -208,7 +211,7 @@ def _landscape_entry(bucket):
 
 
 def _games_block(reference_date=None):
-    ref = reference_date or date.today()
+    ref = reference_date or _default_reference_date()
     latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
     if latest_game_date is None:
         return {
@@ -267,10 +270,11 @@ def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
     never uses best / worst / advantage language. ``records`` may be supplied by
     the caller to avoid re-classifying; otherwise they are computed here.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or _default_reference_date()
     if records is None:
         records = classify_latest_fatigue_rows(
             latest_fatigue_rows(),
+            reference_date=ref,
             mode=CURRENT_AVAILABILITY_MODE,
         )
 
