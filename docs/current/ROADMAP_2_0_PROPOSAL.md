@@ -1,6 +1,6 @@
 # Roadmap 2.0 Proposal — June 2026
 
-> Companion to [PRODUCT_AUDIT_JUNE_2026.md](PRODUCT_AUDIT_JUNE_2026.md).
+> Companion to [PRODUCT_AUDIT_JUNE_2026.md](../product/PRODUCT_AUDIT_JUNE_2026.md).
 > This roadmap is **planning context, not implementation authorization.** It
 > proposes direction; it does not modify code, APIs, schemas, or governance.
 >
@@ -36,7 +36,7 @@ Impact and effort on ★ (1–5). Risk = Low / Med / High.
 - **Rationale:** The atomic unit of growth. One watermarked, screenshot-ready
   card per team per day that travels on social and pulls in new users. The growth
   loop the product completely lacks. See
-  [STORYTELLING_SURFACES.md](STORYTELLING_SURFACES.md) S1.
+  [STORYTELLING_SURFACES.md](../product/STORYTELLING_SURFACES.md) S1.
 - **Impact:** ★★★★★ · **Effort:** ★★★☆☆ · **Risk:** Low.
 
 ### N4 — "What changed overnight" deltas for your team
@@ -86,7 +86,7 @@ Impact and effort on ★ (1–5). Risk = Low / Med / High.
 
 ### L4 — Fantasy/DFS "is my closer rested?" view + Pro-for-Fantasy tier
 - **Rationale:** Opens the largest reachable *paying* audience on the same honest
-  data. See [MONETIZATION_AND_ADOPTION.md](MONETIZATION_AND_ADOPTION.md).
+  data. See [MONETIZATION_AND_ADOPTION.md](../product/MONETIZATION_AND_ADOPTION.md).
 - **Impact:** ★★★★☆ · **Effort:** ★★★★☆ · **Risk:** Med.
 
 ### L5 — Collapse Recommendation V1/V2 into the board
@@ -169,7 +169,7 @@ Impact and effort on ★ (1–5). Risk = Low / Med / High.
 ### X5 — Chasing FanGraphs/Savant/Reference on breadth
 - **Rationale:** Unwinnable and off-strategy. Depth in one unclaimed category
   beats shallow parity across four claimed ones. See
-  [COMPETITIVE_ANALYSIS_JUNE_2026.md](COMPETITIVE_ANALYSIS_JUNE_2026.md).
+  [COMPETITIVE_ANALYSIS_JUNE_2026.md](../product/COMPETITIVE_ANALYSIS_JUNE_2026.md).
 
 ### X6 — Expanding the governance/certification documentation corpus
 - **Rationale:** ~147 docs already obscure the product more than they protect it.

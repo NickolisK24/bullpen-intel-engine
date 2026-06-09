@@ -50,7 +50,7 @@ V1 certification remain unchanged by this document.
 
 The V2 strategy foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
 
 The strategy defines the product direction: bullpen-level intelligence,
 inventory visibility, stress/readiness awareness, workload distribution
@@ -63,19 +63,19 @@ services, data flow, trust metadata, and certification expectations.
 
 The authoritative governance-boundary document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
 The API contract companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
 The frontend contract companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
 The certification requirements companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
 
 The governance-boundary document defines allowed, restricted, and forbidden V2
 behavior. This architecture must remain subordinate to those governance

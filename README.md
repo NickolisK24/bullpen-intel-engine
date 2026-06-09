@@ -44,11 +44,11 @@ returns fixed deterministic data, pending separately-authorized live runtime
 integration.
 
 Detailed certification, rollout, and historical phase state is maintained in
-[docs/INDEX.md](docs/INDEX.md),
-[docs/PROJECT_STATE_2026_06.md](docs/PROJECT_STATE_2026_06.md),
+[docs/README.md](docs/README.md),
+[docs/current/PROJECT_STATE_2026_06.md](docs/current/PROJECT_STATE_2026_06.md),
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md),
 and
-[docs/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md](docs/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md).
+[docs/archive/2026-06/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md](docs/archive/2026-06/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md).
 
 ## Core Capabilities
 
@@ -173,7 +173,7 @@ BaseballOS does not authorize:
 - injury prediction, save prediction, or performance prediction
 
 Detailed governance, certification, rollout, and monitoring evidence is in
-[docs/INDEX.md](docs/INDEX.md) and
+[docs/README.md](docs/README.md) and
 [docs/governance/CERTIFICATION_LEDGER.md](docs/governance/CERTIFICATION_LEDGER.md).
 
 ## Architecture Overview
@@ -218,8 +218,8 @@ npm run dev
 ```
 
 The frontend dev server proxies API calls to the backend during local
-development. See [docs/SETUP.md](docs/SETUP.md) for full local and hosted setup
-details.
+development. See [docs/current/SETUP.md](docs/current/SETUP.md) for full local
+and hosted setup details.
 
 ## Environment Variables
 
@@ -276,62 +276,26 @@ unless implementation files change.
 
 ## Documentation Entry Points
 
-- [Documentation Index](docs/INDEX.md) - full documentation map.
-- [Project State](docs/PROJECT_STATE_2026_06.md) - canonical June 2026 state
-  record.
-- [Setup Guide](docs/SETUP.md) - local setup, deployment, environment
+See [docs/README.md](docs/README.md) for the full documentation map. Primary
+entry points:
+
+- [Documentation Index](docs/README.md) - folder guide and authoritative docs.
+- [Project State](docs/current/PROJECT_STATE_2026_06.md) - canonical June 2026
+  state record.
+- [Setup Guide](docs/current/SETUP.md) - local setup, deployment, environment
   variables, and scheduled sync.
-- [Roadmap](docs/ROADMAP.md) - current direction and historical roadmap
+- [Roadmap](docs/current/ROADMAP.md) - current direction and historical roadmap
   context.
 - [Certification Ledger](docs/governance/CERTIFICATION_LEDGER.md) -
   certification, production, rollout, and governance state by surface.
-- [Operational Reviews](docs/operations/OPERATIONAL_REVIEWS.md) - deployment
+- [Operational Reviews](docs/governance/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
-- [V4 Production Rollout Review](docs/V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md)
-  - full production rollout approval record for certified V4 explanation
-    surfaces.
-- [V5 Phase 1 Capability Definition](docs/V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md)
-  - governed Bullpen Intelligence Surface capability boundary and Phase 2
-    taxonomy entry point.
-- [V5 Phase 2 Observation Taxonomy](docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md)
-  - authorized observation families, language rules, input boundaries,
-    output expectations, and fail-closed requirements.
-- [V5 Phase 3 Architecture Definition](docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md)
-  - governed observation lifecycle, domain architecture, builder architecture,
-    evidence architecture, trust architecture, severity architecture,
-    fail-closed architecture, frontend surface architecture, governance
-    protection layer, and Phase 4 boundary.
-- [V5 Phase 4 Observation Domain And Contracts](docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md)
-  - backend observation enums, dataclass contracts, serialization helpers,
-    contract validators, prohibited-language safeguards, and focused tests.
-- [V5 Phase 5 Observation Builder Foundation](docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md)
-  - deterministic backend observation builders, static supplied-state
-    contracts, fail-closed suppression, evidence propagation, and focused
-    builder tests.
-- [V5 Phase 6 Observation API Surface](docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md)
-  - read-only backend observation API route, preview route, response contract,
-    fail-closed behavior, governance tests, and Phase 7 frontend boundary.
-- [V5 Phase 7 Frontend Intelligence Surface](docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md)
-  - read-only Dashboard panel consuming `GET /api/observations`, frontend
-    contract guard, evidence, limitations, trust, freshness, confidence, and
-    governance display.
-- [V5 Phase 8 Governance Certification](docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md)
-  - full V5 governance certification across contracts, builders, API,
-    frontend surface, fail-closed behavior, trust, freshness, confidence, and
-    prohibited behavior review.
-- [V5 Phase 9 Controlled Rollout Review](docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md)
-  - controlled rollout approval for the certified V5 Bullpen Intelligence
-    Surface, while keeping full production rollout unapproved.
-- [V5 Phase 10 Production Rollout Review](docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md)
-  - production rollout review for V5, retaining full production rollout as not
-    approved pending retained production-readiness evidence.
-- [V5 Phase 11 Production Evidence Review](docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md)
-  - retained manual production evidence for V5 and cleared the Phase 10
-    production evidence blocker before Phase 12 approval.
-- [V5 Phase 12 Full Production Rollout Approval](docs/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md)
-  - final V5 governance approval for full production rollout after Phase 8
-    certification, Phase 9 controlled rollout, Phase 10 production review, and
-    Phase 11 evidence retention.
+
+Detailed per-version phase records (Recommendation Engine V1/V2, V2.5 lifecycle
+hardening, V3 Team Operations readiness, V4 evidence/explanation, and the V5
+Bullpen Intelligence Surface, including the
+[V5 Phase 12 full production rollout approval](docs/archive/2026-06/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md))
+are retained under [docs/archive/2026-06/](docs/archive/2026-06/).
 
 ## Current V5 Boundary
 

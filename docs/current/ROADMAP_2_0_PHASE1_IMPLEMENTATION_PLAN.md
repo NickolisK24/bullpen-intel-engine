@@ -10,8 +10,8 @@
 > certification work, no future-phase items.
 >
 > **Companion context:** [ROADMAP_2_0_PROPOSAL.md](ROADMAP_2_0_PROPOSAL.md),
-> [USER_HABIT_LOOP_ANALYSIS.md](USER_HABIT_LOOP_ANALYSIS.md),
-> [PRODUCT_AUDIT_JUNE_2026.md](PRODUCT_AUDIT_JUNE_2026.md).
+> [USER_HABIT_LOOP_ANALYSIS.md](../product/USER_HABIT_LOOP_ANALYSIS.md),
+> [PRODUCT_AUDIT_JUNE_2026.md](../product/PRODUCT_AUDIT_JUNE_2026.md).
 
 ---
 

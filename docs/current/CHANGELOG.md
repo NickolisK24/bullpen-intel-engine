@@ -2,7 +2,7 @@
 
 This changelog summarizes major product, governance, rollout, and operational
 milestones. It does not replace the detailed evidence records linked from
-[docs/INDEX.md](INDEX.md).
+[docs/README.md](../README.md).
 
 ## June 2026 - Bullpen Trust And Data Quality Cleanup
 
@@ -28,12 +28,12 @@ milestones. It does not replace the detailed evidence records linked from
 ## June 2026 - Documentation Structure Refactor
 
 - Refactored README into a concise project front page.
-- Added [docs/INDEX.md](INDEX.md) as the documentation hub.
+- Added [docs/README.md](../README.md) as the documentation hub.
 - Added [docs/ROADMAP.md](ROADMAP.md) for planning context.
 - Added this changelog for historical milestone summaries.
-- Added [governance/CERTIFICATION_LEDGER.md](governance/CERTIFICATION_LEDGER.md)
+- Added [governance/CERTIFICATION_LEDGER.md](../governance/CERTIFICATION_LEDGER.md)
   for certification and rollout status.
-- Added [operations/OPERATIONAL_REVIEWS.md](operations/OPERATIONAL_REVIEWS.md)
+- Added [operations/OPERATIONAL_REVIEWS.md](../governance/OPERATIONAL_REVIEWS.md)
   for operational review and monitoring evidence summaries.
 
 ## V5 - Bullpen Intelligence Surface

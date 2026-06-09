@@ -55,7 +55,7 @@ certainty, or unsupported baseball opinion.
 
 The certification requirements companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
 
 ## 2. Relationship to V1 Frontend
 
@@ -76,7 +76,7 @@ for implementation.
 
 The V2 strategy foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
 
 The strategy allows future exploration of bullpen-level intelligence, bullpen
 inventory visibility, bullpen stress awareness, leverage resource visibility,
@@ -90,7 +90,7 @@ without turning organization into ranking or turning context into selection.
 
 The V2 governance-boundary document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
 This frontend contract is subordinate to that document. Future UI must preserve
 the rule that BaseballOS may group, summarize, and explain, but must not rank,
@@ -104,7 +104,7 @@ V2 frontend scope.
 
 The V2 architecture foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
 
 The architecture defines conceptual UI layers such as Trust Strip, Bullpen
 Context Panel, Candidate Group Panels, Inventory Panels, Explanation Panels,
@@ -118,7 +118,7 @@ certification expectations.
 
 The V2 API contract foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
 Future V2 frontend display must honor API metadata and object boundaries,
 including:

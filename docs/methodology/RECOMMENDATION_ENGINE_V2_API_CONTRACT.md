@@ -21,11 +21,11 @@ prediction, or unsupported decision-making from entering future API design.
 
 The frontend contract companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
 The certification requirements companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
 
 ## 2. Relationship to V1 API
 
@@ -42,7 +42,7 @@ for implementation.
 
 The V2 strategy foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
 
 This API contract supports the strategy by defining a response shape for
 bullpen-state summaries, grouped eligibility, inventory visibility,
@@ -53,7 +53,7 @@ selection.
 
 The V2 governance-boundary document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
 This API contract is subordinate to that governance document. API payloads must
 not contain ranking arrays, winner fields, hidden weights, opaque scores,
@@ -63,7 +63,7 @@ automated pitcher choice, unsupported predictions, or decision commands.
 
 The V2 architecture foundation is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
 
 This API contract translates the architecture concepts into proposed
 contract-level response objects:
@@ -127,7 +127,7 @@ selection, prediction, or Recommendation Engine V1 behavior changes.
 
 The Phase 8 completion record is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+- `docs/archive/2026-06/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
 
 Recommendation Engine V2 Phase 9 adds frontend client consumption of this
 endpoint through `frontend/src/utils/api.js`. The client normalizes successful,
@@ -137,7 +137,7 @@ changes.
 
 The Phase 9 completion record is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+- `docs/archive/2026-06/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
 
 ## 8. Proposed Endpoint Scope
 

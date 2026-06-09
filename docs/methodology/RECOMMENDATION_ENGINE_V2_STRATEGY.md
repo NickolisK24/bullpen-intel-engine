@@ -12,23 +12,23 @@ frontend behavior changes, or new recommendation logic.
 
 The governance-boundary companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
 
 The architecture companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
 
 The API contract companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
 
 The frontend contract companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+- `docs/methodology/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
 
 The certification requirements companion document is:
 
-- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+- `docs/governance/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
 
 V2 exists to explore broader bullpen and team context while preserving the
 trust contract certified in V1:

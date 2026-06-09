@@ -33,11 +33,11 @@ sources, and primary documentation links.
 Long historical roadmap, certification, rollout, operational review, and
 documentation-inventory material is retained in dedicated documentation:
 
-- `docs/INDEX.md`
-- `docs/ROADMAP.md`
-- `docs/CHANGELOG.md`
+- `docs/README.md`
+- `docs/current/ROADMAP.md`
+- `docs/current/CHANGELOG.md`
 - `docs/governance/CERTIFICATION_LEDGER.md`
-- `docs/operations/OPERATIONAL_REVIEWS.md`
+- `docs/governance/OPERATIONAL_REVIEWS.md`
 
 This documentation structure refactor preserves governance, certification,
 rollout, and monitoring evidence. It does not authorize backend changes,
@@ -1040,11 +1040,11 @@ are:
 
 The documentation navigation records are:
 
-- `docs/INDEX.md`
-- `docs/ROADMAP.md`
-- `docs/CHANGELOG.md`
+- `docs/README.md`
+- `docs/current/ROADMAP.md`
+- `docs/current/CHANGELOG.md`
 - `docs/governance/CERTIFICATION_LEDGER.md`
-- `docs/operations/OPERATIONAL_REVIEWS.md`
+- `docs/governance/OPERATIONAL_REVIEWS.md`
 
 V2 planning may explore bullpen-level intelligence, bullpen inventory
 visibility, bullpen stress awareness, leverage resource visibility, workload

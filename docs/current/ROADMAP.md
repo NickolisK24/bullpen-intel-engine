@@ -106,7 +106,7 @@ Future roadmap work must not introduce:
 Any future surface that changes lifecycle tier, certification state, rollout
 state, data trust assumptions, or user-facing decision language must pass the
 governance and lifecycle evidence process linked from
-[docs/INDEX.md](INDEX.md).
+[docs/README.md](../README.md).
 
 ## Historical Milestone Summary
 
@@ -307,6 +307,6 @@ governance and lifecycle evidence process linked from
 For detailed milestone history, use:
 
 - [Changelog](CHANGELOG.md)
-- [Certification ledger](governance/CERTIFICATION_LEDGER.md)
-- [Operational reviews](operations/OPERATIONAL_REVIEWS.md)
+- [Certification ledger](../governance/CERTIFICATION_LEDGER.md)
+- [Operational reviews](../governance/OPERATIONAL_REVIEWS.md)
 - [Project state snapshot](PROJECT_STATE_2026_06.md)

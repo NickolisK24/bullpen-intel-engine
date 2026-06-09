@@ -3,7 +3,7 @@
 > **Scope.** This is a product and strategy audit, not a code audit. It evaluates
 > BaseballOS as an *experience a user opens*, not as a repository an engineer
 > reads. It complements the technical
-> [Full Program Audit](BASEBALLOS_FULL_PROGRAM_AUDIT_2026_06.md), which graded the
+> [Full Program Audit](../governance/BASEBALLOS_FULL_PROGRAM_AUDIT_2026_06.md), which graded the
 > code and governance. Where that audit asked "is this well-built?", this one
 > asks "would anyone care if it disappeared, and would they come back tomorrow?"
 >
@@ -352,7 +352,7 @@ not months.
 - [Storytelling Surfaces](STORYTELLING_SURFACES.md) — turning the engine into stories.
 - [Competitive Analysis](COMPETITIVE_ANALYSIS_JUNE_2026.md) — the category to own.
 - [Monetization & Adoption](MONETIZATION_AND_ADOPTION.md) — who pays and why.
-- [Roadmap 2.0 Proposal](ROADMAP_2_0_PROPOSAL.md) — Do Next / Later / Much Later / Never.
+- [Roadmap 2.0 Proposal](../current/ROADMAP_2_0_PROPOSAL.md) — Do Next / Later / Much Later / Never.
 
 *Audit produced read-only. No application code, API, schema, test, or migration
 was modified.*
