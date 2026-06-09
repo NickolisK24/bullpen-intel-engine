@@ -1,8 +1,27 @@
+# Python
 __pycache__/
 *.pyc
-.env
-*.db
 venv/
-.vscode/
-backend/logs/
 backend/.venv/
+backend/logs/
+
+# Databases
+*.db
+
+# Environment
+.env
+.env.local
+
+# Editors
+.vscode/
+
+# Node / frontend dependencies and build output
+node_modules/
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+dist/
+build/
+
+# OS
+.DS_Store
