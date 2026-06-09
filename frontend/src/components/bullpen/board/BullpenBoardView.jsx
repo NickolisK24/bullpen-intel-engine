@@ -1,4 +1,5 @@
 import { EmptyState } from '../../UI'
+import BullpenStressSummary from './BullpenStressSummary'
 import BullpenContextSummary from './BullpenContextSummary'
 import {
   getBoardCardView,
@@ -321,6 +322,8 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
           {totals.total === 1 ? '' : 's'} shown. Fatigue score: higher = heavier recent workload.
         </p>
       </div>
+
+      <BullpenStressSummary stress={board?.stress} />
 
       <BullpenContextSummary board={board} />
 

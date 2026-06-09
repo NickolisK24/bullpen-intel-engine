@@ -328,6 +328,45 @@ const HEALTH_TONE = {
   no_data: { borderColor: 'rgba(148,163,184,0.32)', backgroundColor: 'rgba(148,163,184,0.09)', color: '#cbd5e1', dot: '#94a3b8' },
 }
 
+const STRESS_TONE = {
+  manageable: HEALTH_TONE.manageable,
+  monitoring: HEALTH_TONE.monitoring,
+  elevated: HEALTH_TONE.elevated,
+  constrained: HEALTH_TONE.constrained,
+  muted: HEALTH_TONE.no_data,
+}
+
+export function getBullpenStressView(stress) {
+  if (!stress) {
+    return {
+      hasStress: false,
+      label: null,
+      summary: null,
+      reasons: [],
+      limitations: [],
+      confidenceLabel: formatConfidence(null),
+      isLimited: true,
+      tone: STRESS_TONE.muted,
+    }
+  }
+
+  const tone = STRESS_TONE[stress.tone] || STRESS_TONE[stress.state] || STRESS_TONE.muted
+  const reasons = Array.isArray(stress.reasons) ? stress.reasons : []
+  const limitations = Array.isArray(stress.limitations) ? stress.limitations : []
+  return {
+    hasStress: true,
+    state: stress.state || 'no_data',
+    label: stress.label || 'No Read',
+    summary: stress.summary || 'Not enough current bullpen data to assess stress.',
+    reasons,
+    limitations,
+    reasonCodes: Array.isArray(stress.reason_codes) ? stress.reason_codes : [],
+    confidenceLabel: formatConfidence(stress.confidence),
+    isLimited: stress.is_stale === true || stress.label === 'No Read' || stress.confidence === 'low',
+    tone,
+  }
+}
+
 // Snapshot rows mirror the board's five groups, in the same reading order.
 const SNAPSHOT_ROWS = [
   { status: 'Available', label: 'Available Tonight', key: 'available' },

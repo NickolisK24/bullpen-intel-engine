@@ -6,6 +6,7 @@ import {
   buildFollowedTeamHref,
   resolveFollowedTeam,
 } from '../../utils/followedTeamPreference'
+import BullpenStressSummary from '../bullpen/board/BullpenStressSummary'
 import { getBoardContextView } from '../bullpen/board/tonightsBullpenBoardView'
 import WhatChangedCard from './WhatChangedCard'
 
@@ -72,6 +73,8 @@ function FollowedTeamSummary({ board }) {
 
   return (
     <div className="space-y-3">
+      <BullpenStressSummary stress={board?.stress} compact />
+
       <div className="rounded border border-dirt bg-field/50 p-3" role="status">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="font-display text-lg tracking-wide text-chalk100">
