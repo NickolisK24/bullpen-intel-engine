@@ -7,7 +7,7 @@ admin/development validation and threshold review.
 """
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import timedelta
 
 from sqlalchemy import desc
 
@@ -15,6 +15,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability_reference_date import product_current_date
 from utils.db import db
 
 
@@ -52,7 +53,7 @@ def availability_mode_metadata(mode, records=None, reference_date=None):
 
     return {
         'mode': CURRENT_AVAILABILITY_MODE,
-        'reference_date': _iso_or_none(reference_date or date.today()),
+        'reference_date': _iso_or_none(reference_date or product_current_date()),
         'is_current_availability': True,
     }
 
@@ -173,7 +174,7 @@ def logs_for_availability_windows(pitcher_ids, evaluation_dates):
 
 
 def evaluation_date_for_mode(mode, latest_game_date, current_reference_date=None):
-    current_reference_date = current_reference_date or date.today()
+    current_reference_date = current_reference_date or product_current_date()
     if mode == LATEST_WORKLOAD_SNAPSHOT_MODE:
         return latest_game_date or current_reference_date
     return current_reference_date
@@ -202,7 +203,7 @@ def _classified_record(score, pitcher, latest_game_date, evaluation_date, logs, 
 
 
 def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
-    current_reference_date = reference_date or date.today()
+    current_reference_date = reference_date or product_current_date()
     latest_game_date = latest_game_date_for(pitcher.id)
     evaluation_date = evaluation_date_for_mode(
         mode,
@@ -222,7 +223,7 @@ def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAIL
 
 def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_MODE):
     rows = list(rows or [])
-    current_reference_date = reference_date or date.today()
+    current_reference_date = reference_date or product_current_date()
     pitcher_ids = [pitcher.id for _score, pitcher in rows]
     latest_game_dates = latest_game_dates_for(pitcher_ids)
     evaluation_dates = {

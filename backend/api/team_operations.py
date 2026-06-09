@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from services import sync_metadata
+from services.availability_reference_date import (
+    product_availability_reference_date_from_sync_status,
+    product_current_date,
+)
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     classify_latest_fatigue_rows,
@@ -51,6 +55,7 @@ TEAM_OPERATIONS_PROHIBITED_QUERY_TOKENS = (
 @team_operations_bp.route('/bullpen-readiness', methods=['GET'])
 def get_team_operations_bullpen_readiness():
     sync_status = _sync_status_payload()
+    reference_date = _availability_reference_date(sync_status)
     request_refusal = _request_refusal(request.args)
     team_id = request.args.get('team_id', type=int)
     team_abbreviation = request.args.get('team_abbreviation')
@@ -79,6 +84,7 @@ def get_team_operations_bullpen_readiness():
             _filter_records_by_team_abbreviation(
                 classify_latest_fatigue_rows(
                     rows,
+                    reference_date=reference_date,
                     mode=CURRENT_AVAILABILITY_MODE,
                 ),
                 team_abbreviation=team_abbreviation,
@@ -247,16 +253,26 @@ def _sync_status_payload():
                 'latest_workload_date': None,
                 'latest_fatigue_calculated_at': None,
             },
+            'availability_reference_date': None,
             'freshness': {
                 'is_current': False,
                 'is_stale': False,
                 'freshness_state': 'metadata_unavailable',
                 'data_age_days': None,
+                'reference_date': None,
+                'availability_reference_date': None,
                 'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Sync metadata unavailable.',
                 'limitations': ['Could not read sync status metadata.'],
             },
         }
+
+
+def _availability_reference_date(sync_status):
+    return (
+        product_availability_reference_date_from_sync_status(sync_status)
+        or product_current_date()
+    )
 
 
 def _generated_at(rows):
@@ -422,6 +438,8 @@ def _team_operations_freshness_metadata(records, *, sync_status, generated_at):
         'data_age_days': sync_freshness.get('data_age_days'),
         'active_window_days': sync_freshness.get('active_window_days'),
         'active_cutoff_date': sync_freshness.get('active_cutoff_date'),
+        'reference_date': sync_freshness.get('reference_date'),
+        'availability_reference_date': sync_freshness.get('availability_reference_date'),
         'reason_codes': list(sync_freshness.get('reason_codes') or []),
         'latest_fatigue_calculated_at': latest_fatigue,
         'generated_at': generated_at,

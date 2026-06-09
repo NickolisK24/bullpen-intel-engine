@@ -16,9 +16,10 @@ close approximation under this reading and only ever slightly understates
 fractional innings, which keeps the multi-inning rules conservative.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import product_current_date
 
 
 # Recent window used to read usage. Wider than the availability window so role
@@ -172,13 +173,14 @@ def classify_usage_role(logs, reference_date=None):
 
     Args:
         logs: recent GameLog-like objects (caller windows them). May be empty.
-        reference_date: date the window is anchored on. Defaults to today.
+        reference_date: date the window is anchored on. Defaults to the product
+            calendar date.
 
     Returns:
         Dict with role_key, role label, confidence, short_reason, evidence,
         and limitations. Safe to embed in an API response.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     d = _derive(logs, ref)
     evidence = _evidence(d)
 

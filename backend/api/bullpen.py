@@ -11,6 +11,11 @@ from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from services.fatigue import calculate_fatigue, get_risk_level
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services.availability_reference_date import (
+    parse_reference_date,
+    product_availability_reference_date_from_sync_status,
+    product_current_date,
+)
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     LATEST_WORKLOAD_SNAPSHOT_MODE,
@@ -53,19 +58,38 @@ def _truthy(value):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-def _active_pitcher_cutoff(days: int = ACTIVE_WINDOW_DAYS):
+def _availability_reference_date_from_freshness(freshness):
+    return parse_reference_date((freshness or {}).get('availability_reference_date'))
+
+
+def _freshness_reference_date(freshness):
+    return parse_reference_date((freshness or {}).get('reference_date')) or product_current_date()
+
+
+def _public_availability_reference_date(freshness=None):
+    """
+    Availability anchor for public current-availability claims.
+
+    Prefer the durable data-derived date carried by freshness. The fallback is
+    a product calendar date, not the host machine's local date.
+    """
+    return _availability_reference_date_from_freshness(freshness) or product_current_date()
+
+
+def _active_pitcher_cutoff(days: int = ACTIVE_WINDOW_DAYS, reference_date=None):
     """Calendar-date cutoff for the active/current bullpen list."""
-    return date.today() - timedelta(days=days)
+    ref = reference_date or product_current_date()
+    return ref - timedelta(days=days)
 
 
-def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS):
+def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS, reference_date=None):
     """
     Subquery returning pitcher_ids whose most recent game_log.game_date falls
-    within the last `days` days relative to today's date. This intentionally
+    within the last `days` days relative to the product reference date. This intentionally
     treats historical local snapshots as inactive/stale instead of pretending
     old data is current bullpen availability.
     """
-    cutoff = _active_pitcher_cutoff(days)
+    cutoff = _active_pitcher_cutoff(days, reference_date=reference_date)
     return (
         db.session.query(GameLog.pitcher_id.label('pitcher_id'))
         .group_by(GameLog.pitcher_id)
@@ -100,7 +124,15 @@ def _latest_fatigue_query(team_id=None, risk_level=None):
     return query
 
 
-def _fatigue_list_meta(filtered_count, fresh_filtered_count, returned_count, include_stale, team_id, risk_level):
+def _fatigue_list_meta(
+    filtered_count,
+    fresh_filtered_count,
+    returned_count,
+    include_stale,
+    team_id,
+    risk_level,
+    reference_date=None,
+):
     """Trust metadata explaining why a fatigue list may be empty."""
     latest_game_date = db.session.query(db.func.max(GameLog.game_date)).scalar()
     total_game_logs = db.session.query(db.func.count(GameLog.id)).scalar() or 0
@@ -114,7 +146,8 @@ def _fatigue_list_meta(filtered_count, fresh_filtered_count, returned_count, inc
     return {
         'include_stale': include_stale,
         'active_window_days': ACTIVE_WINDOW_DAYS,
-        'active_cutoff_date': _active_pitcher_cutoff().isoformat(),
+        'active_cutoff_date': _active_pitcher_cutoff(reference_date=reference_date).isoformat(),
+        'availability_reference_date': reference_date.isoformat() if reference_date else None,
         'latest_game_date': latest_game_date.isoformat() if latest_game_date else None,
         'total_game_logs': int(total_game_logs),
         'total_scored_pitchers': int(total_scored),
@@ -131,7 +164,7 @@ def _fatigue_list_meta(filtered_count, fresh_filtered_count, returned_count, inc
 
 def _availability_context(pitcher_id, reference_date=None):
     """Fetch the current workload window needed by the availability service."""
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     latest_game_date = (
         db.session.query(db.func.max(GameLog.game_date))
         .filter(GameLog.pitcher_id == pitcher_id)
@@ -152,11 +185,12 @@ def _availability_context(pitcher_id, reference_date=None):
 
 
 def _availability_for(pitcher_id, score, reference_date=None):
-    logs, latest_game_date = _availability_context(pitcher_id, reference_date=reference_date)
+    ref = reference_date or product_current_date()
+    logs, latest_game_date = _availability_context(pitcher_id, reference_date=ref)
     return classify_availability(
         score=score,
         game_logs=logs,
-        reference_date=reference_date or date.today(),
+        reference_date=ref,
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
     )
@@ -181,10 +215,12 @@ def get_fatigue_scores():
     limit         = request.args.get('limit', 50, type=int)
     include_stale = _truthy(request.args.get('include_stale'))
     with_meta     = _truthy(request.args.get('with_meta'))
+    freshness     = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
 
     base_query     = _latest_fatigue_query(team_id=team_id, risk_level=risk_level)
     filtered_count = base_query.count()
-    recent         = _recent_pitcher_ids_subquery()
+    recent         = _recent_pitcher_ids_subquery(reference_date=reference_date)
     fresh_query    = base_query.join(recent, recent.c.pitcher_id == Pitcher.id)
     fresh_count    = fresh_query.count()
     query          = base_query
@@ -196,6 +232,7 @@ def get_fatigue_scores():
 
     records = classify_fatigue_rows(
         results,
+        reference_date=reference_date,
         mode=CURRENT_AVAILABILITY_MODE,
     )
 
@@ -220,6 +257,7 @@ def get_fatigue_scores():
             include_stale=include_stale,
             team_id=team_id,
             risk_level=risk_level,
+            reference_date=reference_date,
         ),
     })
 
@@ -293,15 +331,19 @@ def get_pitcher_fatigue(pitcher_id):
         .first()
     )
 
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
+
     # Anchor recent_logs / fatigue_trend on the pitcher's most recent game
     # so historical (e.g. 2024-2025 seed) data still produces non-empty
-    # windows. Fall back to today if the pitcher has no logs at all.
+    # windows. Fall back to the product reference date if the pitcher has no
+    # logs at all.
     last_game_date = (
         db.session.query(db.func.max(GameLog.game_date))
         .filter(GameLog.pitcher_id == pitcher_id)
         .scalar()
     )
-    anchor = last_game_date if last_game_date else date.today()
+    anchor = last_game_date if last_game_date else reference_date
 
     fourteen_days_ago = anchor - timedelta(days=14)
     logs = (
@@ -322,7 +364,7 @@ def get_pitcher_fatigue(pitcher_id):
         .all()
     )
 
-    workload_signal = _availability_for(pitcher_id, latest)
+    workload_signal = _availability_for(pitcher_id, latest, reference_date=reference_date)
     roster_status = classify_roster_status(pitcher)
     availability = apply_roster_status_to_availability(workload_signal, roster_status)
 
@@ -537,11 +579,14 @@ def get_sync_status():
                 'latest_workload_date': None,
                 'latest_fatigue_calculated_at': None,
             },
+            'availability_reference_date': None,
             'freshness': {
                 'is_current': False,
                 'is_stale': False,
                 'freshness_state': 'metadata_unavailable',
                 'data_age_days': None,
+                'reference_date': None,
+                'availability_reference_date': None,
                 'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Freshness metadata unavailable.',
                 'limitations': ['Could not read durable sync metadata.'],
@@ -607,7 +652,7 @@ def get_teams():
     ])
 
 
-def _team_bullpen_rows(team_id, include_stale=False):
+def _team_bullpen_rows(team_id, include_stale=False, reference_date=None):
     """
     Latest fatigue + availability for a team's active pitchers.
 
@@ -636,7 +681,7 @@ def _team_bullpen_rows(team_id, include_stale=False):
     )
 
     if not include_stale:
-        recent = _recent_pitcher_ids_subquery()
+        recent = _recent_pitcher_ids_subquery(reference_date=reference_date)
         query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
 
     results = query.order_by(desc(FatigueScore.raw_score)).all()
@@ -649,6 +694,7 @@ def _team_bullpen_rows(team_id, include_stale=False):
         record['pitcher_id']: record['availability']
         for record in classify_fatigue_rows(
             availability_rows,
+            reference_date=reference_date,
             mode=CURRENT_AVAILABILITY_MODE,
         )
     }
@@ -666,7 +712,13 @@ def get_team_bullpen(team_id):
                        appearance is older than 14 days. Default false.
     """
     include_stale = _truthy(request.args.get('include_stale'))
-    results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
+    results, availability_by_pitcher = _team_bullpen_rows(
+        team_id,
+        include_stale,
+        reference_date=reference_date,
+    )
 
     return jsonify([
         {
@@ -686,11 +738,20 @@ def _board_freshness_block():
     """
     try:
         status_payload = sync_metadata.build_sync_status_payload()
+        availability_reference_date = product_availability_reference_date_from_sync_status(
+            status_payload
+        )
         freshness = status_payload.get('freshness') or {}
         data = status_payload.get('data') or {}
         return {
             'data_through': data.get('latest_game_date'),
             'latest_workload_date': data.get('latest_workload_date'),
+            'reference_date': freshness.get('reference_date'),
+            'availability_reference_date': (
+                availability_reference_date.isoformat()
+                if availability_reference_date
+                else None
+            ),
             'last_successful_sync': status_payload.get('last_successful_sync'),
             'sync_status': status_payload.get('status'),
             'sync_authority': status_payload.get('sync_authority'),
@@ -708,6 +769,8 @@ def _board_freshness_block():
         return {
             'data_through': None,
             'latest_workload_date': None,
+            'reference_date': None,
+            'availability_reference_date': None,
             'last_successful_sync': None,
             'sync_status': None,
             'sync_authority': 'sync_runs',
@@ -755,17 +818,22 @@ def _availability_with_eligibility(availability, eligibility, roster_status=None
     return merged
 
 
-def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=False):
+def _eligible_records_for_rows(
+    rows,
+    availability_by_pitcher,
+    include_stale=False,
+    reference_date=None,
+):
     """
     Convert (Pitcher, FatigueScore) rows into board records after applying the
     reusable bullpen eligibility filter.
     """
-    today = date.today()
+    ref = reference_date or product_current_date()
     contexts, roster_summary = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
         include_stale=include_stale,
         include_inactive_context=include_stale,
-        reference_date=today,
+        reference_date=ref,
     )
     contexts_by_pitcher = {
         context['pitcher'].id: context
@@ -788,7 +856,7 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability,
-            'role': classify_usage_role(context['logs'], reference_date=today),
+            'role': classify_usage_role(context['logs'], reference_date=ref),
             'eligibility': context['eligibility'],
             'roster_status': context['roster_status'],
             'pitcher': pitcher,
@@ -796,21 +864,22 @@ def _eligible_records_for_rows(rows, availability_by_pitcher, include_stale=Fals
     return records, roster_summary
 
 
-def _eligible_classified_records(rows, include_stale=True):
+def _eligible_classified_records(rows, include_stale=True, reference_date=None):
     """
     Classify availability rows and remove non-bullpen pitchers for league-wide
     bullpen-specific surfaces.
     """
     classified = classify_latest_fatigue_rows(
         rows,
+        reference_date=reference_date,
         mode=CURRENT_AVAILABILITY_MODE,
     )
-    today = date.today()
+    ref = reference_date or product_current_date()
     contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
         [record['pitcher'] for record in classified],
         include_stale=include_stale,
         include_inactive_context=False,
-        reference_date=today,
+        reference_date=ref,
     )
     contexts_by_pitcher = {
         context['pitcher'].id: context
@@ -835,7 +904,7 @@ def _eligible_classified_records(rows, include_stale=True):
     return eligible
 
 
-def _build_team_board(team_id, include_stale=False, freshness=None):
+def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
 
@@ -843,13 +912,20 @@ def _build_team_board(team_id, include_stale=False, freshness=None):
     same grouped/context output and the same observed-usage-role classification
     (built once here, no duplicate availability or role calculation).
     """
-    results, availability_by_pitcher = _team_bullpen_rows(team_id, include_stale)
+    freshness = freshness or _board_freshness_block()
+    ref = reference_date or _public_availability_reference_date(freshness)
+    results, availability_by_pitcher = _team_bullpen_rows(
+        team_id,
+        include_stale,
+        reference_date=ref,
+    )
 
     team_info = None
     records, roster_summary = _eligible_records_for_rows(
         results,
         availability_by_pitcher,
         include_stale=include_stale,
+        reference_date=ref,
     )
     for pitcher, score in results:
         if team_info is None:
@@ -862,7 +938,6 @@ def _build_team_board(team_id, include_stale=False, freshness=None):
     if team_info is None:
         team_info = _team_info_lookup(team_id)
 
-    freshness = freshness or _board_freshness_block()
     limitations = _merge_limitations(
         freshness.get('limitations'),
         roster_summary.get('limitations'),
@@ -959,11 +1034,14 @@ def get_stats_overview():
     """Dashboard overview stats."""
     total_pitchers = Pitcher.query.filter_by(active=True).count()
     total_logs     = GameLog.query.count()
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
 
     latest_rows = availability_latest_fatigue_rows()
     latest_scores = [score for score, _pitcher in latest_rows]
     availability_records = classify_latest_fatigue_rows(
         latest_rows,
+        reference_date=reference_date,
         mode=CURRENT_AVAILABILITY_MODE,
     )
 
@@ -998,8 +1076,14 @@ def get_bullpen_dashboard():
     pitchers. Presentation/context only:
     no ranking, selection, recommendation, or prediction.
     """
+    freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
     latest_rows = availability_latest_fatigue_rows()
-    availability_records = _eligible_classified_records(latest_rows, include_stale=True)
+    availability_records = _eligible_classified_records(
+        latest_rows,
+        include_stale=True,
+        reference_date=reference_date,
+    )
     summary = summarize_availability_records(availability_records)
     status_counts = summary.get('statuses') or {}
     groups = [
@@ -1007,22 +1091,31 @@ def get_bullpen_dashboard():
         for status in BOARD_GROUP_ORDER
     ]
 
-    freshness = _board_freshness_block()
     context = build_team_context(groups, freshness=freshness)
 
     # Usage-role composition across the same bullpen-eligible scored-pitcher set.
     pitcher_ids = [record['pitcher'].id for record in availability_records]
-    logs_by_pitcher = usage_logs_by_pitcher(pitcher_ids, include_stale=True)
-    today = date.today()
+    logs_by_pitcher = usage_logs_by_pitcher(
+        pitcher_ids,
+        include_stale=True,
+        reference_date=reference_date,
+    )
     role_counts = {key: 0 for key in ROLE_KEYS}
     for pitcher_id in pitcher_ids:
-        role = classify_usage_role(logs_by_pitcher.get(pitcher_id, []), reference_date=today)
+        role = classify_usage_role(
+            logs_by_pitcher.get(pitcher_id, []),
+            reference_date=reference_date,
+        )
         key = role['role_key']
         role_counts[key] = role_counts.get(key, 0) + 1
 
     # Tonight's Bullpen Landscape — league orientation, reusing the records we
     # already classified above (no extra availability pass).
-    landscape = build_landscape(records=availability_records, freshness=freshness)
+    landscape = build_landscape(
+        records=availability_records,
+        reference_date=reference_date,
+        freshness=freshness,
+    )
 
     return jsonify({
         'capability': 'bullpen_dashboard',
@@ -1051,11 +1144,17 @@ def get_bullpen_landscape():
     selection, recommendation, or prediction.
     """
     freshness = _board_freshness_block()
+    reference_date = _public_availability_reference_date(freshness)
     records = _eligible_classified_records(
         availability_latest_fatigue_rows(),
         include_stale=True,
+        reference_date=reference_date,
     )
-    return jsonify(build_landscape(records=records, freshness=freshness))
+    return jsonify(build_landscape(
+        records=records,
+        reference_date=reference_date,
+        freshness=freshness,
+    ))
 
 
 @bullpen_bp.route('/teams/<int:team_id>/game-context', methods=['GET'])
@@ -1066,7 +1165,11 @@ def get_team_game_context(team_id):
     engine, or prediction. Home/away and scheduled time are reported as missing
     because the stored game log does not carry them.
     """
-    return jsonify(build_team_game_context(team_id))
+    freshness = _board_freshness_block()
+    return jsonify(build_team_game_context(
+        team_id,
+        reference_date=_freshness_reference_date(freshness),
+    ))
 
 
 # ─── Insights ─────────────────────────────────────────────────────────────────

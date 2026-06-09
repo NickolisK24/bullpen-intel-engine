@@ -14,6 +14,7 @@ excluded from default bullpen counts.
 from datetime import date, timedelta
 
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import product_current_date
 
 
 SAMPLE_SIZE = 10
@@ -125,7 +126,7 @@ def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None, respect_loc
     Returns a serializable dict with an eligibility boolean plus explanation
     fields safe to expose in API payloads.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     pos = _position(pitcher)
     active = bool(getattr(pitcher, 'active', True))
 

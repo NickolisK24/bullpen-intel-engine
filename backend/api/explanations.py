@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 from flask import Blueprint, jsonify, request
@@ -19,6 +19,11 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from services import sync_metadata
+from services.availability_reference_date import (
+    product_availability_reference_date_from_sync_status,
+    product_current_date,
+)
 from services.availability_snapshot import (
     CURRENT_AVAILABILITY_MODE,
     classify_latest_fatigue_rows,
@@ -223,7 +228,8 @@ def _availability_explanation_payload(pitcher_id: int) -> dict[str, Any]:
             status_code=503,
         )
 
-    reference_date = date.today()
+    sync_status = _sync_status_payload()
+    reference_date = _availability_reference_date(sync_status)
     latest_game_date = (
         GameLog.query
         .filter_by(pitcher_id=pitcher_id)
@@ -270,6 +276,7 @@ def _team_readiness_payload_from_request() -> dict[str, Any]:
 
     team_abbreviation = request.args.get('team_abbreviation')
     sync_status = team_operations_api._sync_status_payload()
+    reference_date = _availability_reference_date(sync_status)
 
     try:
         rows = tuple(
@@ -282,6 +289,7 @@ def _team_readiness_payload_from_request() -> dict[str, Any]:
             team_operations_api._filter_records_by_team_abbreviation(
                 classify_latest_fatigue_rows(
                     rows,
+                    reference_date=reference_date,
                     mode=CURRENT_AVAILABILITY_MODE,
                 ),
                 team_abbreviation=team_abbreviation,
@@ -337,6 +345,45 @@ def _team_readiness_payload_from_request() -> dict[str, Any]:
             status_code=503,
         )
     return payload
+
+
+def _sync_status_payload():
+    try:
+        return sync_metadata.build_sync_status_payload()
+    except Exception:
+        return {
+            'status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
+            'sync_authority': 'sync_runs',
+            'metadata_source': 'none',
+            'last_sync': None,
+            'last_successful_sync': None,
+            'finished_at': None,
+            'data': {
+                'game_logs': None,
+                'latest_game_date': None,
+                'latest_workload_date': None,
+                'latest_fatigue_calculated_at': None,
+            },
+            'availability_reference_date': None,
+            'freshness': {
+                'is_current': False,
+                'is_stale': False,
+                'freshness_state': 'metadata_unavailable',
+                'data_age_days': None,
+                'reference_date': None,
+                'availability_reference_date': None,
+                'reason_codes': ['durable_sync_metadata_unavailable'],
+                'label': 'Sync metadata unavailable.',
+                'limitations': ['Could not read sync status metadata.'],
+            },
+        }
+
+
+def _availability_reference_date(sync_status):
+    return (
+        product_availability_reference_date_from_sync_status(sync_status)
+        or product_current_date()
+    )
 
 
 def _query_error(args, *, allowed_fields: frozenset[str]) -> ExplanationRouteError | None:

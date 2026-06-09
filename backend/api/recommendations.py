@@ -24,6 +24,10 @@ from services.availability_snapshot import (
     latest_fatigue_rows,
 )
 from services import sync_metadata
+from services.availability_reference_date import (
+    product_availability_reference_date_from_sync_status,
+    product_current_date,
+)
 
 
 recommendations_bp = Blueprint('recommendations', __name__)
@@ -109,6 +113,7 @@ def get_v2_bullpen_state():
     limit = _v2_limit_from_request()
     unsafe_request_errors = _v2_unsafe_request_errors(request.args)
     sync_status = _v2_sync_status_payload()
+    reference_date = _v2_availability_reference_date(sync_status)
 
     if unsafe_request_errors:
         assembly = assemble_v2_context(
@@ -121,6 +126,7 @@ def get_v2_bullpen_state():
         rows = tuple(latest_fatigue_rows(team_id=team_id, limit=limit))
         records = classify_latest_fatigue_rows(
             rows,
+            reference_date=reference_date,
             mode=CURRENT_AVAILABILITY_MODE,
         )
         assembly = assemble_v2_context(
@@ -247,16 +253,26 @@ def _v2_sync_status_payload():
                 'latest_workload_date': None,
                 'latest_fatigue_calculated_at': None,
             },
+            'availability_reference_date': None,
             'freshness': {
                 'is_current': False,
                 'is_stale': False,
                 'freshness_state': 'metadata_unavailable',
                 'data_age_days': None,
+                'reference_date': None,
+                'availability_reference_date': None,
                 'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Sync metadata unavailable.',
                 'limitations': ['Could not read sync status metadata.'],
             },
         }
+
+
+def _v2_availability_reference_date(sync_status):
+    return (
+        product_availability_reference_date_from_sync_status(sync_status)
+        or product_current_date()
+    )
 
 
 def _v2_api_response_payload(assembly_payload, *, sync_status=None):
