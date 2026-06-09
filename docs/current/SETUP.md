@@ -298,8 +298,11 @@ configured for one-command production deployment.
   (e.g. `gunicorn app:app`). For a hosted environment set `APP_ENV=production`,
   `SECRET_KEY` (a strong unique value), `DATABASE_URL` (a hosted PostgreSQL
   instance), and `ADMIN_API_TOKEN` (gates the write endpoints); the app fails
-  fast at startup if any of those production requirements aren't met. Run
-  `flask db upgrade` against that database on deploy.
+  fast at startup if any of those production requirements aren't met. Database
+  migrations are applied automatically before the server starts when the Render
+  start command runs `backend/scripts/render_start.sh` (see "Render start
+  command" below); that script fails closed if `flask db upgrade` fails, so the
+  app never serves traffic against an un-migrated database.
 - **Health check:** `GET /api/health` returns `{ status, environment, debug }`,
   so you can confirm a deploy is actually running `production` (debug `false`).
 - **Scheduler:** `AUTO_SYNC=true` starts an in-process APScheduler job (06:00
@@ -312,6 +315,41 @@ configured for one-command production deployment.
   unset/`development` keeps debug on for local work. This branch wires that
   switch and the production safety checks, but full deployment (host setup,
   managed Postgres, a production scheduler) is still future work.
+
+### Render start command (apply migrations before startup)
+
+The deployed backend can reference schema added by Alembic migrations — for
+example `game_logs.games_started`. If the production database has not run those
+migrations, every request that touches the new column fails with a Postgres
+`UndefinedColumn` error (HTTP 500). To prevent that, the Render service applies
+migrations *before* the web server starts, using a startup script that fails
+closed: if `flask db upgrade` fails, the server never starts and the migration
+error is visible in the Render logs.
+
+Set the Render service **Start Command** to:
+
+```bash
+bash backend/scripts/render_start.sh
+```
+
+If the Render service **Root Directory** is set to `backend`, use
+`bash scripts/render_start.sh` instead.
+
+With no arguments the script applies migrations and then starts the documented
+production server — `gunicorn app:app` bound to Render's `$PORT`. If the service
+needs a specific gunicorn invocation (extra `--workers`, `--timeout`, etc.),
+pass it as arguments and it is run verbatim after migrations succeed:
+
+```bash
+bash backend/scripts/render_start.sh gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+```
+
+This repository has no `Procfile` or `render.yaml`, so the exact gunicorn flags
+currently configured in the Render dashboard are not tracked in version control.
+The `gunicorn app:app` default matches the command documented in these notes;
+confirm it against the service's current Start Command, or pass the exact
+command as arguments as shown above. The script only runs when it is set as the
+start command, so local development and tests are unaffected.
 
 ### Render production configuration checklist
 
