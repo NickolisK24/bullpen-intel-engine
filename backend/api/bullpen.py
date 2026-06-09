@@ -29,6 +29,7 @@ from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build
 from services.bullpen_comparison import build_team_comparison
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
+    population_diagnostic,
     usage_logs_by_pitcher,
 )
 from services.game_context import build_landscape, build_team_game_context
@@ -1024,6 +1025,40 @@ def compare_team_bullpens():
         'team_a': board_a,
         'team_b': board_b,
         'comparison': comparison,
+    })
+
+
+# ─── Role Authority diagnostic (read-only) ────────────────────────────────────
+
+@bullpen_bp.route('/role-authority/diagnostic', methods=['GET'])
+def get_role_authority_diagnostic():
+    """
+    Read-only comparison of the legacy innings-based bullpen population vs. the
+    Role Authority population. Changes no live behavior — it exists so the
+    population shift can be audited (additions, removals, role and confidence
+    distributions) before/while role authority drives the surfaces.
+
+    Optional query params:
+      - team_id: scope to one team (default: all active pitchers).
+      - include_stale: widen the usage window and surface Unknown roles.
+    """
+    team_id = request.args.get('team_id', type=int)
+    include_stale = _truthy(request.args.get('include_stale'))
+
+    query = Pitcher.query.filter(Pitcher.active == True)
+    if team_id is not None:
+        query = query.filter(Pitcher.team_id == team_id)
+    pitchers = query.order_by(Pitcher.full_name).all()
+
+    diagnostic = population_diagnostic(pitchers, include_stale=include_stale)
+    return jsonify({
+        'capability': 'role_authority_diagnostic',
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'ranking_applied': False,
+        'selection_made': False,
+        'team_id': team_id,
+        'include_stale': include_stale,
+        **diagnostic,
     })
 
 
