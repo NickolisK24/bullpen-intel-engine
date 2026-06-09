@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 import logging
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -7,6 +7,10 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.sync_run import SyncRun
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_reference_date import (
+    product_availability_reference_date_from_metadata,
+    product_current_date,
+)
 from utils.db import db
 from utils.time import utc_now_naive
 
@@ -167,7 +171,12 @@ def determine_freshness_state(
     persisted game/fatigue tables. This function does not infer a successful
     sync from local files or from data presence.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
+    availability_reference_date = (
+        product_availability_reference_date_from_metadata(metadata)
+        if last_successful_sync
+        else None
+    )
     latest_game_date = metadata['latest_game_date']
     latest_workload_date = metadata['latest_workload_date'] or latest_game_date
     latest_fatigue = metadata['latest_fatigue_calculated_at']
@@ -189,6 +198,11 @@ def determine_freshness_state(
             'active_window_days': ACTIVE_WINDOW_DAYS,
             'active_cutoff_date': cutoff.isoformat(),
             'reference_date': ref.isoformat(),
+            'availability_reference_date': (
+                availability_reference_date.isoformat()
+                if availability_reference_date
+                else None
+            ),
             'reason_codes': ['workload_data_missing'],
             'label': 'No baseball workload data loaded.',
             'limitations': ['No game logs are available.'],
@@ -229,6 +243,11 @@ def determine_freshness_state(
         'active_window_days': ACTIVE_WINDOW_DAYS,
         'active_cutoff_date': cutoff.isoformat(),
         'reference_date': ref.isoformat(),
+        'availability_reference_date': (
+            availability_reference_date.isoformat()
+            if availability_reference_date
+            else None
+        ),
         'reason_codes': reason_codes,
         'label': label,
         'limitations': limitations,
@@ -286,6 +305,12 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         last_successful_sync = None
         last_successful_sync_run = None
 
+    availability_reference_date = (
+        product_availability_reference_date_from_metadata(metadata)
+        if last_successful_sync
+        else None
+    )
+
     return {
         'status': status,
         'sync_authority': 'sync_runs',
@@ -304,6 +329,7 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             'latest_workload_date': _iso(metadata['latest_workload_date']),
             'latest_fatigue_calculated_at': _iso(metadata['latest_fatigue_calculated_at']),
         },
+        'availability_reference_date': _iso(availability_reference_date),
         'freshness': determine_freshness_state(
             metadata,
             status=status,

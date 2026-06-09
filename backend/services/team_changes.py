@@ -410,7 +410,11 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         'label': _comparison_label(team, anchor_date, current_date),
     })
 
-    pitchers, _roster_summary = eligible_bullpen_pitchers(team_id, include_stale=False)
+    pitchers, _roster_summary = eligible_bullpen_pitchers(
+        team_id,
+        include_stale=False,
+        reference_date=current_date,
+    )
     pitcher_ids = [pitcher.id for pitcher in pitchers]
     current_scores = _latest_scores(pitcher_ids)
     anchor_scores = _scores_at_or_before(pitcher_ids, anchor_date)

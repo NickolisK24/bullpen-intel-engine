@@ -7,8 +7,9 @@ logs, and data freshness signals already available to the backend.
 """
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 
+from services.availability_reference_date import product_current_date
 from services.availability_explanations import (
     BASE_LIMITATIONS,
     INCOMPLETE_WORKLOAD_LIMITATION,
@@ -252,7 +253,8 @@ def classify_availability(
     Args:
         score: FatigueScore-like object or dict. May be None.
         game_logs: Recent GameLog-like objects for the reference-date window.
-        reference_date: Date of the availability snapshot. Defaults to today.
+        reference_date: Date of the availability snapshot. Defaults to the
+            product calendar date.
         latest_game_date: Most recent known appearance date. If omitted, derived
             from game_logs when possible.
         active_window_days: Freshness window for current availability.
@@ -261,7 +263,7 @@ def classify_availability(
     Returns:
         Dict safe to embed in API responses.
     """
-    ref = reference_date or date.today()
+    ref = reference_date or product_current_date()
     logs = list(game_logs or [])
     if latest_game_date is None and logs:
         latest_game_date = max(
