@@ -307,6 +307,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
+  const hasStress = Boolean(board?.stress)
 
   return (
     <div>
@@ -325,7 +326,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
 
       <BullpenStressSummary stress={board?.stress} />
 
-      <BullpenContextSummary board={board} />
+      <BullpenContextSummary board={board} showHealthSummary={!hasStress} />
 
       {totals.isEmpty ? (
         <EmptyState

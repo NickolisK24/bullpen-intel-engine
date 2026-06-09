@@ -63,6 +63,7 @@ function FollowedTeamSummary({ board }) {
   }
 
   const context = getBoardContextView(board)
+  const hasStress = Boolean(board?.stress)
   const snapshot = context.snapshot.filter(row => (
     row.status === 'Available'
     || row.status === 'Monitor'
@@ -75,19 +76,21 @@ function FollowedTeamSummary({ board }) {
     <div className="space-y-3">
       <BullpenStressSummary stress={board?.stress} compact />
 
-      <div className="rounded border border-dirt bg-field/50 p-3" role="status">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="font-display text-lg tracking-wide text-chalk100">
-            {context.label || 'Bullpen context unavailable.'}
+      {!hasStress && (
+        <div className="rounded border border-dirt bg-field/50 p-3" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-display text-lg tracking-wide text-chalk100">
+              {context.label || 'Bullpen context unavailable.'}
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Confidence: {context.confidenceLabel}
+            </div>
           </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Confidence: {context.confidenceLabel}
-          </div>
+          {context.reasons[0] && (
+            <p className="mt-1 text-xs leading-relaxed text-chalk400">{context.reasons[0]}</p>
+          )}
         </div>
-        {context.reasons[0] && (
-          <p className="mt-1 text-xs leading-relaxed text-chalk400">{context.reasons[0]}</p>
-        )}
-      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {snapshot.map(row => (
