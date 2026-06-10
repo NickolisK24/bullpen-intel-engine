@@ -10,25 +10,33 @@
 export const CONCEPT_DEFINITIONS = {
   pressure: {
     name: 'Bullpen Pressure',
-    definition: 'How much strain the bullpen appears to be carrying today based on recent workload and availability.',
+    definition: 'How much workload strain the pen is carrying today.',
   },
   recovery: {
     name: 'Recovery Window',
-    definition: 'How much clean rest the bullpen appears to have available today. This describes workload rest, not health.',
+    definition: 'How much clean rest the bullpen has available.',
   },
   concentration: {
     name: 'Workload Concentration',
-    definition: 'Whether recent bullpen work appears spread across the group or clustered among fewer arms.',
+    definition: 'Whether recent work is spread around or clustered on fewer arms.',
   },
   cleanOptions: {
     name: 'Clean Options',
-    definition: 'How many arms appear to enter today without significant recent workload restriction.',
+    definition: 'How many arms enter today without major recent workload restriction.',
   },
 }
 
 export const LIMITED_READ_LABEL = 'Limited Read'
 
-const arms = (n) => `${n} arm${n === 1 ? '' : 's'}`
+// Count-led phrase helpers — every read's detail leads with the arms that
+// drive it, so a tooltip reads like "3 of 8 arms need rest; 2 more on watch."
+const needRestPhrase = (needRest, total) =>
+  `${needRest} of ${total} ${needRest === 1 ? 'arm needs' : 'arms need'} rest`
+const restedPhrase = (ready, total) =>
+  `${ready} of ${total} ${ready === 1 ? 'arm comes' : 'arms come'} in rested`
+const unrestrictedPhrase = (ready, total) =>
+  `${ready} of ${total} ${ready === 1 ? 'arm enters' : 'arms enter'} without restriction`
+const onWatchPhrase = (watch, total) => `${watch} of ${total} on the watch list`
 
 function normalizeCounts(counts = {}) {
   const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
@@ -60,22 +68,18 @@ function pressureRead({ total, watch, needRest }) {
     concept: CONCEPT_DEFINITIONS.pressure.name,
     definition: CONCEPT_DEFINITIONS.pressure.definition,
   }
+  // Lead with arms needing rest, then add the watch tail when it applies.
+  const restAndWatch = watch > 0
+    ? `${needRestPhrase(needRest, total)}; ${watch} more on watch.`
+    : `${needRestPhrase(needRest, total)}.`
   if (needRest >= 3 || needRest / total >= 0.4) {
     return {
-      ...base,
-      label: 'High',
-      display: 'High Bullpen Pressure',
-      tone: 'stress',
-      detail: `${arms(needRest)} of ${total} need rest — recent workload is squeezing today's options.`,
+      ...base, label: 'High', display: 'High Bullpen Pressure', tone: 'stress', detail: restAndWatch,
     }
   }
   if (needRest === 2 || (needRest >= 1 && watch >= 2)) {
     return {
-      ...base,
-      label: 'Elevated',
-      display: 'Elevated Bullpen Pressure',
-      tone: 'watch',
-      detail: 'Enough recent workload here to tighten the late innings.',
+      ...base, label: 'Elevated', display: 'Elevated Bullpen Pressure', tone: 'watch', detail: restAndWatch,
     }
   }
   if (needRest === 1 || watch >= 2) {
@@ -84,7 +88,7 @@ function pressureRead({ total, watch, needRest }) {
       label: 'Manageable',
       display: 'Manageable Bullpen Pressure',
       tone: 'rest',
-      detail: 'Some recent work to manage, nothing squeezing the pen yet.',
+      detail: needRest === 1 ? `${needRestPhrase(needRest, total)}.` : `${onWatchPhrase(watch, total)}.`,
     }
   }
   return {
@@ -92,7 +96,7 @@ function pressureRead({ total, watch, needRest }) {
     label: 'Low',
     display: 'Low Bullpen Pressure',
     tone: 'rest',
-    detail: 'Little recent strain on this group.',
+    detail: watch > 0 ? `No arms need rest; ${watch} of ${total} on watch.` : 'No arms need rest today.',
   }
 }
 
@@ -103,43 +107,20 @@ function recoveryRead({ total, ready }) {
     definition: CONCEPT_DEFINITIONS.recovery.definition,
   }
   const share = ready / total
+  const detail = `${restedPhrase(ready, total)}.`
   if (ready >= 6 || share >= 0.65) {
-    return {
-      ...base,
-      label: 'Wide',
-      display: 'Wide Recovery Window',
-      tone: 'rest',
-      detail: `${arms(ready)} of ${total} come in rested — plenty of clean rest to work with.`,
-    }
+    return { ...base, label: 'Wide', display: 'Wide Recovery Window', tone: 'rest', detail }
   }
   if (share >= 0.45) {
-    return {
-      ...base,
-      label: 'Stable',
-      display: 'Stable Recovery Window',
-      tone: 'rest',
-      detail: 'A workable amount of clean rest in the group.',
-    }
+    return { ...base, label: 'Stable', display: 'Stable Recovery Window', tone: 'rest', detail }
   }
   if (share >= 0.25) {
-    return {
-      ...base,
-      label: 'Narrow',
-      display: 'Narrow Recovery Window',
-      tone: 'watch',
-      detail: 'Clean rest is in shorter supply than usual here.',
-    }
+    return { ...base, label: 'Narrow', display: 'Narrow Recovery Window', tone: 'watch', detail }
   }
-  return {
-    ...base,
-    label: 'Limited',
-    display: 'Limited Recovery Window',
-    tone: 'stress',
-    detail: 'Very little clean rest available in this group today.',
-  }
+  return { ...base, label: 'Limited', display: 'Limited Recovery Window', tone: 'stress', detail }
 }
 
-function concentrationRead({ watch, needRest }) {
+function concentrationRead({ total, watch, needRest }) {
   const base = {
     key: 'concentration',
     concept: CONCEPT_DEFINITIONS.concentration.name,
@@ -147,28 +128,19 @@ function concentrationRead({ watch, needRest }) {
   }
   if (watch >= 3 || (watch >= 2 && needRest >= 2)) {
     return {
-      ...base,
-      label: 'Concentrated',
-      display: 'Concentrated Workload',
-      tone: 'watch',
-      detail: `Recent work is clustering in a few arms — ${arms(watch)} on the watch list.`,
+      ...base, label: 'Concentrated', display: 'Concentrated Workload', tone: 'watch',
+      detail: `${onWatchPhrase(watch, total)} — work is clustering in a few arms.`,
     }
   }
   if (watch === 2 || (watch >= 1 && needRest >= 1)) {
     return {
-      ...base,
-      label: 'Some Concentration',
-      display: 'Some Concentration',
-      tone: 'neutral',
-      detail: 'A few arms are carrying more than their share of recent work.',
+      ...base, label: 'Some Concentration', display: 'Some Concentration', tone: 'neutral',
+      detail: `${onWatchPhrase(watch, total)} carrying more than their share.`,
     }
   }
   return {
-    ...base,
-    label: 'Spread-Out',
-    display: 'Spread-Out Workload',
-    tone: 'rest',
-    detail: 'Recent work looks spread across the group.',
+    ...base, label: 'Spread-Out', display: 'Spread-Out Workload', tone: 'rest',
+    detail: watch > 0 ? `Just ${watch} of ${total} on watch; work otherwise spread.` : 'No arms on the watch list.',
   }
 }
 
@@ -178,40 +150,17 @@ function cleanOptionsRead({ total, ready }) {
     concept: CONCEPT_DEFINITIONS.cleanOptions.name,
     definition: CONCEPT_DEFINITIONS.cleanOptions.definition,
   }
+  const detail = `${unrestrictedPhrase(ready, total)}.`
   if (ready >= 6 || ready / total >= 0.7) {
-    return {
-      ...base,
-      label: 'Deep',
-      display: 'Deep Clean Options',
-      tone: 'rest',
-      detail: `${arms(ready)} enter today without significant recent restriction.`,
-    }
+    return { ...base, label: 'Deep', display: 'Deep Clean Options', tone: 'rest', detail }
   }
   if (ready >= 4 || ready / total >= 0.5) {
-    return {
-      ...base,
-      label: 'Enough',
-      display: 'Enough Clean Options',
-      tone: 'rest',
-      detail: 'A workable group of unrestricted arms for today.',
-    }
+    return { ...base, label: 'Enough', display: 'Enough Clean Options', tone: 'rest', detail }
   }
   if (ready >= 2) {
-    return {
-      ...base,
-      label: 'Thin',
-      display: 'Thin Clean Options',
-      tone: 'watch',
-      detail: 'Fewer unrestricted arms than a club would like today.',
-    }
+    return { ...base, label: 'Thin', display: 'Thin Clean Options', tone: 'watch', detail }
   }
-  return {
-    ...base,
-    label: 'Very Thin',
-    display: 'Very Thin Clean Options',
-    tone: 'stress',
-    detail: 'Almost no unrestricted arms in this pen today.',
-  }
+  return { ...base, label: 'Very Thin', display: 'Very Thin Clean Options', tone: 'stress', detail }
 }
 
 // All four reads from one set of counts:

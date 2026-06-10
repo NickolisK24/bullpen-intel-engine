@@ -64,45 +64,41 @@ export default function TeamBullpenStoryPanel({ board }) {
   )
 }
 
-// The BaseballOS Reads strip — the four named reads in a compact row. Each
-// chip explains itself on hover/focus, and the disclosure underneath spells
-// out what every read means in one line.
+// The BaseballOS Reads strip — the four named reads in one tight row. Each
+// chip pairs a muted concept name with its tone-colored value and explains
+// itself on hover/focus; the collapsed disclosure carries the plain-English
+// definitions so the chips themselves stay light.
 function BaseballOSReads({ reads }) {
   if (!Array.isArray(reads) || reads.length === 0) return null
 
   return (
     <div className="mt-4">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-        BaseballOS Reads
-      </div>
-      <dl className="mt-2 flex flex-wrap gap-2">
+      <dl className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
+        <dt className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+          BaseballOS Reads
+        </dt>
         {reads.map(read => {
           const tone = homeTone(read.tone)
           return (
-            <div
+            <dd
               key={read.key}
-              className="inline-flex items-center gap-2 rounded border border-dirt bg-field/60 px-2.5 py-1"
-              title={`${read.concept}: ${read.definition} ${read.detail}`}
+              className="inline-flex items-center gap-1.5 rounded border border-dirt/70 bg-field/40 px-2 py-0.5"
+              title={`${read.display}: ${read.detail}`}
             >
-              <dt className="font-mono text-[10px] uppercase tracking-wider text-chalk400">
-                {read.concept}
-              </dt>
-              <dd
-                className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wide"
-                style={{ color: tone.color }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+              <span className="font-mono text-[10px] uppercase tracking-wide text-chalk400">{read.concept}</span>
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-wide" style={{ color: tone.color }}>
                 {read.label}
-              </dd>
-            </div>
+              </span>
+            </dd>
           )
         })}
       </dl>
-      <details className="mt-2">
+      <details className="mt-1.5">
         <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
           What these mean
         </summary>
-        <ul className="mt-2 space-y-1">
+        <ul className="mt-1.5 space-y-1">
           {Object.values(CONCEPT_DEFINITIONS).map(concept => (
             <li key={concept.name} className="text-xs leading-relaxed text-chalk400">
               <span className="text-chalk200">{concept.name}</span> — {concept.definition}

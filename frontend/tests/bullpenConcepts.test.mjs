@@ -160,8 +160,11 @@ const dashboard = {
 
 test('today stays light: exactly one concept chip, on the hero', () => {
   const html = render(React.createElement(HomeView, { dashboard }))
-  const matches = (html.match(/High Bullpen Pressure/g) || []).length
-  assert.equal(matches, 1, 'the hero carries one pressure chip; story cards on Today stay untagged')
+  // Count chips by their unique tooltip marker so the visible label and its
+  // own title attribute are not double-counted.
+  const chips = (html.match(/title="High Bullpen Pressure:/g) || []).length
+  assert.equal(chips, 1, 'the hero carries one pressure chip; story cards on Today stay untagged')
+  assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
 })
 
 test('stories feed cards carry compact concept tags', () => {
@@ -170,6 +173,50 @@ test('stories feed cards carry compact concept tags', () => {
   assert.ok(htmlIncludes(html, 'Concentrated Workload'))
   // Washington's rested story is tagged with its recovery read.
   assert.ok(htmlIncludes(html, 'Wide Recovery Window'))
+})
+
+// ── Definition polish ───────────────────────────────────────────────────────
+
+test('definitions stay short and plain', () => {
+  for (const key of ['pressure', 'recovery', 'concentration', 'cleanOptions']) {
+    const { definition } = CONCEPT_DEFINITIONS[key]
+    assert.ok(definition.length > 20, `${key} definition too short`)
+    assert.ok(definition.length <= 80, `${key} definition should stay a single plain sentence`)
+    assert.ok(definition.split('.').filter(Boolean).length === 1, `${key} definition should be one sentence`)
+  }
+})
+
+test('the concept set stays at four — no new concepts were added', () => {
+  assert.equal(Object.keys(CONCEPT_DEFINITIONS).length, 4)
+  const { reads } = getBullpenReads({ total: 8, ready: 4, watch: 2, needRest: 2 })
+  assert.equal(reads.length, 4)
+})
+
+test('Clean Options keeps its name and avoids health-tinted alternatives', () => {
+  assert.equal(CONCEPT_DEFINITIONS.cleanOptions.name, 'Clean Options')
+  // No display label anywhere should drift to a fresh/health-flavored term.
+  const tiers = [
+    { total: 8, ready: 6, watch: 1, needRest: 1 },
+    { total: 8, ready: 4, watch: 2, needRest: 2 },
+    { total: 8, ready: 2, watch: 2, needRest: 4 },
+    { total: 8, ready: 1, watch: 3, needRest: 4 },
+  ]
+  for (const counts of tiers) {
+    const display = getBullpenReads(counts).byKey.cleanOptions.display
+    assert.ok(/Clean Options$/.test(display), `unexpected clean-options display: ${display}`)
+    assert.ok(!/Fresh|Clean Arms/.test(display))
+  }
+})
+
+test('read detail leads with the counts that drive it', () => {
+  const { byKey } = getBullpenReads({ total: 8, ready: 2, watch: 2, needRest: 3 })
+  assert.match(byKey.pressure.detail, /^3 of 8 arms need rest/)
+  assert.match(byKey.recovery.detail, /^2 of 8 arms come in rested/)
+  assert.match(byKey.concentration.detail, /^2 of 8 on the watch list/)
+  assert.match(byKey.cleanOptions.detail, /^2 of 8 arms enter without restriction/)
+  // Singular counts read grammatically.
+  const single = getBullpenReads({ total: 8, ready: 1, watch: 1, needRest: 1 })
+  assert.match(single.byKey.recovery.detail, /^1 of 8 arm comes in rested/)
 })
 
 // ── Language guardrails ─────────────────────────────────────────────────────
