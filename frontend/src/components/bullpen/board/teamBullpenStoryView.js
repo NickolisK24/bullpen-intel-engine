@@ -4,6 +4,8 @@
 // Pure retelling in baseball language — descriptive only, no predictions,
 // no recommendations, no new signals.
 
+import { getBullpenReads } from '../../../utils/bullpenConcepts'
+
 const STORY_TONES = {
   constrained: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5', dot: '#ef4444' },
   watch: { borderColor: '#eab30855', backgroundColor: '#eab30812', color: '#fde047', dot: '#eab308' },
@@ -167,6 +169,9 @@ export function getTeamBullpenStoryView(board) {
   const confidence = board?.context?.confidence || 'high'
   const family = deriveStoryFamily(board)
   const { headline, summary } = storyHeadline(family, teamName, counts)
+  // The BaseballOS Reads strip — the named vocabulary derived from the same
+  // counts the story itself uses. A thin dataset reads as Limited across.
+  const { reads } = getBullpenReads({ ...counts, limitedRead: family === 'data_limited' })
 
   return {
     hasStory: true,
@@ -176,6 +181,7 @@ export function getTeamBullpenStoryView(board) {
     teamName,
     headline,
     summary,
+    reads,
     workloadBullets: workloadBullets(family, counts, confidence),
     watchBullets: watchBullets(family, counts),
     framing: STORY_FRAMING_LINE,

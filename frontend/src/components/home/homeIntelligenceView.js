@@ -1,4 +1,5 @@
 import { fmtDataDate } from '../dashboard/syncStatusView'
+import { getReadsForLandscapeEntry } from '../../utils/bullpenConcepts'
 
 // The Morning Bullpen Report — view-model for the story-led homepage.
 //
@@ -102,6 +103,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'stress',
       kicker: 'Workload Stress',
       team: stressed,
+      read: getReadsForLandscapeEntry(stressed).byKey.pressure,
       headline: `The ${stressed.teamName} have baseball's most constrained bullpen today`,
       observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. No club enters the day with less late-inning flexibility.`,
       whyItMatters: 'A short bullpen narrows the late innings. If the next few games stay close, the heaviest work is likely to stay on the arms that have already been carrying it.',
@@ -117,6 +119,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'watch',
       kicker: 'Workload Watch',
       team: watched,
+      read: getReadsForLandscapeEntry(watched).byKey.pressure,
       headline: `The ${watched.teamName} have baseball's most concentrated bullpen workload today`,
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
       whyItMatters: 'Concentrated work stacks up quietly. Heavy weeks tend to show up later as shorter outings and nights off the schedule didn’t plan for.',
@@ -132,6 +135,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'rest',
       kicker: 'Fresh Arms',
       team: rested,
+      read: getReadsForLandscapeEntry(rested).byKey.pressure,
       headline: `The ${rested.teamName} bring baseball's most rested bullpen into today`,
       observation: `${rested.available} of the pen's ${rested.total} relievers come in rested and ready — the cleanest availability picture in baseball today.`,
       whyItMatters: 'Rest is flexibility. A full pen lets a manager shape the late innings on his terms instead of his bullpen’s.',
@@ -145,6 +149,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     tone: 'neutral',
     kicker: 'League Check-In',
     team: null,
+    read: null,
     headline: 'A quiet morning across baseball’s bullpens',
     observation: dashboard?.context?.health?.label
       || 'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
@@ -336,6 +341,7 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: hidden.teamId,
       abbr: hidden.abbr,
       teamName: hidden.teamName,
+      read: getReadsForLandscapeEntry(hidden).byKey.concentration,
       kicker: 'Hidden Workload',
       tone: 'watch',
       title: `The ${hidden.teamName} box score looks calm. The bullpen does not.`,
@@ -351,6 +357,7 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: heaviest.teamId,
       abbr: heaviest.abbr,
       teamName: heaviest.teamName,
+      read: getReadsForLandscapeEntry(heaviest).byKey.concentration,
       kicker: 'Carrying The Load',
       tone: 'watch',
       title: `The ${heaviest.teamName} keep handing the ball to the same relievers`,
@@ -366,6 +373,7 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: tightening.teamId,
       abbr: tightening.abbr,
       teamName: tightening.teamName,
+      read: getReadsForLandscapeEntry(tightening).byKey.pressure,
       kicker: 'Pressure Point',
       tone: 'stress',
       title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
@@ -381,6 +389,7 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: freshest.teamId,
       abbr: freshest.abbr,
       teamName: freshest.teamName,
+      read: getReadsForLandscapeEntry(freshest).byKey.recovery,
       kicker: 'Fresh And Ready',
       tone: 'rest',
       title: `Nobody brings a more rested pen into today than the ${freshest.teamName}`,
@@ -396,6 +405,7 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: steady.teamId,
       abbr: steady.abbr,
       teamName: steady.teamName,
+      read: getReadsForLandscapeEntry(steady).byKey.cleanOptions,
       kicker: 'Quiet Strength',
       tone: 'rest',
       title: `The ${steady.teamName} pen is in good shape`,

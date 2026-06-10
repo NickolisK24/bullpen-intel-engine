@@ -122,13 +122,24 @@ function HeroStory({ hero }) {
     <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout bg-stadium-glow p-5 sm:p-7">
       <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
       <div className="relative z-10">
-        <span
-          className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-          style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
-          {hero.kicker}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
+            style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+            {hero.kicker}
+          </span>
+          {hero.read && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded border border-dirt bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk200"
+              title={`${hero.read.concept}: ${hero.read.definition} ${hero.read.detail}`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: homeTone(hero.read.tone).dot }} aria-hidden="true" />
+              {hero.read.display}
+            </span>
+          )}
+        </div>
 
         <h2 className="mt-3 max-w-4xl font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl">
           {hero.headline}
