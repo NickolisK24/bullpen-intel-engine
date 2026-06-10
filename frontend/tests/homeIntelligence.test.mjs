@@ -254,7 +254,7 @@ test('the homepage renders all five sections in story-first order', () => {
   const sections = [
     'What BaseballOS Sees Today',
     'Most Stressed Bullpen',
-    'Bullpen Stories',
+    'Short List',
     'Bullpen Rankings',
   ]
   let lastIndex = -1
@@ -271,6 +271,20 @@ test('today is curated: no team explorer, feedback CTA intact', () => {
   assert.ok(!htmlIncludes(html, 'Explore Every Bullpen'))
   assert.ok(!htmlIncludes(html, 'arms tracked'))
   assert.ok(htmlIncludes(html, 'Help shape BaseballOS'))
+})
+
+test('today shows only the top three stories and hands off to the feed', () => {
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+  // With this fixture the story order is Toronto, the Mets, then Washington.
+  assert.ok(htmlIncludes(html, 'box score looks calm'))
+  assert.ok(htmlIncludes(html, 'thin late-inning margin is forming'))
+  assert.ok(htmlIncludes(html, 'more rested pen into today'))
+  // Stories four and beyond stay off the briefing.
+  assert.ok(!htmlIncludes(html, 'Quiet Strength'))
+  assert.ok(!htmlIncludes(html, 'Bullpen work is running heavy around the league'))
+  // The short list hands off to the full feed.
+  assert.ok(htmlIncludes(html, 'href="/stories"'))
+  assert.ok(htmlIncludes(html, 'Open the full story feed'))
 })
 
 test('the hero renders the flagship observation with Why It Matters', () => {
@@ -350,8 +364,10 @@ test('a story without a destination renders as plain copy, not a pretend link', 
     },
   }))
   assert.ok(htmlIncludes(html, 'No destination here'))
-  assert.ok(!html.includes('</a>'), 'no anchor should render without a destination')
-  assert.ok(!html.includes('→'), 'no CTA arrow should render without a destination')
+  // The only anchor in the section is the standing hand-off to the feed.
+  assert.equal((html.match(/<a /g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'href="/stories"'))
+  assert.ok(!htmlIncludes(html, 'Open the full picture'), 'no card CTA should render without a destination')
 })
 
 test('live ranking rows link to team boards; coming-soon boards render no links', () => {

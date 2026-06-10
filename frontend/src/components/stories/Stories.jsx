@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard, getBullpenObservations } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
-import { HeroStory } from '../home/Home'
 import LeagueIntelligenceCards from '../home/LeagueIntelligenceCards'
 import { SectionHeading } from '../home/BullpenStories'
 import {
@@ -20,10 +19,10 @@ import {
   getStoryFeed,
 } from './storiesFeedView'
 
-// BaseballOS Stories — the browseable bullpen intelligence feed. Today stays
-// curated; this page collects every storyline BaseballOS is carrying right
-// now into one place, with simple lanes to browse by. Same derivations, same
-// destinations, no new signals.
+// BaseballOS Stories — the browseable bullpen intelligence feed. Today is the
+// curated morning briefing; this page is the stream: a compact top story,
+// filters up front, and every storyline BaseballOS is carrying right now.
+// Same derivations, same destinations, no new signals.
 export default function Stories() {
   const dash = useFetch(getBullpenDashboard)
   const observations = useFetch(getBullpenObservations)
@@ -49,7 +48,7 @@ export function StoriesView({
 }) {
   const [filter, setFilter] = useState(initialFilter)
   const masthead = getMastheadView(dashboard)
-  const hero = getHeroStory(dashboard, 'stories-hero')
+  const hero = getHeroStory(dashboard, 'stories-top')
   const cards = getLeagueCards(dashboard)
   const feed = getStoryFeed(dashboard, observations)
   const counts = getFilterCounts(feed.items)
@@ -57,7 +56,7 @@ export function StoriesView({
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
-      <header className="mb-6 border-b border-dirt pb-4 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+      <header className="mb-5 border-b border-dirt pb-4 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
@@ -86,20 +85,7 @@ export function StoriesView({
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
         <>
-          <section className="mb-8" aria-label="Featured story">
-            <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
-              The Story Today
-            </div>
-            <HeroStory hero={hero} />
-          </section>
-
-          <section className="mb-8" aria-label="Around the league">
-            <SectionHeading
-              title="Around The League"
-              subtitle="The four bullpen situations that frame the day."
-            />
-            <LeagueIntelligenceCards cards={cards} />
-          </section>
+          <TopStoryCard hero={hero} />
 
           <section className="mb-8" aria-label="Story feed">
             <SectionHeading
@@ -138,9 +124,66 @@ export function StoriesView({
               </div>
             )}
           </section>
+
+          <section className="mb-8" aria-label="Around the league">
+            <SectionHeading
+              title="Around The League"
+              subtitle="The four situations framing the day — the same cards the morning briefing leads with."
+            />
+            <LeagueIntelligenceCards cards={cards} />
+          </section>
         </>
       )}
     </div>
+  )
+}
+
+// The feed's lede: the same flagship story Today leads with, in a compact cut
+// that hands the page to the feed instead of repeating the homepage hero.
+function TopStoryCard({ hero }) {
+  const tone = homeTone(hero.tone)
+  const href = hero.team?.href || null
+
+  const inner = (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Top Story</span>
+        <span
+          className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
+          style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
+        >
+          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+          {hero.kicker}
+        </span>
+      </div>
+
+      <h2 className="mt-2 max-w-4xl font-display text-2xl leading-tight tracking-wide text-chalk100 sm:text-3xl group-hover:text-amber transition-colors">
+        {hero.headline}
+      </h2>
+
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">{hero.observation}</p>
+
+      {href && (
+        <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
+          Step inside the {hero.team.abbr || hero.team.teamName} pen →
+        </div>
+      )}
+    </>
+  )
+
+  return (
+    <section className="mb-6" aria-label="Top story">
+      {href ? (
+        <Link
+          to={href}
+          className="card group block p-4 sm:p-5 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
+        >
+          {inner}
+        </Link>
+      ) : (
+        <article className="card p-4 sm:p-5">{inner}</article>
+      )}
+    </section>
   )
 }
 
