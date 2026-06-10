@@ -1,6 +1,7 @@
 import { EmptyState } from '../../UI'
 import BullpenStressSummary from './BullpenStressSummary'
 import BullpenContextSummary from './BullpenContextSummary'
+import TeamBullpenStoryPanel from './TeamBullpenStoryPanel'
 import {
   getBoardCardView,
   getBoardFreshnessView,
@@ -303,7 +304,10 @@ function BoardGroup({ group, onViewDetails }) {
   )
 }
 
-export default function BullpenBoardView({ board, onSelectPitcher }) {
+// `showStoryPanel` mounts Today's Bullpen Story between the context strips and
+// the board. Tonight's Board (the homepage destination) opts in; embedded uses
+// like the side-by-side comparison stay as they are.
+export default function BullpenBoardView({ board, onSelectPitcher, showStoryPanel = false }) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
@@ -313,6 +317,7 @@ export default function BullpenBoardView({ board, onSelectPitcher }) {
     <div>
       <FreshnessBanner freshness={board?.freshness} />
       <RosterStatusBanner summary={board?.roster_status} />
+      {showStoryPanel && <TeamBullpenStoryPanel board={board} />}
 
       <div className="mb-5">
         <h2 className="font-display text-2xl tracking-wide text-chalk100">
