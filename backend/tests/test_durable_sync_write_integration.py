@@ -31,7 +31,7 @@ def client(tmp_path, monkeypatch):
     # Mock the network/heavy work so the endpoint's durable wiring is what's tested.
     monkeypatch.setattr(sync_service, 'sync_recent_logs',
                         lambda days_back=7: {'new_logs_added': 3, 'pitchers_touched': 2, 'errors': 0})
-    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda use_last_game_date=False: 5)
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda reference_date=None: 5)
     monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
         'pitchers_refreshed': 1,
         'pitchers_changed': 0,
