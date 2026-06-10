@@ -93,9 +93,17 @@ test('the hero leads with the most constrained bullpen', () => {
   assert.ok(hero.hasStory)
   assert.equal(hero.angle, 'stress')
   assert.equal(hero.team.teamName, 'Milwaukee Brewers')
-  assert.ok(/Milwaukee Brewers/.test(hero.headline))
-  assert.ok(/4 of/.test(hero.observation))
+  assert.ok(/4 of the pen/.test(hero.observation))
   assert.ok(hero.whyItMatters.length > 0)
+})
+
+test('the hero headline states what the data shows, not a forecast', () => {
+  const hero = getHeroStory(dashboard)
+  assert.match(hero.headline, /have baseball's most constrained bullpen today/)
+  // No drama, no fortune-telling.
+  for (const phrase of [/running out/i, /collapse/i, /will\s/i, /guarantee/i, /doomed/i]) {
+    assert.ok(!phrase.test(hero.headline), `headline leaked: ${phrase}`)
+  }
 })
 
 test('the hero falls back to the heaviest watch list, then the most rested pen', () => {
@@ -106,6 +114,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const watchHero = getHeroStory(noStress)
   assert.equal(watchHero.angle, 'concentration')
   assert.equal(watchHero.team.teamName, 'Toronto Blue Jays')
+  assert.match(watchHero.headline, /most concentrated bullpen workload today/)
 
   const restOnly = {
     ...dashboard,
@@ -114,6 +123,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
+  assert.match(restHero.headline, /most rested bullpen into today/)
 })
 
 test('a quiet league day still produces a hero story', () => {
@@ -135,7 +145,18 @@ test('all four league intelligence cards are derived from the landscape', () => 
   assert.equal(byKey['bullpen-to-watch'].team.abbr, 'TOR')
   // Two constrained clubs → the trend card reads league-wide stress.
   assert.equal(byKey['biggest-trend'].stat, '2')
-  assert.ok(/clubs/.test(byKey['biggest-trend'].statLabel))
+  assert.match(byKey['biggest-trend'].line, /Stress is not isolated to one club today/)
+})
+
+test('card copy reads like a hook, not a metric summary', () => {
+  const cards = getLeagueCards(dashboard)
+  const byKey = Object.fromEntries(cards.map(card => [card.key, card]))
+  assert.equal(byKey['most-stressed'].line,
+    'More arms need a breather here than anywhere else in baseball.')
+  assert.equal(byKey['most-rested'].line,
+    'This group brings the cleanest availability picture into today.')
+  assert.equal(byKey['bullpen-to-watch'].line,
+    'The surface is not alarming yet, but the recent workload is worth watching.')
 })
 
 test('cards degrade to quiet copy when the landscape is empty', () => {
@@ -159,13 +180,33 @@ test('stories are derived from the landscape without repeating the hero club', (
   assert.ok(/Toronto Blue Jays/.test(titles))
   assert.ok(/New York Mets/.test(titles))
   assert.ok(/Washington Nationals/.test(titles))
-  // Toronto (4 monitor, 0 restricted) reads as a hidden workload story.
-  assert.ok(stories.items.some(story => story.kicker === 'Hidden Workload Story'))
 })
 
-test('governed observations join the story list when contract-safe', () => {
+test('story titles read like a baseball writer, not a system', () => {
+  const stories = getBullpenStories(dashboard, null)
+  const titles = stories.items.map(story => story.title)
+  // Toronto (4 monitor, 0 restricted) is the hidden-workload shape.
+  assert.ok(titles.includes('The Toronto Blue Jays box score looks calm. The bullpen does not.'))
+  assert.ok(titles.includes('A thin late-inning margin is forming for the New York Mets'))
+})
+
+test('governed observations are retold in editorial language, never verbatim', () => {
   const stories = getBullpenStories(dashboard, observations)
-  assert.ok(stories.items.some(story => story.title === 'Bullpen workload pressure is elevated.'))
+  const titles = stories.items.map(story => story.title)
+  assert.ok(titles.includes('Bullpen work is running heavy around the league'))
+  assert.ok(!titles.includes('Bullpen workload pressure is elevated.'))
+})
+
+test('observation families without an editorial translation are left off the page', () => {
+  const unknownFamily = {
+    contractState: 'available',
+    observations: [
+      { family: 'mystery_family', severity: 'monitor', title: 'Raw system text.', summary: 'Raw system summary.' },
+    ],
+  }
+  const stories = getBullpenStories(dashboard, unknownFamily)
+  const text = stories.items.map(story => `${story.title} ${story.body}`).join(' ')
+  assert.ok(!text.includes('Raw system'))
 })
 
 test('unsafe or empty observation feeds are ignored', () => {
@@ -196,6 +237,13 @@ test('rankings preview runs live boards from counts and marks movement boards as
   assert.ok(byKey.risers.placeholderCopy.length > 0)
 })
 
+test('rankings carry framing that separates bullpen shape from team quality', () => {
+  const rankings = getRankingsPreview(dashboard)
+  assert.match(rankings.framing, /workload and availability signals/)
+  assert.match(rankings.framing, /not a talent ranking/)
+  assert.match(rankings.updateNote, /update as new completed games/)
+})
+
 // ── Team explorer ───────────────────────────────────────────────────────────
 
 test('the team explorer lists every tracked club with board deep-links', () => {
@@ -211,9 +259,17 @@ test('the team explorer lists every tracked club with board deep-links', () => {
 test('clubs in the landscape carry story hooks, with stress taking priority', () => {
   const explorer = getTeamExplorerView(teams, dashboard)
   const byAbbr = Object.fromEntries(explorer.items.map(team => [team.abbr, team]))
-  assert.equal(byAbbr.MIL.tag.label, 'Stressed')
-  assert.equal(byAbbr.TOR.tag.label, 'Watch')
-  assert.equal(byAbbr.WSH.tag.label, 'Rested')
+  assert.equal(byAbbr.MIL.tag.label, 'Running Hot')
+  assert.equal(byAbbr.TOR.tag.label, 'Watch List')
+  assert.equal(byAbbr.WSH.tag.label, 'Well Rested')
+})
+
+test('clubs carrying storylines lead the explorer; the rest follow alphabetically', () => {
+  const explorer = getTeamExplorerView(teams, dashboard)
+  assert.deepEqual(
+    explorer.items.map(team => team.abbr),
+    ['MIL', 'NYM', 'TOR', 'WSH', 'CHC'],
+  )
 })
 
 // ── Masthead ────────────────────────────────────────────────────────────────
@@ -223,7 +279,7 @@ test('the masthead reports the data window in plain language', () => {
   assert.ok(/Built from completed games through Jun 5, 2026/.test(masthead.dataLine))
   assert.ok(masthead.editionDate.includes('2026'))
   const cold = getMastheadView({}, new Date('2026-06-06T12:00:00Z'))
-  assert.equal(cold.dataLine, 'Awaiting the first data sync')
+  assert.equal(cold.dataLine, 'Waiting on the first completed games')
 })
 
 // ── Rendering & placement ───────────────────────────────────────────────────
@@ -250,7 +306,14 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
   assert.ok(htmlIncludes(html, 'Why It Matters'))
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
+  assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
+})
+
+test('the rankings framing is visible on the page', () => {
+  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  assert.ok(htmlIncludes(html, 'not a talent ranking'))
+  assert.ok(htmlIncludes(html, 'Rankings update as new completed games enter the system.'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
@@ -265,7 +328,7 @@ test('loading and error states render without data', () => {
   assert.ok(htmlIncludes(errorHtml, 'API 500'))
 })
 
-// ── Guardrails: stories stay descriptive ────────────────────────────────────
+// ── Guardrails: language stays descriptive and human ───────────────────────
 
 test('the homepage avoids advisory, ranking, and prediction language', () => {
   const html = render(React.createElement(HomeView, { dashboard, teams, observations })).toLowerCase()
@@ -273,8 +336,20 @@ test('the homepage avoids advisory, ranking, and prediction language', () => {
     'should use', 'best option', 'best bullpen', 'worst bullpen', 'best arm',
     'recommended', 'recommendation', 'strongest bullpen', 'weakest bullpen',
     'expected to win', 'likely to win', 'win probability', 'odds', 'projection',
-    'prediction', 'preferred arm',
+    'prediction', 'preferred arm', 'will collapse', 'guaranteed', 'bet on',
+    'betting', 'parlay', 'moneyline', 'injury', 'manager should',
   ]) {
     assert.ok(!html.includes(term), `leaked term: ${term}`)
+  }
+})
+
+test('the homepage avoids raw system phrasing', () => {
+  const html = render(React.createElement(HomeView, { dashboard, teams, observations })).toLowerCase()
+  for (const term of [
+    'availability inventory', 'readiness limitations', 'limitations are present',
+    'trusted snapshot', 'snapshot', 'data state', 'data_state', 'contract',
+    'fail closed', 'fail_closed', 'governance',
+  ]) {
+    assert.ok(!html.includes(term), `leaked system phrasing: ${term}`)
   }
 })

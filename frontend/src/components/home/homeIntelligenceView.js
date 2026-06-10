@@ -15,9 +15,6 @@ const countWord = (n) => COUNT_WORDS[n] || String(n)
 
 const capitalize = (text) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : text)
 
-// "Toronto Blue Jays" → "Toronto Blue Jays'", "Milwaukee" → "Milwaukee's".
-const possessive = (name) => (name?.endsWith('s') ? `${name}'` : `${name}'s`)
-
 // Neutral display tones shared across the homepage. Tones describe the
 // situation being observed (stress / watch / rest), never quality.
 export const HOME_TONES = {
@@ -92,7 +89,8 @@ const heroChips = (team) => [
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
 // One flagship observation, picked by a fixed priority: the most constrained
 // pen, then the heaviest watch list, then the most rested group, then a quiet
-// league day. Same data the landscape already publishes — retold as a story.
+// league day. Headlines state what the data shows today — present tense,
+// defensible, no forecasts.
 export function getHeroStory(dashboard, source = 'home-hero') {
   const { constrained, available, monitoring } = landscapeLists(dashboard, source)
 
@@ -104,9 +102,9 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'stress',
       kicker: 'Workload Stress',
       team: stressed,
-      headline: `The ${stressed.teamName} bullpen is running out of fresh arms`,
-      observation: `BaseballOS counts ${stressed.restricted} of the ${possessive(stressed.teamName)} ${stressed.total} relievers as needing rest after their recent workloads — the most constrained pen in baseball today.`,
-      whyItMatters: 'A short pen narrows the late innings. If the next few games stay close, the heaviest work lands on the arms that have already been carrying it.',
+      headline: `The ${stressed.teamName} have baseball's most constrained bullpen today`,
+      observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. No club enters the day with less late-inning flexibility.`,
+      whyItMatters: 'A short bullpen narrows the late innings. If the next few games stay close, the heaviest work is likely to stay on the arms that have already been carrying it.',
       chips: heroChips(stressed),
     }
   }
@@ -119,9 +117,9 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'watch',
       kicker: 'Workload Watch',
       team: watched,
-      headline: `${watched.teamName} keep going back to the same arms`,
-      observation: `${watched.monitor} of the ${possessive(watched.teamName)} ${watched.total} relievers are carrying workloads heavy enough to watch — the largest watch list in baseball today, even with nobody down outright.`,
-      whyItMatters: 'Workload that concentrates in a few relievers stacks up quietly. Heavy weeks tend to surface later as shorter outings and forced nights off.',
+      headline: `The ${watched.teamName} have baseball's most concentrated bullpen workload today`,
+      observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
+      whyItMatters: 'Concentrated work stacks up quietly. Heavy weeks tend to show up later as shorter outings and nights off the schedule didn’t plan for.',
       chips: heroChips(watched),
     }
   }
@@ -134,8 +132,8 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       tone: 'rest',
       kicker: 'Fresh Arms',
       team: rested,
-      headline: `The ${rested.teamName} bullpen comes in fully rested`,
-      observation: `${rested.available} of the ${possessive(rested.teamName)} ${rested.total} relievers enter tonight rested and ready — the largest group of fresh arms in baseball today.`,
+      headline: `The ${rested.teamName} bring baseball's most rested bullpen into today`,
+      observation: `${rested.available} of the pen's ${rested.total} relievers come in rested and ready — the cleanest availability picture in baseball today.`,
       whyItMatters: 'Rest is flexibility. A full pen lets a manager shape the late innings on his terms instead of his bullpen’s.',
       chips: heroChips(rested),
     }
@@ -147,10 +145,10 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     tone: 'neutral',
     kicker: 'League Check-In',
     team: null,
-    headline: 'A quiet morning across major-league bullpens',
+    headline: 'A quiet morning across baseball’s bullpens',
     observation: dashboard?.context?.health?.label
-      || 'No club stands out for bullpen stress or workload concentration in the current snapshot.',
-    whyItMatters: 'Quiet days are when pens reset. The interesting stories usually start the night after.',
+      || 'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
+    whyItMatters: 'Quiet days are when bullpens reset. The next story usually starts the night after.',
     chips: [],
   }
 }
@@ -169,26 +167,26 @@ export function getLeagueCards(dashboard) {
   if (stressedClubs >= 2) {
     trend = {
       stat: String(stressedClubs),
-      statLabel: 'clubs showing stress',
-      line: `${capitalize(countWord(stressedClubs))} bullpens are carrying real stress at the same time — workload is the league-wide story today.`,
+      statLabel: 'clubs working through stress',
+      line: `Stress is not isolated to one club today — ${countWord(stressedClubs)} pens are carrying real workload at the same time.`,
     }
   } else if (metrics.monitor > 0 && metrics.monitor >= metrics.restricted) {
     trend = {
       stat: String(metrics.monitor),
-      statLabel: 'arms on workload watch',
-      line: 'The watch list is the story today: heavy recent usage is spread across the league.',
+      statLabel: 'arms on the watch list',
+      line: 'The watch list is the story today — heavy recent use is spread around the league.',
     }
   } else if (metrics.pctAvailable > 0) {
     trend = {
       stat: `${metrics.pctAvailable}%`,
       statLabel: 'of arms rested league-wide',
-      line: 'Most pens enter tonight with their arms rested.',
+      line: 'Most pens come into today rested, with stress the exception rather than the rule.',
     }
   } else {
     trend = {
       stat: null,
       statLabel: null,
-      line: 'No single league-wide trend stands out in the current snapshot.',
+      line: 'No single league-wide storyline stands out today.',
     }
   }
 
@@ -201,8 +199,8 @@ export function getLeagueCards(dashboard) {
       stat: stressLeader ? `${stressLeader.restricted} of ${stressLeader.total}` : null,
       statLabel: stressLeader ? 'arms needing rest' : null,
       line: stressLeader
-        ? 'More relievers need a breather here than anywhere else in baseball.'
-        : 'No bullpen is carrying notable stress in the current snapshot.',
+        ? 'More arms need a breather here than anywhere else in baseball.'
+        : 'No pen is carrying outsized stress today — a clean league-wide picture.',
       href: stressLeader?.href || '/bullpen',
       cta: stressLeader ? 'Step inside this pen' : 'Browse bullpens',
     },
@@ -214,8 +212,8 @@ export function getLeagueCards(dashboard) {
       stat: restLeader ? `${restLeader.available} of ${restLeader.total}` : null,
       statLabel: restLeader ? 'arms rested & ready' : null,
       line: restLeader
-        ? 'The largest group of fresh relievers in baseball today.'
-        : 'No bullpen stands out for rest in the current snapshot.',
+        ? 'This group brings the cleanest availability picture into today.'
+        : 'No pen stands out for rest today.',
       href: restLeader?.href || '/bullpen',
       cta: restLeader ? 'Step inside this pen' : 'Browse bullpens',
     },
@@ -236,10 +234,10 @@ export function getLeagueCards(dashboard) {
       tone: 'watch',
       team: watchLeader,
       stat: watchLeader ? `${watchLeader.monitor} of ${watchLeader.total}` : null,
-      statLabel: watchLeader ? 'arms on workload watch' : null,
+      statLabel: watchLeader ? 'arms on the watch list' : null,
       line: watchLeader
-        ? 'Nobody is down yet — but the recent usage here is piling up.'
-        : 'No watch list stands out in the current snapshot.',
+        ? 'The surface is not alarming yet, but the recent workload is worth watching.'
+        : 'No watch list stands out today.',
       href: watchLeader?.href || '/bullpen',
       cta: watchLeader ? 'Step inside this pen' : 'Browse bullpens',
     },
@@ -248,17 +246,54 @@ export function getLeagueCards(dashboard) {
 
 // ── Section 3 — Today's Bullpen Stories ────────────────────────────────────
 export const STORIES_FALLBACK =
-  'No standout bullpen stories in the current snapshot — check back after tonight’s games.'
+  'A quiet day in the bullpens — no standout stories this morning. Check back after tonight’s games.'
 
-const OBSERVATION_KICKERS = {
-  inventory: 'Depth Check',
-  readiness: 'Readiness Note',
-  workload_pressure: 'Workload Watch',
-  constraint: 'Constraint Note',
-  freshness: 'Data Check',
-  trust: 'Data Check',
-  availability_movement: 'Movement',
-  snapshot_change: 'What Changed',
+// Governed observations arrive in system vocabulary ("Availability inventory
+// is constrained."). The homepage retells each family in the words a baseball
+// writer would use. Families without an editorial translation are left off
+// the page rather than shown raw — the governed text remains available on the
+// deeper surfaces.
+const OBSERVATION_STORY_COPY = {
+  inventory: {
+    kicker: 'Depth Check',
+    title: 'Some clubs are running short on clean options',
+    body: 'Around the league, a few pens come in with fewer fully rested arms than they would like. Depth is carrying more of the load than usual today.',
+  },
+  readiness: {
+    kicker: 'Rest Watch',
+    title: 'Rest is becoming part of the bullpen story',
+    body: 'Not every arm on a roster is truly fresh today. A handful of pens are managing rest as carefully as they manage innings.',
+  },
+  workload_pressure: {
+    kicker: 'Workload Watch',
+    title: 'Bullpen work is running heavy around the league',
+    body: 'Several pens have been busy lately, and the work has not been spread evenly. The arms carrying it have earned a closer look.',
+  },
+  constraint: {
+    kicker: 'Tight Margins',
+    title: 'Late-inning options are tighter than usual today',
+    body: 'More than one club comes in with a shorter list of fresh arms than it would like. The margin for a long night is thin in places.',
+  },
+  freshness: {
+    kicker: 'Data Note',
+    title: 'Today’s picture is waiting on fresh games',
+    body: 'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
+  },
+  trust: {
+    kicker: 'Data Note',
+    title: 'BaseballOS is staying quiet where the data is thin',
+    body: 'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
+  },
+  availability_movement: {
+    kicker: 'Movement',
+    title: 'Availability is shifting around the league',
+    body: 'Arms are rotating on and off rest around the league. Today’s availability picture is not yesterday’s.',
+  },
+  snapshot_change: {
+    kicker: 'What Changed',
+    title: 'Last night rearranged a few bullpens',
+    body: 'The newest completed games changed who is rested and who is not. Today’s bullpen picture reflects it.',
+  },
 }
 
 const OBSERVATION_TONES = {
@@ -281,10 +316,10 @@ export function getBullpenStories(dashboard, observations = null) {
   if (hidden) {
     candidates.push({
       teamId: hidden.teamId,
-      kicker: 'Hidden Workload Story',
+      kicker: 'Hidden Workload',
       tone: 'watch',
-      title: `${hidden.teamName} look fine on the surface — the workload says look closer`,
-      body: `Nobody in this pen is flashing red yet, but ${hidden.monitor} of ${hidden.total} arms are carrying heavy recent usage. The surface is calmer than the workload underneath.`,
+      title: `The ${hidden.teamName} box score looks calm. The bullpen does not.`,
+      body: `Nobody in this pen is flashing red, but ${hidden.monitor} of ${hidden.total} arms are carrying heavy recent work. The quiet surface is doing a lot of hiding.`,
       href: hidden.href,
     })
   }
@@ -295,8 +330,8 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: heaviest.teamId,
       kicker: 'Carrying The Load',
       tone: 'watch',
-      title: `${heaviest.teamName} keep handing the ball to the same relievers`,
-      body: `${heaviest.monitor} of ${heaviest.total} arms sit on the workload watch list — the heaviest concentration of recent usage in baseball today.`,
+      title: `The ${heaviest.teamName} keep handing the ball to the same relievers`,
+      body: `${heaviest.monitor} of ${heaviest.total} arms sit on the watch list — the heaviest concentration of recent bullpen work in baseball today.`,
       href: heaviest.href,
     })
   }
@@ -305,10 +340,10 @@ export function getBullpenStories(dashboard, observations = null) {
   if (tightening) {
     candidates.push({
       teamId: tightening.teamId,
-      kicker: 'Emerging Pressure Point',
+      kicker: 'Pressure Point',
       tone: 'stress',
-      title: `The ${tightening.teamName} pen is tightening`,
-      body: `${tightening.restricted} of ${tightening.total} relievers need rest tonight. One long, close game could stretch this group thin.`,
+      title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
+      body: `${tightening.restricted} of ${tightening.total} relievers need rest today. One long night could leave this pen with very few clean options.`,
       href: tightening.href,
     })
   }
@@ -319,8 +354,8 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: freshest.teamId,
       kicker: 'Fresh And Ready',
       tone: 'rest',
-      title: `${freshest.teamName} bring the most rested pen to the park`,
-      body: `${freshest.available} of ${freshest.total} relievers come in rested and ready — rest that buys a manager options late.`,
+      title: `Nobody brings a more rested pen into today than the ${freshest.teamName}`,
+      body: `${freshest.available} of ${freshest.total} relievers are rested and ready — the kind of depth that lets the late innings breathe.`,
       href: freshest.href,
     })
   }
@@ -332,27 +367,33 @@ export function getBullpenStories(dashboard, observations = null) {
       kicker: 'Quiet Strength',
       tone: 'rest',
       title: `The ${steady.teamName} pen is in good shape`,
-      body: `${steady.available} of ${steady.total} arms enter tonight rested, with no notable stress signals in the current snapshot.`,
+      body: `${steady.available} of ${steady.total} arms come in rested, with nothing on the workload ledger to worry about today.`,
       href: steady.href,
     })
   }
 
-  // Governed observations, retold as league-level notes. Only a contract-safe
-  // collection is used, and the governed title/summary text is shown verbatim.
+  // Governed observations, retold in editorial language. Only a contract-safe
+  // collection is used; only families with a translation are shown, one card
+  // per family, two at most.
   const observationItems = observations?.contractState === 'available'
     && Array.isArray(observations.observations)
     ? observations.observations
     : []
-  for (const observation of observationItems.slice(0, 2)) {
-    if (!observation?.title || !observation?.summary) continue
+  const seenFamilies = new Set()
+  for (const observation of observationItems) {
+    const family = observation?.family
+    const copy = OBSERVATION_STORY_COPY[family]
+    if (!copy || seenFamilies.has(family)) continue
+    seenFamilies.add(family)
     candidates.push({
       teamId: null,
-      kicker: OBSERVATION_KICKERS[observation.family] || 'League Note',
+      kicker: copy.kicker,
       tone: OBSERVATION_TONES[observation.severity] || 'neutral',
-      title: observation.title,
-      body: observation.summary,
+      title: copy.title,
+      body: copy.body,
       href: '/dashboard',
     })
+    if (seenFamilies.size >= 2) break
   }
 
   const items = []
@@ -384,12 +425,13 @@ export function getRankingsPreview(dashboard) {
   }))
 
   return {
-    intro: 'Where full bullpen rankings are headed — assembled from the same availability signals on this page and refreshed as new games sync in.',
+    framing: 'Built from current workload and availability signals — not a talent ranking. This reflects today’s bullpen shape.',
+    updateNote: 'Rankings update as new completed games enter the system.',
     boards: [
       {
         key: 'health',
         title: 'Top Bullpen Health',
-        note: 'Most rested arms in today’s snapshot',
+        note: 'Most rested arms today',
         placeholder: false,
         entries: toEntries(
           available.filter(team => team.available > 0),
@@ -399,7 +441,7 @@ export function getRankingsPreview(dashboard) {
       {
         key: 'stress',
         title: 'Most Stressed Bullpens',
-        note: 'Most arms needing rest tonight',
+        note: 'Most arms needing rest today',
         placeholder: false,
         entries: toEntries(
           constrained.filter(team => team.restricted > 0),
@@ -427,30 +469,41 @@ export function getRankingsPreview(dashboard) {
 }
 
 // ── Section 5 — Team Explorer ──────────────────────────────────────────────
+// Clubs with a live storyline lead off — most stressed first, then the watch
+// list, then the most rested — and everyone else follows alphabetically. The
+// hooks use story language rather than status labels.
 export function getTeamExplorerView(teams, dashboard) {
   const { constrained, available, monitoring } = landscapeLists(dashboard, 'home-explorer')
 
-  // Story hooks for clubs that show up in today's landscape. Later writes win,
-  // so apply in reverse priority: rest, then watch, then stress.
-  const tagByTeamId = new Map()
-  for (const team of available) {
-    if (team.teamId != null && team.available > 0) tagByTeamId.set(team.teamId, { label: 'Rested', tone: 'rest' })
+  const hookByTeamId = new Map()
+  const addHooks = (list, countKey, label, tone, priority) => {
+    list.forEach((team, index) => {
+      if (team.teamId == null || !(team[countKey] > 0)) return
+      const existing = hookByTeamId.get(team.teamId)
+      if (existing && existing.priority <= priority) return
+      hookByTeamId.set(team.teamId, { label, tone, priority, order: index })
+    })
   }
-  for (const team of monitoring) {
-    if (team.teamId != null && team.monitor > 0) tagByTeamId.set(team.teamId, { label: 'Watch', tone: 'watch' })
-  }
-  for (const team of constrained) {
-    if (team.teamId != null && team.restricted > 0) tagByTeamId.set(team.teamId, { label: 'Stressed', tone: 'stress' })
-  }
+  addHooks(constrained, 'restricted', 'Running Hot', 'stress', 0)
+  addHooks(monitoring, 'monitor', 'Watch List', 'watch', 1)
+  addHooks(available, 'available', 'Well Rested', 'rest', 2)
 
-  const items = (Array.isArray(teams) ? teams : []).map(team => ({
-    teamId: team.team_id,
-    name: team.team_name || team.team_abbreviation || `Team ${team.team_id}`,
-    abbr: team.team_abbreviation || '—',
-    armsTracked: Number(team.pitcher_count) || 0,
-    tag: tagByTeamId.get(team.team_id) || null,
-    href: buildHomeTeamHref(team, 'home-explorer'),
-  }))
+  const items = (Array.isArray(teams) ? teams : []).map(team => {
+    const hook = hookByTeamId.get(team.team_id) || null
+    return {
+      teamId: team.team_id,
+      name: team.team_name || team.team_abbreviation || `Team ${team.team_id}`,
+      abbr: team.team_abbreviation || '—',
+      armsTracked: Number(team.pitcher_count) || 0,
+      tag: hook ? { label: hook.label, tone: hook.tone } : null,
+      sortKey: hook ? hook.priority * 100 + hook.order : Number.MAX_SAFE_INTEGER,
+      href: buildHomeTeamHref(team, 'home-explorer'),
+    }
+  })
+
+  items.sort((a, b) => (
+    a.sortKey - b.sortKey || a.name.localeCompare(b.name)
+  ))
 
   return { hasTeams: items.length > 0, items, count: items.length }
 }
@@ -467,7 +520,7 @@ export function getMastheadView(dashboard, now = new Date()) {
     }),
     dataLine: dataThrough
       ? `Built from completed games through ${dataThrough}`
-      : 'Awaiting the first data sync',
+      : 'Waiting on the first completed games',
     isLive,
   }
 }
