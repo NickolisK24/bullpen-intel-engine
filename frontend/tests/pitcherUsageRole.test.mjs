@@ -81,7 +81,7 @@ test('low-confidence role displays its confidence', () => {
   const board = makeBoard({ cardsByStatus: { Monitor: [roleCard('Stu Short', 'Monitor', lowRole)] } })
   const html = render(board)
   assert.ok(htmlIncludes(html, 'Low / Unclear Usage'))
-  assert.ok(htmlIncludes(html, '· Low'))
+  assert.ok(htmlIncludes(html, '· Unclear Read'))
 })
 
 test('insufficient-data role displays without inventing a pattern', () => {
@@ -118,7 +118,7 @@ test('getRoleView maps key, labels, confidence, and neutral tone', () => {
   const v = view.getRoleView(longRole)
   assert.equal(v.key, 'long_multi_inning')
   assert.equal(v.shortLabel, 'Long / Multi-Inning')
-  assert.equal(v.confidenceLabel, 'High')
+  assert.equal(v.confidenceLabel, 'Strong Read')
   assert.equal(v.evidence.length, 3)
   assert.equal(view.getRoleView(null), null)
   // Insufficient/low use the muted tone; defined roles use the neutral tone.

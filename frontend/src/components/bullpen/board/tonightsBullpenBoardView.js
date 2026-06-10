@@ -70,7 +70,7 @@ const ROLE_SHORT_LABELS = {
 }
 
 const ELIGIBILITY_LABELS = {
-  inactive_bullpen_relevant: 'Stale Workload',
+  inactive_bullpen_relevant: 'Recent Workload Unclear',
   uncertain_bullpen_relevance: 'Bullpen Role Unclear',
   // Role Authority V1 caveats (surfaced when role authority drives the board).
   // Relievers and starters need no chip: relievers are the default population
@@ -269,7 +269,7 @@ export function getDataProvenance(freshness) {
   if (isStale) {
     return {
       state: 'stale',
-      label: 'Stale data',
+      label: 'Outdated data',
       detail: `through ${dataThrough}`,
       dataThrough,
       throughHint: f.label || 'Latest completed MLB data is outside the active freshness window.',
@@ -315,7 +315,7 @@ export function getBoardFreshnessView(freshness) {
     dataAgeDays: f.data_age_days ?? null,
     label: f.label || null,
     limitations,
-    healthLabel: isCurrent ? 'Current' : 'Stale',
+    healthLabel: isCurrent ? 'Current' : 'Not Current',
     tone: isCurrent
       ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
       : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },

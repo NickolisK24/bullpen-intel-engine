@@ -47,6 +47,19 @@ function rowValue(rows, label) {
   return asArray(rows).find(row => row.label === label)?.value
 }
 
+// Baseball-facing visibility labels for the bullpen visibility snapshot.
+// Raw trust-metadata confidence values stay untouched in the contract rows.
+const VISIBILITY_LABELS = {
+  high: 'Clear Visibility',
+  medium: 'Limited Visibility',
+  low: 'Limited Visibility',
+  unknown: 'Visibility Unknown',
+}
+
+function visibilityValue(rawValue) {
+  return VISIBILITY_LABELS[String(rawValue || '').trim().toLowerCase()] || metricLabel(rawValue)
+}
+
 function availabilityShape(availability) {
   const rows = [
     ['Available', availability.available],
@@ -204,9 +217,9 @@ export default function OperationalReadinessSection({
   const freshnessDetail = freshness.data_through
     ? `Data through ${freshness.data_through}`
     : 'Freshness metadata visible'
-  const trustLabel = metricLabel(
+  const trustLabel = visibilityValue(
     trustMetadata.confidence
-    || rowValue(v2View.trustRows, 'Confidence'),
+    || rowValue(v2View.trustRows, 'Workload Read'),
   )
   const trustDetail = `Data state ${metricLabel(
     trustMetadata.data_state
@@ -249,7 +262,7 @@ export default function OperationalReadinessSection({
                 Operational Snapshot
               </div>
               <p className="mt-1 text-sm leading-relaxed text-chalk500">
-                Current bullpen state, readiness, pressure, availability shape, freshness, and trust in one governed view.
+                Current bullpen state, readiness, pressure, availability shape, freshness, and visibility in one governed view.
               </p>
             </div>
             <div className="font-mono text-[11px] uppercase tracking-wider text-chalk600">
@@ -291,7 +304,7 @@ export default function OperationalReadinessSection({
               subtext={freshnessDetail}
             />
             <SnapshotMetric
-              label="Trust Status"
+              label="Bullpen Visibility"
               value={trustLabel}
               subtext={trustDetail}
               tone="border-amber/35 bg-amber/10 text-amber"

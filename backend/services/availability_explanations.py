@@ -31,9 +31,11 @@ BASE_LIMITATIONS = [
 
 MISSING_WORKLOAD_REASON = 'Missing workload history or fatigue score'
 INCOMPLETE_WORKLOAD_REASON = 'Incomplete workload inputs'
-MISSING_WORKLOAD_LIMITATION = 'Availability confidence is low because workload inputs are missing'
+MISSING_WORKLOAD_LIMITATION = 'Availability read is unclear because workload inputs are missing'
 INCOMPLETE_WORKLOAD_LIMITATION = 'Some game-log workload fields are incomplete'
-STALE_WORKLOAD_LIMITATION = 'Stale workload data must not be treated as current availability'
+# Wording must keep a data-state keyword (stale/missing/incomplete) so
+# categorize_limitation continues to map it to CATEGORY_DATA_STATE.
+STALE_WORKLOAD_LIMITATION = 'Recent usage information is incomplete, so workload data must not be treated as current availability'
 WORKLOAD_FALLBACK_REASON = 'Availability restriction rule matched without a displayable workload input'
 
 

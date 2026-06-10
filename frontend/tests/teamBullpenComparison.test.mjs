@@ -61,8 +61,8 @@ test('similar distributions read as similar, not as a winner', () => {
 
 test('stale bullpen surfaces freshness limitations and degraded confidence', () => {
   const html = render(staleComparison)
-  assert.ok(htmlIncludes(html, 'Stale — read with caution'))
-  assert.ok(htmlIncludes(html, 'Confidence: Low'))
+  assert.ok(htmlIncludes(html, 'Recent workload unclear — read with caution'))
+  assert.ok(htmlIncludes(html, 'Workload Read: Unclear Read'))
   assert.ok(htmlIncludes(html, 'one or both bullpens have degraded freshness'))
   assert.ok(htmlIncludes(html, 'outside the 14-day freshness window'))
 })

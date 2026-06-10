@@ -133,7 +133,7 @@ function inventorySummaryText(item) {
   const freshness = asObject(item.freshness)
   const freshnessState = freshness.freshness_state || freshness.state || freshness.state_code
   if (freshnessState || item.confidence) {
-    return `Freshness ${displayValue(freshnessState, 'unavailable')} | Confidence ${displayValue(item.confidence, 'unavailable')}`
+    return `Freshness ${displayValue(freshnessState, 'unavailable')} | Workload Read ${displayValue(item.confidence, 'unavailable')}`
   }
 
   return 'Inventory category reported by the V2 contract.'
@@ -145,7 +145,7 @@ function inventoryFreshnessRows(item) {
     { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
     { label: 'Data Through', value: displayValue(freshness.data_through) },
     { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
-    { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
+    { label: 'Data Recency Notice', value: displayValue(freshness.stale_warning, 'None') },
     { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
   ]
 }
@@ -182,7 +182,7 @@ function candidateGroupFreshnessRows(group) {
     { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
     { label: 'Data Through', value: displayValue(freshness.data_through) },
     { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
-    { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
+    { label: 'Data Recency Notice', value: displayValue(freshness.stale_warning, 'None') },
     { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
   ]
 }
@@ -368,7 +368,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
     ],
     trustRows: [
       { label: 'Scope', value: displayValue(trustMetadata.scope || state.scope) },
-      { label: 'Confidence', value: displayValue(trustMetadata.confidence || state.confidence) },
+      { label: 'Workload Read', value: displayValue(trustMetadata.confidence || state.confidence) },
       { label: 'Data State', value: displayValue(trustMetadata.data_state || state.dataState) },
       { label: 'Generated', value: displayValue(trustMetadata.generated_at || state.generatedAt) },
     ],
@@ -380,7 +380,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
       { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
       { label: 'Overall Sync', value: displayValue(freshness.overall_sync_status || statusMetadata.overall_sync_status) },
       { label: 'Sync Current', value: displayValue(freshness.overall_sync_current ?? statusMetadata.overall_sync_current) },
-      { label: 'Stale Notice', value: displayValue(freshness.stale_warning, 'None') },
+      { label: 'Data Recency Notice', value: displayValue(freshness.stale_warning, 'None') },
       { label: 'Missing Data Notice', value: displayValue(freshness.missing_data_warning, 'None') },
     ],
     bullpenState,
@@ -676,7 +676,7 @@ function InventorySummary({
               </div>
               <div className="mt-3 grid gap-2">
                 <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Confidence</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Workload Read</span>
                   <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
                     {displayValue(item.confidence, 'Unavailable')}
                   </span>
@@ -854,7 +854,7 @@ function CandidateGroups({
                   </span>
                 </div>
                 <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Confidence</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Workload Read</span>
                   <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
                     {displayValue(group.confidence, 'Unavailable')}
                   </span>

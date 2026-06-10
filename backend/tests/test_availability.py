@@ -158,7 +158,7 @@ class TestAvailabilityClassification:
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'stale'
         assert 'Latest workload data is outside the 14-day freshness window' in result['reasons']
-        assert any('Stale workload data' in note for note in result['limitations'])
+        assert any('must not be treated as current availability' in note for note in result['limitations'])
 
     def test_incomplete_inputs_reduce_confidence(self, make_log):
         ref = date(2026, 6, 1)

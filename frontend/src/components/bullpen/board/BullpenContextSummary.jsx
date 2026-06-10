@@ -17,13 +17,13 @@ export default function BullpenContextSummary({ board, showHealthSummary = true 
               {view.label || 'Bullpen context unavailable.'}
             </h3>
             <span className="font-mono text-[10px] uppercase tracking-widest">
-              Confidence: {view.confidenceLabel}
+              Workload Read: {view.confidenceLabel}
             </span>
           </div>
 
           {view.isDegraded && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-              Lower confidence - read this snapshot with caution.
+              Unclear read - treat this snapshot with caution.
             </p>
           )}
 
