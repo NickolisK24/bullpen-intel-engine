@@ -3,7 +3,8 @@ import { NavLink } from 'react-router-dom'
 import FeedbackLink from './feedback/FeedbackLink'
 
 const NAV = [
-  { to: '/',            icon: '⬡',  label: 'Dashboard'   },
+  { to: '/',            icon: '☀',  label: 'Today'       },
+  { to: '/dashboard',   icon: '⬡',  label: 'Dashboard'   },
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
   { to: '/prospects',   icon: '📈', label: 'Pipeline', tag: 'Preview' },
   { to: '/methodology', icon: '📐', label: 'Methodology' },
