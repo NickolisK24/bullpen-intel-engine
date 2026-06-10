@@ -334,6 +334,8 @@ export function getBullpenStories(dashboard, observations = null) {
   if (hidden) {
     candidates.push({
       teamId: hidden.teamId,
+      abbr: hidden.abbr,
+      teamName: hidden.teamName,
       kicker: 'Hidden Workload',
       tone: 'watch',
       title: `The ${hidden.teamName} box score looks calm. The bullpen does not.`,
@@ -347,6 +349,8 @@ export function getBullpenStories(dashboard, observations = null) {
   if (heaviest) {
     candidates.push({
       teamId: heaviest.teamId,
+      abbr: heaviest.abbr,
+      teamName: heaviest.teamName,
       kicker: 'Carrying The Load',
       tone: 'watch',
       title: `The ${heaviest.teamName} keep handing the ball to the same relievers`,
@@ -360,6 +364,8 @@ export function getBullpenStories(dashboard, observations = null) {
   if (tightening) {
     candidates.push({
       teamId: tightening.teamId,
+      abbr: tightening.abbr,
+      teamName: tightening.teamName,
       kicker: 'Pressure Point',
       tone: 'stress',
       title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
@@ -373,6 +379,8 @@ export function getBullpenStories(dashboard, observations = null) {
   if (freshest) {
     candidates.push({
       teamId: freshest.teamId,
+      abbr: freshest.abbr,
+      teamName: freshest.teamName,
       kicker: 'Fresh And Ready',
       tone: 'rest',
       title: `Nobody brings a more rested pen into today than the ${freshest.teamName}`,
@@ -386,6 +394,8 @@ export function getBullpenStories(dashboard, observations = null) {
   if (steady) {
     candidates.push({
       teamId: steady.teamId,
+      abbr: steady.abbr,
+      teamName: steady.teamName,
       kicker: 'Quiet Strength',
       tone: 'rest',
       title: `The ${steady.teamName} pen is in good shape`,
@@ -490,46 +500,6 @@ export function getRankingsPreview(dashboard) {
       },
     ],
   }
-}
-
-// ── Section 5 — Team Explorer ──────────────────────────────────────────────
-// Clubs with a live storyline lead off — most stressed first, then the watch
-// list, then the most rested — and everyone else follows alphabetically. The
-// hooks use story language rather than status labels.
-export function getTeamExplorerView(teams, dashboard) {
-  const { constrained, available, monitoring } = landscapeLists(dashboard, 'home-explorer')
-
-  const hookByTeamId = new Map()
-  const addHooks = (list, countKey, label, tone, priority) => {
-    list.forEach((team, index) => {
-      if (team.teamId == null || !(team[countKey] > 0)) return
-      const existing = hookByTeamId.get(team.teamId)
-      if (existing && existing.priority <= priority) return
-      hookByTeamId.set(team.teamId, { label, tone, priority, order: index })
-    })
-  }
-  addHooks(constrained, 'restricted', 'Running Hot', 'stress', 0)
-  addHooks(monitoring, 'monitor', 'Watch List', 'watch', 1)
-  addHooks(available, 'available', 'Well Rested', 'rest', 2)
-
-  const items = (Array.isArray(teams) ? teams : []).map(team => {
-    const hook = hookByTeamId.get(team.team_id) || null
-    return {
-      teamId: team.team_id,
-      name: team.team_name || team.team_abbreviation || `Team ${team.team_id}`,
-      abbr: team.team_abbreviation || '—',
-      armsTracked: Number(team.pitcher_count) || 0,
-      tag: hook ? { label: hook.label, tone: hook.tone } : null,
-      sortKey: hook ? hook.priority * 100 + hook.order : Number.MAX_SAFE_INTEGER,
-      href: buildHomeTeamHref(team, 'home-explorer'),
-    }
-  })
-
-  items.sort((a, b) => (
-    a.sortKey - b.sortKey || a.name.localeCompare(b.name)
-  ))
-
-  return { hasTeams: items.length > 0, items, count: items.length }
 }
 
 // ── Masthead ───────────────────────────────────────────────────────────────

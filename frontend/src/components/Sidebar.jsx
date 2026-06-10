@@ -4,6 +4,7 @@ import FeedbackLink from './feedback/FeedbackLink'
 
 const NAV = [
   { to: '/',            icon: '☀',  label: 'Today'       },
+  { to: '/stories',     icon: '📰', label: 'Stories'     },
   { to: '/dashboard',   icon: '⬡',  label: 'Dashboard'   },
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
   { to: '/prospects',   icon: '📈', label: 'Pipeline', tag: 'Preview' },
