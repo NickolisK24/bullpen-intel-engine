@@ -37,14 +37,16 @@ export function SectionHeading({ title, subtitle, right }) {
   )
 }
 
+// A story card is a doorway: team stories step into that club's bullpen
+// board, league notes open the league view, data notes open Data & Trust.
+// A story with no meaningful destination renders as plain copy — no CTA, no
+// pretend link.
 function StoryCard({ story }) {
   const tone = homeTone(story.tone)
+  const hasDestination = Boolean(story.href)
 
-  return (
-    <Link
-      to={story.href || '/bullpen'}
-      className="card group flex flex-col p-4 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
-    >
+  const inner = (
+    <>
       <span
         className="inline-flex w-fit items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
         style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
@@ -59,9 +61,24 @@ function StoryCard({ story }) {
 
       <p className="mt-2 flex-1 text-sm leading-relaxed text-chalk400">{story.body}</p>
 
-      <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
-        Open the full picture →
-      </div>
+      {hasDestination && (
+        <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
+          {story.cta || 'Open the full picture'} →
+        </div>
+      )}
+    </>
+  )
+
+  if (!hasDestination) {
+    return <article className="card flex flex-col p-4">{inner}</article>
+  }
+
+  return (
+    <Link
+      to={story.href}
+      className="card group flex flex-col p-4 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
+    >
+      {inner}
     </Link>
   )
 }

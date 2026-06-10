@@ -17,6 +17,8 @@ after(async () => {
 })
 
 const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { default: BullpenStories } = await server.ssrLoadModule('/src/components/home/BullpenStories.jsx')
+const { default: RankingsPreview } = await server.ssrLoadModule('/src/components/home/RankingsPreview.jsx')
 const {
   getHeroStory,
   getLeagueCards,
@@ -326,6 +328,92 @@ test('loading and error states render without data', () => {
   assert.ok(htmlIncludes(loadingHtml, 'bullpen report'))
   const errorHtml = render(React.createElement(HomeView, { dashboard: null, teams: null, error: 'API 500' }))
   assert.ok(htmlIncludes(errorHtml, 'API 500'))
+})
+
+// ── Depth links: every strong hook leads somewhere real ────────────────────
+
+test('the hero primary CTA deep-links into the featured club’s bullpen board', () => {
+  const hero = getHeroStory(dashboard)
+  assert.equal(hero.team.href, '/bullpen?view=board&team=MIL&source=home-hero')
+  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  assert.ok(htmlIncludes(html, 'view=board') && htmlIncludes(html, 'team=MIL'))
+})
+
+test('league intelligence cards link to team boards, and the trend to the league view', () => {
+  const cards = getLeagueCards(dashboard)
+  const byKey = Object.fromEntries(cards.map(card => [card.key, card]))
+  assert.ok(byKey['most-stressed'].href.includes('team=MIL'))
+  assert.ok(byKey['most-rested'].href.includes('team=WSH'))
+  assert.ok(byKey['bullpen-to-watch'].href.includes('team=TOR'))
+  assert.equal(byKey['biggest-trend'].href, '/dashboard')
+})
+
+test('team stories step into the club; league and data notes open their own surfaces', () => {
+  const mixedObservations = {
+    contractState: 'available',
+    observations: [
+      { family: 'workload_pressure', severity: 'elevated', title: 'x', summary: 'y' },
+      { family: 'trust', severity: 'monitor', title: 'x', summary: 'y' },
+    ],
+  }
+  const stories = getBullpenStories(dashboard, mixedObservations)
+  for (const story of stories.items) {
+    assert.ok(story.href, `story has no destination: ${story.title}`)
+    if (story.teamId != null) {
+      assert.ok(story.href.includes('/bullpen?') && story.href.includes('team='))
+      assert.equal(story.cta, 'Step inside this pen')
+    }
+  }
+  const leagueNote = stories.items.find(story => story.kicker === 'Workload Watch' && story.teamId == null)
+  assert.equal(leagueNote.href, '/dashboard')
+  assert.equal(leagueNote.cta, 'See the league view')
+  const dataNote = stories.items.find(story => story.kicker === 'Data Note')
+  assert.equal(dataNote.href, '/trust')
+  assert.equal(dataNote.cta, 'Open the full picture')
+})
+
+test('a story without a destination renders as plain copy, not a pretend link', () => {
+  const html = render(React.createElement(BullpenStories, {
+    stories: {
+      hasStories: true,
+      items: [{ kicker: 'League Note', tone: 'neutral', title: 'No destination here', body: 'Copy only.', href: null }],
+      fallback: '',
+    },
+  }))
+  assert.ok(htmlIncludes(html, 'No destination here'))
+  assert.ok(!html.includes('</a>'), 'no anchor should render without a destination')
+  assert.ok(!html.includes('→'), 'no CTA arrow should render without a destination')
+})
+
+test('live ranking rows link to team boards; coming-soon boards render no links', () => {
+  const rankings = getRankingsPreview(dashboard)
+  for (const board of rankings.boards.filter(b => !b.placeholder)) {
+    for (const entry of board.entries) {
+      assert.ok(entry.href.includes('/bullpen?') && entry.href.includes('team='), `${board.key} row missing link`)
+    }
+  }
+  const html = render(React.createElement(RankingsPreview, { rankings }))
+  const anchorCount = (html.match(/<a /g) || []).length
+  const liveRowCount = rankings.boards.filter(b => !b.placeholder)
+    .reduce((sum, board) => sum + board.entries.length, 0)
+  assert.equal(anchorCount, liveRowCount,
+    'every anchor in the rankings section must be a live team row')
+})
+
+test('every team explorer tile links into that club’s bullpen board', () => {
+  const explorer = getTeamExplorerView(teams, dashboard)
+  for (const team of explorer.items) {
+    assert.ok(team.href.includes('/bullpen?') && team.href.includes('view=board'), `${team.abbr} tile missing link`)
+  }
+})
+
+test('CTA language is specific, never vague', () => {
+  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  assert.ok(htmlIncludes(html, 'Step inside this pen'))
+  assert.ok(htmlIncludes(html, 'See the league view'))
+  for (const vague of ['Learn more', 'Click here', '>Details<', 'Read more']) {
+    assert.ok(!htmlIncludes(html, vague), `vague CTA leaked: ${vague}`)
+  }
 })
 
 // ── Guardrails: language stays descriptive and human ───────────────────────
