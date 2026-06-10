@@ -22,7 +22,7 @@ function FreshnessChip({ label, freshness }) {
       )}
       {freshness.isStale && (
         <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-amber">
-          Stale — read with caution
+          Recent workload unclear — read with caution
         </div>
       )}
     </div>
@@ -124,7 +124,7 @@ export default function BullpenComparisonView({ payload }) {
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Comparison</h3>
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Confidence: {view.confidenceLabel}
+            Workload Read: {view.confidenceLabel}
           </span>
         </div>
         {view.summary.statement && (
@@ -132,7 +132,7 @@ export default function BullpenComparisonView({ payload }) {
         )}
         {view.isDegraded && (
           <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-amber">
-            Lower confidence — one or both bullpens have degraded freshness.
+            Unclear read — one or both bullpens have degraded freshness.
           </p>
         )}
         <div className="grid gap-3 md:grid-cols-3">

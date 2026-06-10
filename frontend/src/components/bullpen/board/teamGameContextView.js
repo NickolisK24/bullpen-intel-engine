@@ -4,7 +4,7 @@ import { fmtDataDate } from '../../dashboard/syncStatusView'
 const DATA_STATE_LABEL = {
   live: 'Live',
   historical: 'Historical',
-  stale: 'Stale',
+  stale: 'Not Current',
   unavailable: 'Unavailable',
 }
 
@@ -12,7 +12,7 @@ const DATA_STATE_LABEL = {
 const DATA_STATE_LONG_LABEL = {
   live: 'Current Game Log',
   historical: 'Historical Game Log',
-  stale: 'Stale Game Log',
+  stale: 'Game Log Not Current',
   unavailable: 'Unavailable',
 }
 

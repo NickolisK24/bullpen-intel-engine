@@ -780,7 +780,7 @@ def _readiness_summary(status_code: str) -> str:
     if status_code == 'operationally_stressed':
         return 'Team-level bullpen readiness is stressed by current workload or availability constraints.'
     if status_code == 'data_limited':
-        return 'Team-level bullpen readiness is data limited by freshness, trust, or coverage evidence.'
+        return 'Team-level bullpen visibility is limited by freshness, trust, or coverage evidence.'
     return 'Readiness output is refused because required evidence is unavailable.'
 
 
@@ -792,5 +792,5 @@ def _readiness_explanation(status_code: str) -> str:
     if status_code == 'operationally_stressed':
         return 'Readiness is operationally stressed because elevated workload or unavailable inventory is present.'
     if status_code == 'data_limited':
-        return 'Readiness is data limited because current evidence is incomplete, stale, or low confidence.'
+        return 'Readiness visibility is limited because current evidence is incomplete, not fully current, or based on an unclear read.'
     return 'Readiness output was refused before team-level assembly.'

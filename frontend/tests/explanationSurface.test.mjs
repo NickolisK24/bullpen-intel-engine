@@ -260,7 +260,7 @@ test('opens explanation detail surface with summary and reasons when disclosure 
   assert.ok(htmlIncludes(html, 'Visible readiness context explains the current state.'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Limitations'))
-  assert.ok(htmlIncludes(html, 'Freshness / Trust / Confidence'))
+  assert.ok(htmlIncludes(html, 'Freshness / Visibility / Workload Read'))
 })
 
 test('renders evidence and limitations inside the opened explanation detail surface', () => {

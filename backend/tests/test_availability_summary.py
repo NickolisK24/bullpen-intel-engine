@@ -73,9 +73,9 @@ def test_availability_summary_adds_stale_dominant_trust_note():
         _record('Available', 'high', 'fresh'),
     ])
 
-    assert 'Most pitchers are classified from stale or missing workload data.' in summary['notes']
-    assert 'Stale workload data must not be treated as current availability' in summary['notes']
-    assert 'Missing workload history reduces availability confidence.' in summary['notes']
+    assert 'Recent usage information is missing for most pitchers, so most availability reads are less certain.' in summary['notes']
+    assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in summary['notes']
+    assert 'Missing workload history makes availability reads less certain.' in summary['notes']
 
 
 def test_availability_summary_reports_empty_classification_set():

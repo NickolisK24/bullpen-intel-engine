@@ -23,7 +23,7 @@ const TrustStrip = ({ dot, style = {}, title, status, metrics, helper }) => {
       className="w-full rounded-lg border px-4 py-3 sm:px-5 font-mono"
       style={stripStyle}
       title={title}
-      aria-label="Dashboard data trust status"
+      aria-label="Dashboard data status"
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(180px,0.75fr)_2.25fr] lg:items-center">
         <div className="flex min-w-0 items-center gap-2">

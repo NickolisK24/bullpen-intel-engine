@@ -131,8 +131,8 @@ function RoleChip({ role }) {
     <span
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={role.tone}
-      title={`Observed usage role: ${role.label} (confidence: ${role.confidenceLabel})`}
-      aria-label={`Observed usage role: ${role.label}, confidence ${role.confidenceLabel}`}
+      title={`Observed usage role: ${role.label} (workload read: ${role.confidenceLabel})`}
+      aria-label={`Observed usage role: ${role.label}, workload read ${role.confidenceLabel}`}
     >
       {role.shortLabel}
       <span className="opacity-70">· {role.confidenceLabel}</span>
@@ -147,7 +147,7 @@ function EligibilityChip({ eligibility }) {
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={eligibility.tone}
       title={eligibility.reason || eligibility.label}
-      aria-label={`${eligibility.label}, confidence ${eligibility.confidenceLabel}`}
+      aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
     >
       {eligibility.label}
       <span className="opacity-70">· {eligibility.confidenceLabel}</span>
@@ -161,8 +161,8 @@ function RosterStatusChip({ rosterStatus }) {
     <span
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={rosterStatus.tone}
-      title={`Roster status: ${rosterStatus.label} (confidence: ${rosterStatus.confidenceLabel})`}
-      aria-label={`Roster status: ${rosterStatus.label}, confidence ${rosterStatus.confidenceLabel}`}
+      title={`Roster status: ${rosterStatus.label} (workload read: ${rosterStatus.confidenceLabel})`}
+      aria-label={`Roster status: ${rosterStatus.label}, workload read ${rosterStatus.confidenceLabel}`}
     >
       {rosterStatus.label}
       <span className="opacity-70">· {rosterStatus.confidenceLabel}</span>
@@ -180,7 +180,7 @@ function RoleDisclosure({ role }) {
       <div className="mt-2 space-y-2">
         <div className="text-xs leading-relaxed text-chalk200">
           <span className="text-chalk500">Observed role:</span> {role.label}
-          <span className="ml-1 text-chalk500">({role.confidenceLabel} confidence)</span>
+          <span className="ml-1 text-chalk500">({role.confidenceLabel})</span>
         </div>
         {role.reason && <p className="text-xs leading-relaxed text-chalk300">{role.reason}</p>}
         {role.evidence.length > 0 && (
@@ -245,7 +245,7 @@ function PitcherCard({ card, onViewDetails }) {
           <span className="text-chalk200">{view.fatigueScore != null ? view.fatigueScore : '—'}</span>
         </span>
         <span>
-          <span className="text-chalk600">Confidence</span>{' '}
+          <span className="text-chalk600">Workload Read</span>{' '}
           <span className="text-chalk200">{view.confidenceLabel}</span>
         </span>
         {view.dataStateView && (

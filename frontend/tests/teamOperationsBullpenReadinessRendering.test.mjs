@@ -212,8 +212,8 @@ test('renders degraded Team Operations readiness payloads', () => {
   state.sourceContractState = 'degraded'
   state.isDegraded = true
   state.readinessStatus = 'data_limited'
-  state.readiness.status = 'Data Limited'
-  state.readiness.summary = 'Team-level bullpen readiness is data limited.'
+  state.readiness.status = 'Limited Visibility'
+  state.readiness.summary = 'Team-level bullpen visibility is limited.'
   state.readinessSummary = state.readiness.summary
   state.trustMetadata.confidence = 'low'
   state.trustMetadata.data_state = 'partial'
@@ -225,8 +225,8 @@ test('renders degraded Team Operations readiness payloads', () => {
   const html = renderPanel(state, { initialExpandedSections: ['metadata'] })
 
   assert.ok(htmlIncludes(html, 'Degraded'))
-  assert.ok(htmlIncludes(html, 'Data Limited'))
-  assert.ok(htmlIncludes(html, 'Team-level bullpen readiness is data limited.'))
+  assert.ok(htmlIncludes(html, 'Limited Visibility'))
+  assert.ok(htmlIncludes(html, 'Team-level bullpen visibility is limited.'))
   assert.ok(htmlIncludes(html, 'low'))
   assert.ok(htmlIncludes(html, 'partial'))
   assert.ok(htmlIncludes(html, 'Current workload evidence is stale.'))
@@ -309,7 +309,7 @@ test('renders governance flags and metadata', () => {
 test('renders trust metadata when expanded', () => {
   const html = renderPanel(baseState, { initialExpandedSections: ['metadata'] })
 
-  assert.ok(htmlIncludes(html, 'Confidence'))
+  assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'medium'))
   assert.ok(htmlIncludes(html, 'Data State'))
   assert.ok(htmlIncludes(html, 'complete'))

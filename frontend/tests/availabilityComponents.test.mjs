@@ -19,6 +19,7 @@ after(async () => {
 
 const { default: AvailabilityBadge } = await server.ssrLoadModule('/src/components/bullpen/AvailabilityBadge.jsx')
 const { default: AvailabilitySummary } = await server.ssrLoadModule('/src/components/bullpen/AvailabilitySummary.jsx')
+const { formatConfidence } = await server.ssrLoadModule('/src/components/bullpen/availabilityView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -42,13 +43,13 @@ test('AvailabilityBadge renders non-current data state when requested', () => {
   )
 
   assert.ok(htmlIncludes(html, 'Monitor'))
-  assert.ok(htmlIncludes(html, 'Data: Stale'))
+  assert.ok(htmlIncludes(html, 'Data: Recent Usage Unknown'))
 })
 
 test('AvailabilitySummary renders status, confidence, reasons, and limitations for every fixture', () => {
   for (const row of availabilityFixtureRows) {
     const status = row.availability.availability_status
-    const confidence = `${row.availability.confidence.charAt(0).toUpperCase()}${row.availability.confidence.slice(1)}`
+    const confidence = formatConfidence(row.availability.confidence)
     const html = renderToStaticMarkup(
       React.createElement(AvailabilitySummary, { availability: row.availability }),
     )
@@ -56,7 +57,7 @@ test('AvailabilitySummary renders status, confidence, reasons, and limitations f
     assert.ok(htmlIncludes(html, 'Final Availability'))
     assert.ok(htmlIncludes(html, status))
     assert.ok(htmlIncludes(html, 'Roster Status'))
-    assert.ok(htmlIncludes(html, 'Confidence'))
+    assert.ok(htmlIncludes(html, 'Workload Read'))
     assert.ok(htmlIncludes(html, confidence))
     assert.ok(htmlIncludes(html, 'Data Status'))
     assert.ok(htmlIncludes(html, 'Final Availability Reasons'))

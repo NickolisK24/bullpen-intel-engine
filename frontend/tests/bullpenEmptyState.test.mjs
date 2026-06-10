@@ -18,7 +18,7 @@ test('explains when freshness excludes available workload data', () => {
   })
 
   assert.equal(state.title, 'No current pitchers match the freshness filter.')
-  assert.match(state.subtitle, /Show stale workload pitchers/)
+  assert.match(state.subtitle, /Show pitchers with unclear recent workload/)
   assert.doesNotMatch(state.subtitle, /seed\.py/)
 })
 

@@ -409,7 +409,7 @@ function buildHandednessRows(view) {
 
 function buildTrustRows(view) {
   return buildRows(view.trustMetadata, [
-    ['Confidence', 'confidence'],
+    ['Workload Read', 'confidence'],
     ['Data State', 'data_state'],
     ['Source Evidence', 'source_evidence_state'],
     ['Governance State', 'governance_state'],
@@ -425,7 +425,7 @@ function buildFreshnessRows(view) {
     ['Last Sync', 'last_successful_sync'],
     ['Sync Status', 'latest_sync_status'],
     ['Calculated At', 'latest_fatigue_calculated_at'],
-    ['Stale Notice', 'stale_warning'],
+    ['Data Recency Notice', 'stale_warning'],
     ['Missing Data Notice', 'missing_data_warning'],
   ])
 }

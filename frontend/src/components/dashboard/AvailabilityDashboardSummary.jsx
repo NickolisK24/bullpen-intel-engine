@@ -163,13 +163,13 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
 
         {detailsOpen && (
           <div id="availability-summary-details" className="mt-4 grid gap-5 lg:grid-cols-2">
-            <DistributionRows title="Confidence" rows={view.confidenceRows} total={view.totalPitchers} />
+            <DistributionRows title="Workload Read" rows={view.confidenceRows} total={view.totalPitchers} />
             <DistributionRows title="Data State" rows={view.dataStateRows} total={view.totalPitchers} />
             {(view.limitedByData || view.notes.length > 1) && (
               <div className="lg:col-span-2 flex flex-wrap gap-2">
                 {view.limitedByData && (
                   <span className="rounded border border-dirt bg-chalk/30 px-2 py-1 font-mono text-[10px] text-chalk400">
-                    Show stale workload pitchers or refresh sync data to inspect historical workload context.
+                    Show pitchers with unclear recent workload or refresh sync data to inspect historical workload context.
                   </span>
                 )}
                 {view.notes.slice(1).map((note) => (
@@ -198,7 +198,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           {view.primaryTrustNote}
           {view.limitedByData && (
             <span className="block mt-1 text-chalk400">
-              Show stale workload pitchers or refresh sync data to inspect historical workload context.
+              Show pitchers with unclear recent workload or refresh sync data to inspect historical workload context.
             </span>
           )}
         </div>
@@ -206,7 +206,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
 
       <div className="grid gap-6 lg:grid-cols-3">
         <DistributionRows title="Statuses" rows={view.statusRows} total={view.totalPitchers} />
-        <DistributionRows title="Confidence" rows={view.confidenceRows} total={view.totalPitchers} />
+        <DistributionRows title="Workload Read" rows={view.confidenceRows} total={view.totalPitchers} />
         <DistributionRows title="Data State" rows={view.dataStateRows} total={view.totalPitchers} />
       </div>
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { ErrorState, LoadingPane } from '../UI'
+import { formatConfidence } from '../bullpen/availabilityView'
 import {
   OBSERVATION_EMPTY_COPY,
   OBSERVATION_GOVERNANCE_COPY,
@@ -20,6 +21,25 @@ const STATUS_LABELS = {
 // values are preserved in the API payload, the normalized view model, and the
 // contract tests — they just don't need to read like debug output here.
 const GOVERNANCE_CONTEXT_COPY = 'Context only — not a ranking or selection.'
+
+// Baseball-facing display labels for the governed trust_status vocabulary.
+// The raw vocabulary values stay untouched in the payload and view model.
+const VISIBILITY_LABELS = {
+  supported: 'Clear Visibility',
+  limited: 'Limited Visibility',
+  data_limited: 'Limited Visibility',
+  stale: 'Recent Usage Unknown',
+  missing: 'Missing Recent Usage',
+  refused: 'Protected',
+  fail_closed: 'Protected',
+  unsupported: 'Visibility Unknown',
+}
+
+function visibilityLabel(trustStatus) {
+  const key = String(trustStatus || '').trim().toLowerCase()
+  if (!key) return 'Visibility Unknown'
+  return VISIBILITY_LABELS[key] || labelize(key)
+}
 
 function asArray(value) {
   return Array.isArray(value) ? value : []
@@ -206,15 +226,15 @@ function ObservationCard({ observation }) {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <StatusChip label="Trust" value={observation.trust_status} />
+        <StatusChip label="Visibility" value={visibilityLabel(observation.trust_status)} />
         <StatusChip
           label="Freshness"
           value={observation.freshness?.status}
           detail={freshnessDetail}
         />
         <StatusChip
-          label="Confidence"
-          value={observation.confidence?.status}
+          label="Workload Read"
+          value={formatConfidence(observation.confidence?.status)}
           detail={confidenceDetail}
         />
       </div>
@@ -321,15 +341,15 @@ export default function BullpenIntelligencePanel({
         ) : (
           <div className="space-y-4">
             <div className="bullpen-intelligence-panel__metadata-grid gap-3">
-              <MetadataCell label="Trust Status" value={state.trustStatus} />
+              <MetadataCell label="Bullpen Visibility" value={visibilityLabel(state.trustStatus)} />
               <MetadataCell
                 label="Freshness"
                 value={state.freshness?.status}
                 subtext={state.freshness?.data_through ? `Data through ${state.freshness.data_through}` : null}
               />
               <MetadataCell
-                label="Confidence"
-                value={state.confidence?.status}
+                label="Workload Read"
+                value={formatConfidence(state.confidence?.status)}
                 subtext={state.confidence?.reason}
               />
               <MetadataCell

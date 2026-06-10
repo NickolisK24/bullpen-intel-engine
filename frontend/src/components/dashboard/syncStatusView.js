@@ -46,7 +46,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
   if (failedStatuses.has(status)) {
     return {
       variant: stale ? 'stale' : 'failed',
-      healthLabel: stale ? 'Stale' : 'Limited',
+      healthLabel: stale ? 'Not Current' : 'Limited',
       dot: stale ? '#f5a623' : '#ef4444',
       style: stale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
@@ -69,7 +69,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
     const limited = stale || missing || freshness.is_current === false || limitations.length > 0
     return {
       variant: stale ? 'stale' : (limited ? 'limited' : 'synced'),
-      healthLabel: stale ? 'Stale' : (limited ? 'Limited' : 'Healthy'),
+      healthLabel: stale ? 'Not Current' : (limited ? 'Limited' : 'Healthy'),
       dot: stale || limited ? '#f5a623' : '#10b981',
       style: stale
         ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }

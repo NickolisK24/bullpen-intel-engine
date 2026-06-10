@@ -59,7 +59,7 @@ export default function AvailabilitySummary({
             </div>
           </div>
           <div className="rounded border border-dirt bg-field/60 p-2">
-            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Confidence</div>
+            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Workload Read</div>
             <div className="mt-1 font-mono text-xs font-semibold text-chalk200">{summary.confidenceLabel}</div>
           </div>
           <div className={`rounded border bg-field/60 p-2 ${isCurrentData ? 'border-dirt' : 'border-amber/40'}`}>

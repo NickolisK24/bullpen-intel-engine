@@ -165,10 +165,10 @@ test('renders stale workload data from backend freshness reason codes', () => {
     React.createElement(SyncStatusContent, { data, loading: false, error: null, now }),
   )
 
-  assert.equal(view.healthLabel, 'Stale')
+  assert.equal(view.healthLabel, 'Not Current')
   assert.equal(view.reasonCodes[0], 'workload_data_outside_active_window')
   assert.ok(htmlIncludes(html, 'Data Status:'))
-  assert.ok(htmlIncludes(html, 'Stale'))
+  assert.ok(htmlIncludes(html, 'Not Current'))
   assert.ok(htmlIncludes(html, 'Stale baseball data through 2026-04-01.'))
   assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
   assert.ok(htmlIncludes(html, 'Apr 1, 2026'))

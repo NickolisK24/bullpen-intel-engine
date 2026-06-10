@@ -59,8 +59,8 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
   assert.ok(htmlIncludes(html, '29 pitches yesterday'))   // short reason
   assert.ok(htmlIncludes(html, 'Fatigue'))
-  assert.ok(htmlIncludes(html, 'Confidence'))
-  assert.ok(htmlIncludes(html, 'Medium'))                 // confidence formatted
+  assert.ok(htmlIncludes(html, 'Workload Read'))
+  assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
 
 test('Why? disclosure surfaces engine reasons and limitations', () => {
@@ -86,11 +86,11 @@ test('groups with no pitchers render their own empty copy', () => {
 
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
-  assert.ok(htmlIncludes(html, 'Stale'))
+  assert.ok(htmlIncludes(html, 'Recent Usage Unknown'))
   assert.ok(htmlIncludes(html, 'Bullpen Stress: No Read'))
   assert.ok(htmlIncludes(html, 'Bullpen stress read is limited by data freshness.'))
   assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
-  assert.ok(htmlIncludes(html, 'Stale Workload'))
+  assert.ok(htmlIncludes(html, 'Recent Workload Unclear'))
   assert.ok(htmlIncludes(html, 'Roster Unknown'))
   assert.ok(htmlIncludes(html, 'Roster status unavailable'))
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
@@ -146,7 +146,7 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBullpenStressView(populatedBoard.stress).label, 'Elevated')
   assert.equal(view.getBullpenStressView(staleBoard.stress).label, 'No Read')
   assert.equal(view.getBullpenStressView(staleBoard.stress).isLimited, true)
-  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Stale Workload')
+  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Recent Workload Unclear')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).rosterStatus.label, 'Roster Unknown')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, 'IL-60')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man Only')

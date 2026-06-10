@@ -22,7 +22,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-widest">
-          Confidence: {view.confidenceLabel}
+          Workload Read: {view.confidenceLabel}
         </span>
       </div>
 

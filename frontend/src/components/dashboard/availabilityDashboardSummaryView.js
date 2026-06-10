@@ -61,7 +61,7 @@ function buildRows(counts = {}, order = [], labelFor = value => value, styleFor 
 function getPrimaryTrustNote(summary, limitedByData) {
   const notes = Array.isArray(summary?.notes) ? summary.notes : []
   if (limitedByData) {
-    return 'Availability is limited by stale workload data.'
+    return 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'
   }
   return notes[0] || 'Availability summary is based on current-mode classifier output.'
 }

@@ -83,7 +83,7 @@ function FollowedTeamSummary({ board }) {
               {context.label || 'Bullpen context unavailable.'}
             </div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-              Confidence: {context.confidenceLabel}
+              Workload Read: {context.confidenceLabel}
             </div>
           </div>
           {context.reasons[0] && (
