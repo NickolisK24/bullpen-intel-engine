@@ -10,7 +10,7 @@ export default function TeamExplorer({ explorer }) {
     <section className="mb-8" aria-label="Team explorer">
       <SectionHeading
         title="Explore Every Bullpen"
-        subtitle="Pick a club and step inside its pen — availability, workload, and the arms behind tonight's story."
+        subtitle="Pick a club and step inside its pen. The clubs carrying today's storylines lead off; everyone else follows A to Z."
       />
 
       {!explorer?.hasTeams ? (

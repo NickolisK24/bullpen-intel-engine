@@ -11,7 +11,7 @@ export default function RankingsPreview({ rankings }) {
     <section className="mb-8" aria-label="Bullpen rankings preview">
       <SectionHeading
         title="Bullpen Rankings"
-        subtitle={rankings.intro}
+        subtitle={rankings.framing}
         right={(
           <span className="rounded border border-amber/30 bg-amber/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber/80">
             Preview
@@ -24,6 +24,10 @@ export default function RankingsPreview({ rankings }) {
           <RankingBoard key={board.key} board={board} />
         ))}
       </div>
+
+      <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+        {rankings.updateNote}
+      </p>
     </section>
   )
 }
@@ -38,7 +42,7 @@ function RankingBoard({ board }) {
         {board.placeholder ? (
           <PlaceholderRows copy={board.placeholderCopy} />
         ) : board.entries.length === 0 ? (
-          <div className="py-2 text-xs text-chalk400">Nothing stands out in the current snapshot.</div>
+          <div className="py-2 text-xs text-chalk400">Nothing stands out today.</div>
         ) : (
           board.entries.map(entry => (
             <Link
