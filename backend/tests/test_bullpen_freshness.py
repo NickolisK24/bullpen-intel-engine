@@ -132,7 +132,7 @@ class TestBullpenFreshness:
         assert body['availability_summary']['statuses']['Monitor'] == 1
         assert body['availability_summary']['confidence']['low'] == 1
         assert body['availability_summary']['data_state']['stale'] == 1
-        assert any('stale' in note.lower() for note in body['availability_summary']['notes'])
+        assert any('recent usage information' in note.lower() for note in body['availability_summary']['notes'])
 
     def test_detail_and_team_responses_include_availability(self, client):
         with client.application.app_context():

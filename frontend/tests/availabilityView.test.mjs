@@ -50,18 +50,18 @@ test('counts availability filter options from returned rows', () => {
 
 test('formats fixture confidence values for display', () => {
   for (const row of availabilityFixtureRows) {
-    assert.match(formatConfidence(row.availability.confidence), /^(High|Medium|Low)$/)
+    assert.match(formatConfidence(row.availability.confidence), /^(Strong Read|Limited Read|Unclear Read)$/)
   }
-  assert.equal(formatConfidence(null), 'Unknown')
+  assert.equal(formatConfidence(null), 'Unknown Read')
 })
 
 test('describes stale data state clearly for Monitor fixture', () => {
   const stale = getDataStateView('stale')
   const monitor = availabilityFixtureRows.find(row => row.availability.availability_status === 'Monitor')
 
-  assert.equal(stale.label, 'Stale')
+  assert.equal(stale.label, 'Recent Usage Unknown')
   assert.match(stale.message, /active freshness window/i)
-  assert.equal(getDataStateView(monitor.availability.data_state).label, 'Stale')
+  assert.equal(getDataStateView(monitor.availability.data_state).label, 'Recent Usage Unknown')
 })
 
 test('preserves explanation reasons and limitations from fixture backend output', () => {

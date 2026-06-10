@@ -9,7 +9,6 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
-from services.fatigue import calculate_fatigue, get_risk_level
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.availability_reference_date import (
     parse_reference_date,
@@ -385,47 +384,30 @@ def get_pitcher_fatigue(pitcher_id):
 def recalculate_fatigue():
     """
     Trigger fatigue recalculation for all pitchers.
-    Uses each pitcher's last game date as the reference point — not today —
-    so historical data produces meaningful scores.
+
+    Delegates to the single canonical recalculation authority
+    (services.sync.recalculate_all_fatigue), which scores every pitcher against
+    the canonical availability reference date — the latest completed MLB
+    workload date + 1 day. This guarantees the recalculate endpoint, the
+    scheduled sync, and the GitHub Actions / manual sync all write identical
+    fatigue scores for the same game logs, so the league snapshot never changes
+    based on which path last ran.
     """
-    pitchers = Pitcher.query.filter_by(active=True).all()
-    updated  = []
+    updated = sync_service.recalculate_all_fatigue()
 
-    for pitcher in pitchers:
-        latest_log = (
-            GameLog.query
-            .filter_by(pitcher_id=pitcher.id)
-            .order_by(GameLog.game_date.desc())
-            .first()
-        )
-
-        if not latest_log:
-            continue
-
-        reference_date = latest_log.game_date
-        window_start   = reference_date - timedelta(days=14)
-
-        logs = (
-            GameLog.query
-            .filter(
-                GameLog.pitcher_id == pitcher.id,
-                GameLog.game_date  >= window_start,
-                GameLog.game_date  <= reference_date
-            )
-            .order_by(desc(GameLog.game_date))
-            .all()
-        )
-
-        score = calculate_fatigue(pitcher, logs, reference_date=reference_date)
-        db.session.add(score)
-        updated.append({
+    # Report the canonical latest scores so the response stays a faithful read
+    # of what was just persisted (one entry per scored pitcher).
+    rows = _latest_fatigue_query().all()
+    results = [
+        {
             'pitcher': pitcher.full_name,
             'score':   round(score.raw_score, 1),
             'risk':    score.risk_level,
-        })
+        }
+        for score, pitcher in rows
+    ]
 
-    db.session.commit()
-    return jsonify({'recalculated': len(updated), 'results': updated})
+    return jsonify({'recalculated': updated, 'results': results})
 
 
 # ─── Sync (Live Data Refresh) ─────────────────────────────────────────────────
@@ -483,8 +465,9 @@ def sync_recent_logs():
         })
         return jsonify({'error': f'Sync failed: {str(e)}'}), 500
 
-    # Live mode: score against today — same behavior as before.
-    fatigue_updated = sync_service.recalculate_all_fatigue(use_last_game_date=False)
+    # Canonical authority: score against the latest completed workload date + 1
+    # day — the same reference the scheduled sync and recalculate endpoint use.
+    fatigue_updated = sync_service.recalculate_all_fatigue()
     finished        = datetime.now(timezone.utc)
     # Durable first (self-healing if the start row never persisted), then the
     # best-effort cache file. The durable row is the source of truth.

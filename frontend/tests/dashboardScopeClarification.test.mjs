@@ -65,7 +65,7 @@ test('bullpen health is clearly league-wide, not a single team', () => {
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen Health'))
   assert.ok(htmlIncludes(html, 'not a single team'))
   // The aggregate statement itself carries a league-wide qualifier inline.
-  assert.ok(htmlIncludes(html, 'League-Wide · Confidence:'))
+  assert.ok(htmlIncludes(html, 'League-Wide · Workload Read:'))
 })
 
 test('usage roles are described as a league-wide distribution', () => {

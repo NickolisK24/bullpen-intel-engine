@@ -51,6 +51,27 @@ def collect_data_metadata():
     }
 
 
+def canonical_fatigue_reference_date(reference_date=None):
+    """
+    Single production authority for the fatigue recalculation reference date:
+    the latest completed MLB workload date + 1 day ("tonight's availability").
+
+    Every production-facing recalculation path — the scheduled APScheduler sync,
+    the GitHub Actions / manual sync endpoint, and the recalculate endpoint —
+    anchors here, so identical game logs always produce identical fatigue scores
+    regardless of which path last ran. This is the same anchor the read /
+    availability path derives from durable sync metadata
+    (product_availability_reference_date_from_metadata), so stored scores and
+    displayed availability share one calendar date instead of diverging between a
+    per-pitcher last-game-date and the host's runtime "today".
+
+    Returns None when there is no workload data to anchor against.
+    """
+    if reference_date is not None:
+        return reference_date
+    return product_availability_reference_date_from_metadata(collect_data_metadata())
+
+
 def start_sync_run(source=SOURCE_MANUAL, started_at=None):
     started_at = started_at or _now()
     # Start from a clean transaction. If an earlier statement in this request

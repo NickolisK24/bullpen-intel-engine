@@ -45,8 +45,8 @@ const staleDominantSummary = {
     incomplete: 0,
   },
   notes: [
-    'Most pitchers are classified from stale or missing workload data.',
-    'Stale workload data must not be treated as current availability',
+    'Recent usage information is missing for most pitchers, so most availability reads are less certain.',
+    'Recent usage information is incomplete, so workload data must not be treated as current availability',
   ],
 }
 
@@ -66,10 +66,10 @@ test('formats current-mode availability summary distributions', () => {
   assert.equal(view.statusTotal, 704)
   assert.equal(view.dominantStatus.label, 'Monitor')
   assert.equal(view.operationalSummary, 'Availability inventory is currently concentrated in Monitor status.')
-  assert.equal(view.confidenceRows.find(row => row.label === 'Low').count, 704)
-  assert.equal(view.dataStateRows.find(row => row.label === 'Stale').count, 640)
+  assert.equal(view.confidenceRows.find(row => row.label === 'Unclear Read').count, 704)
+  assert.equal(view.dataStateRows.find(row => row.label === 'Recent Usage Unknown').count, 640)
   assert.equal(view.dataStateRows.find(row => row.label === 'Missing').count, 64)
-  assert.equal(view.primaryTrustNote, 'Availability is limited by stale workload data.')
+  assert.equal(view.primaryTrustNote, 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.')
 })
 
 test('renders dashboard summary without claiming stale data is current', () => {
@@ -81,10 +81,10 @@ test('renders dashboard summary without claiming stale data is current', () => {
   assert.ok(htmlIncludes(html, 'Current availability'))
   assert.ok(htmlIncludes(html, '704 classified pitchers'))
   assert.ok(htmlIncludes(html, 'Monitor'))
-  assert.ok(htmlIncludes(html, 'Low'))
-  assert.ok(htmlIncludes(html, 'Stale'))
-  assert.ok(htmlIncludes(html, 'Availability is limited by stale workload data.'))
-  assert.ok(htmlIncludes(html, 'Show stale workload pitchers or refresh sync data'))
+  assert.ok(htmlIncludes(html, 'Unclear Read'))
+  assert.ok(htmlIncludes(html, 'Recent Usage Unknown'))
+  assert.ok(htmlIncludes(html, 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'))
+  assert.ok(htmlIncludes(html, 'Show pitchers with unclear recent workload or refresh sync data'))
   assert.doesNotMatch(html, /latest_workload_snapshot/)
 })
 
@@ -109,10 +109,10 @@ test('renders compact availability summary with secondary evidence collapsed', (
   assert.ok(htmlIncludes(collapsedHtml, 'Monitor'))
   assert.ok(htmlIncludes(collapsedHtml, 'View Availability Evidence'))
   assert.ok(htmlIncludes(collapsedHtml, 'aria-expanded="false"'))
-  assert.equal(htmlIncludes(collapsedHtml, 'Confidence'), false)
+  assert.equal(htmlIncludes(collapsedHtml, 'Workload Read'), false)
   assert.equal(htmlIncludes(collapsedHtml, 'Data State'), false)
   assert.ok(htmlIncludes(expandedHtml, 'Hide Availability Evidence'))
-  assert.ok(htmlIncludes(expandedHtml, 'Confidence'))
+  assert.ok(htmlIncludes(expandedHtml, 'Workload Read'))
   assert.ok(htmlIncludes(expandedHtml, 'Data State'))
 })
 

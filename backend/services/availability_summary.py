@@ -62,18 +62,18 @@ def _summary_notes(total_pitchers, data_state_counts):
     notes = []
 
     if limited > total_pitchers / 2:
-        notes.append('Most pitchers are classified from stale or missing workload data.')
+        notes.append('Recent usage information is missing for most pitchers, so most availability reads are less certain.')
     elif limited > 0:
-        notes.append('Some availability classifications are limited by stale or incomplete workload data.')
+        notes.append('Recent usage information is incomplete for some pitchers, so some availability reads are less certain.')
     else:
-        notes.append('Availability classifications are based on fresh workload data.')
+        notes.append('Availability classifications are based on current workload data.')
 
     if stale:
         notes.append(STALE_WORKLOAD_LIMITATION)
     if missing:
-        notes.append('Missing workload history reduces availability confidence.')
+        notes.append('Missing workload history makes availability reads less certain.')
     if incomplete:
-        notes.append('Incomplete workload inputs reduce availability confidence.')
+        notes.append('Incomplete workload inputs make availability reads less certain.')
 
     return notes
 

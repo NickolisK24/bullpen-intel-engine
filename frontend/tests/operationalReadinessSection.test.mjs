@@ -173,7 +173,7 @@ test('renders the Operational Readiness hero and snapshot for V2 and V3 state', 
   assert.ok(htmlIncludes(html, 'Available: 240 / 679 total'))
   assert.ok(htmlIncludes(html, 'Freshness Status'))
   assert.ok(htmlIncludes(html, 'current'))
-  assert.ok(htmlIncludes(html, 'Trust Status'))
+  assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
   assert.ok(htmlIncludes(html, 'Data state complete'))
   assert.ok(htmlIncludes(html, 'Team-level context only. The user remains responsible for bullpen decisions.'))
 })

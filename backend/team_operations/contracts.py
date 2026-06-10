@@ -31,7 +31,7 @@ READINESS_STATUSES = {
     'operationally_stable': 'Operationally Stable',
     'operationally_constrained': 'Operationally Constrained',
     'operationally_stressed': 'Operationally Stressed',
-    'data_limited': 'Data Limited',
+    'data_limited': 'Limited Visibility',
     'refused': 'Refused',
 }
 ALLOWED_READINESS_STATUS_CODES = frozenset(READINESS_STATUSES)

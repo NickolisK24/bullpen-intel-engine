@@ -120,12 +120,12 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
                   {context.label || 'Bullpen context unavailable.'}
                 </h3>
                 <span className="font-mono text-[10px] uppercase tracking-widest">
-                  League-Wide · Confidence: {context.confidenceLabel}
+                  League-Wide · Workload Read: {context.confidenceLabel}
                 </span>
               </div>
               {context.isDegraded && (
                 <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-                  Lower confidence — read this snapshot with caution.
+                  Unclear read — treat this snapshot with caution.
                 </p>
               )}
               {context.reasons.length > 0 && (
@@ -214,7 +214,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
         <span>{provenance.label}</span>
         <span>{dataLine}</span>
         {lastSync && <span className="text-chalk500">· Last synced: {lastSync}</span>}
-        <span className="text-chalk500">· Confidence: {confidenceLabel}</span>
+        <span className="text-chalk500">· Workload Read: {confidenceLabel}</span>
       </span>
     </div>
   )

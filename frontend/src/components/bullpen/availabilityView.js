@@ -76,12 +76,12 @@ const DATA_STATE_COPY = {
     message: 'Latest workload information is inside the active freshness window.',
   },
   stale: {
-    label: 'Stale',
+    label: 'Recent Usage Unknown',
     message: 'Latest workload information is older than the active freshness window.',
   },
   missing: {
     label: 'Missing',
-    message: 'Required workload inputs are not available, so confidence is reduced.',
+    message: 'Required workload inputs are not available, so the workload read is less certain.',
   },
   incomplete: {
     label: 'Incomplete',
@@ -157,16 +157,31 @@ export function getAvailabilityBadgeView(availabilityOrStatus) {
   }
 }
 
-export function formatConfidence(confidence) {
-  const value = String(confidence || '').trim()
-  if (!value) return 'Unknown'
+// Baseball-facing labels for classification confidence: the user sees how
+// clear the workload read is, not an internal confidence grade. Raw API
+// values ('high'/'medium'/'low') are preserved everywhere outside display.
+const CONFIDENCE_READ_LABELS = {
+  high: 'Strong Read',
+  medium: 'Limited Read',
+  low: 'Unclear Read',
+  none: 'No Read',
+  unknown: 'Unknown Read',
+}
+
+function capitalizeToken(value) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1).toLowerCase()}`
+}
+
+export function formatConfidence(confidence) {
+  const value = String(confidence || '').trim().toLowerCase()
+  if (!value) return 'Unknown Read'
+  return CONFIDENCE_READ_LABELS[value] || capitalizeToken(value)
 }
 
 export function getDataStateView(dataState) {
   const key = String(dataState || 'unknown').toLowerCase()
   return DATA_STATE_COPY[key] || {
-    label: formatConfidence(key),
+    label: capitalizeToken(key),
     message: 'The backend returned a non-standard workload data state.',
   }
 }

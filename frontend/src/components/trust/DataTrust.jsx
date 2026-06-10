@@ -1,6 +1,5 @@
 import { useFetch } from '../../hooks/useFetch'
 import {
-  getBullpenObservations,
   getBullpenOverview,
   getRecommendationV2BullpenState,
   getSyncStatus,
@@ -11,7 +10,6 @@ import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
-import BullpenIntelligencePanel from '../observations/BullpenIntelligencePanel'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
@@ -23,18 +21,17 @@ export default function DataTrust() {
   const sync = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
-  const bullpenObservations = useFetch(getBullpenObservations)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Data & Trust"
-        subtitle="Freshness, confidence, governance protections, and evidence behind every number"
+        subtitle="Freshness, workload reads, governance protections, and evidence behind every number"
       />
 
       <p className="mb-6 max-w-3xl text-sm leading-relaxed text-chalk400">
         The bullpen views show the summary you need to act. This page keeps the
-        full depth — how fresh the data is, how confident each classification is,
+        full depth — how fresh the data is, how clear each workload read is,
         the governance protections that keep the product descriptive (no ranking,
         selection, recommendation, or prediction), and the supporting evidence.
       </p>
@@ -68,7 +65,7 @@ export default function DataTrust() {
 
       {/* Availability transparency */}
       <section className="mb-6" aria-label="Availability transparency">
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Availability Confidence</h2>
+        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Workload Read</h2>
         <AvailabilityDashboardSummary summary={overview.data?.availability_summary} initialDetailsOpen />
       </section>
 
@@ -82,14 +79,6 @@ export default function DataTrust() {
         readinessLoading={teamOperationsReadiness.loading}
         readinessError={teamOperationsReadiness.error}
         onRetryReadiness={teamOperationsReadiness.refetch}
-      />
-
-      {/* Observations */}
-      <BullpenIntelligencePanel
-        state={bullpenObservations.data}
-        loading={bullpenObservations.loading}
-        error={bullpenObservations.error}
-        onRetry={bullpenObservations.refetch}
       />
 
       {/* Exploratory study */}

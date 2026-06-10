@@ -254,7 +254,7 @@ def test_current_mode_keeps_stale_data_truthful(client):
     assert availability['availability_status'] == 'Monitor'
     assert availability['confidence'] == 'low'
     assert availability['data_state'] == 'stale'
-    assert 'Stale workload data must not be treated as current availability' in availability['limitations']
+    assert 'Recent usage information is incomplete, so workload data must not be treated as current availability' in availability['limitations']
 
 
 def test_snapshot_mode_keeps_missing_data_truthful(client):

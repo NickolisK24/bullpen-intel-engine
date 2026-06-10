@@ -65,15 +65,15 @@ test('every context statement explains itself with real counts', () => {
 
 test('stale data degrades confidence and communicates limitations', () => {
   const html = renderSummary(staleBoard)
-  assert.ok(htmlIncludes(html, 'Confidence: Low'))
-  assert.ok(htmlIncludes(html, 'read this snapshot with caution'))
+  assert.ok(htmlIncludes(html, 'Workload Read: Unclear Read'))
+  assert.ok(htmlIncludes(html, 'treat this snapshot with caution'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
 })
 
 test('empty bullpen renders the no-data context without implying availability', () => {
   const html = renderSummary(emptyBoard)
   assert.ok(htmlIncludes(html, 'No bullpen availability to summarize tonight.'))
-  assert.ok(htmlIncludes(html, 'Confidence: None'))
+  assert.ok(htmlIncludes(html, 'Workload Read: No Read'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
 })
 

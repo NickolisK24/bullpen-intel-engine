@@ -30,7 +30,7 @@ def test_explanation_audit_groups_reason_and_limitation_frequencies():
         _record(
             'Repeated Pitch Volume',
             ['42 pitches yesterday', 'Back-to-back appearances'],
-            ['No injury data available', 'Stale workload data must not be treated as current availability'],
+            ['No injury data available', 'Recent usage information is incomplete, so workload data must not be treated as current availability'],
         ),
     ])
 

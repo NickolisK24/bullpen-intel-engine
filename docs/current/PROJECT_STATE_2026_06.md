@@ -1,0 +1,7897 @@
+# Project State: June 2026
+
+## Executive Summary
+
+BaseballOS has completed the Availability Engine trust foundation, roster
+authority, team-assignment authority, stale ownership correction, unavailable
+pitcher separation, and Player Detail/Bullpen Board availability consistency.
+The platform now presents bullpen availability and workload intelligence with
+explicit roster context, explainable workload signals, freshness visibility, and
+clear limits around what public data can and cannot prove.
+
+The current product identity is:
+
+```text
+BaseballOS: descriptive, explainable, trust-first bullpen availability and
+workload intelligence.
+```
+
+BaseballOS is not a betting product, prediction system, ranking surface, or
+automated recommendation engine. It does not pick a pitcher, order a bullpen,
+predict outcomes, or replace the user's decision.
+
+The repository remains `bullpen-intel-engine`. Repository structures, package
+names, imports, and deployment configuration should not be renamed solely for
+branding.
+
+## Documentation Structure
+
+The README now functions as a concise project front page for onboarding,
+platform status, architecture, quick start, environment variables, testing, data
+sources, and primary documentation links.
+
+Long historical roadmap, certification, rollout, operational review, and
+documentation-inventory material is retained in dedicated documentation:
+
+- `docs/README.md`
+- `docs/current/ROADMAP.md`
+- `docs/current/CHANGELOG.md`
+- `docs/governance/CERTIFICATION_LEDGER.md`
+- `docs/governance/OPERATIONAL_REVIEWS.md`
+
+This documentation structure refactor preserves governance, certification,
+rollout, and monitoring evidence. It does not authorize backend changes,
+frontend changes, runtime behavior changes, API contract changes, ranking
+behavior, selection behavior, prediction behavior, or full production rollout.
+
+## Completed Foundations
+
+### Bullpen Intelligence
+
+BaseballOS ingests MLB Stats API rosters and pitching game logs, computes
+fatigue scores, stores roster status and team ownership authority, and exposes
+team, pitcher, and dashboard workload views.
+
+### Fatigue Engine
+
+The Fatigue Engine remains the deterministic workload base. It produces a
+transparent 0-100 workload score from pitch-count load, rest days, appearance
+frequency, and innings load.
+
+### Availability Engine V1
+
+Availability Engine V1 is implemented. The workload classifier translates
+fatigue, rest, recent workload, appearance compression, and data state into a
+workload signal:
+
+- `Available`
+- `Monitor`
+- `Limited`
+- `Avoid`
+- `Unavailable`
+
+The classifier is centralized in the backend availability service and is not
+embedded directly in routes. API responses remain backward-compatible by adding
+availability objects rather than replacing fatigue fields. Current final
+availability is roster-status-adjusted: IL, minors, optioned, DFA, non-roster,
+40-man-only, released/no-organization, and unresolved ownership states cannot
+present as final `Available`.
+
+### Roster Status Authority
+
+Roster status authority is active from MLB Stats API roster endpoints. BaseballOS
+normalizes official roster evidence into:
+
+- `Active MLB`
+- `IL-15`
+- `IL-60`
+- `Minors`
+- `40-Man Only`
+- `Optioned`
+- `DFA`
+- `Non-Roster`
+- `Roster Unknown`
+
+Roster status is separate from workload freshness. Unknown roster status fails
+closed with explicit limitations instead of being promoted to active MLB.
+
+### Team Assignment Authority
+
+Team assignment authority is active. BaseballOS resolves pitcher ownership from
+MLB team rosters and player current-team/status fallback before roster-status
+sync. If a pitcher is released, has no organization, or cannot be resolved
+confidently, stale team assignment is cleared fail-closed rather than preserved
+in team-scoped views.
+
+### Bullpen Board And Player Detail Consistency
+
+The default Bullpen Board shows active bullpen-relevant arms. Clear starters are
+excluded from default bullpen planning, and unavailable pitchers are separated
+from bullpen arms with roster reasons such as `IL-60`, `IL-15`, `Minors`,
+`Optioned`, `DFA`, `Non-Roster`, `40-Man Only`, or `Roster Unknown`.
+
+Player Detail now uses the same final roster-adjusted availability semantics as
+Bullpen Board cards. Workload signal remains visible separately so a pitcher can
+show `Workload Signal: Available` while final availability is `Unavailable`
+because of roster status.
+
+### Pitcher Search V1
+
+Pitcher Search V1 is implemented as database-backed, team-agnostic pitcher
+discovery from stored BaseballOS records. It supports exact, prefix, partial,
+case-insensitive, and accent-folded name search, returns current team
+assignment, roster status, position, and final roster-adjusted availability,
+and opens the existing Player Detail surface from the Bullpen Board.
+
+Pitcher Search V1 does not call MLB APIs during search requests and does not
+introduce recommendations, rankings, predictions, matchup advice, best-arm
+logic, or automated pitcher selection.
+
+### Explainability
+
+Availability output includes:
+
+- status
+- confidence
+- data state
+- reasons
+- limitations
+- deterministic inputs
+
+Every non-Available classification must expose reasons. Missing, stale, or
+incomplete data must lower confidence, alter display, or make limitations
+visible.
+
+### Dashboard Integration
+
+The dashboard now includes:
+
+- current-mode availability summary
+- status distribution
+- confidence distribution
+- data-state distribution
+- stale/missing-data trust notes
+- dashboard trust strip for data status, sync date, data-through date, and
+  refresh coverage
+
+### Status Reachability
+
+Frontend fixture coverage verifies that all five availability statuses render
+correctly even when the current local dataset does not naturally contain all
+statuses at once. Fixture validation is for UI correctness only, not threshold
+validation.
+
+### Governance Framework
+
+Availability threshold governance is implemented through:
+
+- repeatable threshold audit tooling
+- latest-workload snapshot validation mode
+- explanation quality audit
+- threshold tuning plan
+- boundary review process
+- adoption records
+- readiness certification reports
+
+Threshold changes must be evidence-based, single-variable where possible, and
+reviewed before adoption.
+
+### Recommendation Engine V1
+
+Recommendation Engine V1 is complete, certified, and production-ready for
+candidate-level evaluation. It translates trusted availability, confidence,
+freshness, explanation, limitation, and refusal evidence into structured
+candidate-level recommendation or refusal output.
+
+The certified V1 system includes:
+
+- backend recommendation foundation contracts and schemas
+- eligibility and exclusion gates
+- category eligibility assignment
+- response builder/composer
+- candidate-level engine integration
+- candidate API route
+- frontend recommendation API client
+- Recommendation Panel UI
+- controlled success, caution, refusal, loading, error, and empty states
+- pitcher detail dashboard integration
+- UI polish and regression certification
+
+Recommendation Engine V1 remains bounded to one pitcher candidate at a time.
+It does not rank the bullpen or select the final pitcher.
+
+## Current Capabilities
+
+| Capability | Status |
+| --- | --- |
+| Bullpen Intelligence | ✓ Complete |
+| Fatigue Engine | ✓ Complete |
+| Availability Engine | ✓ Complete |
+| Roster Status Authority | Complete / Active |
+| Team Assignment Authority | Complete / Active |
+| Stale Team Ownership Correction | Complete / Active |
+| Bullpen Board Unavailable Pitcher Separation | Complete / Active |
+| Player Detail And Bullpen Board Availability Consistency | Complete / Active |
+| Pitcher Search V1 | Complete / Database-Backed / Team-Agnostic |
+| Explainability | ✓ Complete |
+| Trust Layer | ✓ Complete |
+| Freshness Transparency | ✓ Complete |
+| Governance Framework | ✓ Complete |
+| Recommendation Engine V1 | ✓ Complete / Certified / Production Ready |
+| Recommendation Engine V1 Candidate Evaluation Layout Remediation | Complete |
+| Dashboard and Bullpen Loading Performance Remediation | Complete |
+| Recommendation Engine V2 Strategy | Scope Definition Active |
+| Recommendation Engine V2 Governance Boundaries | Documented |
+| Recommendation Engine V2 Architecture | Documented |
+| Recommendation Engine V2 API Contract | Documented |
+| Recommendation Engine V2 Frontend Contract | Documented |
+| Recommendation Engine V2 Certification Requirements | Documented |
+| Recommendation Engine V2 Implementation Readiness Review | Complete |
+| Recommendation Engine V2 Implementation Plan | Complete |
+| Recommendation Engine V2 Phase 1 Domain Foundation | Complete |
+| Recommendation Engine V2 Phase 2 Context Assembly | Complete |
+| Recommendation Engine V2 Phase 3 Neutral Intelligence | Complete |
+| Recommendation Engine V2 Phase 4 Inventory Visibility | Complete |
+| Recommendation Engine V2 Phase 5 Team Bullpen Context | Complete |
+| Recommendation Engine V2 Phase 6 Trust Metadata Integration | Complete |
+| Recommendation Engine V2 Phase 7 Refusal Fail-Closed Integration | Complete |
+| Recommendation Engine V2 Phase 8 API Contract Exposure | Complete |
+| Recommendation Engine V2 Phase 9 Frontend Client Integration | Complete |
+| Recommendation Engine V2 Phase 10 Governed Frontend Rendering | Complete |
+| Recommendation Engine V2 Phase 10A Desktop Layout Remediation | Complete |
+| Recommendation Engine V2 Phase 10B Bullpen Selected Pitcher Layout Remediation | Complete |
+| Recommendation Engine V2 Phase 11 Mobile Accessibility Validation | Complete |
+| Recommendation Engine V2 Phase 12 Certification Readiness Validation | Ready for Formal Certification Review |
+| Recommendation Engine V2 Phase 13 Formal Certification Review | Certified / Production Ready |
+| BaseballOS V2.5 Phase 14 Inventory Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization | Complete |
+| BaseballOS V2.5 Phase 16 Production Rollout Decision | Approved for Production Rollout |
+| BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review | Complete |
+| BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review | Complete |
+| BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review | Complete |
+| BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy | Complete |
+| BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist | Complete |
+| BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit | Complete |
+| BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan | Complete |
+| BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial Backfill | Complete |
+| BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill Execution | Complete |
+| BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship Review | Complete |
+| BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map | Complete |
+| BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test Mapping Closeout | Complete |
+| BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness Decision | Complete |
+| Recommendation Engine V2 Production Fail-Closed Diagnosis | Complete / Remediation Planning |
+| Recommendation Engine V2 Production Fail-Closed Communication and Freshness Metadata Remediation | Complete |
+| BaseballOS V3 Phase 1 Product Capability Review and Priority Decision | Complete |
+| BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition | Complete |
+| BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan | Complete |
+| BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract and Certification Requirements | Complete |
+| BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation | Complete |
+| BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration | Complete / Internal / Uncertified |
+| BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review | Ready for Frontend Integration Planning |
+| BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan | Complete / Planning Only |
+| BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests | Complete / Client Only / No Dashboard UI |
+| BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration | Complete / Internal UI / Uncertified |
+| BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review | Ready for Formal Certification Planning |
+| BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites | Complete / Certification Plan Only |
+| BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review | Certified With Non-Blocking Operational Gaps / Rollout Not Approved |
+| BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring | Ready With Pending Manual Evidence / Full Rollout Not Approved |
+| BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision | Blocked Pending Manual Evidence / Full Rollout Not Approved |
+| BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review | Local Smoke Evidence Retained / Controlled Rollout Blocked |
+| BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review | Deployment API Evidence Retained / Controlled Rollout Blocked |
+| Operational Review 1 Deployment Configuration and Environment Classification Investigation | Complete / Deployment Configuration Incorrect |
+| Operational Remediation 1 Deployment Production Config Health Verification | External Deployment Config Required / Rollout Blocked |
+| Operational Verification 1 Render Production Health Evidence Capture | Production Health Verified / Deployment Config Blocker Cleared |
+| BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment | Blocked Pending Manual Review / Full Rollout Not Approved |
+| BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval | Controlled Rollout Approved / Full Rollout Not Approved |
+| BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review | Ready for Controlled Rollout Observation / Full Rollout Not Approved |
+| BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition | Complete / Planning Only |
+| BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning | Complete / Ready for Phase 3 Planning |
+| BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan | Complete / Ready for Backend Domain Foundation |
+| BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation | Complete / Internal Backend Domain Only |
+| BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder | Complete / Internal Backend Builder Only |
+| BaseballOS V4 Phase 6 Availability Explanation Integration | Complete / Internal Backend Availability Adapter Only |
+| BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
+| BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
+| BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition | Complete / Ready for Architecture Planning |
+| BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture | Complete / Ready for Internal Backend Implementation |
+| BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation | Complete / Internal Backend Adapter Only |
+| BaseballOS V4 Phase 12 Team Operations Readiness Explanation Certification Readiness Review | Complete / Ready for Formal Certification Review |
+| BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend Only |
+| BaseballOS V4 Phase 14 Explanation API Contract Planning | Complete / Ready for Route Implementation |
+| BaseballOS V4 Phase 15 Explanation API Route Implementation | Complete / Internal Backend Routes Only |
+| BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review | Complete / Ready for Formal API Certification |
+| BaseballOS V4 Phase 17 Explanation API Formal Certification Review | Certified with Non-Blocking Observations / Internal Backend API Only |
+| BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning | Complete / Ready for Frontend Explanation Surface Implementation |
+| BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation | Complete / Frontend Surfaces Implemented / Ready for Certification Readiness Review |
+| BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review | Complete / Ready for Formal Frontend Certification Review |
+| BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification Review | Certified with Non-Blocking Observations / Rollout Not Approved |
+| BaseballOS V4 Phase 22 Frontend Explanation Surface Rollout Planning And Monitoring | Complete / Ready for Controlled Rollout Review |
+| BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout Decision | Controlled Rollout Approved / Full Production Rollout Not Approved |
+| BaseballOS V4 Phase 24 Frontend Explanation Surface Controlled Rollout Observation Review | Controlled Rollout Review Required / Production Review Not Ready |
+| BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment | Controlled Rollout Review Required / Production Review Not Ready |
+| BaseballOS V4 Phase 26 Production Rollout Review | Production Rollout Approved for Certified Explanation Surfaces |
+| BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition | Approved / Planning Only |
+| BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy | Approved / Planning Only |
+| BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition | Approved / Planning Only |
+| BaseballOS V5 Phase 4 Observation Domain And Contracts | Complete / Backend Contracts Only |
+| BaseballOS V5 Phase 5 Observation Builder Foundation | Complete / Backend Builders Only |
+| BaseballOS V5 Phase 6 Observation API Surface | Complete / Backend Read-Only API Only |
+| BaseballOS V5 Phase 7 Frontend Intelligence Surface | Complete / Frontend Read-Only Surface Only |
+| BaseballOS V5 Phase 8 Governance Certification | Governance Certified / Controlled Rollout Ready |
+| BaseballOS V5 Phase 9 Controlled Rollout Review | Controlled Rollout Approved / Full Production Rollout Not Approved |
+| BaseballOS V5 Phase 10 Production Rollout Review | Review Complete / Full Production Rollout Not Approved |
+| BaseballOS V5 Phase 11 Production Evidence Review | Production Evidence Retained / Ready for Full Production Rollout Approval |
+| BaseballOS V5 Phase 12 Full Production Rollout Approval | Full Production Rollout Approved |
+| Prospect Pipeline | Prototype |
+
+## Trust & Governance Status
+
+Trust-first rules currently in force:
+
+- No black-box availability labels.
+- Every status must expose reasons when workload or data-state constraints are
+  present.
+- Stale data must not be presented as current availability.
+- Missing data must reduce confidence or alter display.
+- Workload `Unavailable` means workload-unavailable from public data, not
+  injured, medically unavailable, or team-reported unavailable.
+- Final availability is roster-status-adjusted. IL, minors, optioned, DFA,
+  non-roster, 40-man-only, released/no-organization, and unresolved ownership
+  states cannot display as final `Available`.
+- Workload signal and roster status must remain visible as separate concepts.
+- Roster status must not be inferred from workload freshness.
+- Stale team ownership must be cleared fail-closed when authority cannot resolve
+  current organization.
+- Recommendation wording must not imply private clubhouse, medical, travel, or
+  manager-intent knowledge.
+- Recommendation Engine V1 must preserve candidate-level evaluation only.
+- Recommendation Engine V1 must preserve `ranking_applied=false` and
+  `selection_made=false`.
+- Recommendation Engine V1 must keep confidence, freshness, explanations,
+  limitations, and refusal reasons visible.
+- V5 Bullpen Intelligence Surface observations must remain observational,
+  descriptive, trust-aware, explainable, non-prescriptive, and
+  non-predictive.
+- Threshold changes require audit evidence and before/after comparison.
+
+The first governed threshold adoption is complete:
+
+```text
+Unavailable 3-day pitch threshold: 80 -> 90
+```
+
+This adoption allows 80-89 pitches in three days to classify as `Avoid` unless
+another Unavailable rule fires. 90+ pitches in three days remains
+`Unavailable`.
+
+Reference artifacts:
+
+- `docs/AVAILABILITY_THRESHOLD_TUNING_PLAN.md`
+- `backend/reports/availability_threshold_adoption_candidate_c.md`
+- `backend/reports/availability_unavailable_boundary_review.md`
+- `backend/reports/availability_post_adoption_readiness_certification.md`
+
+## Current Trust State
+
+- Roster authority is active from MLB Stats API roster endpoints.
+- Team assignment authority is active before roster-status sync.
+- Stale ownership correction is active for reassigned, released,
+  no-organization, and unresolved players.
+- Unavailable pitcher separation is active on Bullpen Board.
+- Player Detail and Bullpen Board use the same final roster-adjusted
+  availability semantics.
+- Remaining limitations: transaction-event lineage is not stored, reality can
+  move between syncs, and bullpen eligibility still uses role/usage evidence
+  where explicit bullpen-role authority is unavailable.
+
+## Freshness & Sync Status
+
+Durable sync metadata is implemented through the `sync_runs` persistence model.
+The backend can separately expose:
+
+- last sync attempt
+- last successful sync
+- latest baseball game-log date
+- latest workload date
+- latest fatigue calculation timestamp
+- sync status
+- freshness limitations
+
+Current sync responsibilities run in this order:
+
+```text
+team assignment sync
+-> roster status sync
+-> game log/workload sync
+-> fatigue/availability calculation
+-> trust/freshness reporting
+```
+
+Team assignment sync resolves current ownership and clears stale team assignment
+before roster status is refreshed. Roster status sync classifies active MLB,
+injured list, minors, optioned, DFA, non-roster, 40-man-only, or unknown state.
+Game-log/workload sync and fatigue calculation produce the workload signal.
+Trust and freshness reporting preserve sync metadata separately from baseball
+data coverage.
+
+The dashboard distinguishes:
+
+```text
+Synced:
+June 1, 2026
+
+Data Through:
+May 31, 2026
+```
+
+This distinction matters because a sync timestamp is operational metadata, while
+data-through date is baseball data coverage. BaseballOS should never substitute
+one for the other.
+
+If sync metadata is unavailable but data exists, the dashboard should say so and
+still show the data-through date. If the latest sync fails, the dashboard should
+preserve the latest known data-through date and disclose the failed sync state.
+
+Reference artifacts:
+
+- `backend/reports/durable_sync_metadata_implementation.md`
+- `backend/reports/durable_sync_metadata_deployment_certification.md`
+- `frontend/docs/dashboard_trust_strip_polish.md`
+
+## Availability Engine Status
+
+Availability Engine V1 is complete as a deterministic, explainable
+classification framework. Current public UI surfaces consume backend output
+instead of recreating classification logic in the browser.
+
+Implemented public-facing surfaces:
+
+- bullpen row availability badges
+- availability filter
+- pitcher detail availability summary
+- dashboard availability summary
+- dashboard data trust strip
+
+Current availability semantics:
+
+- Final availability is roster-status-adjusted.
+- Workload signal remains visible separately.
+- Bullpen Board cards and Player Detail use the same final availability
+  semantics.
+- IL and other non-active roster states cannot show as final `Available`.
+
+Implemented validation/governance surfaces:
+
+- frontend fixtures for all five statuses
+- backend status tests
+- stale and missing data tests
+- threshold audit
+- snapshot validation
+- explanation audit
+- boundary review tooling
+- adoption reports
+
+The Availability Engine remains bounded by public workload data. It does not
+claim team-reported availability, injury status, warm-up activity, travel
+status, or manager intent.
+
+## Known Limitations
+
+- Transaction feed lineage is not yet persisted. BaseballOS stores current
+  status and ownership authority, not claim dates, signing dates, release dates,
+  or full status-change history.
+- Real-world roster changes can occur between syncs before BaseballOS refreshes.
+- Bullpen eligibility still uses role and usage evidence where explicit bullpen
+  role labels are unavailable.
+- Starters are intentionally excluded from default bullpen planning, but future
+  transparency counters should separate active MLB pitchers, bullpen arms, and
+  excluded starters more explicitly.
+- No private clubhouse, medical, travel, warm-up, bullpen phone, or
+  manager-intent data is available.
+- No Statcast, Hawk-Eye biomechanics, Stuff+, or pitch-quality modeling is used.
+- Latest-workload snapshot mode is validation/admin only and must not be treated
+  as current availability.
+- Prospect Pipeline remains a prototype with sample data, not a live
+  minor-league data product.
+- Recommendation Engine V1 and V2 remain governed, non-ranking, non-selection
+  surfaces. Bullpen ranking, pitcher ordering, final pitcher selection,
+  performance forecasting, injury prediction, save prediction, matchup guidance,
+  and black-box baseball opinions remain outside the current product authority.
+
+## Next Priorities
+
+- Pitcher search.
+- Mobile review.
+- Active MLB pitchers versus bullpen arms transparency.
+- Competitive positioning versus Rotowire.
+- Optional transaction lineage/history later.
+
+## Recommendation Engine V1 Completion Status
+
+The completed major initiative is:
+
+```text
+Recommendation Engine V1
+```
+
+Status:
+
+```text
+Completed
+Certified
+Production Ready
+```
+
+Mission achieved:
+
+```text
+Move BaseballOS from availability intelligence to decision-support intelligence.
+```
+
+Recommendation Engine V1 is certified for:
+
+- fail-closed behavior
+- candidate-level evaluation
+- trust visibility
+- freshness visibility
+- confidence visibility
+- explanation visibility
+- limitation visibility
+- refusal visibility
+
+The official completion certification is:
+
+- `docs/RECOMMENDATION_ENGINE_V1_COMPLETION_CERTIFICATION.md`
+
+Supporting governance documents:
+
+- `docs/RECOMMENDATION_ENGINE_V1_POLICY.md`
+- `docs/RECOMMENDATION_ENGINE_V1_IMPLEMENTATION_PLAN.md`
+- `docs/RECOMMENDATION_ENGINE_V1_API_CONTRACT.md`
+- `docs/RECOMMENDATION_ENGINE_V1_FRONTEND_CONTRACT.md`
+- `docs/RECOMMENDATION_ENGINE_V1_UI_IMPLEMENTATION_PLAN.md`
+- `docs/RECOMMENDATION_ENGINE_V1_DASHBOARD_INTEGRATION_PLAN.md`
+
+The implemented candidate-level route evaluates one candidate at a time. The
+frontend API client calls that route for one-candidate evaluation only. The
+selected-pitcher detail workflow builds one candidate payload from existing
+pitcher detail, availability, and workload fields and displays the controlled
+Recommendation Panel response after a user-triggered evaluation.
+
+The certified display keeps confidence, data freshness, availability,
+explanations, limitations, category eligibility, refusal reasons,
+`ranking_applied=false`, and `selection_made=false` visible. The integration
+does not perform ranking, scoring, bullpen comparison, route navigation, or
+final pitcher selection.
+
+## Recommendation Engine V2 Strategy and Phase 13 Status
+
+Recommendation Engine V2 has completed strategy, governance boundaries,
+architecture, contracts, certification planning, implementation readiness,
+implementation planning, Phase 1 backend domain object foundation work, Phase
+2 backend context assembly work, Phase 3 backend-only neutral intelligence
+expansion work, Phase 4 backend-only inventory visibility work, and Phase 5
+backend-only team bullpen context work, Phase 6 backend-only trust metadata
+integration work, and Phase 7 backend-only refusal/fail-closed integration
+work, Phase 8 backend-only API contract exposure work, Phase 9 frontend
+client integration work, Phase 10 governed frontend rendering work, and Phase
+10A desktop layout remediation work, and Phase 10B Bullpen selected-pitcher
+layout remediation work, and Phase 11 mobile/accessibility validation work,
+Phase 12 certification readiness validation work, and Phase 13 formal
+certification review work. BaseballOS V2.5 Phase 14 inventory presentation
+optimization and V2.5 Phase 15 intelligence presentation optimization are also
+complete as post-certification usability milestones. BaseballOS V2.5 Phase 16
+production rollout decision is complete and approves the current certified V2
+Dashboard experience for production rollout within the implemented scope only.
+BaseballOS V2.5 Phase 17 post-rollout monitoring and boundary review is also
+complete and preserves the approved V2 production boundary. BaseballOS V2.5
+Phase 18 maintenance warning remediation review is complete and removes the
+current backend validation warning debt without changing certified
+Recommendation Engine behavior. BaseballOS V2.5 Phase 19 prototype surface
+maintenance review is complete and classifies production, supported,
+prototype, experimental, legacy, and deprecated surfaces without expanding
+Recommendation Engine behavior. BaseballOS V2.5 Phase 20 prototype promotion
+and deprecation policy is complete and defines the official lifecycle gates
+for promotion, support, production approval, legacy classification,
+deprecation, removal, and intelligence-surface governance. BaseballOS V2.5
+Phase 21 lifecycle enforcement checklist is complete and converts those gates
+into operational pass/fail checklists for lifecycle movement, production
+eligibility, deprecation, removal, and future intelligence-surface review.
+BaseballOS V2.5 Phase 22 lifecycle review log and adoption audit is complete
+and adds the auditable record layer for checklist usage, evidence requirements,
+surface-by-surface readiness findings, and remaining adoption risks.
+BaseballOS V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan
+is complete and converts those adoption findings into a structured owner,
+runbook, metadata, test, governance, certification, and migration-evidence
+framework before any future lifecycle movement.
+BaseballOS V2.5 Phase 24 lifecycle evidence packet template and initial
+backfill is complete and introduces standardized evidence packets plus initial
+packet stubs for selected production, prototype, experimental, and legacy
+surfaces.
+BaseballOS V2.5 Phase 25 lifecycle evidence packet review and backfill
+execution is complete and performs the first formal packet review, evidence
+readiness scoring, readiness classification, and known-evidence backfill pass
+across governed packet stubs.
+BaseballOS V2.5 Phase 26 lifecycle evidence citation backfill and stewardship
+review is complete and performs the first production-focused citation review
+for certified V2 evidence, replacing broad packet claims with documented source
+references where current records support them.
+BaseballOS V2.5 Phase 27 lifecycle evidence section-level citation mapping is
+complete and converts production evidence citations for Dashboard V2 Bullpen
+Intelligence and `/api/recommendations/v2/bullpen-state` from document-level
+references to source-document section references wherever current records
+support that specificity.
+BaseballOS V2.5 Phase 28 evidence ownership, monitoring artifact, and test
+mapping closeout is complete and assigns production packet retention ownership,
+defines evidence retention cadence, defines the monitoring artifact format, and
+maps certified production governance evidence to exact test files and test names
+where current tests support that mapping.
+BaseballOS V2.5 Phase 29 governance hardening closeout and V3 readiness
+decision is complete and formally closes the V2.5 governance hardening
+initiative. Remaining operational retention gaps are classified as non-blocking
+for governance closeout, and V3 product capability planning is ready under the
+existing governance gates.
+The Recommendation Engine V2 production fail-closed diagnosis is complete and
+finds that the observed production degraded fail-closed state is correctly
+triggered by stale source evidence while Dashboard communication and V2
+freshness metadata need a bounded remediation plan.
+The Recommendation Engine V2 production fail-closed communication and freshness
+metadata remediation is also complete and improves Dashboard communication
+without changing Recommendation Engine logic, candidate grouping, fatigue
+formulas, or fail-closed criteria.
+BaseballOS V3 Phase 1 product capability review and priority decision is
+complete and neutrally evaluates the current program state, prototype surfaces,
+experimental surfaces, legacy surfaces, data availability, implementation risk,
+governance risk, portfolio value, and baseball operations value. It recommends
+Team Operations Bullpen Readiness planning as the next product direction
+without authorizing runtime behavior.
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness capability definition
+is complete and defines the selected capability's allowed inputs, prohibited
+inputs, allowed outputs, prohibited outputs, readiness vocabulary, constraint
+vocabulary, coverage vocabulary, workload vocabulary, trust metadata,
+freshness metadata, refusal metadata, fail-closed requirements, testing
+requirements, accessibility requirements, certification requirements, and
+non-goals before any implementation work.
+BaseballOS V3 Phase 3 Team Operations Bullpen Readiness implementation plan is
+complete and converts the Phase 2 definition into a concrete backend, API,
+frontend, testing, certification, and rollout plan without changing runtime
+behavior.
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements are complete and establish the official readiness
+route strategy, request contract, response contract, metadata contracts,
+fail-closed contract, and backend/frontend/accessibility/governance
+certification gates without changing runtime behavior.
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness backend domain
+foundation is complete and implements the separate backend Team Operations
+domain package, contract constants, metadata objects, deterministic readiness
+assembly, fail-closed behavior, and focused backend tests without registering a
+route, adding frontend behavior, or changing the certified Recommendation
+Engine V2 contract.
+BaseballOS V3 Phase 6 Team Operations Bullpen Readiness internal API route
+integration is complete and registers the separate readiness route as an
+internal, non-production, uncertified Flask surface with allowed query handling,
+unsafe query refusal, source input assembly, route metadata, fail-closed
+behavior, and backend route tests. It does not add frontend exposure,
+production certification, or Recommendation Engine V2 contract changes.
+BaseballOS V3 Phase 7 Team Operations Bullpen Readiness route certification
+readiness review is complete and classifies the internal route as
+`READY_FOR_FRONTEND_INTEGRATION_PLANNING` after reviewing API contract
+alignment, request validation, response contract shape, governance metadata,
+trust metadata, freshness metadata, refusal metadata, fail-closed behavior,
+anti-ranking, anti-selection, anti-prediction, route tests, domain tests, and
+V2 regression safety. It does not grant production certification or frontend
+implementation authorization.
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness frontend integration
+plan is complete and defines governed Dashboard placement, client/API
+normalization, component architecture, summary-first rendering,
+expand-on-demand evidence, trust metadata presentation, freshness metadata
+presentation, refusal/fail-closed presentation, governance metadata
+presentation, accessibility, mobile behavior, loading/error/degraded states,
+neutral language rules, prohibited UI patterns, frontend tests, and
+certification-readiness requirements without adding UI or changing runtime
+behavior.
+BaseballOS V3 Phase 9 Team Operations Bullpen Readiness frontend client
+normalization and contract tests are complete and add the frontend API helper
+for the internal route, response normalization for successful, degraded,
+refused, missing-field, malformed-governance, unknown-vocabulary, and
+internal-status payloads, plus focused frontend contract tests. It does not add
+Dashboard UI, production certification, public exposure, or Recommendation
+Engine V2 contract changes.
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+integration is complete and adds the first governed Dashboard panel for the
+internal readiness route. The panel uses the Phase 9 normalized payload,
+displays internal/non-production/uncertified status, renders summary-first
+team-level context, exposes context/evidence/metadata on demand, shows
+trust/freshness/refusal/fail-closed/governance metadata, and adds focused
+frontend rendering tests. It does not grant production certification, public
+route certification, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, matchup advice, or Recommendation Engine
+V2 contract changes.
+BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
+certification-readiness review is complete and classifies the Phase 10 UI as
+`READY_FOR_FORMAL_CERTIFICATION_PLANNING`. The review covers governance-safe
+rendering, neutral language, summary-first presentation, expand-on-demand
+evidence, trust/freshness/refusal/fail-closed/governance metadata visibility,
+accessibility, mobile/responsive behavior, frontend test coverage, and V2
+regression safety. It does not grant production certification, production
+rollout approval, public route certification, runtime behavior changes, or
+Recommendation Engine V2 contract changes.
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness formal certification
+plan and rollout prerequisites are complete and define the checklist required
+before any formal certification review or rollout decision can be attempted.
+The plan covers backend, frontend, accessibility, governance, freshness, trust,
+refusal/fail-closed, V2 regression, monitoring artifact, evidence packet,
+rollout prerequisite, and stop-condition requirements. It does not grant
+production certification, production rollout approval, public route
+certification, runtime behavior changes, or Recommendation Engine V2 contract
+changes.
+BaseballOS V3 Phase 13 Team Operations Bullpen Readiness formal certification
+review is complete and certifies the implemented Team Operations readiness
+domain, internal route, frontend client normalization, and Dashboard UI with
+non-blocking operational gaps. It does not approve production rollout. The
+route and UI remain internal, non-production, and uncertified until a separate
+rollout decision.
+BaseballOS V3 Phase 14 Team Operations Bullpen Readiness controlled rollout
+and monitoring is complete and creates the controlled rollout plan, monitoring
+artifact format, initial retained artifact stub, rollback criteria, stop
+conditions, and post-rollout observation requirements. The controlled rollout
+decision is `CONTROLLED_ROLLOUT_READY_WITH_PENDING_MANUAL_EVIDENCE`. Full
+production rollout remains not approved.
+BaseballOS V3 Phase 15 Team Operations Bullpen Readiness deployment smoke
+review and controlled rollout decision is complete and records that controlled
+rollout remains blocked pending retained deployment, browser, mobile,
+accessibility, and maintainer-review evidence.
+BaseballOS V3 Phase 16 Team Operations Bullpen Readiness deployment evidence
+and manual smoke review is complete and retains local API health, readiness
+route, prohibited-query refusal, and frontend reachability evidence. Browser,
+mobile, accessibility, deployment-environment, and explicit maintainer-review
+evidence remain pending, so controlled rollout remains blocked and full
+production rollout remains not approved.
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness deployment
+environment manual review is complete and retains deployed backend health,
+readiness route, prohibited-query refusal, and frontend shell reachability
+evidence. Controlled rollout remains blocked because the deployed backend
+reports development/debug state and rendered Dashboard, browser, mobile,
+accessibility, and explicit maintainer-review evidence remain pending.
+Operational Review 1 Deployment Configuration and Environment Classification
+Investigation is complete and concludes `DEPLOYMENT_CONFIGURATION_INCORRECT`.
+Repository evidence shows the health endpoint reflects selected Flask app
+configuration, and deployed evidence shows the backend selected development
+configuration with debug enabled. Team Operations Bullpen Readiness rollout
+remains blocked pending deployment configuration remediation and retained
+manual evidence.
+
+The official strategy foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_STRATEGY.md`
+
+The governance-boundary decision filter is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`
+
+The architecture foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`
+
+The API contract foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`
+
+The frontend contract foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FRONTEND_CONTRACT.md`
+
+The certification requirements foundation is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_REQUIREMENTS.md`
+
+The implementation-readiness review is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_READINESS_REVIEW.md`
+
+The implementation plan is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_IMPLEMENTATION_PLAN.md`
+
+The Phase 1 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_1_DOMAIN_FOUNDATION.md`
+
+The Phase 2 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_2_CONTEXT_ASSEMBLY.md`
+
+The Phase 3 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_3_NEUTRAL_INTELLIGENCE.md`
+
+The Phase 4 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_4_INVENTORY_VISIBILITY.md`
+
+The Phase 5 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_5_TEAM_BULLPEN_CONTEXT.md`
+
+The Phase 6 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_6_TRUST_METADATA_INTEGRATION.md`
+
+The Phase 7 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_7_REFUSAL_FAIL_CLOSED.md`
+
+The Phase 8 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_8_API_CONTRACT_EXPOSURE.md`
+
+The Phase 9 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_9_FRONTEND_CLIENT.md`
+
+The Phase 10 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10_GOVERNED_FRONTEND_RENDERING.md`
+
+The Phase 10A completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10A_DESKTOP_LAYOUT_REMEDIATION.md`
+
+The Phase 10B completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_10B_BULLPEN_SELECTED_PITCHER_LAYOUT_REMEDIATION.md`
+
+The Phase 11 completion record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_PHASE_11_MOBILE_ACCESSIBILITY.md`
+
+The Phase 12 certification readiness record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
+
+The Phase 13 formal certification record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
+
+The V2.5 Phase 14 inventory presentation optimization record is:
+
+- `docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`
+
+The V2.5 Phase 15 intelligence presentation optimization record is:
+
+- `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
+
+The Dashboard V2 collapsible remediation record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
+The V2.5 Phase 16 production rollout decision record is:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+The V2.5 Phase 17 post-rollout monitoring and boundary review record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
+The V2.5 Phase 18 maintenance warning remediation review record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+The V2.5 Phase 19 prototype surface maintenance review record is:
+
+- `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
+
+The V2.5 Phase 20 prototype promotion and deprecation policy record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+The V2.5 Phase 21 lifecycle enforcement checklist record is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
+
+The V2.5 Phase 22 lifecycle review log and adoption audit record is:
+
+- `docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`
+
+The V2.5 Phase 23 lifecycle evidence backfill and owner assignment plan is:
+
+- `docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`
+
+The V2.5 Phase 24 lifecycle evidence packet template and initial backfill
+record is:
+
+- `docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`
+
+The V2.5 Phase 25 lifecycle evidence packet review and backfill execution
+record is:
+
+- `docs/V25_PHASE_25_LIFECYCLE_EVIDENCE_PACKET_REVIEW_AND_BACKFILL_EXECUTION.md`
+
+The V2.5 Phase 26 lifecycle evidence citation backfill and stewardship review
+record is:
+
+- `docs/V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md`
+
+The V2.5 Phase 27 lifecycle evidence section-level citation map record is:
+
+- `docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`
+
+The V2.5 Phase 28 evidence ownership, monitoring artifact, and test mapping
+closeout record is:
+
+- `docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`
+
+The V2.5 Phase 29 governance hardening closeout and V3 readiness decision
+record is:
+
+- `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
+
+The Recommendation Engine V2 production fail-closed diagnosis record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`
+
+The Recommendation Engine V2 production fail-closed communication and freshness
+metadata remediation record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md`
+
+The V3 Phase 1 product capability review and priority decision record is:
+
+- `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
+
+The V3 Phase 2 Team Operations Bullpen Readiness capability definition record
+is:
+
+- `docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`
+
+The V3 Phase 3 Team Operations Bullpen Readiness implementation plan record
+is:
+
+- `docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`
+
+The V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements record is:
+
+- `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
+
+The V3 Phase 5 Team Operations Bullpen Readiness backend domain foundation
+record is:
+
+- `docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md`
+
+The V3 Phase 6 Team Operations Bullpen Readiness internal API route
+integration record is:
+
+- `docs/V3_PHASE_6_TEAM_OPERATIONS_BULLPEN_READINESS_INTERNAL_API_ROUTE_INTEGRATION.md`
+
+The V3 Phase 7 Team Operations Bullpen Readiness route certification-readiness
+review record is:
+
+- `docs/V3_PHASE_7_TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE_CERTIFICATION_READINESS_REVIEW.md`
+
+The V3 Phase 8 Team Operations Bullpen Readiness frontend integration plan
+record is:
+
+- `docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`
+
+The V3 Phase 9 Team Operations Bullpen Readiness frontend client normalization
+and contract tests record is:
+
+- `docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`
+
+The V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI integration
+record is:
+
+- `docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`
+
+The V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
+certification-readiness review record is:
+
+- `docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`
+
+The V3 Phase 12 Team Operations Bullpen Readiness formal certification plan
+and rollout prerequisites record is:
+
+- `docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`
+
+The V3 Phase 13 Team Operations Bullpen Readiness formal certification review
+record is:
+
+- `docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`
+
+The V3 Phase 14 Team Operations Bullpen Readiness controlled rollout and
+monitoring records are:
+
+- `docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md`
+
+The V3 Phase 15 Team Operations Bullpen Readiness deployment smoke review and
+controlled rollout decision records are:
+
+- `docs/V3_PHASE_15_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_SMOKE_REVIEW_AND_CONTROLLED_ROLLOUT_DECISION.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_15_DEPLOYMENT_SMOKE_REVIEW_ARTIFACT.md`
+
+The V3 Phase 16 Team Operations Bullpen Readiness deployment evidence and
+manual smoke review records are:
+
+- `docs/V3_PHASE_16_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_16_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_ARTIFACT.md`
+
+The V3 Phase 17 Team Operations Bullpen Readiness deployment environment
+manual review records are:
+
+- `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
+
+The Operational Review 1 deployment configuration and environment
+classification investigation record is:
+
+- `docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md`
+
+The Operational Verification 1 and V3 Phase 18 rollout reassessment records
+are:
+
+- `docs/OPERATIONAL_VERIFICATION_1_RENDER_PRODUCTION_HEALTH_EVIDENCE_CAPTURE_AND_ROLLOUT_BLOCKER_REASSESSMENT.md`
+- `docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md`
+- `docs/V3_PHASE_18_TEAM_OPERATIONS_BULLPEN_READINESS_MANUAL_REVIEW_AND_CONTROLLED_ROLLOUT_REASSESSMENT.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_18_MANUAL_REVIEW_AND_ROLLOUT_REASSESSMENT_ARTIFACT.md`
+- `docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md`
+
+The documentation navigation records are:
+
+- `docs/README.md`
+- `docs/current/ROADMAP.md`
+- `docs/current/CHANGELOG.md`
+- `docs/governance/CERTIFICATION_LEDGER.md`
+- `docs/governance/OPERATIONAL_REVIEWS.md`
+
+V2 planning may explore bullpen-level intelligence, bullpen inventory
+visibility, bullpen stress awareness, leverage resource visibility, workload
+distribution visibility, grouped eligibility reporting, bullpen readiness
+reporting, and broader recommendation explainability.
+
+This milestone does not authorize pitcher rankings, pitcher ordering,
+automated pitcher selection, game outcome prediction, injury prediction, save
+prediction, performance forecasting, opaque recommendation scores, unsupported
+baseball opinions, additional Recommendation Engine API exposure, frontend
+rendering behavior changes, or new recommendation logic.
+
+The governance-boundary milestone documents allowed, restricted, and forbidden
+V2 behaviors; preserves the active `ranking_applied=false` and
+`selection_made=false` trust guarantees; and requires documented architecture,
+API contract, frontend contract, certification criteria, and explicit user
+approval before implementation may begin.
+
+The architecture milestone defines the proposed V2 object model, service flow,
+metadata model, fail-closed path, API and frontend architecture concepts,
+governance enforcement points, testing architecture, certification
+architecture, and implementation-readiness criteria. It does not authorize
+backend, frontend, API, or Recommendation Engine V1 behavior changes.
+
+The API contract milestone defines the proposed V2 response shape, provisional
+bullpen-state endpoint scope, required trust metadata, response objects,
+anti-ranking rules, success and refusal examples, testing requirements,
+certification requirements, and implementation gate. The contract itself did
+not implement or modify endpoints; the separately completed Phase 8 milestone
+implemented the approved endpoint.
+
+The frontend contract milestone defines future V2 display rules for allowed,
+restricted, and forbidden UI patterns; candidate groups, inventory, bullpen
+state, team context, trust metadata, freshness, limitations, refusal states,
+mobile rendering, accessibility language, visual hierarchy, testing, and
+certification. It does not create or modify frontend components.
+
+The certification requirements milestone defines the evidence standards,
+trust guarantees, explainability guarantees, freshness guarantees, fail-closed
+guarantees, backend/API/frontend/mobile/accessibility certification
+requirements, refusal-state requirements, anti-ranking and anti-selection
+audits, documentation requirements, test categories, production-readiness
+requirements, certification failure conditions, implementation admission gate,
+and final approval requirements. It does not authorize implementation.
+
+The implementation-readiness review evaluates the complete V2 planning package
+and finds no remaining governance blockers. The final readiness determination
+is `READY_FOR_IMPLEMENTATION`. The review does not implement or certify
+runtime behavior.
+
+The implementation plan converts the approved V2 governance package into a
+phased roadmap covering repo hygiene, backend domain objects, bullpen state,
+candidate grouping, inventory visibility, team bullpen context, trust metadata,
+refusal and fail-closed behavior, API implementation, frontend integration,
+mobile/accessibility validation, test expansion, certification review, and
+production rollout decision. It remains the sequencing authority for future
+phases after Phase 10B.
+
+Recommendation Engine V2 Phase 1 implements backend-only domain objects:
+
+- `RecommendationContext`
+- `BullpenState`
+- `CandidateGroup`
+- `TeamBullpenContext`
+
+The Phase 1 foundation represents trust, freshness, limitation, explanation,
+refusal, bullpen inventory, readiness, workload, stress, neutral candidate
+group, and team bullpen context metadata. It does not expose V2 API support,
+frontend support, runtime bullpen-state calculation, candidate grouping logic,
+ranking, selection, prediction, or user-visible behavior.
+
+Recommendation Engine V2 Phase 2 implements backend-only context assembly:
+
+- `assemble_v2_context`
+- `V2ContextAssembly`
+
+The Phase 2 assembler maps existing availability, workload, freshness,
+limitation, explanation, and refusal evidence into `RecommendationContext`,
+`BullpenState`, `TeamBullpenContext`, and neutral `CandidateGroup` collections.
+It can summarize bullpen inventory, readiness distribution, workload evidence,
+stress indicators, and leverage evidence availability. It fails closed when
+required evidence is missing or source evidence includes forbidden ranking or
+selection fields.
+
+The Phase 2 assembler does not expose V2 API support, frontend support,
+user-facing V2 recommendation behavior, ranking, selection, prediction, or
+route changes.
+
+Recommendation Engine V2 Phase 3 expands backend-only neutral intelligence:
+
+- eligibility distribution
+- refusal distribution
+- freshness distribution
+- readiness distribution
+- workload distribution
+- neutral candidate groups across availability, eligibility, refusal,
+  freshness, readiness, and workload categories
+
+The Phase 3 expansion preserves source input order inside groups, documents
+category ordering as a static taxonomy, propagates trust/freshness/refusal and
+explanation support, and fails closed when evidence is missing or unsafe.
+
+The Phase 3 expansion does not expose V2 API support, frontend support,
+user-facing V2 recommendation behavior, ranking, selection, prediction, or
+route changes.
+
+Recommendation Engine V2 Phase 4 expands backend-only inventory visibility:
+
+- availability inventory
+- eligibility inventory
+- refusal inventory
+- freshness inventory
+- readiness inventory
+- workload inventory
+- evidence inventory
+- limitation inventory
+- explanation inventory
+- trust metadata
+
+The Phase 4 expansion preserves source input order inside inventory
+categories, exposes deterministic counts and member references, propagates
+trust/freshness/refusal/limitation/explanation metadata, and fails closed when
+evidence is missing or unsafe.
+
+The Phase 4 expansion does not expose V2 API support, frontend support,
+user-facing V2 inventory UI, user-facing V2 recommendation behavior, ranking,
+selection, prediction, or route changes.
+
+Recommendation Engine V2 Phase 5 expands backend-only team bullpen context:
+
+- team bullpen status
+- team availability distribution
+- team eligibility distribution
+- team refusal distribution
+- team freshness and data-state distribution
+- team readiness distribution
+- team workload distribution
+- team limitation context
+- team explanation context
+- team trust metadata
+
+The Phase 5 expansion preserves source input order in team member references,
+uses the existing Phase 4 inventory visibility layer as source evidence,
+propagates trust/freshness/refusal/limitation/explanation metadata, and fails
+closed when evidence is missing or unsafe.
+
+The Phase 5 expansion does not expose V2 API support, frontend support,
+user-facing V2 team context UI, user-facing V2 recommendation behavior,
+ranking, selection, prediction, or route changes.
+
+Recommendation Engine V2 Phase 6 enforces backend-only trust metadata
+integration:
+
+- confidence metadata
+- freshness metadata
+- limitation metadata
+- explanation metadata
+- refusal metadata
+- data-state metadata
+- source evidence state
+- governance state
+- no-ranking and no-selection governance metadata
+
+The Phase 6 expansion adds mandatory trust metadata validation across
+`RecommendationContext`, `BullpenState`, `CandidateGroup`,
+`TeamBullpenContext`, `V2ContextAssembly`, neutral intelligence summaries,
+inventory visibility summaries, and team bullpen context summaries. Missing or
+unsupported trust metadata now produces explicit fail-closed/refusal metadata
+instead of silently passing incomplete context.
+
+The Phase 6 expansion does not expose V2 API support, frontend support,
+user-facing V2 trust UI, user-facing V2 recommendation behavior, ranking,
+selection, prediction, or route changes.
+
+Recommendation Engine V2 Phase 7 expands backend-only refusal and fail-closed
+integration:
+
+- Phase 7 refusal/fail-closed summary
+- deterministic degraded-output state
+- missing evidence handling
+- incomplete evidence handling
+- stale evidence handling
+- unsupported evidence handling
+- malformed evidence handling
+- unsafe ranking source-field handling
+- unsafe selection source-field handling
+- unsafe prediction source-field handling
+
+The Phase 7 expansion adds explicit internal `refusal_fail_closed` metadata to
+context assembly, neutral intelligence, inventory visibility, and team bullpen
+context summaries. It distinguishes passed, degraded, and failed-closed states,
+suppresses candidate output for malformed or unsupported source-shape evidence,
+and preserves trust/freshness/refusal/limitation/explanation metadata.
+
+The Phase 7 expansion does not expose V2 API support, frontend support,
+user-facing V2 refusal UI, user-facing V2 recommendation behavior, ranking,
+selection, prediction, or route changes.
+
+Recommendation Engine V2 Phase 8 exposes the approved backend API contract:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The Phase 8 endpoint returns V2 bullpen-state contract output with:
+
+- top-level no-ranking and no-selection metadata
+- trust metadata
+- freshness metadata
+- limitations
+- explanations
+- refusal reasons
+- fail-closed metadata
+- descriptive bullpen state when evidence is safe
+- neutral candidate groups when grouping is safe
+- inventory summaries
+- team bullpen context
+
+The Phase 8 endpoint fails closed or degrades explicitly when evidence is
+missing, stale, incomplete, unsupported, malformed, or governance-unsafe.
+
+The Phase 8 expansion does not expose frontend support, user-facing V2 UI,
+ranking, selection, prediction, or changes to Recommendation Engine V1.
+
+Recommendation Engine V2 Phase 9 adds frontend client integration for the
+approved V2 endpoint:
+
+```text
+GET /api/recommendations/v2/bullpen-state
+```
+
+The Phase 9 client integration is implemented in:
+
+- `frontend/src/utils/api.js`
+
+The client consumes the endpoint and normalizes V2 responses into explicit
+contract states:
+
+- `available`
+- `fail_closed`
+- `unavailable`
+
+The client preserves trust metadata, freshness metadata, limitation metadata,
+explanation metadata, refusal metadata, and no-ranking/no-selection governance
+flags. Missing, malformed, governance-unsafe, or forbidden
+ranking/selection/prediction fields are represented as unavailable instead of
+being treated as valid future UI state.
+
+The Phase 9 expansion does not expose user-facing V2 UI, ranking UI, selection
+UI, prediction UI, new V2 routes, backend V2 behavior changes, or changes to
+Recommendation Engine V1.
+
+Recommendation Engine V2 Phase 10 adds governed dashboard rendering for the
+normalized V2 frontend client output.
+
+The Phase 10 rendering paths are:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/components/recommendations/index.js`
+
+The Phase 10 panel renders:
+
+- bullpen state
+- trust metadata
+- freshness metadata
+- governance metadata
+- inventory visibility
+- team context
+- neutral candidate groups
+- limitations
+- explanations
+- refusal metadata
+- fail-closed state
+- unavailable contract state
+
+The panel renders fail-closed and unavailable states explicitly. When the
+client reports unavailable contract state, the panel withholds bullpen-state
+details and avoids rendering unsafe candidate, inventory, or team-context
+output.
+
+The Phase 10 expansion does not introduce ranking UI, selection UI, prediction
+UI, best/preferred/recommended pitcher UI, backend V2 behavior changes, new
+backend routes, or changes to Recommendation Engine V1.
+
+Recommendation Engine V2 Phase 10A remediates the desktop layout defect in the
+governed Phase 10 panel.
+
+The Phase 10A remediation updates:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationV2Rendering.test.mjs`
+
+The panel now uses container-aware internal grids so trust, freshness,
+inventory, team-context, limitation, explanation, refusal, fail-closed, and
+neutral-group sections remain readable when rendered inside desktop layouts
+with constrained panel width.
+
+The Phase 10A remediation does not introduce ranking UI, selection UI,
+prediction UI, best/preferred/recommended pitcher UI, backend V2 behavior
+changes, new backend routes, or changes to Recommendation Engine V1.
+
+Recommendation Engine V2 Phase 10B remediates the Bullpen selected-pitcher
+detail layout.
+
+The Phase 10B remediation updates:
+
+- `frontend/src/components/bullpen/Bullpen.jsx`
+- `frontend/src/components/bullpen/PitcherDetail.jsx`
+- `frontend/src/components/recommendations/RecommendationPitcherDetailSection.jsx`
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+The Bullpen selected-pitcher layout now avoids the cramped fixed desktop split
+that squeezed the detail card and recommendation trust surface on common
+desktop widths. The selected-pitcher detail surface remains full width in
+constrained desktop layouts and becomes a readable fixed-width rail only on
+wider desktop screens.
+
+The embedded recommendation detail surface now uses container-aware internal
+grids and text wrapping safeguards so trust, freshness, refusal, explanation,
+limitation, and metadata sections remain readable inside the selected-pitcher
+detail card.
+
+The Phase 10B remediation does not introduce ranking UI, selection UI,
+prediction UI, best/preferred/recommended pitcher UI, backend V2 behavior
+changes, new backend routes, or changes to Recommendation Engine V1.
+
+Recommendation Engine V1 Candidate Evaluation Layout Remediation fixes the
+embedded Candidate Evaluation article rendered inside the Bullpen
+selected-pitcher detail surface.
+
+The V1 layout remediation updates:
+
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+The embedded V1 Candidate Evaluation article now has an explicit embedded
+layout path and remains single-column. Standalone Recommendation Engine V1
+panels may still use the wider container-aware layout, but the embedded
+selected-pitcher article no longer inherits the standalone two-column grid.
+
+The V1 layout remediation preserves Recommendation Status, Trust And
+Freshness, Eligible Categories, Blocked Categories, Explanation, Limitation,
+Refusal Reason, and Metadata visibility.
+
+The V1 layout remediation does not introduce ranking UI, selection UI,
+prediction UI, best/preferred/recommended pitcher UI, backend behavior
+changes, API changes, or Recommendation Engine V1 logic changes.
+
+The active V1 and V2 governance guarantees remain:
+
+```text
+ranking_applied = false
+selection_made = false
+```
+
+Dashboard and Bullpen Loading Performance Remediation improves the loading
+paths that affected Dashboard and Bullpen perceived production quality before
+Phase 11 mobile/accessibility validation.
+
+The performance remediation updates:
+
+- `backend/services/availability_snapshot.py`
+- `backend/api/bullpen.py`
+- `backend/api/recommendations.py`
+- `backend/tests/test_availability_snapshot_mode.py`
+- `backend/tests/test_recommendation_v2_api_contract.py`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/utils/api.js`
+- `frontend/tests/recommendationV2Api.test.mjs`
+- `frontend/tests/syncStatus.test.mjs`
+
+The root cause was repeated per-pitcher availability evidence queries for
+broad bullpen views, full internal V2 context serialization before public API
+response shaping, and a duplicate Dashboard sync-status request.
+
+The remediation batches availability evidence reads, uses lean public V2 API
+serialization, reuses the Dashboard sync-status request for the trust strip,
+and de-duplicates concurrent identical frontend GET requests.
+
+Measured local endpoint averages improved from 470.4 ms to 42.5 ms for
+Dashboard overview, 490.7 ms to 54.1 ms for stale-included Bullpen fatigue
+data, and 1625.1 ms to 419.0 ms for V2 bullpen-state output.
+
+The performance remediation does not change recommendation logic, fatigue
+formulas, V1 behavior, V2 governance behavior, API route shape, ranking,
+selection, prediction, or best/preferred/recommended pitcher behavior.
+
+Recommendation Engine V2 Phase 11 Mobile Accessibility Validation validates
+and improves the governed frontend surfaces after the Phase 10, Phase 10A,
+Phase 10B, V1 Candidate Evaluation layout, and loading-performance
+remediations.
+
+The Phase 11 validation updates:
+
+- `frontend/src/components/recommendations/RecommendationV2BullpenStatePanel.jsx`
+- `frontend/src/components/recommendations/RecommendationPitcherDetailSection.jsx`
+- `frontend/src/components/recommendations/RecommendationPanel.jsx`
+- `frontend/src/components/bullpen/Bullpen.jsx`
+- `frontend/src/components/bullpen/PitcherDetail.jsx`
+- `frontend/src/components/UI/LoadingPane.jsx`
+- `frontend/src/components/UI/ErrorState.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/recommendationV2Rendering.test.mjs`
+- `frontend/tests/recommendationPitcherDetailSection.test.mjs`
+
+Phase 11 validates the Dashboard V2 panel, Bullpen selected-pitcher detail
+surface, and embedded Recommendation Engine V1 Candidate Evaluation surface
+at mobile and tablet widths. It adds or preserves explicit V2 section
+headings, status and alert semantics, fail-closed announcements, visible
+focus treatment, keyboard access to selected-pitcher detail, focus transfer
+when the detail surface opens, and embedded V1 trust/freshness/refusal
+metadata labeling.
+
+The Phase 11 validation does not change recommendation logic, fatigue
+formulas, backend behavior, API behavior, V1 behavior, V2 governance behavior,
+ranking, selection, prediction, or best/preferred/recommended pitcher
+behavior.
+
+Recommendation Engine V2 Phase 12 Certification Readiness Validation compiles
+backend, API, frontend, governed rendering, mobile, accessibility, trust,
+freshness, refusal, fail-closed, and V1 regression evidence for the
+implemented V2 system.
+
+The Phase 12 readiness record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_CERTIFICATION_READINESS_VALIDATION.md`
+
+Phase 12 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+69 passed, 0 failed
+```
+
+Phase 12 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v2-certification
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The Phase 12 readiness classification is:
+
+```text
+READY_FOR_CERTIFICATION_REVIEW
+```
+
+This means V2 is ready to enter formal certification review. It does not mean
+V2 is production certified, does not approve production rollout, and does not
+add product behavior.
+
+Recommendation Engine V2 Phase 13 Formal Certification Review certifies the
+implemented and governed V2 scope as production-ready.
+
+The Phase 13 formal certification record is:
+
+- `docs/RECOMMENDATION_ENGINE_V2_FORMAL_CERTIFICATION.md`
+
+Phase 13 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+69 passed, 0 failed
+```
+
+Phase 13 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v2-formal-certification
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The Phase 13 formal certification decision is:
+
+```text
+CERTIFIED_PRODUCTION_READY
+```
+
+This certifies the implemented and governed V2 scope only. Production rollout
+still requires a separate governed rollout decision.
+
+BaseballOS V2.5 Phase 14 Inventory Presentation Optimization reduces the
+Dashboard V2 inventory surface from full membership by default to
+summary-first category cards with expansion on demand.
+
+The Phase 14 inventory presentation record is:
+
+- `docs/V25_PHASE_14_INVENTORY_PRESENTATION_OPTIMIZATION.md`
+
+Phase 14 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+72 passed, 0 failed
+```
+
+Phase 14 did not touch backend files, API contracts, recommendation logic,
+trust logic, freshness logic, refusal logic, ranking behavior, selection
+behavior, prediction behavior, or Recommendation Engine V1 behavior.
+
+BaseballOS V2.5 Phase 15 Intelligence Presentation Optimization audits the
+full Dashboard V2 intelligence surface and reduces raw-structure exposure
+beyond inventory. Candidate groups, team context distributions and indicators,
+limitations, explanations, and refusal details now render summary-first by
+default with full detail available through expansion.
+
+The Phase 15 intelligence presentation record is:
+
+- `docs/V25_PHASE_15_INTELLIGENCE_PRESENTATION_OPTIMIZATION.md`
+
+A later Dashboard V2 production UX remediation corrects the live collapsible
+implementation without creating a new roadmap phase. It adds nested
+member/detail controls for inventory and candidate groups, structured Team
+Context indicator summaries for live count-object payloads, and validation
+that high-volume names and details remain hidden until explicit expansion.
+
+The Dashboard V2 collapsible remediation record is:
+
+- `docs/V25_DASHBOARD_INTELLIGENCE_COLLAPSIBLE_REMEDIATION.md`
+
+Phase 15 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 15 did not touch backend files, API contracts, recommendation logic,
+trust logic, freshness logic, refusal logic, ranking behavior, selection
+behavior, prediction behavior, or Recommendation Engine V1 behavior.
+
+Dashboard V2 collapsible remediation validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+78 passed, 0 failed
+```
+
+Backend tests were not required for the remediation because no backend files
+were touched.
+
+BaseballOS V2.5 Phase 16 Production Rollout Decision evaluates the certified
+V2 system, current Dashboard and Bullpen surfaces, performance remediation,
+mobile/accessibility evidence, Phase 14 inventory presentation optimization,
+and Phase 15 intelligence presentation optimization.
+
+The Phase 16 production rollout decision record is:
+
+- `docs/V25_PHASE_16_PRODUCTION_ROLLOUT_DECISION.md`
+
+The Phase 16 rollout decision is:
+
+```text
+APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
+Phase 16 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 16 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-rollout-decision
+```
+
+Result:
+
+```text
+278 passed, 0 failed
+```
+
+The backend run reported 139 existing deprecation warnings from SQLAlchemy and
+datetime usage. The warnings are maintenance follow-up items, not rollout
+blockers for the current V2 scope.
+
+Phase 16 did not touch backend files, frontend source files, API contracts,
+recommendation logic, trust logic, freshness logic, refusal logic, ranking
+behavior, selection behavior, prediction behavior, or Recommendation Engine V1
+behavior.
+
+BaseballOS V2.5 Phase 17 Post-Rollout Monitoring and Boundary Review evaluates
+the approved V2 production boundary after rollout approval. It reviews
+governance drift, contract drift, UX drift, warning classes, existing
+regression protection, and future monitoring requirements.
+
+The Phase 17 post-rollout monitoring and boundary review record is:
+
+- `docs/V25_PHASE_17_POST_ROLLOUT_MONITORING_AND_BOUNDARY_REVIEW.md`
+
+The Phase 17 boundary review decision is:
+
+```text
+BOUNDARY_REVIEW_PASSED
+```
+
+Phase 17 validation ran:
+
+```text
+npm test
+```
+
+Result:
+
+```text
+77 passed, 0 failed
+```
+
+Phase 17 validation also ran:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-post-rollout
+```
+
+Result:
+
+```text
+278 passed, 0 failed, 139 warnings
+```
+
+Phase 17 did not discover a regression-protection gap. Existing frontend and
+backend tests already cover anti-ranking, anti-selection, anti-prediction,
+trust metadata, freshness metadata, refusal metadata, fail-closed behavior,
+collapsed/expanded V2 inventory and intelligence presentation, and prohibited
+decision-language rendering.
+
+The warning review classifies SQLAlchemy and datetime deprecation warnings as
+maintenance items to monitor, not current V2 governance blockers. Local
+pytest cache/temp permission warnings and frontend generated/dependency drift
+remain unstaged local artifacts.
+
+Phase 17 did not touch backend source files, frontend source files, API
+contracts, recommendation logic, trust logic, freshness logic, refusal logic,
+ranking behavior, selection behavior, prediction behavior, fatigue formulas,
+or Recommendation Engine V1 behavior.
+
+BaseballOS V2.5 Phase 18 Maintenance Warning Remediation Review evaluates the
+backend warning debt surfaced during Phase 17 post-rollout validation. It
+classifies datetime warnings, SQLAlchemy warnings, pytest temp/cache
+permission warnings, prototype route scan findings, and unrelated
+generated/dependency drift.
+
+The Phase 18 maintenance warning remediation review record is:
+
+- `docs/V25_PHASE_18_MAINTENANCE_WARNING_REMEDIATION_REVIEW.md`
+
+Phase 18 validation ran before remediation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-warning-review
+```
+
+Initial result:
+
+```text
+278 passed, 0 failed, 139 warnings
+```
+
+Phase 18 applied safe warning remediation:
+
+- replaced deprecated UTC timestamp acquisition with a naive UTC helper that
+  preserves existing `DateTime` storage shape
+- replaced backend test fixture `datetime.utcnow()` calls with the same helper
+- replaced the observed bullpen detail route legacy query lookup with
+  `db.session.get()` and explicit 404 behavior
+
+Phase 18 validation ran after remediation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-warning-review
+```
+
+Final result:
+
+```text
+278 passed, 0 failed, 0 warnings
+```
+
+Frontend validation was not required because Phase 18 did not touch frontend
+files.
+
+Phase 18 deferred local pytest temp/cache permission warnings, unrelated
+frontend generated/dependency drift, and prototype Prospect API scan findings.
+Those items are not part of the certified V2 behavior and should be handled
+only in separate maintenance work if needed.
+
+Phase 18 did not change API contracts, Recommendation Engine behavior, trust
+logic, freshness logic, refusal logic, fatigue formulas, ranking behavior,
+selection behavior, prediction behavior, frontend behavior, or Recommendation
+Engine V1 behavior.
+
+BaseballOS V2.5 Phase 19 Prototype Surface Maintenance Review evaluates
+current backend routes, frontend routes, shared utilities, prototype surfaces,
+experimental surfaces, legacy surfaces, and deprecated-surface status.
+
+The Phase 19 prototype surface maintenance review record is:
+
+- `docs/V25_PHASE_19_PROTOTYPE_SURFACE_MAINTENANCE_REVIEW.md`
+
+Phase 19 classifications:
+
+- PRODUCTION: Dashboard, Bullpen, certified V2 bullpen-state API and panel,
+  certified V1 candidate API and panel, bullpen workload read APIs, sync
+  status, and health.
+- SUPPORTED: Methodology, admin sync/recalculation endpoints, frontend API
+  normalizers, and availability governance tooling.
+- PROTOTYPE: Prospect Pipeline UI, Prospect APIs, Prospect model, and Dashboard
+  Pipeline Snapshot.
+- EXPERIMENTAL: fatigue-to-ERA analysis, latest-workload snapshot mode, MLB
+  passthrough helpers, and availability threshold experiment tooling.
+- LEGACY: metadata-less fatigue array response and standalone fatigue
+  recalculation script.
+- DEPRECATED: none discovered.
+
+Phase 19 applied safe presentation cleanup:
+
+- renamed the Bullpen team view from ranking language to summary language
+- defaulted the team summary to alphabetical order
+- removed the team summary ordinal column
+- renamed the Dashboard prototype pipeline highlight label away from top-style
+  wording
+- removed ordinal numbering from the Dashboard prototype pipeline highlights
+
+Phase 19 validation:
+
+```text
+npm test
+77 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-prototype-review
+278 passed, 0 failed
+```
+
+Phase 19 did not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, selection behavior,
+prediction behavior, or Recommendation Engine V1 behavior.
+
+Prototype governance risk remains deferred to future policy work: the Prospect
+Pipeline must not be promoted to production until it has an explicit
+promotion contract covering provenance, freshness, limitations, refusal,
+fail-closed behavior, and trust metadata.
+
+BaseballOS V2.5 Phase 20 Prototype Promotion and Deprecation Policy creates
+the official lifecycle policy for current and future surfaces.
+
+The Phase 20 policy record is:
+
+- `docs/V25_PHASE_20_PROTOTYPE_PROMOTION_AND_DEPRECATION_POLICY.md`
+
+Phase 20 defines these lifecycle transitions:
+
+```text
+Prototype -> Experimental -> Supported -> Production
+Production -> Legacy -> Deprecated -> Removed
+```
+
+Phase 20 promotion requirements include:
+
+- defined purpose and ownership before prototype promotion
+- documentation and limitations before experimental support
+- test coverage and governance review before supported status
+- API/frontend contract review where applicable
+- certification review and production readiness review before production
+- trust, freshness, refusal, fail-closed, anti-ranking, anti-selection, and
+  anti-prediction review for intelligence surfaces
+
+Phase 20 deprecation requirements include:
+
+- replacement or strategic retirement before production becomes legacy
+- documented migration path before legacy becomes deprecated
+- completed migration window and governance approval before removal
+
+Phase 20 current-surface review finds no classification correction is required.
+Prospect Pipeline remains PROTOTYPE. Fatigue-to-ERA insight, latest-workload
+snapshot mode, MLB passthrough helpers, and threshold experimentation
+surfaces remain EXPERIMENTAL. Metadata-less fatigue array response and the
+standalone fatigue recalculation script remain LEGACY.
+
+Phase 20 validation:
+
+```text
+npm test
+77 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-promotion-policy
+278 passed, 0 failed
+```
+
+Phase 20 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, or Recommendation
+Engine V1 behavior.
+
+BaseballOS V2.5 Phase 21 Lifecycle Enforcement Checklist converts the Phase 20
+policy into an operational checklist that must be completed before lifecycle
+movement, production promotion, legacy classification, deprecation, or removal.
+
+The Phase 21 enforcement record is:
+
+- `docs/V25_PHASE_21_LIFECYCLE_ENFORCEMENT_CHECKLIST.md`
+
+Phase 21 checklists cover:
+
+- Prototype -> Experimental
+- Experimental -> Supported
+- Supported -> Production
+- Production -> Legacy
+- Legacy -> Deprecated
+- Deprecated -> Removed
+- intelligence-surface promotion readiness
+
+Phase 21 requires promotion reviews to confirm:
+
+- ownership and purpose are documented
+- maintenance expectations are defined
+- contracts are reviewed where applicable
+- test coverage exists for the requested tier
+- trust metadata is defined, visible, and tested where intelligence is shown
+- freshness metadata is defined, visible, and tested where intelligence is shown
+- refusal metadata and fail-closed behavior are defined and tested where
+  applicable
+- certification and rollout review are complete before production eligibility
+- ranking, selection, prediction, best option, preferred option, and recommended
+  option behavior are reviewed before promotion eligibility
+
+Phase 21 conceptual readiness review finds no current prototype or experimental
+surface is unexpectedly promotion-ready:
+
+- Prospect Pipeline remains PROTOTYPE and does not pass Prototype ->
+  Experimental readiness.
+- Fatigue-to-ERA insight remains EXPERIMENTAL and does not pass Experimental ->
+  Supported readiness.
+- Latest-workload snapshot mode remains EXPERIMENTAL and does not pass
+  Experimental -> Supported readiness.
+- MLB passthrough helpers remain EXPERIMENTAL and do not pass Experimental ->
+  Supported readiness.
+- Threshold experimentation tooling remains EXPERIMENTAL and does not pass
+  Experimental -> Supported readiness.
+
+Phase 21 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, or Recommendation
+Engine V1 behavior.
+
+Phase 21 validation:
+
+```text
+npm test
+ENOENT at repository root because no root package.json exists.
+
+cd frontend
+npm test
+78 passed, 0 failed
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-lifecycle-enforcement
+278 passed, 0 failed
+```
+
+BaseballOS V2.5 Phase 22 Lifecycle Review Log and Adoption Audit establishes
+the auditable adoption layer for Phase 21 checklist enforcement.
+
+The Phase 22 audit record is:
+
+- `docs/V25_PHASE_22_LIFECYCLE_REVIEW_LOG_AND_ADOPTION_AUDIT.md`
+
+The Phase 22 adoption audit requires every future lifecycle change to retain:
+
+- surface name and classification
+- requested lifecycle transition
+- applicable Phase 21 checklist
+- owner or owning area
+- purpose, audience, limitations, and maintenance expectations
+- backend, frontend, script, report, and contract impact
+- governance, trust, freshness, refusal, fail-closed, and anti-ranking /
+  anti-selection / anti-prediction evidence where applicable
+- test evidence
+- certification and rollout evidence before production eligibility
+- migration, notice, and approval evidence before deprecation or removal
+
+Phase 22 surface-by-surface adoption review confirms:
+
+- certified V2 production remains limited to `GET
+  /api/recommendations/v2/bullpen-state` and the Dashboard V2 Bullpen State
+  panel
+- Dashboard, Bullpen, V1 candidate API and panel, bullpen fatigue APIs, and
+  bullpen read APIs remain accepted production surfaces
+- Methodology, admin sync and recalculation, frontend API normalizers, and
+  availability governance reports/scripts remain supported surfaces
+- Prospect Pipeline UI, Prospect APIs, and Dashboard Pipeline Snapshot remain
+  PROTOTYPE and do not pass Prototype -> Experimental readiness
+- Fatigue-to-ERA insight, latest-workload snapshot mode, MLB passthrough
+  helpers, and threshold experimentation tooling remain EXPERIMENTAL and do
+  not pass Experimental -> Supported readiness
+- metadata-less fatigue array response and standalone fatigue recalculation
+  script remain LEGACY and require consumer/replacement evidence before
+  deprecation
+
+Phase 22 explicitly confirms no current prototype or experimental surface is
+promotion-ready.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 22 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend behavior,
+ranking behavior, selection behavior, prediction behavior, best option
+behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 22 validation:
+
+```text
+pytest
+Result: Not available on PATH in this shell; no project failure recorded.
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests
+Result: 271 passed before 7 local temp/cache collection errors caused by
+Windows access denial under C:\Users\nikko\AppData\Local\Temp\pytest-of-nikko.
+
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-22-lifecycle-audit
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+BaseballOS V2.5 Phase 23 Lifecycle Evidence Backfill and Owner Assignment Plan
+converts the Phase 22 adoption audit findings into a structured evidence
+acquisition framework.
+
+The Phase 23 plan is:
+
+- `docs/V25_PHASE_23_LIFECYCLE_EVIDENCE_BACKFILL_AND_OWNER_ASSIGNMENT_PLAN.md`
+
+Phase 23 requires every future lifecycle movement to resolve or explicitly
+record:
+
+- surface owner and owning area
+- evidence collection owner
+- runbook and maintenance expectations
+- trust, freshness, refusal, and fail-closed metadata evidence where applicable
+- test evidence for normal, stale, missing, malformed, unsupported, and
+  governance-unsafe behavior where applicable
+- governance review evidence, including ranking, selection, prediction, and
+  best/preferred/recommended behavior review
+- certification evidence before production eligibility
+- rollout evidence before production eligibility
+- legacy consumer, migration, notice, and approval evidence before deprecation
+  or removal
+
+Phase 23 surface-by-surface evidence review confirms:
+
+- certified V2 production remains unchanged
+- supported surfaces need stronger runbook and evidence-retention records
+  before any production classification
+- Prospect Pipeline UI, Prospect APIs, and Dashboard Pipeline Snapshot remain
+  PROTOTYPE and fail Prototype -> Experimental evidence readiness
+- Fatigue-to-ERA insight, latest-workload snapshot mode, MLB passthrough
+  helpers, and threshold experimentation tooling remain EXPERIMENTAL and fail
+  Experimental -> Supported evidence readiness
+- metadata-less fatigue array response and standalone fatigue recalculation
+  script remain LEGACY and need consumer, replacement, migration, and retirement
+  evidence before deprecation
+
+Phase 23 explicitly confirms no current prototype or experimental surface is
+promotion-ready.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 23 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 23 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-23-evidence-backfill
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 23. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 24 Lifecycle Evidence Packet Template and Initial
+Backfill creates the standard lifecycle evidence packet framework required by
+the Phase 21 through Phase 23 lifecycle governance chain.
+
+The Phase 24 packet framework record is:
+
+- `docs/V25_PHASE_24_LIFECYCLE_EVIDENCE_PACKET_TEMPLATE_AND_INITIAL_BACKFILL.md`
+
+Phase 24 defines required evidence packet sections for:
+
+- owner evidence
+- runbook evidence
+- metadata evidence
+- test evidence
+- governance evidence
+- certification evidence
+- migration evidence
+- evidence retention
+- packet review
+- promotion readiness
+- demotion, deprecation, and removal readiness
+
+Phase 24 creates initial packet stubs for:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+- Prospect Pipeline
+- Fatigue-to-ERA Insight
+- Snapshot Mode
+- MLB Passthrough Helpers
+- Threshold Experimentation
+- metadata-less fatigue array response
+- standalone recalculation script
+
+Phase 24 explicitly avoids fabricating evidence. The initial packet stubs record
+known evidence where existing certification, rollout, review, or governance
+records already apply, and they mark missing evidence where owner, runbook,
+metadata, test, governance, certification, migration, or retention proof is not
+yet complete.
+
+Phase 24 confirms:
+
+- production packet stubs preserve the current certified V2 scope
+- Prospect Pipeline remains PROTOTYPE and is not promotion-ready
+- Fatigue-to-ERA Insight, Snapshot Mode, MLB Passthrough Helpers, and Threshold
+  Experimentation remain EXPERIMENTAL and are not promotion-ready for Supported
+- metadata-less fatigue array response and standalone recalculation script
+  remain LEGACY and are not ready for deprecation or removal
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 24 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 24 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-24-evidence-packets
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 24. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 25 Lifecycle Evidence Packet Review and Backfill
+Execution performs the first formal review of the Phase 24 packet stubs.
+
+The Phase 25 packet review record is:
+
+- `docs/V25_PHASE_25_LIFECYCLE_EVIDENCE_PACKET_REVIEW_AND_BACKFILL_EXECUTION.md`
+
+Phase 25 establishes:
+
+- evidence packet review methodology
+- evidence completeness criteria
+- evidence readiness scoring
+- owner evidence review
+- runbook evidence review
+- metadata evidence review
+- test evidence review
+- governance evidence review
+- certification evidence review
+- migration evidence review
+- evidence retention review
+- surface-by-surface packet assessment
+- backfill execution inventory
+- readiness classification framework
+
+Phase 25 reviews packet status for:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+- Prospect Pipeline
+- Fatigue-to-ERA Insight
+- Snapshot Mode
+- MLB Passthrough Helpers
+- Threshold Experimentation
+- metadata-less fatigue array response
+- standalone recalculation script
+
+Phase 25 readiness classifications are:
+
+| Classification | Surfaces |
+|----------------|----------|
+| READY_FOR_STEWARDSHIP_REVIEW | Dashboard V2 Bullpen Intelligence; `/api/recommendations/v2/bullpen-state` |
+| READY_FOR_REQUESTED_REVIEW | None |
+| REVIEWABLE_WITH_MINOR_GAPS | None |
+| BACKFILL_REQUIRED | Prospect Pipeline; Fatigue-to-ERA Insight; Snapshot Mode; MLB Passthrough Helpers; Threshold Experimentation |
+| BLOCKED_BY_MISSING_EVIDENCE | metadata-less fatigue array response; standalone recalculation script |
+
+Phase 25 does not promote, demote, deprecate, remove, or modify any surface.
+The review records known evidence where current governance records already
+apply and preserves missing evidence where packet sections remain incomplete.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 25 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 25 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-25-evidence-review
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 25. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 26 Lifecycle Evidence Citation Backfill and Stewardship
+Review performs the first production-focused citation backfill pass for the
+Phase 24 and Phase 25 evidence packets.
+
+The Phase 26 citation stewardship record is:
+
+- `docs/V25_PHASE_26_LIFECYCLE_EVIDENCE_CITATION_BACKFILL_AND_STEWARDSHIP_REVIEW.md`
+
+Phase 26 focuses first on:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+
+Phase 26 establishes:
+
+- stewardship review methodology
+- evidence citation standards
+- citation completeness criteria
+- citation quality criteria
+- production evidence review
+- governance evidence review
+- certification evidence review
+- testing evidence review
+- accessibility evidence review
+- rollout evidence review
+- monitoring evidence review
+- evidence traceability requirements
+- stewardship review findings
+- remaining uncited evidence inventory
+- stewardship readiness classifications
+
+Phase 26 stewardship classifications are:
+
+| Surface | Stewardship Classification |
+|---------|----------------------------|
+| Dashboard V2 Bullpen Intelligence | STEWARDSHIP_READY_WITH_CITATION_GAPS |
+| `/api/recommendations/v2/bullpen-state` | STEWARDSHIP_READY_WITH_CITATION_GAPS |
+
+Phase 26 records document-level citations for certification, rollout,
+monitoring, accessibility, governance, metadata, and test evidence where
+current source documents support the claim. It does not fabricate citations.
+Evidence that remains broad, packet-level, or not tied to exact sections is
+preserved as requiring future citation backfill.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 26 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 26 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-26-citation-review
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 26. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 27 Lifecycle Evidence Section-Level Citation Map
+converts the Phase 26 production citation backfill from document-level
+references to source-document section references wherever current records
+support that specificity.
+
+The Phase 27 section-level citation map record is:
+
+- `docs/V25_PHASE_27_LIFECYCLE_EVIDENCE_SECTION_LEVEL_CITATION_MAP.md`
+
+Phase 27 focuses exclusively on:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+
+Phase 27 establishes:
+
+- stewardship review follow-up
+- citation mapping methodology
+- section-level citation standards
+- production surface citation inventory
+- certification citation map
+- governance citation map
+- testing citation map
+- accessibility citation map
+- rollout citation map
+- monitoring citation map
+- evidence retention citation map
+- remaining uncited evidence inventory
+- citation quality assessment
+- stewardship readiness reassessment
+
+Phase 27 stewardship reassessment is:
+
+| Surface | Phase 27 Reassessment |
+|---------|-----------------------|
+| Dashboard V2 Bullpen Intelligence | STEWARDSHIP_READY_WITH_SECTION_LEVEL_CITATION_GAPS |
+| `/api/recommendations/v2/bullpen-state` | STEWARDSHIP_READY_WITH_SECTION_LEVEL_CITATION_GAPS |
+
+Phase 27 improves traceability for certification, governance, rollout,
+monitoring expectations, accessibility, and retained source documents. It
+still preserves exact test-file/test-name mapping, packet-level retention
+owners, packet retention cadence, Dashboard runbook evidence, and dated
+operational monitoring artifacts as remaining evidence gaps.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 27 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 27 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-27-citation-map
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 27. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 28 Evidence Ownership, Monitoring Artifact, and Test
+Mapping Closeout closes the remaining production evidence-quality gaps
+identified in Phase 27 where current records and tests support closeout.
+
+The Phase 28 closeout record is:
+
+- `docs/V25_PHASE_28_EVIDENCE_OWNERSHIP_MONITORING_ARTIFACT_AND_TEST_MAPPING_CLOSEOUT.md`
+
+Phase 28 focuses exclusively on:
+
+- Dashboard V2 Bullpen Intelligence
+- `/api/recommendations/v2/bullpen-state`
+
+Phase 28 establishes:
+
+- evidence ownership model
+- packet-level owner assignment
+- evidence retention cadence
+- evidence retention responsibility matrix
+- monitoring artifact format
+- monitoring artifact retention requirements
+- test mapping methodology
+- exact test-file, test-name, and assertion-group mapping where available
+- production surface test mapping
+- Dashboard V2 runbook evidence assessment
+- API-to-frontend accessibility field traceability assessment
+- remaining unmapped evidence
+- governance closeout readiness assessment
+
+Phase 28 owner and retention closeout is:
+
+| Surface | Maintainer Of Record | Evidence Collection Owner | Packet-Level Retention Owner | Retention Cadence |
+|---------|----------------------|---------------------------|------------------------------|-------------------|
+| Dashboard V2 Bullpen Intelligence | Nikko | Frontend governance | Documentation governance under Nikko | Monthly while V2.5 closeout remains active; before lifecycle movement; after certification, rollout, monitoring, or test mapping changes. |
+| `/api/recommendations/v2/bullpen-state` | Nikko | Backend governance | Documentation governance under Nikko | Monthly while V2.5 closeout remains active; before lifecycle movement; after certification, rollout, monitoring, contract, or test mapping changes. |
+
+Phase 28 maps exact production evidence tests in:
+
+- `backend/tests/test_recommendation_v2_api_contract.py`
+- `frontend/tests/recommendationV2Api.test.mjs`
+- `frontend/tests/recommendationV2Rendering.test.mjs`
+
+Supporting internal V2 backend suites are identified for context assembly,
+inventory visibility, neutral intelligence, team bullpen context, trust
+metadata integration, and refusal/fail-closed behavior.
+
+Phase 28 defines a retained monitoring artifact format, but the first dated
+operational monitoring artifact is still missing. Runtime telemetry feed
+evidence and continuous-integration artifact publication are also not yet
+documented.
+
+Phase 28 governance closeout readiness is:
+
+```text
+V2_5_GOVERNANCE_HARDENING_CLOSEOUT = APPROPRIATE_WITH_OPERATIONAL_RETENTION_RISK
+```
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 28 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 28 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-28-evidence-closeout
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 28. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V2.5 Phase 29 Governance Hardening Closeout and V3 Readiness
+Decision formally closes the V2.5 governance hardening initiative.
+
+The Phase 29 closeout record is:
+
+- `docs/V25_PHASE_29_GOVERNANCE_HARDENING_CLOSEOUT_AND_V3_READINESS_DECISION.md`
+
+Phase 29 reviews:
+
+- lifecycle enforcement
+- lifecycle auditability
+- evidence packets
+- evidence reviews
+- citation mapping
+- ownership assignment
+- retention cadence
+- stewardship process
+- test traceability
+
+Phase 29 closeout decision is:
+
+```text
+V2_5_GOVERNANCE_HARDENING_CLOSEOUT_APPROVED
+```
+
+Phase 29 V3 readiness decision is:
+
+```text
+V3_PRODUCT_CAPABILITY_PLANNING_READY_WITH_GOVERNANCE_GATES
+```
+
+Blocking risks:
+
+```text
+NONE_IDENTIFIED_FOR_V2_5_GOVERNANCE_CLOSEOUT
+```
+
+Remaining non-blocking risks:
+
+- first dated operational monitoring artifact is not retained
+- runtime telemetry evidence is not documented
+- continuous-integration artifact publication is not documented
+- optional Dashboard operating checklist is not retained
+- owner-transition procedure is not documented
+
+These are operational retention risks. They do not block governance closeout or
+V3 product capability planning, but they must be addressed before claiming
+complete operational monitoring evidence.
+
+The certified Recommendation Engine V2 governance requirements remain:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 29 does not change backend recommendation logic, API contracts, trust
+logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior, or
+Recommendation Engine V1 behavior.
+
+Phase 29 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-phase-29-governance-closeout
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 29. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V3 Phase 1 Product Capability Review and Priority Decision is
+complete.
+
+The V3 Phase 1 record is:
+
+- `docs/V3_PHASE_1_PRODUCT_CAPABILITY_REVIEW_AND_PRIORITY_DECISION.md`
+
+Phase 1 reviews:
+
+- current certified production capabilities
+- current prototype surfaces
+- current experimental surfaces
+- current legacy surfaces
+- Recommendation Engine V1 and V2 gaps
+- Availability Engine gaps
+- Dashboard and Bullpen Intelligence gaps
+- Prospect Pipeline readiness
+- Team Operations Intelligence readiness
+- Game Context Intelligence readiness
+- additional product paths discovered from repository and documentation review
+- implementation risk
+- governance risk
+- data availability
+- portfolio value
+- baseball operations value
+
+Phase 1 product direction decision is:
+
+```text
+TEAM_OPERATIONS_BULLPEN_READINESS_PLANNING
+```
+
+Recommended next milestone:
+
+```text
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition
+```
+
+The recommendation is planning-only. It does not authorize implementation,
+runtime behavior changes, API contract changes, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, lifecycle promotion,
+production expansion, Prospect Pipeline production work, or Game Context
+Intelligence implementation.
+
+Phase 1 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 1 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, or Recommendation Engine V1 behavior.
+
+Phase 1 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-1-product-review
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 1. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V3 Phase 2 Team Operations Bullpen Readiness Capability Definition
+is complete.
+
+The V3 Phase 2 record is:
+
+- `docs/V3_PHASE_2_TEAM_OPERATIONS_BULLPEN_READINESS_CAPABILITY_DEFINITION.md`
+
+Phase 2 defines:
+
+- Team Operations Bullpen Readiness capability scope
+- user-facing purpose
+- baseball operations purpose
+- allowed inputs
+- prohibited inputs
+- allowed outputs
+- prohibited outputs
+- readiness concepts and readiness status vocabulary
+- constraint vocabulary
+- coverage vocabulary
+- workload vocabulary
+- trust metadata requirements
+- freshness metadata requirements
+- refusal metadata requirements
+- fail-closed requirements
+- explainability requirements
+- governance boundaries
+- API contract planning
+- frontend presentation planning
+- testing requirements
+- accessibility requirements
+- certification requirements
+- risks and mitigations
+- non-goals
+
+Phase 2 capability definition:
+
+```text
+TEAM_OPERATIONS_BULLPEN_READINESS
+```
+
+Recommended next milestone:
+
+```text
+BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan
+```
+
+Phase 2 is planning-only. It does not authorize implementation, runtime
+behavior changes, API contract changes, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, database schema changes,
+lifecycle promotion, production rollout, Prospect Pipeline promotion, or Game
+Context Intelligence implementation.
+
+Phase 2 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 2 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, or Recommendation Engine V1 behavior.
+
+Phase 2 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-2-readiness-definition
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 2. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V3 Phase 3 Team Operations Bullpen Readiness Implementation Plan
+is complete.
+
+The V3 Phase 3 record is:
+
+- `docs/V3_PHASE_3_TEAM_OPERATIONS_BULLPEN_READINESS_IMPLEMENTATION_PLAN.md`
+
+Phase 3 defines:
+
+- implementation goals
+- non-goals
+- proposed backend architecture
+- proposed domain module structure
+- proposed API endpoint plan
+- proposed response contract
+- allowed input data
+- prohibited input data
+- readiness status calculation plan
+- constraint detection plan
+- workload pressure summary plan
+- coverage inventory plan
+- handedness coverage plan
+- availability distribution plan
+- trust metadata plan
+- freshness metadata plan
+- refusal and fail-closed plan
+- explainability plan
+- frontend integration plan
+- dashboard presentation plan
+- accessibility plan
+- test strategy
+- certification strategy
+- rollout strategy
+- implementation sequence
+- risks and mitigations
+
+Phase 3 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract And Certification Requirements
+```
+
+Phase 3 is planning-only. It does not authorize implementation, runtime
+behavior changes, API contract changes, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, database schema changes,
+lifecycle promotion, production rollout, Prospect Pipeline promotion, or Game
+Context Intelligence implementation.
+
+Phase 3 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 3 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, or Recommendation Engine V1 behavior.
+
+Phase 3 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-3-readiness-plan
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 3. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V3 Phase 4 Team Operations Bullpen Readiness API Contract And
+Certification Requirements is complete.
+
+The V3 Phase 4 record is:
+
+- `docs/V3_PHASE_4_TEAM_OPERATIONS_BULLPEN_READINESS_API_CONTRACT_AND_CERTIFICATION_REQUIREMENTS.md`
+
+Phase 4 defines:
+
+- Team Operations API strategy
+- endpoint strategy
+- route naming decision
+- request contract
+- response contract
+- readiness status contract
+- constraint contract
+- workload pressure contract
+- availability distribution contract
+- coverage inventory contract
+- handedness coverage contract
+- explanation contract
+- limitation contract
+- trust metadata contract
+- freshness metadata contract
+- refusal metadata contract
+- governance metadata contract
+- fail-closed contract
+- successful, degraded, and refusal response examples
+- backend certification requirements
+- frontend certification requirements
+- accessibility certification requirements
+- governance certification requirements
+- testing certification requirements
+- rollout certification requirements
+- risks and mitigations
+
+Phase 4 chosen route strategy:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+Phase 4 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain Foundation
+```
+
+Phase 4 is planning-only. It does not authorize implementation, runtime
+behavior changes, API route registration, frontend behavior changes,
+recommendation logic changes, fatigue formula changes, database schema changes,
+lifecycle promotion, production rollout, Prospect Pipeline promotion, or Game
+Context Intelligence implementation.
+
+Phase 4 preserves the certified Recommendation Engine V2 governance
+requirements:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 4 does not change ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, matchup advice, or Recommendation Engine
+V1 behavior.
+
+Phase 4 validation:
+
+```text
+.\backend\venv\Scripts\python.exe -m pytest backend\tests --basetemp .pytest-tmp-v3-phase-4-contract
+Result: 278 passed, 0 failed.
+
+cd frontend
+npm test
+Result: 78 passed, 0 failed.
+
+git diff --check
+Result: Passed; reported only LF-to-CRLF warnings, including known unrelated
+frontend generated/dependency drift.
+
+git diff --cached --check
+Result: Passed after targeted documentation staging.
+```
+
+Root `npm test` is not required for Phase 4. No root `package.json` exists,
+which is expected and is not a project failure.
+
+BaseballOS V3 Phase 5 Team Operations Bullpen Readiness Backend Domain
+Foundation is complete.
+
+The V3 Phase 5 record is:
+
+- `docs/V3_PHASE_5_TEAM_OPERATIONS_BULLPEN_READINESS_BACKEND_DOMAIN_FOUNDATION.md`
+
+Phase 5 implements:
+
+- separate `backend/team_operations` domain package
+- Team Operations readiness contract constants
+- trust metadata contract object
+- freshness metadata contract object
+- refusal metadata contract object
+- fail-closed metadata contract object
+- deterministic `assemble_bullpen_readiness(...)` assembly function
+- team-level readiness payload
+- constraint summary structure
+- workload pressure structure
+- availability distribution structure
+- coverage inventory structure
+- handedness coverage structure
+- explanation and limitation structures
+- fail-closed behavior for missing trust metadata
+- fail-closed behavior for missing freshness metadata
+- fail-closed behavior for explicit refusal input
+- backend domain tests
+
+Phase 5 does not register:
+
+```text
+GET /api/team-operations/bullpen-readiness
+```
+
+The route remains planned by Phase 4 and should be integrated only in a later
+bounded milestone.
+
+Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 5 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+frontend runtime behavior, or Recommendation Engine V2 contract changes.
+
+Phase 5 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route Integration
+```
+
+BaseballOS V3 Phase 6 Team Operations Bullpen Readiness Internal API Route
+Integration is complete.
+
+The V3 Phase 6 record is:
+
+- `docs/V3_PHASE_6_TEAM_OPERATIONS_BULLPEN_READINESS_INTERNAL_API_ROUTE_INTEGRATION.md`
+
+Phase 6 implements:
+
+- `backend/api/team_operations.py`
+- route registration in `backend/app.py`
+- internal `GET /api/team-operations/bullpen-readiness` route
+- allowed query parameter handling
+- unsafe query refusal
+- unsupported query refusal
+- route metadata marking the route internal, non-production, and uncertified
+- source input assembly from existing fatigue, availability, and sync metadata
+  evidence
+- domain assembly through `assemble_bullpen_readiness(...)`
+- fail-closed route behavior
+- backend route tests
+
+Phase 6 route status:
+
+```text
+INTERNAL_NON_PRODUCTION_UNCERTIFIED
+```
+
+Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 6 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+frontend runtime behavior, production certification, or Recommendation Engine
+V2 contract changes.
+
+Phase 6 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification Readiness Review
+```
+
+BaseballOS V3 Phase 7 Team Operations Bullpen Readiness Route Certification
+Readiness Review is complete.
+
+The V3 Phase 7 record is:
+
+- `docs/V3_PHASE_7_TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase 7 reviews:
+
+- the internal `GET /api/team-operations/bullpen-readiness` route
+- internal, non-production, uncertified route status
+- API contract alignment
+- allowed query handling
+- unsafe query refusal
+- response contract shape
+- governance metadata
+- trust metadata
+- freshness metadata
+- refusal metadata
+- fail-closed behavior
+- anti-ranking safeguards
+- anti-selection safeguards
+- anti-prediction safeguards
+- route test coverage
+- domain test coverage
+- certified V2 regression safety
+
+Phase 7 readiness decision:
+
+```text
+READY_FOR_FRONTEND_INTEGRATION_PLANNING
+```
+
+Phase 7 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 7 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+frontend runtime behavior, production certification, or Recommendation Engine
+V2 contract changes.
+
+Phase 7 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration Plan
+```
+
+BaseballOS V3 Phase 8 Team Operations Bullpen Readiness Frontend Integration
+Plan is complete.
+
+The V3 Phase 8 record is:
+
+- `docs/V3_PHASE_8_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_INTEGRATION_PLAN.md`
+
+Phase 8 defines:
+
+- frontend client strategy
+- API normalization strategy
+- Dashboard placement strategy
+- separate Team Operations component architecture
+- summary-first rendering
+- expand-on-demand evidence
+- trust metadata presentation
+- freshness metadata presentation
+- refusal and fail-closed presentation
+- governance metadata presentation
+- accessibility requirements
+- mobile and responsive requirements
+- loading, error, degraded, refused, and unavailable state handling
+- neutral language rules
+- prohibited UI patterns
+- frontend client, rendering, prohibited-language, and accessibility tests
+- certification-readiness requirements
+
+Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 8 does not introduce or plan ranking behavior, selection behavior,
+prediction behavior, best option behavior, preferred option behavior,
+recommended option behavior, hidden priority ordering, pitcher-level advice, or
+matchup advice.
+
+Phase 8 does not implement frontend UI, frontend client code, backend behavior,
+API contract changes, public route certification, production certification, or
+production rollout.
+
+Phase 8 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client Normalization and Contract Tests
+```
+
+BaseballOS V3 Phase 9 Team Operations Bullpen Readiness Frontend Client
+Normalization and Contract Tests is complete.
+
+The V3 Phase 9 record is:
+
+- `docs/V3_PHASE_9_TEAM_OPERATIONS_BULLPEN_READINESS_FRONTEND_CLIENT_NORMALIZATION_AND_CONTRACT_TESTS.md`
+
+Phase 9 adds:
+
+- frontend route constant for the internal Team Operations readiness route
+- frontend getter for `/api/team-operations/bullpen-readiness`
+- frontend response normalization for the implemented nested readiness contract
+- successful payload normalization
+- degraded payload normalization
+- refused and fail-closed payload normalization
+- missing trust metadata handling
+- missing freshness metadata handling
+- missing governance metadata handling
+- malformed governance metadata handling
+- unknown readiness status handling
+- internal, non-production, uncertified route metadata preservation
+- frontend contract tests for the normalization layer
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 9 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+Dashboard UI, public exposure, production certification, production rollout, or
+Recommendation Engine V2 contract changes.
+
+Phase 9 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI Integration
+```
+
+BaseballOS V3 Phase 10 Team Operations Bullpen Readiness Dashboard UI
+Integration is complete.
+
+The V3 Phase 10 record is:
+
+- `docs/V3_PHASE_10_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_INTEGRATION.md`
+
+Phase 10 adds:
+
+- Dashboard integration for the internal Team Operations readiness route
+- `TeamOperationsBullpenReadinessPanel`
+- summary-first readiness status and summary rendering
+- visible internal, non-production, uncertified status
+- expand-on-demand context details
+- expand-on-demand explanations and limitations
+- expand-on-demand trust metadata
+- expand-on-demand freshness metadata
+- expand-on-demand refusal metadata
+- expand-on-demand fail-closed metadata
+- expand-on-demand governance metadata
+- safe unavailable rendering for unsafe normalized payloads
+- safe degraded rendering for degraded normalized payloads
+- safe refused rendering for refused/fail-closed normalized payloads
+- frontend rendering tests for successful, degraded, refused, metadata, and
+  governance-safe states
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 10 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+public exposure, production certification, production rollout, backend route
+changes, or Recommendation Engine V2 contract changes.
+
+Phase 10 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI Certification Readiness Review
+```
+
+BaseballOS V3 Phase 11 Team Operations Bullpen Readiness Dashboard UI
+Certification Readiness Review is complete.
+
+The V3 Phase 11 record is:
+
+- `docs/V3_PHASE_11_TEAM_OPERATIONS_BULLPEN_READINESS_DASHBOARD_UI_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase 11 reviews:
+
+- Dashboard UI identification and internal status labeling
+- team-level/context-level rendering
+- summary-first presentation
+- expand-on-demand context details
+- expand-on-demand explanations and limitations
+- trust metadata visibility
+- freshness metadata visibility
+- refusal metadata visibility
+- fail-closed metadata visibility
+- governance metadata visibility
+- neutral language requirements
+- prohibited UI patterns
+- accessibility behavior
+- mobile/responsive behavior
+- frontend test coverage
+- certified V2 regression safety
+
+Phase 11 decision:
+
+```text
+READY_FOR_FORMAL_CERTIFICATION_PLANNING
+```
+
+Phase 11 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 11 does not introduce ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, matchup advice,
+public exposure, production certification, production rollout, backend route
+changes, frontend runtime changes, or Recommendation Engine V2 contract
+changes.
+
+Phase 11 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification Plan and Rollout Prerequisites
+```
+
+BaseballOS V3 Phase 12 Team Operations Bullpen Readiness Formal Certification
+Plan and Rollout Prerequisites is complete.
+
+The V3 Phase 12 record is:
+
+- `docs/V3_PHASE_12_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_PLAN_AND_ROLLOUT_PREREQUISITES.md`
+
+Phase 12 defines the formal certification plan required before the internal,
+non-production, uncertified Team Operations Bullpen Readiness route and
+Dashboard UI can move into a later formal certification review.
+
+Phase 12 defines:
+
+- current feature status
+- relationship to V3 Phases 4-11
+- certification objective
+- certification non-goals
+- backend certification checklist
+- frontend certification checklist
+- accessibility certification checklist
+- governance certification checklist
+- data freshness certification checklist
+- trust metadata certification checklist
+- refusal and fail-closed certification checklist
+- V2 regression certification checklist
+- monitoring artifact requirements
+- evidence packet requirements
+- rollout prerequisites
+- certification stop conditions
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 12 does not grant production certification, production rollout approval,
+public route certification, runtime behavior changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+ranking behavior, selection behavior, prediction behavior, best option
+behavior, preferred option behavior, recommended option behavior, hidden
+priority ordering, pitcher-level advice, or matchup advice.
+
+Phase 12 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review
+```
+
+## BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification Review
+
+BaseballOS V3 Phase 13 Team Operations Bullpen Readiness Formal Certification
+Review is complete.
+
+The V3 Phase 13 record is:
+
+- `docs/V3_PHASE_13_TEAM_OPERATIONS_BULLPEN_READINESS_FORMAL_CERTIFICATION_REVIEW.md`
+
+Phase 13 executes the formal certification review for Team Operations Bullpen
+Readiness using the Phase 12 plan. It reviews the backend domain, internal
+route, frontend client normalization, Dashboard UI, accessibility evidence,
+governance evidence, freshness evidence, trust metadata evidence,
+refusal/fail-closed evidence, V2 regression evidence, monitoring artifact
+status, and evidence packet status.
+
+Phase 13 certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OPERATIONAL_GAPS
+```
+
+Phase 13 rollout status:
+
+```text
+NOT_APPROVED_FOR_PRODUCTION_ROLLOUT
+```
+
+Phase 13 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 13 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 13 does not authorize public route certification, production rollout,
+route exposure changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, fatigue formula changes,
+availability threshold changes, ranking behavior, selection behavior,
+prediction behavior, best option behavior, preferred option behavior,
+recommended option behavior, hidden priority ordering, pitcher-level advice,
+or matchup advice.
+
+Phase 13 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout Planning and Monitoring Artifact Capture
+```
+
+## BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout and Monitoring
+
+BaseballOS V3 Phase 14 Team Operations Bullpen Readiness Controlled Rollout
+and Monitoring is complete.
+
+The V3 Phase 14 records are:
+
+- `docs/V3_PHASE_14_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_AND_MONITORING.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_14_INITIAL_MONITORING_ARTIFACT.md`
+
+Phase 14 creates the controlled rollout planning and monitoring artifact
+framework required after Phase 13 formal certification. It defines controlled
+rollout stages, deployment smoke-review requirements, manual browser review
+requirements, mobile review requirements, accessibility review requirements,
+monitoring artifact format, initial retained artifact stub, evidence retention
+requirements, rollback criteria, stop conditions, and post-rollout observation
+requirements.
+
+Phase 14 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_READY_WITH_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 14 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 14 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 14 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 14 does not authorize full production rollout, public route
+certification, route exposure changes, backend route changes, frontend
+implementation changes, Recommendation Engine V2 contract changes, fatigue
+formula changes, availability threshold changes, ranking behavior, selection
+behavior, prediction behavior, best option behavior, preferred option
+behavior, recommended option behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+
+Phase 14 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision
+```
+
+## BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke Review and Controlled Rollout Decision
+
+BaseballOS V3 Phase 15 Team Operations Bullpen Readiness Deployment Smoke
+Review and Controlled Rollout Decision is complete.
+
+The V3 Phase 15 records are:
+
+- `docs/V3_PHASE_15_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_SMOKE_REVIEW_AND_CONTROLLED_ROLLOUT_DECISION.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_15_DEPLOYMENT_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 15 reviews the Phase 14 rollout plan and initial monitoring artifact,
+retains a deployment smoke-review decision artifact, records backend,
+frontend, repository, governance, fail-closed, and V2 regression validation,
+and determines that controlled rollout remains blocked because actual
+deployment, browser, mobile, accessibility, and maintainer-review evidence has
+not been retained.
+
+Phase 15 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 15 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 15 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 15 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 15 does not authorize controlled rollout, full production rollout,
+public route certification, route exposure changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+fatigue formula changes, availability threshold changes, ranking behavior,
+selection behavior, prediction behavior, best option behavior, preferred
+option behavior, recommended option behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Phase 15 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence Capture and Manual Smoke Review Remediation
+```
+
+```text
+BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review
+```
+
+## BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence and Manual Smoke Review
+
+BaseballOS V3 Phase 16 Team Operations Bullpen Readiness Deployment Evidence
+and Manual Smoke Review is complete.
+
+The V3 Phase 16 records are:
+
+- `docs/V3_PHASE_16_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_16_DEPLOYMENT_EVIDENCE_AND_MANUAL_SMOKE_REVIEW_ARTIFACT.md`
+
+Phase 16 retains local smoke evidence where the current environment allowed
+it:
+
+- local backend health route returned HTTP 200.
+- local internal Team Operations Bullpen Readiness route returned a governed
+  degraded readiness payload.
+- prohibited query intent returned a governed refusal payload with fail-closed
+  metadata.
+- local frontend shell was reachable through the Vite development server.
+
+Phase 16 also records that local browser automation did not attach in the
+current environment, and no deployed browser, mobile, accessibility, or
+explicit maintainer-review evidence was retained. Those gaps remain blocking
+for controlled rollout approval.
+
+Phase 16 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_EVIDENCE
+```
+
+Phase 16 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 16 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 16 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 16 does not authorize controlled rollout, full production rollout,
+public route certification, route exposure changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+fatigue formula changes, availability threshold changes, ranking behavior,
+selection behavior, prediction behavior, best option behavior, preferred
+option behavior, recommended option behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Phase 16 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
+```
+
+```text
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
+```
+
+## BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment Manual Review
+
+BaseballOS V3 Phase 17 Team Operations Bullpen Readiness Deployment Environment
+Manual Review is complete.
+
+The V3 Phase 17 records are:
+
+- `docs/V3_PHASE_17_TEAM_OPERATIONS_BULLPEN_READINESS_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_17_DEPLOYMENT_ENVIRONMENT_MANUAL_REVIEW_ARTIFACT.md`
+
+Phase 17 retains deployed HTTP/API evidence:
+
+- deployed frontend shell returned HTTP 200.
+- deployed backend health route returned HTTP 200.
+- deployed Team Operations Bullpen Readiness route returned a governed degraded
+  readiness payload.
+- deployed prohibited query intent returned a governed refused fail-closed
+  payload.
+
+Phase 17 also records a deployment-state blocker:
+
+```text
+DEPLOYED_BACKEND_REPORTS_DEVELOPMENT_DEBUG_STATE
+```
+
+The deployed backend health route reported:
+
+```text
+environment: development
+debug: true
+```
+
+Rendered Dashboard review, manual browser review, mobile/responsive review,
+manual accessibility smoke review, and explicit maintainer-review evidence
+remain pending. Those gaps remain blocking for controlled rollout approval.
+
+Phase 17 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_DEPLOYMENT_EVIDENCE
+```
+
+Phase 17 full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 17 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 17 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 17 does not authorize controlled rollout, full production rollout,
+public route certification, route exposure changes, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+fatigue formula changes, availability threshold changes, ranking behavior,
+selection behavior, prediction behavior, best option behavior, preferred
+option behavior, recommended option behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Phase 17 recommended next milestone:
+
+```text
+BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Deployment Configuration Remediation and Manual Browser Review
+```
+
+```text
+Operational Review 1 Deployment Configuration and Environment Classification Investigation
+```
+
+## Operational Review 1 Deployment Configuration and Environment Classification Investigation
+
+Operational Review 1 Deployment Configuration and Environment Classification
+Investigation is complete.
+
+The investigation record is:
+
+- `docs/OPERATIONAL_REVIEW_1_DEPLOYMENT_CONFIGURATION_AND_ENVIRONMENT_CLASSIFICATION_INVESTIGATION.md`
+
+Investigation conclusion:
+
+```text
+DEPLOYMENT_CONFIGURATION_INCORRECT
+```
+
+Operational Review 1 finds:
+
+- `backend/app.py` selects configuration from `APP_ENV`, defaulting to
+  `development`.
+- `backend/config.py` sets `DevelopmentConfig.DEBUG = True`.
+- `backend/config.py` sets `ProductionConfig.DEBUG = False` and requires
+  production-only configuration checks.
+- `/api/health` reports the selected Flask application environment and debug
+  flag.
+- deployed `/api/health` reports `environment = development` and
+  `debug = true`.
+
+Root cause summary:
+
+```text
+The deployed backend selected the development configuration instead of the production configuration.
+```
+
+Most likely operational cause:
+
+```text
+APP_ENV is unset, empty, invalid, or set to development in the deployed backend environment.
+```
+
+The exact Render environment-variable setting is not committed in the
+repository and therefore is not directly inspectable from repository evidence.
+
+Operational Review 1 confirms deployed V2 and V3 read routes still preserve
+governance metadata:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Operational Review 1 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- certified Recommendation Engine V2 behavior remains unchanged
+- V3 Team Operations Bullpen Readiness remains internal, non-production, and
+  uncertified
+
+Rollout impact decision:
+
+```text
+Should Team Operations Bullpen Readiness rollout remain blocked?
+YES
+```
+
+Recommended remediation:
+
+```text
+Correct the deployed backend configuration so APP_ENV=production and required production variables are present, then redeploy and capture health evidence.
+```
+
+Recommended priority:
+
+```text
+P0_BEFORE_CONTROLLED_ROLLOUT
+```
+
+Operational Review 1 does not authorize runtime fixes, controlled rollout,
+full production rollout, public exposure, route exposure changes, backend route
+changes, frontend implementation changes, Recommendation Engine V2 contract
+changes, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, recommended option behavior,
+hidden priority ordering, pitcher-level advice, or matchup advice.
+
+Operational Review 1 recommended next milestone:
+
+```text
+Operational Remediation 1 - Deployment Production Configuration Correction and Health Verification
+```
+
+## Operational Remediation 1 Deployment Production Config Health Verification
+
+Operational Remediation 1 Deployment Production Configuration Correction and
+Health Verification is complete.
+
+The remediation record is:
+
+- `docs/OPERATIONAL_REMEDIATION_1_DEPLOYMENT_PRODUCTION_CONFIG_HEALTH_VERIFICATION.md`
+
+Remediation assessment:
+
+```text
+EXTERNAL_DEPLOYMENT_CONFIG_REQUIRED
+```
+
+Operational Remediation 1 finds:
+
+- repository production-mode health verification succeeds when
+  `APP_ENV=production`, `DATABASE_URL`, `SECRET_KEY`, and `ADMIN_API_TOKEN` are
+  supplied.
+- local `/api/health` reports `environment = production` and `debug = false`
+  under those process-level production variables.
+- deployed `/api/health` still reports `environment = development` and
+  `debug = true`.
+- no repository runtime fix is required for the immediate remediation because
+  the repository-controlled production config path behaves as expected.
+- Render service environment variables must be corrected externally before
+  controlled rollout can be reopened.
+
+Required Render production health target:
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+status: ok
+environment: production
+debug: false
+```
+
+Required external deployment actions:
+
+- set `APP_ENV=production` in the Render backend service.
+- confirm `SECRET_KEY` is strong and non-default.
+- confirm `DATABASE_URL` points to hosted PostgreSQL.
+- confirm `ADMIN_API_TOKEN` is set.
+- redeploy or restart the backend service.
+- retain deployed health evidence after remediation.
+
+Operational Remediation 1 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Operational Remediation 1 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+- V3 Team Operations Bullpen Readiness remains internal, non-production, and
+  uncertified
+
+Rollout impact decision:
+
+```text
+CONTROLLED_ROLLOUT_REMAINS_BLOCKED
+```
+
+Operational Remediation 1 recommended next milestone:
+
+```text
+Operational Verification 1 - Render Production Health Evidence Capture and Rollout Blocker Reassessment
+```
+
+## Operational Verification 1 Render Production Health Evidence Capture
+
+Operational Verification 1 Render Production Health Evidence Capture and
+Rollout Blocker Reassessment is complete.
+
+The verification records are:
+
+- `docs/OPERATIONAL_VERIFICATION_1_RENDER_PRODUCTION_HEALTH_EVIDENCE_CAPTURE_AND_ROLLOUT_BLOCKER_REASSESSMENT.md`
+- `docs/monitoring/team_operations_bullpen_readiness/OPERATIONAL_VERIFICATION_1_PRODUCTION_HEALTH_ARTIFACT.md`
+
+Verification conclusion:
+
+```text
+DEPLOYMENT_CONFIGURATION_VERIFIED_CORRECT
+```
+
+Operational Verification 1 retains deployed health evidence:
+
+```text
+GET https://baseballos-api.onrender.com/api/health
+status: ok
+environment: production
+debug: false
+```
+
+Blocker reassessment:
+
+```text
+Should deployment configuration remain a rollout blocker?
+NO
+```
+
+Operational Verification 1 finds:
+
+- the prior deployment configuration blocker is cleared by retained production
+  health evidence.
+- deployed environment classification now reports `production`.
+- deployed debug state now reports `false`.
+- V2 runtime behavior and certification scope are unchanged.
+- V3 Team Operations Bullpen Readiness remains internal, non-production, and
+  uncertified for public rollout.
+- controlled rollout is not approved by this verification phase.
+
+Remaining evidence required before controlled rollout approval:
+
+- rendered Dashboard manual review evidence
+- mobile/responsive review evidence
+- accessibility smoke-review evidence
+- explicit maintainer-review evidence
+- protected operational write/admin endpoint gating confirmation without
+  mutating production data
+
+Operational Verification 1 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Operational Verification 1 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Recommended next milestone:
+
+```text
+V3 Phase 18 - Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment
+```
+
+## BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and Controlled Rollout Reassessment
+
+BaseballOS V3 Phase 18 Team Operations Bullpen Readiness Manual Review and
+Controlled Rollout Reassessment is complete.
+
+The Phase 18 records are:
+
+- `docs/V3_PHASE_18_TEAM_OPERATIONS_BULLPEN_READINESS_MANUAL_REVIEW_AND_CONTROLLED_ROLLOUT_REASSESSMENT.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_18_MANUAL_REVIEW_AND_ROLLOUT_REASSESSMENT_ARTIFACT.md`
+
+Phase 18 accepts the Operational Verification 1 production health evidence:
+
+```text
+environment: production
+debug: false
+```
+
+Deployment configuration blocker status:
+
+```text
+CLEARED_BY_OPERATIONAL_VERIFICATION_1
+```
+
+Phase 18 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_BLOCKED_PENDING_MANUAL_REVIEW
+```
+
+Phase 18 finds that controlled rollout remains blocked because the following
+evidence is still not retained:
+
+- rendered Dashboard review evidence
+- browser review evidence
+- mobile/responsive review evidence
+- accessibility smoke-review evidence
+- explicit maintainer confirmation
+- deployed protected operational endpoint confirmation through a safe
+  non-mutating method or explicit maintainer acceptance
+
+Phase 18 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 18 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 18 does not authorize controlled rollout, full production rollout,
+public exposure, backend route changes, frontend implementation changes,
+API contract changes, Recommendation Engine V2 contract changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+hidden priority ordering, pitcher-level advice, or matchup advice.
+
+Recommended next milestone:
+
+```text
+V3 Phase 19 - Team Operations Bullpen Readiness Manual Evidence Capture and Controlled Rollout Decision
+```
+
+## BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout Approval
+
+BaseballOS V3 Phase 19 Team Operations Bullpen Readiness Controlled Rollout
+Approval is complete.
+
+The Phase 19 records are:
+
+- `docs/V3_PHASE_19_TEAM_OPERATIONS_BULLPEN_READINESS_CONTROLLED_ROLLOUT_APPROVAL.md`
+- `docs/monitoring/team_operations_bullpen_readiness/PHASE_19_CONTROLLED_ROLLOUT_APPROVAL_ARTIFACT.md`
+
+Phase 19 records maintainer-confirmed blocker satisfaction:
+
+- deployment configuration verified
+- manual Dashboard review completed
+- browser review completed
+- responsive review completed
+- accessibility smoke review completed
+- protected operational endpoint review completed
+- governance invariants remain intact
+
+Phase 19 controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+```
+
+Full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Team Operations Bullpen Readiness remains certified with non-blocking
+operational gaps and is approved for controlled rollout only.
+
+Phase 19 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 19 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no best/preferred/recommended behavior exists
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+- certified Recommendation Engine V2 behavior remains unchanged
+
+Phase 19 does not authorize full production rollout, public production
+certification language, backend route changes, frontend implementation
+changes, API contract changes, Recommendation Engine V2 contract changes,
+pitcher ranking, pitcher selection, pitcher recommendation, prediction
+behavior, hidden priority ordering, pitcher-level advice, or matchup advice.
+
+Recommended next milestone:
+
+```text
+V3 Phase 20 - Team Operations Bullpen Readiness Controlled Rollout Observation Review
+```
+
+## BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review
+
+BaseballOS V3 Phase 20 Controlled Rollout Observation Readiness Review is
+complete.
+
+The Phase 20 record is:
+
+- `docs/V3_PHASE_20_CONTROLLED_ROLLOUT_OBSERVATION_READINESS_REVIEW.md`
+
+Phase 20 observation readiness decision:
+
+```text
+READY_FOR_CONTROLLED_ROLLOUT_OBSERVATION
+```
+
+Full production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 20 confirms that deployment health, production configuration,
+governance invariants, Dashboard structure, and retained Phase 19 approval
+evidence are sufficient to begin controlled rollout observation under existing
+restrictions.
+
+Phase 20 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 20 confirms:
+
+- no ranking behavior exists
+- no selection behavior exists
+- no prediction behavior exists
+- no recommendation behavior exists
+- no best/preferred/recommended behavior exists for bullpen choice
+- no hidden priority ordering exists
+- no pitcher-level advice exists
+- no matchup advice exists
+
+Phase 20 does not authorize full production rollout, backend behavior changes,
+frontend behavior changes, Dashboard redesign, API contract changes, fatigue
+calculation changes, availability calculation changes, Recommendation Engine
+behavior changes, readiness calculation changes, trust logic changes, freshness
+logic changes, database schema changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+
+Recommended next milestone:
+
+```text
+V3 Phase 21 - Controlled Rollout Observation Evidence Capture
+```
+
+## BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition
+
+BaseballOS V4 Phase 1 Evidence and Explanation Capability Definition is
+complete.
+
+The Phase 1 record is:
+
+- `docs/V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION.md`
+
+V4 capability track:
+
+```text
+V4_EVIDENCE_AND_EXPLANATION_LAYER
+```
+
+Phase 1 status:
+
+```text
+V4_PHASE_1_EVIDENCE_AND_EXPLANATION_CAPABILITY_DEFINITION_COMPLETE
+```
+
+Implementation status:
+
+```text
+PLANNING_ONLY
+```
+
+V4 is defined as the next explanation-focused platform layer. Its purpose is
+to answer why an existing governed BaseballOS state exists, what evidence
+supports that state, and what limitations affect confidence.
+
+V4 may explain:
+
+- availability states
+- readiness states
+- workload states
+- risk or availability distributions
+- freshness contributors
+- trust contributors
+- coverage contributors
+- limitation contributors
+- refusal and fail-closed contributors
+
+V4 may not decide.
+
+V4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+V4 Phase 1 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred/recommended arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 1 does not authorize backend implementation, frontend implementation,
+database changes, API contract changes, runtime behavior changes, fatigue
+calculation changes, availability calculation changes, Recommendation Engine
+behavior changes, readiness calculation changes, trust logic changes, or
+freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 2 - Evidence And Explanation Architecture And Contract Planning
+```
+
+## BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract Planning
+
+BaseballOS V4 Phase 2 Evidence and Explanation Architecture and Contract
+Planning is complete.
+
+The Phase 2 record is:
+
+- `docs/V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING.md`
+
+Phase 2 status:
+
+```text
+V4_PHASE_2_EVIDENCE_AND_EXPLANATION_ARCHITECTURE_AND_CONTRACT_PLANNING_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_3_IMPLEMENTATION_PLANNING
+```
+
+V4 Phase 2 defines:
+
+- the intended explanation architecture
+- allowed explanation scopes
+- proposed internal explanation object shape
+- reusable evidence item shape
+- stable reason code strategy
+- limitation model
+- required governance contract
+- future API contract candidates
+- future frontend surface candidates
+- certification requirements
+
+V4 Phase 2 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+V4 Phase 2 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 2 does not authorize backend implementation, frontend implementation,
+database migration, runtime behavior changes, API route creation, API contract
+exposure, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, readiness calculation changes, trust
+logic changes, or freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 3 - Evidence And Explanation Implementation Plan
+```
+
+## BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan
+
+BaseballOS V4 Phase 3 Evidence and Explanation Implementation Plan is
+complete.
+
+The Phase 3 record is:
+
+- `docs/V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN.md`
+
+Phase 3 status:
+
+```text
+V4_PHASE_3_EVIDENCE_AND_EXPLANATION_IMPLEMENTATION_PLAN_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_4_BACKEND_DOMAIN_FOUNDATION
+```
+
+V4 Phase 3 defines:
+
+- implementation overview
+- proposed V4 phase breakdown
+- backend implementation plan
+- frontend implementation plan
+- internal and future API-facing contract plan
+- testing strategy
+- certification strategy
+- rollout strategy
+- documentation requirements
+- readiness decision for the first implementation phase
+
+V4 Phase 3 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 3 confirms:
+
+- no ranking behavior is authorized
+- no selection behavior is authorized
+- no prediction behavior is authorized
+- no recommendation behavior is authorized
+- no best/preferred arm behavior is authorized
+- no hidden priority ordering is authorized
+- no pitcher-level advice is authorized
+- no matchup advice is authorized
+- no decision automation is authorized
+
+Phase 3 does not authorize backend implementation, frontend implementation,
+database migration, runtime behavior changes, API route creation, API contract
+exposure, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, readiness calculation changes, trust
+logic changes, or freshness logic changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 4 - Evidence And Explanation Backend Domain Foundation
+```
+
+## BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation
+
+BaseballOS V4 Phase 4 Evidence and Explanation Backend Domain Foundation is
+complete.
+
+The Phase 4 record is:
+
+- `docs/V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION.md`
+
+Phase 4 status:
+
+```text
+V4_PHASE_4_EVIDENCE_AND_EXPLANATION_BACKEND_DOMAIN_FOUNDATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+BACKEND_DOMAIN_FOUNDATION_ONLY
+```
+
+V4 Phase 4 creates:
+
+- `backend/explanations/__init__.py`
+- `backend/explanations/contracts.py`
+- `backend/tests/test_v4_explanations_domain_foundation.py`
+
+The backend domain foundation includes:
+
+- explanation scope vocabulary
+- subject type vocabulary
+- evidence item representation
+- explanation object representation
+- stable reason code definitions
+- stable limitation type definitions
+- governance payload object
+- freshness reference object
+- trust reference object
+- confidence object
+- validation helpers
+- deterministic JSON-compatible serialization
+- focused backend tests
+
+Supported scopes:
+
+```text
+availability_state
+workload_state
+readiness_state
+risk_distribution
+freshness_state
+trust_state
+coverage_state
+```
+
+Supported subject types:
+
+```text
+pitcher
+team
+bullpen
+distribution
+system
+```
+
+Supported reason codes:
+
+```text
+WORKLOAD_RECENT_USAGE_ELEVATED
+FRESHNESS_STALE_SOURCE
+COVERAGE_PARTIAL
+TRUST_LIMITED
+AVAILABILITY_MONITOR_THRESHOLD_MET
+READINESS_DEGRADED_BY_LIMITATIONS
+```
+
+Supported limitation types:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+V4 Phase 4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 4 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 4 does not implement API routes, frontend UI, database migration,
+availability integration, readiness integration, recommendation integration,
+dashboard behavior, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 5 - Evidence And Explanation Deterministic Builder
+```
+
+## BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder
+
+BaseballOS V4 Phase 5 Evidence and Explanation Deterministic Builder is
+complete.
+
+The Phase 5 record is:
+
+- `docs/V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md`
+
+Phase 5 status:
+
+```text
+V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER_COMPLETE
+```
+
+Implementation status:
+
+```text
+BACKEND_BUILDER_ONLY
+```
+
+V4 Phase 5 creates:
+
+- `backend/explanations/builders.py`
+- `backend/tests/test_v4_explanations_deterministic_builder.py`
+- `docs/V4_PHASE_5_EVIDENCE_AND_EXPLANATION_DETERMINISTIC_BUILDER.md`
+
+V4 Phase 5 modifies:
+
+- `backend/explanations/__init__.py`
+
+The deterministic builder layer includes:
+
+- reusable explanation creation through `build_explanation(...)`
+- generic evidence construction through `build_evidence_item(...)`
+- numeric evidence construction through `build_numeric_evidence(...)`
+- percentage evidence construction through `build_percentage_evidence(...)`
+- limitation construction through `build_limitation(...)`
+- reason construction through `build_reason(...)` and `build_reasons(...)`
+- governance default attachment through `V4GovernancePayload()`
+- deterministic generated explanation IDs
+- deterministic generated evidence IDs
+- stable JSON serialization support through `stable_json_dumps(...)`
+- JSON-compatible explanation serialization through `serialize_explanation(...)`
+- fail-closed validation for unsupported scopes, subject types, reason codes,
+  limitation types, malformed references, and invalid evidence values
+
+Generated governance defaults are:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+The deterministic ID approach uses canonical JSON with sorted keys, compact
+separators, ASCII-safe output, and a SHA-256 digest prefix. Evidence IDs use the
+`evidence:<type>:<digest>` shape. Explanation IDs use the
+`explanation:<scope>:<subject_type>:<subject_id>:<digest>` shape. Identical
+controlled inputs produce identical objects, IDs, dictionaries, and stable JSON
+strings.
+
+V4 Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+```
+
+V4 Phase 5 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 5 does not implement API routes, frontend UI, database migration,
+availability integration, readiness integration, recommendation integration,
+dashboard behavior, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 6 - Availability Explanation Integration
+```
+
+## BaseballOS V4 Phase 6 Availability Explanation Integration
+
+BaseballOS V4 Phase 6 Availability Explanation Integration is complete.
+
+The Phase 6 record is:
+
+- `docs/V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md`
+
+Phase 6 status:
+
+```text
+V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+INTERNAL_BACKEND_AVAILABILITY_ADAPTER_ONLY
+```
+
+V4 Phase 6 creates:
+
+- `backend/explanations/availability.py`
+- `backend/tests/test_v4_availability_explanation_integration.py`
+- `docs/V4_PHASE_6_AVAILABILITY_EXPLANATION_INTEGRATION.md`
+
+V4 Phase 6 modifies:
+
+- `backend/explanations/__init__.py`
+
+The internal availability explanation adapter:
+
+- accepts existing Availability Engine output dictionaries
+- requires a pitcher subject id
+- preserves `scope = availability_state`
+- preserves `subject_type = pitcher`
+- preserves `state_explained = existing availability status`
+- maps existing status, confidence, data-state, and workload inputs into V4
+  evidence items
+- maps supported availability conditions into Phase 4 reason codes
+- maps missing, stale, incomplete, confidence-limited, and insufficient-context
+  boundaries into Phase 4 limitation types
+- attaches Phase 5 governance defaults
+- returns deterministic `V4Explanation` objects
+- does not mutate the original availability dictionary
+
+Availability states covered:
+
+```text
+Available
+Monitor
+Limited
+Avoid
+Unavailable
+```
+
+Evidence mapped:
+
+- availability status
+- availability confidence
+- availability data state
+- fatigue score when present
+- pitches yesterday when present
+- pitches in 3 days when present
+- pitches in 5 days when present
+- appearances in 3 days when present
+- appearances in 5 days when present
+- days of rest when present
+- back-to-back appearance flag when present
+- three appearances in four days flag when present
+- four appearances in five days flag when present
+
+Limitations supported:
+
+```text
+missing_data
+stale_data
+partial_coverage
+limited_confidence
+insufficient_context
+```
+
+V4 Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+V4 Phase 6 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 6 does not modify `backend/services/availability.py`, fatigue
+calculations, availability thresholds, status assignment logic, API routes, API
+response shapes, frontend rendering, dashboard behavior, recommendation
+behavior, readiness behavior, database schema, production certification, or
+rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 7 - Availability Explanation Certification Readiness Review
+```
+
+## BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review
+
+BaseballOS V4 Phase 7 Availability Explanation Certification Readiness Review
+is complete.
+
+The Phase 7 record is:
+
+- `docs/V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase 7 status:
+
+```text
+V4_PHASE_7_AVAILABILITY_EXPLANATION_CERTIFICATION_READINESS_REVIEW_COMPLETE
+```
+
+Certification-readiness decision:
+
+```text
+READY_FOR_V4_PHASE_8_FORMAL_CERTIFICATION_REVIEW
+```
+
+Review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Capability coverage | PASS |
+| Reason mapping | PARTIAL |
+| Evidence attribution | PASS |
+| Limitation handling | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PASS |
+| Availability Engine preservation | PASS |
+
+The reason-mapping review is partial because the internal adapter uses only
+existing Phase 4 reason codes and intentionally does not yet define a positive
+Available-state reason code. Available explanations still carry state,
+evidence, freshness, trust, confidence, and governance metadata.
+
+Critical certification blockers:
+
+```text
+None
+```
+
+Non-critical certification blockers:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- reason-code coverage remains intentionally conservative
+- future public exposure must define whether explanations are embedded in
+  existing availability responses or exposed through a separate explanation
+  contract
+- future UI work must preserve the difference between explaining the existing
+  `Avoid` state and telling a user to avoid a pitcher
+
+V4 Phase 7 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+V4 Phase 7 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 7 does not modify runtime behavior, backend availability behavior,
+fatigue calculations, availability thresholds, status assignment logic, API
+routes, API response shapes, frontend rendering, dashboard behavior,
+recommendation behavior, readiness behavior, database schema, production
+certification, or rollout approval.
+
+Recommended next milestone:
+
+```text
+V4 Phase 8 - Availability Explanation Formal Certification Review
+```
+
+## BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review
+
+BaseballOS V4 Phase 8 Availability Explanation Formal Certification Review is
+complete.
+
+The Phase 8 record is:
+
+- `docs/V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md`
+
+Phase 8 status:
+
+```text
+V4_PHASE_8_AVAILABILITY_EXPLANATION_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+```
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certified status:
+
+```text
+AVAILABILITY_EXPLANATION_INTEGRATION_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certification scope:
+
+```text
+Availability Explanation Integration
+```
+
+Certification excludes:
+
+- Team Operations Readiness explanations
+- Risk Distribution explanations
+- Recommendation explanations
+- frontend explanation surfaces
+- explanation APIs
+- dashboard explanation rendering
+- database persistence
+- production rollout approval
+- public user-facing exposure
+
+Certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Capability review | PASS |
+| Coverage certification | PASS |
+| Evidence certification | PASS |
+| Limitation certification | PASS |
+| Governance certification | PASS |
+| Determinism certification | PASS |
+| Testing certification | PASS |
+| Availability Engine preservation certification | PASS |
+
+Critical findings:
+
+```text
+None
+```
+
+Non-critical findings:
+
+```text
+None
+```
+
+Observations:
+
+- reason mapping remains intentionally conservative because there is not yet a
+  dedicated positive Available-state reason code
+- future API exposure must define whether V4 availability explanations are
+  embedded in existing availability payloads or exposed through a separate
+  explanation contract
+- future frontend exposure must preserve the difference between explaining the
+  existing `Avoid` state and telling the user to avoid a pitcher
+
+V4 Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+V4 Phase 8 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 8 does not modify runtime behavior, backend availability behavior,
+fatigue calculations, availability thresholds, status assignment logic, API
+routes, API response shapes, frontend rendering, dashboard behavior,
+recommendation behavior, readiness behavior, database schema, production
+rollout approval, or public exposure.
+
+Recommended next milestone:
+
+```text
+V4 Phase 9 - Team Operations Readiness Explanation Capability Definition
+```
+
+## BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability Definition
+
+BaseballOS V4 Phase 9 Team Operations Readiness Explanation Capability
+Definition is complete.
+
+The Phase 9 record is:
+
+- `docs/V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION.md`
+
+Phase 9 status:
+
+```text
+V4_PHASE_9_TEAM_OPERATIONS_READINESS_EXPLANATION_CAPABILITY_DEFINITION_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_10_READINESS_EXPLANATION_ARCHITECTURE
+```
+
+Phase 9 defines how future V4 explanations should explain Team Operations
+Bullpen Readiness states without implementing readiness explanation logic,
+changing readiness calculations, exposing APIs, adding frontend UI, changing
+dashboard behavior, or expanding rollout status.
+
+Capability summary:
+
+- explain why a Team Operations readiness state appears
+- explain why readiness is degraded, data limited, freshness limited, trust
+  limited, coverage limited, or refused
+- explain workload, coverage, freshness, trust, confidence, limitation, and
+  refusal contributors
+- keep explanations team-level, bullpen-level, or system-level
+- preserve the user as the decision maker
+
+Candidate explanation scopes:
+
+- `readiness_state`
+- `team_readiness_state`
+- `workload_pressure`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+- `confidence_state`
+
+Candidate evidence sources:
+
+- readiness status
+- operational constraints
+- workload pressure state
+- availability distribution
+- fatigue distribution
+- high-risk workload counts
+- role or coverage inventory counts
+- handedness coverage counts
+- freshness metadata
+- trust metadata
+- confidence metadata
+- refusal and fail-closed metadata
+- existing readiness limitations
+- governance metadata
+
+Existing V4 reason codes that may support readiness explanations:
+
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Candidate future readiness-focused reason codes:
+
+- `READINESS_DEGRADED_BY_FRESHNESS`
+- `READINESS_DEGRADED_BY_COVERAGE`
+- `READINESS_DATA_LIMITED`
+- `WORKLOAD_PRESSURE_ELEVATED`
+- `TRUST_LIMITED_FOR_READINESS`
+- `CONFIDENCE_REDUCED`
+- `READINESS_REFUSED_BY_FAIL_CLOSED`
+
+Phase 9 finds the current V4 limitation model sufficient for initial readiness
+explanation architecture planning:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 9 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 9 does not modify runtime behavior, backend behavior, frontend behavior,
+API routes, API response shapes, dashboard behavior, database schema, fatigue
+calculations, availability calculations, Recommendation Engine behavior, Team
+Operations Readiness behavior, trust logic, freshness logic, production
+certification, rollout approval, or public exposure.
+
+Recommended next milestone:
+
+```text
+V4 Phase 10 - Team Operations Readiness Explanation Architecture
+```
+
+## BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture
+
+BaseballOS V4 Phase 10 Team Operations Readiness Explanation Architecture is
+complete.
+
+The Phase 10 record is:
+
+- `docs/V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE.md`
+
+Phase 10 status:
+
+```text
+V4_PHASE_10_TEAM_OPERATIONS_READINESS_EXPLANATION_ARCHITECTURE_COMPLETE
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_11_READINESS_EXPLANATION_IMPLEMENTATION
+```
+
+Phase 10 defines the technical architecture for future Team Operations
+Readiness explanation generation. It does not implement backend behavior,
+frontend behavior, API routes, dashboard rendering, runtime integration,
+database changes, certification, or rollout.
+
+Architecture summary:
+
+- use a bounded future readiness explanation adapter
+- read existing Team Operations Readiness payloads
+- map existing readiness evidence into V4 evidence items
+- map supported readiness conditions into V4 reason codes
+- map data boundaries into V4 limitations
+- reuse V4 deterministic builders and governance defaults
+- return V4 explanation objects without mutating readiness payloads
+
+Participating systems:
+
+- Team Operations Bullpen Readiness
+- Availability Engine as an indirect evidence contributor through existing
+  readiness output
+- V4 Explanation Domain Foundation
+- V4 Deterministic Builder
+- future readiness explanation adapter
+
+Systems that remain unchanged:
+
+- fatigue calculations
+- availability calculations
+- Team Operations Readiness calculations
+- Team Operations Readiness API route behavior
+- Recommendation Engine behavior
+- V3 readiness dashboard behavior
+- database schema
+- frontend rendering
+- rollout status
+
+Scope architecture:
+
+- `readiness_state` as the preferred root explanation scope
+- existing `workload_state`, `coverage_state`, `freshness_state`, and
+  `trust_state` as supporting explanation scopes
+- `team_readiness_state` and `confidence_state` remain candidate scopes only
+  unless future implementation proves current vocabulary insufficient
+
+Evidence mapping architecture includes:
+
+- readiness status
+- operational constraints
+- workload pressure state
+- high-risk workload counts
+- critical workload counts
+- fatigue distribution
+- availability distribution
+- coverage metrics
+- freshness metrics
+- trust metrics
+- confidence metrics
+- refusal metadata
+- fail-closed metadata
+- governance metadata
+
+Reason code architecture uses existing V4 reason codes where possible:
+
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Candidate readiness-focused reason codes remain future candidates only:
+
+- `READINESS_DEGRADED_BY_FRESHNESS`
+- `READINESS_DEGRADED_BY_COVERAGE`
+- `READINESS_DATA_LIMITED`
+- `WORKLOAD_PRESSURE_ELEVATED`
+- `TRUST_LIMITED_FOR_READINESS`
+- `CONFIDENCE_REDUCED`
+- `READINESS_REFUSED_BY_FAIL_CLOSED`
+
+Phase 10 finds the current V4 limitation model sufficient for initial
+implementation planning:
+
+```text
+missing_data
+stale_data
+partial_coverage
+uncertified_source
+limited_confidence
+insufficient_context
+```
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 10 confirms:
+
+- no ranking behavior is introduced
+- no selection behavior is introduced
+- no prediction behavior is introduced
+- no recommendation behavior is introduced
+- no best/preferred arm behavior is introduced
+- no hidden priority ordering is introduced
+- no pitcher-level advice is introduced
+- no matchup advice is introduced
+- no decision automation is introduced
+
+Phase 10 does not modify runtime behavior, backend behavior, frontend
+behavior, API routes, API response shapes, dashboard behavior, database schema,
+fatigue calculations, availability calculations, Recommendation Engine
+behavior, Team Operations Readiness behavior, trust logic, freshness logic,
+production certification, rollout approval, or public exposure.
+
+Recommended next milestone:
+
+```text
+V4 Phase 11 - Team Operations Readiness Explanation Implementation
+```
+
+## BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation
+
+BaseballOS V4 Phase 11 Team Operations Readiness Explanation Implementation is
+complete.
+
+The implementation record is:
+
+- `docs/V4_PHASE_11_TEAM_OPERATIONS_READINESS_EXPLANATION_IMPLEMENTATION.md`
+
+Phase 11 implements an internal backend adapter that converts existing Team
+Operations Bullpen Readiness payloads into deterministic V4 explanation objects.
+
+The adapter consumes existing governed readiness output and maps:
+
+- readiness state
+- workload pressure
+- availability distribution
+- coverage inventory
+- handedness coverage
+- freshness metadata
+- trust metadata
+- confidence metadata
+- refusal/fail-closed context
+- existing readiness limitations
+
+into V4 explanation evidence, reasons, limitations, freshness references, trust
+references, confidence references, and governance payloads.
+
+Supported explanation scopes:
+
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Reason code status:
+
+- no new reason codes were added
+- existing V4 reason codes were reused conservatively
+- `READINESS_DEGRADED_BY_LIMITATIONS`
+- `WORKLOAD_RECENT_USAGE_ELEVATED`
+- `FRESHNESS_STALE_SOURCE`
+- `COVERAGE_PARTIAL`
+- `TRUST_LIMITED`
+
+Phase 11 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 11 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 11 does not modify readiness calculations, readiness status assignment,
+availability calculations, fatigue calculations, Recommendation Engine
+behavior, API routes, API payloads, frontend runtime behavior, Dashboard
+behavior, database schema, certification status, or rollout status.
+
+Focused backend tests cover stable, constrained, stressed, stale freshness,
+partial coverage, limited trust, refused/fail-closed, deterministic, invalid
+input, governance, and prohibited-language paths.
+
+Recommended next milestone:
+
+```text
+V4 Phase 12 - Team Operations Readiness Explanation Certification Readiness Review
+```
+
+## BaseballOS V4 Phase 12 Team Operations Readiness Explanation Certification Readiness Review
+
+BaseballOS V4 Phase 12 Team Operations Readiness Explanation Certification
+Readiness Review is complete.
+
+The review record is:
+
+- `docs/V4_PHASE_12_TEAM_OPERATIONS_READINESS_EXPLANATION_CERTIFICATION_READINESS_REVIEW.md`
+
+Readiness decision:
+
+```text
+READY_FOR_V4_PHASE_13_FORMAL_CERTIFICATION_REVIEW
+```
+
+Phase 12 reviewed internal Team Operations Readiness explanations before
+formal certification review, API exposure, frontend exposure, dashboard
+rendering, production certification, or rollout approval.
+
+Review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Capability coverage | PASS |
+| Reason mapping | PARTIAL |
+| Evidence attribution | PARTIAL |
+| Limitation handling | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PASS |
+| Readiness Engine preservation | PASS |
+
+Phase 12 confirms implemented readiness explanation scopes:
+
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Phase 12 non-blocking observations:
+
+- reason-code coverage remains intentionally conservative
+- elevated workload pressure reuses `WORKLOAD_RECENT_USAGE_ELEVATED` rather
+  than adding a dedicated `WORKLOAD_PRESSURE_ELEVATED` reason code
+- operationally stable readiness explanations may have no primary reason code
+  when no limiting evidence is present
+- dedicated fatigue-distribution and risk-distribution evidence is not mapped
+  because the current readiness payload does not expose those objects
+- future API and UI exposure require separate authorization and certification
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 12 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 12 does not modify readiness calculations, readiness status assignment,
+availability calculations, fatigue calculations, Recommendation Engine
+behavior, API routes, API payloads, frontend runtime behavior, Dashboard
+behavior, database schema, certification status, or rollout status.
+
+Recommended next milestone:
+
+```text
+V4 Phase 13 - Team Operations Readiness Explanation Formal Certification Review
+```
+
+## BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal Certification Review
+
+BaseballOS V4 Phase 13 Team Operations Readiness Explanation Formal
+Certification Review is complete.
+
+The formal certification record is:
+
+- `docs/V4_PHASE_13_TEAM_OPERATIONS_READINESS_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md`
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certified status:
+
+```text
+TEAM_OPERATIONS_READINESS_EXPLANATIONS_CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Phase 13 certifies internal backend Team Operations Readiness Explanations only.
+
+Certified explanation scopes:
+
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Capability review | PASS |
+| Coverage certification | PASS |
+| Evidence certification | PARTIAL |
+| Limitation certification | PASS |
+| Governance certification | PASS |
+| Determinism certification | PASS |
+| Testing certification | PASS |
+| Readiness Engine preservation certification | PASS |
+
+Phase 13 observations:
+
+- reason-code coverage remains intentionally conservative
+- there is not yet a dedicated `WORKLOAD_PRESSURE_ELEVATED` reason code
+- elevated workload pressure maps to `WORKLOAD_RECENT_USAGE_ELEVATED`
+- operationally stable readiness explanations may have no primary reason code
+  when no limiting evidence is present
+- dedicated fatigue-distribution and risk-distribution evidence is not mapped
+  because the current Team Operations Readiness payload does not expose those
+  objects
+- future API and UI exposure require separate authorization and certification
+
+Phase 13 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 13 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 13 does not authorize API exposure, frontend exposure, dashboard
+exposure, production rollout, Availability Explanations, Recommendation
+Explanations, Risk Distribution Explanations, database changes, runtime
+behavior changes, readiness calculation changes, readiness status assignment
+changes, availability calculation changes, fatigue calculation changes, or
+Recommendation Engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 14 - Explanation API Contract Planning
+```
+
+## BaseballOS V4 Phase 14 Explanation API Contract Planning
+
+BaseballOS V4 Phase 14 Explanation API Contract Planning is complete.
+
+The planning record is:
+
+- `docs/V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING.md`
+
+Phase status:
+
+```text
+V4_PHASE_14_EXPLANATION_API_CONTRACT_PLANNING_COMPLETE
+```
+
+Implementation status:
+
+```text
+PLANNING_ONLY
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION
+```
+
+Phase 14 defines governed API contract planning for certified V4 explanations
+only.
+
+Certified explanation types eligible for future route planning:
+
+- `availability_explanation`
+- `team_readiness_explanation`
+
+Candidate route contracts planned:
+
+- `GET /api/explanations/availability/:pitcher_id`
+- `GET /api/explanations/team-readiness`
+- `GET /api/explanations/team-readiness/:scope`
+
+Shared contract areas defined:
+
+- certified explanation type boundaries
+- candidate route purpose and subject type
+- expected safe inputs
+- prohibited query intent
+- shared successful response shape
+- fail-closed response shape
+- safe error handling recommendations
+- envelope-level and explanation-level governance metadata
+- certification boundary for future explanation types
+- future route testing requirements
+
+Phase 14 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 14 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred arm behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 14 does not authorize API route implementation, frontend exposure,
+dashboard exposure, uncertified explanation scopes, Recommendation
+Explanations, Risk Distribution Explanations, database persistence, rollout
+approval, source engine behavior changes, Availability Engine behavior
+changes, Team Operations Readiness behavior changes, Recommendation Engine
+behavior changes, fatigue calculation changes, or availability calculation
+changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 15 - Explanation API Route Implementation
+```
+
+## BaseballOS V4 Phase 15 Explanation API Route Implementation
+
+BaseballOS V4 Phase 15 Explanation API Route Implementation is complete.
+
+The implementation record is:
+
+- `docs/V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION.md`
+
+Phase status:
+
+```text
+V4_PHASE_15_EXPLANATION_API_ROUTE_IMPLEMENTATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+BACKEND_ROUTES_IMPLEMENTED
+INTERNAL_UNCERTIFIED_ROUTE_STATUS
+NO_FRONTEND_EXPOSURE
+NO_DASHBOARD_EXPOSURE
+```
+
+Routes implemented:
+
+- `GET /api/explanations/availability/<pitcher_id>`
+- `GET /api/explanations/team-readiness`
+- `GET /api/explanations/team-readiness/<scope>`
+- `GET /api/explanations/<explanation_type>`
+
+Certified explanation types exposed:
+
+- `availability_explanation`
+- `team_readiness_explanation`
+
+Certified scopes exposed:
+
+- `availability_state`
+- `readiness_state`
+- `workload_state`
+- `coverage_state`
+- `freshness_state`
+- `trust_state`
+
+Phase 15 implements:
+
+- Flask blueprint registration for V4 explanation routes
+- governed success envelopes for certified explanation objects
+- governed fail-closed envelopes for unavailable, unsupported, or uncertified
+  requests
+- certified explanation type allowlists
+- certified readiness scope allowlists
+- safe request validation for unsupported parameters and prohibited query
+  intent
+- route-level tests for success, fail-closed, governance, certification
+  boundary, and deterministic response behavior
+
+Phase 15 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 15 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 15 does not change availability thresholds, availability calculations,
+fatigue calculations, readiness calculations, readiness status assignment,
+Recommendation Engine behavior, existing dashboard behavior, frontend behavior,
+or database schema.
+
+Recommended next milestone:
+
+```text
+V4 Phase 16 - Explanation API Route Certification Readiness Review
+```
+
+## BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review
+
+BaseballOS V4 Phase 16 Explanation API Route Certification Readiness Review is
+complete.
+
+The review record is:
+
+- `docs/V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW.md`
+
+Phase status:
+
+```text
+V4_PHASE_16_EXPLANATION_API_ROUTE_CERTIFICATION_READINESS_REVIEW_COMPLETE
+```
+
+Review status:
+
+```text
+READY_FOR_V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION
+```
+
+Review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Certified scope exposure | PASS |
+| Route coverage | PASS |
+| Response contract | PASS |
+| Fail-closed behavior | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PARTIAL |
+| Behavior preservation | PASS |
+
+Critical blockers:
+
+```text
+None
+```
+
+Non-critical blockers:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- direct forced route-level builder-validation failure test coverage is not
+  currently present
+- explicit malformed `team_id` route testing is not currently present
+- route-level monitoring artifact capture is not implemented because rollout is
+  not in scope
+- availability route determinism depends on identical source evidence and
+  identical runtime date context
+- route status remains `internal_uncertified_route` until formal API
+  certification is completed
+
+Phase 16 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 16 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 16 does not authorize formal API certification, frontend exposure,
+dashboard exposure, route rollout, Recommendation Explanations, Risk
+Distribution Explanations, availability calculation changes, fatigue
+calculation changes, readiness calculation changes, readiness status assignment
+changes, or Recommendation Engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 17 - Explanation API Formal Certification Review
+```
+
+## BaseballOS V4 Phase 17 Explanation API Formal Certification Review
+
+BaseballOS V4 Phase 17 Explanation API Formal Certification Review is
+complete.
+
+The formal certification record is:
+
+- `docs/V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW.md`
+
+Phase status:
+
+```text
+V4_PHASE_17_EXPLANATION_API_FORMAL_CERTIFICATION_REVIEW_COMPLETE
+```
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Certification scope:
+
+- Availability Explanation API
+- Team Operations Readiness Explanation API
+- governed response envelopes
+- fail-closed response envelopes
+- certified explanation type enforcement
+- certified readiness scope enforcement
+- internal backend API behavior only
+
+Certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Certification scope | PASS |
+| Certified scope exposure | PASS |
+| Route coverage | PASS |
+| Response contract | PASS |
+| Fail-closed behavior | PASS |
+| Governance | PASS |
+| Determinism | PASS |
+| Testing | PARTIAL |
+| Behavior preservation | PASS |
+
+Critical findings:
+
+```text
+None
+```
+
+Non-critical findings:
+
+```text
+None
+```
+
+Non-blocking observations:
+
+- direct forced route-level builder-validation exception coverage is not
+  currently present
+- explicit malformed `team_id` route coverage is not currently present
+- availability determinism depends on identical source evidence and identical
+  runtime date context
+- route status remains internal until separate rollout planning changes route
+  exposure status
+- frontend explanation surfaces and Dashboard explanation UI remain
+  intentionally unimplemented
+- route-level monitoring artifacts remain future rollout work
+
+Phase 17 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 17 does not introduce:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+
+Phase 17 does not authorize frontend exposure, Dashboard exposure, production
+rollout, future explanation scopes, Recommendation Explanations, Risk
+Distribution Explanations, availability calculation changes, fatigue
+calculation changes, readiness calculation changes, readiness status assignment
+changes, Recommendation Engine behavior changes, database behavior changes, or
+source-engine behavior changes.
+
+Recommended next milestone:
+
+```text
+V4 Phase 18 - Explanation API Frontend Integration Planning
+```
+
+## BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning
+
+BaseballOS V4 Phase 18 Explanation API Frontend Integration Planning is
+complete.
+
+The planning record is:
+
+- `docs/V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING.md`
+
+Phase status:
+
+```text
+V4_PHASE_18_EXPLANATION_API_FRONTEND_INTEGRATION_PLANNING_COMPLETE
+```
+
+Planning status:
+
+```text
+PLANNING_ONLY
+NO_FRONTEND_IMPLEMENTATION
+NO_BACKEND_IMPLEMENTATION
+NO_API_IMPLEMENTATION
+NO_DASHBOARD_CHANGES
+```
+
+Implementation readiness decision:
+
+```text
+READY_FOR_V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION
+```
+
+Phase 18 defines:
+
+- Availability explanation frontend access planning
+- Team Operations Readiness explanation frontend access planning
+- shared explanation UI patterns
+- default visibility rules
+- progressive disclosure strategy
+- evidence and limitation display strategy
+- fail-closed UI behavior
+- compact governance display
+- Dashboard UX anti-regression rules
+- frontend contract requirements
+- frontend testing requirements
+
+Phase 18 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 18 does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- Dashboard redesign
+- uncertified explanation types
+
+UX anti-regression summary:
+
+- do not add full explanation blocks directly to the Dashboard by default
+- do not display full evidence lists inline by default
+- do not repeat full governance text across multiple large sections
+- do not add certification notes as default Dashboard content
+- do not create one explanation card per pitcher on the main Dashboard
+- do not create comparison tables for explanation content
+- prefer drawers, modals, or compact expandable panels for evidence detail
+- keep the first viewport focused on operational state
+- preserve mobile page length by lazy-loading and collapsing detail surfaces
+
+Recommended next milestone:
+
+```text
+V4 Phase 19 - Frontend Explanation Surface Implementation
+```
+
+## BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation
+
+BaseballOS V4 Phase 19 Frontend Explanation Surface Implementation is
+complete.
+
+The implementation record is:
+
+- `docs/V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION.md`
+
+Phase status:
+
+```text
+V4_PHASE_19_FRONTEND_EXPLANATION_SURFACE_IMPLEMENTATION_COMPLETE
+```
+
+Implementation status:
+
+```text
+FRONTEND_SURFACE_IMPLEMENTED
+BACKEND_UNCHANGED
+API_CONTRACTS_UNCHANGED
+DASHBOARD_REDESIGN_NOT_PERFORMED
+PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Implemented frontend surfaces:
+
+- Operational Readiness `Why this state?` action
+- selected pitcher detail `Why this availability?` action
+- shared V4 explanation disclosure component
+- certified explanation API client normalization
+- governed fail-closed explanation display
+- compact governance strip and detailed governance disclosure
+
+Certified API routes consumed:
+
+```text
+GET /api/explanations/team-readiness
+GET /api/explanations/team-readiness/<scope>
+GET /api/explanations/availability/<pitcher_id>
+```
+
+Phase 19 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 19 does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- Dashboard redesign
+- production rollout approval
+
+Anti-regression summary:
+
+- explanation details remain hidden until user action
+- full evidence blocks are not rendered inline on the Dashboard by default
+- per-pitcher explanation stacks were not added to the Dashboard
+- availability explanation access is limited to selected pitcher detail
+- governance is visible in compact form without repeating large audit blocks
+
+Recommended next milestone:
+
+```text
+V4 Phase 20 - Frontend Explanation Surface Certification Readiness Review
+```
+
+## BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness Review
+
+BaseballOS V4 Phase 20 Frontend Explanation Surface Certification Readiness
+Review is complete.
+
+The review record is:
+
+- `docs/V4_PHASE_20_FRONTEND_EXPLANATION_SURFACE_CERTIFICATION_READINESS_REVIEW.md`
+
+Review decision:
+
+```text
+READY_FOR_V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION
+```
+
+Certification status:
+
+```text
+FRONTEND_EXPLANATION_SURFACES_NOT_FORMALLY_CERTIFIED
+FORMAL_FRONTEND_CERTIFICATION_REVIEW_PENDING
+PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 20 review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Surface coverage | PASS |
+| Certified API consumption | PASS |
+| Progressive disclosure | PASS |
+| Fail-closed UI | PASS |
+| Governance | PASS |
+| UX anti-regression | PASS |
+| Testing | PASS |
+| Behavior preservation | PASS |
+
+Phase 20 confirms frontend explanation surfaces preserve:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 20 confirms the UI does not introduce or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- dashboard redesign
+- production rollout approval
+
+Non-blocking observations:
+
+- formal frontend certification should retain final browser review evidence for
+  opened explanation disclosures
+- formal frontend certification should retain accessibility smoke evidence for
+  keyboard operation, focus visibility, and screen-reader-safe status language
+- production rollout remains outside the Phase 20 readiness review
+
+Recommended next milestone:
+
+```text
+V4 Phase 21 - Frontend Explanation Surface Formal Certification Review
+```
+
+## BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification Review
+
+BaseballOS V4 Phase 21 Frontend Explanation Surface Formal Certification
+Review is complete.
+
+The certification record is:
+
+- `docs/V4_PHASE_21_FRONTEND_EXPLANATION_FORMAL_CERTIFICATION_REVIEW.md`
+
+Formal certification decision:
+
+```text
+CERTIFIED_WITH_NON_BLOCKING_OBSERVATIONS
+```
+
+Rollout status:
+
+```text
+PRODUCTION_ROLLOUT_NOT_APPROVED
+CONTROLLED_ROLLOUT_PLANNING_PENDING
+```
+
+Certified frontend scope:
+
+- Operational Readiness explanation surface
+- selected pitcher Availability explanation surface
+- shared explanation disclosure component
+- frontend API normalization for certified explanation routes
+- fail-closed explanation rendering
+- governance-safe explanation presentation
+
+Phase 21 certification decisions:
+
+| Certification area | Decision |
+| --- | --- |
+| Certification scope | PASS |
+| Surface coverage | PASS |
+| Certified API usage | PASS |
+| Progressive disclosure | PASS |
+| Fail-closed rendering | PASS |
+| Governance | PASS |
+| UX anti-regression | PASS |
+| Testing | PASS |
+| Behavior preservation | PASS |
+
+Phase 21 confirms frontend explanation surfaces preserve:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 21 confirms the certified frontend explanation surfaces do not introduce
+or authorize:
+
+- ranking behavior
+- selection behavior
+- prediction behavior
+- recommendation behavior
+- best/preferred behavior
+- hidden priority ordering
+- pitcher-level advice
+- matchup advice
+- decision automation
+- backend behavior changes
+- API contract changes
+- dashboard redesign
+- production rollout approval
+
+Certification findings:
+
+- Critical findings: `NONE`
+- Non-critical findings: `NONE`
+- Observations:
+  - browser/device smoke evidence remains manual
+  - accessibility validation remains limited and should be retained in later
+    rollout planning
+  - future explanation surfaces are not yet implemented
+  - production rollout is not approved by this certification
+
+Recommended next milestone:
+
+```text
+V4 Phase 22 - Frontend Explanation Surface Rollout Planning and Monitoring
+```
+
+## BaseballOS V4 Phase 22 Frontend Explanation Surface Rollout Planning And Monitoring
+
+BaseballOS V4 Phase 22 Frontend Explanation Surface Rollout Planning And
+Monitoring is complete.
+
+The rollout planning record is:
+
+- `docs/V4_PHASE_22_FRONTEND_EXPLANATION_ROLLOUT_PLANNING_AND_MONITORING.md`
+
+Rollout planning decision:
+
+```text
+READY_FOR_V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT
+```
+
+Rollout status:
+
+```text
+CONTROLLED_ROLLOUT_NOT_YET_APPROVED
+PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 22 rollout scope:
+
+- Operational Readiness explanation surface
+- selected pitcher Availability explanation surface
+- certified explanation APIs consumed by the frontend
+- shared explanation disclosure component
+- frontend API normalization for certified explanation routes
+- fail-closed explanation rendering
+- governance-safe explanation presentation
+
+Phase 22 defines:
+
+- internal review, controlled rollout, observation, reassessment, and production
+  approval review stages
+- desktop, mobile, responsive, accessibility, explanation content, governance
+  language, and fail-closed manual review requirements
+- monitoring for API failures, fail-closed frequency, frontend rendering
+  failures, user confusion indicators, governance regressions, and unexpected
+  Dashboard growth
+- rollback conditions for governance regression, recommendation-like language,
+  API instability, fail-closed failure, accessibility regression, or Dashboard
+  usability regression
+- observation evidence requirements for screenshots, browser notes, mobile
+  notes, accessibility observations, fail-closed evidence, and governance
+  validation
+- approval gates for technical validation, governance validation, manual UX
+  validation, accessibility validation, observation review, and rollout
+  approval review
+
+Phase 22 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 22 does not authorize:
+
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- dashboard redesign
+- controlled rollout approval
+- production rollout approval
+
+Recommended next milestone:
+
+```text
+V4 Phase 23 - Frontend Explanation Surface Controlled Rollout
+```
+
+## BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout Decision
+
+BaseballOS V4 Phase 23 Frontend Explanation Surface Controlled Rollout
+Decision is complete.
+
+The controlled rollout decision record is:
+
+- `docs/V4_PHASE_23_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_DECISION.md`
+
+Controlled rollout decision:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+```
+
+Production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 23 rollout scope:
+
+- Operational Readiness explanation surface
+- selected pitcher Availability explanation surface
+- shared explanation disclosure component
+- certified explanation APIs consumed by frontend explanation surfaces
+- frontend API normalization for certified explanation routes
+- fail-closed explanation rendering
+- governance-safe explanation presentation
+
+Phase 23 certification summary:
+
+- Availability Explanation Integration remains certified with non-blocking
+  observations.
+- Team Operations Readiness Explanations remain certified with non-blocking
+  observations.
+- Explanation APIs remain certified with non-blocking observations.
+- Frontend explanation surfaces remain certified with non-blocking
+  observations.
+
+Phase 23 controlled rollout audience:
+
+- maintainer
+- internal review
+- limited evaluation users when explicitly included by the maintainer
+
+Phase 23 required observation evidence:
+
+- desktop browser review
+- mobile browser review
+- responsive validation
+- accessibility smoke review
+- fail-closed validation
+- governance validation
+
+Phase 23 monitoring expectations:
+
+- Explanation API failures
+- frontend failures
+- governance regressions
+- Dashboard growth regressions
+- accessibility observations
+- user confusion indicators
+
+Phase 23 rollback conditions include:
+
+- recommendation-like behavior
+- ranking, selection, prediction, pitcher advice, matchup advice, or decision
+  automation
+- missing or malformed governance fields
+- fail-closed behavior that fabricates content
+- unsupported or uncertified explanation API consumption
+- Dashboard usability regression
+- accessibility regression
+- explanation-induced Dashboard clutter
+
+Phase 23 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 23 does not authorize:
+
+- unrestricted production release
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- dashboard redesign
+
+Recommended next milestone:
+
+```text
+V4 Phase 24 - Frontend Explanation Surface Controlled Rollout Observation Review
+```
+
+## BaseballOS V4 Phase 24 Frontend Explanation Surface Controlled Rollout Observation Review
+
+BaseballOS V4 Phase 24 Frontend Explanation Surface Controlled Rollout
+Observation Review is complete.
+
+The observation review record is:
+
+- `docs/V4_PHASE_24_FRONTEND_EXPLANATION_CONTROLLED_ROLLOUT_OBSERVATION_REVIEW.md`
+
+Controlled rollout observation decision:
+
+```text
+CONTROLLED_ROLLOUT_REVIEW_REQUIRED
+```
+
+Production review readiness:
+
+```text
+NOT_READY_FOR_V4_PHASE_25_PRODUCTION_ROLLOUT_REVIEW
+```
+
+Production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 24 review decisions:
+
+| Review area | Decision |
+| --- | --- |
+| Rollout scope | PASS |
+| Desktop browser observation | PARTIAL |
+| Mobile / responsive observation | PARTIAL |
+| Fail-closed observation | PARTIAL |
+| Governance observation | PASS |
+| UX anti-regression observation | PARTIAL |
+| Accessibility observation | PARTIAL |
+| Monitoring observation | PARTIAL |
+
+Phase 24 findings:
+
+- Critical findings: `NONE`
+- Non-critical findings:
+  - retained V4 controlled rollout desktop browser observation evidence is
+    incomplete
+  - retained V4 controlled rollout mobile/responsive observation evidence is
+    incomplete
+  - retained V4 controlled rollout accessibility smoke observation evidence is
+    incomplete
+  - retained V4 controlled rollout fail-closed observation evidence is
+    incomplete
+  - no V4 frontend explanation controlled rollout monitoring artifact was found
+- Observations:
+  - V4 frontend explanation surfaces remain formally certified with
+    non-blocking observations
+  - Phase 23 controlled rollout approval remains bounded to certified frontend
+    explanation surfaces and certified explanation APIs
+  - no retained repository evidence shows a governance regression
+  - no retained repository evidence shows recommendation, ranking, selection,
+    prediction, pitcher advice, matchup advice, or decision automation
+  - production rollout review should wait until retained observation evidence
+    is captured
+
+Phase 24 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 24 does not authorize:
+
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+- frontend implementation
+- backend implementation
+- API implementation
+- dashboard redesign
+- production rollout approval
+
+Recommended next milestone:
+
+```text
+V4 Phase 25 - Frontend Explanation Controlled Rollout Evidence Capture And Reassessment
+```
+
+## BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment
+
+BaseballOS V4 Phase 25 Frontend Explanation Evidence Capture And Reassessment
+is complete.
+
+The Phase 25 record is:
+
+- `docs/V4_PHASE_25_FRONTEND_EXPLANATION_EVIDENCE_CAPTURE_AND_REASSESSMENT.md`
+
+Phase 25 reassesses the evidence gaps identified in Phase 24 for certified
+frontend explanation surfaces. It reviews retained repository source and test
+evidence for:
+
+- Operational Readiness explanation disclosure
+- selected pitcher Availability explanation disclosure
+- shared V4 explanation disclosure behavior
+- fail-closed frontend rendering
+- governance-safe frontend messaging
+- Dashboard anti-regression protections
+
+Evidence decisions:
+
+| Evidence area | Decision |
+| --- | --- |
+| Desktop Browser Evidence | PARTIAL |
+| Mobile / Responsive Evidence | PARTIAL |
+| Accessibility Smoke Evidence | PARTIAL |
+| Fail-Closed Evidence | PARTIAL |
+| Governance Evidence | PASS |
+| Dashboard Anti-Regression Evidence | PARTIAL |
+| Monitoring Reassessment | PARTIAL |
+
+Phase 25 controlled rollout reassessment decision:
+
+```text
+CONTROLLED_ROLLOUT_REVIEW_REQUIRED
+```
+
+Phase 25 production review readiness decision:
+
+```text
+NOT_READY_FOR_V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW
+```
+
+Phase 25 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 25 does not authorize:
+
+- frontend changes
+- backend changes
+- API changes
+- Dashboard redesign
+- production rollout approval
+- recommendation behavior
+- ranking behavior
+- selection behavior
+- prediction behavior
+- pitcher advice
+- matchup advice
+- decision automation
+
+Recommended next milestone:
+
+```text
+V4 Phase 26 - Frontend Explanation Runtime Evidence Capture And Production Review Gate
+```
+
+## BaseballOS V4 Phase 26 Production Rollout Review
+
+BaseballOS V4 Phase 26 Production Rollout Review is complete.
+
+The Phase 26 record is:
+
+- `docs/V4_PHASE_26_PRODUCTION_ROLLOUT_REVIEW.md`
+
+Phase 26 records completed retained runtime evidence for certified V4 frontend
+explanation surfaces and approves production rollout for that certified scope.
+
+Prior rollout status:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+CONTROLLED_ROLLOUT_REVIEW_REQUIRED
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Evidence decisions:
+
+| Evidence area | Decision |
+| --- | --- |
+| Desktop Review | PASS |
+| Mobile Review | PASS |
+| Accessibility Smoke Review | PASS |
+| Fail-Closed Review | PASS |
+| Governance Review | PASS |
+| Dashboard Anti-Regression Review | PASS |
+| Explanation Review | PASS |
+| Evidence Review | PASS |
+| Metadata Review | PASS |
+| Limitations Review | PASS |
+
+Phase 26 final decision:
+
+```text
+V4_PHASE_26_PRODUCTION_ROLLOUT_APPROVED
+```
+
+Phase 26 production rollout status:
+
+```text
+FULL_PRODUCTION_ROLLOUT_APPROVED
+```
+
+Phase 26 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+recommendation_made === false
+prediction_made === false
+decision_scope === "explanation_only"
+advice_scope === "none"
+```
+
+Phase 26 production approval does not authorize:
+
+- ranking
+- selection
+- prediction
+- best-arm recommendations
+- pitcher usage advice
+- matchup advice
+- automated decision-making
+
+Required future V4+ state:
+
+- deterministic explanations
+- fail-closed behavior
+- explanation-only language
+- governance metadata visibility
+- on-demand evidence disclosure
+- Dashboard anti-bloat constraints
+
+Recommended next milestone:
+
+```text
+V4 Phase 27 - Post-Rollout Monitoring And Governance Preservation Review
+```
+
+## BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition
+
+BaseballOS V5 Phase 1 Bullpen Intelligence Surface Capability Definition is
+approved.
+
+The Phase 1 record is:
+
+- `docs/V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION.md`
+
+Phase 1 approves only the capability definition for governed observation
+surfacing. V5 may describe inventory observations, readiness observations,
+availability movement observations, workload pressure observations, constraint
+summaries, freshness protection observations, trust-aware warnings, and
+explanation-backed intelligence summaries when derived from existing trusted
+BaseballOS state.
+
+Phase 1 decision:
+
+```text
+V5_PHASE_1_BULLPEN_INTELLIGENCE_SURFACE_CAPABILITY_DEFINITION_APPROVED
+V5_PHASE_1_CAPABILITY_DEFINITION_APPROVED
+```
+
+Phase 1 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 1 does not authorize:
+
+- backend implementation
+- frontend implementation
+- API contract changes
+- database schema changes
+- runtime behavior changes
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5 Phase 2 - Bullpen Intelligence Surface Observation Taxonomy
+```
+
+## BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy
+
+BaseballOS V5 Phase 2 Bullpen Intelligence Surface Observation Taxonomy is
+approved.
+
+The Phase 2 record is:
+
+- `docs/V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY.md`
+
+Phase 2 approves only the observation taxonomy for governed observation
+surfacing. It defines the authorized V5 observation families, approved trusted
+inputs, expected future output fields, governance boundary matrix, observation
+language rules, fail-closed requirements, and future implementation guidance.
+
+Authorized observation families:
+
+- Inventory Observations
+- Readiness Observations
+- Workload Pressure Observations
+- Constraint Observations
+- Freshness Observations
+- Trust Observations
+- Availability Movement Observations
+- Snapshot Change Observations
+
+Phase 2 decision:
+
+```text
+V5_PHASE_2_BULLPEN_INTELLIGENCE_SURFACE_OBSERVATION_TAXONOMY_APPROVED
+V5_PHASE_2_OBSERVATION_TAXONOMY_APPROVED
+```
+
+Phase 2 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 2 does not authorize:
+
+- backend implementation
+- frontend implementation
+- API contract changes
+- database schema changes
+- runtime behavior changes
+- tests
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5 Phase 3 - Bullpen Intelligence Surface Architecture Definition
+```
+
+## BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition
+
+BaseballOS V5 Phase 3 Bullpen Intelligence Surface Architecture Definition is
+approved.
+
+The Phase 3 record is:
+
+- `docs/V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION.md`
+
+Phase 3 approves only the architecture definition for governed observation
+surfacing. It defines the observation lifecycle, observation domain
+architecture, observation builder architecture, evidence architecture, trust
+architecture, severity architecture, fail-closed architecture, frontend surface
+architecture, governance protection layer, and Phase 4 boundary.
+
+Phase 3 decision:
+
+```text
+V5_PHASE_3_BULLPEN_INTELLIGENCE_SURFACE_ARCHITECTURE_DEFINITION_APPROVED
+V5_PHASE_3_ARCHITECTURE_APPROVED
+```
+
+Phase 3 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 3 does not authorize:
+
+- backend implementation
+- frontend implementation
+- API contract changes
+- database schema changes
+- runtime behavior changes
+- tests
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5 Phase 4 - Observation Domain And Contracts
+```
+
+## BaseballOS V5 Phase 4 Observation Domain And Contracts
+
+BaseballOS V5 Phase 4 Observation Domain And Contracts is complete.
+
+The Phase 4 record is:
+
+- `docs/V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS.md`
+
+Phase 4 implements the backend observation domain and contract foundation for
+governed observation surfacing. It adds governed enum vocabularies, dataclass
+contracts, serialization helpers, contract validators, prohibited-language
+safeguards, collection serialization, and focused backend tests.
+
+Phase 4 implementation files:
+
+- `backend/observations/enums.py`
+- `backend/observations/contracts.py`
+- `backend/observations/validators.py`
+- `backend/observations/__init__.py`
+- `backend/tests/test_observation_contracts.py`
+
+Phase 4 decision:
+
+```text
+V5_PHASE_4_OBSERVATION_DOMAIN_AND_CONTRACTS_COMPLETE
+V5_PHASE_4_BACKEND_FOUNDATION_CERTIFIED
+```
+
+Phase 4 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 4 does not authorize:
+
+- observation builders
+- API routes
+- frontend UI
+- database migrations
+- runtime observation generation
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION
+```
+
+## BaseballOS V5 Phase 5 Observation Builder Foundation
+
+BaseballOS V5 Phase 5 Observation Builder Foundation is complete.
+
+The Phase 5 record is:
+
+- `docs/V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION.md`
+
+Phase 5 implements deterministic backend observation builders for governed
+observation surfacing. It adds supplied-state builders, fail-closed
+suppression, evidence propagation, trust and freshness propagation, collection
+assembly, and focused backend tests.
+
+Phase 5 implementation files:
+
+- `backend/observations/builders.py`
+- `backend/observations/__init__.py`
+- `backend/tests/test_observation_builders.py`
+
+Phase 5 decision:
+
+```text
+V5_PHASE_5_OBSERVATION_BUILDER_FOUNDATION_COMPLETE
+```
+
+Phase 5 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 5 does not authorize:
+
+- API routes
+- frontend UI
+- database migrations
+- live runtime integration
+- runtime observation generation
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_6_OBSERVATION_API_SURFACE
+```
+
+## BaseballOS V5 Phase 6 Observation API Surface
+
+BaseballOS V5 Phase 6 Observation API Surface is complete.
+
+The Phase 6 record is:
+
+- `docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md`
+
+Phase 6 implements a backend read-only API surface for governed observation
+surfacing. It adds deterministic supplied-state API assembly, `GET
+/api/observations`, `POST /api/observations/preview`, fail-closed API
+responses, governed collection serialization, route registration, and focused
+API tests.
+
+Phase 6 implementation files:
+
+- `backend/api/observations.py`
+- `backend/observations/api_assembly.py`
+- `backend/app.py`
+- `backend/tests/test_observation_api.py`
+
+Phase 6 decision:
+
+```text
+V5_PHASE_6_OBSERVATION_API_SURFACE_COMPLETE
+```
+
+Phase 6 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 6 route paths:
+
+```text
+GET /api/observations
+POST /api/observations/preview
+```
+
+Phase 6 does not authorize:
+
+- frontend UI
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE
+```
+
+## BaseballOS V5 Phase 7 Frontend Intelligence Surface
+
+BaseballOS V5 Phase 7 Frontend Intelligence Surface is complete.
+
+The Phase 7 record is:
+
+- `docs/V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE.md`
+
+Phase 7 implements a frontend read-only Bullpen Intelligence surface for
+governed observation surfacing. It adds `GET /api/observations` client
+normalization, a Dashboard panel, evidence display, limitation display, trust
+status, freshness status, confidence status, explanation references,
+empty/protected state handling, API failure handling, and focused frontend
+tests.
+
+Phase 7 implementation files:
+
+- `frontend/src/types/observations.js`
+- `frontend/src/components/observations/BullpenIntelligencePanel.jsx`
+- `frontend/src/utils/api.js`
+- `frontend/src/components/dashboard/Dashboard.jsx`
+- `frontend/src/index.css`
+- `frontend/tests/bullpenIntelligencePanel.test.mjs`
+
+Phase 7 decision:
+
+```text
+V5_PHASE_7_FRONTEND_INTELLIGENCE_SURFACE_COMPLETE
+```
+
+Phase 7 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 7 frontend route consumption:
+
+```text
+GET /api/observations
+```
+
+Phase 7 does not authorize:
+
+- backend decision logic
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+- production certification
+- controlled rollout approval
+- production rollout approval
+
+Recommended next milestone:
+
+```text
+V5_PHASE_8_GOVERNANCE_CERTIFICATION
+```
+
+## BaseballOS V5 Phase 8 Governance Certification
+
+BaseballOS V5 Phase 8 Governance Certification is complete.
+
+The Phase 8 record is:
+
+- `docs/V5_PHASE_8_GOVERNANCE_CERTIFICATION.md`
+
+Phase 8 certifies the governed Bullpen Intelligence Surface across Phase 4
+contracts, Phase 5 deterministic builders, Phase 6 read-only API surface,
+Phase 7 frontend surface, documentation, tests, fail-closed behavior, trust,
+freshness, confidence, and prohibited behavior safeguards.
+
+Phase 8 decision:
+
+```text
+V5_PHASE_8_GOVERNANCE_CERTIFIED
+```
+
+Phase 8 rollout readiness state:
+
+```text
+CONTROLLED_ROLLOUT_READY
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 8 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 8 reviewed:
+
+- backend observation contracts
+- deterministic observation builders
+- `GET /api/observations`
+- `POST /api/observations/preview`
+- frontend Bullpen Intelligence panel
+- frontend observation client normalization
+- evidence, limitations, trust, freshness, confidence, and explanation display
+- allowed and forbidden language tests
+- fail-closed API, builder, contract, and frontend states
+
+Phase 8 does not authorize:
+
+- full production rollout
+- backend decision logic
+- database migrations
+- live runtime integration
+- runtime observation generation from MLB data
+- ranking
+- selection
+- pitcher recommendations
+- matchup advice
+- best-arm language
+- closer/setup/role advice
+- prediction
+- automated decision-making
+
+Recommended next milestone:
+
+```text
+V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW
+```
+
+## BaseballOS V5 Phase 9 Controlled Rollout Review
+
+BaseballOS V5 Phase 9 Controlled Rollout Review is complete.
+
+The Phase 9 record is:
+
+- `docs/V5_PHASE_9_CONTROLLED_ROLLOUT_REVIEW.md`
+
+Phase 9 reviews the governed Bullpen Intelligence Surface across contracts,
+deterministic builders, read-only API routes, frontend rendering,
+documentation, tests, fail-closed behavior, trust, freshness, confidence,
+evidence, limitations, and preserved governance flags.
+
+Phase 9 decision:
+
+```text
+V5_PHASE_9_CONTROLLED_ROLLOUT_APPROVED
+```
+
+Phase 9 rollout state:
+
+```text
+CONTROLLED_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 9 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 9 approved controlled rollout only. It does not authorize full
+production rollout, backend decision logic, database migrations, live runtime
+integration, runtime observation generation from MLB data, API expansion,
+frontend feature expansion, new observation families, ranking, selection,
+pitcher recommendations, matchup advice, best-arm language, role advice,
+prediction, or automated decision-making.
+
+Next milestone:
+
+```text
+V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW
+```
+
+## BaseballOS V5 Phase 10 Production Rollout Review
+
+BaseballOS V5 Phase 10 Production Rollout Review is complete.
+
+The Phase 10 record is:
+
+- `docs/V5_PHASE_10_PRODUCTION_ROLLOUT_REVIEW.md`
+
+Phase 10 reviews the governed Bullpen Intelligence Surface across contracts,
+deterministic builders, read-only API routes, frontend rendering,
+documentation, tests, fail-closed behavior, trust, freshness, confidence,
+evidence, limitations, Phase 8 governance certification, Phase 9 controlled
+rollout approval, and preserved governance flags.
+
+Phase 10 decision:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 10 classification:
+
+```text
+PRODUCTION_ROLLOUT_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_REQUIRED
+```
+
+Phase 10 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 10 does not approve full production rollout because retained
+controlled-rollout monitoring, production browser, accessibility smoke,
+fail-closed, governance-copy, and preserved false-flag evidence is incomplete.
+
+Required evidence before any renewed production approval review:
+
+```text
+CONTROLLED_ROLLOUT_MONITORING_EVIDENCE
+MANUAL_BROWSER_EVIDENCE
+ACCESSIBILITY_SMOKE_EVIDENCE
+FAIL_CLOSED_EVIDENCE
+GOVERNANCE_COPY_EVIDENCE
+PRESERVED_FALSE_FLAG_EVIDENCE
+```
+
+## BaseballOS V5 Phase 11 Production Evidence Review
+
+BaseballOS V5 Phase 11 Production Evidence Review is complete.
+
+The Phase 11 record is:
+
+- `docs/V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW.md`
+
+Phase 11 is a documentation-only production evidence review for the governed
+Bullpen Intelligence Surface. It records retained manual evidence for API
+behavior, frontend rendering, governance copy, accessibility smoke,
+fail-closed behavior, controlled rollout observation, and preserved false
+governance flags.
+
+Phase 11 decision:
+
+```text
+V5_PHASE_11_PRODUCTION_EVIDENCE_REVIEW_COMPLETE
+PRODUCTION_EVIDENCE_RETAINED
+READY_FOR_FULL_PRODUCTION_ROLLOUT_APPROVAL
+```
+
+Phase 11 production rollout state:
+
+```text
+FULL_PRODUCTION_ROLLOUT_NOT_APPROVED
+```
+
+Phase 11 reviewed manual observations confirming:
+
+- `GET /api/observations` returned governed observation payloads.
+- `ranking_applied` remained false.
+- `selection_made` remained false.
+- observation evidence rendered.
+- observation limitations rendered.
+- trust, freshness, and confidence rendered.
+- frontend governance copy was visible.
+- accessibility smoke was green.
+- `POST /api/observations/preview` with `{}` returned `400 BAD REQUEST`.
+- fail-closed response stated observation output was withheld by the API
+  fail-closed boundary.
+- no recommendation, ranking, selection, matchup advice, pitcher advice, or
+  manager advice was observed.
+
+Phase 11 resolves the Phase 10 production evidence blocker by retaining the
+manual evidence required for a renewed production approval review. It does not
+approve full production rollout.
+
+Next milestone:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL
+```
+
+## BaseballOS V5 Phase 12 Full Production Rollout Approval
+
+BaseballOS V5 Phase 12 Full Production Rollout Approval is complete.
+
+The Phase 12 record is:
+
+- `docs/V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVAL.md`
+
+Phase 12 is the final V5 governance approval milestone. It reviews the
+authoritative Phase 8 governance certification, Phase 9 controlled rollout
+review, Phase 10 production rollout review, and Phase 11 production evidence
+review.
+
+Phase 12 decision:
+
+```text
+V5_PHASE_12_FULL_PRODUCTION_ROLLOUT_APPROVED
+FULL_PRODUCTION_ROLLOUT_APPROVED
+```
+
+Approval is granted because:
+
+```text
+GOVERNANCE_CERTIFICATION_PASSED
+CONTROLLED_ROLLOUT_PASSED
+PRODUCTION_REVIEW_PASSED
+EVIDENCE_RETENTION_COMPLETED
+NO_UNRESOLVED_BLOCKERS_REMAIN
+```
+
+Phase 12 preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+Phase 12 approves full production rollout for the certified V5 Bullpen
+Intelligence Surface only. It does not authorize backend changes, frontend
+changes, API changes, database changes, observation-builder changes, contract
+changes, test changes, feature work, future runtime observation generation
+from MLB data, future observation-family expansion, ranking, selection,
+prediction, pitcher recommendations, matchup advice, manager advice, best-arm
+language, role advice, or automated decision-making.
+
+## V2 Production Fail-Closed Diagnosis
+
+Recommendation Engine V2 Production Fail-Closed Diagnosis is complete.
+
+The diagnosis record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_DIAGNOSIS.md`
+
+The diagnosis decision is:
+
+```text
+Fail-closed functioning correctly but UI communication insufficient
+```
+
+The diagnosis finds that the observed production `FAIL-CLOSED` surface is a
+degraded non-critical response triggered by stale source evidence, not by trust
+metadata failure, ranking behavior, selection behavior, prediction behavior, or
+global sync-status failure.
+
+The recommended next milestone is:
+
+```text
+V2 Production Fail-Closed Communication and Freshness Metadata Remediation Plan
+```
+
+This diagnosis does not change backend recommendation logic, API contracts,
+trust logic, freshness logic, refusal logic, fatigue formulas, frontend runtime
+behavior, ranking behavior, selection behavior, prediction behavior, best
+option behavior, preferred option behavior, or recommended option behavior.
+
+## V2 Production Fail-Closed Communication and Freshness Metadata Remediation
+
+Recommendation Engine V2 Production Fail-Closed Communication and Freshness
+Metadata Remediation is complete.
+
+The remediation record is:
+
+- `docs/V2_PRODUCTION_FAIL_CLOSED_COMMUNICATION_AND_FRESHNESS_REMEDIATION.md`
+
+The remediation implements the diagnosis-recommended next milestone by exposing
+sync status, sync timestamp, source freshness status, aggregate V2 freshness
+status, fail-closed reason code, user-facing reason summary, trust failure
+status, freshness failure status, and safe partial-output status in the V2
+bullpen-state response and Dashboard rendering.
+
+The remediated Dashboard communication uses the degraded freshness-protection
+state instead of presenting the surface as generically broken when stale source
+freshness is the active refusal reason.
+
+The remediation preserves:
+
+```text
+ranking_applied === false
+selection_made === false
+```
+
+It does not change backend recommendation logic, API eligibility, candidate
+grouping, trust criteria, freshness criteria, refusal criteria, fail-closed
+criteria, fatigue formulas, ranking behavior, selection behavior, prediction
+behavior, best option behavior, preferred option behavior, recommended option
+behavior, hidden priority ordering, pitcher-level advice, or matchup advice.
+
+The recommended next milestone is:
+
+```text
+V2 Production Fail-Closed Monitoring and Source-Freshness Distribution Review
+```
+
+## Future Expansion Boundary
+
+Future recommendation work belongs in Recommendation Engine V2 or later.
+
+Possible future expansion areas include:
+
+- bullpen-level intelligence
+- team-level stress intelligence
+- bullpen inventory visibility
+- API-visible grouped eligibility reporting when separately authorized
+- bullpen readiness reporting
+- neutral planning support with explicit governance review
+- advanced decision-support layers
+- role-aware recommendation behavior
+- simulator integration
+
+This project state document does not authorize further Recommendation Engine
+API exposure beyond the approved V2 bullpen-state endpoint, user-facing V2 UI
+surfaces beyond the governed Phase 10 rendering layer, Phase 10B Bullpen
+selected-pitcher layout remediation, Phase 11 mobile/accessibility validation,
+Phase 12 certification readiness validation, and Phase 13 formal
+certification review, V2.5 Phase 14 inventory presentation optimization, and
+V2.5 Phase 15 intelligence presentation optimization, production rollout
+within the Phase 16-approved current certified V2 experience, or Phase 17
+post-rollout monitoring and boundary review, or Phase 18 maintenance warning
+remediation review, or Phase 19 prototype surface maintenance review, or
+Phase 20 prototype promotion and deprecation policy, or Phase 21 lifecycle
+enforcement checklist, or Phase 22 lifecycle review log and adoption audit,
+or Phase 23 lifecycle evidence backfill and owner assignment plan, or Phase 24
+lifecycle evidence packet template and initial backfill, or Phase 25 lifecycle
+evidence packet review and backfill execution, or Phase 26 lifecycle evidence
+citation backfill and stewardship review, or Phase 27 lifecycle evidence
+section-level citation map, or Phase 28 evidence ownership, monitoring
+artifact, and test mapping closeout, or Phase 29 governance hardening closeout
+and V3 readiness decision, or V3 Phase 1 product capability review and
+priority decision, or V3 Phase 2 Team Operations Bullpen Readiness capability
+definition, or V3 Phase 3 Team Operations Bullpen Readiness implementation
+plan, or V3 Phase 4 Team Operations Bullpen Readiness API contract and
+certification requirements, or V3 Phase 5 Team Operations Bullpen Readiness
+backend domain foundation, or V3 Phase 6 Team Operations Bullpen Readiness
+internal API route integration, or V3 Phase 7 Team Operations Bullpen
+Readiness route certification-readiness review, or V3 Phase 8 Team Operations
+Bullpen Readiness frontend integration plan, or V3 Phase 9 Team Operations
+Bullpen Readiness frontend client normalization and contract tests, or V3
+Phase 10 Team Operations Bullpen Readiness Dashboard UI integration, or V3
+Phase 11 Team Operations Bullpen Readiness Dashboard UI certification-readiness
+review, or V3 Phase 12 Team Operations Bullpen Readiness formal certification
+plan and rollout prerequisites, or V3 Phase 13 Team Operations Bullpen
+Readiness formal certification review, or V3 Phase 14 Team Operations Bullpen
+Readiness controlled rollout and monitoring, or V3 Phase 15 Team Operations
+Bullpen Readiness deployment smoke review and controlled rollout decision, or
+V3 Phase 16 Team Operations Bullpen Readiness deployment evidence and manual
+smoke review, or V3 Phase 17 Team Operations Bullpen Readiness deployment
+environment manual review, or Operational Review 1 deployment configuration
+and environment classification investigation, or V2 production fail-closed
+communication and freshness metadata remediation. Phase 29 authorizes V3
+product capability
+planning only. V3 Phase 1 selects the next planning direction only. V3 Phase 2
+defines the selected capability only. V3 Phase 3 defines implementation
+planning only. V3 Phase 4 defines contract and certification planning only.
+V3 Phase 5 authorizes only the backend Team Operations domain foundation and
+tests. V3 Phase 6 authorizes only the internal, non-production, uncertified
+route integration and tests. It does not authorize public exposure, frontend
+runtime behavior, production certification, or production rollout. V3 Phase 7
+authorizes only certification-readiness documentation for the internal route
+and classifies it as ready for frontend integration planning. It does not
+authorize frontend implementation, public exposure, production certification,
+or production rollout. V3 Phase 8 authorizes only frontend integration
+planning for the internal route. It does not authorize frontend implementation,
+frontend client code, public exposure, production certification, or production
+rollout. V3 Phase 9 authorizes only frontend client normalization and contract
+tests for the internal route. It does not authorize Dashboard UI
+implementation, public exposure, production certification, production rollout,
+or Recommendation Engine V2 contract changes. V3 Phase 10 authorizes only the
+internal, non-production, uncertified Dashboard UI panel and frontend rendering
+tests for Team Operations Bullpen Readiness. It does not authorize public
+exposure, production certification, production rollout, backend route changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice. V3 Phase 11 authorizes only the
+Dashboard UI certification-readiness review and formal certification planning
+decision. It does not authorize runtime behavior changes, production
+certification, production rollout, public exposure, backend route changes,
+frontend implementation changes, Recommendation Engine V2 contract changes,
+pitcher ranking, pitcher selection, pitcher recommendation, prediction
+behavior, hidden priority ordering, pitcher-level advice, or matchup advice.
+V3 Phase 12 authorizes only the formal certification plan and rollout
+prerequisite checklist for Team Operations Bullpen Readiness. It does not
+authorize production certification, production rollout, public exposure,
+runtime behavior changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice. V3 Phase 13 authorizes only
+the formal certification review and certification decision for Team Operations
+Bullpen Readiness. It does not authorize production rollout, public exposure,
+route exposure changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice. V3 Phase 14 authorizes
+only controlled rollout planning, monitoring artifact format creation, initial
+monitoring artifact stub retention, rollback criteria, stop conditions, and
+post-rollout observation requirements for Team Operations Bullpen Readiness.
+It does not authorize full production rollout, public exposure, route exposure
+changes, backend route changes, frontend implementation changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice. V3 Phase 15 authorizes
+only deployment smoke-review evidence assessment, retained monitoring artifact
+creation, validation-result retention, and a controlled rollout decision for
+Team Operations Bullpen Readiness. It does not authorize controlled rollout
+approval while manual evidence is pending, full production rollout, public
+exposure, route exposure changes, backend route changes, frontend
+implementation changes, Recommendation Engine V2 contract changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+hidden priority ordering, pitcher-level advice, or matchup advice.
+V3 Phase 16 authorizes only local deployment evidence capture, retained
+monitoring artifact creation, validation-result retention, and a controlled
+rollout decision for Team Operations Bullpen Readiness. It does not authorize
+controlled rollout approval while deployment and manual evidence remain
+pending, full production rollout, public exposure, route exposure changes,
+backend route changes, frontend implementation changes, Recommendation Engine
+V2 contract changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+V3 Phase 17 authorizes only deployed-environment evidence capture, retained
+monitoring artifact creation, validation-result retention, and a controlled
+rollout decision for Team Operations Bullpen Readiness. It does not authorize
+controlled rollout approval while deployment configuration and manual evidence
+remain pending, full production rollout, public exposure, route exposure
+changes, backend route changes, frontend implementation changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, or matchup advice.
+Operational Review 1 authorizes only deployment configuration diagnosis,
+evidence collection, root cause analysis, rollout impact assessment, and
+remediation planning. It does not authorize runtime fixes, controlled rollout
+approval, full production rollout, public exposure, route exposure changes,
+backend route changes, frontend implementation changes, Recommendation Engine
+V2 contract changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+Operational Remediation 1 authorizes only repository-controlled documentation,
+deployment configuration guidance, local production-mode health verification,
+external Render variable requirements, and rollout-blocker retention. It does
+not authorize controlled rollout approval, full production rollout, public
+exposure, route exposure changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice.
+Operational Verification 1 authorizes only retained production health evidence,
+deployment-configuration blocker reassessment, monitoring artifact creation,
+documentation updates, validation-result retention, and follow-up planning. It
+does not authorize controlled rollout approval, full production rollout, public
+exposure, route exposure changes, backend route changes, frontend implementation
+changes, Recommendation Engine V2 contract changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, hidden priority
+ordering, pitcher-level advice, or matchup advice.
+V3 Phase 18 authorizes only manual-review status reassessment, monitoring
+artifact creation, documentation updates, validation-result retention, and
+controlled rollout decision recording. It does not authorize controlled rollout
+approval, full production rollout, public exposure, route exposure changes,
+backend route changes, frontend implementation changes, Recommendation Engine
+V2 contract changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+V3 Phase 19 authorizes only controlled rollout under the defined restrictions,
+monitoring artifact creation, documentation updates, validation-result
+retention, and controlled-rollout observation planning. It does not authorize
+full production rollout, public production certification language, backend
+route changes, frontend implementation changes, Recommendation Engine V2
+contract changes, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, hidden priority ordering, pitcher-level advice, or
+matchup advice.
+V3 Phase 20 authorizes only controlled rollout observation readiness review,
+documentation updates, observation target definition, and readiness-decision
+recording. It does not authorize full production rollout, public production
+certification language, backend behavior changes, frontend behavior changes,
+Dashboard redesign, API contract changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes,
+readiness calculation changes, trust logic changes, freshness logic changes,
+database schema changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, hidden priority ordering, pitcher-level
+advice, or matchup advice.
+V4 Phase 1 authorizes only Evidence and Explanation capability definition,
+allowed-output definition, prohibited-output definition, governance-boundary
+definition, candidate-surface identification, data-requirement identification,
+API-consideration identification, certification-requirement definition, and
+success-criteria definition. It does not authorize backend implementation,
+frontend implementation, database changes, API contract changes, runtime
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, readiness calculation changes,
+trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 2 authorizes only Evidence and Explanation architecture planning,
+explanation-scope planning, internal object-shape planning, evidence-item
+planning, reason-code planning, limitation-model planning, governance-contract
+planning, API candidate identification, frontend surface candidate
+identification, certification-requirement planning, and implementation-readiness
+decision recording. It does not authorize backend implementation, frontend
+implementation, database migration, runtime behavior changes, API route
+creation, API contract exposure, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, readiness
+calculation changes, trust logic changes, freshness logic changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 3 authorizes only Evidence and Explanation implementation planning,
+phase sequencing, backend planning, frontend planning, contract planning,
+testing strategy, certification strategy, rollout strategy, documentation
+requirements, and readiness-decision recording for the first backend domain
+foundation milestone. It does not authorize backend implementation, frontend
+implementation, database migration, runtime behavior changes, API route
+creation, API contract exposure, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, readiness
+calculation changes, trust logic changes, freshness logic changes, pitcher
+ranking, pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 4 authorizes only the internal backend Evidence and Explanation
+domain foundation, including domain contracts, scope and subject vocabularies,
+reason code constants, limitation type constants, governance payloads,
+freshness references, trust references, confidence references, validation
+helpers, deterministic serialization, focused tests, and documentation. It
+does not authorize API routes, frontend UI, database migration, availability
+integration, readiness integration, recommendation integration, dashboard
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 5 authorizes only deterministic builders, evidence helpers,
+limitation helpers, reason helpers, governance default attachment,
+deterministic ID generation, serialization support, focused tests, and
+documentation for the internal backend Evidence and Explanation layer. It does
+not authorize API routes, frontend UI, database migration, availability
+integration, readiness integration, recommendation integration, dashboard
+behavior changes, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Bullpen
+Readiness behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 6 authorizes only internal backend availability explanation adapter
+integration, deterministic explanation construction from existing Availability
+Engine outputs, reason and evidence mapping, limitation mapping, focused tests,
+and documentation. It does not authorize API route creation or exposure,
+frontend UI, dashboard behavior changes, database migration, availability
+threshold changes, availability status assignment changes, fatigue calculation
+changes, readiness integration, recommendation integration, Recommendation
+Engine behavior changes, Team Operations Bullpen Readiness behavior changes,
+production certification, rollout approval, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, best/preferred arm behavior,
+hidden priority ordering, pitcher-level advice, matchup advice, or decision
+automation.
+V4 Phase 7 authorizes only certification-readiness review documentation for
+internal backend availability explanations. It does not authorize runtime
+behavior changes, API route creation or exposure, frontend UI, dashboard
+behavior changes, database migration, availability threshold changes,
+availability status assignment changes, fatigue calculation changes, readiness
+integration, recommendation integration, Recommendation Engine behavior
+changes, Team Operations Bullpen Readiness behavior changes, trust logic
+changes, freshness logic changes, production certification, rollout approval,
+pitcher ranking, pitcher selection, pitcher recommendation, prediction
+behavior, best/preferred arm behavior, hidden priority ordering, pitcher-level
+advice, matchup advice, or decision automation.
+V4 Phase 8 authorizes only formal certification review documentation and
+certification-status recording for internal backend Availability Explanation
+Integration. It does not authorize runtime behavior changes, API route creation
+or exposure, frontend UI, dashboard behavior changes, database migration,
+availability threshold changes, availability status assignment changes, fatigue
+calculation changes, readiness explanation integration, recommendation
+explanation integration, risk distribution explanation integration,
+Recommendation Engine behavior changes, Team Operations Bullpen Readiness
+behavior changes, trust logic changes, freshness logic changes, production
+rollout approval, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred arm behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 9 authorizes only Team Operations Readiness explanation capability
+definition, user-question definition, allowed-output definition,
+prohibited-output definition, candidate-scope identification,
+candidate-evidence-source identification, candidate-reason-code identification,
+limitation-model review, governance-boundary definition,
+certification-requirement definition, and implementation-readiness decision
+recording. It does not authorize backend implementation, frontend
+implementation, API route creation or exposure, dashboard behavior changes,
+database migration, runtime behavior changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Bullpen Readiness behavior changes, trust logic changes, freshness
+logic changes, production certification, rollout approval, pitcher ranking,
+pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 10 authorizes only Team Operations Readiness explanation architecture
+planning, system-boundary definition, scope architecture planning, evidence
+mapping architecture, reason-code architecture, limitation architecture,
+builder-integration planning, conceptual object-shape planning, testing
+architecture, certification architecture, and implementation-readiness decision
+recording. It does not authorize backend implementation, frontend
+implementation, API route creation or exposure, dashboard behavior changes,
+database migration, runtime behavior changes, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Bullpen Readiness behavior changes, trust logic changes, freshness
+logic changes, production certification, rollout approval, pitcher ranking,
+pitcher selection, pitcher recommendation, prediction behavior,
+best/preferred arm behavior, hidden priority ordering, pitcher-level advice,
+matchup advice, or decision automation.
+V4 Phase 11 authorizes only internal backend Team Operations Readiness
+explanation adapter implementation, deterministic explanation construction
+from existing readiness payloads, evidence mapping, reason mapping, limitation
+mapping, focused tests, and documentation. It does not authorize API route
+creation or exposure, frontend UI, dashboard behavior changes, database
+migration, readiness calculation changes, readiness status assignment changes,
+availability calculation changes, fatigue calculation changes, Recommendation
+Engine behavior changes, trust logic changes, freshness logic changes,
+production certification, rollout approval, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred arm
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 12 authorizes only certification-readiness review documentation for
+internal backend Team Operations Readiness explanations. It does not authorize
+runtime behavior changes, API route creation or exposure, frontend UI,
+dashboard behavior changes, database migration, readiness calculation changes,
+readiness status assignment changes, availability calculation changes, fatigue
+calculation changes, Recommendation Engine behavior changes, trust logic
+changes, freshness logic changes, production certification, rollout approval,
+pitcher ranking, pitcher selection, pitcher recommendation, prediction
+behavior, best/preferred arm behavior, hidden priority ordering, pitcher-level
+advice, matchup advice, or decision automation.
+V4 Phase 13 authorizes only formal certification review documentation and
+certification-status recording for internal backend Team Operations Readiness
+Explanations. It does not authorize runtime behavior changes, API route
+creation or exposure, frontend UI, dashboard behavior changes, database
+migration, readiness calculation changes, readiness status assignment changes,
+availability calculation changes, fatigue calculation changes, Recommendation
+Engine behavior changes, trust logic changes, freshness logic changes,
+production rollout approval, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, best/preferred arm behavior, hidden
+priority ordering, pitcher-level advice, matchup advice, or decision
+automation.
+V4 Phase 14 authorizes only explanation API contract planning documentation for
+certified V4 Availability and Team Operations Readiness explanations. It does
+not authorize runtime behavior changes, API route implementation, frontend UI,
+dashboard behavior changes, database migration, availability calculation
+changes, fatigue calculation changes, readiness calculation changes, readiness
+status assignment changes, Recommendation Engine behavior changes, trust logic
+changes, freshness logic changes, rollout approval, uncertified explanation
+scope exposure, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred arm behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 15 authorizes only governed backend API route implementation for
+certified V4 Availability and Team Operations Readiness explanations. It does
+not authorize frontend UI, dashboard behavior changes, database migration,
+production route certification, rollout approval, uncertified explanation type
+exposure, future explanation scopes, Recommendation Explanations, Risk
+Distribution Explanations, availability calculation changes, fatigue
+calculation changes, readiness calculation changes, readiness status assignment
+changes, Recommendation Engine behavior changes, trust logic changes, freshness
+logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 16 authorizes only certification-readiness review documentation for
+the internal backend V4 explanation API routes. It does not authorize runtime
+behavior changes, frontend UI, dashboard behavior changes, database migration,
+formal API certification, route rollout, uncertified explanation type exposure,
+future explanation scopes, Recommendation Explanations, Risk Distribution
+Explanations, availability calculation changes, fatigue calculation changes,
+readiness calculation changes, readiness status assignment changes,
+Recommendation Engine behavior changes, trust logic changes, freshness logic
+changes, pitcher ranking, pitcher selection, pitcher recommendation,
+prediction behavior, best/preferred behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 17 authorizes only formal certification review documentation and
+certification-status recording for the internal backend V4 Explanation API
+Layer. It does not authorize runtime behavior changes, frontend UI, Dashboard
+behavior changes, database migration, route rollout, public exposure,
+uncertified explanation type exposure, future explanation scopes,
+Recommendation Explanations, Risk Distribution Explanations, availability
+calculation changes, fatigue calculation changes, readiness calculation
+changes, readiness status assignment changes, Recommendation Engine behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 18 authorizes only frontend integration planning documentation for the
+certified V4 Explanation API layer. It does not authorize frontend
+implementation, backend implementation, API implementation, Dashboard redesign,
+runtime behavior changes, database migration, route rollout, public exposure,
+uncertified explanation type exposure, future explanation scopes,
+Recommendation Explanations, Risk Distribution Explanations, availability
+calculation changes, fatigue calculation changes, readiness calculation
+changes, readiness status assignment changes, Recommendation Engine behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, prediction behavior, best/preferred
+behavior, hidden priority ordering, pitcher-level advice, matchup advice, or
+decision automation.
+V4 Phase 25 authorizes only frontend explanation controlled rollout evidence
+capture, repository-retained source/test evidence reassessment, observation
+finding classification, controlled rollout reassessment, production review
+readiness recording, and documentation updates. It does not authorize frontend
+changes, backend changes, API changes, Dashboard redesign, runtime behavior
+changes, database migration, production rollout approval, uncertified
+explanation scope exposure, future explanation surfaces, Recommendation
+Explanations, Risk Distribution Explanations, availability calculation
+changes, fatigue calculation changes, readiness calculation changes, readiness
+status assignment changes, Recommendation Engine behavior changes, trust logic
+changes, freshness logic changes, pitcher ranking, pitcher selection, pitcher
+recommendation, prediction behavior, best/preferred behavior, hidden priority
+ordering, pitcher-level advice, matchup advice, or decision automation.
+V4 Phase 26 authorizes only production rollout approval for certified V4
+frontend explanation surfaces after retained runtime evidence passed desktop,
+mobile, accessibility smoke, fail-closed, governance, Dashboard
+anti-regression, explanation, evidence, metadata, and limitation review. It
+does not authorize ranking, selection, prediction, best-arm recommendations,
+pitcher usage advice, matchup advice, automated decision-making, uncertified
+explanation scope exposure, future explanation surfaces, API contract changes,
+backend behavior changes, frontend redesign, Dashboard redesign, availability
+calculation changes, fatigue calculation changes, readiness calculation
+changes, readiness status assignment changes, Recommendation Engine behavior
+changes, trust logic changes, or freshness logic changes.
+V5 Phase 1 authorizes only Bullpen Intelligence Surface capability definition,
+governance-boundary definition, allowed observation-scope definition,
+prohibited-output definition, trusted-source requirement definition,
+freshness and confidence requirement definition, fail-closed requirement
+definition, certification requirement definition, rollout sequence definition,
+and Phase 2 taxonomy readiness recording. It does not authorize backend
+implementation, frontend implementation, API contract changes, database schema
+changes, runtime behavior changes, fatigue calculation changes, availability
+calculation changes, Recommendation Engine behavior changes, Team Operations
+Readiness behavior changes, explanation behavior changes, trust logic changes,
+freshness logic changes, pitcher ranking, pitcher selection, pitcher
+recommendation, matchup advice, best-arm language, closer/setup/role advice,
+prediction behavior, hidden priority ordering, pitcher-level advice, or
+automated decision-making.
+V5 Phase 2 authorizes only Bullpen Intelligence Surface observation taxonomy,
+authorized observation-family definition, approved input definition, expected
+future output-field definition, governance boundary matrix documentation,
+observation language rule definition, fail-closed requirement definition,
+future implementation guidance, and Phase 3 architecture definition
+readiness recording. It does not authorize backend implementation, frontend
+implementation, API contract changes, database schema changes, runtime behavior
+changes, tests, fatigue calculation changes, availability calculation changes,
+Recommendation Engine behavior changes, Team Operations Readiness behavior
+changes, explanation behavior changes, trust logic changes, freshness logic
+changes, pitcher ranking, pitcher selection, pitcher recommendation, matchup
+advice, best-arm language, closer/setup/role advice, prediction behavior,
+hidden priority ordering, pitcher-level advice, or automated decision-making.
+V5 Phase 3 authorizes only Bullpen Intelligence Surface architecture
+definition, observation lifecycle definition, observation domain architecture
+definition, observation builder architecture definition, evidence architecture
+definition, trust architecture definition, severity architecture definition,
+fail-closed architecture definition, frontend surface architecture definition,
+governance protection layer definition, and Phase 4 observation domain and
+contracts readiness recording. It does not authorize backend implementation,
+frontend implementation, API contract changes, database schema changes, runtime
+behavior changes, tests, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Readiness
+behavior changes, explanation behavior changes, trust logic changes, freshness
+logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
+matchup advice, best-arm language, closer/setup/role advice, prediction
+behavior, hidden priority ordering, pitcher-level advice, or automated
+decision-making.
+V5 Phase 4 authorizes only backend observation domain contracts, governed enum
+vocabularies, dataclass contract definitions, serialization helpers, contract
+validators, prohibited-language safeguards, collection serialization, focused
+backend tests, and Phase 5 observation builder foundation readiness recording.
+It does not authorize observation builders, API routes, frontend UI, database
+migrations, runtime observation generation, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Readiness behavior changes, explanation behavior changes, trust
+logic changes, freshness logic changes, pitcher ranking, pitcher selection,
+pitcher recommendation, matchup advice, best-arm language, closer/setup/role
+advice, prediction behavior, hidden priority ordering, pitcher-level advice,
+or automated decision-making.
+V5 Phase 5 authorizes only deterministic backend observation builders,
+supplied-state observation inputs, fail-closed suppression, evidence
+propagation, trust and freshness propagation, collection assembly, package
+exports, focused backend tests, and Phase 6 observation API surface readiness
+recording. It does not authorize API routes, frontend UI, database migrations,
+live runtime integration, runtime observation generation, fatigue calculation
+changes, availability calculation changes, Recommendation Engine behavior
+changes, Team Operations Readiness behavior changes, explanation behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, or automated decision-making.
+V5 Phase 6 authorizes only the backend read-only observation API surface,
+deterministic supplied-state API assembly, governed collection serialization,
+fail-closed API responses, route registration, focused backend tests, and
+Phase 7 frontend intelligence surface readiness recording. It does not
+authorize frontend UI, database migrations, live runtime integration, runtime
+observation generation from MLB data, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes, Team
+Operations Readiness behavior changes, explanation behavior changes, trust
+logic changes, freshness logic changes, pitcher ranking, pitcher selection,
+pitcher recommendation, matchup advice, best-arm language, closer/setup/role
+advice, prediction behavior, hidden priority ordering, pitcher-level advice,
+or automated decision-making.
+V5 Phase 7 authorizes only the frontend read-only Bullpen Intelligence surface,
+frontend observation types, `GET /api/observations` client normalization,
+Dashboard panel integration, evidence and limitation display, trust/freshness/
+confidence display, empty/protected state handling, API failure handling,
+focused frontend tests, and Phase 8 governance certification readiness
+recording. It does not authorize backend decision logic, database migrations,
+live runtime integration, runtime observation generation from MLB data,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, production rollout, or automated
+decision-making.
+V5 Phase 8 authorizes only governance certification documentation, status
+recording, certification-ledger updates, and controlled-rollout readiness
+classification for the governed Bullpen Intelligence Surface. It does not
+authorize full production rollout, backend decision logic, database migrations,
+live runtime integration, runtime observation generation from MLB data,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, controlled rollout expansion, or
+automated decision-making.
+V5 Phase 9 authorizes only controlled rollout approval documentation, status
+recording, certification-ledger updates, controlled rollout monitoring
+expectations, retained evidence requirements, and Phase 10 production rollout
+review readiness recording for the certified Bullpen Intelligence Surface. It
+does not authorize full production rollout, backend decision logic, database
+migrations, live runtime integration, runtime observation generation from MLB
+data, API expansion, frontend feature expansion, new observation families,
+fatigue calculation changes, availability calculation changes, Recommendation
+Engine behavior changes, Team Operations Readiness behavior changes,
+explanation behavior changes, trust logic changes, freshness logic changes,
+pitcher ranking, pitcher selection, pitcher recommendation, matchup advice,
+best-arm language, closer/setup/role advice, prediction behavior, hidden
+priority ordering, pitcher-level advice, or automated decision-making.
+V5 Phase 10 authorizes only production rollout review documentation, status
+recording, certification-ledger updates, evidence-gap recording, and retained
+production-readiness evidence requirements for the certified Bullpen
+Intelligence Surface. It does not authorize full production rollout, backend
+decision logic, database migrations, live runtime integration, runtime
+observation generation from MLB data, API expansion, frontend feature
+expansion, new observation families, fatigue calculation changes,
+availability calculation changes, Recommendation Engine behavior changes,
+Team Operations Readiness behavior changes, explanation behavior changes,
+trust logic changes, freshness logic changes, pitcher ranking, pitcher
+selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, or automated decision-making.
+V5 Phase 11 authorizes only production evidence review documentation, manual
+evidence retention recording, status recording, certification-ledger updates,
+Phase 10 blocker resolution recording, and Phase 12 readiness recording for
+the certified Bullpen Intelligence Surface. It does not authorize full
+production rollout, backend decision logic, backend feature logic, frontend
+logic, frontend feature expansion, API routes, API expansion, database
+changes, database migrations, live runtime integration, runtime observation
+generation from MLB data, new observation families, fatigue calculation
+changes, availability calculation changes, Recommendation Engine behavior
+changes, Team Operations Readiness behavior changes, explanation behavior
+changes, trust logic changes, freshness logic changes, pitcher ranking,
+pitcher selection, pitcher recommendation, matchup advice, best-arm language,
+closer/setup/role advice, prediction behavior, hidden priority ordering,
+pitcher-level advice, manager advice, or automated decision-making.
+V5 Phase 12 authorizes only full production rollout approval documentation,
+status recording, certification-ledger updates, and production approval
+recording for the certified V5 Bullpen Intelligence Surface. It does not
+authorize backend changes, frontend changes, API changes, database changes,
+observation-builder changes, contract changes, test changes, feature work,
+live runtime integration, runtime observation generation from MLB data, new
+observation families, fatigue calculation changes, availability calculation
+changes, Recommendation Engine behavior changes, Team Operations Readiness
+behavior changes, explanation behavior changes, trust logic changes, freshness
+logic changes, pitcher ranking, pitcher selection, pitcher recommendation,
+matchup advice, best-arm language, closer/setup/role advice, prediction
+behavior, hidden priority ordering, pitcher-level advice, manager advice, or
+automated decision-making.
+The README documentation structure refactor authorizes only documentation
+navigation and onboarding-surface cleanup. It does not authorize backend
+changes, frontend changes, runtime behavior changes, API contract changes,
+Recommendation Engine V2 contract changes, pitcher ranking, pitcher selection,
+pitcher recommendation, prediction behavior, hidden priority ordering,
+pitcher-level advice, matchup advice, controlled rollout expansion, or full
+production rollout.
+
+This project state document also does not authorize pitcher ranking, pitcher
+ordering, scoring, final pitcher selection, or new automated decision behavior.

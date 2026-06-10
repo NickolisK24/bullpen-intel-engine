@@ -537,7 +537,7 @@ function StaleToggle({ active, onToggle }) {
           )}
         </span>
         <span className="font-mono text-xs" style={{ color: labelColor }}>
-          Show stale workload pitchers
+          Show pitchers with unclear recent workload
         </span>
       </div>
       <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">

@@ -78,7 +78,7 @@ test('snapshot cards show the five availability counts', () => {
 test('bullpen health reuses the Team Context Layer statement and confidence', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
-  assert.ok(htmlIncludes(html, 'Confidence:'))
+  assert.ok(htmlIncludes(html, 'Workload Read:'))
   assert.ok(htmlIncludes(html, 'of 12 relievers are Available Tonight.'))
 })
 
@@ -114,8 +114,12 @@ test('Data & Trust page hosts the relocated trust and governance detail', () => 
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Availability Confidence'))
+  assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Exploratory Fatigue Insight'))
+  // The V5 Bullpen Intelligence surface runs on deterministic sample state, so it
+  // is not mounted on the live Trust page until it is wired to live MLB data.
+  assert.ok(!htmlIncludes(html, 'V5 Bullpen Intelligence'))
+  assert.ok(!htmlIncludes(html, 'Governed Observations'))
 })
 
 test('sidebar navigation includes a Data & Trust destination', () => {
