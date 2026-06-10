@@ -24,7 +24,6 @@ const {
   getLeagueCards,
   getBullpenStories,
   getRankingsPreview,
-  getTeamExplorerView,
   getMastheadView,
   STORIES_FALLBACK,
 } = await server.ssrLoadModule('/src/components/home/homeIntelligenceView.js')
@@ -68,14 +67,6 @@ const dashboard = {
   freshness: { data_through: '2026-06-05', last_successful_sync: '2026-06-06T08:00:00Z', is_current: true, sync_status: 'success' },
   availability_summary: { statuses: {} },
 }
-
-const teams = [
-  { team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL', pitcher_count: 8 },
-  { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM', pitcher_count: 8 },
-  { team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR', pitcher_count: 8 },
-  { team_id: 120, team_name: 'Washington Nationals', team_abbreviation: 'WSH', pitcher_count: 8 },
-  { team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC', pitcher_count: 7 },
-]
 
 const observations = {
   contractState: 'available',
@@ -246,34 +237,6 @@ test('rankings carry framing that separates bullpen shape from team quality', ()
   assert.match(rankings.updateNote, /update as new completed games/)
 })
 
-// ── Team explorer ───────────────────────────────────────────────────────────
-
-test('the team explorer lists every tracked club with board deep-links', () => {
-  const explorer = getTeamExplorerView(teams, dashboard)
-  assert.equal(explorer.count, 5)
-  const cubs = explorer.items.find(team => team.abbr === 'CHC')
-  assert.ok(cubs)
-  assert.ok(cubs.href.includes('/bullpen?'))
-  assert.ok(cubs.href.includes('team=CHC'))
-  assert.equal(cubs.tag, null)
-})
-
-test('clubs in the landscape carry story hooks, with stress taking priority', () => {
-  const explorer = getTeamExplorerView(teams, dashboard)
-  const byAbbr = Object.fromEntries(explorer.items.map(team => [team.abbr, team]))
-  assert.equal(byAbbr.MIL.tag.label, 'Running Hot')
-  assert.equal(byAbbr.TOR.tag.label, 'Watch List')
-  assert.equal(byAbbr.WSH.tag.label, 'Well Rested')
-})
-
-test('clubs carrying storylines lead the explorer; the rest follow alphabetically', () => {
-  const explorer = getTeamExplorerView(teams, dashboard)
-  assert.deepEqual(
-    explorer.items.map(team => team.abbr),
-    ['MIL', 'NYM', 'TOR', 'WSH', 'CHC'],
-  )
-})
-
 // ── Masthead ────────────────────────────────────────────────────────────────
 
 test('the masthead reports the data window in plain language', () => {
@@ -287,13 +250,12 @@ test('the masthead reports the data window in plain language', () => {
 // ── Rendering & placement ───────────────────────────────────────────────────
 
 test('the homepage renders all five sections in story-first order', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   const sections = [
     'What BaseballOS Sees Today',
     'Most Stressed Bullpen',
     'Bullpen Stories',
     'Bullpen Rankings',
-    'Explore Every Bullpen',
   ]
   let lastIndex = -1
   for (const section of sections) {
@@ -304,8 +266,15 @@ test('the homepage renders all five sections in story-first order', () => {
   }
 })
 
+test('today is curated: no team explorer, feedback CTA intact', () => {
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+  assert.ok(!htmlIncludes(html, 'Explore Every Bullpen'))
+  assert.ok(!htmlIncludes(html, 'arms tracked'))
+  assert.ok(htmlIncludes(html, 'Help shape BaseballOS'))
+})
+
 test('the hero renders the flagship observation with Why It Matters', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'Why It Matters'))
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
@@ -313,20 +282,20 @@ test('the hero renders the flagship observation with Why It Matters', () => {
 })
 
 test('the rankings framing is visible on the page', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'not a talent ranking'))
   assert.ok(htmlIncludes(html, 'Rankings update as new completed games enter the system.'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'href="/dashboard"'))
 })
 
 test('loading and error states render without data', () => {
-  const loadingHtml = render(React.createElement(HomeView, { dashboard: null, teams: null, loading: true }))
+  const loadingHtml = render(React.createElement(HomeView, { dashboard: null, loading: true }))
   assert.ok(htmlIncludes(loadingHtml, 'bullpen report'))
-  const errorHtml = render(React.createElement(HomeView, { dashboard: null, teams: null, error: 'API 500' }))
+  const errorHtml = render(React.createElement(HomeView, { dashboard: null, error: 'API 500' }))
   assert.ok(htmlIncludes(errorHtml, 'API 500'))
 })
 
@@ -335,7 +304,7 @@ test('loading and error states render without data', () => {
 test('the hero primary CTA deep-links into the featured club’s bullpen board', () => {
   const hero = getHeroStory(dashboard)
   assert.equal(hero.team.href, '/bullpen?view=board&team=MIL&source=home-hero')
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'view=board') && htmlIncludes(html, 'team=MIL'))
 })
 
@@ -400,15 +369,8 @@ test('live ranking rows link to team boards; coming-soon boards render no links'
     'every anchor in the rankings section must be a live team row')
 })
 
-test('every team explorer tile links into that club’s bullpen board', () => {
-  const explorer = getTeamExplorerView(teams, dashboard)
-  for (const team of explorer.items) {
-    assert.ok(team.href.includes('/bullpen?') && team.href.includes('view=board'), `${team.abbr} tile missing link`)
-  }
-})
-
 test('CTA language is specific, never vague', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations }))
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'Step inside this pen'))
   assert.ok(htmlIncludes(html, 'See the league view'))
   for (const vague of ['Learn more', 'Click here', '>Details<', 'Read more']) {
@@ -419,7 +381,7 @@ test('CTA language is specific, never vague', () => {
 // ── Guardrails: language stays descriptive and human ───────────────────────
 
 test('the homepage avoids advisory, ranking, and prediction language', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations })).toLowerCase()
+  const html = render(React.createElement(HomeView, { dashboard, observations })).toLowerCase()
   for (const term of [
     'should use', 'best option', 'best bullpen', 'worst bullpen', 'best arm',
     'recommended', 'recommendation', 'strongest bullpen', 'weakest bullpen',
@@ -432,7 +394,7 @@ test('the homepage avoids advisory, ranking, and prediction language', () => {
 })
 
 test('the homepage avoids raw system phrasing', () => {
-  const html = render(React.createElement(HomeView, { dashboard, teams, observations })).toLowerCase()
+  const html = render(React.createElement(HomeView, { dashboard, observations })).toLowerCase()
   for (const term of [
     'availability inventory', 'readiness limitations', 'limitations are present',
     'trusted snapshot', 'snapshot', 'data state', 'data_state', 'contract',

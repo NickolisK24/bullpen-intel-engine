@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
 import Home from './components/home/Home'
+import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
 import Prospects from './components/prospects/Prospects'
@@ -16,6 +17,7 @@ export default function App() {
         <main className="flex-1 min-w-0">
           <Routes>
             <Route path="/"            element={<Home />} />
+            <Route path="/stories"     element={<Stories />} />
             <Route path="/dashboard"   element={<Dashboard />} />
             <Route path="/bullpen"     element={<Bullpen />} />
             <Route path="/prospects"   element={<Prospects />} />
