@@ -218,36 +218,39 @@ def seed_game_logs():
 
 def seed_fatigue_scores():
     """
-    Calculate fatigue scores using the 14-day window before each pitcher's
-    most recent game. Works correctly for both historical and current data.
+    Calculate fatigue scores against the canonical availability reference date
+    (latest completed workload date + 1 day), so seeded scores match what the
+    production sync paths and the dashboard read path use. This keeps a freshly
+    seeded database telling the same bullpen story as a synced one.
     """
     print("\n🔥 Calculating fatigue scores...")
+    from services.sync_metadata import canonical_fatigue_reference_date
+
+    reference_date = canonical_fatigue_reference_date()
+    if reference_date is None:
+        print("  ⚠️  No game logs to anchor fatigue scores; skipping.")
+        return 0
+
+    window_start = reference_date - timedelta(days=14)
     pitchers = Pitcher.query.filter_by(active=True).all()
     scored = 0
 
     for pitcher in pitchers:
-        latest_log = (
-            GameLog.query
-            .filter_by(pitcher_id=pitcher.id)
-            .order_by(GameLog.game_date.desc())
-            .first()
-        )
-
-        if not latest_log:
-            continue
-
-        window_start = latest_log.game_date - timedelta(days=14)
         logs = (
             GameLog.query
             .filter(
                 GameLog.pitcher_id == pitcher.id,
-                GameLog.game_date >= window_start
+                GameLog.game_date >= window_start,
+                GameLog.game_date <= reference_date,
             )
             .order_by(GameLog.game_date.desc())
             .all()
         )
 
-        score = calculate_fatigue(pitcher, logs)
+        if not logs:
+            continue
+
+        score = calculate_fatigue(pitcher, logs, reference_date=reference_date)
         db.session.add(score)
         scored += 1
 

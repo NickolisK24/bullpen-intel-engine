@@ -182,41 +182,41 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
     }
 
 
-def recalculate_all_fatigue(use_last_game_date: bool = True):
+def recalculate_all_fatigue(reference_date: date | None = None):
     """
-    Recalculate fatigue scores for every active pitcher.
+    Recalculate fatigue scores for every active pitcher against a SINGLE
+    canonical availability reference date — the latest completed MLB workload
+    date + 1 day ("tonight's availability"), resolved by
+    ``sync_metadata.canonical_fatigue_reference_date``.
 
-    If `use_last_game_date` is True (the default and the fix the daily job
-    needs) we score each pitcher relative to their most recent game date —
-    so offseason or injured-list pitchers still produce meaningful history.
-    Otherwise we score relative to today (useful for live in-season mode).
+    This is the one production authority. The scheduled APScheduler sync, the
+    GitHub Actions / manual sync endpoint, and the recalculate endpoint all flow
+    through here, so the same game logs always yield the same fatigue scores no
+    matter which path last ran. It replaces the previous split where the daily
+    job scored each pitcher at their own last game date while the sync endpoint
+    scored against the host's runtime "today" — a divergence that let one
+    database tell two different league-wide stories.
 
-    Returns the count of pitchers updated.
+    Pass ``reference_date`` only to pin the anchor explicitly (e.g. in tests);
+    production callers leave it None so the canonical date is derived from
+    durable workload metadata. Returns the count of pitchers updated.
     """
+    ref = sync_metadata.canonical_fatigue_reference_date(reference_date)
+    if ref is None:
+        # No workload data at all → nothing to anchor against.
+        return 0
+
+    window_start = ref - timedelta(days=14)
     pitchers = Pitcher.query.filter_by(active=True).all()
     updated  = 0
 
     for pitcher in pitchers:
-        if use_last_game_date:
-            latest_log = (
-                GameLog.query
-                .filter_by(pitcher_id=pitcher.id)
-                .order_by(GameLog.game_date.desc())
-                .first()
-            )
-            if not latest_log:
-                continue
-            reference_date = latest_log.game_date
-        else:
-            reference_date = date.today()
-
-        window_start = reference_date - timedelta(days=14)
         logs = (
             GameLog.query
             .filter(
                 GameLog.pitcher_id == pitcher.id,
                 GameLog.game_date  >= window_start,
-                GameLog.game_date  <= reference_date,
+                GameLog.game_date  <= ref,
             )
             .order_by(desc(GameLog.game_date))
             .all()
@@ -224,7 +224,7 @@ def recalculate_all_fatigue(use_last_game_date: bool = True):
         if not logs:
             continue
 
-        score = calculate_fatigue(pitcher, logs, reference_date=reference_date)
+        score = calculate_fatigue(pitcher, logs, reference_date=ref)
         db.session.add(score)
         updated += 1
 
@@ -323,7 +323,7 @@ def run_daily_sync(app, days_back: int = 7):
                     status['message'] = 'No games found — offseason skip.'
                     run_logger.info('No games found — offseason skip.')
 
-            pitchers_updated = recalculate_all_fatigue(use_last_game_date=True)
+            pitchers_updated = recalculate_all_fatigue()
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
             sync_metadata.finish_sync_run(
