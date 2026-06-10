@@ -202,7 +202,7 @@ export function getLeagueCards(dashboard) {
         ? 'More arms need a breather here than anywhere else in baseball.'
         : 'No pen is carrying outsized stress today — a clean league-wide picture.',
       href: stressLeader?.href || '/bullpen',
-      cta: stressLeader ? 'Step inside this pen' : 'Browse bullpens',
+      cta: stressLeader ? 'Step inside this pen' : 'Browse every bullpen',
     },
     {
       key: 'most-rested',
@@ -215,7 +215,7 @@ export function getLeagueCards(dashboard) {
         ? 'This group brings the cleanest availability picture into today.'
         : 'No pen stands out for rest today.',
       href: restLeader?.href || '/bullpen',
-      cta: restLeader ? 'Step inside this pen' : 'Browse bullpens',
+      cta: restLeader ? 'Step inside this pen' : 'Browse every bullpen',
     },
     {
       key: 'biggest-trend',
@@ -239,7 +239,7 @@ export function getLeagueCards(dashboard) {
         ? 'The surface is not alarming yet, but the recent workload is worth watching.'
         : 'No watch list stands out today.',
       href: watchLeader?.href || '/bullpen',
-      cta: watchLeader ? 'Step inside this pen' : 'Browse bullpens',
+      cta: watchLeader ? 'Step inside this pen' : 'Browse every bullpen',
     },
   ]
 }
@@ -252,47 +252,65 @@ export const STORIES_FALLBACK =
 // is constrained."). The homepage retells each family in the words a baseball
 // writer would use. Families without an editorial translation are left off
 // the page rather than shown raw — the governed text remains available on the
-// deeper surfaces.
+// deeper surfaces. Each family also carries its most useful next click:
+// league-shape stories open the league dashboard; data notes open the
+// Data & Trust page that explains what the system is working from.
 const OBSERVATION_STORY_COPY = {
   inventory: {
     kicker: 'Depth Check',
     title: 'Some clubs are running short on clean options',
     body: 'Around the league, a few pens come in with fewer fully rested arms than they would like. Depth is carrying more of the load than usual today.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
   readiness: {
     kicker: 'Rest Watch',
     title: 'Rest is becoming part of the bullpen story',
     body: 'Not every arm on a roster is truly fresh today. A handful of pens are managing rest as carefully as they manage innings.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
   workload_pressure: {
     kicker: 'Workload Watch',
     title: 'Bullpen work is running heavy around the league',
     body: 'Several pens have been busy lately, and the work has not been spread evenly. The arms carrying it have earned a closer look.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
   constraint: {
     kicker: 'Tight Margins',
     title: 'Late-inning options are tighter than usual today',
     body: 'More than one club comes in with a shorter list of fresh arms than it would like. The margin for a long night is thin in places.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
   freshness: {
     kicker: 'Data Note',
     title: 'Today’s picture is waiting on fresh games',
     body: 'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
+    href: '/trust',
+    cta: 'Open the full picture',
   },
   trust: {
     kicker: 'Data Note',
     title: 'BaseballOS is staying quiet where the data is thin',
     body: 'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
+    href: '/trust',
+    cta: 'Open the full picture',
   },
   availability_movement: {
     kicker: 'Movement',
     title: 'Availability is shifting around the league',
     body: 'Arms are rotating on and off rest around the league. Today’s availability picture is not yesterday’s.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
   snapshot_change: {
     kicker: 'What Changed',
     title: 'Last night rearranged a few bullpens',
     body: 'The newest completed games changed who is rested and who is not. Today’s bullpen picture reflects it.',
+    href: '/dashboard',
+    cta: 'See the league view',
   },
 }
 
@@ -321,6 +339,7 @@ export function getBullpenStories(dashboard, observations = null) {
       title: `The ${hidden.teamName} box score looks calm. The bullpen does not.`,
       body: `Nobody in this pen is flashing red, but ${hidden.monitor} of ${hidden.total} arms are carrying heavy recent work. The quiet surface is doing a lot of hiding.`,
       href: hidden.href,
+      cta: 'Step inside this pen',
     })
   }
 
@@ -333,6 +352,7 @@ export function getBullpenStories(dashboard, observations = null) {
       title: `The ${heaviest.teamName} keep handing the ball to the same relievers`,
       body: `${heaviest.monitor} of ${heaviest.total} arms sit on the watch list — the heaviest concentration of recent bullpen work in baseball today.`,
       href: heaviest.href,
+      cta: 'Step inside this pen',
     })
   }
 
@@ -345,6 +365,7 @@ export function getBullpenStories(dashboard, observations = null) {
       title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
       body: `${tightening.restricted} of ${tightening.total} relievers need rest today. One long night could leave this pen with very few clean options.`,
       href: tightening.href,
+      cta: 'Step inside this pen',
     })
   }
 
@@ -357,6 +378,7 @@ export function getBullpenStories(dashboard, observations = null) {
       title: `Nobody brings a more rested pen into today than the ${freshest.teamName}`,
       body: `${freshest.available} of ${freshest.total} relievers are rested and ready — the kind of depth that lets the late innings breathe.`,
       href: freshest.href,
+      cta: 'Step inside this pen',
     })
   }
 
@@ -369,6 +391,7 @@ export function getBullpenStories(dashboard, observations = null) {
       title: `The ${steady.teamName} pen is in good shape`,
       body: `${steady.available} of ${steady.total} arms come in rested, with nothing on the workload ledger to worry about today.`,
       href: steady.href,
+      cta: 'Step inside this pen',
     })
   }
 
@@ -391,7 +414,8 @@ export function getBullpenStories(dashboard, observations = null) {
       tone: OBSERVATION_TONES[observation.severity] || 'neutral',
       title: copy.title,
       body: copy.body,
-      href: '/dashboard',
+      href: copy.href,
+      cta: copy.cta,
     })
     if (seenFamilies.size >= 2) break
   }
