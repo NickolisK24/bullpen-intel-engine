@@ -1,26 +1,40 @@
 import { Link } from 'react-router-dom'
 import { homeTone } from './homeIntelligenceView'
 
-// Section 3 — Today's Bullpen Stories. Observation-led story cards in plain
-// baseball language: what the workload data shows, never what anyone should
-// do about it.
+// Section 3 — Today's Short List. The briefing cut: only the few stories that
+// matter most this morning, in plain baseball language — what the workload
+// data shows, never what anyone should do about it. The full feed lives on
+// the Stories page.
+export const SHORT_LIST_LIMIT = 3
+
 export default function BullpenStories({ stories }) {
+  const shortList = (Array.isArray(stories?.items) ? stories.items : []).slice(0, SHORT_LIST_LIMIT)
+
   return (
-    <section className="mb-8" aria-label="Today's bullpen stories">
+    <section className="mb-8" aria-label="Today's short list">
       <SectionHeading
-        title="Today’s Bullpen Stories"
-        subtitle="What the workload data is saying around the league — observations, not verdicts."
+        title="Today’s Short List"
+        subtitle="The bullpen stories that matter most this morning."
       />
 
       {!stories?.hasStories ? (
         <div className="card p-5 text-sm text-chalk400">{stories?.fallback}</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {stories.items.map((story, index) => (
+          {shortList.map((story, index) => (
             <StoryCard key={`${story.kicker}-${index}`} story={story} />
           ))}
         </div>
       )}
+
+      <div className="mt-3 text-right">
+        <Link
+          to="/stories"
+          className="inline-flex items-center rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
+        >
+          Open the full story feed →
+        </Link>
+      </div>
     </section>
   )
 }

@@ -114,8 +114,8 @@ function Masthead({ masthead }) {
 }
 
 // The flagship observation, told the way a baseball writer would lead a
-// column. Shared with the Stories page, where it runs as the featured story.
-export function HeroStory({ hero }) {
+// column. The Stories page runs the same story as a compact lede instead.
+function HeroStory({ hero }) {
   const tone = homeTone(hero.tone)
 
   return (

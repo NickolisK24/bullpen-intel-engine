@@ -107,20 +107,37 @@ test('every feed story keeps a valid existing destination', () => {
 
 // ── Page rendering ──────────────────────────────────────────────────────────
 
-test('the stories page renders header, framing, featured story, and league cards', () => {
+test('the stories page renders header, framing, compact top story, and league cards', () => {
   const html = render(React.createElement(StoriesView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'STORIES'))
   assert.ok(htmlIncludes(html, 'The bullpen stories BaseballOS is watching today'))
   assert.ok(htmlIncludes(html, 'Observations, not predictions.'))
-  // Featured story = the Today flagship, with Why It Matters and its CTA.
-  assert.ok(htmlIncludes(html, 'The Story Today'))
+  // The lede is a compact Top Story module carrying the Today flagship.
+  assert.ok(htmlIncludes(html, 'Top Story'))
   assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
-  assert.ok(htmlIncludes(html, 'Why It Matters'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
-  // League intelligence cards, linking as they do from Today.
+  // League intelligence cards remain, linking as they do from Today.
   for (const title of ['Most Stressed Bullpen', 'Most Rested Bullpen', 'Biggest Trend', 'Bullpen To Watch']) {
     assert.ok(htmlIncludes(html, title), `missing card: ${title}`)
   }
+})
+
+test('stories is the feed, not a second homepage', () => {
+  const html = render(React.createElement(StoriesView, { dashboard, observations }))
+  // No giant Today hero: no Why It Matters box, no hero chips, no hero CTAs.
+  assert.ok(!htmlIncludes(html, 'Why It Matters'))
+  assert.ok(!htmlIncludes(html, 'Rested &amp; Ready'))
+  assert.ok(!htmlIncludes(html, 'Browse every bullpen'))
+  // No rankings on the feed.
+  assert.ok(!htmlIncludes(html, 'Bullpen Rankings'))
+  assert.ok(!htmlIncludes(html, 'Top Bullpen Health'))
+  // Filters sit with the feed, ahead of the demoted league strip.
+  const filterIndex = html.indexOf('Story filters')
+  const feedCardIndex = html.indexOf('box score looks calm')
+  const leagueStripIndex = html.indexOf('Around The League')
+  assert.ok(filterIndex >= 0 && feedCardIndex >= 0 && leagueStripIndex >= 0)
+  assert.ok(filterIndex < feedCardIndex, 'filters should come before the feed cards')
+  assert.ok(feedCardIndex < leagueStripIndex, 'the feed should come before the league strip')
 })
 
 test('the feed renders story cards with club identity and filter pills with counts', () => {
