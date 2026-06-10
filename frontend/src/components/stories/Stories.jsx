@@ -209,14 +209,12 @@ function FeedStoryCard({ story }) {
       </div>
 
       {story.read && (
-        <div className="mt-2">
-          <span
-            className="inline-flex items-center gap-1.5 rounded border border-dirt bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk200"
-            title={`${story.read.concept}: ${story.read.definition} ${story.read.detail}`}
-          >
-            <span className="h-1 w-1 rounded-full" style={{ backgroundColor: homeTone(story.read.tone).dot }} aria-hidden="true" />
-            {story.read.display}
-          </span>
+        <div
+          className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-chalk500"
+          title={`${story.read.display}: ${story.read.detail}`}
+        >
+          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: homeTone(story.read.tone).dot }} aria-hidden="true" />
+          {story.read.display}
         </div>
       )}
 

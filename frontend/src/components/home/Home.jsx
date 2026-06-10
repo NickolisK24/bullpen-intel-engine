@@ -133,7 +133,7 @@ function HeroStory({ hero }) {
           {hero.read && (
             <span
               className="inline-flex items-center gap-1.5 rounded border border-dirt bg-field/60 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk200"
-              title={`${hero.read.concept}: ${hero.read.definition} ${hero.read.detail}`}
+              title={`${hero.read.display}: ${hero.read.detail}`}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: homeTone(hero.read.tone).dot }} aria-hidden="true" />
               {hero.read.display}
