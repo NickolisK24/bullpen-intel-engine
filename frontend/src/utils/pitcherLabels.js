@@ -126,6 +126,14 @@ const ROLE_KEY_TO_LABEL = Object.freeze({
   insufficient_data: PITCHER_ROLE_LABELS.LIMITED_READ,
 })
 
+const COVERAGE_ROLE_KEYS = new Set([
+  'long_multi_inning',
+  'long_relief',
+  'multi_inning',
+  'bulk',
+  'coverage',
+])
+
 const INACTIVE_ROSTER_STATUSES = new Set([
   'IL_10',
   'IL_15',
@@ -166,6 +174,72 @@ function rolePayload(card) {
   return card?.role || card?.usage_role || null
 }
 
+function normalizedRoleKey(payload) {
+  return normalizeToken(payload?.role_key || payload?.key || payload?.role_type)
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function roleEvidenceText(payload) {
+  return normalizeText(
+    payload?.role,
+    payload?.short_reason,
+    payload?.reason,
+    ...asArray(payload?.evidence),
+    ...asArray(payload?.reasons),
+  )
+}
+
+function numberValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function getUsageSampleSize(payload) {
+  for (const value of [
+    payload?.sample_size,
+    payload?.usage_sample_size,
+    payload?.appearance_count,
+    payload?.appearances,
+    payload?.recent_appearances,
+    payload?.recent_outings,
+    payload?.relief_appearances,
+  ]) {
+    const parsed = numberValue(value)
+    if (parsed != null) return parsed
+    if (Array.isArray(value)) return value.length
+  }
+
+  const evidenceText = roleEvidenceText(payload)
+  const match = evidenceText.match(/\b(\d+)\s+(?:appearance|appearances|outing|outings)\b/)
+  return match ? Number(match[1]) : null
+}
+
+function hasLowUsageSample(payload) {
+  const sampleSize = getUsageSampleSize(payload)
+  return sampleSize != null && sampleSize < 2
+}
+
+function hasWeakRoleConfidence(payload) {
+  const confidence = normalizeToken(payload?.confidence || payload?.role_confidence || payload?.usage_confidence)
+  return ['low', 'none', 'unknown'].includes(confidence)
+}
+
+function hasCoverageUsageSignal(payload) {
+  const text = roleEvidenceText(payload)
+  return text.includes('long relief') ||
+    text.includes('multi inning') ||
+    text.includes('multi innings') ||
+    text.includes('bulk') ||
+    text.includes('coverage')
+}
+
 function isMixedStarterReliever(card, payload) {
   if (!card && !payload) return false
   if (payload?.is_starter === true && payload?.is_reliever === true) return true
@@ -187,7 +261,7 @@ function isMixedStarterReliever(card, payload) {
 }
 
 function inferRoleFromText(payload) {
-  const text = normalizeText(payload?.role, payload?.short_reason, payload?.reason)
+  const text = roleEvidenceText(payload)
   if (!text) return null
   if (text.includes('high leverage') || text.includes('late leverage') || text.includes('closer')) {
     return PITCHER_ROLE_LABELS.TRUST_ARM
@@ -209,11 +283,19 @@ export function derivePitcherRoleLabel(card) {
   if (!payload || typeof payload !== 'object') {
     return cloneLabel(PITCHER_ROLE_LABELS.LIMITED_READ, 'missing_role')
   }
+
+  const key = normalizedRoleKey(payload)
+  if (hasLowUsageSample(payload) || hasWeakRoleConfidence(payload)) {
+    return cloneLabel(PITCHER_ROLE_LABELS.LIMITED_READ, 'low_usage_sample')
+  }
+
   if (isMixedStarterReliever(card, payload)) {
+    if (COVERAGE_ROLE_KEYS.has(key) && hasCoverageUsageSignal(payload)) {
+      return cloneLabel(PITCHER_ROLE_LABELS.COVERAGE_ARM, `mixed_coverage:${key}`)
+    }
     return cloneLabel(PITCHER_ROLE_LABELS.LIMITED_READ, 'mixed_starter_reliever')
   }
 
-  const key = normalizeToken(payload.role_key || payload.key || payload.role_type)
   const mapped = ROLE_KEY_TO_LABEL[key]
   if (mapped) {
     return cloneLabel(mapped, `role_key:${key}`)
