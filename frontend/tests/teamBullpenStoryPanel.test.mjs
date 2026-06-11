@@ -158,12 +158,11 @@ test('a rested club reads as the cleanest availability picture', () => {
   assert.match(story.summary, /6 arms of 8 come in rested and ready/)
 })
 
-test('single-arm counts read grammatically', () => {
+test('single-arm workload counts read grammatically after density trimming', () => {
   const story = getTeamBullpenStoryView(restedBoard)
   assert.ok(story.workloadBullets.some(bullet => bullet === '1 arm is workload-restricted after its recent use.'),
     `got: ${story.workloadBullets.join(' | ')}`)
-  assert.ok(story.workloadBullets.some(bullet => bullet === '1 arm carries enough recent work to sit on the watch list.'),
-    `got: ${story.workloadBullets.join(' | ')}`)
+  assert.equal(story.workloadBullets.length, 2)
 })
 
 test('a neutral club gets balanced story copy', () => {
@@ -216,11 +215,13 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
   assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
   assert.ok(htmlIncludes(html, 'Thin Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Limited Depth Safety'))
-  assert.ok(htmlIncludes(html, '2 of 3 Trust Arms are Clean Options or Watch Arms.'))
-  assert.ok(htmlIncludes(html, '2 Clean Options out of 7 active bullpen arms.'))
+  assert.ok(htmlIncludes(html, 'Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted.'))
+  assert.ok(htmlIncludes(html, '2 Clean Options from 7 active arms.'))
+  assert.ok(htmlIncludes(html, 'Pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
+  assert.ok(htmlIncludes(html, 'aria-label="Stable Trust Arm Availability. Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
 })
 
-test('the shape section stays label-only and avoids score or ranking language', () => {
+test('the shape section stays label-led and avoids score ranking or grade language', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   const start = html.indexOf('Today’s Bullpen Shape')
   const end = html.indexOf('What The Workload Shape Says')
@@ -228,7 +229,7 @@ test('the shape section stays label-only and avoids score or ranking language', 
 
   for (const term of [
     'Team Score', 'Bullpen Score', 'Score:', 'Rating', 'Grade', 'Index',
-    'ranking', 'ranked', 'leaderboard',
+    'ranking', 'ranked', 'leaderboard', 'scorecard',
   ]) {
     assert.ok(!shapeHtml.includes(term), `shape section leaked score/ranking language: ${term}`)
   }
