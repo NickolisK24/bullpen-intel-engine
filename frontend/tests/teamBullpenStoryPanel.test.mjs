@@ -24,9 +24,25 @@ const { getTeamBullpenStoryView, deriveStoryFamily, STORY_FRAMING_LINE } =
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
+const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
+const ROLE_KEYS = {
+  'Trust Arm': 'late_high_leverage',
+  'Bridge Arm': 'setup_bridge',
+  'Coverage Arm': 'long_multi_inning',
+  'Depth Arm': 'depth',
+}
 
 // Board payloads shaped like /api/bullpen/teams/:id/board.
-function makeBoard({ teamName, abbr, state, confidence = 'high', metrics }) {
+function makeBoard({ teamName, abbr, state, confidence = 'high', metrics, cardsByStatus = {} }) {
+  const groups = BOARD_GROUP_ORDER.map(status => {
+    const pitchers = cardsByStatus[status] || []
+    return {
+      status,
+      label: status,
+      count: pitchers.length,
+      pitchers,
+    }
+  })
   return {
     capability: 'team_bullpen_board',
     team: { team_id: 1, team_name: teamName, team_abbreviation: abbr },
@@ -36,7 +52,7 @@ function makeBoard({ teamName, abbr, state, confidence = 'high', metrics }) {
       confidence,
       limitations: [],
     },
-    groups: [],
+    groups,
     freshness: {},
     roster_status: null,
     stress: null,
@@ -44,9 +60,47 @@ function makeBoard({ teamName, abbr, state, confidence = 'high', metrics }) {
   }
 }
 
+function storyPitcher(id, name, roleLabel, status, overrides = {}) {
+  return {
+    pitcher_id: id,
+    name,
+    availability_status: status,
+    fatigue_score: 25,
+    confidence: 'high',
+    data_state: 'fresh',
+    role: {
+      role_key: ROLE_KEYS[roleLabel],
+      confidence: 'high',
+      sample_size: 4,
+      evidence: ['4 appearances in the recent window'],
+    },
+    reasons: [],
+    limitations: [],
+    ...overrides,
+  }
+}
+
 const constrainedBoard = makeBoard({
   teamName: 'Milwaukee Brewers', abbr: 'MIL', state: 'constrained',
   metrics: { total_relievers: 8, available: 2, monitor: 2, limited: 0, avoid: 3, unavailable: 1, pct_available: 25, pct_restricted: 50 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(1, 'Trevor Trust', 'Trust Arm', 'Available'),
+      storyPitcher(2, 'Brennan Bridge', 'Bridge Arm', 'Available'),
+    ],
+    Monitor: [
+      storyPitcher(3, 'Wade Watch', 'Trust Arm', 'Monitor'),
+      storyPitcher(4, 'Cal Coverage', 'Coverage Arm', 'Monitor'),
+    ],
+    Avoid: [
+      storyPitcher(5, 'Tyler Trust', 'Trust Arm', 'Avoid'),
+      storyPitcher(6, 'Cooper Coverage', 'Coverage Arm', 'Avoid'),
+      storyPitcher(7, 'Drew Depth', 'Depth Arm', 'Avoid'),
+    ],
+    Unavailable: [
+      storyPitcher(8, 'Uri Depth', 'Depth Arm', 'Unavailable'),
+    ],
+  },
 })
 
 const watchBoard = makeBoard({
@@ -138,6 +192,46 @@ test('the panel renders headline, both bullet sections, and the framing line', (
   assert.ok(htmlIncludes(html, 'What The Workload Shape Says'))
   assert.ok(htmlIncludes(html, 'What To Watch On The Board'))
   assert.ok(htmlIncludes(html, STORY_FRAMING_LINE))
+})
+
+test('the panel renders Today’s Bullpen Shape in the required order with explanations', () => {
+  const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
+  const orderedLabels = [
+    'Trust Arm Availability',
+    'Clean Options',
+    'Bullpen Pressure',
+    'Coverage Safety',
+    'Depth Safety',
+  ]
+
+  assert.ok(htmlIncludes(html, 'Today’s Bullpen Shape'))
+  let cursor = html.indexOf('Today’s Bullpen Shape')
+  for (const label of orderedLabels) {
+    const index = html.indexOf(label, cursor)
+    assert.ok(index > cursor, `${label} should render after the prior shape row`)
+    cursor = index
+  }
+  assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
+  assert.ok(htmlIncludes(html, 'Thin Clean Options'))
+  assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
+  assert.ok(htmlIncludes(html, 'Thin Coverage Safety'))
+  assert.ok(htmlIncludes(html, 'Limited Depth Safety'))
+  assert.ok(htmlIncludes(html, '2 of 3 Trust Arms are Clean Options or Watch Arms.'))
+  assert.ok(htmlIncludes(html, '2 Clean Options out of 7 active bullpen arms.'))
+})
+
+test('the shape section stays label-only and avoids score or ranking language', () => {
+  const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
+  const start = html.indexOf('Today’s Bullpen Shape')
+  const end = html.indexOf('What The Workload Shape Says')
+  const shapeHtml = html.slice(start, end)
+
+  for (const term of [
+    'Team Score', 'Bullpen Score', 'Score:', 'Rating', 'Grade', 'Index',
+    'ranking', 'ranked', 'leaderboard',
+  ]) {
+    assert.ok(!shapeHtml.includes(term), `shape section leaked score/ranking language: ${term}`)
+  }
 })
 
 test('the board view mounts the story panel above the board only when asked', () => {
