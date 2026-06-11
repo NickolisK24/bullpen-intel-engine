@@ -12,11 +12,15 @@ import {
   homeTone,
 } from '../home/homeIntelligenceView'
 import {
-  FEED_EMPTY_COPY,
+  DEFAULT_STORY_FILTER,
   STORY_FILTERS,
   filterStoryFeed,
+  getActiveStoryFilterLabel,
+  getFeedEmptyState,
   getFilterCounts,
+  getStoryFilterOption,
   getStoryFeed,
+  normalizeStoryFilter,
 } from './storiesFeedView'
 
 // BaseballOS Stories — the browseable bullpen intelligence feed. Today is the
@@ -52,7 +56,11 @@ export function StoriesView({
   const cards = getLeagueCards(dashboard)
   const feed = getStoryFeed(dashboard, observations)
   const counts = getFilterCounts(feed.items)
-  const visible = filterStoryFeed(feed.items, filter)
+  const activeFilter = normalizeStoryFilter(filter)
+  const activeOption = getStoryFilterOption(activeFilter)
+  const activeCount = counts[activeFilter] ?? 0
+  const activeLabel = getActiveStoryFilterLabel(activeFilter, activeCount)
+  const visible = filterStoryFeed(feed.items, activeFilter)
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
@@ -93,29 +101,37 @@ export function StoriesView({
               subtitle="Every storyline BaseballOS is carrying today. Pick a lane or read it all."
             />
 
-            <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Story filters">
+            <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Story filters">
               {STORY_FILTERS.map(option => (
                 <button
                   key={option.key}
                   type="button"
                   onClick={() => setFilter(option.key)}
-                  aria-pressed={filter === option.key}
+                  aria-pressed={activeFilter === option.key}
+                  aria-label={`${option.label}: ${option.description}`}
+                  title={option.description}
                   className={`rounded border px-3 py-1.5 font-mono text-xs transition-all ${
-                    filter === option.key
+                    activeFilter === option.key
                       ? 'border-amber/40 bg-amber/10 text-amber'
                       : 'border-dirt text-chalk400 hover:border-chalk400'
                   }`}
                 >
                   {option.label}
-                  <span className="ml-1.5 opacity-60">{counts[option.key] ?? 0}</span>
+                  <span className="ml-1.5 opacity-70">({counts[option.key] ?? 0})</span>
                 </button>
               ))}
             </div>
 
+            <div className="mb-4 border-y border-dirt/70 py-3">
+              <p className="font-mono text-[11px] uppercase tracking-widest text-amber/80">{activeLabel}</p>
+              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk400">{activeOption.description}</p>
+            </div>
+
             {visible.length === 0 ? (
-              <div className="card p-5 text-sm text-chalk400">
-                {FEED_EMPTY_COPY[filter] || feed.fallback}
-              </div>
+              <StoryFeedEmptyState
+                state={getFeedEmptyState(activeFilter)}
+                onReset={() => setFilter(DEFAULT_STORY_FILTER)}
+              />
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {visible.map((story, index) => (
@@ -134,6 +150,25 @@ export function StoriesView({
           </section>
         </>
       )}
+    </div>
+  )
+}
+
+function StoryFeedEmptyState({ state, onReset }) {
+  return (
+    <div className="card p-5 text-sm text-chalk400">
+      <div className="max-w-2xl">
+        <p className="text-base font-semibold text-chalk100">{state.title}</p>
+        <p className="mt-2 leading-relaxed">{state.body}</p>
+        <button
+          type="button"
+          data-reset-filter={state.resetFilter}
+          onClick={onReset}
+          className="mt-4 inline-flex items-center rounded border border-amber/30 bg-amber/10 px-3 py-1.5 font-mono text-xs text-amber transition-colors hover:border-amber/50 hover:bg-amber/15"
+        >
+          Show All Stories <span className="ml-1" aria-hidden="true">→</span>
+        </button>
+      </div>
     </div>
   )
 }

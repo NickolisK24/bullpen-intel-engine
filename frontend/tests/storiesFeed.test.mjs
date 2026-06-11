@@ -17,7 +17,19 @@ after(async () => {
 })
 
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
-const { getStoryFeed, filterStoryFeed, getFilterCounts, STORY_FILTERS, FEED_EMPTY_COPY } =
+const {
+  DEFAULT_STORY_FILTER,
+  FEED_EMPTY_COPY,
+  FEED_EMPTY_SUPPORT_COPY,
+  STORY_FILTERS,
+  filterStoryFeed,
+  getActiveStoryFilterLabel,
+  getFeedEmptyState,
+  getFilterCounts,
+  getStoryFeed,
+  getStoryFilterOption,
+  normalizeStoryFilter,
+} =
   await server.ssrLoadModule('/src/components/stories/storiesFeedView.js')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
@@ -95,6 +107,33 @@ test('filters slice the feed by lane and the counts add up', () => {
   }
 })
 
+test('filter metadata carries concise descriptions and active labels', () => {
+  for (const { key, description } of STORY_FILTERS) {
+    const option = getStoryFilterOption(key)
+    assert.equal(option.description, description)
+    assert.equal(option.description.split('.').filter(Boolean).length, 1)
+    assert.ok(getActiveStoryFilterLabel(key, 2).includes('(2)'))
+  }
+  assert.equal(normalizeStoryFilter('unknown-lane'), DEFAULT_STORY_FILTER)
+  assert.equal(getFeedEmptyState('unknown-lane').resetFilter, DEFAULT_STORY_FILTER)
+})
+
+test('missing and unknown categories degrade gracefully', () => {
+  const feed = getStoryFeed(dashboard, observations)
+  const withUnknown = [
+    ...feed.items,
+    { title: 'Unlabeled bullpen note' },
+    { title: 'Unexpected bullpen note', category: 'mystery' },
+  ]
+  const counts = getFilterCounts(withUnknown)
+  assert.equal(counts.all, withUnknown.length)
+  assert.equal(
+    counts.stressed + counts.rested + counts.watch + counts.league,
+    feed.items.length,
+  )
+  assert.equal(filterStoryFeed(withUnknown, 'mystery').length, withUnknown.length)
+})
+
 test('every feed story keeps a valid existing destination', () => {
   const feed = getStoryFeed(dashboard, observations)
   for (const item of feed.items) {
@@ -142,38 +181,94 @@ test('stories is the feed, not a second homepage', () => {
 
 test('the feed renders story cards with club identity and filter pills with counts', () => {
   const html = render(React.createElement(StoriesView, { dashboard, observations }))
+  const counts = getFilterCounts(getStoryFeed(dashboard, observations).items)
   assert.ok(htmlIncludes(html, 'The Story Feed'))
   assert.ok(htmlIncludes(html, 'TOR · Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, 'Around the league'))
-  for (const { label } of STORY_FILTERS) {
+  assert.ok(htmlIncludes(html, getActiveStoryFilterLabel('all', counts.all)))
+  for (const { key, label, description } of STORY_FILTERS) {
     assert.ok(htmlIncludes(html, label), `missing filter: ${label}`)
+    assert.ok(htmlIncludes(html, `(${counts[key]})`), `missing count for ${label}`)
+    assert.ok(htmlIncludes(html, description), `missing description for ${label}`)
   }
 })
 
 test('each filter lane renders only its stories', () => {
+  const counts = getFilterCounts(getStoryFeed(dashboard, observations).items)
   const stressed = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'stressed' }))
+  assert.ok(htmlIncludes(stressed, getActiveStoryFilterLabel('stressed', counts.stressed)))
   assert.ok(htmlIncludes(stressed, 'New York Mets'))
   assert.ok(!htmlIncludes(stressed, 'TOR · Toronto Blue Jays'))
 
   const rested = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'rested' }))
+  assert.ok(htmlIncludes(rested, getActiveStoryFilterLabel('rested', counts.rested)))
   assert.ok(htmlIncludes(rested, 'Washington Nationals'))
   assert.ok(!htmlIncludes(rested, 'New York Mets pen'))
 
   const watch = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'watch' }))
+  assert.ok(htmlIncludes(watch, getActiveStoryFilterLabel('watch', counts.watch)))
   assert.ok(htmlIncludes(watch, 'TOR · Toronto Blue Jays'))
 
   const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
+  assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
   assert.ok(htmlIncludes(league, 'Bullpen work is running heavy around the league'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })
 
-test('an empty lane explains itself instead of going blank', () => {
-  const noWatch = {
-    ...dashboard,
-    landscape: { ...dashboard.landscape, monitoring_concentration: [] },
+test('empty filter lanes explain themselves and offer a reset', () => {
+  const sparseByFilter = {
+    stressed: {
+      ...dashboard,
+      landscape: { ...dashboard.landscape, constrained_bullpens: [] },
+    },
+    rested: {
+      ...dashboard,
+      landscape: { ...dashboard.landscape, available_bullpens: [] },
+    },
+    watch: {
+      ...dashboard,
+      landscape: { ...dashboard.landscape, monitoring_concentration: [] },
+    },
+    league: dashboard,
   }
-  const html = render(React.createElement(StoriesView, { dashboard: noWatch, observations: null, initialFilter: 'watch' }))
-  assert.ok(htmlIncludes(html, FEED_EMPTY_COPY.watch))
+  const observationsByFilter = {
+    stressed: null,
+    rested: null,
+    watch: null,
+    league: null,
+  }
+
+  for (const key of ['stressed', 'rested', 'watch', 'league']) {
+    const html = render(React.createElement(StoriesView, {
+      dashboard: sparseByFilter[key],
+      observations: observationsByFilter[key],
+      initialFilter: key,
+    }))
+    assert.ok(htmlIncludes(html, FEED_EMPTY_COPY[key]), `missing empty copy for ${key}`)
+    assert.ok(htmlIncludes(html, FEED_EMPTY_SUPPORT_COPY), `missing support copy for ${key}`)
+    assert.ok(htmlIncludes(html, 'Show All Stories'), `missing reset CTA for ${key}`)
+    assert.ok(htmlIncludes(html, 'data-reset-filter="all"'), `reset CTA should target all for ${key}`)
+  }
+})
+
+test('all-feed empty state renders correctly when no stories are active', () => {
+  const emptyDashboard = {
+    ...dashboard,
+    landscape: {
+      ...dashboard.landscape,
+      constrained_bullpens: [],
+      available_bullpens: [],
+      monitoring_concentration: [],
+    },
+  }
+  const html = render(React.createElement(StoriesView, {
+    dashboard: emptyDashboard,
+    observations: null,
+    initialFilter: 'all',
+  }))
+  assert.ok(htmlIncludes(html, FEED_EMPTY_COPY.all))
+  assert.ok(htmlIncludes(html, 'All Stories (0)'))
+  assert.ok(htmlIncludes(html, 'Show All Stories'))
 })
 
 test('loading and error states render without data', () => {
