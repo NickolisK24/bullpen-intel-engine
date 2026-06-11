@@ -160,6 +160,57 @@ class TestLandscape:
         assert available[0]['team_id'] in (2, 3)       # most available arms
         assert available[0]['available'] == 5
 
+    def test_constrained_team_never_also_headlines_available(self, client):
+        # The reconciliation invariant for the user's "healthiest AND most
+        # constrained at the same time" question. Team 1 carries a deep pen
+        # (six available arms) but is genuinely constrained (four restricted
+        # of ten → constrained shape). On raw count alone it would top BOTH
+        # columns; the health-state gate must keep it out of the available
+        # frame so the two opposing public reads stay mutually exclusive.
+        records = (
+            [_fake_record(1, 'Avoid')] * 3 + [_fake_record(1, 'Unavailable')]
+            + [_fake_record(1, 'Available')] * 6
+            + [_fake_record(2, 'Available')] * 4
+        )
+        with client.application.app_context():
+            payload = build_landscape(records=records, reference_date=date.today())
+
+        constrained = payload['constrained_bullpens']
+        constrained_ids = {e['team_id'] for e in constrained}
+        available_ids = {e['team_id'] for e in payload['available_bullpens']}
+
+        # Team 1 has the most available arms in absolute terms (6 vs 4) yet is
+        # the constrained-shape club, so it must headline only the constrained
+        # frame and stay out of the available frame.
+        assert any(e['team_id'] == 1 and e['available'] == 6 for e in constrained)
+        assert 1 in constrained_ids
+        assert 1 not in available_ids
+        # No team may appear in both opposing frames.
+        assert constrained_ids.isdisjoint(available_ids)
+        # The available frame still surfaces the genuinely healthy club.
+        assert 2 in available_ids
+
+    def test_manageable_team_with_one_restricted_arm_is_not_constrained_headline(self, client):
+        # Inverse direction: a healthy club with a single restricted arm used to
+        # leak into the constrained column purely because restricted > 0. Its
+        # reconciled shape is manageable, so it must headline available only.
+        records = (
+            [_fake_record(1, 'Available')] * 9 + [_fake_record(1, 'Avoid')]
+            + [_fake_record(2, 'Avoid')] * 3 + [_fake_record(2, 'Unavailable')] * 2
+        )
+        with client.application.app_context():
+            payload = build_landscape(records=records, reference_date=date.today())
+
+        constrained_ids = {e['team_id'] for e in payload['constrained_bullpens']}
+        available_ids = {e['team_id'] for e in payload['available_bullpens']}
+
+        assert 1 in available_ids
+        assert 1 not in constrained_ids
+        # Every constrained-frame entry is genuinely a constrained-shape pen.
+        assert all(e['health_state'] == 'constrained'
+                   for e in payload['constrained_bullpens'])
+        assert constrained_ids.isdisjoint(available_ids)
+
     def test_no_forbidden_language_in_payload(self, client):
         records = [_fake_record(1, 'Avoid'), _fake_record(1, 'Monitor'), _fake_record(2, 'Available')]
         with client.application.app_context():

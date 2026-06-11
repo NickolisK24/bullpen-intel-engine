@@ -26,7 +26,11 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
-from services.bullpen_board import BOARD_GROUP_ORDER, build_team_context
+from services.bullpen_board import (
+    BOARD_GROUP_ORDER,
+    HEALTH_CONSTRAINED,
+    build_team_context,
+)
 from utils.db import db
 
 
@@ -284,18 +288,29 @@ def build_landscape(records=None, reference_date=None, freshness=None, top_n=3):
         if entry['total_relievers'] > 0
     ]
 
+    # Reconciliation: each team already carries a single, deterministic
+    # ``health_state`` from ``classify_bullpen_health`` that reconciles its
+    # available / monitor / restricted counts in priority order. That state is
+    # the authority for which public frame a bullpen may headline, so the same
+    # team can never surface as both "most available" and "most constrained"
+    # tonight. Without this gate a club with a deep pen could top the available
+    # column on raw count while a single restricted arm also placed it in the
+    # constrained column — the contradictory read this layer exists to prevent.
     constrained_bullpens = [
         entry for entry in sorted(
             entries,
             key=lambda e: (-e['restricted'], -e['pct_restricted'], e['team_name'] or ''),
         )
-        if entry['restricted'] > 0
+        if entry['restricted'] > 0 and entry['health_state'] == HEALTH_CONSTRAINED
     ][:top_n]
 
-    available_bullpens = sorted(
-        entries,
-        key=lambda e: (-e['available'], -e['pct_available'], e['team_name'] or ''),
-    )[:top_n]
+    available_bullpens = [
+        entry for entry in sorted(
+            entries,
+            key=lambda e: (-e['available'], -e['pct_available'], e['team_name'] or ''),
+        )
+        if entry['health_state'] != HEALTH_CONSTRAINED
+    ][:top_n]
 
     monitoring_concentration = [
         entry for entry in sorted(
