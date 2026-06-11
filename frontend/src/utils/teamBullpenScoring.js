@@ -470,6 +470,15 @@ function depthSafety(summary) {
   const unavailableDepthArms = depthReads[READ_LABELS.unavailable]
   const limitedReadDepthArms = depthReads[READ_LABELS.limited]
   const availableDepthArms = cleanDepthArms + watchDepthArms
+
+  // Depth Safety answers "if the primary arms become unavailable, how much
+  // fallback exists?" — which only means something when there is a usable
+  // primary corps to fall back from. A bullpen with no usable Trust Arm has no
+  // anchored late-inning option, so its Depth Arms are the front line, not
+  // fallback. This trust-anchor read is a guardrail only: Depth Safety still
+  // describes depth, and Trust Arm influence never inflates the depth count.
+  const usableTrustArms = summary.roleReadCounts.trust[READ_LABELS.clean] + summary.roleReadCounts.trust[READ_LABELS.watch]
+  const anchoredByTrust = usableTrustArms > 0
   const supportingCounts = {
     depthArms,
     availableDepthArms,
@@ -478,6 +487,8 @@ function depthSafety(summary) {
     restRestrictedDepthArms,
     unavailableDepthArms,
     limitedReadDepthArms,
+    usableTrustArms,
+    anchoredByTrust,
     activeBullpenArms: summary.activeBullpenArms,
     totalBullpenArms: summary.totalBullpenArms,
     roleKnownCount: summary.dataQuality.roleKnownCount,
@@ -491,17 +502,26 @@ function depthSafety(summary) {
     )
   }
 
-  const explanation = `${depthArms} Depth Arms in a ${summary.totalBullpenArms}-arm bullpen; ${availableDepthArms} are Clean Options or Watch Arms, ${restRestrictedDepthArms} are Rest-Restricted, and ${unavailableDepthArms} are Unavailable.`
-  if (summary.totalBullpenArms >= 8 && depthArms >= 3 && availableDepthArms >= 2) {
-    return read('depthSafety', 'Strong Depth Safety', explanation, supportingCounts)
+  const baseExplanation = `${depthArms} Depth Arms in a ${summary.totalBullpenArms}-arm bullpen; ${availableDepthArms} are Clean Options or Watch Arms, ${restRestrictedDepthArms} are Rest-Restricted, and ${unavailableDepthArms} are Unavailable.`
+  const strongByVolume = summary.totalBullpenArms >= 8 && depthArms >= 3 && availableDepthArms >= 2
+
+  // Guardrail: deep volume only reads Strong when a usable Trust Arm anchors the
+  // bullpen behind that depth. Without one, the same volume reads Stable —
+  // fallback arms with no primary corps in front of them.
+  if (strongByVolume && anchoredByTrust) {
+    return read('depthSafety', 'Strong Depth Safety', baseExplanation, supportingCounts)
   }
-  if (summary.totalBullpenArms >= 7 && depthArms >= 2 && availableDepthArms >= 1) {
+  if (strongByVolume && !anchoredByTrust) {
+    const explanation = `${baseExplanation} No usable Trust Arm anchors the bullpen, so this depth reads Stable rather than Strong — fallback volume without a primary corps in front of it.`
     return read('depthSafety', 'Stable Depth Safety', explanation, supportingCounts)
   }
-  if (depthArms >= 1 && availableDepthArms >= 1) {
-    return read('depthSafety', 'Thin Depth Safety', explanation, supportingCounts)
+  if (summary.totalBullpenArms >= 7 && depthArms >= 2 && availableDepthArms >= 1) {
+    return read('depthSafety', 'Stable Depth Safety', baseExplanation, supportingCounts)
   }
-  return read('depthSafety', 'Limited Depth Safety', explanation, supportingCounts)
+  if (depthArms >= 1 && availableDepthArms >= 1) {
+    return read('depthSafety', 'Thin Depth Safety', baseExplanation, supportingCounts)
+  }
+  return read('depthSafety', 'Limited Depth Safety', baseExplanation, supportingCounts)
 }
 
 export function getTeamBullpenShape(input) {
