@@ -1,4 +1,5 @@
 import { getPitcherLabels } from './pitcherLabels.js'
+import { READ_USABILITY, ROLE_INFLUENCE } from './teamWeighting.js'
 
 const READ_KEYS = Object.freeze([
   'trustAvailability',
@@ -50,6 +51,7 @@ const STATUS_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
 
 const ROLE_LABELS = {
   trust: 'Trust Arm',
+  bridge: 'Bridge Arm',
   coverage: 'Coverage Arm',
   depth: 'Depth Arm',
   limited: 'Limited Read',
@@ -110,6 +112,7 @@ function summarizePitchers(input) {
   ])
   const roleReadCounts = {
     trust: emptyLabelCounts(Object.values(READ_LABELS)),
+    bridge: emptyLabelCounts(Object.values(READ_LABELS)),
     coverage: emptyLabelCounts(Object.values(READ_LABELS)),
     depth: emptyLabelCounts(Object.values(READ_LABELS)),
   }
@@ -122,6 +125,7 @@ function summarizePitchers(input) {
     if (roleCounts[roleLabel] != null) roleCounts[roleLabel] += 1
     if (readCounts[readLabel] != null) readCounts[readLabel] += 1
     if (roleLabel === ROLE_LABELS.trust) roleReadCounts.trust[readLabel] += 1
+    if (roleLabel === ROLE_LABELS.bridge) roleReadCounts.bridge[readLabel] += 1
     if (roleLabel === ROLE_LABELS.coverage) roleReadCounts.coverage[readLabel] += 1
     if (roleLabel === ROLE_LABELS.depth) roleReadCounts.depth[readLabel] += 1
     if (cardFatigue(card) >= 70) highFatigueArms += 1
@@ -251,12 +255,68 @@ function cleanOptions(summary) {
   return read('cleanOptions', 'Very Thin Clean Options', explanation, supportingCounts)
 }
 
+// Weighted-pressure thresholds. Trust-arm stress is read on its own scale so a
+// single restricted Trust Arm (weight 3) clears the elevated bar on its own and
+// a Trust Arm pair lost clears the high bar, while the same loss among Depth
+// Arms (weight 1) does not. ``pressureShare`` is the fraction of the bullpen's
+// total role influence currently under stress, which keeps the read stable
+// across bullpen sizes.
+const TRUST_PRESSURE_HIGH = 4.5
+const TRUST_PRESSURE_ELEVATED = 2.5
+const ROLE_STRESS_ELEVATED = 2
+const PRESSURE_SHARE_HIGH = 0.45
+const PRESSURE_SHARE_ELEVATED = 0.25
+
+// Pressure contributed by a role's today-reads, scaled by role influence. Only
+// Watch / Rest-Restricted / Unavailable reads carry pressure (Clean Options and
+// Limited Reads add none), matching the prior model's inputs but weighting them
+// by role. Read pressure is the inverse of read usability, so a Watch Arm is
+// half the load of a fully lost arm.
+function rolePressure(reads, weight) {
+  if (!reads) return 0
+  const load =
+    (reads[READ_LABELS.watch] || 0) * (1 - READ_USABILITY.watch_arm) +
+    (reads[READ_LABELS.restricted] || 0) * (1 - READ_USABILITY.rest_restricted) +
+    (reads[READ_LABELS.unavailable] || 0) * (1 - READ_USABILITY.unavailable)
+  return weight * load
+}
+
 function bullpenPressure(summary) {
   const watchArmCount = summary.readCounts[READ_LABELS.watch]
   const restRestrictedCount = summary.readCounts[READ_LABELS.restricted]
   const unavailableCount = summary.readCounts[READ_LABELS.unavailable]
   const limitedReadCount = summary.readCounts[READ_LABELS.limited]
-  const pressureLoad = watchArmCount + (restRestrictedCount * 2) + (unavailableCount * 2) + summary.highFatigueArms
+
+  const trustReads = summary.roleReadCounts.trust
+  const bridgeReads = summary.roleReadCounts.bridge
+  const coverageReads = summary.roleReadCounts.coverage
+  const depthReads = summary.roleReadCounts.depth
+
+  const trustPressure = rolePressure(trustReads, ROLE_INFLUENCE.trust_arm.weight)
+  const bridgePressure = rolePressure(bridgeReads, ROLE_INFLUENCE.bridge_arm.weight)
+  const coveragePressure = rolePressure(coverageReads, ROLE_INFLUENCE.coverage_arm.weight)
+  const depthPressure = rolePressure(depthReads, ROLE_INFLUENCE.depth_arm.weight)
+  const weightedPressure = trustPressure + bridgePressure + coveragePressure + depthPressure
+
+  const fullInfluence =
+    summary.roleCounts[ROLE_LABELS.trust] * ROLE_INFLUENCE.trust_arm.weight +
+    summary.roleCounts[ROLE_LABELS.bridge] * ROLE_INFLUENCE.bridge_arm.weight +
+    summary.roleCounts[ROLE_LABELS.coverage] * ROLE_INFLUENCE.coverage_arm.weight +
+    summary.roleCounts[ROLE_LABELS.depth] * ROLE_INFLUENCE.depth_arm.weight
+  const pressureShare = fullInfluence > 0 ? weightedPressure / fullInfluence : 0
+
+  const cleanTrustArms = trustReads[READ_LABELS.clean]
+  const watchTrustArms = trustReads[READ_LABELS.watch]
+  const restrictedTrustArms = trustReads[READ_LABELS.restricted]
+  const unavailableTrustArms = trustReads[READ_LABELS.unavailable]
+  const usableTrustArms = cleanTrustArms + watchTrustArms
+  const stressedBridgeArms = bridgeReads[READ_LABELS.restricted] + bridgeReads[READ_LABELS.unavailable]
+  const stressedCoverageArms = coverageReads[READ_LABELS.restricted] + coverageReads[READ_LABELS.unavailable]
+  // No usable Trust Arm means no trusted option to lean on tonight, regardless
+  // of how many rested Depth Arms remain. This is the "meaningful options"
+  // floor: such a bullpen can never read Low and lands at least Elevated.
+  const noUsableTrust = usableTrustArms === 0
+
   const supportingCounts = {
     watchArmCount,
     restRestrictedCount,
@@ -264,6 +324,13 @@ function bullpenPressure(summary) {
     highFatigueArms: summary.highFatigueArms,
     limitedReadCount,
     totalBullpenArms: summary.totalBullpenArms,
+    cleanTrustArms,
+    restrictedTrustArms,
+    unavailableTrustArms,
+    usableTrustArms,
+    stressedBridgeArms,
+    stressedCoverageArms,
+    noUsableTrust,
   }
 
   if (summary.dataQuality.readSparse) {
@@ -274,16 +341,21 @@ function bullpenPressure(summary) {
     )
   }
 
-  const explanation = `${watchArmCount} Watch Arms, ${restRestrictedCount} Rest-Restricted, ${unavailableCount} Unavailable, and ${summary.highFatigueArms} high-fatigue arms shape bullpen pressure today.`
+  const explanation = `Trust Arms show ${cleanTrustArms} clean, ${restrictedTrustArms} Rest-Restricted, and ${unavailableTrustArms} Unavailable; ${stressedBridgeArms} Bridge Arms and ${stressedCoverageArms} Coverage Arms are stressed, alongside ${summary.highFatigueArms} high-fatigue arms. Pressure weighs Trust and Bridge Arm stress above Depth Arm stress.`
+
   if (
-    restRestrictedCount + unavailableCount >= 4 ||
-    pressureLoad >= summary.totalBullpenArms ||
+    trustPressure >= TRUST_PRESSURE_HIGH ||
+    pressureShare >= PRESSURE_SHARE_HIGH ||
     summary.stressState === 'constrained'
   ) {
     return read('bullpenPressure', 'High Bullpen Pressure', explanation, supportingCounts)
   }
   if (
-    restRestrictedCount + unavailableCount >= 2 ||
+    trustPressure >= TRUST_PRESSURE_ELEVATED ||
+    bridgePressure >= ROLE_STRESS_ELEVATED ||
+    coveragePressure >= ROLE_STRESS_ELEVATED ||
+    pressureShare >= PRESSURE_SHARE_ELEVATED ||
+    noUsableTrust ||
     watchArmCount >= 3 ||
     summary.highFatigueArms >= 2 ||
     summary.stressState === 'elevated' ||
@@ -291,7 +363,13 @@ function bullpenPressure(summary) {
   ) {
     return read('bullpenPressure', 'Elevated Bullpen Pressure', explanation, supportingCounts)
   }
-  if (restRestrictedCount === 0 && unavailableCount === 0 && watchArmCount <= 1 && summary.highFatigueArms === 0) {
+  if (
+    restRestrictedCount === 0 &&
+    unavailableCount === 0 &&
+    watchArmCount <= 1 &&
+    summary.highFatigueArms === 0 &&
+    usableTrustArms > 0
+  ) {
     return read('bullpenPressure', 'Low Bullpen Pressure', explanation, supportingCounts)
   }
   return read('bullpenPressure', 'Manageable Bullpen Pressure', explanation, supportingCounts)
