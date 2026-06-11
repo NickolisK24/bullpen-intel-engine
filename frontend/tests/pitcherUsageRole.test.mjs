@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
+import { readFile } from 'node:fs/promises'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
+import {
+  APPROVED_READ_LABELS,
+  APPROVED_ROLE_LABELS,
+} from '../src/utils/pitcherLabels.js'
 import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
@@ -31,7 +36,7 @@ const visibleText = (html) => html
   .replace(/\s+/g, ' ')
   .trim()
 
-function roleCard(name, status, role) {
+function roleCard(name, status, role, overrides = {}) {
   return {
     pitcher_id: name.length + status.length,
     name,
@@ -40,6 +45,7 @@ function roleCard(name, status, role) {
     confidence: 'high',
     data_state: 'fresh',
     role,
+    ...overrides,
   }
 }
 
@@ -103,6 +109,37 @@ test('trust and clean option chips do not carry layer prefixes', () => {
   assert.equal(text.includes('READ CLEAN OPTION'), false)
 })
 
+test('pitcher card renders role chip before read chip and ahead of caveats', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Monitor: [
+        roleCard('Terry Trust', 'Monitor', trustRole, {
+          roster_status: {
+            status: 'ACTIVE',
+            label: 'Active MLB',
+            confidence: 'high',
+            is_authoritative: true,
+          },
+        }),
+      ],
+    },
+  })
+  const html = render(board)
+  const cardStart = html.indexOf('Terry Trust')
+  const roleKindIndex = html.indexOf('data-label-kind="role"', cardStart)
+  const readKindIndex = html.indexOf('data-label-kind="read"', cardStart)
+  const roleLabelIndex = html.indexOf('Trust Arm', cardStart)
+  const readLabelIndex = html.indexOf('Watch Arm', cardStart)
+  const caveatIndex = html.indexOf('Active MLB', cardStart)
+
+  assert.ok(cardStart > -1)
+  assert.ok(roleKindIndex > cardStart)
+  assert.ok(readKindIndex > roleKindIndex)
+  assert.ok(roleLabelIndex > cardStart)
+  assert.ok(readLabelIndex > roleLabelIndex)
+  assert.ok(caveatIndex > readLabelIndex)
+})
+
 test('role explanation expands with reason, evidence, and limitations', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
   const html = render(board)
@@ -152,6 +189,44 @@ test('pitcher label key renders both label layers', () => {
   assert.ok(htmlIncludes(html, 'Rest-Restricted'))
   assert.ok(!htmlIncludes(html, 'Role</span>Trust Arm'))
   assert.ok(!htmlIncludes(html, 'Read</span>Clean Option'))
+})
+
+test('pitcher label key uses the approved public terminology only', () => {
+  const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
+  const html = render(board)
+  const keyStart = html.indexOf('Pitcher Label Key')
+  const boardStart = html.indexOf('Available Tonight', keyStart)
+  const keyHtml = html.slice(keyStart, boardStart)
+
+  for (const label of APPROVED_ROLE_LABELS) {
+    assert.ok(keyHtml.includes(label), `missing role label: ${label}`)
+  }
+  for (const label of APPROVED_READ_LABELS) {
+    assert.ok(keyHtml.includes(label), `missing read label: ${label}`)
+  }
+  for (const rejected of [
+    'Trusted Arm',
+    'High Trust Arm',
+    'Late-Inning Arm',
+    'Clean Arm',
+    'Fresh Option',
+    'Fresh Arm',
+  ]) {
+    assert.equal(keyHtml.includes(rejected), false, `introduced label variant: ${rejected}`)
+  }
+})
+
+test('pitcher label chip layout keeps mobile wrapping guards', async () => {
+  const source = await readFile(
+    new URL('../src/components/bullpen/board/BullpenBoardView.jsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.ok(source.includes('flex flex-wrap items-center gap-1.5'))
+  assert.ok(source.includes('inline-flex max-w-full items-center gap-1.5'))
+  assert.ok(source.includes('min-w-0 truncate sm:whitespace-nowrap'))
+  assert.ok(source.includes('2xl:grid-cols-2'))
+  assert.ok(source.includes('flex min-w-0 flex-wrap gap-1.5'))
 })
 
 test('visible board text does not leak prefixed label or raw label keys', () => {
