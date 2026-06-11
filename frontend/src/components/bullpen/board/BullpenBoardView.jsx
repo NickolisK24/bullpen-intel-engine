@@ -10,6 +10,11 @@ import {
   getDataProvenance,
   getRosterStatusSummaryView,
 } from './tonightsBullpenBoardView'
+import {
+  PITCHER_LABEL_KEY_COPY,
+  PITCHER_READ_LABELS,
+  PITCHER_ROLE_LABELS,
+} from '../../../utils/pitcherLabels'
 
 function FreshnessBanner({ freshness }) {
   const view = getBoardFreshnessView(freshness)
@@ -126,18 +131,27 @@ function WhyDisclosure({ reasons, limitations }) {
   )
 }
 
-function RoleChip({ role }) {
-  if (!role) return null
+function PitcherLabelChip({ label }) {
+  if (!label) return null
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
-      style={role.tone}
-      title={`Observed usage role: ${role.label} (workload read: ${role.confidenceLabel})`}
-      aria-label={`Observed usage role: ${role.label}, workload read ${role.confidenceLabel}`}
+      style={label.tone}
+      title={label.definition}
+      aria-label={`${label.label}. ${label.definition}`}
     >
-      {role.shortLabel}
-      <span className="opacity-70">· {role.confidenceLabel}</span>
+      {label.label}
     </span>
+  )
+}
+
+function PitcherLabelChips({ labels }) {
+  if (!labels?.role && !labels?.read) return null
+  return (
+    <>
+      <PitcherLabelChip label={labels.role} />
+      <PitcherLabelChip label={labels.read} />
+    </>
   )
 }
 
@@ -209,6 +223,39 @@ function RoleDisclosure({ role }) {
   )
 }
 
+function PitcherLabelKey() {
+  const roleLabels = Object.values(PITCHER_ROLE_LABELS)
+  const readLabels = Object.values(PITCHER_READ_LABELS)
+  const roleLabelText = roleLabels.map(label => label.label).join(' · ')
+  const readLabelText = readLabels.map(label => label.label).join(' · ')
+  return (
+    <section className="mb-5 rounded-lg border border-dirt bg-dugout/40 p-3" aria-label={PITCHER_LABEL_KEY_COPY.title}>
+      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk300">
+        {PITCHER_LABEL_KEY_COPY.title}
+      </h3>
+      <p className="mt-1 text-xs leading-relaxed text-chalk500">
+        {PITCHER_LABEL_KEY_COPY.roleSummary} {PITCHER_LABEL_KEY_COPY.readSummary}
+      </p>
+      <div className="mt-3 grid gap-3 text-xs leading-relaxed text-chalk300 lg:grid-cols-2">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+            {PITCHER_LABEL_KEY_COPY.roleLayer}
+          </div>
+          <p className="mt-1 text-chalk400">{PITCHER_LABEL_KEY_COPY.roleQuestion}</p>
+          <p className="mt-1 text-chalk200">{roleLabelText}</p>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+            {PITCHER_LABEL_KEY_COPY.readLayer}
+          </div>
+          <p className="mt-1 text-chalk400">{PITCHER_LABEL_KEY_COPY.readQuestion}</p>
+          <p className="mt-1 text-chalk200">{readLabelText}</p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PitcherCard({ card, onViewDetails }) {
   const view = getBoardCardView(card)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
@@ -232,10 +279,10 @@ function PitcherCard({ card, onViewDetails }) {
         </span>
       </div>
 
-      {(view.role || view.eligibility || view.rosterStatus) && (
+      {(view.pitcherLabels || view.eligibility || view.rosterStatus) && (
         <div className="mt-2 flex flex-wrap gap-2">
+          <PitcherLabelChips labels={view.pitcherLabels} />
           <RosterStatusChip rosterStatus={view.rosterStatus} />
-          <RoleChip role={view.role} />
           <EligibilityChip eligibility={view.eligibility} />
         </div>
       )}
@@ -339,11 +386,14 @@ export default function BullpenBoardView({ board, onSelectPitcher, showStoryPane
           subtitle="No active bullpen options are available under the current roster and freshness filters."
         />
       ) : (
-        <div className="grid gap-5 xl:grid-cols-2">
-          {groups.map(group => (
-            <BoardGroup key={group.status} group={group} onViewDetails={onSelectPitcher} />
-          ))}
-        </div>
+        <>
+          <PitcherLabelKey />
+          <div className="grid gap-5 xl:grid-cols-2">
+            {groups.map(group => (
+              <BoardGroup key={group.status} group={group} onViewDetails={onSelectPitcher} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

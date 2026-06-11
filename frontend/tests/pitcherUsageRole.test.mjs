@@ -26,9 +26,21 @@ const view = await server.ssrLoadModule(
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const visibleText = (html) => html
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
 
 function roleCard(name, status, role) {
-  return { pitcher_id: name.length + status.length, name, availability_status: status, role }
+  return {
+    pitcher_id: name.length + status.length,
+    name,
+    availability_status: status,
+    fatigue_score: 25,
+    confidence: 'high',
+    data_state: 'fresh',
+    role,
+  }
 }
 
 const longRole = {
@@ -38,6 +50,15 @@ const longRole = {
   short_reason: 'Recent outings show repeated multi-inning workload.',
   evidence: ['3 appearances in the recent window', 'Average recent IP: 1.9', '3 of 3 outings above 1.0 IP'],
   limitations: ['Role is inferred from recent workload patterns only.', 'Does not include manager intent.'],
+}
+
+const trustRole = {
+  role_key: 'late_high_leverage',
+  role: 'Late / High-Leverage Pattern',
+  confidence: 'high',
+  short_reason: 'Recent outings show late relief usage.',
+  evidence: ['3 late relief appearances in the recent window'],
+  limitations: ['Role is inferred from recent workload patterns only.'],
 }
 
 const lowRole = {
@@ -60,11 +81,26 @@ const insufficientRole = {
 
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 
-test('role chip renders on the pitcher card with role and confidence', () => {
+test('role and read label chips render product labels only on the pitcher card', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'Long / Multi-Inning'))
-  assert.ok(htmlIncludes(html, 'Observed usage role: Long Relief / Multi-Inning Pattern'))
+  const text = visibleText(html)
+  assert.ok(text.includes('Coverage Arm'))
+  assert.ok(text.includes('Clean Option'))
+  assert.ok(!htmlIncludes(html, 'Role</span>Coverage Arm'))
+  assert.ok(!htmlIncludes(html, 'Read</span>Clean Option'))
+  assert.ok(htmlIncludes(html, 'Observed role:'))
+  assert.ok(htmlIncludes(html, 'Long Relief / Multi-Inning Pattern'))
+})
+
+test('trust and clean option chips do not carry layer prefixes', () => {
+  const board = makeBoard({ cardsByStatus: { Available: [roleCard('Terry Trust', 'Available', trustRole)] } })
+  const html = render(board)
+  const text = visibleText(html).toUpperCase()
+  assert.ok(text.includes('TRUST ARM'))
+  assert.ok(text.includes('CLEAN OPTION'))
+  assert.equal(text.includes('ROLE TRUST ARM'), false)
+  assert.equal(text.includes('READ CLEAN OPTION'), false)
 })
 
 test('role explanation expands with reason, evidence, and limitations', () => {
@@ -77,25 +113,73 @@ test('role explanation expands with reason, evidence, and limitations', () => {
   assert.ok(htmlIncludes(html, 'Does not include manager intent.'))  // limitation
 })
 
-test('low-confidence role displays its confidence', () => {
+test('low-confidence role remains a limited role read with a watch read', () => {
   const board = makeBoard({ cardsByStatus: { Monitor: [roleCard('Stu Short', 'Monitor', lowRole)] } })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'Low / Unclear Usage'))
-  assert.ok(htmlIncludes(html, '· Unclear Read'))
+  const text = visibleText(html)
+  assert.ok(text.includes('Limited Read'))
+  assert.ok(text.includes('Watch Arm'))
+  assert.ok(!htmlIncludes(html, 'Role</span>Limited Read'))
+  assert.ok(!htmlIncludes(html, 'Read</span>Watch Arm'))
 })
 
 test('insufficient-data role displays without inventing a pattern', () => {
   const board = makeBoard({ cardsByStatus: { Unavailable: [roleCard('Newt Rookie', 'Unavailable', insufficientRole)] } })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'Insufficient Data'))
+  const text = visibleText(html)
+  assert.ok(text.includes('Limited Read'))
+  assert.ok(text.includes('Unavailable'))
   assert.ok(htmlIncludes(html, 'Not enough recent usage data to classify a role.'))
 })
 
-test('cards without a role simply omit the chip', () => {
+test('cards without a role fall back to limited role read', () => {
   const board = makeBoard({ cardsByStatus: { Available: [{ pitcher_id: 1, name: 'No Role', availability_status: 'Available' }] } })
   const html = render(board)
   assert.ok(htmlIncludes(html, 'No Role'))
-  assert.ok(!htmlIncludes(html, 'Observed usage role:'))
+  assert.ok(visibleText(html).includes('Limited Read'))
+  assert.ok(!htmlIncludes(html, 'Observed role:'))
+})
+
+test('pitcher label key renders both label layers', () => {
+  const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
+  const html = render(board)
+  assert.ok(htmlIncludes(html, 'Pitcher Label Key'))
+  assert.ok(htmlIncludes(html, 'Role:'))
+  assert.ok(htmlIncludes(html, 'Read:'))
+  assert.ok(htmlIncludes(html, 'What type of bullpen arm is this?'))
+  assert.ok(htmlIncludes(html, 'What shape is this pitcher in today?'))
+  assert.ok(htmlIncludes(html, 'Trust Arm'))
+  assert.ok(htmlIncludes(html, 'Rest-Restricted'))
+  assert.ok(!htmlIncludes(html, 'Role</span>Trust Arm'))
+  assert.ok(!htmlIncludes(html, 'Read</span>Clean Option'))
+})
+
+test('visible board text does not leak prefixed label or raw label keys', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: [roleCard('Terry Trust', 'Available', trustRole)],
+      Monitor: [roleCard('Stu Short', 'Monitor', lowRole)],
+    },
+  })
+  const html = render(board)
+  for (const term of [
+    'Role</span>Trust Arm',
+    'Read</span>Clean Option',
+    'Role</span>Bridge Arm',
+    'Read</span>Watch Arm',
+  ]) {
+    assert.equal(htmlIncludes(html, term), false, `leaked term: ${term}`)
+  }
+  const text = visibleText(html).toUpperCase()
+  for (const term of [
+    'ROLE TRUST ARM',
+    'READ CLEAN OPTION',
+    'ROLE BRIDGE ARM',
+    'ROLE_',
+    'READ_',
+  ]) {
+    assert.equal(text.includes(term), false, `leaked term: ${term}`)
+  }
 })
 
 test('role surface contains no advisory or recommendation language', () => {
