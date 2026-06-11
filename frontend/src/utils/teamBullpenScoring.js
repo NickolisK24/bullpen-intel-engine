@@ -220,11 +220,30 @@ function trustAvailability(summary) {
   return read('trustAvailability', 'Limited Trust Arm Availability', explanation, supportingCounts)
 }
 
+// Clean Options interpretation tiers, ordered weakest to strongest. The public
+// labels are unchanged; weighting only affects which tier the raw count earns.
+const CLEAN_OPTIONS_TIERS = ['Very Thin Clean Options', 'Thin Clean Options', 'Healthy Clean Options', 'Deep Clean Options']
+const CLEAN_TIER_VERY_THIN = 0
+const CLEAN_TIER_THIN = 1
+const CLEAN_TIER_HEALTHY = 2
+const CLEAN_TIER_DEEP = 3
+
 function cleanOptions(summary) {
   const cleanOptionCount = summary.readCounts[READ_LABELS.clean]
   const restRestrictedCount = summary.readCounts[READ_LABELS.restricted]
   const unavailableCount = summary.readCounts[READ_LABELS.unavailable]
   const limitedReadCount = summary.readCounts[READ_LABELS.limited]
+
+  // Clean composition by role. The raw count stays the honest headline; these
+  // tell us how many of those clean options are actually meaningful.
+  const cleanTrustArms = summary.roleReadCounts.trust[READ_LABELS.clean]
+  const cleanBridgeArms = summary.roleReadCounts.bridge[READ_LABELS.clean]
+  const cleanCoverageArms = summary.roleReadCounts.coverage[READ_LABELS.clean]
+  const cleanDepthArms = summary.roleReadCounts.depth[READ_LABELS.clean]
+  // Bridge and Coverage Arms are meaningful clean backing; Depth Arms alone are
+  // not. A bullpen whose only clean arms are Depth Arms has bodies, not options.
+  const meaningfulCleanBacking = cleanTrustArms >= 1 || cleanBridgeArms >= 1 || cleanCoverageArms >= 1
+
   const supportingCounts = {
     cleanOptionCount,
     activeBullpenArms: summary.activeBullpenArms,
@@ -232,6 +251,11 @@ function cleanOptions(summary) {
     restRestrictedCount,
     unavailableCount,
     limitedReadCount,
+    cleanTrustArms,
+    cleanBridgeArms,
+    cleanCoverageArms,
+    cleanDepthArms,
+    meaningfulCleanBacking,
   }
 
   if (summary.dataQuality.readSparse) {
@@ -242,17 +266,37 @@ function cleanOptions(summary) {
     )
   }
 
-  const explanation = `${cleanOptionCount} Clean Options out of ${summary.activeBullpenArms} active bullpen arms, with ${restRestrictedCount} Rest-Restricted and ${unavailableCount} Unavailable.`
+  // Raw count sets the honest base tier — you can never read deeper than your
+  // body count supports.
+  let tier
   if (cleanOptionCount >= 6 || (summary.activeBullpenArms >= 7 && cleanOptionCount >= 5)) {
-    return read('cleanOptions', 'Deep Clean Options', explanation, supportingCounts)
+    tier = CLEAN_TIER_DEEP
+  } else if (cleanOptionCount >= 4) {
+    tier = CLEAN_TIER_HEALTHY
+  } else if (cleanOptionCount >= 2) {
+    tier = CLEAN_TIER_THIN
+  } else {
+    tier = CLEAN_TIER_VERY_THIN
   }
-  if (cleanOptionCount >= 4) {
-    return read('cleanOptions', 'Healthy Clean Options', explanation, supportingCounts)
+
+  // Trust-backed upgrade: a genuine clean Trust Arm pair lifts a low body count
+  // into Healthy — two trusted options matter more than the count suggests.
+  if (cleanTrustArms >= 2 && tier < CLEAN_TIER_HEALTHY) {
+    tier = CLEAN_TIER_HEALTHY
   }
-  if (cleanOptionCount >= 2) {
-    return read('cleanOptions', 'Thin Clean Options', explanation, supportingCounts)
+  // Deep is reserved for a real clean Trust Arm core; depth volume alone cannot
+  // reach the strongest interpretation.
+  if (tier === CLEAN_TIER_DEEP && cleanTrustArms < 2) {
+    tier = CLEAN_TIER_HEALTHY
   }
-  return read('cleanOptions', 'Very Thin Clean Options', explanation, supportingCounts)
+  // With no meaningful clean backing at all (only clean Depth Arms), the read
+  // cannot exceed Thin no matter how many bodies are available.
+  if (!meaningfulCleanBacking && tier > CLEAN_TIER_THIN) {
+    tier = CLEAN_TIER_THIN
+  }
+
+  const explanation = `${cleanOptionCount} Clean Options out of ${summary.activeBullpenArms} active bullpen arms — ${cleanTrustArms} Trust, ${cleanBridgeArms} Bridge, ${cleanCoverageArms} Coverage, ${cleanDepthArms} Depth, with ${restRestrictedCount} Rest-Restricted and ${unavailableCount} Unavailable. Interpretation weighs clean Trust Arms above clean Depth Arms.`
+  return read('cleanOptions', CLEAN_OPTIONS_TIERS[tier], explanation, supportingCounts)
 }
 
 // Weighted-pressure thresholds. Trust-arm stress is read on its own scale so a
