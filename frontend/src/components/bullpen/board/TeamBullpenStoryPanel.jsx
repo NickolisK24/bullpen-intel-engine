@@ -74,7 +74,7 @@ function TeamBullpenShape({ reads }) {
       <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
         Today’s Bullpen Shape
       </div>
-      <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-5">
+      <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-5">
         {reads.map(read => {
           const tone = homeTone(read.tone)
           return (
@@ -82,14 +82,18 @@ function TeamBullpenShape({ reads }) {
               <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
                 {read.concept}
               </dt>
-              <dd className="mt-0.5 min-w-0" title={read.explanation}>
+              <dd
+                className="mt-0.5 min-w-0"
+                title={read.explanation}
+                aria-label={`${read.label}. ${read.explanation}`}
+              >
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
                   <span className="min-w-0 text-xs font-semibold leading-snug text-chalk100">
                     {read.label}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[11px] leading-snug text-chalk500">
+                <p className="sr-only sm:not-sr-only sm:mt-0.5 sm:block sm:text-[11px] sm:leading-snug sm:text-chalk500">
                   {read.explanation}
                 </p>
               </dd>

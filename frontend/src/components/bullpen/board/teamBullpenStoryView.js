@@ -38,6 +38,13 @@ const arms = (n) => `${n} arm${n === 1 ? '' : 's'}`
 // Verb agreement for count-driven sentences: one('is','are'), etc.
 const one = (n, singular, plural) => (n === 1 ? singular : plural)
 const hasCounts = (...values) => values.every(value => typeof value === 'number' && Number.isFinite(value))
+const READ_COUNT_PLURALS = {
+  'Clean Option': 'Clean Options',
+  'Watch Arm': 'Watch Arms',
+  'Rest-Restricted': 'Rest-Restricted',
+  Unavailable: 'Unavailable',
+}
+const readCount = (n, label) => `${n} ${n === 1 ? label : (READ_COUNT_PLURALS[label] || `${label}s`)}`
 
 function boardCounts(board) {
   const metrics = board?.context?.metrics || {}
@@ -98,7 +105,7 @@ function workloadBullets(family, counts, confidence) {
   if (bullets.length < 2) {
     bullets.push(`${arms(total)} tracked in this pen today.`)
   }
-  return bullets.slice(0, 3)
+  return bullets.slice(0, 2)
 }
 
 function watchBullets(family, counts) {
@@ -179,32 +186,58 @@ function shapeTone(label) {
   return 'neutral'
 }
 
+function compactReadCounts(items, fallback) {
+  const parts = items
+    .filter(item => item.count > 0)
+    .map(item => readCount(item.count, item.label))
+  return parts.length ? `${parts.join('; ')}.` : fallback
+}
+
 function shortShapeExplanation(read) {
   const counts = read?.supportingCounts || {}
   switch (read?.key) {
     case 'trustAvailability':
       if (hasCounts(counts.availableTrustArms, counts.trustArms)) {
-        return `${counts.availableTrustArms} of ${counts.trustArms} Trust Arms are Clean Options or Watch Arms.`
+        return `Trust Arms: ${compactReadCounts([
+          { count: counts.cleanTrustArms, label: 'Clean Option' },
+          { count: counts.watchTrustArms, label: 'Watch Arm' },
+          { count: counts.restRestrictedTrustArms, label: 'Rest-Restricted' },
+          { count: counts.unavailableTrustArms, label: 'Unavailable' },
+        ], 'no Clean Options or Watch Arms.')}`
       }
       break
     case 'cleanOptions':
       if (hasCounts(counts.cleanOptionCount, counts.activeBullpenArms)) {
-        return `${counts.cleanOptionCount} Clean Options out of ${counts.activeBullpenArms} active bullpen arms.`
+        return `${counts.cleanOptionCount} Clean Options from ${counts.activeBullpenArms} active arms.`
       }
       break
     case 'bullpenPressure':
       if (hasCounts(counts.watchArmCount, counts.restRestrictedCount, counts.unavailableCount)) {
-        return `${counts.watchArmCount} Watch Arms, ${counts.restRestrictedCount} Rest-Restricted, ${counts.unavailableCount} Unavailable.`
+        return `Pressure: ${compactReadCounts([
+          { count: counts.watchArmCount, label: 'Watch Arm' },
+          { count: counts.restRestrictedCount, label: 'Rest-Restricted' },
+          { count: counts.unavailableCount, label: 'Unavailable' },
+        ], 'no Watch Arms, Rest-Restricted, or Unavailable arms.')}`
       }
       break
     case 'coverageSafety':
       if (hasCounts(counts.availableCoverageArms, counts.coverageArms)) {
-        return `${counts.availableCoverageArms} of ${counts.coverageArms} Coverage Arms are Clean Options or Watch Arms.`
+        return `Coverage Arms: ${compactReadCounts([
+          { count: counts.cleanCoverageArms, label: 'Clean Option' },
+          { count: counts.watchCoverageArms, label: 'Watch Arm' },
+          { count: counts.restRestrictedCoverageArms, label: 'Rest-Restricted' },
+          { count: counts.unavailableCoverageArms, label: 'Unavailable' },
+        ], 'no Clean Options or Watch Arms.')}`
       }
       break
     case 'depthSafety':
       if (hasCounts(counts.availableDepthArms, counts.depthArms)) {
-        return `${counts.availableDepthArms} of ${counts.depthArms} Depth Arms are Clean Options or Watch Arms.`
+        return `Depth Arms: ${compactReadCounts([
+          { count: counts.cleanDepthArms, label: 'Clean Option' },
+          { count: counts.watchDepthArms, label: 'Watch Arm' },
+          { count: counts.restRestrictedDepthArms, label: 'Rest-Restricted' },
+          { count: counts.unavailableDepthArms, label: 'Unavailable' },
+        ], 'no Clean Options or Watch Arms.')}`
       }
       break
     default:
@@ -251,7 +284,7 @@ export function getTeamBullpenStoryView(board) {
     reads,
     shapeReads: teamShapeReads(board),
     workloadBullets: workloadBullets(family, counts, confidence),
-    watchBullets: watchBullets(family, counts),
+    watchBullets: watchBullets(family, counts).slice(0, 2),
     framing: STORY_FRAMING_LINE,
   }
 }
