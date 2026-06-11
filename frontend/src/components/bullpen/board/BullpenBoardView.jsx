@@ -131,16 +131,15 @@ function WhyDisclosure({ reasons, limitations }) {
   )
 }
 
-function PitcherLabelChip({ label, prefix }) {
+function PitcherLabelChip({ label }) {
   if (!label) return null
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={label.tone}
       title={label.definition}
-      aria-label={`${prefix}: ${label.label}. ${label.definition}`}
+      aria-label={`${label.label}. ${label.definition}`}
     >
-      <span className="opacity-70">{prefix}</span>
       {label.label}
     </span>
   )
@@ -150,8 +149,8 @@ function PitcherLabelChips({ labels }) {
   if (!labels?.role && !labels?.read) return null
   return (
     <>
-      <PitcherLabelChip label={labels.role} prefix="Role" />
-      <PitcherLabelChip label={labels.read} prefix="Read" />
+      <PitcherLabelChip label={labels.role} />
+      <PitcherLabelChip label={labels.read} />
     </>
   )
 }
@@ -227,34 +226,30 @@ function RoleDisclosure({ role }) {
 function PitcherLabelKey() {
   const roleLabels = Object.values(PITCHER_ROLE_LABELS)
   const readLabels = Object.values(PITCHER_READ_LABELS)
+  const roleLabelText = roleLabels.map(label => label.label).join(' · ')
+  const readLabelText = readLabels.map(label => label.label).join(' · ')
   return (
     <section className="mb-5 rounded-lg border border-dirt bg-dugout/40 p-3" aria-label={PITCHER_LABEL_KEY_COPY.title}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk300">
+        {PITCHER_LABEL_KEY_COPY.title}
+      </h3>
+      <p className="mt-1 text-xs leading-relaxed text-chalk500">
+        {PITCHER_LABEL_KEY_COPY.roleSummary} {PITCHER_LABEL_KEY_COPY.readSummary}
+      </p>
+      <div className="mt-3 grid gap-3 text-xs leading-relaxed text-chalk300 lg:grid-cols-2">
         <div>
-          <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk300">
-            {PITCHER_LABEL_KEY_COPY.title}
-          </h3>
-          <p className="mt-1 text-xs leading-relaxed text-chalk500">
-            {PITCHER_LABEL_KEY_COPY.roleSummary} {PITCHER_LABEL_KEY_COPY.readSummary}
-          </p>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <div>
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
             {PITCHER_LABEL_KEY_COPY.roleLayer}
           </div>
-          <div className="flex flex-wrap gap-2">
-            {roleLabels.map(label => <PitcherLabelChip key={label.key} label={label} prefix="Role" />)}
-          </div>
+          <p className="mt-1 text-chalk400">{PITCHER_LABEL_KEY_COPY.roleQuestion}</p>
+          <p className="mt-1 text-chalk200">{roleLabelText}</p>
         </div>
         <div>
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
             {PITCHER_LABEL_KEY_COPY.readLayer}
           </div>
-          <div className="flex flex-wrap gap-2">
-            {readLabels.map(label => <PitcherLabelChip key={label.key} label={label} prefix="Read" />)}
-          </div>
+          <p className="mt-1 text-chalk400">{PITCHER_LABEL_KEY_COPY.readQuestion}</p>
+          <p className="mt-1 text-chalk200">{readLabelText}</p>
         </div>
       </div>
     </section>

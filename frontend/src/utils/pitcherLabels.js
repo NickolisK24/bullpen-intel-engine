@@ -90,10 +90,12 @@ export const APPROVED_READ_LABELS = Object.freeze(
 
 export const PITCHER_LABEL_KEY_COPY = Object.freeze({
   title: 'Pitcher Label Key',
-  roleLayer: 'Role Layer',
-  readLayer: 'Read Layer',
-  roleSummary: 'Role labels describe recent bullpen usage shape.',
-  readSummary: 'Read labels describe today workload and availability shape.',
+  roleLayer: 'Role:',
+  readLayer: 'Read:',
+  roleSummary: 'Role labels describe bullpen usage shape.',
+  readSummary: "Read labels describe today's workload and availability shape.",
+  roleQuestion: 'What type of bullpen arm is this?',
+  readQuestion: 'What shape is this pitcher in today?',
 })
 
 const ROLE_KEY_TO_LABEL = Object.freeze({
