@@ -5,6 +5,7 @@
 // no recommendations, no new signals.
 
 import { getBullpenReads } from '../../../utils/bullpenConcepts'
+import { getTeamBullpenShape } from '../../../utils/teamBullpenScoring'
 
 const STORY_TONES = {
   constrained: { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5', dot: '#ef4444' },
@@ -25,9 +26,18 @@ const STORY_LABELS = {
 export const STORY_FRAMING_LINE =
   'Context from current workload and availability signals — not a prediction.'
 
+const SHAPE_READ_ORDER = [
+  { key: 'trustAvailability', concept: 'Trust Arm Availability' },
+  { key: 'cleanOptions', concept: 'Clean Options' },
+  { key: 'bullpenPressure', concept: 'Bullpen Pressure' },
+  { key: 'coverageSafety', concept: 'Coverage Safety' },
+  { key: 'depthSafety', concept: 'Depth Safety' },
+]
+
 const arms = (n) => `${n} arm${n === 1 ? '' : 's'}`
 // Verb agreement for count-driven sentences: one('is','are'), etc.
 const one = (n, singular, plural) => (n === 1 ? singular : plural)
+const hasCounts = (...values) => values.every(value => typeof value === 'number' && Number.isFinite(value))
 
 function boardCounts(board) {
   const metrics = board?.context?.metrics || {}
@@ -161,6 +171,63 @@ function storyHeadline(family, teamName, counts) {
   }
 }
 
+function shapeTone(label) {
+  if (!label || label === 'Limited Read') return 'neutral'
+  if (/^(Strong|Stable|Deep|Healthy|Low)\b/.test(label)) return 'rest'
+  if (/^(Thin|Elevated|Manageable)\b/.test(label)) return 'watch'
+  if (/^(Very Thin|Limited|High)\b/.test(label)) return 'stress'
+  return 'neutral'
+}
+
+function shortShapeExplanation(read) {
+  const counts = read?.supportingCounts || {}
+  switch (read?.key) {
+    case 'trustAvailability':
+      if (hasCounts(counts.availableTrustArms, counts.trustArms)) {
+        return `${counts.availableTrustArms} of ${counts.trustArms} Trust Arms are Clean Options or Watch Arms.`
+      }
+      break
+    case 'cleanOptions':
+      if (hasCounts(counts.cleanOptionCount, counts.activeBullpenArms)) {
+        return `${counts.cleanOptionCount} Clean Options out of ${counts.activeBullpenArms} active bullpen arms.`
+      }
+      break
+    case 'bullpenPressure':
+      if (hasCounts(counts.watchArmCount, counts.restRestrictedCount, counts.unavailableCount)) {
+        return `${counts.watchArmCount} Watch Arms, ${counts.restRestrictedCount} Rest-Restricted, ${counts.unavailableCount} Unavailable.`
+      }
+      break
+    case 'coverageSafety':
+      if (hasCounts(counts.availableCoverageArms, counts.coverageArms)) {
+        return `${counts.availableCoverageArms} of ${counts.coverageArms} Coverage Arms are Clean Options or Watch Arms.`
+      }
+      break
+    case 'depthSafety':
+      if (hasCounts(counts.availableDepthArms, counts.depthArms)) {
+        return `${counts.availableDepthArms} of ${counts.depthArms} Depth Arms are Clean Options or Watch Arms.`
+      }
+      break
+    default:
+      break
+  }
+  return read?.explanation || 'Not enough current bullpen data for a confident read.'
+}
+
+function teamShapeReads(board) {
+  const shape = getTeamBullpenShape(board)
+  return SHAPE_READ_ORDER.map(item => {
+    const read = shape.byKey[item.key]
+    if (!read) return null
+    return {
+      key: item.key,
+      concept: item.concept,
+      label: read.label,
+      explanation: shortShapeExplanation(read),
+      tone: shapeTone(read.label),
+    }
+  }).filter(Boolean)
+}
+
 export function getTeamBullpenStoryView(board) {
   if (!board) return { hasStory: false }
 
@@ -182,6 +249,7 @@ export function getTeamBullpenStoryView(board) {
     headline,
     summary,
     reads,
+    shapeReads: teamShapeReads(board),
     workloadBullets: workloadBullets(family, counts, confidence),
     watchBullets: watchBullets(family, counts),
     framing: STORY_FRAMING_LINE,

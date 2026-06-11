@@ -36,6 +36,8 @@ export default function TeamBullpenStoryPanel({ board }) {
 
       <BaseballOSReads reads={story.reads} />
 
+      <TeamBullpenShape reads={story.shapeReads} />
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
@@ -60,6 +62,41 @@ export default function TeamBullpenStoryPanel({ board }) {
       </div>
 
       <p className="mt-3 border-t border-dirt/60 pt-2 text-[11px] text-chalk600">{story.framing}</p>
+    </section>
+  )
+}
+
+function TeamBullpenShape({ reads }) {
+  if (!Array.isArray(reads) || reads.length === 0) return null
+
+  return (
+    <section className="mt-4 border-t border-dirt/60 pt-3" aria-label="Today’s bullpen shape">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+        Today’s Bullpen Shape
+      </div>
+      <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-5">
+        {reads.map(read => {
+          const tone = homeTone(read.tone)
+          return (
+            <div key={read.key} className="min-w-0">
+              <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                {read.concept}
+              </dt>
+              <dd className="mt-0.5 min-w-0" title={read.explanation}>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+                  <span className="min-w-0 text-xs font-semibold leading-snug text-chalk100">
+                    {read.label}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] leading-snug text-chalk500">
+                  {read.explanation}
+                </p>
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
     </section>
   )
 }
