@@ -121,6 +121,7 @@ def create_app(config_name=None):
     from api.explanations import explanations_bp
     from api.observations import observations_bp
     from api.pitchers import pitchers_bp
+    from api.system import system_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -130,6 +131,7 @@ def create_app(config_name=None):
     app.register_blueprint(explanations_bp, url_prefix='/api/explanations')
     app.register_blueprint(observations_bp, url_prefix='/api/observations')
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
+    app.register_blueprint(system_bp, url_prefix='/api/system')
 
     @app.route('/api/health')
     def health():

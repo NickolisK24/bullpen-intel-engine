@@ -258,6 +258,92 @@ def latest_successful_sync_run():
     )
 
 
+def last_run_per_job():
+    """Latest sync_runs row for each distinct job_name, most-recent first."""
+    job_names = [
+        row[0]
+        for row in db.session.query(SyncRun.job_name).distinct().all()
+    ]
+    runs = []
+    for job_name in job_names:
+        run = (
+            SyncRun.query
+            .filter_by(job_name=job_name)
+            .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+            .first()
+        )
+        if run is not None:
+            runs.append(run)
+    runs.sort(key=lambda r: (r.started_at or r.created_at), reverse=True)
+    return runs
+
+
+def domain_freshness(metadata=None, reference_date=None):
+    """
+    Per-domain fresh / stale / unavailable classification.
+
+    Each tracked data domain (workload game logs, fatigue scores) is aged
+    against the product reference date and run through the same configurable
+    degradation thresholds, so the operator can see exactly which domain is
+    degrading rather than a single blended freshness signal.
+    """
+    metadata = metadata or collect_data_metadata()
+    ref = reference_date or product_current_date()
+
+    def _age_days(value):
+        if value is None:
+            return None
+        as_date = value.date() if hasattr(value, 'date') else value
+        return (ref - as_date).days
+
+    return {
+        'workload': {
+            'latest_date': _iso(metadata['latest_workload_date']),
+            **build_degradation_block(_age_days(metadata['latest_workload_date'])),
+        },
+        'fatigue': {
+            'latest_date': _iso(metadata['latest_fatigue_calculated_at']),
+            **build_degradation_block(_age_days(metadata['latest_fatigue_calculated_at'])),
+        },
+    }
+
+
+def pipeline_health_payload(reference_date=None):
+    """
+    Operator-facing pipeline observability: last run per job, each run's status,
+    per-domain freshness classification, and the unresolved dead-letter count.
+
+    Read-only and deterministic — everything here is traceable to sync_runs and
+    sync_failures rows.
+    """
+    # Imported here to avoid any import-time coupling between the two services.
+    from services import dead_letter
+
+    metadata = collect_data_metadata()
+    runs = last_run_per_job()
+    overall = build_sync_status_payload(reference_date=reference_date)
+
+    return {
+        'capability': 'pipeline_health',
+        'jobs': [
+            {
+                'job_name': run.job_name,
+                'status': run.status,
+                'last_run': run.to_dict(),
+            }
+            for run in runs
+        ],
+        'domains': domain_freshness(metadata, reference_date=reference_date),
+        'freshness': overall.get('freshness'),
+        'sync_status': overall.get('status'),
+        'last_successful_sync': overall.get('last_successful_sync'),
+        'dead_letters': {
+            'unresolved_count': dead_letter.unresolved_count(),
+            'recent': [f.to_dict() for f in dead_letter.unresolved_failures(limit=20)],
+        },
+    }
+
+
 def _run_message(run):
     if run is None:
         return ''
