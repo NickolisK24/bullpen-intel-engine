@@ -1,13 +1,16 @@
 import { fmtDataDate } from '../dashboard/syncStatusView'
 import { getReadsForLandscapeEntry } from '../../utils/bullpenConcepts'
+import { SIGNAL_HEADLINES } from '../../utils/bullpenLanguage'
 
 // The Morning Bullpen Report — view-model for the story-led homepage.
 //
 // Everything on the homepage is derived from outputs the platform already
 // publishes: the league dashboard payload (availability counts, team context,
 // landscape) and the governed observation feed. This module only retells those
-// signals in plain baseball language. Descriptive only — nothing here ranks
-// pitchers, selects arms, recommends usage, or predicts outcomes.
+// signals in plain baseball language: ontology vocabulary stays on the
+// evidence slots (read chips, stat labels, fact labels) while headlines and
+// prose talk baseball. Descriptive only — nothing here ranks pitchers,
+// selects arms, recommends usage, or predicts outcomes.
 
 const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
@@ -80,10 +83,12 @@ function leagueMetrics(dashboard) {
   }
 }
 
+// Count chips state plainly what each number counts; the concept vocabulary
+// rides the hero's read chip, where it explains itself on hover.
 const heroChips = (team) => [
-  { key: 'clean', label: 'Clean Options', value: team.available, tone: 'rest' },
-  { key: 'concentration', label: 'Workload Concentration', value: team.monitor, tone: 'watch' },
-  { key: 'recovery', label: 'Recovery Window', value: team.restricted, tone: 'stress' },
+  { key: 'clean', label: 'Fresh', value: team.available, tone: 'rest' },
+  { key: 'concentration', label: 'On Watch', value: team.monitor, tone: 'watch' },
+  { key: 'recovery', label: 'Needing Rest', value: team.restricted, tone: 'stress' },
   { key: 'total', label: 'Relievers', value: team.total, tone: 'neutral' },
 ]
 
@@ -101,12 +106,12 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       hasStory: true,
       angle: 'stress',
       tone: 'stress',
-      kicker: 'Workload Stress',
+      kicker: 'Stretched Thin',
       team: stressed,
       read: getReadsForLandscapeEntry(stressed).byKey.pressure,
-      headline: `The ${stressed.teamName} have baseball's most constrained bullpen today`,
-      observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in with a limited Recovery Window after the work they've carried lately. No club enters the day with less late-inning flexibility.`,
-      whyItMatters: 'High Bullpen Pressure narrows the late innings. If the next few games stay close, the heaviest work is likely to stay on the arms that have already been carrying it.',
+      headline: SIGNAL_HEADLINES.stretchedPen.hero(stressed.teamName),
+      observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. No club enters the day with less room in the late innings.`,
+      whyItMatters: 'A stretched pen narrows the late innings. If the next few games stay close, the heaviest work keeps falling on the arms that have already been carrying it.',
       chips: heroChips(stressed),
     }
   }
@@ -120,9 +125,9 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       kicker: 'Workload Watch',
       team: watched,
       read: getReadsForLandscapeEntry(watched).byKey.concentration,
-      headline: `The ${watched.teamName} have baseball's most concentrated bullpen workload today`,
+      headline: SIGNAL_HEADLINES.sameArms.hero(watched.teamName),
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
-      whyItMatters: 'Workload Concentration stacks up quietly. Heavy weeks tend to show up later as shorter outings and nights off the schedule did not plan for.',
+      whyItMatters: 'Heavy use on the same few arms stacks up quietly. It tends to show up later as shorter outings and nights off the schedule did not plan for.',
       chips: heroChips(watched),
     }
   }
@@ -133,12 +138,12 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       hasStory: true,
       angle: 'rest',
       tone: 'rest',
-      kicker: 'Recovery Window',
+      kicker: 'Fresh Pen',
       team: rested,
       read: getReadsForLandscapeEntry(rested).byKey.recovery,
-      headline: `The ${rested.teamName} bring baseball's widest Recovery Window into today`,
-      observation: `${rested.available} of the pen's ${rested.total} relievers register as Clean Options — the cleanest availability context in baseball today.`,
-      whyItMatters: 'A wide Recovery Window is flexibility. A full pen lets a manager shape the late innings on his terms instead of his bullpen’s.',
+      headline: SIGNAL_HEADLINES.freshPen.hero(rested.teamName),
+      observation: `${rested.available} of the pen's ${rested.total} relievers come in rested and ready to go — no pen in baseball has more fresh arms to call on today.`,
+      whyItMatters: 'A fresh pen is flexibility. A full slate of rested arms lets a manager shape the late innings on his terms instead of his bullpen’s.',
       chips: heroChips(rested),
     }
   }
@@ -195,29 +200,31 @@ export function getLeagueCards(dashboard) {
     }
   }
 
+  // Card titles talk baseball; the stat labels underneath keep the counts and
+  // concept vocabulary as evidence.
   return [
     {
       key: 'most-stressed',
-      title: 'Highest Bullpen Pressure',
+      title: 'The Most Stretched Pen',
       tone: 'stress',
       team: stressLeader,
       stat: stressLeader ? `${stressLeader.restricted} of ${stressLeader.total}` : null,
-      statLabel: stressLeader ? 'arms with limited Recovery Window' : null,
+      statLabel: stressLeader ? 'arms needing rest' : null,
       line: stressLeader
-        ? 'More arms have a limited Recovery Window here than anywhere else in baseball.'
+        ? 'More arms need a day here than anywhere else in baseball.'
         : 'No pen is carrying outsized stress today — a clean league-wide picture.',
       href: stressLeader?.href || '/bullpen',
       cta: stressLeader ? 'Step inside this pen' : 'Browse every bullpen',
     },
     {
       key: 'most-rested',
-      title: 'Widest Recovery Window',
+      title: 'The Freshest Pen',
       tone: 'rest',
       team: restLeader,
       stat: restLeader ? `${restLeader.available} of ${restLeader.total}` : null,
       statLabel: restLeader ? 'Clean Options' : null,
       line: restLeader
-        ? 'This group brings the cleanest availability context into today.'
+        ? 'No pen brings more rested arms into today.'
         : 'No pen stands out for rest today.',
       href: restLeader?.href || '/bullpen',
       cta: restLeader ? 'Step inside this pen' : 'Browse every bullpen',
@@ -235,13 +242,13 @@ export function getLeagueCards(dashboard) {
     },
     {
       key: 'bullpen-to-watch',
-      title: 'Workload Concentration',
+      title: 'Leaning On The Same Arms',
       tone: 'watch',
       team: watchLeader,
       stat: watchLeader ? `${watchLeader.monitor} of ${watchLeader.total}` : null,
       statLabel: watchLeader ? 'arms on the watch list' : null,
       line: watchLeader
-        ? 'The surface is not alarming yet, but the recent workload is worth watching.'
+        ? 'Nothing is flashing red yet, but the same arms keep getting the call.'
         : 'No watch list stands out today.',
       href: watchLeader?.href || '/bullpen',
       cta: watchLeader ? 'Step inside this pen' : 'Browse every bullpen',
@@ -279,7 +286,7 @@ export function getTodayWatchItems(dashboard) {
       kicker: 'Pressure Watch',
       tone: 'stress',
       title: 'One more pen is working with a shorter late-inning margin',
-      body: `The ${pressure.teamName} also carry ${pressure.restricted} ${pressure.restricted === 1 ? 'reliever' : 'relievers'} with a limited Recovery Window, giving Stories another Bullpen Pressure thread to unpack.`,
+      body: `The ${pressure.teamName} also have ${pressure.restricted} ${pressure.restricted === 1 ? 'reliever' : 'relievers'} needing rest after recent work — another pen coming in short today.`,
       href: pressure.href,
       cta: 'Open the team board',
     })
@@ -291,8 +298,8 @@ export function getTodayWatchItems(dashboard) {
       teamId: workload.teamId,
       kicker: 'Workload Watch',
       tone: 'watch',
-      title: 'The watch list is not all at the top of the page',
-      body: `${workload.monitor} ${workload.monitor === 1 ? 'arm' : 'arms'} in the ${workload.teamName} pen are carrying Workload Concentration, a quieter signal worth a second look.`,
+      title: 'Another club keeps going to the same arms',
+      body: `${workload.monitor} ${workload.monitor === 1 ? 'arm' : 'arms'} in the ${workload.teamName} pen ${workload.monitor === 1 ? 'has' : 'have'} been carrying the heavy work lately — quiet so far, worth a second look.`,
       href: workload.href,
       cta: 'Open the team board',
     })
@@ -302,10 +309,10 @@ export function getTodayWatchItems(dashboard) {
   if (recovery) {
     addItem(recovery, {
       teamId: recovery.teamId,
-      kicker: 'Recovery Window',
+      kicker: 'Fresh Arms',
       tone: 'rest',
-      title: 'Recovery Window is the counterweight to today’s pressure',
-      body: `${recovery.available} ${recovery.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options for the ${recovery.teamName}, giving the day a second side beyond the stress story.`,
+      title: 'At least one pen comes in with room to breathe',
+      body: `The ${recovery.teamName} have ${recovery.available} ${recovery.available === 1 ? 'reliever' : 'relievers'} coming in fresh — the other side of today’s workload story.`,
       href: recovery.href,
       cta: 'Open the team board',
     })
@@ -317,8 +324,8 @@ export function getTodayWatchItems(dashboard) {
       teamId: null,
       kicker: 'League Watch',
       tone: 'watch',
-      title: 'The workload underneath is worth watching',
-      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list around the league, so Workload Concentration is not limited to the flagship club.`,
+      title: 'The heavy lifting is spread around the league',
+      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list around the league — the heavy recent work is not limited to one club.`,
       href: '/stories',
       cta: 'Open Stories',
     })
@@ -327,10 +334,10 @@ export function getTodayWatchItems(dashboard) {
   if (items.length < 3 && metrics.available > 0) {
     items.push({
       teamId: null,
-      kicker: 'Coverage Safety',
+      kicker: 'Fresh Arms',
       tone: 'rest',
-      title: 'Clean Options still frame the league context',
-      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options. The pressure points matter, but the league picture is not one-note.`,
+      title: 'There are still plenty of fresh arms out there',
+      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever comes' : 'relievers come'} in fresh today. The pressure points matter, but the league picture is not one-note.`,
       href: '/stories',
       cta: 'Open Stories',
     })
@@ -345,9 +352,11 @@ export function getLeagueContext(dashboard) {
   const hasMetrics = metrics.total > 0
 
   const summary = hasMetrics
-    ? `${metrics.restricted} tracked ${metrics.restricted === 1 ? 'arm has' : 'arms have'} a limited Recovery Window, ${metrics.monitor} ${metrics.monitor === 1 ? 'sits' : 'sit'} on the watch list, and ${metrics.available} register as Clean Options. That is the league context behind today’s front-page story.`
+    ? `Around the league, ${metrics.restricted} tracked ${metrics.restricted === 1 ? 'arm needs' : 'arms need'} rest after recent work, ${metrics.monitor} ${metrics.monitor === 1 ? 'sits' : 'sit'} on the watch list, and ${metrics.available} ${metrics.available === 1 ? 'comes' : 'come'} in fresh. That is the backdrop behind today’s front-page story.`
     : 'The league context is waiting on a complete bullpen dashboard.'
 
+  // Fact labels keep the BaseballOS vocabulary; the values and details say
+  // what is actually being counted.
   return {
     summary,
     facts: [
@@ -356,7 +365,7 @@ export function getLeagueContext(dashboard) {
         label: 'Bullpen Pressure',
         tone: metrics.restricted > 0 ? 'stress' : 'neutral',
         value: hasMetrics ? String(metrics.restricted) : '0',
-        detail: 'arms with limited Recovery Window',
+        detail: 'arms needing rest after recent work',
       },
       {
         key: 'concentration',
@@ -370,7 +379,7 @@ export function getLeagueContext(dashboard) {
         label: 'Clean Options',
         tone: metrics.available > 0 ? 'rest' : 'neutral',
         value: hasMetrics ? `${metrics.pctAvailable}%` : '0%',
-        detail: 'of tracked arms available cleanly',
+        detail: 'of tracked arms fresh today',
       },
     ],
     href: '/stories',
@@ -405,15 +414,15 @@ export const STORY_TITLE_GUIDELINES = {
 const OBSERVATION_STORY_COPY = {
   inventory: {
     kicker: 'Depth Check',
-    title: 'Clean Options are thinner in a few places today',
-    body: 'Around the league, a few pens come in with fewer Clean Options than they would like. Depth Safety is carrying more of the load than usual today.',
+    title: 'Fresh arms are harder to find in a few pens today',
+    body: 'Around the league, a few pens come in with fewer rested arms than they would like, and the back of the bullpen is carrying more of the load than usual.',
     href: '/dashboard',
     cta: 'See the league view',
   },
   readiness: {
     kicker: 'Rest Watch',
     title: 'Rest is becoming part of the bullpen story',
-    body: 'Not every arm on a roster is a Clean Option today. A handful of pens are managing Recovery Window as carefully as they manage innings.',
+    body: 'Not every arm on a roster is ready for the ball today. A handful of pens are managing rest as carefully as they manage innings.',
     href: '/dashboard',
     cta: 'See the league view',
   },
@@ -427,7 +436,7 @@ const OBSERVATION_STORY_COPY = {
   constraint: {
     kicker: 'Tight Margins',
     title: 'A few late-inning margins are getting thin',
-    body: 'More than one club comes in with a shorter list of Clean Options than it would like. The margin for a long night is thin in places.',
+    body: 'More than one club comes in with fewer fresh arms than it would like. The margin for a long night is thin in places.',
     href: '/dashboard',
     cta: 'See the league view',
   },
@@ -447,8 +456,8 @@ const OBSERVATION_STORY_COPY = {
   },
   availability_movement: {
     kicker: 'Movement',
-    title: 'The league availability picture moved overnight',
-    body: 'Arms are rotating on and off rest around the league. Today’s availability picture is not yesterday’s.',
+    title: 'Who is rested changed overnight',
+    body: 'Arms are rotating on and off rest around the league. Today’s picture is not yesterday’s.',
     href: '/dashboard',
     cta: 'See the league view',
   },
@@ -486,7 +495,7 @@ export function getBullpenStories(dashboard, observations = null) {
       read: getReadsForLandscapeEntry(hidden).byKey.concentration,
       kicker: 'Hidden Workload',
       tone: 'watch',
-      title: `The ${hidden.teamName} box score looks calm. The bullpen does not.`,
+      title: SIGNAL_HEADLINES.sameArms.hidden(hidden.teamName),
       body: `Nobody in this pen is flashing red, but ${hidden.monitor} of ${hidden.total} arms are carrying heavy recent work. The quiet surface is doing a lot of hiding.`,
       href: hidden.href,
       cta: 'Step inside this pen',
@@ -502,8 +511,8 @@ export function getBullpenStories(dashboard, observations = null) {
       read: getReadsForLandscapeEntry(heaviest).byKey.concentration,
       kicker: 'Carrying The Load',
       tone: 'watch',
-      title: `The ${heaviest.teamName} keep handing the ball to the same relievers`,
-      body: `${heaviest.monitor} of ${heaviest.total} arms sit on the watch list — the heaviest concentration of recent bullpen work in baseball today.`,
+      title: SIGNAL_HEADLINES.sameArms.feed(heaviest.teamName),
+      body: `${heaviest.monitor} of ${heaviest.total} arms sit on the watch list — the most anywhere in baseball today.`,
       href: heaviest.href,
       cta: 'Step inside this pen',
     })
@@ -518,8 +527,8 @@ export function getBullpenStories(dashboard, observations = null) {
       read: getReadsForLandscapeEntry(tightening).byKey.pressure,
       kicker: 'Pressure Point',
       tone: 'stress',
-      title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
-      body: `${tightening.restricted} of ${tightening.total} relievers ${tightening.restricted === 1 ? 'has' : 'have'} a limited Recovery Window today. One long night could leave this pen with very few Clean Options.`,
+      title: SIGNAL_HEADLINES.stretchedPen.feed(tightening.teamName),
+      body: `${tightening.restricted} of ${tightening.total} relievers ${tightening.restricted === 1 ? 'needs' : 'need'} rest after recent work. One long night could leave this pen with almost nobody fresh.`,
       href: tightening.href,
       cta: 'Step inside this pen',
     })
@@ -532,10 +541,10 @@ export function getBullpenStories(dashboard, observations = null) {
       abbr: widestWindow.abbr,
       teamName: widestWindow.teamName,
       read: getReadsForLandscapeEntry(widestWindow).byKey.recovery,
-      kicker: 'Recovery Window',
+      kicker: 'Fresh Pen',
       tone: 'rest',
-      title: `Nobody brings a wider Recovery Window into today than the ${widestWindow.teamName}`,
-      body: `${widestWindow.available} of ${widestWindow.total} relievers register as Clean Options — the kind of depth that lets the late innings breathe.`,
+      title: SIGNAL_HEADLINES.freshPen.feed(widestWindow.teamName),
+      body: `${widestWindow.available} of ${widestWindow.total} relievers come in rested — the kind of depth that lets the late innings breathe.`,
       href: widestWindow.href,
       cta: 'Step inside this pen',
     })
@@ -548,10 +557,10 @@ export function getBullpenStories(dashboard, observations = null) {
       abbr: steady.abbr,
       teamName: steady.teamName,
       read: getReadsForLandscapeEntry(steady).byKey.cleanOptions,
-      kicker: 'Depth Safety',
+      kicker: 'Arms To Spare',
       tone: 'rest',
-      title: `Clean Options are stacked a little deeper for the ${steady.teamName}`,
-      body: `${steady.available} of ${steady.total} arms register as Clean Options, with no standout Workload Concentration signal today. Depth Safety is part of this pen’s story.`,
+      title: SIGNAL_HEADLINES.freshPen.depth(steady.teamName),
+      body: `${steady.available} of ${steady.total} arms come in without a workload flag, and nobody is carrying too much of the recent load. Depth is part of this pen’s story today.`,
       href: steady.href,
       cta: 'Step inside this pen',
     })
@@ -564,7 +573,7 @@ export function getBullpenStories(dashboard, observations = null) {
       kicker: 'League Note',
       tone: metrics.restricted > metrics.monitor ? 'stress' : 'watch',
       title: 'Workload is collecting below the headline',
-      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list and ${metrics.restricted} ${metrics.restricted === 1 ? 'has' : 'have'} a limited Recovery Window. Stories is watching where Bullpen Pressure is obvious and where it is still quiet.`,
+      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list and ${metrics.restricted} ${metrics.restricted === 1 ? 'needs' : 'need'} rest. Some of that work is obvious, some is still quiet — and the quiet kind is usually where the next story starts.`,
       href: '/dashboard',
       cta: 'See the league view',
     })
@@ -573,10 +582,10 @@ export function getBullpenStories(dashboard, observations = null) {
   if (metrics.available > 0) {
     candidates.push({
       teamId: null,
-      kicker: 'Coverage Safety',
+      kicker: 'The Other Side',
       tone: 'rest',
-      title: 'Coverage Safety is still part of today’s league picture',
-      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options. That does not erase the pressure points, but it gives the feed context on both sides of the bullpen ledger.`,
+      title: 'Most of the league still has fresh arms to call on',
+      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever comes' : 'relievers come'} in fresh today. That does not erase the pressure points, but the league as a whole is not running on empty.`,
       href: '/dashboard',
       cta: 'See the league view',
     })
@@ -634,7 +643,7 @@ export function getRankingsPreview(dashboard) {
       {
         key: 'shape',
         title: 'Bullpen Shape Preview',
-        note: 'Availability context, not a ranking',
+        note: 'How each pen comes in, not a ranking',
         placeholder: true,
         placeholderCopy: 'Coming later after the preview is validated.',
         entries: [],
@@ -642,7 +651,7 @@ export function getRankingsPreview(dashboard) {
       {
         key: 'recovery',
         title: 'Recovery Window Preview',
-        note: 'Clean Options context, not a ranking',
+        note: 'Who comes in fresh, not a ranking',
         placeholder: true,
         placeholderCopy: 'Not yet validated for team ordering.',
         entries: [],
@@ -650,7 +659,7 @@ export function getRankingsPreview(dashboard) {
       {
         key: 'pressure',
         title: 'Bullpen Pressure Preview',
-        note: 'Workload context, not a ranking',
+        note: 'Who is carrying the load, not a ranking',
         placeholder: true,
         placeholderCopy: 'Preview only until the full release is ready.',
         entries: [],

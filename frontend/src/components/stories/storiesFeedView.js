@@ -17,19 +17,19 @@ export const STORY_FILTERS = [
     key: 'stressed',
     label: 'Stressed',
     activeLabel: 'Stressed Stories',
-    description: 'Stories involving bullpens carrying elevated workload strain.',
+    description: 'Pens that have been worked hard and are short on rest.',
   },
   {
     key: 'rested',
     label: 'Rested',
     activeLabel: 'Rested Stories',
-    description: 'Stories involving bullpens entering the day with cleaner availability.',
+    description: 'Pens coming in fresh, with arms to spare.',
   },
   {
     key: 'watch',
     label: 'Watch List',
     activeLabel: 'Watch List Stories',
-    description: 'Stories where workload patterns are worth monitoring.',
+    description: 'Pens quietly leaning on the same arms.',
   },
   {
     key: 'league',

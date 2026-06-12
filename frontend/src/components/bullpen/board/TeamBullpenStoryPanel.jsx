@@ -4,7 +4,7 @@ import { homeTone } from '../../home/homeIntelligenceView'
 
 // Today's Bullpen Story — a compact analyst note that sits between the
 // context strips and the availability board. It answers why BaseballOS is
-// watching this pen, what the workload shape says, and what to look at on
+// watching this pen, what the recent work says, and what to look at on
 // the board below. Additive context only; the board remains the detail.
 export default function TeamBullpenStoryPanel({ board }) {
   const story = getTeamBullpenStoryView(board)
@@ -41,7 +41,7 @@ export default function TeamBullpenStoryPanel({ board }) {
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            What The Workload Shape Says
+            What The Recent Work Says
           </div>
           <ul className="mt-2 space-y-1.5">
             {story.workloadBullets.map((bullet, index) => (
