@@ -17,13 +17,21 @@ from utils.time import utc_now_naive
 
 STATUS_RUNNING = 'running'
 STATUS_SUCCESS = 'success'
+STATUS_PARTIAL = 'partial'
 STATUS_FAILED = 'failed'
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
+# A run counts as a "successful" data write for freshness purposes when it
+# either fully succeeded or completed with partial dead-lettered records — in
+# both cases the domains it touched were refreshed.
+SUCCESSFUL_STATUSES = (STATUS_SUCCESS, STATUS_PARTIAL)
+
 SOURCE_MANUAL = 'manual'
 SOURCE_SCHEDULED = 'scheduled'
 SOURCE_GITHUB_ACTIONS = 'github_actions'
+
+JOB_DAILY_SYNC = 'daily_sync'
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +80,7 @@ def canonical_fatigue_reference_date(reference_date=None):
     return product_availability_reference_date_from_metadata(collect_data_metadata())
 
 
-def start_sync_run(source=SOURCE_MANUAL, started_at=None):
+def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYNC):
     started_at = started_at or _now()
     # Start from a clean transaction. If an earlier statement in this request
     # left the session in an aborted/poisoned state (a classic Postgres
@@ -84,6 +92,7 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None):
         pass
     try:
         run = SyncRun(
+            job_name=job_name,
             started_at=started_at,
             status=STATUS_RUNNING,
             source=source,
@@ -104,12 +113,16 @@ def finish_sync_run(
     status,
     completed_at=None,
     records_processed=0,
+    records_failed=0,
     new_logs_added=0,
     pitchers_updated=0,
     errors=0,
+    api_calls_made=0,
+    retries_used=0,
     error_message=None,
     source=SOURCE_MANUAL,
     started_at=None,
+    job_name=JOB_DAILY_SYNC,
 ):
     """
     Record the outcome of a sync as a durable sync_runs row.
@@ -131,6 +144,7 @@ def finish_sync_run(
             # Self-heal: start never persisted (or the id was lost). Create the
             # durable row now so the sync is never recorded only in the file.
             run = SyncRun(
+                job_name=job_name,
                 started_at=started_at or completed_at,
                 status=status,
                 source=source,
@@ -145,9 +159,12 @@ def finish_sync_run(
         run.latest_workload_date = metadata['latest_workload_date']
         run.latest_fatigue_calculated_at = metadata['latest_fatigue_calculated_at']
         run.records_processed = records_processed or 0
+        run.records_failed = records_failed or 0
         run.new_logs_added = new_logs_added or 0
         run.pitchers_updated = pitchers_updated or 0
         run.errors = errors or 0
+        run.api_calls_made = api_calls_made or 0
+        run.retries_used = retries_used or 0
         run.error_message = error_message
         db.session.commit()
         return run
@@ -162,9 +179,12 @@ def latest_sync_run():
 
 
 def latest_successful_sync_run():
+    # A partial run still refreshed the domains it touched (it dead-lettered
+    # only the records that failed), so it counts as a successful data write
+    # for freshness purposes.
     return (
         SyncRun.query
-        .filter_by(status=STATUS_SUCCESS)
+        .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
     )
@@ -316,10 +336,10 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
     if successful_run:
         last_successful_sync = _iso(successful_run.completed_at or successful_run.started_at)
         last_successful_sync_run = successful_run.to_dict()
-    elif status == STATUS_SUCCESS and finished_at:
+    elif status in SUCCESSFUL_STATUSES and finished_at:
         last_successful_sync = finished_at
         last_successful_sync_run = sync_block
-    elif status == STATUS_SUCCESS:
+    elif status in SUCCESSFUL_STATUSES:
         last_successful_sync = last_sync
         last_successful_sync_run = sync_block
     else:
