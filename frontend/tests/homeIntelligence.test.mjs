@@ -22,10 +22,13 @@ const { default: RankingsPreview } = await server.ssrLoadModule('/src/components
 const {
   getHeroStory,
   getLeagueCards,
+  getLeagueContext,
   getBullpenStories,
   getRankingsPreview,
+  getTodayWatchItems,
   getMastheadView,
   STORIES_FALLBACK,
+  STORY_TITLE_GUIDELINES,
 } = await server.ssrLoadModule('/src/components/home/homeIntelligenceView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -162,6 +165,37 @@ test('cards degrade to quiet copy when the landscape is empty', () => {
   }
 })
 
+// ── Today briefing ──────────────────────────────────────────────────────────
+
+test('today watch items are briefing-only and exclude the flagship club', () => {
+  const hero = getHeroStory(dashboard)
+  const watchItems = getTodayWatchItems(dashboard)
+  assert.ok(watchItems.hasStories)
+  assert.equal(watchItems.items.length, 3)
+  assert.ok(watchItems.items.every(item => item.teamId !== hero.team.teamId))
+  assert.deepEqual(
+    watchItems.items.map(item => item.title),
+    [
+      'One more pen is working with a shorter late-inning margin',
+      'The watch list is not all at the top of the page',
+      'Recovery Window is the counterweight to today’s pressure',
+    ],
+  )
+})
+
+test('today league context stays short and uses BaseballOS vocabulary', () => {
+  const context = getLeagueContext(dashboard)
+  assert.match(context.summary, /limited Recovery Window/)
+  assert.match(context.summary, /Clean Options/)
+  assert.equal(context.facts.length, 3)
+  assert.deepEqual(context.facts.map(fact => fact.label), [
+    'Bullpen Pressure',
+    'Workload Concentration',
+    'Clean Options',
+  ])
+  assert.equal(context.href, '/stories')
+})
+
 // ── Bullpen stories ─────────────────────────────────────────────────────────
 
 test('stories are derived from the landscape without repeating the hero club', () => {
@@ -186,7 +220,7 @@ test('story titles read like a baseball writer, not a system', () => {
 test('governed observations are retold in editorial language, never verbatim', () => {
   const stories = getBullpenStories(dashboard, observations)
   const titles = stories.items.map(story => story.title)
-  assert.ok(titles.includes('Bullpen work is running heavy around the league'))
+  assert.ok(titles.includes('The workload underneath is worth watching'))
   assert.ok(!titles.includes('Bullpen workload pressure is elevated.'))
 })
 
@@ -210,10 +244,21 @@ test('unsafe or empty observation feeds are ignored', () => {
 
 test('story list is capped and falls back gracefully', () => {
   const stories = getBullpenStories(dashboard, observations)
-  assert.ok(stories.items.length <= 6)
+  assert.ok(stories.items.length <= 8)
   const empty = getBullpenStories({}, null)
   assert.equal(empty.hasStories, false)
   assert.equal(empty.fallback, STORIES_FALLBACK)
+})
+
+test('story title guidelines prefer observations over conclusions', () => {
+  assert.ok(STORY_TITLE_GUIDELINES.prefer.some(line => /curiosity/i.test(line)))
+  assert.ok(STORY_TITLE_GUIDELINES.avoid.some(line => /in good shape/i.test(line)))
+  const stories = getBullpenStories(dashboard, observations)
+  const titles = stories.items.map(story => story.title).join(' | ').toLowerCase()
+  for (const weak of ['pen is in good shape', 'bullpen is healthy', 'strong availability']) {
+    assert.ok(!titles.includes(weak), `conclusion-driven title leaked: ${weak}`)
+  }
+  assert.ok(titles.includes('clean options are stacked a little deeper'))
 })
 
 // ── Rankings preview ────────────────────────────────────────────────────────
@@ -252,13 +297,12 @@ test('the masthead reports the data window in plain language', () => {
 
 // ── Rendering & placement ───────────────────────────────────────────────────
 
-test('the homepage renders all five sections in story-first order', () => {
+test('the homepage renders the morning briefing sections in order', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   const sections = [
     'What BaseballOS Sees Today',
-    'Highest Bullpen Pressure',
-    'Short List',
-    'Rankings Preview',
+    'Three Things To Watch',
+    'League Context',
   ]
   let lastIndex = -1
   for (const section of sections) {
@@ -273,21 +317,30 @@ test('today is curated: no team explorer, feedback CTA intact', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(!htmlIncludes(html, 'Explore Every Bullpen'))
   assert.ok(!htmlIncludes(html, 'arms tracked'))
+  assert.ok(!htmlIncludes(html, 'The Story Feed'))
   assert.ok(htmlIncludes(html, 'Help shape BaseballOS'))
 })
 
-test('today shows only the top three stories and hands off to the feed', () => {
+test('today shows three briefing watch items without repeating Stories titles', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  // With this fixture the story order is Toronto, the Mets, then Washington.
-  assert.ok(htmlIncludes(html, 'box score looks calm'))
-  assert.ok(htmlIncludes(html, 'thin late-inning margin is forming'))
-  assert.ok(htmlIncludes(html, 'wider Recovery Window into today'))
-  // Stories four and beyond stay off the briefing.
-  assert.ok(!htmlIncludes(html, 'Quiet Strength'))
-  assert.ok(!htmlIncludes(html, 'Bullpen work is running heavy around the league'))
-  // The short list hands off to the full feed.
+  assert.ok(htmlIncludes(html, 'One more pen is working with a shorter late-inning margin'))
+  assert.ok(htmlIncludes(html, 'The watch list is not all at the top of the page'))
+  assert.ok(htmlIncludes(html, 'Recovery Window is the counterweight to today’s pressure'))
+  // Full-feed story titles stay in Stories, not on the briefing.
+  assert.ok(!htmlIncludes(html, 'box score looks calm'))
+  assert.ok(!htmlIncludes(html, 'A thin late-inning margin is forming'))
+  assert.ok(!htmlIncludes(html, 'Nobody brings a wider Recovery Window'))
+  assert.ok(!htmlIncludes(html, 'The workload underneath is worth watching'))
+})
+
+test('today ends with short league context and a Stories handoff', () => {
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+  assert.ok(htmlIncludes(html, 'League Context'))
+  assert.ok(htmlIncludes(html, 'Bullpen Pressure'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'href="/stories"'))
-  assert.ok(htmlIncludes(html, 'Open the full story feed'))
+  assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
 })
 
 test('the hero renders the flagship observation with Why It Matters', () => {
@@ -298,12 +351,10 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
-test('the rankings framing is visible on the page', () => {
+test('the rankings preview is not part of the short Today briefing', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'Preview only'))
-  assert.ok(htmlIncludes(html, 'Not yet validated'))
-  assert.ok(htmlIncludes(html, 'Coming later'))
-  assert.ok(htmlIncludes(html, 'No rankings are active on this page.'))
+  assert.ok(!htmlIncludes(html, 'Rankings Preview'))
+  assert.ok(!htmlIncludes(html, 'No rankings are active on this page.'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
@@ -372,6 +423,7 @@ test('a story without a destination renders as plain copy, not a pretend link', 
   // The only anchor in the section is the standing hand-off to the feed.
   assert.equal((html.match(/<a /g) || []).length, 1)
   assert.ok(htmlIncludes(html, 'href="/stories"'))
+  assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
   assert.ok(!htmlIncludes(html, 'Open the full picture'), 'no card CTA should render without a destination')
 })
 
@@ -388,8 +440,8 @@ test('rankings preview renders no live rows or team links', () => {
 
 test('CTA language is specific, never vague', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'Step inside this pen'))
-  assert.ok(htmlIncludes(html, 'See the league view'))
+  assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
+  assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
   for (const vague of ['Learn more', 'Click here', '>Details<', 'Read more']) {
     assert.ok(!htmlIncludes(html, vague), `vague CTA leaked: ${vague}`)
   }

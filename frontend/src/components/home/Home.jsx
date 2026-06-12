@@ -1,37 +1,27 @@
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard, getBullpenObservations } from '../../utils/api'
+import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
-import LeagueIntelligenceCards from './LeagueIntelligenceCards'
-import BullpenStories from './BullpenStories'
-import RankingsPreview from './RankingsPreview'
+import BullpenStories, { SectionHeading } from './BullpenStories'
 import {
-  getBullpenStories,
   getHeroStory,
-  getLeagueCards,
+  getLeagueContext,
   getMastheadView,
-  getRankingsPreview,
+  getTodayWatchItems,
   homeTone,
 } from './homeIntelligenceView'
 
 // The Morning Bullpen Report — BaseballOS's story-led front page. Curated,
-// not exhaustive: the flagship story, the league cards, today's stories, and
-// the rankings preview. The Stories page carries the browseable feed and the
-// Bullpen page remains the team directory. Every number underneath comes from
-// the same league dashboard, landscape, and governed observation outputs the
-// deeper pages already use.
+// not exhaustive: one flagship observation, three things to watch, short
+// league context, and a handoff to Stories. The Stories page carries the
+// browseable feed and the Bullpen page remains the team directory.
 export default function Home() {
   const dash = useFetch(getBullpenDashboard)
-  // Observations enrich the story list when the governed feed has content;
-  // the page never blocks on them (only .data is read, so a failed fetch
-  // simply means no observation stories).
-  const observations = useFetch(getBullpenObservations)
 
   return (
     <HomeView
       dashboard={dash.data}
-      observations={observations.data}
       loading={dash.loading}
       error={dash.error}
       onRetry={dash.refetch}
@@ -41,16 +31,14 @@ export default function Home() {
 
 export function HomeView({
   dashboard,
-  observations = null,
   loading = false,
   error = null,
   onRetry,
 }) {
   const masthead = getMastheadView(dashboard)
   const hero = getHeroStory(dashboard)
-  const cards = getLeagueCards(dashboard)
-  const stories = getBullpenStories(dashboard, observations)
-  const rankings = getRankingsPreview(dashboard)
+  const watchItems = getTodayWatchItems(dashboard)
+  const leagueContext = getLeagueContext(dashboard)
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
@@ -68,9 +56,8 @@ export function HomeView({
             </div>
             <HeroStory hero={hero} />
           </section>
-          <LeagueIntelligenceCards cards={cards} />
-          <BullpenStories stories={stories} />
-          <RankingsPreview rankings={rankings} />
+          <BullpenStories stories={watchItems} showCta={false} />
+          <LeagueContext context={leagueContext} />
         </>
       )}
 
@@ -114,7 +101,7 @@ function Masthead({ masthead }) {
 }
 
 // The flagship observation, told the way a baseball writer would lead a
-// column. The Stories page runs the same story as a compact lede instead.
+// column. Stories deliberately explores the observations behind and beyond it.
 function HeroStory({ hero }) {
   const tone = homeTone(hero.tone)
 
@@ -187,5 +174,52 @@ function HeroStory({ hero }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function LeagueContext({ context }) {
+  return (
+    <section className="mb-8" aria-label="League context">
+      <SectionHeading
+        title="League Context"
+        subtitle="The short read behind the morning briefing."
+      />
+
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
+        <p className="max-w-3xl text-sm leading-relaxed text-chalk300">
+          {context.summary}
+        </p>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {context.facts.map(fact => {
+            const tone = homeTone(fact.tone)
+            return (
+              <div key={fact.key} className="border border-dirt bg-field/50 p-3">
+                <div
+                  className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
+                  style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
+                >
+                  <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
+                  {fact.label}
+                </div>
+                <div className="mt-2 font-display text-2xl leading-none tracking-wide text-chalk100">
+                  {fact.value}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-chalk500">{fact.detail}</p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-4 text-right">
+          <Link
+            to={context.href}
+            className="inline-flex items-center rounded border border-amber/40 bg-amber/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-amber transition-colors hover:bg-amber/20"
+          >
+            {context.cta} →
+          </Link>
+        </div>
+      </div>
+    </section>
   )
 }
