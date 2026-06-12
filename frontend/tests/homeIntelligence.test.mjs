@@ -116,7 +116,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
-  assert.match(restHero.headline, /most rested bullpen into today/)
+  assert.match(restHero.headline, /widest Recovery Window into today/)
 })
 
 test('a quiet league day still produces a hero story', () => {
@@ -145,9 +145,9 @@ test('card copy reads like a hook, not a metric summary', () => {
   const cards = getLeagueCards(dashboard)
   const byKey = Object.fromEntries(cards.map(card => [card.key, card]))
   assert.equal(byKey['most-stressed'].line,
-    'More arms need a breather here than anywhere else in baseball.')
+    'More arms have a limited Recovery Window here than anywhere else in baseball.')
   assert.equal(byKey['most-rested'].line,
-    'This group brings the cleanest availability picture into today.')
+    'This group brings the cleanest availability context into today.')
   assert.equal(byKey['bullpen-to-watch'].line,
     'The surface is not alarming yet, but the recent workload is worth watching.')
 })
@@ -218,23 +218,26 @@ test('story list is capped and falls back gracefully', () => {
 
 // ── Rankings preview ────────────────────────────────────────────────────────
 
-test('rankings preview runs live boards from counts and marks movement boards as placeholders', () => {
+test('rankings preview is placeholder-only and does not order teams', () => {
   const rankings = getRankingsPreview(dashboard)
   const byKey = Object.fromEntries(rankings.boards.map(board => [board.key, board]))
   assert.equal(rankings.boards.length, 4)
-  assert.equal(byKey.health.entries[0].abbr, 'WSH')
-  assert.equal(byKey.health.entries[0].stat, '6/8 rested')
-  assert.equal(byKey.stress.entries[0].abbr, 'MIL')
-  assert.ok(byKey.risers.placeholder)
-  assert.ok(byKey.fallers.placeholder)
-  assert.ok(byKey.risers.placeholderCopy.length > 0)
+  assert.ok(byKey.shape.placeholder)
+  assert.ok(byKey.recovery.placeholder)
+  assert.ok(byKey.pressure.placeholder)
+  assert.ok(byKey.movement.placeholder)
+  for (const board of rankings.boards) {
+    assert.equal(board.entries.length, 0)
+    assert.ok(board.placeholderCopy.length > 0)
+  }
 })
 
-test('rankings carry framing that separates bullpen shape from team quality', () => {
+test('rankings carry explicit not-ready framing', () => {
   const rankings = getRankingsPreview(dashboard)
-  assert.match(rankings.framing, /workload and availability signals/)
-  assert.match(rankings.framing, /not a talent ranking/)
-  assert.match(rankings.updateNote, /update as new completed games/)
+  assert.match(rankings.framing, /Preview only/)
+  assert.match(rankings.framing, /Not yet validated/)
+  assert.match(rankings.framing, /Coming later/)
+  assert.match(rankings.updateNote, /No rankings are active/)
 })
 
 // ── Masthead ────────────────────────────────────────────────────────────────
@@ -253,9 +256,9 @@ test('the homepage renders all five sections in story-first order', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   const sections = [
     'What BaseballOS Sees Today',
-    'Most Stressed Bullpen',
+    'Highest Bullpen Pressure',
     'Short List',
-    'Bullpen Rankings',
+    'Rankings Preview',
   ]
   let lastIndex = -1
   for (const section of sections) {
@@ -278,7 +281,7 @@ test('today shows only the top three stories and hands off to the feed', () => {
   // With this fixture the story order is Toronto, the Mets, then Washington.
   assert.ok(htmlIncludes(html, 'box score looks calm'))
   assert.ok(htmlIncludes(html, 'thin late-inning margin is forming'))
-  assert.ok(htmlIncludes(html, 'more rested pen into today'))
+  assert.ok(htmlIncludes(html, 'wider Recovery Window into today'))
   // Stories four and beyond stay off the briefing.
   assert.ok(!htmlIncludes(html, 'Quiet Strength'))
   assert.ok(!htmlIncludes(html, 'Bullpen work is running heavy around the league'))
@@ -297,8 +300,10 @@ test('the hero renders the flagship observation with Why It Matters', () => {
 
 test('the rankings framing is visible on the page', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'not a talent ranking'))
-  assert.ok(htmlIncludes(html, 'Rankings update as new completed games enter the system.'))
+  assert.ok(htmlIncludes(html, 'Preview only'))
+  assert.ok(htmlIncludes(html, 'Not yet validated'))
+  assert.ok(htmlIncludes(html, 'Coming later'))
+  assert.ok(htmlIncludes(html, 'No rankings are active on this page.'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
@@ -370,19 +375,15 @@ test('a story without a destination renders as plain copy, not a pretend link', 
   assert.ok(!htmlIncludes(html, 'Open the full picture'), 'no card CTA should render without a destination')
 })
 
-test('live ranking rows link to team boards; coming-soon boards render no links', () => {
+test('rankings preview renders no live rows or team links', () => {
   const rankings = getRankingsPreview(dashboard)
-  for (const board of rankings.boards.filter(b => !b.placeholder)) {
-    for (const entry of board.entries) {
-      assert.ok(entry.href.includes('/bullpen?') && entry.href.includes('team='), `${board.key} row missing link`)
-    }
-  }
+  assert.ok(rankings.boards.every(board => board.placeholder))
+  assert.ok(rankings.boards.every(board => board.entries.length === 0))
   const html = render(React.createElement(RankingsPreview, { rankings }))
   const anchorCount = (html.match(/<a /g) || []).length
-  const liveRowCount = rankings.boards.filter(b => !b.placeholder)
-    .reduce((sum, board) => sum + board.entries.length, 0)
-  assert.equal(anchorCount, liveRowCount,
-    'every anchor in the rankings section must be a live team row')
+  assert.equal(anchorCount, 0)
+  assert.ok(!htmlIncludes(html, 'WSH'))
+  assert.ok(!htmlIncludes(html, 'MIL'))
 })
 
 test('CTA language is specific, never vague', () => {
