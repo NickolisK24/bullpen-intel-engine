@@ -1,6 +1,7 @@
 from datetime import timedelta
 import logging
 
+from flask import current_app, has_app_context
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.fatigue_score import FatigueScore
@@ -17,19 +18,94 @@ from utils.time import utc_now_naive
 
 STATUS_RUNNING = 'running'
 STATUS_SUCCESS = 'success'
+STATUS_PARTIAL = 'partial'
 STATUS_FAILED = 'failed'
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
+# A run counts as a "successful" data write for freshness purposes when it
+# either fully succeeded or completed with partial dead-lettered records — in
+# both cases the domains it touched were refreshed.
+SUCCESSFUL_STATUSES = (STATUS_SUCCESS, STATUS_PARTIAL)
+
 SOURCE_MANUAL = 'manual'
 SOURCE_SCHEDULED = 'scheduled'
 SOURCE_GITHUB_ACTIONS = 'github_actions'
+
+JOB_DAILY_SYNC = 'daily_sync'
 
 logger = logging.getLogger(__name__)
 
 
 def _now():
     return utc_now_naive()
+
+
+# ── Freshness degradation (fail-closed) ──────────────────────────────────────
+
+DEGRADATION_FRESH = 'fresh'
+DEGRADATION_STALE = 'stale'
+DEGRADATION_UNAVAILABLE = 'unavailable'
+DEGRADATION_MISSING = 'missing'
+
+
+def freshness_thresholds():
+    """
+    Resolve the stale / unavailable day thresholds from app config when an app
+    context is active, else fall back to the established 14-day active window
+    for stale and a hard 30-day boundary for unavailable.
+    """
+    # Fallbacks mirror config.Config defaults so behavior is identical whether
+    # or not an app config is loaded (e.g. bare test apps).
+    stale_default = ACTIVE_WINDOW_DAYS  # 14
+    unavailable_default = 30
+    if has_app_context():
+        stale = current_app.config.get('FRESHNESS_STALE_AFTER_DAYS', stale_default)
+        unavailable = current_app.config.get(
+            'FRESHNESS_UNAVAILABLE_AFTER_DAYS', unavailable_default
+        )
+    else:
+        stale = stale_default
+        unavailable = unavailable_default
+    # An unavailable threshold below the stale threshold would be incoherent;
+    # clamp so unavailable is always at least the stale boundary.
+    return int(stale), int(max(unavailable, stale))
+
+
+def classify_freshness_degradation(data_age_days, stale_after_days, unavailable_after_days):
+    """
+    Pure classification of data age into fresh / stale / unavailable.
+
+    Boundaries are inclusive at the degrading edge so there is no silent gap:
+      - age <  stale_after            → fresh
+      - stale_after <= age < unavail  → stale
+      - age >= unavailable_after      → unavailable (fail closed)
+      - age is None (no data)         → missing (fail closed)
+
+    Unavailable and missing both fail closed: the domain must not be presented
+    as usable.
+    """
+    if data_age_days is None:
+        return DEGRADATION_MISSING
+    if data_age_days >= unavailable_after_days:
+        return DEGRADATION_UNAVAILABLE
+    if data_age_days >= stale_after_days:
+        return DEGRADATION_STALE
+    return DEGRADATION_FRESH
+
+
+def build_degradation_block(data_age_days):
+    """Additive freshness-degradation descriptor for trust surfaces."""
+    stale_after, unavailable_after = freshness_thresholds()
+    state = classify_freshness_degradation(data_age_days, stale_after, unavailable_after)
+    fail_closed = state in (DEGRADATION_UNAVAILABLE, DEGRADATION_MISSING)
+    return {
+        'state': state,
+        'fail_closed': fail_closed,
+        'data_age_days': data_age_days,
+        'stale_after_days': stale_after,
+        'unavailable_after_days': unavailable_after,
+    }
 
 
 def _iso(value):
@@ -72,7 +148,7 @@ def canonical_fatigue_reference_date(reference_date=None):
     return product_availability_reference_date_from_metadata(collect_data_metadata())
 
 
-def start_sync_run(source=SOURCE_MANUAL, started_at=None):
+def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYNC):
     started_at = started_at or _now()
     # Start from a clean transaction. If an earlier statement in this request
     # left the session in an aborted/poisoned state (a classic Postgres
@@ -84,6 +160,7 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None):
         pass
     try:
         run = SyncRun(
+            job_name=job_name,
             started_at=started_at,
             status=STATUS_RUNNING,
             source=source,
@@ -104,12 +181,16 @@ def finish_sync_run(
     status,
     completed_at=None,
     records_processed=0,
+    records_failed=0,
     new_logs_added=0,
     pitchers_updated=0,
     errors=0,
+    api_calls_made=0,
+    retries_used=0,
     error_message=None,
     source=SOURCE_MANUAL,
     started_at=None,
+    job_name=JOB_DAILY_SYNC,
 ):
     """
     Record the outcome of a sync as a durable sync_runs row.
@@ -131,6 +212,7 @@ def finish_sync_run(
             # Self-heal: start never persisted (or the id was lost). Create the
             # durable row now so the sync is never recorded only in the file.
             run = SyncRun(
+                job_name=job_name,
                 started_at=started_at or completed_at,
                 status=status,
                 source=source,
@@ -145,9 +227,12 @@ def finish_sync_run(
         run.latest_workload_date = metadata['latest_workload_date']
         run.latest_fatigue_calculated_at = metadata['latest_fatigue_calculated_at']
         run.records_processed = records_processed or 0
+        run.records_failed = records_failed or 0
         run.new_logs_added = new_logs_added or 0
         run.pitchers_updated = pitchers_updated or 0
         run.errors = errors or 0
+        run.api_calls_made = api_calls_made or 0
+        run.retries_used = retries_used or 0
         run.error_message = error_message
         db.session.commit()
         return run
@@ -162,12 +247,101 @@ def latest_sync_run():
 
 
 def latest_successful_sync_run():
+    # A partial run still refreshed the domains it touched (it dead-lettered
+    # only the records that failed), so it counts as a successful data write
+    # for freshness purposes.
     return (
         SyncRun.query
-        .filter_by(status=STATUS_SUCCESS)
+        .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
     )
+
+
+def last_run_per_job():
+    """Latest sync_runs row for each distinct job_name, most-recent first."""
+    job_names = [
+        row[0]
+        for row in db.session.query(SyncRun.job_name).distinct().all()
+    ]
+    runs = []
+    for job_name in job_names:
+        run = (
+            SyncRun.query
+            .filter_by(job_name=job_name)
+            .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+            .first()
+        )
+        if run is not None:
+            runs.append(run)
+    runs.sort(key=lambda r: (r.started_at or r.created_at), reverse=True)
+    return runs
+
+
+def domain_freshness(metadata=None, reference_date=None):
+    """
+    Per-domain fresh / stale / unavailable classification.
+
+    Each tracked data domain (workload game logs, fatigue scores) is aged
+    against the product reference date and run through the same configurable
+    degradation thresholds, so the operator can see exactly which domain is
+    degrading rather than a single blended freshness signal.
+    """
+    metadata = metadata or collect_data_metadata()
+    ref = reference_date or product_current_date()
+
+    def _age_days(value):
+        if value is None:
+            return None
+        as_date = value.date() if hasattr(value, 'date') else value
+        return (ref - as_date).days
+
+    return {
+        'workload': {
+            'latest_date': _iso(metadata['latest_workload_date']),
+            **build_degradation_block(_age_days(metadata['latest_workload_date'])),
+        },
+        'fatigue': {
+            'latest_date': _iso(metadata['latest_fatigue_calculated_at']),
+            **build_degradation_block(_age_days(metadata['latest_fatigue_calculated_at'])),
+        },
+    }
+
+
+def pipeline_health_payload(reference_date=None):
+    """
+    Operator-facing pipeline observability: last run per job, each run's status,
+    per-domain freshness classification, and the unresolved dead-letter count.
+
+    Read-only and deterministic — everything here is traceable to sync_runs and
+    sync_failures rows.
+    """
+    # Imported here to avoid any import-time coupling between the two services.
+    from services import dead_letter
+
+    metadata = collect_data_metadata()
+    runs = last_run_per_job()
+    overall = build_sync_status_payload(reference_date=reference_date)
+
+    return {
+        'capability': 'pipeline_health',
+        'jobs': [
+            {
+                'job_name': run.job_name,
+                'status': run.status,
+                'last_run': run.to_dict(),
+            }
+            for run in runs
+        ],
+        'domains': domain_freshness(metadata, reference_date=reference_date),
+        'freshness': overall.get('freshness'),
+        'sync_status': overall.get('status'),
+        'last_successful_sync': overall.get('last_successful_sync'),
+        'dead_letters': {
+            'unresolved_count': dead_letter.unresolved_count(),
+            'recent': [f.to_dict() for f in dead_letter.unresolved_failures(limit=20)],
+        },
+    }
 
 
 def _run_message(run):
@@ -227,6 +401,7 @@ def determine_freshness_state(
             'reason_codes': ['workload_data_missing'],
             'label': 'No baseball workload data loaded.',
             'limitations': ['No game logs are available.'],
+            'degradation': build_degradation_block(None),
         }
 
     is_current = latest_workload_date >= cutoff
@@ -256,6 +431,23 @@ def determine_freshness_state(
         reason_codes.append('latest_sync_running')
         limitations.append('A sync is currently running; data may reflect the previous completed sync.')
 
+    degradation = build_degradation_block(data_age_days)
+    # Fail-closed: past the hard unavailable threshold the domain must not be
+    # presented as usable. Surface it explicitly so no caller can render data
+    # older than the threshold as fresh.
+    if degradation['fail_closed']:
+        if 'workload_data_unavailable' not in reason_codes:
+            reason_codes.append('workload_data_unavailable')
+        unavailable_after = degradation['unavailable_after_days']
+        limitations.append(
+            f'Latest workload data is older than the {unavailable_after}-day '
+            'availability threshold; availability is failing closed.'
+        )
+        label = (
+            f"Unavailable: baseball data through {latest_workload_date.isoformat()} "
+            f"is older than the {unavailable_after}-day threshold."
+        )
+
     return {
         'is_current': is_current,
         'is_stale': freshness_state == 'stale',
@@ -272,6 +464,7 @@ def determine_freshness_state(
         'reason_codes': reason_codes,
         'label': label,
         'limitations': limitations,
+        'degradation': degradation,
     }
 
 
@@ -316,10 +509,10 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
     if successful_run:
         last_successful_sync = _iso(successful_run.completed_at or successful_run.started_at)
         last_successful_sync_run = successful_run.to_dict()
-    elif status == STATUS_SUCCESS and finished_at:
+    elif status in SUCCESSFUL_STATUSES and finished_at:
         last_successful_sync = finished_at
         last_successful_sync_run = sync_block
-    elif status == STATUS_SUCCESS:
+    elif status in SUCCESSFUL_STATUSES:
         last_successful_sync = last_sync
         last_successful_sync_run = sync_block
     else:

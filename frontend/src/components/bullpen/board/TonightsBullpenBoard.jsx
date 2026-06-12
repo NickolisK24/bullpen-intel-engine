@@ -131,7 +131,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               loading={gameContext.loading}
               error={gameContext.error}
             />
-            <BullpenBoardView board={board.data} onSelectPitcher={setDetailPitcherId} />
+            <BullpenBoardView board={board.data} onSelectPitcher={setDetailPitcherId} showStoryPanel />
           </div>
           {detailPitcherId != null && (
             <div

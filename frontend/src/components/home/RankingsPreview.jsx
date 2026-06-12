@@ -1,0 +1,64 @@
+import { SectionHeading } from './BullpenStories'
+
+// Section 4 — Rankings Preview. Placeholder-only until this product surface is
+// validated; no team ordering or leaderboard links render here.
+export default function RankingsPreview({ rankings }) {
+  if (!rankings) return null
+
+  return (
+    <section className="mb-8" aria-label="Bullpen rankings preview">
+      <SectionHeading
+        title="Rankings Preview"
+        subtitle={rankings.framing}
+        right={(
+          <span className="rounded border border-amber/30 bg-amber/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber/80">
+            Preview
+          </span>
+        )}
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {rankings.boards.map(board => (
+          <RankingBoard key={board.key} board={board} />
+        ))}
+      </div>
+
+      <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-chalk600">
+        {rankings.updateNote}
+      </p>
+    </section>
+  )
+}
+
+function RankingBoard({ board }) {
+  return (
+    <div className="card flex flex-col p-4">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">{board.title}</div>
+      <div className="mt-0.5 text-[11px] text-chalk600">{board.note}</div>
+
+      <div className="mt-3 flex-1 space-y-1.5">
+        <PlaceholderRows copy={board.placeholderCopy} />
+      </div>
+    </div>
+  )
+}
+
+function PlaceholderRows({ copy }) {
+  return (
+    <div>
+      {[1, 2, 3].map(position => (
+        <div key={position} className="flex items-center gap-3 px-2 py-1.5 opacity-40" aria-hidden="true">
+          <span className="font-display text-lg text-chalk600 w-4 text-center">{position}</span>
+          <span className="h-2 flex-1 rounded bg-dirt" />
+          <span className="h-2 w-10 rounded bg-dirt" />
+        </div>
+      ))}
+      <div className="mt-2 flex items-center gap-2 px-2">
+        <span className="rounded border border-dirt px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-chalk600">
+          Not Ready
+        </span>
+        <span className="text-[11px] leading-snug text-chalk400">{copy}</span>
+      </div>
+    </div>
+  )
+}

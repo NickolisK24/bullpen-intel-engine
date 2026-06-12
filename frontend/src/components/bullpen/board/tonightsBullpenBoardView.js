@@ -4,6 +4,7 @@ import {
   getDataStateView,
 } from '../availabilityView'
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import { getPitcherLabels } from '../../../utils/pitcherLabels'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
 // when the payload is missing or malformed — the backend is the source of
@@ -243,6 +244,7 @@ export function getBoardCardView(card) {
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
     reasons: Array.isArray(card?.reasons) ? card.reasons : [],
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
+    pitcherLabels: getPitcherLabels(card),
     role: getRoleView(card?.role),
     eligibility: getEligibilityView(card?.eligibility),
     rosterStatus: getRosterStatusView(card?.roster_status),
