@@ -135,11 +135,11 @@ test('each board shape lands in its story family', () => {
 
 test('a constrained club gets constrained story copy with real counts', () => {
   const story = getTeamBullpenStoryView(constrainedBoard)
-  assert.equal(story.label, 'Constrained Pen')
+  assert.equal(story.label, 'Short-Handed Pen')
   assert.match(story.headline, /Milwaukee Brewers enter today with a thin late-inning margin/)
   assert.match(story.summary, /3 arms of 8 come in needing rest|3 arms/)
   assert.ok(story.workloadBullets.some(bullet => /2 arms of 8 come in rested and ready/.test(bullet)))
-  assert.ok(story.workloadBullets.some(bullet => /3 arms are workload-restricted/.test(bullet)))
+  assert.ok(story.workloadBullets.some(bullet => /3 arms have earned a rest day/.test(bullet)))
   assert.ok(story.watchBullets.length >= 2 && story.watchBullets.length <= 3)
 })
 
@@ -148,19 +148,20 @@ test('a watch-list club reads calm surface, heavy workload', () => {
   assert.equal(story.label, 'Watch-List Pen')
   assert.match(story.headline, /look calm on the surface/)
   assert.match(story.summary, /4 arms of 8/)
-  assert.match(story.summary, /nobody is workload-restricted yet/)
+  assert.match(story.summary, /nobody is down outright yet/)
 })
 
-test('a rested club reads as the cleanest availability picture', () => {
+test('a rested club reads as one of the freshest pens', () => {
   const story = getTeamBullpenStoryView(restedBoard)
   assert.equal(story.label, 'Rested Pen')
-  assert.match(story.headline, /cleanest availability pictures into today/)
+  assert.match(story.headline, /freshest bullpens into today/)
   assert.match(story.summary, /6 arms of 8 come in rested and ready/)
+  assert.match(story.summary, /room to breathe today/)
 })
 
 test('single-arm workload counts read grammatically after density trimming', () => {
   const story = getTeamBullpenStoryView(restedBoard)
-  assert.ok(story.workloadBullets.some(bullet => bullet === '1 arm is workload-restricted after its recent use.'),
+  assert.ok(story.workloadBullets.some(bullet => bullet === '1 arm has earned a rest day after the work it has carried.'),
     `got: ${story.workloadBullets.join(' | ')}`)
   assert.equal(story.workloadBullets.length, 2)
 })
@@ -168,7 +169,7 @@ test('single-arm workload counts read grammatically after density trimming', () 
 test('a neutral club gets balanced story copy', () => {
   const story = getTeamBullpenStoryView(balancedBoard)
   assert.equal(story.label, 'Balanced Pen')
-  assert.match(story.headline, /come in steady — no extreme bullpen signal today/)
+  assert.match(story.headline, /come in steady — nothing tilting the pen either way today/)
 })
 
 test('a thin dataset gets an honest limited read', () => {
@@ -188,7 +189,7 @@ test('no board means no story', () => {
 test('the panel renders headline, both bullet sections, and the framing line', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Is Watching This Pen'))
-  assert.ok(htmlIncludes(html, 'What The Workload Shape Says'))
+  assert.ok(htmlIncludes(html, 'What The Recent Work Says'))
   assert.ok(htmlIncludes(html, 'What To Watch On The Board'))
   assert.ok(htmlIncludes(html, STORY_FRAMING_LINE))
 })
@@ -224,7 +225,7 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
 test('the shape section stays label-led and avoids score ranking or grade language', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   const start = html.indexOf('Today’s Bullpen Shape')
-  const end = html.indexOf('What The Workload Shape Says')
+  const end = html.indexOf('What The Recent Work Says')
   const shapeHtml = html.slice(start, end)
 
   for (const term of [
@@ -259,6 +260,8 @@ test('the story panel never renders raw system phrasing', () => {
       'availability inventory', 'readiness limitations', 'limitations are present',
       'snapshot', 'governance', 'classification', 'algorithm', 'data state',
       'contract', 'fail closed',
+      // Mechanical phrasing the language layer exists to prevent in prose.
+      'workload-restricted', 'register as', 'availability picture',
     ]) {
       assert.ok(!html.includes(term), `${board.team.team_abbreviation} leaked system phrasing: ${term}`)
     }

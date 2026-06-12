@@ -5,6 +5,7 @@
 // no recommendations, no new signals.
 
 import { getBullpenReads } from '../../../utils/bullpenConcepts'
+import { SIGNAL_HEADLINES } from '../../../utils/bullpenLanguage'
 import { getTeamBullpenShape } from '../../../utils/teamBullpenScoring'
 
 const STORY_TONES = {
@@ -16,7 +17,7 @@ const STORY_TONES = {
 }
 
 const STORY_LABELS = {
-  constrained: 'Constrained Pen',
+  constrained: 'Short-Handed Pen',
   watch: 'Watch-List Pen',
   rested: 'Rested Pen',
   balanced: 'Balanced Pen',
@@ -24,7 +25,7 @@ const STORY_LABELS = {
 }
 
 export const STORY_FRAMING_LINE =
-  'Context from current workload and availability signals — not a prediction.'
+  'Drawn from current workload and availability — a read on today, not a prediction.'
 
 const SHAPE_READ_ORDER = [
   { key: 'trustAvailability', concept: 'Trust Arm Availability' },
@@ -91,13 +92,13 @@ function workloadBullets(family, counts, confidence) {
     ? `${arms(ready)} of ${total} ${one(ready, 'comes', 'come')} in rested and ready.`
     : 'No arm in this pen comes in fully rested.')
   if (needRest > 0) {
-    bullets.push(`${arms(needRest)} ${one(needRest, 'is', 'are')} workload-restricted after ${one(needRest, 'its', 'their')} recent use.`)
+    bullets.push(`${arms(needRest)} ${one(needRest, 'has', 'have')} earned a rest day after the work ${one(needRest, 'it has', 'they have')} carried.`)
   }
   if (watch > 0) {
     bullets.push(`${arms(watch)} ${one(watch, 'carries', 'carry')} enough recent work to sit on the watch list.`)
   }
   if (out > 0) {
-    bullets.push(`${arms(out)} ${one(out, 'is', 'are')} unavailable for roster or data reasons rather than tonight's workload.`)
+    bullets.push(`${arms(out)} ${one(out, 'is', 'are')} out for roster reasons or missing data, not tonight's workload.`)
   }
   if (confidence === 'low') {
     bullets.push('The workload read is thinner than usual today — take the counts with some caution.')
@@ -122,7 +123,7 @@ function watchBullets(family, counts) {
     case 'watch':
       return [
         'Whether the watch-list arms are the same names night after night.',
-        'How the Monitor group’s fatigue reads compare with the rested arms.',
+        'How the busiest arms look next to the rested ones.',
         'Whether rest is starting to show up for the busiest arms.',
       ]
     case 'rested':
@@ -150,20 +151,20 @@ function storyHeadline(family, teamName, counts) {
   switch (family) {
     case 'constrained':
       return {
-        headline: `The ${teamName} enter today with a thin late-inning margin`,
+        headline: SIGNAL_HEADLINES.stretchedPen.team(teamName),
         summary: needRest > 0
           ? `${arms(needRest)} of ${total} ${one(needRest, 'comes', 'come')} in needing rest after recent work, and the clean options are thinner than they look. This bullpen has less margin than most today.`
           : `Only ${arms(ready)} of ${total} ${one(ready, 'comes', 'come')} in fully rested, and the clean options are thinner than they look. This bullpen has less margin than most today.`,
       }
     case 'watch':
       return {
-        headline: `The ${teamName} look calm on the surface — the workload underneath is worth watching`,
-        summary: `${arms(watch)} of ${total} ${one(watch, 'carries', 'carry')} enough recent work to land on the watch list${needRest === 0 ? ', even though nobody is workload-restricted yet' : ''}. The work is concentrated in a small group, and that concentration is the story.`,
+        headline: SIGNAL_HEADLINES.sameArms.team(teamName),
+        summary: `${arms(watch)} of ${total} ${one(watch, 'carries', 'carry')} enough recent work to land on the watch list${needRest === 0 ? ', even though nobody is down outright yet' : ''}. The heavy work keeps falling on the same small group, and that is the story.`,
       }
     case 'rested':
       return {
-        headline: `The ${teamName} bring one of the cleanest availability pictures into today`,
-        summary: `${arms(ready)} of ${total} ${one(ready, 'comes', 'come')} in rested and ready. Rest is doing a lot of the work in this bullpen's story today.`,
+        headline: SIGNAL_HEADLINES.freshPen.team(teamName),
+        summary: `${arms(ready)} of ${total} ${one(ready, 'comes', 'come')} in rested and ready. This pen has room to breathe today.`,
       }
     case 'data_limited':
       return {
@@ -172,7 +173,7 @@ function storyHeadline(family, teamName, counts) {
       }
     default:
       return {
-        headline: `The ${teamName} come in steady — no extreme bullpen signal today`,
+        headline: `The ${teamName} come in steady — nothing tilting the pen either way today`,
         summary: `A bit of everything: ${ready} ready, ${watch} on watch, ${needRest} needing rest. Nothing here pushes the late innings into a corner today.`,
       }
   }

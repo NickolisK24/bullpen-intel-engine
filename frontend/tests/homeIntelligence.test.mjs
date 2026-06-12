@@ -95,7 +95,7 @@ test('the hero leads with the most constrained bullpen', () => {
 
 test('the hero headline states what the data shows, not a forecast', () => {
   const hero = getHeroStory(dashboard)
-  assert.match(hero.headline, /have baseball's most constrained bullpen today/)
+  assert.match(hero.headline, /bullpen is stretched thinner than any in baseball today/)
   // No drama, no fortune-telling.
   for (const phrase of [/running out/i, /collapse/i, /will\s/i, /guarantee/i, /doomed/i]) {
     assert.ok(!phrase.test(hero.headline), `headline leaked: ${phrase}`)
@@ -110,7 +110,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const watchHero = getHeroStory(noStress)
   assert.equal(watchHero.angle, 'concentration')
   assert.equal(watchHero.team.teamName, 'Toronto Blue Jays')
-  assert.match(watchHero.headline, /most concentrated bullpen workload today/)
+  assert.match(watchHero.headline, /leaning on the same arms more than anyone in baseball today/)
 
   const restOnly = {
     ...dashboard,
@@ -119,7 +119,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
-  assert.match(restHero.headline, /widest Recovery Window into today/)
+  assert.match(restHero.headline, /baseball's freshest bullpen into today/)
 })
 
 test('a quiet league day still produces a hero story', () => {
@@ -148,11 +148,11 @@ test('card copy reads like a hook, not a metric summary', () => {
   const cards = getLeagueCards(dashboard)
   const byKey = Object.fromEntries(cards.map(card => [card.key, card]))
   assert.equal(byKey['most-stressed'].line,
-    'More arms have a limited Recovery Window here than anywhere else in baseball.')
+    'More arms need a day here than anywhere else in baseball.')
   assert.equal(byKey['most-rested'].line,
-    'This group brings the cleanest availability context into today.')
+    'No pen brings more rested arms into today.')
   assert.equal(byKey['bullpen-to-watch'].line,
-    'The surface is not alarming yet, but the recent workload is worth watching.')
+    'Nothing is flashing red yet, but the same arms keep getting the call.')
 })
 
 test('cards degrade to quiet copy when the landscape is empty', () => {
@@ -177,16 +177,16 @@ test('today watch items are briefing-only and exclude the flagship club', () => 
     watchItems.items.map(item => item.title),
     [
       'One more pen is working with a shorter late-inning margin',
-      'The watch list is not all at the top of the page',
-      'Recovery Window is the counterweight to today’s pressure',
+      'Another club keeps going to the same arms',
+      'At least one pen comes in with room to breathe',
     ],
   )
 })
 
-test('today league context stays short and uses BaseballOS vocabulary', () => {
+test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {
   const context = getLeagueContext(dashboard)
-  assert.match(context.summary, /limited Recovery Window/)
-  assert.match(context.summary, /Clean Options/)
+  assert.match(context.summary, /need rest after recent work/)
+  assert.match(context.summary, /come in fresh/)
   assert.equal(context.facts.length, 3)
   assert.deepEqual(context.facts.map(fact => fact.label), [
     'Bullpen Pressure',
@@ -258,7 +258,7 @@ test('story title guidelines prefer observations over conclusions', () => {
   for (const weak of ['pen is in good shape', 'bullpen is healthy', 'strong availability']) {
     assert.ok(!titles.includes(weak), `conclusion-driven title leaked: ${weak}`)
   }
-  assert.ok(titles.includes('clean options are stacked a little deeper'))
+  assert.ok(titles.includes('fresh arms to spare today'))
 })
 
 // ── Rankings preview ────────────────────────────────────────────────────────
@@ -324,12 +324,12 @@ test('today is curated: no team explorer, feedback CTA intact', () => {
 test('today shows three briefing watch items without repeating Stories titles', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'One more pen is working with a shorter late-inning margin'))
-  assert.ok(htmlIncludes(html, 'The watch list is not all at the top of the page'))
-  assert.ok(htmlIncludes(html, 'Recovery Window is the counterweight to today’s pressure'))
+  assert.ok(htmlIncludes(html, 'Another club keeps going to the same arms'))
+  assert.ok(htmlIncludes(html, 'At least one pen comes in with room to breathe'))
   // Full-feed story titles stay in Stories, not on the briefing.
   assert.ok(!htmlIncludes(html, 'box score looks calm'))
   assert.ok(!htmlIncludes(html, 'A thin late-inning margin is forming'))
-  assert.ok(!htmlIncludes(html, 'Nobody brings a wider Recovery Window'))
+  assert.ok(!htmlIncludes(html, 'Nobody brings a fresher bullpen'))
   assert.ok(!htmlIncludes(html, 'The workload underneath is worth watching'))
 })
 
@@ -347,7 +347,7 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'Why It Matters'))
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
-  assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
+  assert.ok(htmlIncludes(html, 'stretched thinner than any in baseball today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
@@ -468,6 +468,9 @@ test('the homepage avoids raw system phrasing', () => {
     'availability inventory', 'readiness limitations', 'limitations are present',
     'trusted snapshot', 'snapshot', 'data state', 'data_state', 'contract',
     'fail closed', 'fail_closed', 'governance',
+    // Mechanical phrasing the language layer exists to prevent in prose.
+    'register as', 'limited recovery window', 'availability context',
+    'carrying workload concentration', 'workload-restricted',
   ]) {
     assert.ok(!html.includes(term), `leaked system phrasing: ${term}`)
   }

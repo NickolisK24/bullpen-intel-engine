@@ -164,9 +164,9 @@ test('the stories page renders as a feed-first surface beyond Today', () => {
   assert.ok(htmlIncludes(html, 'Observations, not predictions.'))
   assert.ok(htmlIncludes(html, 'Beyond Today'))
   assert.ok(htmlIncludes(html, 'What Else BaseballOS Is Seeing'))
-  assert.ok(htmlIncludes(html, 'active bullpen observations'))
+  assert.ok(htmlIncludes(html, 'bullpen storylines in play today'))
   assert.ok(!htmlIncludes(html, 'Top Story'))
-  assert.ok(!htmlIncludes(html, 'most constrained bullpen today'))
+  assert.ok(!htmlIncludes(html, 'stretched thinner than any in baseball today'))
   assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
@@ -322,6 +322,9 @@ test('the stories page stays in baseball language', () => {
     'snapshot', 'governance', 'data_state', 'fail closed',
     'recommended', 'recommendation', 'betting', 'parlay', 'injury',
     'will collapse', 'guaranteed',
+    // Mechanical phrasing the language layer exists to prevent.
+    'register as', 'workload-restricted', 'availability context',
+    'carrying workload concentration', 'limited recovery window',
   ]) {
     assert.ok(!html.includes(term), `leaked: ${term}`)
   }

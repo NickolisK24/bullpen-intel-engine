@@ -129,7 +129,7 @@ function concentrationRead({ total, watch, needRest }) {
   if (watch >= 3 || (watch >= 2 && needRest >= 2)) {
     return {
       ...base, label: 'Concentrated', display: 'Concentrated Workload', tone: 'watch',
-      detail: `${onWatchPhrase(watch, total)} — work is clustering in a few arms.`,
+      detail: `${onWatchPhrase(watch, total)} — the heavy work is falling on a few arms.`,
     }
   }
   if (watch === 2 || (watch >= 1 && needRest >= 1)) {

@@ -160,7 +160,7 @@ function FeedScope({ feed, counts }) {
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
             {feed.hasStories
-              ? `${feed.items.length} active bullpen observations across team, trend, and league lanes.`
+              ? `${feed.items.length} bullpen storylines in play today, from single pens to the league picture.`
               : feed.fallback}
           </p>
         </div>
