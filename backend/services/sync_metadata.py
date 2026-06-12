@@ -1,6 +1,7 @@
 from datetime import timedelta
 import logging
 
+from flask import current_app, has_app_context
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.fatigue_score import FatigueScore
@@ -38,6 +39,73 @@ logger = logging.getLogger(__name__)
 
 def _now():
     return utc_now_naive()
+
+
+# ── Freshness degradation (fail-closed) ──────────────────────────────────────
+
+DEGRADATION_FRESH = 'fresh'
+DEGRADATION_STALE = 'stale'
+DEGRADATION_UNAVAILABLE = 'unavailable'
+DEGRADATION_MISSING = 'missing'
+
+
+def freshness_thresholds():
+    """
+    Resolve the stale / unavailable day thresholds from app config when an app
+    context is active, else fall back to the established 14-day active window
+    for stale and a hard 30-day boundary for unavailable.
+    """
+    # Fallbacks mirror config.Config defaults so behavior is identical whether
+    # or not an app config is loaded (e.g. bare test apps).
+    stale_default = ACTIVE_WINDOW_DAYS  # 14
+    unavailable_default = 30
+    if has_app_context():
+        stale = current_app.config.get('FRESHNESS_STALE_AFTER_DAYS', stale_default)
+        unavailable = current_app.config.get(
+            'FRESHNESS_UNAVAILABLE_AFTER_DAYS', unavailable_default
+        )
+    else:
+        stale = stale_default
+        unavailable = unavailable_default
+    # An unavailable threshold below the stale threshold would be incoherent;
+    # clamp so unavailable is always at least the stale boundary.
+    return int(stale), int(max(unavailable, stale))
+
+
+def classify_freshness_degradation(data_age_days, stale_after_days, unavailable_after_days):
+    """
+    Pure classification of data age into fresh / stale / unavailable.
+
+    Boundaries are inclusive at the degrading edge so there is no silent gap:
+      - age <  stale_after            → fresh
+      - stale_after <= age < unavail  → stale
+      - age >= unavailable_after      → unavailable (fail closed)
+      - age is None (no data)         → missing (fail closed)
+
+    Unavailable and missing both fail closed: the domain must not be presented
+    as usable.
+    """
+    if data_age_days is None:
+        return DEGRADATION_MISSING
+    if data_age_days >= unavailable_after_days:
+        return DEGRADATION_UNAVAILABLE
+    if data_age_days >= stale_after_days:
+        return DEGRADATION_STALE
+    return DEGRADATION_FRESH
+
+
+def build_degradation_block(data_age_days):
+    """Additive freshness-degradation descriptor for trust surfaces."""
+    stale_after, unavailable_after = freshness_thresholds()
+    state = classify_freshness_degradation(data_age_days, stale_after, unavailable_after)
+    fail_closed = state in (DEGRADATION_UNAVAILABLE, DEGRADATION_MISSING)
+    return {
+        'state': state,
+        'fail_closed': fail_closed,
+        'data_age_days': data_age_days,
+        'stale_after_days': stale_after,
+        'unavailable_after_days': unavailable_after,
+    }
 
 
 def _iso(value):
@@ -247,6 +315,7 @@ def determine_freshness_state(
             'reason_codes': ['workload_data_missing'],
             'label': 'No baseball workload data loaded.',
             'limitations': ['No game logs are available.'],
+            'degradation': build_degradation_block(None),
         }
 
     is_current = latest_workload_date >= cutoff
@@ -276,6 +345,23 @@ def determine_freshness_state(
         reason_codes.append('latest_sync_running')
         limitations.append('A sync is currently running; data may reflect the previous completed sync.')
 
+    degradation = build_degradation_block(data_age_days)
+    # Fail-closed: past the hard unavailable threshold the domain must not be
+    # presented as usable. Surface it explicitly so no caller can render data
+    # older than the threshold as fresh.
+    if degradation['fail_closed']:
+        if 'workload_data_unavailable' not in reason_codes:
+            reason_codes.append('workload_data_unavailable')
+        unavailable_after = degradation['unavailable_after_days']
+        limitations.append(
+            f'Latest workload data is older than the {unavailable_after}-day '
+            'availability threshold; availability is failing closed.'
+        )
+        label = (
+            f"Unavailable: baseball data through {latest_workload_date.isoformat()} "
+            f"is older than the {unavailable_after}-day threshold."
+        )
+
     return {
         'is_current': is_current,
         'is_stale': freshness_state == 'stale',
@@ -292,6 +378,7 @@ def determine_freshness_state(
         'reason_codes': reason_codes,
         'label': label,
         'limitations': limitations,
+        'degradation': degradation,
     }
 
 

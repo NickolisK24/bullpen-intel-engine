@@ -771,8 +771,16 @@ def _board_freshness_block():
             'reason_codes': list(freshness.get('reason_codes') or []),
             'label': freshness.get('label'),
             'limitations': list(freshness.get('limitations') or []),
+            # Fail-closed degradation tier (fresh / stale / unavailable). When
+            # fail_closed is True the data is past the hard threshold and must
+            # not be presented as usable.
+            'degradation': freshness.get('degradation'),
+            'degradation_state': (freshness.get('degradation') or {}).get('state'),
+            'fail_closed': bool((freshness.get('degradation') or {}).get('fail_closed')),
         }
     except Exception:
+        # A metadata read failure itself fails closed — we cannot prove the data
+        # is fresh, so we must not imply it is.
         return {
             'data_through': None,
             'latest_workload_date': None,
@@ -790,6 +798,15 @@ def _board_freshness_block():
             'reason_codes': ['durable_sync_metadata_unavailable'],
             'label': 'Freshness metadata unavailable.',
             'limitations': ['Could not read durable sync metadata.'],
+            'degradation': {
+                'state': 'unavailable',
+                'fail_closed': True,
+                'data_age_days': None,
+                'stale_after_days': None,
+                'unavailable_after_days': None,
+            },
+            'degradation_state': 'unavailable',
+            'fail_closed': True,
         }
 
 

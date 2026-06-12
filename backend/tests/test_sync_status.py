@@ -70,18 +70,25 @@ class TestSyncStatusSnapshot:
         assert body['freshness']['freshness_state'] == 'stale'
         assert body['freshness']['is_stale'] is True
         assert body['freshness']['data_age_days'] is not None
+        # Data this old is past the hard unavailable threshold, so the
+        # fail-closed degradation tier surfaces an explicit reason code.
         assert body['freshness']['reason_codes'] == [
             'durable_sync_metadata_unavailable',
             'successful_sync_missing',
             'fatigue_timestamp_missing',
             'workload_data_outside_active_window',
+            'workload_data_unavailable',
         ]
         assert body['freshness']['limitations'] == [
             'Sync metadata unavailable; data coverage is based on game logs.',
             'No durable successful sync timestamp is available.',
             'No fatigue calculation timestamp is available.',
             'Latest game date is outside the 14-day freshness window.',
+            'Latest workload data is older than the 30-day availability '
+            'threshold; availability is failing closed.',
         ]
+        assert body['freshness']['degradation']['state'] == 'unavailable'
+        assert body['freshness']['degradation']['fail_closed'] is True
 
     def test_reports_empty_when_no_data_and_no_sync(self, client):
         res = client.get('/api/bullpen/sync/status')
