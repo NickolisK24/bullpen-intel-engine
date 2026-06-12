@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import { homeTone } from './homeIntelligenceView'
 
-// Section 2 — four league intelligence cards: Most Stressed, Most Rested,
-// Biggest Trend, Bullpen To Watch. Each card is a doorway into an existing
-// page, not a verdict — counts and situations only.
+// Section 2 — four league intelligence cards: Bullpen Pressure, Recovery
+// Window, Biggest Trend, Workload Concentration. Each card is a doorway into
+// an existing page, not a verdict — counts and situations only.
 export default function LeagueIntelligenceCards({ cards }) {
   if (!Array.isArray(cards) || cards.length === 0) return null
 

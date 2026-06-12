@@ -1,16 +1,14 @@
-import { Link } from 'react-router-dom'
 import { SectionHeading } from './BullpenStories'
 
-// Section 4 — Rankings Preview. Two boards run live off today's availability
-// counts; the movement boards are honest placeholders until day-over-day
-// tracking exists. Positions reflect today's deterministic count ordering.
+// Section 4 — Rankings Preview. Placeholder-only until this product surface is
+// validated; no team ordering or leaderboard links render here.
 export default function RankingsPreview({ rankings }) {
   if (!rankings) return null
 
   return (
     <section className="mb-8" aria-label="Bullpen rankings preview">
       <SectionHeading
-        title="Bullpen Rankings"
+        title="Rankings Preview"
         subtitle={rankings.framing}
         right={(
           <span className="rounded border border-amber/30 bg-amber/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber/80">
@@ -39,28 +37,7 @@ function RankingBoard({ board }) {
       <div className="mt-0.5 text-[11px] text-chalk600">{board.note}</div>
 
       <div className="mt-3 flex-1 space-y-1.5">
-        {board.placeholder ? (
-          <PlaceholderRows copy={board.placeholderCopy} />
-        ) : board.entries.length === 0 ? (
-          <div className="py-2 text-xs text-chalk400">Nothing stands out today.</div>
-        ) : (
-          board.entries.map(entry => (
-            <Link
-              key={entry.position}
-              to={entry.href || '/bullpen'}
-              className="group flex items-center gap-3 rounded border border-transparent px-2 py-1.5 transition-colors hover:border-dirt hover:bg-chalk/40"
-            >
-              <span className="font-display text-lg text-amber/80 w-4 text-center">{entry.position}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-mono text-sm text-chalk100 group-hover:text-amber transition-colors">
-                  {entry.abbr}
-                </span>
-                <span className="block truncate text-[11px] text-chalk600">{entry.teamName}</span>
-              </span>
-              <span className="font-mono text-[11px] text-chalk400">{entry.stat}</span>
-            </Link>
-          ))
-        )}
+        <PlaceholderRows copy={board.placeholderCopy} />
       </div>
     </div>
   )
@@ -78,7 +55,7 @@ function PlaceholderRows({ copy }) {
       ))}
       <div className="mt-2 flex items-center gap-2 px-2">
         <span className="rounded border border-dirt px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-chalk600">
-          Coming Soon
+          Not Ready
         </span>
         <span className="text-[11px] leading-snug text-chalk400">{copy}</span>
       </div>

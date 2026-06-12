@@ -156,7 +156,7 @@ test('the stories page renders header, framing, compact top story, and league ca
   assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
   // League intelligence cards remain, linking as they do from Today.
-  for (const title of ['Most Stressed Bullpen', 'Most Rested Bullpen', 'Biggest Trend', 'Bullpen To Watch']) {
+  for (const title of ['Highest Bullpen Pressure', 'Widest Recovery Window', 'Biggest Trend', 'Workload Concentration']) {
     assert.ok(htmlIncludes(html, title), `missing card: ${title}`)
   }
 })
@@ -168,7 +168,7 @@ test('stories is the feed, not a second homepage', () => {
   assert.ok(!htmlIncludes(html, 'Rested &amp; Ready'))
   assert.ok(!htmlIncludes(html, 'Browse every bullpen'))
   // No rankings on the feed.
-  assert.ok(!htmlIncludes(html, 'Bullpen Rankings'))
+  assert.ok(!htmlIncludes(html, 'Rankings Preview'))
   assert.ok(!htmlIncludes(html, 'Top Bullpen Health'))
   // Filters sit with the feed, ahead of the demoted league strip.
   const filterIndex = html.indexOf('Story filters')
