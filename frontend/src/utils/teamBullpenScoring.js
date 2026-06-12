@@ -428,6 +428,20 @@ function coverageSafety(summary) {
   const unavailableCoverageArms = coverageReads[READ_LABELS.unavailable]
   const limitedReadCoverageArms = coverageReads[READ_LABELS.limited]
   const availableCoverageArms = cleanCoverageArms + watchCoverageArms
+
+  // Substitute-coverage guardrail. Coverage Safety stays coverage-led: only
+  // designated Coverage Arms can earn Strong/Stable/Thin through the gates
+  // below. But a bullpen whose designated length is degraded or absent is not
+  // automatically in an innings emergency when usable Bridge Arms can chain
+  // emergency innings behind it. Meaningful substitute capacity is at least
+  // one clean Bridge Arm, or two on watch (a watched arm is half-usable, per
+  // the read-usability semantics). It lifts the floor only — Limited becomes
+  // Thin — and never raises any other tier, so designated Coverage Arms remain
+  // the only path to Strong or Stable and depth volume still earns nothing.
+  const cleanBridgeArms = summary.roleReadCounts.bridge[READ_LABELS.clean]
+  const watchBridgeArms = summary.roleReadCounts.bridge[READ_LABELS.watch]
+  const hasSubstituteCoverage = cleanBridgeArms >= 1 || watchBridgeArms >= 2
+
   const supportingCounts = {
     coverageArms,
     availableCoverageArms,
@@ -436,6 +450,9 @@ function coverageSafety(summary) {
     restRestrictedCoverageArms,
     unavailableCoverageArms,
     limitedReadCoverageArms,
+    cleanBridgeArms,
+    watchBridgeArms,
+    substituteCoverageApplied: false,
     roleKnownCount: summary.dataQuality.roleKnownCount,
     totalBullpenArms: summary.totalBullpenArms,
   }
@@ -457,6 +474,19 @@ function coverageSafety(summary) {
   }
   if (coverageArms >= 1 && availableCoverageArms >= 1) {
     return read('coverageSafety', 'Thin Coverage Safety', explanation, supportingCounts)
+  }
+  if (hasSubstituteCoverage) {
+    const bridgeFallback = [
+      cleanBridgeArms > 0 ? `${cleanBridgeArms} clean Bridge Arm${cleanBridgeArms === 1 ? '' : 's'}` : null,
+      watchBridgeArms > 0 ? `${watchBridgeArms} Bridge Arm${watchBridgeArms === 1 ? '' : 's'} on watch` : null,
+    ].filter(Boolean).join(' and ')
+    const liftedExplanation = `${explanation} No designated Coverage Arm is available, but ${bridgeFallback} can chain emergency innings, so coverage reads Thin rather than Limited — substitute capacity, not designated length.`
+    return read(
+      'coverageSafety',
+      'Thin Coverage Safety',
+      liftedExplanation,
+      { ...supportingCounts, substituteCoverageApplied: true },
+    )
   }
   return read('coverageSafety', 'Limited Coverage Safety', explanation, supportingCounts)
 }

@@ -222,12 +222,17 @@ function shortShapeExplanation(read) {
       break
     case 'coverageSafety':
       if (hasCounts(counts.availableCoverageArms, counts.coverageArms)) {
-        return `Coverage Arms: ${compactReadCounts([
+        const base = `Coverage Arms: ${compactReadCounts([
           { count: counts.cleanCoverageArms, label: 'Clean Option' },
           { count: counts.watchCoverageArms, label: 'Watch Arm' },
           { count: counts.restRestrictedCoverageArms, label: 'Rest-Restricted' },
           { count: counts.unavailableCoverageArms, label: 'Unavailable' },
         ], 'no Clean Options or Watch Arms.')}`
+        // A floor-lifted read must explain itself: the Thin label came from
+        // Bridge Arms covering emergency innings, not from designated length.
+        return counts.substituteCoverageApplied
+          ? `${base} Bridge Arms cover emergency innings.`
+          : base
       }
       break
     case 'depthSafety':
