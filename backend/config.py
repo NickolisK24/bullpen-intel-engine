@@ -27,6 +27,34 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MLB_API_BASE = os.environ.get('MLB_API_BASE', 'https://statsapi.mlb.com/api/v1')
+
+    # ── Resilient MLB Stats API client ───────────────────────────────────────
+    # Per-request timeout (seconds) and retry policy for transient failures
+    # (connection errors, timeouts, 429, 5xx). These are read by
+    # services/mlb_api.MLBApiClient at call time so they can be tuned per
+    # environment without touching code. Non-transient 4xx responses are never
+    # retried.
+    MLB_API_TIMEOUT = float(os.environ.get('MLB_API_TIMEOUT', '10'))
+    MLB_API_MAX_RETRIES = int(os.environ.get('MLB_API_MAX_RETRIES', '3'))
+    MLB_API_BACKOFF_BASE = float(os.environ.get('MLB_API_BACKOFF_BASE', '1.0'))
+    MLB_API_BACKOFF_CAP = float(os.environ.get('MLB_API_BACKOFF_CAP', '30.0'))
+    # Full jitter on the backoff delay. Disable (set false) only in tests that
+    # need to assert exact sleep durations.
+    MLB_API_BACKOFF_JITTER = (
+        os.environ.get('MLB_API_BACKOFF_JITTER', 'true').lower()
+        in ('1', 'true', 'yes', 'on')
+    )
+
+    # ── Freshness degradation thresholds (fail-closed) ───────────────────────
+    # Data younger than the stale threshold is fresh; at/after it is stale; at
+    # or beyond the unavailable threshold the platform fails closed and stops
+    # presenting the domain as usable. Defaults keep the existing 14-day active
+    # window as the stale boundary and add a hard 30-day unavailable boundary.
+    FRESHNESS_STALE_AFTER_DAYS = int(os.environ.get('FRESHNESS_STALE_AFTER_DAYS', '14'))
+    FRESHNESS_UNAVAILABLE_AFTER_DAYS = int(
+        os.environ.get('FRESHNESS_UNAVAILABLE_AFTER_DAYS', '30')
+    )
+
     # Shared admin token gating operational write endpoints (sync / recalculate).
     # Unset in development = those endpoints are allowed locally (with a warning).
     ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN')

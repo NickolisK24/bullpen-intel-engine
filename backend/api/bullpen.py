@@ -434,20 +434,25 @@ def sync_recent_logs():
         source=source,
         started_at=started.replace(tzinfo=None),
     )
+    # Fresh API metrics so api_calls_made / retries_used reflect only this run.
+    mlb_client.metrics.reset()
 
     try:
         team_assignment = sync_service.sync_team_assignments()
         roster = sync_service.sync_roster_statuses()
-        pull = sync_service.sync_recent_logs(days_back=days_back)
+        pull = sync_service.sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
     except Exception as e:
         db.session.rollback()
         # Durable first, and self-healing: writes a failed row even if the start
         # row never persisted, so the failure is recorded in sync_runs (not only
         # the cache file).
+        api_metrics = mlb_client.metrics.snapshot()
         failed_run = sync_metadata.finish_sync_run(
             sync_run_id,
             status=sync_metadata.STATUS_FAILED,
             errors=1,
+            api_calls_made=api_metrics['api_calls'],
+            retries_used=api_metrics['retries'],
             error_message=str(e),
             source=source,
             started_at=started.replace(tzinfo=None),
@@ -469,16 +474,31 @@ def sync_recent_logs():
     # day — the same reference the scheduled sync and recalculate endpoint use.
     fatigue_updated = sync_service.recalculate_all_fatigue()
     finished        = datetime.now(timezone.utc)
+    # Partial when records were dead-lettered but domains still refreshed.
+    records_failed = pull['records_failed']
+    final_status = (
+        sync_metadata.STATUS_PARTIAL if records_failed
+        else sync_metadata.STATUS_SUCCESS
+    )
+    partial_message = (
+        f'{records_failed} record(s) dead-lettered; see sync_failures.'
+        if records_failed else None
+    )
+    api_metrics = mlb_client.metrics.snapshot()
     # Durable first (self-healing if the start row never persisted), then the
     # best-effort cache file. The durable row is the source of truth.
     completed_run = sync_metadata.finish_sync_run(
         sync_run_id,
-        status=sync_metadata.STATUS_SUCCESS,
+        status=final_status,
         completed_at=finished.replace(tzinfo=None),
         records_processed=pull['new_logs_added'],
+        records_failed=records_failed,
         new_logs_added=pull['new_logs_added'],
         pitchers_updated=fatigue_updated,
         errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
+        api_calls_made=api_metrics['api_calls'],
+        retries_used=api_metrics['retries'],
+        error_message=partial_message,
         source=source,
         started_at=started.replace(tzinfo=None),
     )
@@ -488,9 +508,10 @@ def sync_recent_logs():
     # public freshness endpoint reads durable sync_runs metadata instead.
     sync_service.write_status({
         'last_sync':       started.isoformat(),
-        'status':          sync_metadata.STATUS_SUCCESS,
+        'status':          final_status,
         'pitchers_updated': fatigue_updated,
         'new_logs_added':  pull['new_logs_added'],
+        'records_failed':  records_failed,
         'errors':          pull['errors'] + roster['errors'] + team_assignment['errors'],
         'team_assignments_refreshed': team_assignment['pitchers_refreshed'],
         'team_assignments_changed': team_assignment['pitchers_changed'],
@@ -506,7 +527,9 @@ def sync_recent_logs():
 
     return jsonify({
         'status':               'ok',
+        'sync_run_status':      final_status,
         'new_logs_added':       pull['new_logs_added'],
+        'records_failed':       records_failed,
         'fatigue_recalculated': fatigue_updated,
         'errors':               pull['errors'] + roster['errors'] + team_assignment['errors'],
         'team_assignments_refreshed': team_assignment['pitchers_refreshed'],
@@ -748,8 +771,16 @@ def _board_freshness_block():
             'reason_codes': list(freshness.get('reason_codes') or []),
             'label': freshness.get('label'),
             'limitations': list(freshness.get('limitations') or []),
+            # Fail-closed degradation tier (fresh / stale / unavailable). When
+            # fail_closed is True the data is past the hard threshold and must
+            # not be presented as usable.
+            'degradation': freshness.get('degradation'),
+            'degradation_state': (freshness.get('degradation') or {}).get('state'),
+            'fail_closed': bool((freshness.get('degradation') or {}).get('fail_closed')),
         }
     except Exception:
+        # A metadata read failure itself fails closed — we cannot prove the data
+        # is fresh, so we must not imply it is.
         return {
             'data_through': None,
             'latest_workload_date': None,
@@ -767,6 +798,15 @@ def _board_freshness_block():
             'reason_codes': ['durable_sync_metadata_unavailable'],
             'label': 'Freshness metadata unavailable.',
             'limitations': ['Could not read durable sync metadata.'],
+            'degradation': {
+                'state': 'unavailable',
+                'fail_closed': True,
+                'data_age_days': None,
+                'stale_after_days': None,
+                'unavailable_after_days': None,
+            },
+            'degradation_state': 'unavailable',
+            'fail_closed': True,
         }
 
 

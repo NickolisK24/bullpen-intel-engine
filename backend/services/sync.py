@@ -19,6 +19,7 @@ from sqlalchemy import desc
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
+from services import dead_letter
 from services import sync_metadata
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
@@ -42,16 +43,28 @@ def _season_for(ref: date) -> int:
     return ref.year
 
 
-def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
+def sync_recent_logs(
+    days_back: int = 7,
+    reference_date: date | None = None,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_DAILY_SYNC,
+):
     """
     Pull recent game logs from the MLB Stats API for every active pitcher
     and insert any that aren't already in the DB.
+
+    Partial-failure semantics: a single pitcher whose fetch fails, or a single
+    malformed game-log record, is dead-lettered (recorded in sync_failures with
+    enough payload to retry) and skipped — it never aborts the rest of the
+    batch. ``records_failed`` counts dead-lettered entities so the caller can
+    mark the run 'partial'.
 
     Returns a dict suitable for API response / log line:
         {
           'new_logs_added':       int,
           'pitchers_touched':     int,
           'errors':               int,
+          'records_failed':       int,
           'days_back':            int,
           'season':               int,
           'cutoff':               'YYYY-MM-DD',
@@ -75,97 +88,77 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
     pitchers        = Pitcher.query.filter_by(active=True).all()
     new_logs        = 0
     errors          = 0
+    records_failed  = 0
     pitchers_touched = 0
 
     for pitcher in pitchers:
         try:
             splits = mlb_client.get_pitcher_game_logs(pitcher.mlb_id, season=season)
         except Exception as e:
+            # A per-pitcher fetch failure is dead-lettered with enough payload
+            # to retry, then skipped — the rest of the league still syncs.
             logger.warning('MLB fetch failed for %s (mlb_id=%s): %s',
                            pitcher.full_name, pitcher.mlb_id, e)
             errors += 1
+            records_failed += 1
+            dead_letter.record_failure(
+                'pitcher_game_logs',
+                e,
+                entity_ref=pitcher.mlb_id,
+                payload={
+                    'pitcher_id': pitcher.id,
+                    'mlb_id': pitcher.mlb_id,
+                    'season': season,
+                    'days_back': days_back,
+                },
+                sync_run_id=sync_run_id,
+                job_name=job_name,
+            )
             continue
 
         touched_this_pitcher = False
 
         for split in splits or []:
             game_info     = split.get('game', {})
-            stat          = split.get('stat', {})
             game_pk       = game_info.get('gamePk')
             game_date_str = split.get('date')
-            game_type     = game_info.get('gameType', 'R')
 
             if not game_pk or not game_date_str:
                 continue
 
+            # Process one record in isolation: a single poisoned record is
+            # dead-lettered and skipped rather than aborting this pitcher or the
+            # whole batch.
             try:
-                game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
-            except ValueError:
-                continue
-
-            if game_date < cutoff:
-                continue
-
-            existing = GameLog.query.filter_by(
-                pitcher_id=pitcher.id,
-                mlb_game_pk=game_pk,
-            ).first()
-            if existing:
-                continue
-
-            opponent = split.get('opponent', {})
-
-            log = GameLog(
-                pitcher_id=pitcher.id,
-                mlb_game_pk=game_pk,
-                game_date=game_date,
-                game_type=game_type,
-                opponent=opponent.get('name'),
-                opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
-                games_started=int(stat.get('gamesStarted', 0) or 0),
-                innings_pitched=float(stat.get('inningsPitched', 0) or 0),
-                pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
-                strikes=int(stat.get('strikes', 0) or 0),
-                hits_allowed=int(stat.get('hits', 0) or 0),
-                runs_allowed=int(stat.get('runs', 0) or 0),
-                earned_runs=int(stat.get('earnedRuns', 0) or 0),
-                walks=int(stat.get('baseOnBalls', 0) or 0),
-                strikeouts=int(stat.get('strikeOuts', 0) or 0),
-                home_runs_allowed=int(stat.get('homeRuns', 0) or 0),
-                save_situation=stat.get('saveOpportunities', 0) > 0,
-                hold=stat.get('holds', 0) > 0,
-                blown_save=stat.get('blownSaves', 0) > 0,
-                win=stat.get('wins', 0) > 0,
-                loss=stat.get('losses', 0) > 0,
-                save=stat.get('saves', 0) > 0,
-            )
-            db.session.add(log)
-            new_logs += 1
-            touched_this_pitcher = True
-
-            # Backfill leverage index from the boxscore. A failed call or a
-            # missing LI field just leaves the column as None — never crash
-            # the sync. Sleep briefly so we don't hammer the MLB API.
-            try:
-                pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
+                added = _ingest_game_log_split(
+                    pitcher, split, cutoff, team_abbr_map,
+                )
             except Exception as e:
-                logger.warning('Boxscore fetch failed for game_pk=%s: %s', game_pk, e)
-                pitching_lines = []
+                logger.warning(
+                    'Malformed game-log record for %s (mlb_id=%s, game_pk=%s): %s',
+                    pitcher.full_name, pitcher.mlb_id, game_pk, e,
+                )
+                records_failed += 1
+                dead_letter.record_failure(
+                    'game_log_record',
+                    e,
+                    entity_ref=game_pk,
+                    payload={
+                        'pitcher_id': pitcher.id,
+                        'mlb_id': pitcher.mlb_id,
+                        'game_pk': game_pk,
+                        'game_date': game_date_str,
+                        'season': season,
+                    },
+                    sync_run_id=sync_run_id,
+                    job_name=job_name,
+                )
+                continue
 
-            for line in pitching_lines or []:
-                if line.get('player_id') == pitcher.mlb_id:
-                    stats_block = line.get('stats') or {}
-                    for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
-                        raw_li = stats_block.get(li_key)
-                        if raw_li is not None:
-                            try:
-                                log.leverage_index = float(raw_li)
-                            except (TypeError, ValueError):
-                                pass
-                            break
-                    break
-
-            time.sleep(0.1)
+            if added:
+                new_logs += 1
+                touched_this_pitcher = True
+                time.sleep(0.1)
 
         if touched_this_pitcher:
             pitchers_touched += 1
@@ -176,10 +169,92 @@ def sync_recent_logs(days_back: int = 7, reference_date: date | None = None):
         'new_logs_added':    new_logs,
         'pitchers_touched':  pitchers_touched,
         'errors':            errors,
+        'records_failed':    records_failed,
         'days_back':         days_back,
         'season':            season,
         'cutoff':            cutoff.isoformat(),
     }
+
+
+def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
+    """
+    Insert a single game-log split for a pitcher.
+
+    Returns True if a new GameLog row was added, False if the split was a
+    legitimate skip (before cutoff, malformed-but-empty key, or already stored).
+    Raises on a genuinely poisoned record so the caller can dead-letter it.
+    """
+    game_info     = split.get('game', {})
+    stat          = split.get('stat', {})
+    game_pk       = game_info.get('gamePk')
+    game_date_str = split.get('date')
+    game_type     = game_info.get('gameType', 'R')
+
+    if not game_pk or not game_date_str:
+        return False
+
+    game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
+
+    if game_date < cutoff:
+        return False
+
+    existing = GameLog.query.filter_by(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+    ).first()
+    if existing:
+        return False
+
+    opponent = split.get('opponent', {})
+
+    log = GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        game_type=game_type,
+        opponent=opponent.get('name'),
+        opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
+        games_started=int(stat.get('gamesStarted', 0) or 0),
+        innings_pitched=float(stat.get('inningsPitched', 0) or 0),
+        pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
+        strikes=int(stat.get('strikes', 0) or 0),
+        hits_allowed=int(stat.get('hits', 0) or 0),
+        runs_allowed=int(stat.get('runs', 0) or 0),
+        earned_runs=int(stat.get('earnedRuns', 0) or 0),
+        walks=int(stat.get('baseOnBalls', 0) or 0),
+        strikeouts=int(stat.get('strikeOuts', 0) or 0),
+        home_runs_allowed=int(stat.get('homeRuns', 0) or 0),
+        save_situation=stat.get('saveOpportunities', 0) > 0,
+        hold=stat.get('holds', 0) > 0,
+        blown_save=stat.get('blownSaves', 0) > 0,
+        win=stat.get('wins', 0) > 0,
+        loss=stat.get('losses', 0) > 0,
+        save=stat.get('saves', 0) > 0,
+    )
+    db.session.add(log)
+
+    # Backfill leverage index from the boxscore. A failed call or a missing LI
+    # field just leaves the column as None — never crash the sync.
+    try:
+        pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
+    except Exception as e:
+        logger.warning('Boxscore fetch failed for game_pk=%s: %s', game_pk, e)
+        pitching_lines = []
+
+    for line in pitching_lines or []:
+        if line.get('player_id') == pitcher.mlb_id:
+            stats_block = line.get('stats') or {}
+            for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
+                raw_li = stats_block.get(li_key)
+                if raw_li is not None:
+                    try:
+                        log.leverage_index = float(raw_li)
+                    except (TypeError, ValueError):
+                        pass
+                    break
+            break
+
+    return True
 
 
 def recalculate_all_fatigue(reference_date: date | None = None):
@@ -279,6 +354,9 @@ def run_daily_sync(app, days_back: int = 7):
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
             )
+            # Fresh API metrics for this run so api_calls_made / retries_used
+            # reflect only this sync's activity.
+            mlb_client.metrics.reset()
             team_assignment = sync_team_assignments()
             run_logger.info(
                 'Refreshed team assignment for %s pitchers (%s changed, %s reassigned, %s no org, %s unknown, %s errors)',
@@ -297,12 +375,14 @@ def run_daily_sync(app, days_back: int = 7):
                 roster['unknown_count'],
                 roster['errors'],
             )
-            pull = sync_recent_logs(days_back=days_back)
+            pull = sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
             run_logger.info(
-                'Pulled %s new logs (touched %s pitchers, %s errors)',
+                'Pulled %s new logs (touched %s pitchers, %s errors, %s dead-lettered)',
                 pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
+                pull['records_failed'],
             )
             status['new_logs_added'] = pull['new_logs_added']
+            status['records_failed'] = pull['records_failed']
             status['errors']         = pull['errors'] + roster['errors'] + team_assignment['errors']
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
@@ -326,13 +406,30 @@ def run_daily_sync(app, days_back: int = 7):
             pitchers_updated = recalculate_all_fatigue()
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+
+            # Partial when records were dead-lettered but the run still
+            # refreshed its domains; otherwise success.
+            records_failed = pull['records_failed']
+            final_status = (
+                sync_metadata.STATUS_PARTIAL if records_failed
+                else sync_metadata.STATUS_SUCCESS
+            )
+            status['status'] = final_status
+            if records_failed and not status['message']:
+                status['message'] = (
+                    f'{records_failed} record(s) dead-lettered; see sync_failures.'
+                )
+            api_metrics = mlb_client.metrics.snapshot()
             sync_metadata.finish_sync_run(
                 sync_run_id,
-                status=sync_metadata.STATUS_SUCCESS,
+                status=final_status,
                 records_processed=pull['new_logs_added'],
+                records_failed=records_failed,
                 new_logs_added=pull['new_logs_added'],
                 pitchers_updated=pitchers_updated,
                 errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
+                api_calls_made=api_metrics['api_calls'],
+                retries_used=api_metrics['retries'],
                 error_message=status['message'] or None,
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
@@ -342,6 +439,12 @@ def run_daily_sync(app, days_back: int = 7):
         status['status']  = sync_metadata.STATUS_FAILED
         status['message'] = str(e)
         run_logger.exception('Daily sync failed: %s', e)
+        # Snapshot whatever API activity occurred before the crash so a failed
+        # run still records its retry pressure.
+        try:
+            api_metrics = mlb_client.metrics.snapshot()
+        except Exception:
+            api_metrics = {'api_calls': 0, 'retries': 0}
         with app.app_context():
             sync_metadata.finish_sync_run(
                 sync_run_id,
@@ -349,6 +452,8 @@ def run_daily_sync(app, days_back: int = 7):
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
                 errors=1,
+                api_calls_made=api_metrics['api_calls'],
+                retries_used=api_metrics['retries'],
                 error_message=str(e),
             )
 
