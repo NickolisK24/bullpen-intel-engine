@@ -158,7 +158,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
   }
 }
 
-// ── Section 2 — League Intelligence Cards ──────────────────────────────────
+// ── Shared League Cards ────────────────────────────────────────────────────
 export function getLeagueCards(dashboard) {
   const { constrained, available, monitoring } = landscapeLists(dashboard, 'home-cards')
   const metrics = leagueMetrics(dashboard)
@@ -249,9 +249,151 @@ export function getLeagueCards(dashboard) {
   ]
 }
 
-// ── Section 3 — Today's Bullpen Stories ────────────────────────────────────
+// ── Section 2 — Three Things To Watch ──────────────────────────────────────
+export const TODAY_WATCH_FALLBACK =
+  'No extra watch items stand out behind the flagship story yet. Stories will fill in as the bullpen picture changes.'
+
+function uniqueTeamKey(team) {
+  return team?.teamId ?? team?.abbr ?? team?.teamName ?? null
+}
+
+export function getTodayWatchItems(dashboard) {
+  const { constrained, available, monitoring } = landscapeLists(dashboard, 'today-watch')
+  const hero = getHeroStory(dashboard)
+  const usedTeams = new Set(hero.team ? [uniqueTeamKey(hero.team)] : [])
+  const items = []
+
+  const addItem = (team, item) => {
+    const key = uniqueTeamKey(team)
+    if (key != null) {
+      if (usedTeams.has(key)) return
+      usedTeams.add(key)
+    }
+    items.push(item)
+  }
+
+  const pressure = constrained.find(entry => entry.restricted > 0 && !usedTeams.has(uniqueTeamKey(entry)))
+  if (pressure) {
+    addItem(pressure, {
+      teamId: pressure.teamId,
+      kicker: 'Pressure Watch',
+      tone: 'stress',
+      title: 'One more pen is working with a shorter late-inning margin',
+      body: `The ${pressure.teamName} also carry ${pressure.restricted} ${pressure.restricted === 1 ? 'reliever' : 'relievers'} with a limited Recovery Window, giving Stories another Bullpen Pressure thread to unpack.`,
+      href: pressure.href,
+      cta: 'Open the team board',
+    })
+  }
+
+  const workload = monitoring.find(entry => entry.monitor > 0 && !usedTeams.has(uniqueTeamKey(entry)))
+  if (workload) {
+    addItem(workload, {
+      teamId: workload.teamId,
+      kicker: 'Workload Watch',
+      tone: 'watch',
+      title: 'The watch list is not all at the top of the page',
+      body: `${workload.monitor} ${workload.monitor === 1 ? 'arm' : 'arms'} in the ${workload.teamName} pen are carrying Workload Concentration, a quieter signal worth a second look.`,
+      href: workload.href,
+      cta: 'Open the team board',
+    })
+  }
+
+  const recovery = available.find(entry => entry.available > 0 && !usedTeams.has(uniqueTeamKey(entry)))
+  if (recovery) {
+    addItem(recovery, {
+      teamId: recovery.teamId,
+      kicker: 'Recovery Window',
+      tone: 'rest',
+      title: 'Recovery Window is the counterweight to today’s pressure',
+      body: `${recovery.available} ${recovery.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options for the ${recovery.teamName}, giving the day a second side beyond the stress story.`,
+      href: recovery.href,
+      cta: 'Open the team board',
+    })
+  }
+
+  const metrics = leagueMetrics(dashboard)
+  if (items.length < 3 && metrics.monitor > 0) {
+    items.push({
+      teamId: null,
+      kicker: 'League Watch',
+      tone: 'watch',
+      title: 'The workload underneath is worth watching',
+      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list around the league, so Workload Concentration is not limited to the flagship club.`,
+      href: '/stories',
+      cta: 'Open Stories',
+    })
+  }
+
+  if (items.length < 3 && metrics.available > 0) {
+    items.push({
+      teamId: null,
+      kicker: 'Coverage Safety',
+      tone: 'rest',
+      title: 'Clean Options still frame the league context',
+      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options. The pressure points matter, but the league picture is not one-note.`,
+      href: '/stories',
+      cta: 'Open Stories',
+    })
+  }
+
+  return { hasStories: items.length > 0, items: items.slice(0, 3), fallback: TODAY_WATCH_FALLBACK }
+}
+
+// ── Section 3 — Short League Context ───────────────────────────────────────
+export function getLeagueContext(dashboard) {
+  const metrics = leagueMetrics(dashboard)
+  const hasMetrics = metrics.total > 0
+
+  const summary = hasMetrics
+    ? `${metrics.restricted} tracked ${metrics.restricted === 1 ? 'arm has' : 'arms have'} a limited Recovery Window, ${metrics.monitor} ${metrics.monitor === 1 ? 'sits' : 'sit'} on the watch list, and ${metrics.available} register as Clean Options. That is the league context behind today’s front-page story.`
+    : 'The league context is waiting on a complete bullpen dashboard.'
+
+  return {
+    summary,
+    facts: [
+      {
+        key: 'pressure',
+        label: 'Bullpen Pressure',
+        tone: metrics.restricted > 0 ? 'stress' : 'neutral',
+        value: hasMetrics ? String(metrics.restricted) : '0',
+        detail: 'arms with limited Recovery Window',
+      },
+      {
+        key: 'concentration',
+        label: 'Workload Concentration',
+        tone: metrics.monitor > 0 ? 'watch' : 'neutral',
+        value: hasMetrics ? String(metrics.monitor) : '0',
+        detail: 'arms on the watch list',
+      },
+      {
+        key: 'clean',
+        label: 'Clean Options',
+        tone: metrics.available > 0 ? 'rest' : 'neutral',
+        value: hasMetrics ? `${metrics.pctAvailable}%` : '0%',
+        detail: 'of tracked arms available cleanly',
+      },
+    ],
+    href: '/stories',
+    cta: 'Open Stories for more observations',
+  }
+}
+
+// ── Section 4 — Stories Feed ───────────────────────────────────────────────
 export const STORIES_FALLBACK =
   'A quiet day in the bullpens — no standout stories this morning. Check back after tonight’s games.'
+
+export const STORY_TITLE_GUIDELINES = {
+  prefer: [
+    'Create curiosity before declaring a verdict.',
+    'Highlight tension, hidden workload, or changing bullpen context.',
+    'Use BaseballOS vocabulary without making the title sound like a grade.',
+  ],
+  avoid: [
+    'Ranking language.',
+    'Scouting-grade language.',
+    'Final verdicts such as healthy, strong, or in good shape.',
+  ],
+}
 
 // Governed observations arrive in system vocabulary ("Availability inventory
 // is constrained."). The homepage retells each family in the words a baseball
@@ -263,7 +405,7 @@ export const STORIES_FALLBACK =
 const OBSERVATION_STORY_COPY = {
   inventory: {
     kicker: 'Depth Check',
-    title: 'Some clubs are running short on Clean Options',
+    title: 'Clean Options are thinner in a few places today',
     body: 'Around the league, a few pens come in with fewer Clean Options than they would like. Depth Safety is carrying more of the load than usual today.',
     href: '/dashboard',
     cta: 'See the league view',
@@ -277,14 +419,14 @@ const OBSERVATION_STORY_COPY = {
   },
   workload_pressure: {
     kicker: 'Workload Watch',
-    title: 'Bullpen work is running heavy around the league',
+    title: 'The workload underneath is worth watching',
     body: 'Several pens have been busy lately, and the work has not been spread evenly. The arms carrying it have earned a closer look.',
     href: '/dashboard',
     cta: 'See the league view',
   },
   constraint: {
     kicker: 'Tight Margins',
-    title: 'Late-inning options are tighter than usual today',
+    title: 'A few late-inning margins are getting thin',
     body: 'More than one club comes in with a shorter list of Clean Options than it would like. The margin for a long night is thin in places.',
     href: '/dashboard',
     cta: 'See the league view',
@@ -305,7 +447,7 @@ const OBSERVATION_STORY_COPY = {
   },
   availability_movement: {
     kicker: 'Movement',
-    title: 'Availability is shifting around the league',
+    title: 'The league availability picture moved overnight',
     body: 'Arms are rotating on and off rest around the league. Today’s availability picture is not yesterday’s.',
     href: '/dashboard',
     cta: 'See the league view',
@@ -377,7 +519,7 @@ export function getBullpenStories(dashboard, observations = null) {
       kicker: 'Pressure Point',
       tone: 'stress',
       title: `A thin late-inning margin is forming for the ${tightening.teamName}`,
-      body: `${tightening.restricted} of ${tightening.total} relievers have a limited Recovery Window today. One long night could leave this pen with very few Clean Options.`,
+      body: `${tightening.restricted} of ${tightening.total} relievers ${tightening.restricted === 1 ? 'has' : 'have'} a limited Recovery Window today. One long night could leave this pen with very few Clean Options.`,
       href: tightening.href,
       cta: 'Step inside this pen',
     })
@@ -406,12 +548,37 @@ export function getBullpenStories(dashboard, observations = null) {
       abbr: steady.abbr,
       teamName: steady.teamName,
       read: getReadsForLandscapeEntry(steady).byKey.cleanOptions,
-      kicker: 'Quiet Strength',
+      kicker: 'Depth Safety',
       tone: 'rest',
-      title: `The ${steady.teamName} pen is in good shape`,
-      body: `${steady.available} of ${steady.total} arms register as Clean Options, with no standout Workload Concentration signal today.`,
+      title: `Clean Options are stacked a little deeper for the ${steady.teamName}`,
+      body: `${steady.available} of ${steady.total} arms register as Clean Options, with no standout Workload Concentration signal today. Depth Safety is part of this pen’s story.`,
       href: steady.href,
       cta: 'Step inside this pen',
+    })
+  }
+
+  const metrics = leagueMetrics(dashboard)
+  if (metrics.monitor > 0 || metrics.restricted > 0) {
+    candidates.push({
+      teamId: null,
+      kicker: 'League Note',
+      tone: metrics.restricted > metrics.monitor ? 'stress' : 'watch',
+      title: 'Workload is collecting below the headline',
+      body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list and ${metrics.restricted} ${metrics.restricted === 1 ? 'has' : 'have'} a limited Recovery Window. Stories is watching where Bullpen Pressure is obvious and where it is still quiet.`,
+      href: '/dashboard',
+      cta: 'See the league view',
+    })
+  }
+
+  if (metrics.available > 0) {
+    candidates.push({
+      teamId: null,
+      kicker: 'Coverage Safety',
+      tone: 'rest',
+      title: 'Coverage Safety is still part of today’s league picture',
+      body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever registers' : 'relievers register'} as Clean Options. That does not erase the pressure points, but it gives the feed context on both sides of the bullpen ledger.`,
+      href: '/dashboard',
+      cta: 'See the league view',
     })
   }
 
@@ -441,19 +608,22 @@ export function getBullpenStories(dashboard, observations = null) {
   }
 
   const items = []
+  const usedTitles = new Set()
   for (const story of candidates) {
     if (story.teamId != null) {
       if (usedTeamIds.has(story.teamId)) continue
       usedTeamIds.add(story.teamId)
     }
+    if (usedTitles.has(story.title)) continue
+    usedTitles.add(story.title)
     items.push(story)
-    if (items.length >= 6) break
+    if (items.length >= 8) break
   }
 
   return { hasStories: items.length > 0, items, fallback: STORIES_FALLBACK }
 }
 
-// ── Section 4 — Rankings Preview ───────────────────────────────────────────
+// ── Rankings Preview ───────────────────────────────────────────────────────
 // A placeholder for where bullpen rankings may land later. This section does
 // not order teams or link ranking rows; Today remains descriptive intelligence.
 export function getRankingsPreview(dashboard) {

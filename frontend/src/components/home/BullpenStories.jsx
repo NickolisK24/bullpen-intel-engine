@@ -1,20 +1,20 @@
 import { Link } from 'react-router-dom'
 import { homeTone } from './homeIntelligenceView'
 
-// Section 3 — Today's Short List. The briefing cut: only the few stories that
-// matter most this morning, in plain baseball language — what the workload
-// data shows, never what anyone should do about it. The full feed lives on
-// the Stories page.
+// Section 2 — Three Things To Watch. The briefing cut: only the few signals
+// that matter most this morning, in plain baseball language — what the
+// workload data shows, never what anyone should do about it. The full feed
+// lives on the Stories page.
 export const SHORT_LIST_LIMIT = 3
 
-export default function BullpenStories({ stories }) {
+export default function BullpenStories({ stories, showCta = true }) {
   const shortList = (Array.isArray(stories?.items) ? stories.items : []).slice(0, SHORT_LIST_LIMIT)
 
   return (
-    <section className="mb-8" aria-label="Today's short list">
+    <section className="mb-8" aria-label="Three things to watch">
       <SectionHeading
-        title="Today’s Short List"
-        subtitle="The bullpen stories that matter most this morning."
+        title="Three Things To Watch"
+        subtitle="The briefing-level signals behind the flagship observation."
       />
 
       {!stories?.hasStories ? (
@@ -27,14 +27,16 @@ export default function BullpenStories({ stories }) {
         </div>
       )}
 
-      <div className="mt-3 text-right">
-        <Link
-          to="/stories"
-          className="inline-flex items-center rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
-        >
-          Open the full story feed →
-        </Link>
-      </div>
+      {showCta && (
+        <div className="mt-3 text-right">
+          <Link
+            to="/stories"
+            className="inline-flex items-center rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
+          >
+            Open Stories for more observations →
+          </Link>
+        </div>
+      )}
     </section>
   )
 }

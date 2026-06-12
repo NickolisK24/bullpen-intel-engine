@@ -1,9 +1,8 @@
 import { getBullpenStories } from '../home/homeIntelligenceView'
 
-// The BaseballOS story feed — the browseable version of the Today story
-// surfaces. Reuses the exact story derivation that powers the homepage and
-// only adds a feed category on top so simple client-side filters work.
-// No new signals, no new endpoints.
+// The BaseballOS story feed — the browseable surface behind Today's briefing.
+// The feed keeps the deeper story derivation here, then adds a category on top
+// so simple client-side filters work. No new signals, no new endpoints.
 
 export const DEFAULT_STORY_FILTER = 'all'
 

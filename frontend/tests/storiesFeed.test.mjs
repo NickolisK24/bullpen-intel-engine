@@ -31,6 +31,8 @@ const {
   normalizeStoryFilter,
 } =
   await server.ssrLoadModule('/src/components/stories/storiesFeedView.js')
+const { getHeroStory, getTodayWatchItems } =
+  await server.ssrLoadModule('/src/components/home/homeIntelligenceView.js')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -74,7 +76,7 @@ const observations = {
 
 // ── Feed view-model ─────────────────────────────────────────────────────────
 
-test('the feed reuses the Today stories and adds browse categories', () => {
+test('the feed derives deeper observations and adds browse categories', () => {
   const feed = getStoryFeed(dashboard, observations)
   assert.ok(feed.hasStories)
   const categories = new Set(feed.items.map(item => item.category))
@@ -88,6 +90,15 @@ test('the feed reuses the Today stories and adds browse categories', () => {
       assert.ok(item.teamName, `team story missing teamName: ${item.title}`)
     }
   }
+})
+
+test('the feed is deeper than Today and does not repeat the flagship club', () => {
+  const hero = getHeroStory(dashboard)
+  const today = getTodayWatchItems(dashboard)
+  const feed = getStoryFeed(dashboard, observations)
+  assert.ok(feed.items.length > today.items.length)
+  assert.ok(!feed.items.some(item => item.teamId === hero.team.teamId))
+  assert.ok(!feed.items.some(item => /Milwaukee Brewers/.test(`${item.title} ${item.body}`)))
 })
 
 test('filters slice the feed by lane and the counts add up', () => {
@@ -146,19 +157,17 @@ test('every feed story keeps a valid existing destination', () => {
 
 // ── Page rendering ──────────────────────────────────────────────────────────
 
-test('the stories page renders header, framing, compact top story, and league cards', () => {
+test('the stories page renders as a feed-first surface beyond Today', () => {
   const html = render(React.createElement(StoriesView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'STORIES'))
-  assert.ok(htmlIncludes(html, 'The bullpen stories BaseballOS is watching today'))
+  assert.ok(htmlIncludes(html, 'What else BaseballOS is seeing today'))
   assert.ok(htmlIncludes(html, 'Observations, not predictions.'))
-  // The lede is a compact Top Story module carrying the Today flagship.
-  assert.ok(htmlIncludes(html, 'Top Story'))
-  assert.ok(htmlIncludes(html, 'most constrained bullpen today'))
-  assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
-  // League intelligence cards remain, linking as they do from Today.
-  for (const title of ['Highest Bullpen Pressure', 'Widest Recovery Window', 'Biggest Trend', 'Workload Concentration']) {
-    assert.ok(htmlIncludes(html, title), `missing card: ${title}`)
-  }
+  assert.ok(htmlIncludes(html, 'Beyond Today'))
+  assert.ok(htmlIncludes(html, 'What Else BaseballOS Is Seeing'))
+  assert.ok(htmlIncludes(html, 'active bullpen observations'))
+  assert.ok(!htmlIncludes(html, 'Top Story'))
+  assert.ok(!htmlIncludes(html, 'most constrained bullpen today'))
+  assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
 test('stories is the feed, not a second homepage', () => {
@@ -170,13 +179,18 @@ test('stories is the feed, not a second homepage', () => {
   // No rankings on the feed.
   assert.ok(!htmlIncludes(html, 'Rankings Preview'))
   assert.ok(!htmlIncludes(html, 'Top Bullpen Health'))
-  // Filters sit with the feed, ahead of the demoted league strip.
+  // No duplicated Today league card strip.
+  for (const title of ['Highest Bullpen Pressure', 'Widest Recovery Window', 'Biggest Trend']) {
+    assert.ok(!htmlIncludes(html, title), `duplicated card leaked: ${title}`)
+  }
+  assert.ok(!htmlIncludes(html, 'Around The League'))
+  // The scope row leads into filters and feed cards.
+  const scopeIndex = html.indexOf('Beyond Today')
   const filterIndex = html.indexOf('Story filters')
   const feedCardIndex = html.indexOf('box score looks calm')
-  const leagueStripIndex = html.indexOf('Around The League')
-  assert.ok(filterIndex >= 0 && feedCardIndex >= 0 && leagueStripIndex >= 0)
+  assert.ok(scopeIndex >= 0 && filterIndex >= 0 && feedCardIndex >= 0)
+  assert.ok(scopeIndex < filterIndex, 'the feed scope should introduce the filters')
   assert.ok(filterIndex < feedCardIndex, 'filters should come before the feed cards')
-  assert.ok(feedCardIndex < leagueStripIndex, 'the feed should come before the league strip')
 })
 
 test('the feed renders story cards with club identity and filter pills with counts', () => {
@@ -203,7 +217,7 @@ test('each filter lane renders only its stories', () => {
   const rested = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'rested' }))
   assert.ok(htmlIncludes(rested, getActiveStoryFilterLabel('rested', counts.rested)))
   assert.ok(htmlIncludes(rested, 'Washington Nationals'))
-  assert.ok(!htmlIncludes(rested, 'New York Mets pen'))
+  assert.ok(!htmlIncludes(rested, 'New York Mets'))
 
   const watch = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'watch' }))
   assert.ok(htmlIncludes(watch, getActiveStoryFilterLabel('watch', counts.watch)))
@@ -211,7 +225,8 @@ test('each filter lane renders only its stories', () => {
 
   const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
   assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
-  assert.ok(htmlIncludes(league, 'Bullpen work is running heavy around the league'))
+  assert.ok(htmlIncludes(league, 'The workload underneath is worth watching'))
+  assert.ok(htmlIncludes(league, 'Workload is collecting below the headline'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })
 
@@ -229,7 +244,13 @@ test('empty filter lanes explain themselves and offer a reset', () => {
       ...dashboard,
       landscape: { ...dashboard.landscape, monitoring_concentration: [] },
     },
-    league: dashboard,
+    league: {
+      ...dashboard,
+      context: {
+        ...dashboard.context,
+        metrics: { total_relievers: 0, available: 0, monitor: 0, restricted: 0, pct_available: 0, pct_restricted: 0 },
+      },
+    },
   }
   const observationsByFilter = {
     stressed: null,
@@ -254,6 +275,10 @@ test('empty filter lanes explain themselves and offer a reset', () => {
 test('all-feed empty state renders correctly when no stories are active', () => {
   const emptyDashboard = {
     ...dashboard,
+    context: {
+      ...dashboard.context,
+      metrics: { total_relievers: 0, available: 0, monitor: 0, restricted: 0, pct_available: 0, pct_restricted: 0 },
+    },
     landscape: {
       ...dashboard.landscape,
       constrained_bullpens: [],
