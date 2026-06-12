@@ -187,7 +187,7 @@ test('strong coverage safety scenario requires clean available Coverage Arms', (
 test('limited coverage safety scenario reflects unavailable coverage options', () => {
   const result = shape([
     pitcher('Trust Arm', 'Clean Option'),
-    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Rest-Restricted'),
     pitcher('Coverage Arm', 'Rest-Restricted'),
     pitcher('Coverage Arm', 'Unavailable'),
     pitcher('Depth Arm', 'Clean Option'),
@@ -195,6 +195,173 @@ test('limited coverage safety scenario reflects unavailable coverage options', (
   ])
   assert.equal(result.coverageSafety.label, 'Limited Coverage Safety')
   assert.equal(result.coverageSafety.supportingCounts.availableCoverageArms, 0)
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+// ── Coverage Safety substitute-coverage guardrail (Limited → Thin only) ─────
+
+test('no coverage arms and no substitute capacity stays Limited', () => {
+  // Case A: one watched bridge is below the substitute bar; clean depth earns nothing.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Rest-Restricted'),
+    pitcher('Bridge Arm', 'Watch Arm'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Limited Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('coverage arm down with meaningful substitute capacity lifts Limited to Thin', () => {
+  // Case B: the lift names the bridge fallback in its explanation.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Rest-Restricted'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, true)
+  assert.ok(result.coverageSafety.explanation.includes('Bridge Arm'))
+  assert.ok(result.coverageSafety.explanation.includes('Thin rather than Limited'))
+})
+
+test('strong substitute capacity can never exceed Thin', () => {
+  // Case C: five clean bridges lift the floor one step only — never Stable.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Unavailable'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, true)
+})
+
+test('coverage-rich bullpen is unchanged by the substitute guardrail', () => {
+  // Case D: Strong still requires clean designated Coverage Arms and stays Strong.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Strong Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('weak bullpen with no usable substitutes stays Limited', () => {
+  // Case E: degraded everywhere — depth bodies alone never lift the floor.
+  const result = shape([
+    pitcher('Trust Arm', 'Rest-Restricted'),
+    pitcher('Bridge Arm', 'Unavailable'),
+    pitcher('Coverage Arm', 'Rest-Restricted'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Limited Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('mets-style scenario lifts Limited to Thin on bridge capacity', () => {
+  // Case F: long man down, four clean bridges, a clean trust arm.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Rest-Restricted'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, true)
+})
+
+test('marlins-style scenario lifts Limited to Thin on bridge capacity', () => {
+  // Case G: both long men down, two clean bridges, watch-list depth.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Rest-Restricted'),
+    pitcher('Coverage Arm', 'Unavailable'),
+    pitcher('Depth Arm', 'Watch Arm'),
+    pitcher('Depth Arm', 'Watch Arm'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, true)
+})
+
+test('rockies-style rested construction is unchanged', () => {
+  // Case H: a clean long man already reads Thin through the normal gate.
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('athletics-style archetype with degraded pen stays Limited', () => {
+  // Case I: mirrors the observation-harness Weak B profile — no usable bridge.
+  const result = shape([
+    pitcher('Trust Arm', 'Unavailable'),
+    pitcher('Bridge Arm', 'Rest-Restricted'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Unavailable'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Limited Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('substitute guardrail never fires when a designated coverage arm is available', () => {
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Clean Option'),
+    pitcher('Coverage Arm', 'Watch Arm'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, false)
+})
+
+test('two watched bridges clear the substitute bar when no coverage exists', () => {
+  const result = shape([
+    pitcher('Trust Arm', 'Clean Option'),
+    pitcher('Bridge Arm', 'Watch Arm'),
+    pitcher('Bridge Arm', 'Watch Arm'),
+    pitcher('Coverage Arm', 'Unavailable'),
+    pitcher('Depth Arm', 'Clean Option'),
+    pitcher('Depth Arm', 'Clean Option'),
+  ])
+  assert.equal(result.coverageSafety.label, 'Thin Coverage Safety')
+  assert.equal(result.coverageSafety.supportingCounts.substituteCoverageApplied, true)
 })
 
 test('strong depth safety scenario requires enough available fallback depth', () => {
