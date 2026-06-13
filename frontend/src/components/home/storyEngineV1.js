@@ -545,7 +545,7 @@ function defaultWhyItMatters(candidate, tier) {
     return 'A short bullpen changes how much room the club has in close games.'
   }
   if (kind.includes('workload') || candidate.tone === 'watch') {
-    return 'Heavy work on the same few arms can turn a quiet day into tomorrow\'s story.'
+    return 'Heavy work on the same few arms changes how much room the club has before the late innings even start.'
   }
   if (kind.includes('recovery') || candidate.tone === 'rest') {
     return 'Rested options give a club more room to handle the late innings.'

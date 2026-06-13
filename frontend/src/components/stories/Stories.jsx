@@ -72,7 +72,7 @@ export function StoriesView({
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-chalk400">
             <span className="rounded border border-dirt bg-dugout px-2 py-1">{masthead.dataLine}</span>
             <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
-              Observations, not predictions.
+              Descriptive bullpen notes.
             </span>
           </div>
         </div>
