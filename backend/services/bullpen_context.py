@@ -31,6 +31,9 @@ NULL_START_LIMITATION = (
     'Rows missing gamesStarted are treated as bullpen appearances for usage '
     'demand only.'
 )
+NO_GAME_LOG_CONTEXT_LIMITATION = (
+    'No stored game-log context was found for this team.'
+)
 
 
 def _as_date(value):
@@ -93,6 +96,10 @@ def _serialize_windows(windows):
         }
         for key, value in windows.items()
     }
+
+
+def _window_days():
+    return BULLPEN_CONTEXT_WINDOW_DAYS
 
 
 def _team_identity(team_id):
@@ -174,12 +181,28 @@ def _rotation_context(last_logs, prev_logs, windows):
     return {
         'context_available': trend != 'insufficient_data',
         'evidence_type': 'starter_innings_pitched',
+        'window_days': _window_days(),
         'starter_avg_ip_last_7': last_avg,
         'starter_avg_ip_prev_7': prev_avg,
         'starter_starts_last_7': len(last_starts),
         'starter_starts_prev_7': len(prev_starts),
         'delta_ip': delta,
         'trend': trend,
+        'windows': _serialize_windows(windows),
+    }
+
+
+def _empty_rotation_context(windows=None):
+    return {
+        'context_available': False,
+        'evidence_type': 'starter_innings_pitched',
+        'window_days': _window_days(),
+        'starter_avg_ip_last_7': None,
+        'starter_avg_ip_prev_7': None,
+        'starter_starts_last_7': 0,
+        'starter_starts_prev_7': 0,
+        'delta_ip': None,
+        'trend': 'insufficient_data',
         'windows': _serialize_windows(windows),
     }
 
@@ -200,6 +223,7 @@ def _usage_demand_context(last_logs, prev_logs, windows):
     return {
         'context_available': trend != 'insufficient_data',
         'evidence_type': 'bullpen_appearance_and_pitch_volume',
+        'window_days': _window_days(),
         'bullpen_appearances_last_7': last_appearances,
         'bullpen_appearances_prev_7': prev_appearances,
         'bullpen_pitches_last_7': last_pitches,
@@ -210,6 +234,25 @@ def _usage_demand_context(last_logs, prev_logs, windows):
         'pitch_pct_delta': _pct_delta(last_pitches, prev_pitches),
         'null_start_rows_included_as_bullpen': null_start_rows,
         'trend': trend,
+        'windows': _serialize_windows(windows),
+    }
+
+
+def _empty_usage_demand_context(windows=None):
+    return {
+        'context_available': False,
+        'evidence_type': 'bullpen_appearance_and_pitch_volume',
+        'window_days': _window_days(),
+        'bullpen_appearances_last_7': 0,
+        'bullpen_appearances_prev_7': 0,
+        'bullpen_pitches_last_7': 0,
+        'bullpen_pitches_prev_7': 0,
+        'appearance_delta': 0,
+        'pitch_delta': 0,
+        'appearance_pct_delta': None,
+        'pitch_pct_delta': None,
+        'null_start_rows_included_as_bullpen': 0,
+        'trend': 'insufficient_data',
         'windows': _serialize_windows(windows),
     }
 
@@ -245,20 +288,10 @@ def build_team_bullpen_context(team_id, reference_date=None):
             'team': _team_identity(team_id),
             'reference_date': None,
             'data_through_date': None,
-            'rotation_context': {
-                'context_available': False,
-                'evidence_type': 'starter_innings_pitched',
-                'trend': 'insufficient_data',
-                'windows': None,
-            },
-            'usage_demand_context': {
-                'context_available': False,
-                'evidence_type': 'bullpen_appearance_and_pitch_volume',
-                'trend': 'insufficient_data',
-                'windows': None,
-            },
+            'rotation_context': _empty_rotation_context(),
+            'usage_demand_context': _empty_usage_demand_context(),
             'availability_context': _availability_context(),
-            'limitations': list(CONTEXT_LIMITATIONS),
+            'limitations': [*CONTEXT_LIMITATIONS, NO_GAME_LOG_CONTEXT_LIMITATION],
         }
 
     last_logs = _team_logs(team_id, windows['last_7']['start_date'], windows['last_7']['end_date'])
