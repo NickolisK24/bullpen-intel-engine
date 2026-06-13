@@ -38,6 +38,7 @@ from services.narrative_memory import (
     build_team_pitcher_usage_trend_continuity,
     build_team_workload_concentration_continuity,
 )
+from services.narrative_memory_story import build_dashboard_story_continuity
 from services.pitcher_role import ROLE_KEYS, classify_usage_role
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
@@ -1101,6 +1102,19 @@ def _max_data_through(results):
     return max(dates) if dates else None
 
 
+def _dashboard_continuity_team_ids(landscape):
+    team_ids = []
+    seen = set()
+    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
+        for entry in (landscape or {}).get(key) or []:
+            team_id = entry.get('team_id')
+            if team_id is None or team_id in seen:
+                continue
+            seen.add(team_id)
+            team_ids.append(team_id)
+    return team_ids
+
+
 def _diagnostic_team_exists(team_id):
     return (
         db.session.query(Pitcher.id)
@@ -1408,6 +1422,7 @@ def get_bullpen_dashboard():
         reference_date=reference_date,
         freshness=freshness,
     )
+    continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
 
     return jsonify({
         'capability': 'bullpen_dashboard',
@@ -1422,6 +1437,7 @@ def get_bullpen_dashboard():
             'total': len(pitcher_ids),
         },
         'landscape': landscape,
+        'continuity': continuity,
         'freshness': freshness,
         'availability_summary': summary,
     })

@@ -6,6 +6,7 @@ roles) without ranking/selection, and stay resilient when empty.
 """
 
 from datetime import date, datetime, timedelta
+import json
 
 import pytest
 from flask import Flask
@@ -151,3 +152,53 @@ class TestDashboardEndpoint:
         assert body['roles']['total'] == 1
         assert body['availability_summary']['total_pitchers'] == 1
         assert body['landscape']['teams_evaluated'] == 1
+
+    def test_dashboard_attaches_story_continuity_for_landscape_teams_only(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Core One',
+                team_id=77,
+                mlb_id=7701,
+                raw_score=50,
+                innings=[1.0, 1.0, 1.0, 1.0],
+                days_ago=[1, 2, 4, 6],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'Core Two',
+                team_id=77,
+                mlb_id=7702,
+                raw_score=50,
+                innings=[1.0, 1.0, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'Depth Arm',
+                team_id=77,
+                mlb_id=7703,
+                raw_score=10,
+                innings=[1.0],
+                days_ago=[8],
+                roster_status=STATUS_ACTIVE,
+            )
+            # Historical workload exists, but this team has no scored current
+            # bullpen entry and should not be computed for dashboard continuity.
+            db.session.add(Pitcher(
+                mlb_id=8801,
+                full_name='Unsurfaced Arm',
+                team_id=88,
+                team_name='Team 88',
+                team_abbreviation='T88',
+                active=True,
+            ))
+            db.session.commit()
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['continuity']['capability'] == 'bullpen_continuity_v1'
+        assert set(body['continuity']['teams']) == {'77'}
+        team = body['continuity']['teams']['77']
+        assert team['continuity']['type'] == 'workload_concentration'
+        assert team['by_type']['workload_concentration']['continuity_note']
+        assert 'Narrative Memory' not in json.dumps(body['continuity'])

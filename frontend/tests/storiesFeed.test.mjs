@@ -124,6 +124,45 @@ test('the feed derives deeper observations and adds browse categories', () => {
   }
 })
 
+test('the feed preserves story continuity without exposing internal memory language', () => {
+  const note = 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.'
+  const feed = getStoryFeed({
+    ...dashboard,
+    continuity: {
+      capability: 'bullpen_continuity_v1',
+      teams: {
+        141: {
+          continuity_note: note,
+          continuity: {
+            type: 'workload_concentration',
+            window_days: 10,
+            data_through_date: '2026-06-05',
+            evidence: { bullpen_appearances: 10 },
+            limitations: [],
+          },
+          by_type: {
+            workload_concentration: {
+              continuity_note: note,
+              continuity: {
+                type: 'workload_concentration',
+                window_days: 10,
+                data_through_date: '2026-06-05',
+                evidence: { bullpen_appearances: 10 },
+                limitations: [],
+              },
+            },
+          },
+        },
+      },
+    },
+  }, observations)
+  const story = feed.items.find(item => item.teamId === 141)
+
+  assert.equal(story.continuity_note, note)
+  assert.equal(story.continuity.type, 'workload_concentration')
+  assert.ok(!JSON.stringify(feed).includes('Narrative Memory'))
+})
+
 test('the feed is deeper than Today and does not repeat the flagship club', () => {
   const hero = getHeroStory(dashboard)
   const today = getTodayWatchItems(dashboard)

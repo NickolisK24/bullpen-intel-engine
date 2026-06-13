@@ -143,6 +143,89 @@ test('a quiet league day still produces a hero story', () => {
   assert.ok(quiet.whyItMatters.length > 0)
 })
 
+test('story candidates attach matching continuity from the dashboard payload', () => {
+  const concentrationNote = 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.'
+  const easingNote = 'Bullpen flexibility has improved over the last 14 days.'
+  const continuityDashboard = {
+    ...dashboard,
+    continuity: {
+      capability: 'bullpen_continuity_v1',
+      teams: {
+        141: {
+          continuity_note: concentrationNote,
+          continuity: {
+            type: 'workload_concentration',
+            window_days: 10,
+            data_through_date: '2026-06-05',
+            evidence: { bullpen_appearances: 10 },
+            limitations: [],
+          },
+          by_type: {
+            workload_concentration: {
+              continuity_note: concentrationNote,
+              continuity: {
+                type: 'workload_concentration',
+                window_days: 10,
+                data_through_date: '2026-06-05',
+                evidence: { bullpen_appearances: 10 },
+                limitations: [],
+              },
+            },
+          },
+        },
+        120: {
+          continuity_note: easingNote,
+          continuity: {
+            type: 'workload_easing',
+            window_days: 14,
+            data_through_date: '2026-06-05',
+            evidence: { workload_easing_signal_count: 3 },
+            limitations: [],
+          },
+          by_type: {
+            workload_easing: {
+              continuity_note: easingNote,
+              continuity: {
+                type: 'workload_easing',
+                window_days: 14,
+                data_through_date: '2026-06-05',
+                evidence: { workload_easing_signal_count: 3 },
+                limitations: [],
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+  const workloadHero = getHeroStory({
+    ...continuityDashboard,
+    landscape: { ...continuityDashboard.landscape, constrained_bullpens: [] },
+  })
+  const recoveryHero = getHeroStory({
+    ...continuityDashboard,
+    landscape: {
+      ...continuityDashboard.landscape,
+      constrained_bullpens: [],
+      monitoring_concentration: [],
+    },
+  })
+
+  assert.equal(workloadHero.storyKind, 'team_workload_continuity')
+  assert.equal(workloadHero.continuity_note, concentrationNote)
+  assert.equal(workloadHero.continuity.type, 'workload_concentration')
+  assert.equal(recoveryHero.storyKind, 'team_recovery')
+  assert.equal(recoveryHero.continuity_note, easingNote)
+  assert.equal(recoveryHero.continuity.type, 'workload_easing')
+  assert.ok(!JSON.stringify([workloadHero, recoveryHero]).includes('Narrative Memory'))
+})
+
+test('stories without continuity stay unchanged', () => {
+  const hero = getHeroStory(dashboard)
+  assert.equal(hero.continuity_note, undefined)
+  assert.equal(hero.continuity, undefined)
+})
+
 // ── League intelligence cards ───────────────────────────────────────────────
 
 test('all four league intelligence cards are derived from the landscape', () => {

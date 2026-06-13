@@ -377,6 +377,28 @@ test('adds the evidence contract to every surfaced story', () => {
   assert.ok(teamEvidence.some(item => item.label === 'Relievers needing rest'))
 })
 
+test('preserves continuity output without exposing internal memory language', () => {
+  const story = {
+    ...workloadStory,
+    continuity_note: 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.',
+    continuity: {
+      type: 'workload_concentration',
+      window_days: 10,
+      data_through_date: '2026-06-05',
+      evidence: { bullpen_appearances: 10 },
+      limitations: [],
+    },
+  }
+  const selection = selectStoryCandidates([story], context)
+  const surfaced = selection.items[0]
+
+  assert.equal(surfaced.continuity_note, story.continuity_note)
+  assert.deepEqual(surfaced.continuity, story.continuity)
+  assert.equal(surfaced.storySelection.continuity_note, story.continuity_note)
+  assert.deepEqual(surfaced.storySelection.continuity, story.continuity)
+  assert.ok(!JSON.stringify(surfaced).includes('Narrative Memory'))
+})
+
 test('selection output is deterministic for the same candidate set', () => {
   const candidates = [
     restStory,
