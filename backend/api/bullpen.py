@@ -26,6 +26,13 @@ from services.availability_snapshot import (
 from services.availability_summary import summarize_availability_records
 from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
 from services.bullpen_comparison import build_team_comparison
+from services.bullpen_context import (
+    BULLPEN_CONTEXT_SAMPLE_CAP,
+    CONTEXT_LIMITATIONS as BULLPEN_CONTEXT_LIMITATIONS,
+    build_league_sample_bullpen_context,
+    build_team_bullpen_context,
+    sample_bullpen_context_team_ids,
+)
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
@@ -1295,6 +1302,96 @@ def get_narrative_memory_diagnostic():
         extra={
             'sample_cap': NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP,
             'sampled_team_ids': sample_team_ids,
+        },
+    ))
+
+
+# ─── Bullpen Context diagnostic (read-only foundation) ────────────────────────
+
+def _context_diagnostic_payload(mode, results, limitations=None, extra=None):
+    payload = {
+        'status': 'ok',
+        'capability': 'bullpen_context_engine_v1_diagnostic',
+        'mode': mode,
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'ranking_applied': False,
+        'selection_made': False,
+        'data_through_date': _max_data_through(results),
+        'results': results,
+        'limitations': _merge_limitations(
+            BULLPEN_CONTEXT_LIMITATIONS,
+            ['Internal diagnostic evidence only; no product rendering or story integration is made.'],
+            limitations,
+        ),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+@bullpen_bp.route('/context/diagnostic', methods=['GET'])
+def get_bullpen_context_diagnostic():
+    """
+    Internal/read-only Bullpen Context Engine V1 foundation diagnostic.
+
+    Exposes stored evidence for why a bullpen state might be happening, without
+    changing observations, rankings, suppression, story selection, or UI output.
+
+    Optional query params:
+      - mode: league_sample (default) or team.
+      - team_id: required for team mode.
+    """
+    team_id, team_error = _optional_int_arg('team_id')
+    if team_error:
+        return _diagnostic_error(team_error)
+
+    raw_mode = (request.args.get('mode') or '').strip().lower()
+    mode = raw_mode or ('team' if team_id is not None else 'league_sample')
+    if mode not in ('league_sample', 'team'):
+        return _diagnostic_error(
+            'mode must be league_sample or team.',
+            reason_code='invalid_mode',
+        )
+
+    if mode == 'team':
+        if team_id is None:
+            return _diagnostic_error(
+                'team_id is required when mode=team.',
+                reason_code='team_id_required',
+            )
+        if not _diagnostic_team_exists(team_id):
+            return _diagnostic_error(
+                f'team_id {team_id} was not found.',
+                status_code=404,
+                reason_code='team_not_found',
+            )
+        result = build_team_bullpen_context(team_id)
+        return jsonify(_context_diagnostic_payload(
+            mode='team',
+            results=[result],
+            limitations=['Team context evidence uses stored GameLog rows for the current team assignment.'],
+            extra={'team_id': team_id},
+        ))
+
+    if team_id is not None:
+        return _diagnostic_error(
+            'team_id can only be used when mode=team.',
+            reason_code='team_id_mode_mismatch',
+        )
+
+    sampled_team_ids = sample_bullpen_context_team_ids(limit=BULLPEN_CONTEXT_SAMPLE_CAP)
+    results = build_league_sample_bullpen_context(limit=BULLPEN_CONTEXT_SAMPLE_CAP)
+    limitations = [f'Default league diagnostic is capped at {BULLPEN_CONTEXT_SAMPLE_CAP} teams.']
+    if not sampled_team_ids:
+        limitations.append('No teams with stored game-log context were found for the diagnostic sample.')
+
+    return jsonify(_context_diagnostic_payload(
+        mode='league_sample',
+        results=results,
+        limitations=limitations,
+        extra={
+            'sample_cap': BULLPEN_CONTEXT_SAMPLE_CAP,
+            'sampled_team_ids': sampled_team_ids,
         },
     ))
 
