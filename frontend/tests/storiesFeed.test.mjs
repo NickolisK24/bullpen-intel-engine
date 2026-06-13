@@ -106,6 +106,30 @@ const observations = {
   ],
 }
 
+const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
+
+function dashboardWithMonitoringContinuity(base = dashboard) {
+  return {
+    ...base,
+    landscape: {
+      ...base.landscape,
+      monitoring_concentration: base.landscape.monitoring_concentration.map((entry, index) => (index === 0
+        ? {
+            ...entry,
+            continuity_note: continuityNote,
+            continuity: {
+              type: 'workload_concentration',
+              window_days: 10,
+              data_through_date: '2026-06-05',
+              evidence: { bullpen_appearances: 10 },
+              limitations: [],
+            },
+          }
+        : entry)),
+    },
+  }
+}
+
 // ── Feed view-model ─────────────────────────────────────────────────────────
 
 test('the feed derives deeper observations and adds browse categories', () => {
@@ -161,6 +185,33 @@ test('the feed preserves story continuity without exposing internal memory langu
   assert.equal(story.continuity_note, note)
   assert.equal(story.continuity.type, 'workload_concentration')
   assert.ok(!JSON.stringify(feed).includes('Narrative Memory'))
+})
+
+test('the stories feed renders continuity when a story carries it', () => {
+  const html = render(React.createElement(StoriesView, {
+    dashboard: dashboardWithMonitoringContinuity(),
+    observations,
+  }))
+
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays box score looks calm. The bullpen does not.'))
+  assert.ok(htmlIncludes(html, continuityNote))
+  for (const phrase of [
+    'Narrative Memory',
+    'algorithm',
+    'model',
+    'confidence score',
+    'fatigue score',
+    'story has been developing',
+  ]) {
+    assert.ok(!htmlIncludes(html, phrase), `rendered forbidden phrase: ${phrase}`)
+  }
+})
+
+test('the stories feed omits continuity when the field is missing', () => {
+  const html = render(React.createElement(StoriesView, { dashboard, observations }))
+
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays box score looks calm. The bullpen does not.'))
+  assert.ok(!htmlIncludes(html, continuityNote))
 })
 
 test('the feed is deeper than Today and does not repeat the flagship club', () => {

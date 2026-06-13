@@ -377,10 +377,10 @@ test('adds the evidence contract to every surfaced story', () => {
   assert.ok(teamEvidence.some(item => item.label === 'Relievers needing rest'))
 })
 
-test('preserves continuity output without exposing internal memory language', () => {
-  const story = {
+test('continuity render fields do not change ranking or suppression', () => {
+  const withContinuity = {
     ...workloadStory,
-    continuity_note: 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.',
+    continuity_note: 'The same core relievers have carried most of the bullpen workload over the last 10 days.',
     continuity: {
       type: 'workload_concentration',
       window_days: 10,
@@ -389,13 +389,23 @@ test('preserves continuity output without exposing internal memory language', ()
       limitations: [],
     },
   }
-  const selection = selectStoryCandidates([story], context)
-  const surfaced = selection.items[0]
+  const baselineScore = scoreStorySignificance(workloadStory, context)
+  const continuityScore = scoreStorySignificance(withContinuity, context)
+  const preservationSelection = selectStoryCandidates([withContinuity], context)
+  const surfaced = preservationSelection.items[0]
+  const baselineSelection = selectStoryCandidates([pressureStory, workloadStory, restStory], context)
+  const continuitySelection = selectStoryCandidates([pressureStory, withContinuity, restStory], context)
 
-  assert.equal(surfaced.continuity_note, story.continuity_note)
-  assert.deepEqual(surfaced.continuity, story.continuity)
-  assert.equal(surfaced.storySelection.continuity_note, story.continuity_note)
-  assert.deepEqual(surfaced.storySelection.continuity, story.continuity)
+  assert.deepEqual(continuityScore, baselineScore)
+  assert.deepEqual(
+    continuitySelection.items.map(story => story.title),
+    baselineSelection.items.map(story => story.title),
+  )
+  assert.equal(continuitySelection.suppressedCount, baselineSelection.suppressedCount)
+  assert.equal(surfaced.continuity_note, withContinuity.continuity_note)
+  assert.deepEqual(surfaced.continuity, withContinuity.continuity)
+  assert.equal(surfaced.storySelection.continuity_note, withContinuity.continuity_note)
+  assert.deepEqual(surfaced.storySelection.continuity, withContinuity.continuity)
   assert.ok(!JSON.stringify(surfaced).includes('Narrative Memory'))
 })
 
