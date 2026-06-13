@@ -161,7 +161,7 @@ function evidenceFromTeam(team) {
       detail: 'Tracked relievers carrying enough recent work to watch.',
     },
     {
-      label: 'Fresh arms',
+      label: 'Rested options',
       value: `${asNumber(team.available)} of ${total}`,
       source: 'bullpen_dashboard_landscape',
       sourceType: 'team_bullpen_counts',
@@ -207,7 +207,7 @@ function evidenceFromLeague(candidate, context = {}) {
   }
   if (includeRest) {
     evidence.push({
-      label: 'League fresh arms',
+      label: 'League rested options',
       value: `${asNumber(metrics.available)} of ${total}`,
       source: 'bullpen_dashboard_context',
       sourceType: 'league_bullpen_counts',
@@ -548,7 +548,7 @@ function defaultWhyItMatters(candidate, tier) {
     return 'Heavy work on the same few arms can turn a quiet day into tomorrow\'s story.'
   }
   if (kind.includes('recovery') || candidate.tone === 'rest') {
-    return 'Fresh arms give a club more room to handle the late innings.'
+    return 'Rested options give a club more room to handle the late innings.'
   }
   if (tier.key === STORY_TIERS.data.key) {
     return 'Thin or limited data changes how much BaseballOS should say out loud.'

@@ -71,9 +71,9 @@ const restStory = {
   restricted: 1,
   total: 8,
   storyKind: 'team_recovery',
-  kicker: 'Fresh Pen',
+  kicker: 'More Options',
   tone: 'rest',
-  title: 'Nobody brings a fresher bullpen into today than the Washington Nationals',
+  title: 'No club has more late-inning options today than the Washington Nationals',
   body: '6 of 8 relievers come in rested, giving this pen more room to breathe.',
   href: '/bullpen?view=board&team=WSH&source=stories',
 }
@@ -120,7 +120,7 @@ const leagueWorkloadContext = {
 const leagueWorkloadStory = {
   teamId: null,
   storyKind: 'league_workload_continuity',
-  kicker: 'League Watch',
+  kicker: 'Across The League',
   tone: 'watch',
   title: 'The heavy lifting is spread around baseball today',
   body: '34 tracked arms sit on the watch list, and the same bullpen work is showing up across several clubs.',

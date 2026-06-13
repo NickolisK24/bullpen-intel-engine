@@ -257,7 +257,7 @@ test('each filter lane renders only its stories', () => {
 
   const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
   assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
-  assert.ok(htmlIncludes(league, 'The workload underneath is worth watching'))
+  assert.ok(htmlIncludes(league, 'busiest arms are starting to pile up'))
   assert.ok(!htmlIncludes(league, 'Workload is collecting below the headline'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })
@@ -357,6 +357,8 @@ test('the stories page stays in baseball language', () => {
     // Mechanical phrasing the language layer exists to prevent.
     'register as', 'workload-restricted', 'availability context',
     'carrying workload concentration', 'limited recovery window',
+    'fresh pen', 'fresh arms', 'fresher bullpen', 'freshest bullpen',
+    'come in fresh',
   ]) {
     assert.ok(!html.includes(term), `leaked: ${term}`)
   }

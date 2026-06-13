@@ -46,11 +46,11 @@ export const SIGNAL_HEADLINES = {
 
   // ── Wide Recovery Window / deep Clean Options ─────────────────────────────
   // Internal: most of the pen comes in rested, with no workload restriction.
-  // Says: a fresh pen, room to breathe, arms to spare.
+  // Says: bullpen flexibility, room to maneuver, rested options.
   freshPen: {
-    hero: (team) => `The ${team} bring baseball's freshest bullpen into today`,
-    feed: (team) => `Nobody brings a fresher bullpen into today than the ${team}`,
-    depth: (team) => `The ${team} have fresh arms to spare today`,
-    team: (team) => `The ${team} bring one of the freshest bullpens into today`,
+    hero: (team) => `The ${team} have more bullpen flexibility than anyone in baseball today`,
+    feed: (team) => `No club has more late-inning options today than the ${team}`,
+    depth: (team) => `The ${team} have rested options behind the late innings today`,
+    team: (team) => `The ${team} have one of baseball's deeper bullpens available today`,
   },
 }

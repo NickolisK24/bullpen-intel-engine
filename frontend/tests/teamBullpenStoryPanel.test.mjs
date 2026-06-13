@@ -151,10 +151,10 @@ test('a watch-list club reads calm surface, heavy workload', () => {
   assert.match(story.summary, /nobody is down outright yet/)
 })
 
-test('a rested club reads as one of the freshest pens', () => {
+test('a rested club reads as a deeper bullpen with room to maneuver', () => {
   const story = getTeamBullpenStoryView(restedBoard)
   assert.equal(story.label, 'Rested Pen')
-  assert.match(story.headline, /freshest bullpens into today/)
+  assert.match(story.headline, /deeper bullpens available today/)
   assert.match(story.summary, /6 arms of 8 come in rested and ready/)
   assert.match(story.summary, /room to breathe today/)
 })
@@ -175,7 +175,7 @@ test('a neutral club gets balanced story copy', () => {
 test('a thin dataset gets an honest limited read', () => {
   const story = getTeamBullpenStoryView(dataLimitedBoard)
   assert.equal(story.label, 'Limited Read')
-  assert.match(story.headline, /Not enough fresh data for a strong read/)
+  assert.match(story.headline, /Not enough current workload data for a strong read/)
   assert.ok(story.workloadBullets.length >= 1)
 })
 
