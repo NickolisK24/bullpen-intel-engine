@@ -32,6 +32,12 @@ from services.bullpen_population import (
     usage_logs_by_pitcher,
 )
 from services.game_context import build_landscape, build_team_game_context
+from services.narrative_memory import (
+    DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
+    build_team_bullpen_recovery_continuity,
+    build_team_pitcher_usage_trend_continuity,
+    build_team_workload_concentration_continuity,
+)
 from services.pitcher_role import ROLE_KEYS, classify_usage_role
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
@@ -44,6 +50,8 @@ from services import sync_metadata
 from utils.auth import require_admin_token
 
 bullpen_bp = Blueprint('bullpen', __name__)
+
+NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP = 5
 
 FATIGUE_ERA_RESULTS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1049,6 +1057,232 @@ def compare_team_bullpens():
         'team_b': board_b,
         'comparison': comparison,
     })
+
+
+# ─── Narrative Memory diagnostic (read-only) ─────────────────────────────────
+
+def _diagnostic_error(message, status_code=400, reason_code='invalid_request'):
+    return jsonify({
+        'status': 'error',
+        'reason_code': reason_code,
+        'message': message,
+    }), status_code
+
+
+def _optional_int_arg(name):
+    raw = request.args.get(name)
+    if raw in (None, ''):
+        return None, None
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, f'{name} must be an integer.'
+
+
+def _diagnostic_window_days():
+    raw = request.args.get('window_days')
+    if raw in (None, ''):
+        return 10, None
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return None, 'window_days must be one of 7, 10, or 14.'
+    if days not in NARRATIVE_MEMORY_WINDOWS:
+        return None, 'window_days must be one of 7, 10, or 14.'
+    return days, None
+
+
+def _max_data_through(results):
+    dates = [
+        result.get('data_through_date')
+        for result in results or []
+        if result.get('data_through_date')
+    ]
+    return max(dates) if dates else None
+
+
+def _diagnostic_team_exists(team_id):
+    return (
+        db.session.query(Pitcher.id)
+        .filter(Pitcher.team_id == team_id)
+        .first()
+        is not None
+    )
+
+
+def _diagnostic_team_sample(limit=NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP):
+    rows = (
+        db.session.query(Pitcher.team_id)
+        .join(GameLog, GameLog.pitcher_id == Pitcher.id)
+        .filter(Pitcher.active == True, Pitcher.team_id.isnot(None))
+        .distinct()
+        .order_by(Pitcher.team_id)
+        .limit(limit)
+        .all()
+    )
+    return [row[0] for row in rows if row[0] is not None]
+
+
+def _diagnostic_team_results(team_id, window_days):
+    team = _team_info_lookup(team_id)
+    return [
+        {
+            'result_type': 'team_workload_concentration',
+            'team': team,
+            **build_team_workload_concentration_continuity(
+                team_id,
+                window_days=window_days,
+            ),
+        },
+        {
+            'result_type': 'team_workload_easing',
+            'team': team,
+            **build_team_bullpen_recovery_continuity(
+                team_id,
+                window_days=window_days,
+            ),
+        },
+    ]
+
+
+def _diagnostic_pitcher_info(pitcher):
+    return {
+        'pitcher_id': pitcher.id,
+        'pitcher_name': pitcher.full_name,
+        'team_id': pitcher.team_id,
+        'team_name': pitcher.team_name,
+        'team_abbreviation': pitcher.team_abbreviation,
+    }
+
+
+def _diagnostic_payload(mode, window_days, results, limitations=None, extra=None):
+    payload = {
+        'status': 'ok',
+        'capability': 'narrative_memory_v1_diagnostic',
+        'mode': mode,
+        'window_days': window_days,
+        'generated_at': datetime.now(timezone.utc).isoformat(),
+        'data_through_date': _max_data_through(results),
+        'results': results,
+        'limitations': _merge_limitations(
+            ['Internal diagnostic evidence only; no editorial continuity decision is made.'],
+            limitations,
+        ),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+@bullpen_bp.route('/narrative-memory/diagnostic', methods=['GET'])
+def get_narrative_memory_diagnostic():
+    """
+    Internal/read-only Narrative Memory V1 diagnostic.
+
+    Exposes stored-workload continuity evidence so real team output can be
+    reviewed before any product surface consumes it. No stories are persisted,
+    selected, ranked, archived, or threaded by this route.
+
+    Optional query params:
+      - team_id: return team continuity evidence.
+      - pitcher_id: return pitcher usage trend evidence. If team_id is omitted,
+                    the pitcher's current team_id anchors observed team games.
+      - window_days: 7, 10, or 14. Default 10.
+    """
+    window_days, window_error = _diagnostic_window_days()
+    if window_error:
+        return _diagnostic_error(window_error)
+
+    team_id, team_error = _optional_int_arg('team_id')
+    if team_error:
+        return _diagnostic_error(team_error)
+    pitcher_id, pitcher_error = _optional_int_arg('pitcher_id')
+    if pitcher_error:
+        return _diagnostic_error(pitcher_error)
+
+    if pitcher_id is not None:
+        pitcher = db.session.get(Pitcher, pitcher_id)
+        if pitcher is None:
+            return _diagnostic_error(
+                f'pitcher_id {pitcher_id} was not found.',
+                status_code=404,
+                reason_code='pitcher_not_found',
+            )
+        anchor_team_id = team_id if team_id is not None else pitcher.team_id
+        if anchor_team_id is None:
+            return _diagnostic_error(
+                'pitcher_id requires a team_id when the pitcher has no current team assignment.',
+                status_code=422,
+                reason_code='team_assignment_missing',
+            )
+        if team_id is not None and pitcher.team_id is not None and pitcher.team_id != team_id:
+            return _diagnostic_error(
+                'pitcher_id is not currently assigned to the requested team_id.',
+                status_code=422,
+                reason_code='pitcher_team_mismatch',
+            )
+        if not _diagnostic_team_exists(anchor_team_id):
+            return _diagnostic_error(
+                f'team_id {anchor_team_id} was not found.',
+                status_code=404,
+                reason_code='team_not_found',
+            )
+
+        result = {
+            'result_type': 'pitcher_usage_trend',
+            'team': _team_info_lookup(anchor_team_id),
+            'pitcher': _diagnostic_pitcher_info(pitcher),
+            **build_team_pitcher_usage_trend_continuity(
+                anchor_team_id,
+                pitcher_id,
+                window_days=window_days,
+            ),
+        }
+        return jsonify(_diagnostic_payload(
+            mode='pitcher',
+            window_days=window_days,
+            results=[result],
+            limitations=['Pitcher frequency uses observed stored team bullpen games, not a complete schedule.'],
+            extra={'team_id': anchor_team_id, 'pitcher_id': pitcher_id},
+        ))
+
+    if team_id is not None:
+        if not _diagnostic_team_exists(team_id):
+            return _diagnostic_error(
+                f'team_id {team_id} was not found.',
+                status_code=404,
+                reason_code='team_not_found',
+            )
+        results = _diagnostic_team_results(team_id, window_days)
+        return jsonify(_diagnostic_payload(
+            mode='team',
+            window_days=window_days,
+            results=results,
+            limitations=['Team evidence uses pitchers currently assigned to the team.'],
+            extra={'team_id': team_id},
+        ))
+
+    sample_team_ids = _diagnostic_team_sample()
+    results = []
+    for sampled_team_id in sample_team_ids:
+        results.extend(_diagnostic_team_results(sampled_team_id, window_days))
+
+    limitations = [
+        f'Default league diagnostic is capped at {NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP} teams.',
+    ]
+    if not sample_team_ids:
+        limitations.append('No teams with stored workload history were found for the diagnostic sample.')
+
+    return jsonify(_diagnostic_payload(
+        mode='league_sample',
+        window_days=window_days,
+        results=results,
+        limitations=limitations,
+        extra={
+            'sample_cap': NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP,
+            'sampled_team_ids': sample_team_ids,
+        },
+    ))
 
 
 # ─── Role Authority diagnostic (read-only) ────────────────────────────────────
