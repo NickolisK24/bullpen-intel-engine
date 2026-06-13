@@ -16,6 +16,36 @@ from utils.db import db
 
 REF = date(2026, 6, 8)
 
+ROTATION_CONTEXT_KEYS = {
+    'context_available',
+    'evidence_type',
+    'window_days',
+    'starter_avg_ip_last_7',
+    'starter_avg_ip_prev_7',
+    'starter_starts_last_7',
+    'starter_starts_prev_7',
+    'delta_ip',
+    'trend',
+    'windows',
+}
+
+USAGE_DEMAND_CONTEXT_KEYS = {
+    'context_available',
+    'evidence_type',
+    'window_days',
+    'bullpen_appearances_last_7',
+    'bullpen_appearances_prev_7',
+    'bullpen_pitches_last_7',
+    'bullpen_pitches_prev_7',
+    'appearance_delta',
+    'pitch_delta',
+    'appearance_pct_delta',
+    'pitch_pct_delta',
+    'null_start_rows_included_as_bullpen',
+    'trend',
+    'windows',
+}
+
 
 @pytest.fixture
 def client():
@@ -64,6 +94,55 @@ def _seed_team_identity(team_id, mlb_id):
     return _seed_pitcher(team_id, f'Team {team_id} Pitcher', mlb_id)
 
 
+def _assert_normalized_context_shapes(result):
+    assert set(result['rotation_context']) == ROTATION_CONTEXT_KEYS
+    assert set(result['usage_demand_context']) == USAGE_DEMAND_CONTEXT_KEYS
+
+
+def test_no_data_team_returns_normalized_rotation_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(116, 11601)
+
+        context = build_team_bullpen_context(116)
+
+    rotation = context['rotation_context']
+    assert set(rotation) == ROTATION_CONTEXT_KEYS
+    assert rotation['context_available'] is False
+    assert rotation['window_days'] == 7
+    assert rotation['starter_avg_ip_last_7'] is None
+    assert rotation['starter_avg_ip_prev_7'] is None
+    assert rotation['starter_starts_last_7'] == 0
+    assert rotation['starter_starts_prev_7'] == 0
+    assert rotation['delta_ip'] is None
+    assert rotation['trend'] == 'insufficient_data'
+    assert rotation['windows'] is None
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
+def test_no_data_team_returns_normalized_usage_demand_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(117, 11701)
+
+        context = build_team_bullpen_context(117)
+
+    demand = context['usage_demand_context']
+    assert set(demand) == USAGE_DEMAND_CONTEXT_KEYS
+    assert demand['context_available'] is False
+    assert demand['window_days'] == 7
+    assert demand['bullpen_appearances_last_7'] == 0
+    assert demand['bullpen_appearances_prev_7'] == 0
+    assert demand['bullpen_pitches_last_7'] == 0
+    assert demand['bullpen_pitches_prev_7'] == 0
+    assert demand['appearance_delta'] == 0
+    assert demand['pitch_delta'] == 0
+    assert demand['appearance_pct_delta'] is None
+    assert demand['pitch_pct_delta'] is None
+    assert demand['null_start_rows_included_as_bullpen'] == 0
+    assert demand['trend'] == 'insufficient_data'
+    assert demand['windows'] is None
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
 def test_shorter_starter_outings_detected(client):
     with client.application.app_context():
         starter = _seed_pitcher(118, 'Shorter Starter', 11801)
@@ -75,7 +154,9 @@ def test_shorter_starter_outings_detected(client):
         context = build_team_bullpen_context(118, reference_date=REF)
 
     rotation = context['rotation_context']
+    _assert_normalized_context_shapes(context)
     assert rotation['context_available'] is True
+    assert rotation['window_days'] == 7
     assert rotation['starter_avg_ip_last_7'] == 4.5
     assert rotation['starter_avg_ip_prev_7'] == 6.1
     assert rotation['trend'] == 'shorter_outings'
@@ -92,7 +173,9 @@ def test_longer_starter_outings_detected(client):
         context = build_team_bullpen_context(119, reference_date=REF)
 
     rotation = context['rotation_context']
+    _assert_normalized_context_shapes(context)
     assert rotation['context_available'] is True
+    assert rotation['window_days'] == 7
     assert rotation['starter_avg_ip_last_7'] == 6.2
     assert rotation['starter_avg_ip_prev_7'] == 4.9
     assert rotation['trend'] == 'longer_outings'
@@ -109,7 +192,9 @@ def test_rising_bullpen_demand_detected(client):
         context = build_team_bullpen_context(120, reference_date=REF)
 
     demand = context['usage_demand_context']
+    _assert_normalized_context_shapes(context)
     assert demand['context_available'] is True
+    assert demand['window_days'] == 7
     assert demand['bullpen_appearances_last_7'] == 4
     assert demand['bullpen_appearances_prev_7'] == 2
     assert demand['bullpen_pitches_last_7'] == 72
@@ -127,7 +212,9 @@ def test_falling_bullpen_demand_detected(client):
         context = build_team_bullpen_context(121, reference_date=REF)
 
     demand = context['usage_demand_context']
+    _assert_normalized_context_shapes(context)
     assert demand['context_available'] is True
+    assert demand['window_days'] == 7
     assert demand['bullpen_appearances_last_7'] == 1
     assert demand['bullpen_appearances_prev_7'] == 4
     assert demand['bullpen_pitches_last_7'] == 10
@@ -149,6 +236,21 @@ def test_league_sample_is_capped(client):
     assert body['sample_cap'] == BULLPEN_CONTEXT_SAMPLE_CAP
     assert len(body['results']) == BULLPEN_CONTEXT_SAMPLE_CAP
     assert len(body['sampled_team_ids']) == BULLPEN_CONTEXT_SAMPLE_CAP
+    for result in body['results']:
+        _assert_normalized_context_shapes(result)
+
+
+def test_data_backed_and_no_data_contracts_have_the_same_shape(client):
+    with client.application.app_context():
+        no_data_pitcher = _seed_team_identity(122, 12201)
+        data_pitcher = _seed_pitcher(123, 'Data Reliever', 12301)
+        _seed_log(data_pitcher, 1, 123011, innings=1.0, pitches=16, games_started=0)
+
+        no_data = build_team_bullpen_context(no_data_pitcher.team_id)
+        data_backed = build_team_bullpen_context(data_pitcher.team_id, reference_date=REF)
+
+    assert set(no_data['rotation_context']) == set(data_backed['rotation_context'])
+    assert set(no_data['usage_demand_context']) == set(data_backed['usage_demand_context'])
 
 
 def test_diagnostic_route_team_mode_returns_evidence_contract(client):
@@ -170,6 +272,7 @@ def test_diagnostic_route_team_mode_returns_evidence_contract(client):
     assert body['mode'] == 'team'
     assert body['team_id'] == 130
     result = body['results'][0]
+    _assert_normalized_context_shapes(result)
     assert result['team_id'] == 130
     assert result['rotation_context']['evidence_type'] == 'starter_innings_pitched'
     assert result['usage_demand_context']['evidence_type'] == 'bullpen_appearance_and_pitch_volume'
