@@ -52,10 +52,17 @@ function dashboardContinuityForTeam(dashboard, teamId) {
   return teams[String(teamId)] || teams[teamId] || null
 }
 
+function dashboardStoryContextForTeam(dashboard, teamId) {
+  if (teamId == null) return null
+  const teams = dashboard?.story_context?.teams || {}
+  return teams[String(teamId)] || teams[teamId] || null
+}
+
 function mapEntry(entry, source, dashboard) {
   if (!entry) return null
   const teamId = entry.team_id ?? null
   const dashboardContinuity = dashboardContinuityForTeam(dashboard, teamId)
+  const dashboardContext = dashboardStoryContextForTeam(dashboard, teamId)
   return {
     teamId,
     teamName: entry.team_name || entry.team_abbreviation || null,
@@ -68,11 +75,54 @@ function mapEntry(entry, source, dashboard) {
     pctRestricted: Number(entry.pct_restricted) || 0,
     continuityByType: dashboardContinuity?.by_type || {},
     dashboardContinuity,
+    contextByType: dashboardContext?.by_type || {},
+    dashboardContext,
     continuity_note: typeof entry.continuity_note === 'string' && entry.continuity_note.trim()
       ? entry.continuity_note
       : undefined,
     continuity: entry.continuity || undefined,
     href: buildHomeTeamHref(entry, source),
+  }
+}
+
+function storyContextFits(storyKind, contextEntry) {
+  const type = contextEntry?.context?.type
+  const trend = contextEntry?.context?.evidence?.trend
+  if (!type || typeof contextEntry?.context_note !== 'string') return false
+  if (storyKind === 'team_recovery') {
+    return (
+      (type === 'usage_demand' && trend === 'decreasing_demand')
+      || (type === 'rotation_length' && trend === 'longer_outings')
+    )
+  }
+  if (
+    storyKind === 'team_pressure'
+    || storyKind === 'team_workload'
+    || storyKind === 'team_workload_continuity'
+  ) {
+    return (
+      (type === 'usage_demand' && trend === 'increasing_demand')
+      || (type === 'rotation_length' && trend === 'shorter_outings')
+    )
+  }
+  return false
+}
+
+function storyContextProps(team, storyKind) {
+  if (!team) return {}
+  const byType = team.contextByType || team.by_type || team.dashboardContext?.by_type || {}
+  const entries = [
+    byType.usage_demand,
+    byType.rotation_length,
+    team.context_note ? team : null,
+    team.dashboardContext,
+  ].filter(Boolean)
+  const contextEntry = entries.find(entry => storyContextFits(storyKind, entry))
+  const note = contextEntry?.context_note
+  if (typeof note !== 'string' || !note.trim()) return {}
+  return {
+    context_note: note,
+    ...(contextEntry.context ? { context: contextEntry.context } : {}),
   }
 }
 
@@ -106,10 +156,19 @@ function withStoryContinuity(candidate, team = candidate?.team || candidate, das
       dashboardContinuityForTeam(dashboard, candidate?.teamId),
       candidate?.storyKind,
     )
+  const directContextProps = storyContextProps(team, candidate?.storyKind)
+  const dashboardContextProps = Object.keys(directContextProps).length
+    ? {}
+    : storyContextProps(
+      dashboardStoryContextForTeam(dashboard, candidate?.teamId),
+      candidate?.storyKind,
+    )
   return {
     ...candidate,
     ...dashboardProps,
     ...directProps,
+    ...dashboardContextProps,
+    ...directContextProps,
   }
 }
 

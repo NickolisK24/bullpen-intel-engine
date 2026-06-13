@@ -63,6 +63,16 @@ export function StoryContinuityNote({ note, className = '' }) {
   )
 }
 
+export function StoryContextNote({ note, className = '' }) {
+  if (typeof note !== 'string' || !note.trim()) return null
+
+  return (
+    <p className={`border-t border-dirt/60 pt-3 text-xs leading-relaxed text-chalk400 ${className}`}>
+      {note}
+    </p>
+  )
+}
+
 // A story card is a doorway: team stories step into that club's bullpen
 // board, league notes open the league view, data notes open Data & Trust.
 // A story with no meaningful destination renders as plain copy — no CTA, no
@@ -88,6 +98,7 @@ function StoryCard({ story }) {
       <p className="mt-2 flex-1 text-sm leading-relaxed text-chalk400">{story.body}</p>
 
       <StoryContinuityNote note={story.continuity_note} className="mt-3" />
+      <StoryContextNote note={story.context_note} className="mt-3" />
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">

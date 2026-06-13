@@ -3,7 +3,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
-import BullpenStories, { SectionHeading, StoryContinuityNote } from './BullpenStories'
+import BullpenStories, { SectionHeading, StoryContextNote, StoryContinuityNote } from './BullpenStories'
 import {
   getHeroStory,
   getLeagueContext,
@@ -142,6 +142,7 @@ function HeroStory({ hero }) {
         </div>
 
         <StoryContinuityNote note={hero.continuity_note} className="mt-4 max-w-3xl" />
+        <StoryContextNote note={hero.context_note} className="mt-4 max-w-3xl" />
 
         {hero.chips.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">

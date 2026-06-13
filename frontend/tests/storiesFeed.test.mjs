@@ -107,6 +107,7 @@ const observations = {
 }
 
 const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
+const contextNote = 'Recent bullpen work has picked up: 4 appearances and 72 pitches over the last 7 days, up from 2 appearances and 24 pitches the week before.'
 
 function dashboardWithMonitoringContinuity(base = dashboard) {
   return {
@@ -126,6 +127,40 @@ function dashboardWithMonitoringContinuity(base = dashboard) {
             },
           }
         : entry)),
+    },
+  }
+}
+
+function dashboardWithMonitoringContext(base = dashboard) {
+  const entry = {
+    team_id: 141,
+    context_note: contextNote,
+    context: {
+      type: 'usage_demand',
+      window_days: 7,
+      data_through_date: '2026-06-05',
+      evidence: {
+        trend: 'increasing_demand',
+        bullpen_appearances_last_7: 4,
+        bullpen_appearances_prev_7: 2,
+        bullpen_pitches_last_7: 72,
+        bullpen_pitches_prev_7: 24,
+      },
+      limitations: [],
+    },
+  }
+  return {
+    ...base,
+    story_context: {
+      capability: 'bullpen_context_story_v1',
+      teams: {
+        141: {
+          ...entry,
+          by_type: {
+            usage_demand: entry,
+          },
+        },
+      },
     },
   }
 }
@@ -205,6 +240,25 @@ test('the stories feed renders continuity when a story carries it', () => {
   ]) {
     assert.ok(!htmlIncludes(html, phrase), `rendered forbidden phrase: ${phrase}`)
   }
+})
+
+test('the stories feed renders context after continuity when a story carries both', () => {
+  const contextDashboard = dashboardWithMonitoringContext(dashboardWithMonitoringContinuity())
+  const feed = getStoryFeed(contextDashboard, observations)
+  const story = feed.items.find(item => item.teamId === 141)
+  const html = render(React.createElement(StoriesView, {
+    dashboard: contextDashboard,
+    observations,
+  }))
+  const continuityIndex = html.indexOf(continuityNote)
+  const contextIndex = html.indexOf(contextNote)
+
+  assert.equal(story.continuity_note, continuityNote)
+  assert.equal(story.context_note, contextNote)
+  assert.equal(story.context.type, 'usage_demand')
+  assert.ok(continuityIndex >= 0, 'continuity note should render')
+  assert.ok(contextIndex >= 0, 'context note should render')
+  assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
 })
 
 test('the stories feed omits continuity when the field is missing', () => {
