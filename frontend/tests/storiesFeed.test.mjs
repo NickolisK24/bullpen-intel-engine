@@ -69,8 +69,40 @@ const dashboard = {
 const observations = {
   contractState: 'available',
   observations: [
-    { family: 'workload_pressure', severity: 'elevated', title: 'x', summary: 'y' },
-    { family: 'trust', severity: 'monitor', title: 'x', summary: 'y' },
+    {
+      family: 'workload_pressure',
+      severity: 'elevated',
+      title: 'x',
+      summary: 'y',
+      evidence: [
+        {
+          label: 'Elevated workload record count',
+          value: 3,
+          source: 'test_observation_feed',
+          source_type: 'trusted_platform_state',
+          freshness_status: 'current',
+        },
+      ],
+      freshness: { status: 'current' },
+      confidence: { status: 'medium' },
+    },
+    {
+      family: 'trust',
+      severity: 'significant',
+      title: 'x',
+      summary: 'y',
+      evidence: [
+        {
+          label: 'Trust limitation state',
+          value: 'represented',
+          source: 'test_observation_feed',
+          source_type: 'trusted_platform_state',
+          freshness_status: 'current',
+        },
+      ],
+      freshness: { status: 'current' },
+      confidence: { status: 'medium' },
+    },
   ],
 }
 
@@ -226,7 +258,7 @@ test('each filter lane renders only its stories', () => {
   const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
   assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
   assert.ok(htmlIncludes(league, 'The workload underneath is worth watching'))
-  assert.ok(htmlIncludes(league, 'Workload is collecting below the headline'))
+  assert.ok(!htmlIncludes(league, 'Workload is collecting below the headline'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })
 

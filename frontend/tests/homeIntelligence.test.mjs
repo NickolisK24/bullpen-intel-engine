@@ -78,6 +78,19 @@ const observations = {
       observation_id: 'obs-1', observation_type: 'workload_pressure', family: 'workload_pressure',
       severity: 'elevated', title: 'Bullpen workload pressure is elevated.',
       summary: 'Recent appearance density is elevated across several tracked bullpens.',
+      evidence: [
+        {
+          evidence_id: 'obs-1-evidence',
+          source: 'baseballos_v5_deterministic_sample_state',
+          source_type: 'trusted_platform_state',
+          label: 'Elevated workload record count',
+          value: 3,
+          freshness_status: 'current',
+          data_through: '2026-06-05',
+        },
+      ],
+      freshness: { status: 'current', data_through: '2026-06-05' },
+      confidence: { status: 'medium' },
     },
   ],
 }
@@ -391,8 +404,40 @@ test('team stories step into the club; league and data notes open their own surf
   const mixedObservations = {
     contractState: 'available',
     observations: [
-      { family: 'workload_pressure', severity: 'elevated', title: 'x', summary: 'y' },
-      { family: 'trust', severity: 'monitor', title: 'x', summary: 'y' },
+      {
+        family: 'workload_pressure',
+        severity: 'elevated',
+        title: 'x',
+        summary: 'y',
+        evidence: [
+          {
+            label: 'Elevated workload record count',
+            value: 3,
+            source: 'test_observation_feed',
+            source_type: 'trusted_platform_state',
+            freshness_status: 'current',
+          },
+        ],
+        freshness: { status: 'current' },
+        confidence: { status: 'medium' },
+      },
+      {
+        family: 'trust',
+        severity: 'significant',
+        title: 'x',
+        summary: 'y',
+        evidence: [
+          {
+            label: 'Trust limitation state',
+            value: 'represented',
+            source: 'test_observation_feed',
+            source_type: 'trusted_platform_state',
+            freshness_status: 'current',
+          },
+        ],
+        freshness: { status: 'current' },
+        confidence: { status: 'medium' },
+      },
     ],
   }
   const stories = getBullpenStories(dashboard, mixedObservations)

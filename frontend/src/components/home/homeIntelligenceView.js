@@ -1,6 +1,10 @@
 import { fmtDataDate } from '../dashboard/syncStatusView'
 import { getReadsForLandscapeEntry } from '../../utils/bullpenConcepts'
 import { SIGNAL_HEADLINES } from '../../utils/bullpenLanguage'
+import {
+  selectLeadStory,
+  selectStoryCandidates,
+} from './storyEngineV1'
 
 // The Morning Bullpen Report — view-model for the story-led homepage.
 //
@@ -83,6 +87,15 @@ function leagueMetrics(dashboard) {
   }
 }
 
+function storyEngineContext(dashboard) {
+  return {
+    leagueMetrics: leagueMetrics(dashboard),
+    freshness: dashboard?.freshness || {},
+    games: dashboard?.landscape?.games || {},
+    teamsEvaluated: Number(dashboard?.landscape?.teams_evaluated) || 0,
+  }
+}
+
 // Count chips state plainly what each number counts; the concept vocabulary
 // rides the hero's read chip, where it explains itself on hover.
 const heroChips = (team) => [
@@ -99,11 +112,13 @@ const heroChips = (team) => [
 // defensible, no forecasts.
 export function getHeroStory(dashboard, source = 'home-hero') {
   const { constrained, available, monitoring } = landscapeLists(dashboard, source)
+  const candidates = []
 
   const stressed = constrained.find(entry => entry.restricted > 0)
   if (stressed) {
-    return {
+    candidates.push({
       hasStory: true,
+      storyKind: 'team_pressure',
       angle: 'stress',
       tone: 'stress',
       kicker: 'Stretched Thin',
@@ -113,13 +128,14 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. No club enters the day with less room in the late innings.`,
       whyItMatters: 'A stretched pen narrows the late innings. If the next few games stay close, the heaviest work keeps falling on the arms that have already been carrying it.',
       chips: heroChips(stressed),
-    }
+    })
   }
 
   const watched = monitoring.find(entry => entry.monitor > 0)
   if (watched) {
-    return {
+    candidates.push({
       hasStory: true,
+      storyKind: 'team_workload_continuity',
       angle: 'concentration',
       tone: 'watch',
       kicker: 'Workload Watch',
@@ -129,13 +145,14 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
       whyItMatters: 'Heavy use on the same few arms stacks up quietly. It tends to show up later as shorter outings and nights off the schedule did not plan for.',
       chips: heroChips(watched),
-    }
+    })
   }
 
   const rested = available.find(entry => entry.available > 0)
   if (rested) {
-    return {
+    candidates.push({
       hasStory: true,
+      storyKind: 'team_recovery',
       angle: 'rest',
       tone: 'rest',
       kicker: 'Fresh Pen',
@@ -145,7 +162,12 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       observation: `${rested.available} of the pen's ${rested.total} relievers come in rested and ready to go — no pen in baseball has more fresh arms to call on today.`,
       whyItMatters: 'A fresh pen is flexibility. A full slate of rested arms lets a manager shape the late innings on his terms instead of his bullpen’s.',
       chips: heroChips(rested),
-    }
+    })
+  }
+
+  const lead = selectLeadStory(candidates, storyEngineContext(dashboard))
+  if (lead) {
+    return lead
   }
 
   return {
@@ -283,6 +305,13 @@ export function getTodayWatchItems(dashboard) {
   if (pressure) {
     addItem(pressure, {
       teamId: pressure.teamId,
+      teamName: pressure.teamName,
+      abbr: pressure.abbr,
+      available: pressure.available,
+      monitor: pressure.monitor,
+      restricted: pressure.restricted,
+      total: pressure.total,
+      storyKind: 'team_pressure',
       kicker: 'Pressure Watch',
       tone: 'stress',
       title: 'One more pen is working with a shorter late-inning margin',
@@ -296,6 +325,13 @@ export function getTodayWatchItems(dashboard) {
   if (workload) {
     addItem(workload, {
       teamId: workload.teamId,
+      teamName: workload.teamName,
+      abbr: workload.abbr,
+      available: workload.available,
+      monitor: workload.monitor,
+      restricted: workload.restricted,
+      total: workload.total,
+      storyKind: 'team_workload_continuity',
       kicker: 'Workload Watch',
       tone: 'watch',
       title: 'Another club keeps going to the same arms',
@@ -309,6 +345,13 @@ export function getTodayWatchItems(dashboard) {
   if (recovery) {
     addItem(recovery, {
       teamId: recovery.teamId,
+      teamName: recovery.teamName,
+      abbr: recovery.abbr,
+      available: recovery.available,
+      monitor: recovery.monitor,
+      restricted: recovery.restricted,
+      total: recovery.total,
+      storyKind: 'team_recovery',
       kicker: 'Fresh Arms',
       tone: 'rest',
       title: 'At least one pen comes in with room to breathe',
@@ -322,6 +365,7 @@ export function getTodayWatchItems(dashboard) {
   if (items.length < 3 && metrics.monitor > 0) {
     items.push({
       teamId: null,
+      storyKind: 'league_workload',
       kicker: 'League Watch',
       tone: 'watch',
       title: 'The heavy lifting is spread around the league',
@@ -334,6 +378,7 @@ export function getTodayWatchItems(dashboard) {
   if (items.length < 3 && metrics.available > 0) {
     items.push({
       teamId: null,
+      storyKind: 'league_recovery',
       kicker: 'Fresh Arms',
       tone: 'rest',
       title: 'There are still plenty of fresh arms out there',
@@ -343,7 +388,14 @@ export function getTodayWatchItems(dashboard) {
     })
   }
 
-  return { hasStories: items.length > 0, items: items.slice(0, 3), fallback: TODAY_WATCH_FALLBACK }
+  const selection = selectStoryCandidates(items, storyEngineContext(dashboard), { limit: 3 })
+  return {
+    hasStories: selection.items.length > 0,
+    items: selection.items,
+    fallback: TODAY_WATCH_FALLBACK,
+    suppressedCount: selection.suppressedCount,
+    suppressionReasons: selection.suppressionReasons,
+  }
 }
 
 // ── Section 3 — Short League Context ───────────────────────────────────────
@@ -492,6 +544,11 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: hidden.teamId,
       abbr: hidden.abbr,
       teamName: hidden.teamName,
+      available: hidden.available,
+      monitor: hidden.monitor,
+      restricted: hidden.restricted,
+      total: hidden.total,
+      storyKind: 'team_workload_continuity',
       read: getReadsForLandscapeEntry(hidden).byKey.concentration,
       kicker: 'Hidden Workload',
       tone: 'watch',
@@ -508,6 +565,11 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: heaviest.teamId,
       abbr: heaviest.abbr,
       teamName: heaviest.teamName,
+      available: heaviest.available,
+      monitor: heaviest.monitor,
+      restricted: heaviest.restricted,
+      total: heaviest.total,
+      storyKind: 'team_workload',
       read: getReadsForLandscapeEntry(heaviest).byKey.concentration,
       kicker: 'Carrying The Load',
       tone: 'watch',
@@ -524,6 +586,11 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: tightening.teamId,
       abbr: tightening.abbr,
       teamName: tightening.teamName,
+      available: tightening.available,
+      monitor: tightening.monitor,
+      restricted: tightening.restricted,
+      total: tightening.total,
+      storyKind: 'team_pressure',
       read: getReadsForLandscapeEntry(tightening).byKey.pressure,
       kicker: 'Pressure Point',
       tone: 'stress',
@@ -540,6 +607,11 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: widestWindow.teamId,
       abbr: widestWindow.abbr,
       teamName: widestWindow.teamName,
+      available: widestWindow.available,
+      monitor: widestWindow.monitor,
+      restricted: widestWindow.restricted,
+      total: widestWindow.total,
+      storyKind: 'team_recovery',
       read: getReadsForLandscapeEntry(widestWindow).byKey.recovery,
       kicker: 'Fresh Pen',
       tone: 'rest',
@@ -556,6 +628,11 @@ export function getBullpenStories(dashboard, observations = null) {
       teamId: steady.teamId,
       abbr: steady.abbr,
       teamName: steady.teamName,
+      available: steady.available,
+      monitor: steady.monitor,
+      restricted: steady.restricted,
+      total: steady.total,
+      storyKind: 'team_depth',
       read: getReadsForLandscapeEntry(steady).byKey.cleanOptions,
       kicker: 'Arms To Spare',
       tone: 'rest',
@@ -570,6 +647,7 @@ export function getBullpenStories(dashboard, observations = null) {
   if (metrics.monitor > 0 || metrics.restricted > 0) {
     candidates.push({
       teamId: null,
+      storyKind: 'league_workload',
       kicker: 'League Note',
       tone: metrics.restricted > metrics.monitor ? 'stress' : 'watch',
       title: 'Workload is collecting below the headline',
@@ -582,6 +660,7 @@ export function getBullpenStories(dashboard, observations = null) {
   if (metrics.available > 0) {
     candidates.push({
       teamId: null,
+      storyKind: 'league_recovery',
       kicker: 'The Other Side',
       tone: 'rest',
       title: 'Most of the league still has fresh arms to call on',
@@ -606,6 +685,11 @@ export function getBullpenStories(dashboard, observations = null) {
     seenFamilies.add(family)
     candidates.push({
       teamId: null,
+      family,
+      sourceObservation: observation,
+      storyKind: family === 'freshness' || family === 'trust'
+        ? 'data_observation'
+        : 'league_observation',
       kicker: copy.kicker,
       tone: OBSERVATION_TONES[observation.severity] || 'neutral',
       title: copy.title,
@@ -616,20 +700,19 @@ export function getBullpenStories(dashboard, observations = null) {
     if (seenFamilies.size >= 2) break
   }
 
-  const items = []
-  const usedTitles = new Set()
-  for (const story of candidates) {
-    if (story.teamId != null) {
-      if (usedTeamIds.has(story.teamId)) continue
-      usedTeamIds.add(story.teamId)
-    }
-    if (usedTitles.has(story.title)) continue
-    usedTitles.add(story.title)
-    items.push(story)
-    if (items.length >= 8) break
-  }
+  const selection = selectStoryCandidates(
+    candidates,
+    storyEngineContext(dashboard),
+    { limit: 8, excludedTeamIds: [...usedTeamIds] },
+  )
 
-  return { hasStories: items.length > 0, items, fallback: STORIES_FALLBACK }
+  return {
+    hasStories: selection.items.length > 0,
+    items: selection.items,
+    fallback: STORIES_FALLBACK,
+    suppressedCount: selection.suppressedCount,
+    suppressionReasons: selection.suppressionReasons,
+  }
 }
 
 // ── Rankings Preview ───────────────────────────────────────────────────────
