@@ -168,7 +168,7 @@ function storyHeadline(family, teamName, counts) {
       }
     case 'data_limited':
       return {
-        headline: `Not enough fresh data for a strong read on the ${teamName} today`,
+        headline: `Not enough current workload data for a strong read on the ${teamName} today`,
         summary: 'The current workload picture is too thin to carry a confident story. The board below shows what the data does support.',
       }
     default:

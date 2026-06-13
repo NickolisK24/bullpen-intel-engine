@@ -23,7 +23,7 @@ export const STORY_FILTERS = [
     key: 'rested',
     label: 'Rested',
     activeLabel: 'Rested Stories',
-    description: 'Pens coming in fresh, with arms to spare.',
+    description: 'Pens with rested options and room to maneuver.',
   },
   {
     key: 'watch',

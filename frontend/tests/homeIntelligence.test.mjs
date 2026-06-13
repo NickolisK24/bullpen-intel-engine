@@ -78,6 +78,19 @@ const observations = {
       observation_id: 'obs-1', observation_type: 'workload_pressure', family: 'workload_pressure',
       severity: 'elevated', title: 'Bullpen workload pressure is elevated.',
       summary: 'Recent appearance density is elevated across several tracked bullpens.',
+      evidence: [
+        {
+          evidence_id: 'obs-1-evidence',
+          source: 'baseballos_v5_deterministic_sample_state',
+          source_type: 'trusted_platform_state',
+          label: 'Elevated workload record count',
+          value: 3,
+          freshness_status: 'current',
+          data_through: '2026-06-05',
+        },
+      ],
+      freshness: { status: 'current', data_through: '2026-06-05' },
+      confidence: { status: 'medium' },
     },
   ],
 }
@@ -119,7 +132,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
-  assert.match(restHero.headline, /baseball's freshest bullpen into today/)
+  assert.match(restHero.headline, /more bullpen flexibility than anyone in baseball today/)
 })
 
 test('a quiet league day still produces a hero story', () => {
@@ -150,7 +163,7 @@ test('card copy reads like a hook, not a metric summary', () => {
   assert.equal(byKey['most-stressed'].line,
     'More arms need a day here than anywhere else in baseball.')
   assert.equal(byKey['most-rested'].line,
-    'No pen brings more rested arms into today.')
+    'No pen has more late-inning choices today.')
   assert.equal(byKey['bullpen-to-watch'].line,
     'Nothing is flashing red yet, but the same arms keep getting the call.')
 })
@@ -186,12 +199,12 @@ test('today watch items are briefing-only and exclude the flagship club', () => 
 test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {
   const context = getLeagueContext(dashboard)
   assert.match(context.summary, /need rest after recent work/)
-  assert.match(context.summary, /come in fresh/)
+  assert.match(context.summary, /rested enough to be usable today/)
   assert.equal(context.facts.length, 3)
   assert.deepEqual(context.facts.map(fact => fact.label), [
     'Bullpen Pressure',
-    'Workload Concentration',
-    'Clean Options',
+    'Usage Trend',
+    'Rested Options',
   ])
   assert.equal(context.href, '/stories')
 })
@@ -220,7 +233,7 @@ test('story titles read like a baseball writer, not a system', () => {
 test('governed observations are retold in editorial language, never verbatim', () => {
   const stories = getBullpenStories(dashboard, observations)
   const titles = stories.items.map(story => story.title)
-  assert.ok(titles.includes('The workload underneath is worth watching'))
+  assert.ok(titles.includes("The league's busiest arms are starting to pile up"))
   assert.ok(!titles.includes('Bullpen workload pressure is elevated.'))
 })
 
@@ -258,7 +271,7 @@ test('story title guidelines prefer observations over conclusions', () => {
   for (const weak of ['pen is in good shape', 'bullpen is healthy', 'strong availability']) {
     assert.ok(!titles.includes(weak), `conclusion-driven title leaked: ${weak}`)
   }
-  assert.ok(titles.includes('fresh arms to spare today'))
+  assert.ok(titles.includes('rested options behind the late innings today'))
 })
 
 // ── Rankings preview ────────────────────────────────────────────────────────
@@ -329,7 +342,7 @@ test('today shows three briefing watch items without repeating Stories titles', 
   // Full-feed story titles stay in Stories, not on the briefing.
   assert.ok(!htmlIncludes(html, 'box score looks calm'))
   assert.ok(!htmlIncludes(html, 'A thin late-inning margin is forming'))
-  assert.ok(!htmlIncludes(html, 'Nobody brings a fresher bullpen'))
+  assert.ok(!htmlIncludes(html, 'No club has more late-inning options'))
   assert.ok(!htmlIncludes(html, 'The workload underneath is worth watching'))
 })
 
@@ -337,8 +350,8 @@ test('today ends with short league context and a Stories handoff', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'League Context'))
   assert.ok(htmlIncludes(html, 'Bullpen Pressure'))
-  assert.ok(htmlIncludes(html, 'Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Clean Options'))
+  assert.ok(htmlIncludes(html, 'Usage Trend'))
+  assert.ok(htmlIncludes(html, 'Rested Options'))
   assert.ok(htmlIncludes(html, 'href="/stories"'))
   assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
 })
@@ -391,8 +404,40 @@ test('team stories step into the club; league and data notes open their own surf
   const mixedObservations = {
     contractState: 'available',
     observations: [
-      { family: 'workload_pressure', severity: 'elevated', title: 'x', summary: 'y' },
-      { family: 'trust', severity: 'monitor', title: 'x', summary: 'y' },
+      {
+        family: 'workload_pressure',
+        severity: 'elevated',
+        title: 'x',
+        summary: 'y',
+        evidence: [
+          {
+            label: 'Elevated workload record count',
+            value: 3,
+            source: 'test_observation_feed',
+            source_type: 'trusted_platform_state',
+            freshness_status: 'current',
+          },
+        ],
+        freshness: { status: 'current' },
+        confidence: { status: 'medium' },
+      },
+      {
+        family: 'trust',
+        severity: 'significant',
+        title: 'x',
+        summary: 'y',
+        evidence: [
+          {
+            label: 'Trust limitation state',
+            value: 'represented',
+            source: 'test_observation_feed',
+            source_type: 'trusted_platform_state',
+            freshness_status: 'current',
+          },
+        ],
+        freshness: { status: 'current' },
+        confidence: { status: 'medium' },
+      },
     ],
   }
   const stories = getBullpenStories(dashboard, mixedObservations)
@@ -403,7 +448,7 @@ test('team stories step into the club; league and data notes open their own surf
       assert.equal(story.cta, 'Step inside this pen')
     }
   }
-  const leagueNote = stories.items.find(story => story.kicker === 'Workload Watch' && story.teamId == null)
+  const leagueNote = stories.items.find(story => story.kicker === 'Usage Trend' && story.teamId == null)
   assert.equal(leagueNote.href, '/dashboard')
   assert.equal(leagueNote.cta, 'See the league view')
   const dataNote = stories.items.find(story => story.kicker === 'Data Note')
@@ -473,5 +518,18 @@ test('the homepage avoids raw system phrasing', () => {
     'carrying workload concentration', 'workload-restricted',
   ]) {
     assert.ok(!html.includes(term), `leaked system phrasing: ${term}`)
+  }
+})
+
+test('the homepage avoids repeated fresh-pen shorthand in story copy', () => {
+  const html = render(React.createElement(HomeView, { dashboard, observations })).toLowerCase()
+  for (const phrase of [
+    'fresh pen',
+    'fresh arms',
+    'fresher bullpen',
+    'freshest bullpen',
+    'come in fresh',
+  ]) {
+    assert.ok(!html.includes(phrase), `stale story shorthand leaked: ${phrase}`)
   }
 })
