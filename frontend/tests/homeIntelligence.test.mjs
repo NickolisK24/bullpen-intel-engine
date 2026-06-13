@@ -132,7 +132,7 @@ test('the hero leads with the most constrained bullpen', () => {
 
 test('the hero headline states what the data shows, not a forecast', () => {
   const hero = getHeroStory(dashboard)
-  assert.match(hero.headline, /bullpen is stretched thinner than any in baseball today/)
+  assert.match(hero.headline, /thinnest late-inning margin in baseball today/)
   // No drama, no fortune-telling.
   for (const phrase of [/running out/i, /collapse/i, /will\s/i, /guarantee/i, /doomed/i]) {
     assert.ok(!phrase.test(hero.headline), `headline leaked: ${phrase}`)
@@ -147,7 +147,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const watchHero = getHeroStory(noStress)
   assert.equal(watchHero.angle, 'concentration')
   assert.equal(watchHero.team.teamName, 'Toronto Blue Jays')
-  assert.match(watchHero.headline, /leaning on the same arms more than anyone in baseball today/)
+  assert.match(watchHero.headline, /keep asking the same relievers for the heavy lifting/)
 
   const restOnly = {
     ...dashboard,
@@ -156,7 +156,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
-  assert.match(restHero.headline, /more bullpen flexibility than anyone in baseball today/)
+  assert.match(restHero.headline, /more ways through the late innings than anyone today/)
 })
 
 test('a quiet league day still produces a hero story', () => {
@@ -260,7 +260,7 @@ test('the flagship story renders continuity when the selected story carries it',
   })
   const html = render(React.createElement(HomeView, { dashboard: continuityDashboard, observations }))
 
-  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays are leaning on the same arms more than anyone in baseball today'))
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays keep asking the same relievers for the heavy lifting'))
   assert.ok(htmlIncludes(html, continuityNote))
   for (const phrase of [
     'Narrative Memory',
@@ -285,18 +285,18 @@ test('all four league intelligence cards are derived from the landscape', () => 
   assert.equal(byKey['bullpen-to-watch'].team.abbr, 'TOR')
   // Two constrained clubs → the trend card reads league-wide stress.
   assert.equal(byKey['biggest-trend'].stat, '2')
-  assert.match(byKey['biggest-trend'].line, /Stress is not isolated to one club today/)
+  assert.match(byKey['biggest-trend'].line, /heavy lifting is not isolated to one bullpen/)
 })
 
 test('card copy reads like a hook, not a metric summary', () => {
   const cards = getLeagueCards(dashboard)
   const byKey = Object.fromEntries(cards.map(card => [card.key, card]))
   assert.equal(byKey['most-stressed'].line,
-    'More arms need a day here than anywhere else in baseball.')
+    'No pen has less room to breathe late today.')
   assert.equal(byKey['most-rested'].line,
-    'No pen has more late-inning choices today.')
+    'No pen has more ways through the late innings today.')
   assert.equal(byKey['bullpen-to-watch'].line,
-    'Nothing is flashing red yet, but the same arms keep getting the call.')
+    'The surface can look calm while the same arms keep getting the call.')
 })
 
 test('cards degrade to quiet copy when the landscape is empty', () => {
@@ -320,9 +320,9 @@ test('today watch items are briefing-only and exclude the flagship club', () => 
   assert.deepEqual(
     watchItems.items.map(item => item.title),
     [
-      'One more pen is working with a shorter late-inning margin',
-      'Another club keeps going to the same arms',
-      'At least one pen comes in with room to breathe',
+      'Another pen has less room to breathe late',
+      'Another club is leaning on the same names',
+      'A rested pen has more ways through the late innings',
     ],
   )
 })
@@ -334,7 +334,7 @@ test('today story cards render continuity when present and stay unchanged withou
   }))
   const plainHtml = render(React.createElement(HomeView, { dashboard, observations }))
 
-  assert.ok(htmlIncludes(html, 'Another club keeps going to the same arms'))
+  assert.ok(htmlIncludes(html, 'Another club is leaning on the same names'))
   assert.ok(htmlIncludes(html, continuityNote))
   assert.ok(!htmlIncludes(plainHtml, continuityNote))
 })
@@ -370,13 +370,13 @@ test('story titles read like a baseball writer, not a system', () => {
   const titles = stories.items.map(story => story.title)
   // Toronto (4 monitor, 0 restricted) is the hidden-workload shape.
   assert.ok(titles.includes('The Toronto Blue Jays box score looks calm. The bullpen does not.'))
-  assert.ok(titles.includes('A thin late-inning margin is forming for the New York Mets'))
+  assert.ok(titles.includes('The New York Mets are managing from a thinner late-inning bench'))
 })
 
 test('governed observations are retold in editorial language, never verbatim', () => {
   const stories = getBullpenStories(dashboard, observations)
   const titles = stories.items.map(story => story.title)
-  assert.ok(titles.includes("The league's busiest arms are starting to pile up"))
+  assert.ok(titles.includes('The league-wide workload picture is starting to tighten'))
   assert.ok(!titles.includes('Bullpen workload pressure is elevated.'))
 })
 
@@ -479,12 +479,12 @@ test('today is curated: no team explorer, feedback CTA intact', () => {
 
 test('today shows three briefing watch items without repeating Stories titles', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'One more pen is working with a shorter late-inning margin'))
-  assert.ok(htmlIncludes(html, 'Another club keeps going to the same arms'))
-  assert.ok(htmlIncludes(html, 'At least one pen comes in with room to breathe'))
+  assert.ok(htmlIncludes(html, 'Another pen has less room to breathe late'))
+  assert.ok(htmlIncludes(html, 'Another club is leaning on the same names'))
+  assert.ok(htmlIncludes(html, 'A rested pen has more ways through the late innings'))
   // Full-feed story titles stay in Stories, not on the briefing.
   assert.ok(!htmlIncludes(html, 'box score looks calm'))
-  assert.ok(!htmlIncludes(html, 'A thin late-inning margin is forming'))
+  assert.ok(!htmlIncludes(html, 'managing from a thinner late-inning bench'))
   assert.ok(!htmlIncludes(html, 'No club has more late-inning options'))
   assert.ok(!htmlIncludes(html, 'The workload underneath is worth watching'))
 })
@@ -503,7 +503,7 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'Why It Matters'))
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
-  assert.ok(htmlIncludes(html, 'stretched thinner than any in baseball today'))
+  assert.ok(htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
 })
 

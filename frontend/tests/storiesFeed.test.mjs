@@ -283,12 +283,12 @@ test('the stories page renders as a feed-first surface beyond Today', () => {
   const html = render(React.createElement(StoriesView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'STORIES'))
   assert.ok(htmlIncludes(html, 'What else BaseballOS is seeing today'))
-  assert.ok(htmlIncludes(html, 'Observations, not predictions.'))
+  assert.ok(htmlIncludes(html, 'Descriptive bullpen notes.'))
   assert.ok(htmlIncludes(html, 'Beyond Today'))
   assert.ok(htmlIncludes(html, 'What Else BaseballOS Is Seeing'))
   assert.ok(htmlIncludes(html, 'bullpen storylines in play today'))
   assert.ok(!htmlIncludes(html, 'Top Story'))
-  assert.ok(!htmlIncludes(html, 'stretched thinner than any in baseball today'))
+  assert.ok(!htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
@@ -347,7 +347,7 @@ test('each filter lane renders only its stories', () => {
 
   const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
   assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
-  assert.ok(htmlIncludes(league, 'busiest arms are starting to pile up'))
+  assert.ok(htmlIncludes(league, 'league-wide workload picture is starting to tighten'))
   assert.ok(!htmlIncludes(league, 'Workload is collecting below the headline'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })

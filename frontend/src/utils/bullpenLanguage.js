@@ -28,8 +28,8 @@ export const SIGNAL_HEADLINES = {
   // Internal: the pen is short on rested arms after recent workload.
   // Says: stretched thin, a short bench, less margin than most.
   stretchedPen: {
-    hero: (team) => `The ${team} bullpen is stretched thinner than any in baseball today`,
-    feed: (team) => `A thin late-inning margin is forming for the ${team}`,
+    hero: (team) => `The ${team} have the thinnest late-inning margin in baseball today`,
+    feed: (team) => `The ${team} are managing from a thinner late-inning bench`,
     team: (team) => `The ${team} enter today with a thin late-inning margin`,
   },
 
@@ -38,8 +38,8 @@ export const SIGNAL_HEADLINES = {
   // Says: leaning on the same arms, the same names every night, heavy work
   // falling on a small group.
   sameArms: {
-    hero: (team) => `The ${team} are leaning on the same arms more than anyone in baseball today`,
-    feed: (team) => `The ${team} keep handing the ball to the same relievers`,
+    hero: (team) => `The ${team} keep asking the same relievers for the heavy lifting`,
+    feed: (team) => `The ${team} are leaning on the same names again`,
     hidden: (team) => `The ${team} box score looks calm. The bullpen does not.`,
     team: (team) => `The ${team} look calm on the surface — the workload underneath is worth watching`,
   },
@@ -48,8 +48,8 @@ export const SIGNAL_HEADLINES = {
   // Internal: most of the pen comes in rested, with no workload restriction.
   // Says: bullpen flexibility, room to maneuver, rested options.
   freshPen: {
-    hero: (team) => `The ${team} have more bullpen flexibility than anyone in baseball today`,
-    feed: (team) => `No club has more late-inning options today than the ${team}`,
+    hero: (team) => `The ${team} have more ways through the late innings than anyone today`,
+    feed: (team) => `No club has more room to maneuver late today than the ${team}`,
     depth: (team) => `The ${team} have rested options behind the late innings today`,
     team: (team) => `The ${team} have one of baseball's deeper bullpens available today`,
   },
