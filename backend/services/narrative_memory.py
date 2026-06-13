@@ -9,7 +9,7 @@ infer roles/health/status beyond what GameLog evidence can prove.
 from collections import defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import desc, or_
+from sqlalchemy import desc
 
 from models.game_log import GameLog
 from models.pitcher import Pitcher
@@ -730,7 +730,6 @@ def _team_logs(team_id, start, end):
             Pitcher.team_id == team_id,
             GameLog.game_date >= start,
             GameLog.game_date <= end,
-            or_(GameLog.games_started.is_(None), GameLog.games_started != 1),
         )
         .order_by(GameLog.game_date.desc(), Pitcher.full_name)
         .all()
@@ -744,7 +743,6 @@ def _pitcher_logs_through_window(pitcher_id, start, end):
             GameLog.pitcher_id == pitcher_id,
             GameLog.game_date >= start,
             GameLog.game_date <= end,
-            or_(GameLog.games_started.is_(None), GameLog.games_started != 1),
         )
         .order_by(GameLog.game_date.desc())
         .all()
@@ -754,7 +752,6 @@ def _pitcher_logs_through_window(pitcher_id, start, end):
         .filter(
             GameLog.pitcher_id == pitcher_id,
             GameLog.game_date < start,
-            or_(GameLog.games_started.is_(None), GameLog.games_started != 1),
         )
         .order_by(desc(GameLog.game_date))
         .first()
