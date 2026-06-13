@@ -95,6 +95,30 @@ const observations = {
   ],
 }
 
+const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
+
+function dashboardWithMonitoringContinuity(base = dashboard) {
+  return {
+    ...base,
+    landscape: {
+      ...base.landscape,
+      monitoring_concentration: base.landscape.monitoring_concentration.map((entry, index) => (index === 0
+        ? {
+            ...entry,
+            continuity_note: continuityNote,
+            continuity: {
+              type: 'workload_concentration',
+              window_days: 10,
+              data_through_date: '2026-06-05',
+              evidence: { bullpen_appearances: 10 },
+              limitations: [],
+            },
+          }
+        : entry)),
+    },
+  }
+}
+
 // ── Hero story ──────────────────────────────────────────────────────────────
 
 test('the hero leads with the most constrained bullpen', () => {
@@ -226,6 +250,30 @@ test('stories without continuity stay unchanged', () => {
   assert.equal(hero.continuity, undefined)
 })
 
+test('the flagship story renders continuity when the selected story carries it', () => {
+  const continuityDashboard = dashboardWithMonitoringContinuity({
+    ...dashboard,
+    landscape: {
+      ...dashboard.landscape,
+      constrained_bullpens: [],
+    },
+  })
+  const html = render(React.createElement(HomeView, { dashboard: continuityDashboard, observations }))
+
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays are leaning on the same arms more than anyone in baseball today'))
+  assert.ok(htmlIncludes(html, continuityNote))
+  for (const phrase of [
+    'Narrative Memory',
+    'algorithm',
+    'model',
+    'confidence score',
+    'fatigue score',
+    'story has been developing',
+  ]) {
+    assert.ok(!htmlIncludes(html, phrase), `rendered forbidden phrase: ${phrase}`)
+  }
+})
+
 // ── League intelligence cards ───────────────────────────────────────────────
 
 test('all four league intelligence cards are derived from the landscape', () => {
@@ -277,6 +325,18 @@ test('today watch items are briefing-only and exclude the flagship club', () => 
       'At least one pen comes in with room to breathe',
     ],
   )
+})
+
+test('today story cards render continuity when present and stay unchanged without it', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithMonitoringContinuity(),
+    observations,
+  }))
+  const plainHtml = render(React.createElement(HomeView, { dashboard, observations }))
+
+  assert.ok(htmlIncludes(html, 'Another club keeps going to the same arms'))
+  assert.ok(htmlIncludes(html, continuityNote))
+  assert.ok(!htmlIncludes(plainHtml, continuityNote))
 })
 
 test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {

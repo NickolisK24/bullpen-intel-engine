@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard, getBullpenObservations } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
-import { SectionHeading } from '../home/BullpenStories'
+import { SectionHeading, StoryContinuityNote } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
@@ -246,6 +246,8 @@ function FeedStoryCard({ story }) {
       </h3>
 
       <p className="mt-2 flex-1 text-sm leading-relaxed text-chalk400">{story.body}</p>
+
+      <StoryContinuityNote note={story.continuity_note} className="mt-3" />
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">

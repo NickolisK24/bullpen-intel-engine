@@ -68,6 +68,10 @@ function mapEntry(entry, source, dashboard) {
     pctRestricted: Number(entry.pct_restricted) || 0,
     continuityByType: dashboardContinuity?.by_type || {},
     dashboardContinuity,
+    continuity_note: typeof entry.continuity_note === 'string' && entry.continuity_note.trim()
+      ? entry.continuity_note
+      : undefined,
+    continuity: entry.continuity || undefined,
     href: buildHomeTeamHref(entry, source),
   }
 }
@@ -85,10 +89,12 @@ function storyContinuityProps(team, storyKind) {
   const continuityEntry = byType[type]
     || (team.continuity?.type === type ? team : null)
     || (team.dashboardContinuity?.continuity?.type === type ? team.dashboardContinuity : null)
-  if (!continuityEntry?.continuity_note || !continuityEntry?.continuity) return {}
+    || (!team.continuity?.type && typeof team.continuity_note === 'string' ? team : null)
+  const note = continuityEntry?.continuity_note
+  if (typeof note !== 'string' || !note.trim()) return {}
   return {
-    continuity_note: continuityEntry.continuity_note,
-    continuity: continuityEntry.continuity,
+    continuity_note: note,
+    ...(continuityEntry.continuity ? { continuity: continuityEntry.continuity } : {}),
   }
 }
 
@@ -190,6 +196,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
       whyItMatters: 'Heavy use on the same few arms stacks up quietly. It tends to show up later as shorter outings and nights off the schedule did not plan for.',
       chips: heroChips(watched),
+      ...storyContinuityProps(watched, 'team_workload_continuity'),
     })
   }
 
@@ -207,6 +214,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       observation: `${rested.available} of the pen's ${rested.total} relievers come in rested and ready to go; no pen in baseball has more late-inning options today.`,
       whyItMatters: 'Rested options are flexibility. A full slate of usable arms gives the club room to shape the late innings instead of just surviving them.',
       chips: heroChips(rested),
+      ...storyContinuityProps(rested, 'team_recovery'),
     })
   }
 
@@ -604,6 +612,7 @@ export function getBullpenStories(dashboard, observations = null) {
       body: `Nobody in this pen is flashing red, but ${hidden.monitor} of ${hidden.total} arms are carrying heavy recent work. The quiet surface is doing a lot of hiding.`,
       href: hidden.href,
       cta: 'Step inside this pen',
+      ...storyContinuityProps(hidden, 'team_workload_continuity'),
     })
   }
 
@@ -667,6 +676,7 @@ export function getBullpenStories(dashboard, observations = null) {
       body: `${widestWindow.available} of ${widestWindow.total} relievers come in rested — the kind of depth that lets the late innings breathe.`,
       href: widestWindow.href,
       cta: 'Step inside this pen',
+      ...storyContinuityProps(widestWindow, 'team_recovery'),
     })
   }
 
