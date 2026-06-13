@@ -409,6 +409,43 @@ test('continuity render fields do not change ranking or suppression', () => {
   assert.ok(!JSON.stringify(surfaced).includes('Narrative Memory'))
 })
 
+test('context render fields do not change ranking or suppression', () => {
+  const withContext = {
+    ...workloadStory,
+    context_note: 'Recent bullpen work has picked up: 4 appearances and 72 pitches over the last 7 days, up from 2 appearances and 24 pitches the week before.',
+    context: {
+      type: 'usage_demand',
+      window_days: 7,
+      data_through_date: '2026-06-05',
+      evidence: {
+        trend: 'increasing_demand',
+        bullpen_appearances_last_7: 4,
+        bullpen_appearances_prev_7: 2,
+        bullpen_pitches_last_7: 72,
+        bullpen_pitches_prev_7: 24,
+      },
+      limitations: [],
+    },
+  }
+  const baselineScore = scoreStorySignificance(workloadStory, context)
+  const contextScore = scoreStorySignificance(withContext, context)
+  const preservationSelection = selectStoryCandidates([withContext], context)
+  const surfaced = preservationSelection.items[0]
+  const baselineSelection = selectStoryCandidates([pressureStory, workloadStory, restStory], context)
+  const contextSelection = selectStoryCandidates([pressureStory, withContext, restStory], context)
+
+  assert.deepEqual(contextScore, baselineScore)
+  assert.deepEqual(
+    contextSelection.items.map(story => story.title),
+    baselineSelection.items.map(story => story.title),
+  )
+  assert.equal(contextSelection.suppressedCount, baselineSelection.suppressedCount)
+  assert.equal(surfaced.context_note, withContext.context_note)
+  assert.deepEqual(surfaced.context, withContext.context)
+  assert.equal(surfaced.storySelection.context_note, withContext.context_note)
+  assert.deepEqual(surfaced.storySelection.context, withContext.context)
+})
+
 test('selection output is deterministic for the same candidate set', () => {
   const candidates = [
     restStory,

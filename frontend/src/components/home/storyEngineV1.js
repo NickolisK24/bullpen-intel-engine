@@ -592,6 +592,8 @@ function decorateCandidate(candidate, evaluation) {
       significance: significance.levelLabel,
       ...(candidate.continuity_note ? { continuity_note: candidate.continuity_note } : {}),
       ...(candidate.continuity ? { continuity: candidate.continuity } : {}),
+      ...(candidate.context_note ? { context_note: candidate.context_note } : {}),
+      ...(candidate.context ? { context: candidate.context } : {}),
     },
   }
 }

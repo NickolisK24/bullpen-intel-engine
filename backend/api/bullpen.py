@@ -33,6 +33,7 @@ from services.bullpen_context import (
     build_team_bullpen_context,
     sample_bullpen_context_team_ids,
 )
+from services.bullpen_context_story import build_dashboard_story_context
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
@@ -1520,6 +1521,7 @@ def get_bullpen_dashboard():
         freshness=freshness,
     )
     continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
+    context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
 
     return jsonify({
         'capability': 'bullpen_dashboard',
@@ -1535,6 +1537,7 @@ def get_bullpen_dashboard():
         },
         'landscape': landscape,
         'continuity': continuity,
+        'story_context': context_support,
         'freshness': freshness,
         'availability_summary': summary,
     })
