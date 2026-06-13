@@ -590,6 +590,8 @@ function decorateCandidate(candidate, evaluation) {
       evidence,
       tier: tier.label,
       significance: significance.levelLabel,
+      ...(candidate.continuity_note ? { continuity_note: candidate.continuity_note } : {}),
+      ...(candidate.continuity ? { continuity: candidate.continuity } : {}),
     },
   }
 }

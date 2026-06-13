@@ -46,10 +46,18 @@ export function buildHomeTeamHref(entry, source = 'home') {
   return `/bullpen?${query.toString()}`
 }
 
-function mapEntry(entry, source) {
+function dashboardContinuityForTeam(dashboard, teamId) {
+  if (teamId == null) return null
+  const teams = dashboard?.continuity?.teams || {}
+  return teams[String(teamId)] || teams[teamId] || null
+}
+
+function mapEntry(entry, source, dashboard) {
   if (!entry) return null
+  const teamId = entry.team_id ?? null
+  const dashboardContinuity = dashboardContinuityForTeam(dashboard, teamId)
   return {
-    teamId: entry.team_id ?? null,
+    teamId,
     teamName: entry.team_name || entry.team_abbreviation || null,
     abbr: entry.team_abbreviation || null,
     available: Number(entry.available) || 0,
@@ -58,7 +66,44 @@ function mapEntry(entry, source) {
     total: Number(entry.total_relievers) || 0,
     pctAvailable: Number(entry.pct_available) || 0,
     pctRestricted: Number(entry.pct_restricted) || 0,
+    continuityByType: dashboardContinuity?.by_type || {},
+    dashboardContinuity,
     href: buildHomeTeamHref(entry, source),
+  }
+}
+
+function continuityTypeForStoryKind(storyKind) {
+  if (storyKind === 'team_workload_continuity') return 'workload_concentration'
+  if (storyKind === 'team_recovery') return 'workload_easing'
+  return null
+}
+
+function storyContinuityProps(team, storyKind) {
+  const type = continuityTypeForStoryKind(storyKind)
+  if (!type || !team) return {}
+  const byType = team.continuityByType || team.by_type || team.dashboardContinuity?.by_type || {}
+  const continuityEntry = byType[type]
+    || (team.continuity?.type === type ? team : null)
+    || (team.dashboardContinuity?.continuity?.type === type ? team.dashboardContinuity : null)
+  if (!continuityEntry?.continuity_note || !continuityEntry?.continuity) return {}
+  return {
+    continuity_note: continuityEntry.continuity_note,
+    continuity: continuityEntry.continuity,
+  }
+}
+
+function withStoryContinuity(candidate, team = candidate?.team || candidate, dashboard = null) {
+  const directProps = storyContinuityProps(team, candidate?.storyKind)
+  const dashboardProps = Object.keys(directProps).length
+    ? {}
+    : storyContinuityProps(
+      dashboardContinuityForTeam(dashboard, candidate?.teamId),
+      candidate?.storyKind,
+    )
+  return {
+    ...candidate,
+    ...dashboardProps,
+    ...directProps,
   }
 }
 
@@ -66,7 +111,7 @@ function mapEntry(entry, source) {
 function landscapeLists(dashboard, source = 'home') {
   const landscape = dashboard?.landscape || {}
   const mapList = (list) => (Array.isArray(list) ? list : [])
-    .map(entry => mapEntry(entry, source))
+    .map(entry => mapEntry(entry, source, dashboard))
     .filter(entry => entry && entry.teamName)
   return {
     constrained: mapList(landscape.constrained_bullpens),
@@ -165,7 +210,10 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     })
   }
 
-  const lead = selectLeadStory(candidates, storyEngineContext(dashboard))
+  const lead = selectLeadStory(
+    candidates.map(candidate => withStoryContinuity(candidate)),
+    storyEngineContext(dashboard),
+  )
   if (lead) {
     return lead
   }
@@ -298,7 +346,7 @@ export function getTodayWatchItems(dashboard) {
       if (usedTeams.has(key)) return
       usedTeams.add(key)
     }
-    items.push(item)
+    items.push(withStoryContinuity(item, team))
   }
 
   const pressure = constrained.find(entry => entry.restricted > 0 && !usedTeams.has(uniqueTeamKey(entry)))
@@ -701,7 +749,7 @@ export function getBullpenStories(dashboard, observations = null) {
   }
 
   const selection = selectStoryCandidates(
-    candidates,
+    candidates.map(candidate => withStoryContinuity(candidate, candidate.team || candidate, dashboard)),
     storyEngineContext(dashboard),
     { limit: 8, excludedTeamIds: [...usedTeamIds] },
   )
