@@ -1,3 +1,4 @@
+import hmac
 import json
 import os
 
@@ -62,6 +63,8 @@ from utils.auth import require_admin_token
 bullpen_bp = Blueprint('bullpen', __name__)
 
 NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP = 5
+DASHBOARD_SNAPSHOT_BUILD_TOKEN_ENV = 'DASHBOARD_SNAPSHOT_BUILD_TOKEN'
+INTERNAL_TOKEN_HEADER = 'X-Internal-Token'
 
 FATIGUE_ERA_RESULTS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1627,6 +1630,99 @@ def _dashboard_snapshot_unavailable_payload(reason):
             'reason': reason or 'dashboard_snapshot_unavailable',
         },
     }
+
+
+def _dashboard_snapshot_build_token_from_request():
+    authorization = request.headers.get('Authorization') or ''
+    scheme, separator, token = authorization.partition(' ')
+    if separator and scheme.lower() == 'bearer' and token.strip():
+        return token.strip()
+    return (request.headers.get(INTERNAL_TOKEN_HEADER) or '').strip()
+
+
+def _dashboard_snapshot_build_token_error():
+    expected = (os.environ.get(DASHBOARD_SNAPSHOT_BUILD_TOKEN_ENV) or '').strip()
+    if not expected:
+        current_app.logger.error(
+            'Dashboard snapshot build endpoint disabled: %s is not configured.',
+            DASHBOARD_SNAPSHOT_BUILD_TOKEN_ENV,
+        )
+        return jsonify({
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_not_configured',
+        }), 503
+
+    provided = _dashboard_snapshot_build_token_from_request()
+    if not provided:
+        return jsonify({
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_required',
+        }), 401
+
+    if not hmac.compare_digest(provided, expected):
+        current_app.logger.warning(
+            'Dashboard snapshot build rejected: invalid token supplied.'
+        )
+        return jsonify({
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_invalid',
+        }), 403
+
+    return None
+
+
+def _dashboard_snapshot_build_response(result):
+    snapshot = {
+        'served_from': 'cache',
+        'snapshot_type': result.get('snapshot_type'),
+        'snapshot_id': result.get('snapshot_id'),
+        'sync_run_id': result.get('sync_run_id'),
+        'payload_version': result.get('payload_version'),
+        'data_through': result.get('data_through'),
+        'availability_reference_date': result.get('availability_reference_date'),
+        'snapshot_generated_at': result.get('snapshot_generated_at'),
+    }
+    return {
+        'status': 'ok',
+        'snapshot': snapshot,
+        'builder': {
+            'source': result.get('source'),
+            'duration_ms': result.get('duration_ms'),
+            'snapshot_served_by_dashboard': result.get('snapshot_served_by_dashboard'),
+        },
+    }
+
+
+@bullpen_bp.route('/dashboard/snapshot/build', methods=['POST'])
+def build_dashboard_snapshot_endpoint():
+    token_error = _dashboard_snapshot_build_token_error()
+    if token_error is not None:
+        return token_error
+
+    try:
+        result = dashboard_snapshot_service.build_bullpen_dashboard_snapshot_v2(
+            source='protected_endpoint',
+        )
+    except Exception as exc:
+        db.session.rollback()
+        current_app.logger.exception('Dashboard snapshot build endpoint crashed.')
+        return jsonify({
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_failed',
+        }), 500
+
+    if result.get('status') != 'ready' or not result.get('snapshot_served_by_dashboard'):
+        current_app.logger.warning(
+            'Dashboard snapshot build endpoint produced non-servable snapshot: %s',
+            result,
+        )
+        return jsonify({
+            'status': 'error',
+            'reason': result.get('reason') or 'snapshot_not_servable',
+            'builder': result,
+        }), 500
+
+    return jsonify(_dashboard_snapshot_build_response(result))
 
 
 @bullpen_bp.route('/dashboard', methods=['GET'])

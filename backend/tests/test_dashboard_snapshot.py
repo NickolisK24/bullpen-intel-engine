@@ -394,6 +394,146 @@ class TestDashboardRouteSnapshotBehavior:
         assert body['snapshot']['served_from'] in ('cache', 'live_fallback')
 
 
+class TestDashboardSnapshotBuildEndpoint:
+    def test_snapshot_build_endpoint_rejects_missing_configured_token(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
+        monkeypatch.setattr(
+            dashboard_snapshot,
+            'build_bullpen_dashboard_snapshot_v2',
+            lambda **kwargs: pytest.fail('unauthorized request must not build snapshot'),
+        )
+
+        response = client.post('/api/bullpen/dashboard/snapshot/build')
+
+        assert response.status_code == 401
+        assert response.get_json() == {
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_required',
+        }
+
+    def test_snapshot_build_endpoint_rejects_invalid_token(self, client, monkeypatch):
+        monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
+        monkeypatch.setattr(
+            dashboard_snapshot,
+            'build_bullpen_dashboard_snapshot_v2',
+            lambda **kwargs: pytest.fail('invalid token request must not build snapshot'),
+        )
+
+        response = client.post(
+            '/api/bullpen/dashboard/snapshot/build',
+            headers={'Authorization': 'Bearer wrong'},
+        )
+
+        assert response.status_code == 403
+        assert response.get_json() == {
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_invalid',
+        }
+
+    def test_snapshot_build_endpoint_fails_closed_when_token_unconfigured(
+        self,
+        client,
+        monkeypatch,
+    ):
+        client.application.config['APP_ENV'] = 'production'
+        monkeypatch.delenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', raising=False)
+        monkeypatch.setattr(
+            dashboard_snapshot,
+            'build_bullpen_dashboard_snapshot_v2',
+            lambda **kwargs: pytest.fail('unconfigured endpoint must not build snapshot'),
+        )
+
+        response = client.post(
+            '/api/bullpen/dashboard/snapshot/build',
+            headers={'Authorization': 'Bearer secret'},
+        )
+
+        assert response.status_code == 503
+        assert response.get_json() == {
+            'status': 'error',
+            'reason': 'dashboard_snapshot_build_token_not_configured',
+        }
+
+    def test_snapshot_build_endpoint_accepts_internal_token_header(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
+        with client.application.app_context():
+            _seed_dashboard_data()
+
+        response = client.post(
+            '/api/bullpen/dashboard/snapshot/build',
+            headers={'X-Internal-Token': 'secret'},
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body['status'] == 'ok'
+        assert body['snapshot']['served_from'] == 'cache'
+        assert body['snapshot']['snapshot_id'] is not None
+
+    def test_snapshot_build_endpoint_valid_token_builds_servable_snapshot(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
+        with client.application.app_context():
+            _seed_dashboard_data()
+
+        response = client.post(
+            '/api/bullpen/dashboard/snapshot/build',
+            headers={'Authorization': 'Bearer secret'},
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body['status'] == 'ok'
+        assert body['snapshot']['served_from'] == 'cache'
+        assert body['snapshot']['payload_version'] == dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION
+        assert body['builder']['snapshot_served_by_dashboard'] is True
+
+        client.application.config['APP_ENV'] = 'production'
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: pytest.fail('dashboard GET must serve endpoint-created snapshot'),
+        )
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        assert dashboard['snapshot']['served_from'] == 'cache'
+        assert dashboard['snapshot']['snapshot_id'] == body['snapshot']['snapshot_id']
+
+    def test_snapshot_build_endpoint_returns_controlled_error_on_build_failure(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: (_ for _ in ()).throw(RuntimeError('builder exploded')),
+        )
+
+        response = client.post(
+            '/api/bullpen/dashboard/snapshot/build',
+            headers={'Authorization': 'Bearer secret'},
+        )
+
+        assert response.status_code == 500
+        body = response.get_json()
+        assert body['status'] == 'error'
+        assert body['reason'] == 'dashboard_snapshot_not_ready'
+        assert body['builder']['status'] == 'failed'
+        assert body['builder']['snapshot_served_by_dashboard'] is False
+
+
 class TestSyncSnapshotIntegration:
     def test_successful_manual_sync_does_not_build_dashboard_snapshot_inline(self, client, monkeypatch):
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
