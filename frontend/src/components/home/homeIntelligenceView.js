@@ -186,6 +186,85 @@ function landscapeLists(dashboard, source = 'home') {
   }
 }
 
+function landscapeTeamLookup(dashboard, source = 'home') {
+  const lists = landscapeLists(dashboard, source)
+  const lookup = new Map()
+  for (const entry of [...lists.constrained, ...lists.available, ...lists.monitoring]) {
+    for (const key of [entry.teamId, entry.abbr, entry.teamName]) {
+      if (key != null && !lookup.has(String(key))) lookup.set(String(key), entry)
+    }
+  }
+  return lookup
+}
+
+function contextTeamKey(entry, fallbackKey) {
+  return entry?.team_id ?? entry?.teamId ?? fallbackKey ?? null
+}
+
+function contextStoryEntry(entry = {}) {
+  const byType = entry.by_type || entry.byType || {}
+  return byType.usage_demand || byType.rotation_length || entry
+}
+
+function usageShiftTitle(teamName, context = {}) {
+  const trend = cleanStoryText(context?.evidence?.trend)
+  if (context?.type === 'rotation_length' && trend === 'shorter_outings') {
+    return `Recent short starts are pushing more work toward the ${teamName} bullpen`
+  }
+  if (context?.type === 'rotation_length' && trend === 'longer_outings') {
+    return `Longer starts are giving the ${teamName} bullpen more room`
+  }
+  if (trend === 'decreasing_demand') {
+    return `The ${teamName} bullpen has more room after a quieter stretch`
+  }
+  return `The ${teamName} bullpen workload has shifted recently`
+}
+
+function usageShiftBody(teamName, context = {}) {
+  const trend = cleanStoryText(context?.evidence?.trend)
+  if (trend === 'decreasing_demand' || trend === 'longer_outings') {
+    return `Recent usage has eased around the ${teamName}, giving the bullpen a different shape than it had in the prior window.`
+  }
+  return `Recent usage has picked up around the ${teamName}, giving the bullpen a different shape than it had in the prior window.`
+}
+
+function storyContextShiftCandidates(dashboard, source = 'home-stories') {
+  const contextTeams = dashboard?.story_context?.teams || dashboard?.storyContext?.teams || {}
+  const lookup = landscapeTeamLookup(dashboard, source)
+  return Object.entries(contextTeams)
+    .map(([key, entry]) => {
+      const contextEntry = contextStoryEntry(entry)
+      const context = contextEntry?.context
+      const note = cleanStoryText(contextEntry?.context_note)
+      const team = lookup.get(String(contextTeamKey(contextEntry, key))) || lookup.get(String(contextTeamKey(entry, key)))
+      if (!team || !context || !note) return null
+      if (!['usage_demand', 'rotation_length'].includes(context.type)) return null
+      return {
+        teamId: team.teamId,
+        abbr: team.abbr,
+        teamName: team.teamName,
+        available: team.available,
+        monitor: team.monitor,
+        restricted: team.restricted,
+        total: team.total,
+        storyKind: 'team_usage_shift',
+        archetype_key: 'usage_shift',
+        read: team.monitor >= team.restricted
+          ? getReadsForLandscapeEntry(team).byKey.concentration
+          : getReadsForLandscapeEntry(team).byKey.pressure,
+        kicker: 'Usage Shift',
+        tone: team.restricted > 1 ? 'stress' : team.monitor > 1 ? 'watch' : 'neutral',
+        title: usageShiftTitle(team.teamName, context),
+        body: usageShiftBody(team.teamName, context),
+        context_note: note,
+        context,
+        href: team.href,
+        cta: 'Step inside this pen',
+      }
+    })
+    .filter(Boolean)
+}
+
 function leagueMetrics(dashboard) {
   const metrics = dashboard?.context?.metrics || {}
   return {
@@ -670,7 +749,7 @@ export function getTodayWatchItems(dashboard) {
       storyKind: 'team_pressure',
       kicker: 'Pressure Watch',
       tone: 'stress',
-      title: 'Another pen has less room to breathe late',
+      title: `The ${pressure.teamName} enter today with a thin late-inning margin`,
       body: `The ${pressure.teamName} also have ${pressure.restricted} ${pressure.restricted === 1 ? 'reliever' : 'relievers'} needing rest after recent work. The late-inning bench is thinner here too.`,
       href: pressure.href,
       cta: 'Open the team board',
@@ -690,7 +769,7 @@ export function getTodayWatchItems(dashboard) {
       storyKind: 'team_workload_continuity',
       kicker: 'Heavy Lifting',
       tone: 'watch',
-      title: 'Another club is leaning on the same names',
+      title: `The ${workload.teamName} keep asking the same relievers for the heavy lifting`,
       body: `${workload.monitor} ${workload.monitor === 1 ? 'arm' : 'arms'} in the ${workload.teamName} pen ${workload.monitor === 1 ? 'has' : 'have'} been carrying the heavy work lately. That is the kind of quiet strain a box score can miss.`,
       href: workload.href,
       cta: 'Open the team board',
@@ -710,9 +789,17 @@ export function getTodayWatchItems(dashboard) {
       storyKind: 'team_recovery',
       kicker: 'Rested Options',
       tone: 'rest',
-      title: 'A rested pen has more ways through the late innings',
+      title: `The ${recovery.teamName} have more ways through the late innings`,
       body: `The ${recovery.teamName} have ${recovery.available} ${recovery.available === 1 ? 'reliever' : 'relievers'} rested enough to use today. That is the other side of the workload picture.`,
       href: recovery.href,
+      cta: 'Open the team board',
+    })
+  }
+
+  for (const shift of storyContextShiftCandidates(dashboard, 'today-watch')) {
+    if (items.length >= 5) break
+    addItem(shift, {
+      ...shift,
       cta: 'Open the team board',
     })
   }
@@ -724,7 +811,7 @@ export function getTodayWatchItems(dashboard) {
       storyKind: 'league_workload',
       kicker: 'Across The League',
       tone: 'watch',
-      title: 'The heavy lifting is not isolated to one bullpen',
+      title: 'Several bullpens are carrying heavier late-inning work',
       body: `${metrics.monitor} tracked ${metrics.monitor === 1 ? 'arm sits' : 'arms sit'} on the watch list around the league. Heavy recent work is showing up in more than one place.`,
       href: '/stories',
       cta: 'Open Stories',
@@ -737,7 +824,7 @@ export function getTodayWatchItems(dashboard) {
       storyKind: 'league_recovery',
       kicker: 'Rested Options',
       tone: 'rest',
-      title: 'Most bullpens still have room to maneuver',
+      title: 'The league still has rested options in reserve',
       body: `${metrics.available} tracked ${metrics.available === 1 ? 'reliever is' : 'relievers are'} rested enough to be usable today. The pressure points matter, but the league is not running on empty.`,
       href: '/stories',
       cta: 'Open Stories',
@@ -1000,6 +1087,8 @@ export function getBullpenStories(dashboard, observations = null) {
       cta: 'Step inside this pen',
     })
   }
+
+  candidates.push(...storyContextShiftCandidates(dashboard, 'home-stories'))
 
   const metrics = leagueMetrics(dashboard)
   if (metrics.monitor > 0 || metrics.restricted > 0) {
