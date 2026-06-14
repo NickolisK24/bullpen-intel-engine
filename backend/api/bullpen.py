@@ -1,7 +1,7 @@
 import json
 import os
 
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request
 from sqlalchemy import desc
 from datetime import date, datetime, timedelta, timezone
 
@@ -1570,6 +1570,65 @@ def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=Non
     return result
 
 
+def _dashboard_live_fallback_enabled():
+    if current_app.config.get('TESTING'):
+        return True
+    app_env = current_app.config.get('APP_ENV', 'development')
+    if app_env != 'production':
+        return True
+    return _truthy(os.environ.get('DASHBOARD_LIVE_FALLBACK_ENABLED'))
+
+
+def _dashboard_snapshot_unavailable_payload(reason):
+    generated_at = datetime.now(timezone.utc).isoformat()
+    return {
+        'capability': 'bullpen_dashboard',
+        'status': 'snapshot_unavailable',
+        'reason': reason or 'dashboard_snapshot_unavailable',
+        'generated_at': generated_at,
+        'ranking_applied': False,
+        'selection_made': False,
+        'scope': 'all_tracked_bullpens',
+        'context': {},
+        'roles': {
+            'order': list(ROLE_KEYS),
+            'counts': {},
+            'total': 0,
+        },
+        'landscape': {},
+        'continuity': {
+            'capability': 'bullpen_continuity_v1',
+            'teams': {},
+            'limitations': [
+                'Dashboard snapshot is unavailable; production live fallback is disabled.',
+            ],
+        },
+        'story_context': {
+            'capability': 'bullpen_context_story_v1',
+            'teams': {},
+            'limitations': [
+                'Dashboard snapshot is unavailable; production live fallback is disabled.',
+            ],
+        },
+        'freshness': {
+            'freshness_state': 'snapshot_unavailable',
+            'is_current': False,
+            'reason_codes': [reason or 'dashboard_snapshot_unavailable'],
+            'limitations': [
+                'Dashboard snapshot is unavailable; production live fallback is disabled.',
+            ],
+        },
+        'availability_summary': {},
+        'snapshot': {
+            'served_from': 'snapshot_unavailable',
+            'snapshot_type': dashboard_snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+            'snapshot_generated_at': None,
+            'payload_version': dashboard_snapshot_service.DASHBOARD_PAYLOAD_VERSION,
+            'reason': reason or 'dashboard_snapshot_unavailable',
+        },
+    }
+
+
 @bullpen_bp.route('/dashboard', methods=['GET'])
 def get_bullpen_dashboard():
     snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
@@ -1579,6 +1638,10 @@ def get_bullpen_dashboard():
             'cache',
             snapshot=snapshot,
         ))
+
+    if not _dashboard_live_fallback_enabled():
+        reason = dashboard_snapshot_service.latest_dashboard_snapshot_unavailable_reason()
+        return jsonify(_dashboard_snapshot_unavailable_payload(reason))
 
     payload = build_bullpen_dashboard_payload()
     return jsonify(_dashboard_payload_with_snapshot_metadata(
