@@ -307,7 +307,7 @@ def recalculate_all_fatigue(reference_date: date | None = None):
     return updated
 
 
-def run_daily_sync(app, days_back: int = 7):
+def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_SCHEDULED):
     """
     Full daily refresh — pulls new logs, recalculates fatigue using each
     pitcher's last game date, and records durable sync_runs metadata for
@@ -351,7 +351,7 @@ def run_daily_sync(app, days_back: int = 7):
     try:
         with app.app_context():
             sync_run_id = sync_metadata.start_sync_run(
-                source=sync_metadata.SOURCE_SCHEDULED,
+                source=source,
                 started_at=started_at.replace(tzinfo=None),
             )
             # Fresh API metrics for this run so api_calls_made / retries_used
@@ -431,7 +431,7 @@ def run_daily_sync(app, days_back: int = 7):
                 api_calls_made=api_metrics['api_calls'],
                 retries_used=api_metrics['retries'],
                 error_message=status['message'] or None,
-                source=sync_metadata.SOURCE_SCHEDULED,
+                source=source,
                 started_at=started_at.replace(tzinfo=None),
             )
     except Exception as e:
@@ -448,7 +448,7 @@ def run_daily_sync(app, days_back: int = 7):
             sync_metadata.finish_sync_run(
                 sync_run_id,
                 status=sync_metadata.STATUS_FAILED,
-                source=sync_metadata.SOURCE_SCHEDULED,
+                source=source,
                 started_at=started_at.replace(tzinfo=None),
                 errors=1,
                 api_calls_made=api_metrics['api_calls'],
