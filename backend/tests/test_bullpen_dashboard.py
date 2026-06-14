@@ -211,23 +211,25 @@ class TestDashboardEndpoint:
         dashboard = client.get('/api/bullpen/dashboard').get_json()
         landscape_entries = _landscape_entries_for_team(dashboard['landscape'], 139)
 
-        assert 'Nick Martinez' not in default_names
+        assert 'Nick Martinez' in default_names
         assert 'Nick Martinez' in expanded_names
-        assert default_board['total_pitchers'] == 9
+        assert default_board['total_pitchers'] == 10
         assert expanded_board['total_pitchers'] == 10
         assert default_board['visibility']['hidden_but_available_count'] == 0
         assert expanded_board['visibility']['hidden_but_available_count'] == 0
+        assert default_board['visibility']['active_hidden_count'] == 0
+        assert expanded_board['visibility']['active_hidden_count'] == 0
 
-        assert dashboard['context']['metrics']['total_relievers'] == 9
-        assert dashboard['availability_summary']['total_pitchers'] == 9
+        assert dashboard['context']['metrics']['total_relievers'] == 10
+        assert dashboard['availability_summary']['total_pitchers'] == 10
         assert dashboard['availability_summary']['statuses']['Available'] == 5
-        assert dashboard['availability_summary']['statuses']['Monitor'] == 4
-        assert dashboard['roles']['total'] == 9
+        assert dashboard['availability_summary']['statuses']['Monitor'] == 5
+        assert dashboard['roles']['total'] == 10
         assert dashboard['landscape']['teams_evaluated'] == 1
         assert landscape_entries
-        assert all(entry['total_relievers'] == 9 for entry in landscape_entries)
+        assert all(entry['total_relievers'] == 10 for entry in landscape_entries)
         assert all(entry['available'] == 5 for entry in landscape_entries)
-        assert all(entry['monitor'] == 4 for entry in landscape_entries)
+        assert all(entry['monitor'] == 5 for entry in landscape_entries)
 
     def test_dashboard_attaches_story_continuity_for_landscape_teams_only(self, client):
         with client.application.app_context():
