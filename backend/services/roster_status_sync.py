@@ -131,6 +131,8 @@ def classify_roster_evidence(evidence):
 
     for roster_type, raw in raw_statuses:
         status = normalize_roster_status_value(raw)
+        if status == STATUS_ACTIVE and roster_type != ROSTER_TYPE_ACTIVE:
+            continue
         if status != STATUS_UNKNOWN:
             return {
                 'status': status,
