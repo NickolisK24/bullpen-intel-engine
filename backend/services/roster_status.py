@@ -29,6 +29,9 @@ ROSTER_STATUS_UNAVAILABLE_LIMITATION = (
 TEAM_ASSIGNMENT_UNRESOLVED_LIMITATION = (
     'Current team assignment is unresolved; historical roster labels are not treated as active.'
 )
+ROSTER_ASSIGNMENT_TIER_UNRESOLVED_LIMITATION = (
+    'Current roster assignment tier is unresolved; historical roster labels are not treated as active.'
+)
 
 INACTIVE_STATUSES = {
     STATUS_IL_10,
@@ -73,6 +76,7 @@ _ASSIGNMENT_SOURCE_STATUSES = {
     'active': STATUS_ACTIVE,
     'fullRoster': STATUS_MINORS,
     'nonRosterInvitees': STATUS_NON_ROSTER,
+    '40Man': STATUS_40_MAN_ONLY,
 }
 
 _ACTIVE_VALUES = {
@@ -267,6 +271,10 @@ def _is_current_roster_sync_source(source):
     return bool(source and str(source).startswith(_ROSTER_SYNC_SOURCE_PREFIX))
 
 
+def _is_current_roster_sync_candidate(candidate):
+    return bool(candidate and _is_current_roster_sync_source(candidate.get('source')))
+
+
 def _updated_at_from(pitcher, attr):
     if pitcher is None:
         return None
@@ -304,13 +312,19 @@ def _current_assignment_candidate(pitcher):
                 updated_at=updated_at,
                 evidence=[f'Current roster assignment: {label}.'],
             )
-        if assignment_type == '40Man':
+        if assignment_source and assignment_source.startswith(_TEAM_ASSIGNMENT_SOURCE_PREFIX):
             return _candidate(
-                STATUS_40_MAN_ONLY,
-                raw_status=assignment_type,
+                STATUS_UNKNOWN,
+                raw_status=assignment_type or assignment_status,
                 source=assignment_source,
                 updated_at=updated_at,
-                evidence=[f'Current roster assignment: {STATUS_LABELS[STATUS_40_MAN_ONLY]}.'],
+                evidence=['Current roster assignment tier is unresolved.'],
+                limitations=[
+                    ROSTER_STATUS_UNAVAILABLE_LIMITATION,
+                    ROSTER_ASSIGNMENT_TIER_UNRESOLVED_LIMITATION,
+                ],
+                authoritative=False,
+                current_assignment_unresolved=True,
             )
         return None
 
@@ -360,20 +374,24 @@ def _select_status_candidate(pitcher):
     assignment = _current_assignment_candidate(pitcher)
     stored = _stored_roster_candidate(pitcher)
 
-    if stored and stored['status'] == STATUS_ACTIVE and _is_current_roster_sync_source(stored['source']):
+    if stored and stored['status'] == STATUS_ACTIVE and _is_current_roster_sync_candidate(stored):
         return stored
     if assignment and assignment['status'] == STATUS_ACTIVE:
         return assignment
     if assignment and assignment['status'] == STATUS_MINORS:
         return assignment
-    if stored and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
+    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
         return stored
-    if stored and stored['status'] in INACTIVE_STATUSES:
+    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in INACTIVE_STATUSES:
         return stored
     if assignment and assignment['status'] in INACTIVE_STATUSES:
         return assignment
     if assignment and assignment['current_assignment_unresolved']:
         return assignment
+    if stored and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
+        return stored
+    if stored and stored['status'] in INACTIVE_STATUSES:
+        return stored
     if stored:
         return stored
     return _candidate(
@@ -427,14 +445,11 @@ def allows_default_board(status_payload):
     """
     True when a pitcher can appear on the default board after bullpen filtering.
 
-    Known inactive statuses are excluded. Unknown status is allowed only as a
-    data-limited state so the board can keep operating without asserting active
-    MLB roster authority.
+    Active-only board inclusion requires a resolved active MLB roster state.
+    Unknown roster state and historical workload/transaction evidence do not
+    imply active roster eligibility.
     """
-    status = (status_payload or {}).get('status') or STATUS_UNKNOWN
-    if status == STATUS_UNKNOWN and (status_payload or {}).get('current_assignment_unresolved'):
-        return False
-    return status == STATUS_ACTIVE or status == STATUS_UNKNOWN
+    return (status_payload or {}).get('is_active_mlb') is True
 
 
 def allows_inactive_context(status_payload):

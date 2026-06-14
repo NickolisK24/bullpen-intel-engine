@@ -177,11 +177,11 @@ test('Active view shows active relievers and hides roster-status unavailable rel
   const names = pitcherNames(filtered)
 
   assert.ok(names.includes('Zane Available'))
-  assert.ok(names.includes('Stale Sam'))
   assert.ok(names.includes('Uri Unavailable'))
+  assert.ok(!names.includes('Stale Sam'))
   assert.ok(!names.includes('Graham Ashcraft'))
   assert.ok(!names.includes('Jose Franco'))
-  assert.equal(view.getBoardTotals(filtered).total, 4)
+  assert.equal(view.getBoardTotals(filtered).total, 3)
 })
 
 test('Active + Unavailable view shows active and roster-status unavailable relievers', () => {
@@ -232,6 +232,11 @@ test('Unavailable Only does not show corrected current-minors assignment as acti
 
   assert.ok(!pitcherNames(activeOnly).includes('Valente Bellozo'))
   assert.deepEqual(pitcherNames(unavailableOnly), ['Valente Bellozo'])
+  assert.equal(view.isActiveRosterCard(staleActivatedMinorAssignmentCard), false)
+
+  const html = render(unavailableOnly)
+  assert.ok(htmlIncludes(html, 'Minors'))
+  assert.ok(!htmlIncludes(html, 'Active MLB'))
 })
 
 test('Unavailable Only empty state appears without showing active relievers', () => {

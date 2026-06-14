@@ -30,7 +30,6 @@ from services.roster_status import (
     STATUS_IL_15,
     STATUS_IL_60,
     STATUS_MINORS,
-    STATUS_UNKNOWN,
 )
 from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED
 from utils.db import db
@@ -223,7 +222,7 @@ def _seed_pitcher(
     days_ago=None,
     active=True,
     position='P',
-    roster_status=None,
+    roster_status=STATUS_ACTIVE,
     roster_status_source='test_fixture',
     roster_status_updated_at=None,
     team_assignment_status=None,
@@ -582,6 +581,47 @@ class TestBoardEndpoint:
         assert card['roster_status']['source'] == 'mlb_stats_api:team_assignment_sync:fullRoster'
         assert card['roster_status']['is_active_mlb'] is False
         assert card['visibility']['is_unavailable_roster_status'] is True
+        assert card['visibility']['is_active_roster_option'] is False
+
+    def test_current_assignment_without_roster_tier_blocks_stale_activated_label_on_board(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Valente Bellozo',
+                team_id=115,
+                team_abbr='COL',
+                mlb_id=678129,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+                roster_status_source='mlb_stats_api:transactions:activated',
+                roster_status_updated_at=datetime(2026, 4, 1, 12, 0, 0),
+                team_assignment_status=TEAM_ASSIGNMENT_ASSIGNED,
+                team_assignment_source='mlb_stats_api:team_assignment_sync:people:currentTeam',
+                team_assignment_updated_at=datetime(2026, 4, 13, 12, 0, 0),
+            )
+
+        default_body = client.get('/api/bullpen/teams/115/board').get_json()
+        default_cards = [
+            card
+            for group in default_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert default_cards == []
+        assert default_body['total_pitchers'] == 0
+        assert default_body['roster_status']['unknown_count'] == 1
+        assert default_body['roster_status']['active_mlb_count'] == 0
+
+        expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
+        expanded_cards = [
+            card
+            for group in expanded_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert expanded_cards == []
+        assert expanded_body['roster_status']['unknown_count'] == 1
+        assert expanded_body['roster_status']['active_mlb_count'] == 0
 
     def test_inactive_toggle_shows_roster_status_context_not_available(self, client):
         with client.application.app_context():
@@ -636,17 +676,19 @@ class TestBoardEndpoint:
                 mlb_id=11321,
                 innings=[1.0, 0.2, 1.0],
                 days_ago=[1, 3, 5],
+                roster_status=None,
             )
 
         body = client.get('/api/bullpen/teams/113/board').get_json()
         cards = [card for group in body['groups'] for card in group['pitchers']]
 
-        assert [card['name'] for card in cards] == ['Unknown Status Reliever']
-        assert cards[0]['roster_status']['status'] == STATUS_UNKNOWN
-        assert cards[0]['roster_status']['is_active_mlb'] is None
-        assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in cards[0]['limitations']
+        assert cards == []
+        assert body['total_pitchers'] == 0
         assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in body['limitations']
         assert body['roster_status']['authority'] == 'unavailable'
+        assert body['roster_status']['unknown_count'] == 1
+        assert body['roster_status']['included_unknown_count'] == 0
+        assert body['roster_status']['active_mlb_count'] == 0
 
     def test_pitcher_detail_endpoint_includes_roster_status_without_500(self, client):
         with client.application.app_context():
