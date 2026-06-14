@@ -9,6 +9,7 @@ import {
   getLeagueContext,
   getMastheadView,
   getTodayWatchItems,
+  getWhatChangedSinceYesterday,
   homeTone,
 } from './homeIntelligenceView'
 
@@ -37,6 +38,7 @@ export function HomeView({
 }) {
   const masthead = getMastheadView(dashboard)
   const hero = getHeroStory(dashboard)
+  const whatChanged = getWhatChangedSinceYesterday(dashboard)
   const watchItems = getTodayWatchItems(dashboard)
   const leagueContext = getLeagueContext(dashboard)
 
@@ -56,6 +58,7 @@ export function HomeView({
             </div>
             <HeroStory hero={hero} />
           </section>
+          <WhatChangedSinceYesterday changes={whatChanged} />
           <BullpenStories stories={watchItems} showCta={false} />
           <LeagueContext context={leagueContext} />
         </>
@@ -69,6 +72,41 @@ export function HomeView({
         body="Share what is useful, unclear, or missing while BaseballOS is being tested with real users."
       />
     </div>
+  )
+}
+
+function WhatChangedSinceYesterday({ changes }) {
+  const items = Array.isArray(changes?.items) ? changes.items : []
+  if (!changes?.hasChanges || items.length < 1) return null
+
+  return (
+    <section className="mb-8" aria-label="What Changed Since Yesterday">
+      <SectionHeading
+        title="What Changed Since Yesterday"
+        subtitle="The short version of how the bullpen map moved from the prior window."
+      />
+
+      <ol className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        {items.map((item, index) => (
+          <li key={item.key} className="border border-dirt bg-dugout p-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="min-w-0 font-display text-xl leading-none tracking-wide text-chalk100">
+                {item.teamName}
+              </h3>
+              <span className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-amber/70">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-chalk200">
+              {item.change}
+            </p>
+            <p className="mt-2 border-t border-dirt/70 pt-2 text-xs leading-relaxed text-chalk400">
+              {item.whyChanged}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 

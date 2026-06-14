@@ -30,6 +30,7 @@ const {
   getBullpenStories,
   getRankingsPreview,
   getTodayWatchItems,
+  getWhatChangedSinceYesterday,
   getMastheadView,
   STORIES_FALLBACK,
   STORY_TITLE_GUIDELINES,
@@ -154,6 +155,56 @@ function dashboardWithMonitoringContext(base = dashboard) {
           },
         },
       },
+    },
+  }
+}
+
+function dashboardWithHomepageChanges(base = dashboard) {
+  return {
+    ...base,
+    what_changed_since_yesterday: {
+      capability: 'homepage_bullpen_changes_v1',
+      ranking_applied: false,
+      selection_made: false,
+      comparison: {
+        previous_data_through: '2026-06-04',
+        current_data_through: '2026-06-05',
+      },
+      items: [
+        {
+          key: '141-monitor',
+          team_id: 141,
+          team_name: 'Toronto Blue Jays',
+          team_abbreviation: 'TOR',
+          change: 'Watch-list arms increased from 2 to 4.',
+          why_changed: 'More relievers now sit in the watch-list workload band than in the prior window.',
+        },
+        {
+          key: '120-available',
+          team_id: 120,
+          team_name: 'Washington Nationals',
+          team_abbreviation: 'WSH',
+          change: 'Rested options increased from 4 to 6.',
+          why_changed: 'The current board shows more rested options than the prior window.',
+        },
+        {
+          key: '121-restricted',
+          team_id: 121,
+          team_name: 'New York Mets',
+          team_abbreviation: 'NYM',
+          change: 'Relievers needing rest decreased from 4 to 3.',
+          why_changed: 'Fewer relievers now need rest after recent work than in the prior window.',
+        },
+        {
+          key: '137-monitor',
+          team_id: 137,
+          team_name: 'San Francisco Giants',
+          team_abbreviation: 'SF',
+          change: 'Watch-list arms decreased from 3 to 2.',
+          why_changed: 'Fewer relievers now sit in the watch-list workload band than in the prior window.',
+        },
+      ],
+      limitations: [],
     },
   }
 }
@@ -590,6 +641,62 @@ test('today story cards render continuity when present and stay unchanged withou
   assert.ok(htmlIncludes(html, 'Another club is leaning on the same names'))
   assert.ok(htmlIncludes(html, continuityNote))
   assert.ok(!htmlIncludes(plainHtml, continuityNote))
+})
+
+test('what changed since yesterday stays hidden without comparison data', () => {
+  const changes = getWhatChangedSinceYesterday(dashboard)
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+
+  assert.equal(changes.hasChanges, false)
+  assert.deepEqual(changes.items, [])
+  assert.ok(!htmlIncludes(html, 'What Changed Since Yesterday'))
+  assert.ok(!htmlIncludes(html, 'No data available'))
+})
+
+test('what changed since yesterday normalizes three complete change items', () => {
+  const changes = getWhatChangedSinceYesterday(dashboardWithHomepageChanges())
+
+  assert.equal(changes.hasChanges, true)
+  assert.equal(changes.items.length, 3)
+  assert.deepEqual(
+    changes.items.map(item => [item.teamName, item.change, item.whyChanged]),
+    [
+      [
+        'Toronto Blue Jays',
+        'Watch-list arms increased from 2 to 4.',
+        'More relievers now sit in the watch-list workload band than in the prior window.',
+      ],
+      [
+        'Washington Nationals',
+        'Rested options increased from 4 to 6.',
+        'The current board shows more rested options than the prior window.',
+      ],
+      [
+        'New York Mets',
+        'Relievers needing rest decreased from 4 to 3.',
+        'Fewer relievers now need rest after recent work than in the prior window.',
+      ],
+    ],
+  )
+})
+
+test('what changed since yesterday renders between the flagship and watch list', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithHomepageChanges(),
+    observations,
+  }))
+  const flagshipIndex = html.indexOf('What BaseballOS Sees Today')
+  const changedIndex = html.indexOf('What Changed Since Yesterday')
+  const watchIndex = html.indexOf('Three Things To Watch')
+
+  assert.ok(flagshipIndex >= 0, 'flagship should render')
+  assert.ok(changedIndex > flagshipIndex, 'change section should follow the flagship')
+  assert.ok(watchIndex > changedIndex, 'watch list should follow the change section')
+  assert.ok(htmlIncludes(html, 'Toronto Blue Jays'))
+  assert.ok(htmlIncludes(html, 'Watch-list arms increased from 2 to 4.'))
+  assert.ok(htmlIncludes(html, 'More relievers now sit in the watch-list workload band than in the prior window.'))
+  assert.ok(!htmlIncludes(html, 'Top-ranked change'))
+  assert.ok(!htmlIncludes(html, '#1 biggest mover'))
 })
 
 test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {

@@ -309,6 +309,35 @@ def get_latest_dashboard_snapshot_record(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DAS
         return None
 
 
+def get_latest_dashboard_snapshot_before(
+    data_through,
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    if data_through is None:
+        return None
+
+    try:
+        return (
+            DashboardSnapshot.query
+            .filter_by(
+                snapshot_type=snapshot_type,
+                status=SNAPSHOT_STATUS_READY,
+                payload_version=DASHBOARD_PAYLOAD_VERSION,
+            )
+            .filter(DashboardSnapshot.data_through < data_through)
+            .order_by(
+                DashboardSnapshot.data_through.desc(),
+                DashboardSnapshot.snapshot_generated_at.desc(),
+                DashboardSnapshot.id.desc(),
+            )
+            .first()
+        )
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning('Could not read prior dashboard snapshot: %s', exc)
+        return None
+
+
 def latest_dashboard_snapshot_unavailable_reason(
     snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
 ):
