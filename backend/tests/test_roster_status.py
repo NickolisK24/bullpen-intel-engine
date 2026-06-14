@@ -124,6 +124,43 @@ def test_current_minor_assignment_overrides_stale_activated_label():
     assert result['is_inactive_context'] is True
 
 
+def test_full_roster_sync_active_label_does_not_prove_active_mlb():
+    result = classify_roster_status(
+        SimpleNamespace(
+            active=True,
+            roster_status=STATUS_ACTIVE,
+            roster_status_source='mlb_stats_api:roster_sync:fullRoster',
+            roster_status_updated_at=datetime(2026, 4, 13, 12, 0, 0),
+        )
+    )
+
+    assert result['status'] == STATUS_MINORS
+    assert result['label'] == 'Minors'
+    assert result['source'] == 'mlb_stats_api:roster_sync:fullRoster'
+    assert result['raw_status'] == STATUS_ACTIVE
+    assert result['is_active_mlb'] is False
+    assert result['is_inactive_context'] is True
+    assert allows_default_board(result) is False
+
+
+def test_verified_active_roster_sync_source_still_proves_active_mlb():
+    result = classify_roster_status(
+        SimpleNamespace(
+            active=True,
+            roster_status=STATUS_ACTIVE,
+            roster_status_source='mlb_stats_api:roster_sync:active',
+            roster_status_updated_at=datetime(2026, 6, 14, 12, 0, 0),
+        )
+    )
+
+    assert result['status'] == STATUS_ACTIVE
+    assert result['label'] == 'Active MLB'
+    assert result['source'] == 'mlb_stats_api:roster_sync:active'
+    assert result['is_authoritative'] is True
+    assert result['is_active_mlb'] is True
+    assert allows_default_board(result) is True
+
+
 def test_current_assignment_without_roster_tier_does_not_fall_back_to_stale_active_label():
     result = classify_roster_status(
         SimpleNamespace(

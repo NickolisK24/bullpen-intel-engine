@@ -267,12 +267,26 @@ def _assignment_source_type(source):
     return source.removeprefix(_TEAM_ASSIGNMENT_SOURCE_PREFIX).split(':', 1)[0]
 
 
+def _roster_sync_source_type(source):
+    if not source or not str(source).startswith(_ROSTER_SYNC_SOURCE_PREFIX):
+        return None
+    return str(source).removeprefix(_ROSTER_SYNC_SOURCE_PREFIX).split(':', 1)[0]
+
+
 def _is_current_roster_sync_source(source):
     return bool(source and str(source).startswith(_ROSTER_SYNC_SOURCE_PREFIX))
 
 
 def _is_current_roster_sync_candidate(candidate):
     return bool(candidate and _is_current_roster_sync_source(candidate.get('source')))
+
+
+def _is_verified_active_roster_sync_source(source):
+    return _roster_sync_source_type(source) == 'active'
+
+
+def _is_verified_active_roster_sync_candidate(candidate):
+    return bool(candidate and _is_verified_active_roster_sync_source(candidate.get('source')))
 
 
 def _updated_at_from(pitcher, attr):
@@ -352,6 +366,23 @@ def _stored_roster_candidate(pitcher):
     source = _source_for(pitcher, raw)
     if raw in (None, '') or status == STATUS_UNKNOWN:
         return None
+    source_type = _roster_sync_source_type(source)
+    if status == STATUS_ACTIVE and source_type and source_type != 'active':
+        status = _ASSIGNMENT_SOURCE_STATUSES.get(source_type, STATUS_UNKNOWN)
+        if status == STATUS_UNKNOWN:
+            return _candidate(
+                STATUS_UNKNOWN,
+                raw_status=str(raw),
+                source=source,
+                updated_at=_updated_at_from(pitcher, 'roster_status_updated_at'),
+                evidence=['Stored roster source does not verify active MLB roster membership.'],
+                limitations=[
+                    ROSTER_STATUS_UNAVAILABLE_LIMITATION,
+                    ROSTER_ASSIGNMENT_TIER_UNRESOLVED_LIMITATION,
+                ],
+                authoritative=False,
+                current_assignment_unresolved=True,
+            )
 
     return _candidate(
         status,
@@ -374,7 +405,7 @@ def _select_status_candidate(pitcher):
     assignment = _current_assignment_candidate(pitcher)
     stored = _stored_roster_candidate(pitcher)
 
-    if stored and stored['status'] == STATUS_ACTIVE and _is_current_roster_sync_candidate(stored):
+    if stored and stored['status'] == STATUS_ACTIVE and _is_verified_active_roster_sync_candidate(stored):
         return stored
     if assignment and assignment['status'] == STATUS_ACTIVE:
         return assignment

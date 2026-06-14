@@ -156,6 +156,12 @@ def test_classifies_merged_roster_evidence_by_precedence():
         'roster_types': {ROSTER_TYPE_FULL},
         'raw_statuses': [],
     })['status'] == STATUS_MINORS
+    full_roster_active = classify_roster_evidence({
+        'roster_types': {ROSTER_TYPE_FULL},
+        'raw_statuses': [(ROSTER_TYPE_FULL, 'Active')],
+    })
+    assert full_roster_active['status'] == STATUS_MINORS
+    assert full_roster_active['source'] == 'mlb_stats_api:roster_sync:fullRoster'
     assert classify_roster_evidence({
         'roster_types': {ROSTER_TYPE_NON_ROSTER},
         'raw_statuses': [],

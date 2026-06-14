@@ -623,6 +623,54 @@ class TestBoardEndpoint:
         assert expanded_body['roster_status']['unknown_count'] == 1
         assert expanded_body['roster_status']['active_mlb_count'] == 0
 
+    def test_full_roster_sync_active_label_is_not_active_mlb_on_board(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Valente Bellozo',
+                team_id=115,
+                team_abbr='COL',
+                mlb_id=678129,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[
+                    ACTIVE_WINDOW_DAYS + 2,
+                    ACTIVE_WINDOW_DAYS + 4,
+                    ACTIVE_WINDOW_DAYS + 6,
+                ],
+                roster_status=STATUS_ACTIVE,
+                roster_status_source='mlb_stats_api:roster_sync:fullRoster',
+                roster_status_updated_at=datetime(2026, 4, 13, 12, 0, 0),
+            )
+
+        default_body = client.get('/api/bullpen/teams/115/board').get_json()
+        default_cards = [
+            card
+            for group in default_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert default_cards == []
+        assert default_body['total_pitchers'] == 0
+        assert default_body['roster_status']['active_mlb_count'] == 0
+        assert default_body['roster_status']['excluded_inactive_count'] == 1
+
+        expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
+        expanded_cards = [
+            card
+            for group in expanded_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert [card['name'] for card in expanded_cards] == ['Valente Bellozo']
+        card = expanded_cards[0]
+        assert card['availability_status'] == 'Unavailable'
+        assert card['roster_status']['status'] == STATUS_MINORS
+        assert card['roster_status']['label'] == 'Minors'
+        assert card['roster_status']['source'] == 'mlb_stats_api:roster_sync:fullRoster'
+        assert card['roster_status']['is_active_mlb'] is False
+        assert card['visibility']['is_active_roster_option'] is False
+        assert card['visibility']['is_visible_by_default'] is False
+        assert card['visibility']['hidden_until_show_unavailable'] is True
+
     def test_inactive_toggle_shows_roster_status_context_not_available(self, client):
         with client.application.app_context():
             _seed_pitcher(
