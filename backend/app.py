@@ -112,6 +112,7 @@ def create_app(config_name=None):
     from models.fatigue_score import FatigueScore
     from models.sync_run import SyncRun
     from models.sync_failure import SyncFailure
+    from models.dashboard_snapshot import DashboardSnapshot
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

@@ -54,6 +54,7 @@ from services.roster_status import (
     classify_roster_status,
 )
 from services.mlb_api import mlb_client
+from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
 from services import sync_metadata
 from utils.auth import require_admin_token
@@ -520,6 +521,10 @@ def sync_recent_logs():
         started_at=started.replace(tzinfo=None),
     )
     persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
+    dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
+        sync_run_id=persisted_run_id,
+        source=source,
+    )
 
     # Mirror what the daily APScheduler job writes for local diagnostics. The
     # public freshness endpoint reads durable sync_runs metadata instead.
@@ -1469,8 +1474,7 @@ def get_stats_overview():
     })
 
 
-@bullpen_bp.route('/dashboard', methods=['GET'])
-def get_bullpen_dashboard():
+def build_bullpen_dashboard_payload():
     """
     League-wide bullpen overview for the landing dashboard.
 
@@ -1523,7 +1527,7 @@ def get_bullpen_dashboard():
     continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
     context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
 
-    return jsonify({
+    return {
         'capability': 'bullpen_dashboard',
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'ranking_applied': False,
@@ -1540,7 +1544,51 @@ def get_bullpen_dashboard():
         'story_context': context_support,
         'freshness': freshness,
         'availability_summary': summary,
-    })
+    }
+
+
+def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=None):
+    result = dict(payload or {})
+    snapshot_generated_at = (
+        snapshot.snapshot_generated_at.isoformat()
+        if snapshot is not None and snapshot.snapshot_generated_at
+        else result.get('generated_at')
+    )
+    result['snapshot'] = {
+        'served_from': served_from,
+        'snapshot_type': dashboard_snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+        'snapshot_generated_at': snapshot_generated_at,
+        'payload_version': dashboard_snapshot_service.DASHBOARD_PAYLOAD_VERSION,
+    }
+    if snapshot is not None:
+        result['snapshot'].update({
+            'snapshot_id': snapshot.id,
+            'sync_run_id': snapshot.sync_run_id,
+            'data_through': snapshot.data_through.isoformat() if snapshot.data_through else None,
+            'availability_reference_date': (
+                snapshot.availability_reference_date.isoformat()
+                if snapshot.availability_reference_date
+                else None
+            ),
+        })
+    return result
+
+
+@bullpen_bp.route('/dashboard', methods=['GET'])
+def get_bullpen_dashboard():
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is not None:
+        return jsonify(_dashboard_payload_with_snapshot_metadata(
+            snapshot.payload,
+            'cache',
+            snapshot=snapshot,
+        ))
+
+    payload = build_bullpen_dashboard_payload()
+    return jsonify(_dashboard_payload_with_snapshot_metadata(
+        payload,
+        'live_fallback',
+    ))
 
 
 @bullpen_bp.route('/landscape', methods=['GET'])
