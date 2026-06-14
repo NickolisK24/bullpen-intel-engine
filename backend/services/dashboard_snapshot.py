@@ -67,43 +67,51 @@ def payload_version_valid(snapshot):
     )
 
 
-def snapshot_current_enough(snapshot, sync_status=None):
-    if snapshot is None or snapshot.status != SNAPSHOT_STATUS_READY:
-        return False
+def snapshot_unavailable_reason(snapshot, sync_status=None):
+    if snapshot is None:
+        return 'dashboard_snapshot_missing'
+    if snapshot.status != SNAPSHOT_STATUS_READY:
+        return 'dashboard_snapshot_not_ready'
     if not payload_version_valid(snapshot):
-        return False
+        return 'dashboard_snapshot_version_mismatch'
     if not isinstance(snapshot.payload, Mapping):
-        return False
+        return 'dashboard_snapshot_payload_invalid'
 
     try:
         sync_status = sync_status or sync_metadata.build_sync_status_payload()
     except Exception as exc:
         db.session.rollback()
         logger.warning('Could not validate dashboard snapshot freshness: %s', exc)
-        return False
+        return 'dashboard_snapshot_freshness_validation_unavailable'
 
     current_freshness = _current_freshness(sync_status)
     degradation = current_freshness.get('degradation') or {}
     if degradation.get('fail_closed'):
-        return False
+        return 'dashboard_snapshot_freshness_fail_closed'
 
     if snapshot.data_through != _current_data_through(sync_status):
-        return False
+        return 'dashboard_snapshot_data_through_mismatch'
 
     availability_reference_date = product_availability_reference_date_from_sync_status(
         sync_status
     )
     if snapshot.availability_reference_date != availability_reference_date:
-        return False
+        return 'dashboard_snapshot_availability_reference_mismatch'
 
     payload_freshness = _payload_freshness(snapshot.payload)
     if payload_freshness.get('reference_date') != current_freshness.get('reference_date'):
-        return False
+        return 'dashboard_snapshot_reference_date_mismatch'
     if payload_freshness.get('sync_status') != sync_status.get('status'):
-        return False
+        return 'dashboard_snapshot_sync_status_mismatch'
     if payload_freshness.get('last_successful_sync') != sync_status.get('last_successful_sync'):
-        return False
+        return 'dashboard_snapshot_last_successful_sync_mismatch'
 
+    return None
+
+
+def snapshot_current_enough(snapshot, sync_status=None):
+    if snapshot_unavailable_reason(snapshot, sync_status=sync_status) is not None:
+        return False
     return True
 
 
@@ -206,6 +214,34 @@ def get_latest_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD)
         db.session.rollback()
         logger.warning('Could not read dashboard snapshot: %s', exc)
         return None
+
+
+def get_latest_dashboard_snapshot_record(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):
+    try:
+        return (
+            DashboardSnapshot.query
+            .filter_by(snapshot_type=snapshot_type)
+            .order_by(
+                DashboardSnapshot.snapshot_generated_at.desc(),
+                DashboardSnapshot.id.desc(),
+            )
+            .first()
+        )
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning('Could not read dashboard snapshot record: %s', exc)
+        return None
+
+
+def latest_dashboard_snapshot_unavailable_reason(
+    snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+):
+    snapshot = get_latest_dashboard_snapshot(snapshot_type=snapshot_type)
+    if snapshot is not None:
+        return snapshot_unavailable_reason(snapshot)
+
+    latest_record = get_latest_dashboard_snapshot_record(snapshot_type=snapshot_type)
+    return snapshot_unavailable_reason(latest_record)
 
 
 def get_latest_valid_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):

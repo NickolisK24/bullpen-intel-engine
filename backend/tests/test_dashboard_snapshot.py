@@ -212,6 +212,7 @@ class TestDashboardRouteSnapshotBehavior:
             _seed_dashboard_data()
             payload = bullpen_api.build_bullpen_dashboard_payload()
             dashboard_snapshot.store_dashboard_snapshot(payload, sync_run_id=1, source='test')
+        client.application.config['APP_ENV'] = 'production'
 
         def fail_live_builder():
             raise AssertionError('live builder should not run')
@@ -240,6 +241,29 @@ class TestDashboardRouteSnapshotBehavior:
         assert body['ranking_applied'] is False
         assert body['selection_made'] is False
 
+    def test_dashboard_route_returns_degraded_response_when_production_cache_missing(
+        self,
+        client,
+        monkeypatch,
+    ):
+        client.application.config['APP_ENV'] = 'production'
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: pytest.fail('production cache miss must not run live builder'),
+        )
+
+        response = client.get('/api/bullpen/dashboard')
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body['capability'] == 'bullpen_dashboard'
+        assert body['status'] == 'snapshot_unavailable'
+        assert body['reason'] == 'dashboard_snapshot_missing'
+        assert body['snapshot']['served_from'] == 'snapshot_unavailable'
+        assert body['ranking_applied'] is False
+        assert body['selection_made'] is False
+
     def test_dashboard_route_falls_back_when_latest_snapshot_failed(self, client, monkeypatch):
         with client.application.app_context():
             dashboard_snapshot.mark_dashboard_snapshot_failed(
@@ -255,6 +279,29 @@ class TestDashboardRouteSnapshotBehavior:
 
         body = client.get('/api/bullpen/dashboard').get_json()
         assert body['snapshot']['served_from'] == 'live_fallback'
+
+    def test_dashboard_route_returns_degraded_response_when_production_snapshot_failed(
+        self,
+        client,
+        monkeypatch,
+    ):
+        client.application.config['APP_ENV'] = 'production'
+        with client.application.app_context():
+            dashboard_snapshot.mark_dashboard_snapshot_failed(
+                RuntimeError('snapshot failed'),
+                sync_run_id=10,
+                source='test',
+            )
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: pytest.fail('production failed snapshot must not run live builder'),
+        )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        assert body['status'] == 'snapshot_unavailable'
+        assert body['reason'] == 'dashboard_snapshot_not_ready'
+        assert body['snapshot']['served_from'] == 'snapshot_unavailable'
 
     def test_public_payload_remains_backward_compatible(self, client):
         body = client.get('/api/bullpen/dashboard').get_json()
