@@ -152,10 +152,13 @@ export function StoryPresentation({
   compact = false,
   className = '',
   observationBodyClassName = '',
+  forceContext = false,
 }) {
   const observationText = cleanText(observation ?? story?.body ?? story?.observation)
   const hasContinuity = Boolean(cleanText(story?.continuity_note))
-  const hasContext = shouldRenderStoryContext(story, { compact })
+  const hasContext = forceContext
+    ? Boolean(cleanText(story?.context_note))
+    : shouldRenderStoryContext(story, { compact })
 
   return (
     <div className={`story-presentation ${className}`}>

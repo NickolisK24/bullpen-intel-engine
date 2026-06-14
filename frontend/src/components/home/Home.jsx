@@ -137,6 +137,7 @@ function HeroStory({ hero }) {
           observation={hero.observation}
           className="mt-4 max-w-3xl"
           observationBodyClassName="text-chalk200 sm:text-base"
+          forceContext
         />
 
         <div className="mt-4 max-w-3xl rounded border-l-4 border-amber/70 bg-field/60 p-3 sm:p-4">
