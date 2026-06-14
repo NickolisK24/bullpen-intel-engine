@@ -40,6 +40,7 @@ from services.bullpen_population import (
     population_diagnostic,
     usage_logs_by_pitcher,
 )
+from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
@@ -904,15 +905,25 @@ def _eligible_records_for_rows(
             'role': classify_usage_role(context['logs'], reference_date=ref),
             'eligibility': context['eligibility'],
             'roster_status': context['roster_status'],
+            'visibility': build_visibility_contract(
+                context['eligibility'],
+                context['roster_status'],
+                context['logs'],
+                ref,
+            ),
             'pitcher': pitcher,
         })
     return records, roster_summary
 
 
-def _eligible_classified_records(rows, include_stale=True, reference_date=None):
+def _eligible_classified_records(rows, include_stale=False, reference_date=None):
     """
     Classify availability rows and remove non-bullpen pitchers for league-wide
-    bullpen-specific surfaces.
+    bullpen-specific public surfaces.
+
+    Default mode intentionally matches the default team board universe. Expanded
+    stale/inactive context is reserved for explicit unavailable views and must
+    not inflate public story counts.
     """
     classified = classify_latest_fatigue_rows(
         rows,
@@ -937,6 +948,15 @@ def _eligible_classified_records(rows, include_stale=True, reference_date=None):
         if context is None:
             continue
 
+        visibility = build_visibility_contract(
+            context['eligibility'],
+            context['roster_status'],
+            context['logs'],
+            ref,
+        )
+        if not visibility['is_visible_by_default']:
+            continue
+
         updated = dict(record)
         updated['eligibility'] = context['eligibility']
         updated['roster_status'] = context['roster_status']
@@ -945,6 +965,7 @@ def _eligible_classified_records(rows, include_stale=True, reference_date=None):
             context['eligibility'],
             context['roster_status'],
         )
+        updated['visibility'] = visibility
         eligible.append(updated)
     return eligible
 
@@ -1488,7 +1509,7 @@ def build_bullpen_dashboard_payload():
     latest_rows = availability_latest_fatigue_rows()
     availability_records = _eligible_classified_records(
         latest_rows,
-        include_stale=True,
+        include_stale=False,
         reference_date=reference_date,
     )
     summary = summarize_availability_records(availability_records)
@@ -1504,7 +1525,7 @@ def build_bullpen_dashboard_payload():
     pitcher_ids = [record['pitcher'].id for record in availability_records]
     logs_by_pitcher = usage_logs_by_pitcher(
         pitcher_ids,
-        include_stale=True,
+        include_stale=False,
         reference_date=reference_date,
     )
     role_counts = {key: 0 for key in ROLE_KEYS}
@@ -1758,7 +1779,7 @@ def get_bullpen_landscape():
     reference_date = _public_availability_reference_date(freshness)
     records = _eligible_classified_records(
         availability_latest_fatigue_rows(),
-        include_stale=True,
+        include_stale=False,
         reference_date=reference_date,
     )
     return jsonify(build_landscape(
