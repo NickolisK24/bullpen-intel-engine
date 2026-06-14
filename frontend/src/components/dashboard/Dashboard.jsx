@@ -6,6 +6,10 @@ import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
 import FollowMyTeam from './FollowMyTeam'
+import {
+  getInjuryIlContextSummary,
+  normalizeInjuryIlContext,
+} from './injuryIlContextView'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { fmtSyncDate } from './syncStatusView'
 import {
@@ -32,6 +36,7 @@ export default function Dashboard() {
 export function DashboardView({ data, loading = false, error = null, onRetry }) {
   const context = getBoardContextView(data || {})
   const roles = getRolesSummaryView(data?.roles)
+  const injuryIlContext = normalizeInjuryIlContext(data)
 
   const freshness = data?.freshness || {}
   const lastSync = fmtSyncDate(freshness.last_successful_sync)
@@ -92,6 +97,8 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
         <>
           {/* Tonight's Bullpen Landscape — first-time league orientation */}
           <BullpenLandscape landscape={data.landscape} />
+
+          <InjuryIlContextSection context={injuryIlContext} />
 
           {/* Section 2 — Bullpen Snapshot */}
           <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} relievers across all tracked MLB bullpens`}>
@@ -185,6 +192,96 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
         body="Share what is useful, unclear, or missing while BaseballOS is being tested with real users."
       />
     </div>
+  )
+}
+
+function InjuryIlContextSection({ context }) {
+  if (!context) return null
+
+  const stats = [
+    {
+      label: 'Injured List',
+      value: context.league.injuredListCount,
+      detail: 'Known IL status',
+    },
+    {
+      label: 'Inactive Roster',
+      value: context.league.inactiveCount,
+      detail: 'Optioned, minors, or inactive roster status',
+    },
+    {
+      label: '2+ Unavailable',
+      value: context.league.teamsWithMultipleUnavailable,
+      detail: 'Tracked bullpens with multiple known unavailable arms',
+    },
+  ]
+  const followed = context.followedTeam
+
+  return (
+    <Section
+      title="Injury / IL Context"
+      subtitle="Roster-status context for bullpen depth. Workload availability remains separate."
+    >
+      <div className="card p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+              Explanatory Only
+            </div>
+            <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk300">
+              {getInjuryIlContextSummary(context)}
+            </p>
+          </div>
+          <div className="shrink-0 rounded border border-dirt bg-dugout/60 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            {context.league.trackedPitchersCount} tracked arms
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {stats.map(stat => (
+            <div key={stat.label} className="rounded border border-dirt/70 bg-field/35 p-3">
+              <div className="font-mono text-[10px] uppercase tracking-wider text-chalk500">
+                {stat.label}
+              </div>
+              <div className="mt-1 font-mono text-2xl text-chalk100">{stat.value}</div>
+              <div className="mt-1 text-[11px] leading-relaxed text-chalk500">{stat.detail}</div>
+            </div>
+          ))}
+        </div>
+
+        {followed && (
+          <div className="mt-3 rounded border border-dirt/70 bg-dugout/45 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                  Followed Team
+                </div>
+                <div className="mt-0.5 font-display text-base tracking-wide text-chalk100">
+                  {followed.teamName}
+                </div>
+              </div>
+              <div className="font-mono text-[11px] uppercase tracking-wider text-chalk400">
+                {followed.injuredListCount} IL · {followed.inactiveCount} inactive
+              </div>
+            </div>
+            {followed.unavailablePitchers.length > 0 && (
+              <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+                {followed.unavailablePitchers.slice(0, 4).map(pitcher => (
+                  <li key={`${pitcher.playerId || pitcher.name}-${pitcher.status}`} className="min-w-0 text-xs leading-relaxed text-chalk300">
+                    <span className="break-words text-chalk200">{pitcher.name}</span>
+                    <span className="text-chalk500"> - {pitcher.statusLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <p className="mt-3 text-[11px] leading-relaxed text-chalk500">
+          Availability classifications are workload-based. Roster status context is separate and does not change the availability model.
+        </p>
+      </div>
+    </Section>
   )
 }
 
