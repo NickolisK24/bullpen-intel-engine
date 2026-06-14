@@ -43,6 +43,7 @@ from services.bullpen_population import (
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.homepage_changes import build_homepage_changes_payload
+from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -1550,6 +1551,11 @@ def build_bullpen_dashboard_payload():
     )
     continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
     context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
+    injury_il_context = build_injury_il_context_payload(
+        pitchers=[pitcher for _score, pitcher in latest_rows],
+        availability_records=availability_records,
+        reference_date=reference_date,
+    )
 
     payload = {
         'capability': 'bullpen_dashboard',
@@ -1564,6 +1570,7 @@ def build_bullpen_dashboard_payload():
             'total': len(pitcher_ids),
         },
         'landscape': landscape,
+        'injury_il_context': injury_il_context,
         'continuity': continuity,
         'story_context': context_support,
         'freshness': freshness,
