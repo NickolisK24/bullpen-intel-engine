@@ -280,45 +280,53 @@ function evidenceValueText(value) {
   return ''
 }
 
+const SUMMARY_EVIDENCE_LABELS = new Set([
+  'relievers needing rest',
+  'watch-list arms',
+  'rested options',
+])
+
+function evidenceKey(label, value) {
+  return `${cleanStoryText(label).toLowerCase()}:${evidenceValueText(value).toLowerCase()}`
+}
+
+function isSummaryCountEvidence(item) {
+  const label = cleanStoryText(item?.label).toLowerCase()
+  const sourceType = cleanStoryText(item?.sourceType || item?.source_type).toLowerCase()
+  return sourceType === 'team_bullpen_counts' || SUMMARY_EVIDENCE_LABELS.has(label)
+}
+
+function addFlagshipEvidenceFact(facts, seen, label, value, detail = '') {
+  const cleanLabel = cleanStoryText(label)
+  const cleanValue = evidenceValueText(value)
+  if (!cleanLabel || !cleanValue) return
+
+  const key = evidenceKey(cleanLabel, cleanValue)
+  if (seen.has(key)) return
+  seen.add(key)
+  facts.push({
+    key,
+    label: cleanLabel,
+    value: cleanValue,
+    detail: cleanStoryText(detail),
+  })
+}
+
 function flagshipEvidenceFacts(story) {
   const evidence = Array.isArray(story?.evidence) ? story.evidence : []
   const seen = new Set()
   const facts = []
 
   for (const item of evidence) {
-    const label = cleanStoryText(item?.label)
-    const value = evidenceValueText(item?.value)
-    if (!label || !value) continue
-    const key = `${label}:${value}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    facts.push({
-      key,
-      label,
-      value,
-      detail: cleanStoryText(item?.detail),
-    })
+    if (isSummaryCountEvidence(item)) continue
+    addFlagshipEvidenceFact(facts, seen, item?.label, item?.value, item?.detail)
   }
 
-  const orderedFacts = facts
-    .sort((a, b) => (
-      flagshipEvidenceOrder(story, a.label) - flagshipEvidenceOrder(story, b.label)
-    ))
-    .slice(0, 4)
+  addFlagshipEvidenceFact(facts, seen, 'Pattern check', story?.continuity_note)
+  addFlagshipEvidenceFact(facts, seen, 'Usage driver', story?.context_note)
 
+  const orderedFacts = facts.slice(0, 4)
   return orderedFacts.length >= 2 ? orderedFacts : []
-}
-
-function flagshipEvidenceOrder(story, label) {
-  const normalized = cleanStoryText(label).toLowerCase()
-  const storyKind = story?.storyKind
-  const order = storyKind === 'team_recovery'
-    ? ['rested options', 'watch-list arms', 'relievers needing rest']
-    : storyKind === 'team_workload_continuity' || storyKind === 'team_workload'
-      ? ['watch-list arms', 'relievers needing rest', 'rested options']
-      : ['relievers needing rest', 'watch-list arms', 'rested options']
-  const index = order.findIndex(item => normalized.includes(item))
-  return index >= 0 ? index : order.length
 }
 
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────

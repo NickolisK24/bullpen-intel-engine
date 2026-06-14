@@ -256,6 +256,12 @@ test('selected flagship stories carry two to four supporting facts', () => {
   }
 })
 
+const summaryEvidenceLabels = new Set([
+  'Relievers needing rest',
+  'Watch-list arms',
+  'Rested options',
+])
+
 test('story candidates attach matching continuity from the dashboard payload', () => {
   const concentrationNote = 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.'
   const easingNote = 'Bullpen flexibility has improved over the last 14 days.'
@@ -401,20 +407,40 @@ test('the flagship story renders observation, continuity, context, and why in or
   assert.ok(evidenceIndex > whyIndex, 'evidence should render after why it matters')
 })
 
-test('the flagship story renders compact supporting facts from existing evidence', () => {
+test('the flagship story filters summary counts from supporting facts', () => {
   const hero = getHeroStory(dashboard)
   const html = render(React.createElement(HomeView, { dashboard, observations }))
 
-  assert.equal(hero.whatBaseballOSSaw.length, 3)
-  assert.deepEqual(
-    hero.whatBaseballOSSaw.map(fact => fact.label),
-    ['Relievers needing rest', 'Watch-list arms', 'Rested options'],
-  )
+  assert.equal(hero.whatBaseballOSSaw.length, 2)
+  assert.deepEqual(hero.whatBaseballOSSaw.map(fact => fact.label), [
+    'Pattern check',
+    'Usage driver',
+  ])
+  assert.equal(hero.whatBaseballOSSaw.some(fact => summaryEvidenceLabels.has(fact.label)), false)
+  assert.equal(hero.whatBaseballOSSaw.some(fact => ['4 of 8', '2 of 8'].includes(fact.value)), false)
   assert.ok(htmlIncludes(html, 'What BaseballOS Saw'))
-  assert.ok(htmlIncludes(html, 'Relievers needing rest'))
-  assert.ok(htmlIncludes(html, '4 of 8'))
-  assert.ok(htmlIncludes(html, 'Watch-list arms'))
-  assert.ok(htmlIncludes(html, 'Rested options'))
+  assert.ok(htmlIncludes(html, 'Pattern check'))
+  assert.ok(htmlIncludes(html, 'Usage driver'))
+})
+
+test('flagship evidence uses existing continuity and context signals for story support', () => {
+  const contextDashboard = dashboardWithMonitoringContext(dashboardWithMonitoringContinuity({
+    ...dashboard,
+    landscape: {
+      ...dashboard.landscape,
+      constrained_bullpens: [],
+    },
+  }))
+  const hero = getHeroStory(contextDashboard)
+
+  assert.equal(hero.storyKind, 'team_workload_continuity')
+  assert.deepEqual(hero.whatBaseballOSSaw.map(fact => fact.label), [
+    'Pattern check',
+    'Usage driver',
+  ])
+  assert.equal(hero.whatBaseballOSSaw[0].value, continuityNote)
+  assert.equal(hero.whatBaseballOSSaw[1].value, contextNote)
+  assert.equal(hero.whatBaseballOSSaw.some(fact => summaryEvidenceLabels.has(fact.label)), false)
 })
 
 test('story presentation renders a labeled observation without empty support sections', () => {
