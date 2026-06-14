@@ -262,11 +262,63 @@ function flagshipContextNote(story) {
 
 function withFlagshipBriefingSupport(story) {
   if (!story) return story
-  return {
+  const supported = {
     ...story,
     continuity_note: flagshipContinuityNote(story),
     context_note: flagshipContextNote(story),
   }
+  return {
+    ...supported,
+    whatBaseballOSSaw: flagshipEvidenceFacts(supported),
+  }
+}
+
+function evidenceValueText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+function flagshipEvidenceFacts(story) {
+  const evidence = Array.isArray(story?.evidence) ? story.evidence : []
+  const seen = new Set()
+  const facts = []
+
+  for (const item of evidence) {
+    const label = cleanStoryText(item?.label)
+    const value = evidenceValueText(item?.value)
+    if (!label || !value) continue
+    const key = `${label}:${value}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    facts.push({
+      key,
+      label,
+      value,
+      detail: cleanStoryText(item?.detail),
+    })
+  }
+
+  const orderedFacts = facts
+    .sort((a, b) => (
+      flagshipEvidenceOrder(story, a.label) - flagshipEvidenceOrder(story, b.label)
+    ))
+    .slice(0, 4)
+
+  return orderedFacts.length >= 2 ? orderedFacts : []
+}
+
+function flagshipEvidenceOrder(story, label) {
+  const normalized = cleanStoryText(label).toLowerCase()
+  const storyKind = story?.storyKind
+  const order = storyKind === 'team_recovery'
+    ? ['rested options', 'watch-list arms', 'relievers needing rest']
+    : storyKind === 'team_workload_continuity' || storyKind === 'team_workload'
+      ? ['watch-list arms', 'relievers needing rest', 'rested options']
+      : ['relievers needing rest', 'watch-list arms', 'rested options']
+  const index = order.findIndex(item => normalized.includes(item))
+  return index >= 0 ? index : order.length
 }
 
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
