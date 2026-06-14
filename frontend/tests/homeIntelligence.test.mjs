@@ -374,8 +374,8 @@ test('context does not render automatically just because a note exists', () => {
   assert.ok(!htmlIncludes(html, 'Context'))
 })
 
-test('context renders only for allowed team story families', () => {
-  const allowed = {
+test('context renders for flagship team stories but stays off compact normal cards', () => {
+  const allowedFlagship = {
     storyKind: 'team_pressure',
     teamId: 121,
     title: 'A thin-margin team story',
@@ -389,10 +389,41 @@ test('context renders only for allowed team story families', () => {
     body: 'This is a team note without a context presentation lane.',
     context_note: contextNote,
   }
-  const html = render(React.createElement(StoryPresentation, { story: allowed, compact: true }))
+  const flagshipHtml = render(React.createElement(StoryPresentation, { story: allowedFlagship }))
+  const compactHtml = render(React.createElement(StoryPresentation, { story: allowedFlagship, compact: true }))
 
-  assert.equal(shouldRenderStoryContext(allowed), true)
+  assert.equal(shouldRenderStoryContext(allowedFlagship), true)
+  assert.equal(shouldRenderStoryContext(allowedFlagship, { compact: true }), false)
   assert.equal(shouldRenderStoryContext(generic), false)
+  assert.ok(htmlIncludes(flagshipHtml, 'Context'))
+  assert.ok(htmlIncludes(flagshipHtml, contextNote))
+  assert.ok(!htmlIncludes(compactHtml, contextNote))
+})
+
+test('compact cards render context only for major workload continuity stories', () => {
+  const major = {
+    storyKind: 'team_workload_continuity',
+    teamId: 141,
+    title: 'A workload story with context',
+    body: 'This bullpen keeps leaning on the same group.',
+    continuity_note: continuityNote,
+    context_note: contextNote,
+    context: {
+      type: 'usage_demand',
+      evidence: { trend: 'increasing_demand' },
+    },
+  }
+  const weak = {
+    ...major,
+    context: {
+      type: 'usage_demand',
+      evidence: { trend: 'insufficient_data' },
+    },
+  }
+  const html = render(React.createElement(StoryPresentation, { story: major, compact: true }))
+
+  assert.equal(shouldRenderStoryContext(major, { compact: true }), true)
+  assert.equal(shouldRenderStoryContext(weak, { compact: true }), false)
   assert.ok(htmlIncludes(html, 'Context'))
   assert.ok(htmlIncludes(html, contextNote))
 })

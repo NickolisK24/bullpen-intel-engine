@@ -64,21 +64,47 @@ const CONTEXT_STORY_KINDS = new Set([
   'team_recovery',
 ])
 
+const COMPACT_CONTEXT_STORY_KINDS = new Set([
+  'team_workload_continuity',
+])
+
+const MEANINGFUL_CONTEXT_TYPES = new Set([
+  'rotation_length',
+  'usage_demand',
+])
+
 function storyHasTeam(story = {}) {
   return story.teamId != null || story.team?.teamId != null || Boolean(story.teamName || story.team?.teamName)
 }
 
-export function shouldRenderStoryContext(story = {}) {
+function storyContextHasMeaningfulSignal(story = {}) {
+  const type = cleanText(story.context?.type || story.contextType).toLowerCase()
+  if (!type) return false
+  if (!MEANINGFUL_CONTEXT_TYPES.has(type)) return false
+
+  const trend = cleanText(story.context?.evidence?.trend || story.context?.trend).toLowerCase()
+  return !['insufficient_data', 'unclear', 'stable', 'flat'].includes(trend)
+}
+
+export function shouldRenderStoryContext(story = {}, options = {}) {
   if (!cleanText(story.context_note)) return false
   if (!storyHasTeam(story)) return false
 
   const kind = cleanText(story.storyKind || story.family || story.kicker).toLowerCase()
-  if (CONTEXT_STORY_KINDS.has(kind)) return true
-
   // Fallback stays conservative until every future story source carries a
   // reliable family/type. Context is supporting explanation, not a reason to
   // make generic or league-wide cards longer.
-  return false
+  if (!CONTEXT_STORY_KINDS.has(kind)) return false
+
+  if (options.compact) {
+    return (
+      COMPACT_CONTEXT_STORY_KINDS.has(kind)
+      && Boolean(cleanText(story.continuity_note))
+      && storyContextHasMeaningfulSignal(story)
+    )
+  }
+
+  return true
 }
 
 export function StorySection({
@@ -86,23 +112,35 @@ export function StorySection({
   text,
   children,
   compact = false,
-  muted = false,
+  tone = 'observation',
   bodyClassName = '',
   className = '',
 }) {
   const body = children ?? cleanText(text)
   if (body == null || body === '') return null
 
-  const bodyClass = muted ? 'text-chalk400' : 'text-chalk300'
+  const labelClass = {
+    observation: 'text-chalk600/70',
+    continuity: 'text-chalk600/60',
+    context: 'text-chalk600/50',
+  }[tone] || 'text-chalk600/65'
+  const bodyClass = {
+    observation: compact ? 'text-chalk400' : 'text-chalk300',
+    continuity: 'text-chalk400/85',
+    context: 'text-chalk400/65',
+  }[tone] || 'text-chalk400'
+  const bodySize = tone === 'observation'
+    ? (compact ? 'text-xs' : 'text-sm')
+    : 'text-[11px]'
 
   return (
     <section
-      className={`${compact ? 'space-y-1' : 'space-y-1.5'} ${className}`}
+      className={`space-y-0.5 ${className}`}
       aria-label={label}
     >
-      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{label}</div>
+      <div className={`font-mono text-[9px] uppercase tracking-[0.14em] ${labelClass}`}>{label}</div>
       {typeof body === 'string' ? (
-        <p className={`${compact ? 'text-xs' : 'text-sm'} leading-relaxed ${bodyClass} ${bodyClassName}`}>{body}</p>
+        <p className={`${bodySize} leading-relaxed ${bodyClass} ${bodyClassName}`}>{body}</p>
       ) : body}
     </section>
   )
@@ -117,7 +155,7 @@ export function StoryPresentation({
 }) {
   const observationText = cleanText(observation ?? story?.body ?? story?.observation)
   const hasContinuity = Boolean(cleanText(story?.continuity_note))
-  const hasContext = shouldRenderStoryContext(story)
+  const hasContext = shouldRenderStoryContext(story, { compact })
 
   return (
     <div className={`story-presentation ${className}`}>
@@ -125,7 +163,7 @@ export function StoryPresentation({
         label="Observation"
         text={observationText}
         compact={compact}
-        muted={compact}
+        tone="observation"
         bodyClassName={observationBodyClassName}
       />
       {hasContinuity && (
@@ -133,7 +171,8 @@ export function StoryPresentation({
           label="Continuity"
           text={story.continuity_note}
           compact
-          className="mt-3 border-t border-dirt/60 pt-3"
+          tone="continuity"
+          className="mt-2 border-l border-dirt/60 pl-2"
         />
       )}
       {hasContext && (
@@ -141,8 +180,8 @@ export function StoryPresentation({
           label="Context"
           text={story.context_note}
           compact
-          muted
-          className="mt-3 border-t border-dirt/60 pt-3"
+          tone="context"
+          className="mt-1.5 border-l border-dirt/40 pl-2"
         />
       )}
     </div>
