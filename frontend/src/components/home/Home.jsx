@@ -3,7 +3,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
-import BullpenStories, { SectionHeading, StoryContextNote, StoryContinuityNote } from './BullpenStories'
+import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import {
   getHeroStory,
   getLeagueContext,
@@ -132,17 +132,17 @@ function HeroStory({ hero }) {
           {hero.headline}
         </h2>
 
-        <p className="mt-4 max-w-3xl text-sm leading-relaxed text-chalk200 sm:text-base">
-          {hero.observation}
-        </p>
+        <StoryPresentation
+          story={hero}
+          observation={hero.observation}
+          className="mt-4 max-w-3xl"
+          observationBodyClassName="text-chalk200 sm:text-base"
+        />
 
         <div className="mt-4 max-w-3xl rounded border-l-4 border-amber/70 bg-field/60 p-3 sm:p-4">
           <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">Why It Matters</div>
           <p className="mt-1 text-sm leading-relaxed text-chalk200">{hero.whyItMatters}</p>
         </div>
-
-        <StoryContinuityNote note={hero.continuity_note} className="mt-4 max-w-3xl" />
-        <StoryContextNote note={hero.context_note} className="mt-4 max-w-3xl" />
 
         {hero.chips.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">

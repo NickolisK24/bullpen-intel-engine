@@ -250,14 +250,17 @@ test('the stories feed renders context after continuity when a story carries bot
     dashboard: contextDashboard,
     observations,
   }))
+  const observationIndex = html.indexOf('Observation')
   const continuityIndex = html.indexOf(continuityNote)
   const contextIndex = html.indexOf(contextNote)
 
   assert.equal(story.continuity_note, continuityNote)
   assert.equal(story.context_note, contextNote)
   assert.equal(story.context.type, 'usage_demand')
+  assert.ok(observationIndex >= 0, 'observation section should render')
   assert.ok(continuityIndex >= 0, 'continuity note should render')
   assert.ok(contextIndex >= 0, 'context note should render')
+  assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
 })
 
