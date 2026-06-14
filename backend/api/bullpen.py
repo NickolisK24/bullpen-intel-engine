@@ -709,10 +709,6 @@ def _team_bullpen_rows(team_id, include_stale=False, reference_date=None):
         )
     )
 
-    if not include_stale:
-        recent = _recent_pitcher_ids_subquery(reference_date=reference_date)
-        query  = query.join(recent, recent.c.pitcher_id == Pitcher.id)
-
     results = query.order_by(desc(FatigueScore.raw_score)).all()
 
     availability_rows = [
@@ -737,8 +733,8 @@ def get_team_bullpen(team_id):
     Single joined query — no N+1 issue.
 
     Optional query params:
-      - include_stale: when truthy, include pitchers whose most recent
-                       appearance is older than 14 days. Default false.
+      - include_stale: when truthy, include inactive/unavailable roster context
+                       beyond default active bullpen options. Default false.
     """
     include_stale = _truthy(request.args.get('include_stale'))
     freshness = _board_freshness_block()
@@ -877,7 +873,9 @@ def _eligible_records_for_rows(
     ref = reference_date or product_current_date()
     contexts, roster_summary = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
-        include_stale=include_stale,
+        # Stale workload can still establish an active bullpen role. The
+        # unavailable toggle should only add inactive roster-state context.
+        include_stale=True,
         include_inactive_context=include_stale,
         reference_date=ref,
     )
@@ -921,9 +919,10 @@ def _eligible_classified_records(rows, include_stale=False, reference_date=None)
     Classify availability rows and remove non-bullpen pitchers for league-wide
     bullpen-specific public surfaces.
 
-    Default mode intentionally matches the default team board universe. Expanded
-    stale/inactive context is reserved for explicit unavailable views and must
-    not inflate public story counts.
+    Default mode intentionally matches the default team board universe: active
+    bullpen options remain visible even without recent workload, while inactive
+    roster context is reserved for explicit unavailable views and must not
+    inflate public story counts.
     """
     classified = classify_latest_fatigue_rows(
         rows,
@@ -933,7 +932,7 @@ def _eligible_classified_records(rows, include_stale=False, reference_date=None)
     ref = reference_date or product_current_date()
     contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
         [record['pitcher'] for record in classified],
-        include_stale=include_stale,
+        include_stale=True,
         include_inactive_context=False,
         reference_date=ref,
     )
