@@ -1,0 +1,65 @@
+import argparse
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+# This command is the daily data sync runner. It must not start the web
+# process' optional in-process scheduler while running in GitHub Actions.
+os.environ['AUTO_SYNC'] = 'false'
+
+
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description='Run BaseballOS daily bullpen sync outside the web request path.'
+    )
+    parser.add_argument(
+        '--days-back',
+        type=int,
+        default=7,
+        help='Number of recent days to pull from MLB game logs.',
+    )
+    parser.add_argument(
+        '--source',
+        default='github_actions',
+        help='SyncRun source label to persist with durable sync metadata.',
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+    source = str(args.source or 'github_actions')[:30]
+    logging.basicConfig(
+        level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
+        format='%(asctime)s %(levelname)s %(name)s %(message)s',
+    )
+
+    from app import app
+    from services import sync as sync_service
+    from services import sync_metadata
+
+    status = sync_service.run_daily_sync(
+        app,
+        days_back=args.days_back,
+        source=source,
+    )
+    summary = {
+        'status': status.get('status'),
+        'source': source,
+        'days_back': args.days_back,
+        'sync': status,
+    }
+    print(json.dumps(summary, sort_keys=True))
+
+    return 0 if status.get('status') in sync_metadata.SUCCESSFUL_STATUSES else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

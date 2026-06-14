@@ -1,14 +1,16 @@
 name: Daily Bullpen Sync
 
-# Reliable production sync. An external scheduler POSTs the protected sync
-# endpoint instead of relying on the in-process APScheduler inside the Render
-# web service — that scheduler only fires if the web process happens to be
-# alive and un-restarted at the scheduled time, which a free Render instance
-# (that spins down when idle) cannot guarantee.
+# Reliable production sync. GitHub Actions runs the daily sync as a direct
+# Python process against the production database, then calls the protected
+# dashboard snapshot endpoint. The protected backend sync endpoint remains
+# available for manual emergency use, but scheduled automation does not run the
+# large sync job inside a Render/Gunicorn web request.
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
-#   BASEBALLOS_SYNC_URL         e.g. https://baseballos-api.onrender.com/api/bullpen/sync
+#   DATABASE_URL                production Postgres connection URL
+#   SECRET_KEY                  production Flask secret key
 #   BASEBALLOS_ADMIN_API_TOKEN  must match the backend's ADMIN_API_TOKEN
+#   BASEBALLOS_SYNC_URL         e.g. https://baseballos-api.onrender.com/api/bullpen/sync
 #   DASHBOARD_SNAPSHOT_BUILD_TOKEN must match the backend's DASHBOARD_SNAPSHOT_BUILD_TOKEN
 #
 # To disable: comment out the `schedule:` block below (manual runs still work
@@ -31,33 +33,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Trigger protected backend sync
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run direct daily sync
         env:
-          SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
-          ADMIN_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
         run: |
           set -euo pipefail
-          if [ -z "${SYNC_URL:-}" ] || [ -z "${ADMIN_TOKEN:-}" ]; then
-            echo "::error::Missing BASEBALLOS_SYNC_URL or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          # -sS: quiet but surface errors. Capture body + HTTP status separately.
-          # The token is only passed via a header from an env var — never printed.
-          http_code=$(curl -sS -o response.json -w '%{http_code}' \
-            --retry 2 --max-time 600 \
-            -X POST "$SYNC_URL" \
-            -H 'Content-Type: application/json' \
-            -H "X-Admin-Token: $ADMIN_TOKEN" \
-            -d '{"days_back": 7, "source": "github_actions"}')
-          echo "HTTP $http_code"
-          echo "Response body:"
-          cat response.json || true
-          echo
-          case "$http_code" in
-            2[0-9][0-9]) echo "Sync succeeded." ;;
-            401|403) echo "::error::Unauthorized ($http_code) — check BASEBALLOS_ADMIN_API_TOKEN matches the backend ADMIN_API_TOKEN."; exit 1 ;;
-            *) echo "::error::Sync failed with HTTP $http_code"; exit 1 ;;
-          esac
+          python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions
 
       - name: Build dashboard snapshot cache
         env:
