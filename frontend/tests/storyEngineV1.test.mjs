@@ -3,10 +3,12 @@ import test from 'node:test'
 
 import {
   STORY_ARCHETYPES,
+  STORY_NARRATIVE_TEMPLATES,
   STORY_TIERS,
   buildStoryEvidence,
   classifyStoryTier,
   evaluateStoryCandidate,
+  getNarrativeTemplatesForArchetype,
   getStoryArchetype,
   scoreStorySignificance,
   selectStoryCandidates,
@@ -129,6 +131,8 @@ const leagueWorkloadStory = {
   href: '/dashboard',
 }
 
+const firstSentence = value => String(value || '').match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || String(value || '').trim()
+
 test('classifies league, team, pitcher, and suppressible data tiers', () => {
   assert.equal(classifyStoryTier({ storyKind: 'league_workload', title: 'League workload', body: 'League workload is visible.' }).key, STORY_TIERS.league.key)
   assert.equal(classifyStoryTier(pressureStory).key, STORY_TIERS.team.key)
@@ -155,6 +159,71 @@ test('formalizes story archetypes and adds metadata to surfaced stories', () => 
   assert.equal(evaluation.story.league_wide, false)
   assert.equal(evaluation.story.storySelection.archetype_key, 'concentrated_workload')
   assert.equal(evaluation.story.storySelection.story_lane, 'team')
+})
+
+test('provides multiple deterministic narrative templates for every archetype', () => {
+  const missing = Object.values(STORY_ARCHETYPES)
+    .filter(archetype => getNarrativeTemplatesForArchetype(archetype.key).length < 2)
+    .map(archetype => archetype.key)
+
+  assert.deepEqual(missing, [])
+  for (const [archetypeKey, templates] of Object.entries(STORY_NARRATIVE_TEMPLATES)) {
+    assert.ok(templates.length >= 2, `${archetypeKey} should have multiple narrative forms`)
+  }
+
+  const first = evaluateStoryCandidate(restStory, context).story
+  const second = evaluateStoryCandidate(restStory, context).story
+  assert.equal(first.narrative_template_key, second.narrative_template_key)
+  assert.equal(first.title, second.title)
+  assert.equal(first.body, second.body)
+  assert.match(first.whyItMatters, /Rested options give a club more ways/)
+})
+
+test('similar stories on the same page use different narrative fingerprints', () => {
+  const recoveryCandidate = (teamId, teamName, abbr) => ({
+    teamId,
+    teamName,
+    abbr,
+    available: 6,
+    monitor: 1,
+    restricted: 1,
+    total: 8,
+    storyKind: 'team_recovery',
+    kicker: 'More Options',
+    tone: 'rest',
+    title: `${teamName} has more room after a quieter stretch`,
+    body: '6 of 8 relievers come in rested, giving this pen more room to breathe.',
+    href: `/bullpen?view=board&team=${abbr}&source=stories`,
+  })
+
+  const selection = selectStoryCandidates([
+    recoveryCandidate(142, 'Minnesota Twins', 'MIN'),
+    recoveryCandidate(146, 'Miami Marlins', 'MIA'),
+    recoveryCandidate(139, 'Tampa Bay Rays', 'TB'),
+  ], context, { limit: 3 })
+  const titleFingerprints = selection.items.map(story => story.narrative_fingerprint.split('|')[0])
+  const openingSentences = selection.items.map(story => firstSentence(story.body))
+
+  assert.deepEqual(selection.items.map(story => story.narrative_variant_index), [0, 1, 2])
+  assert.equal(new Set(selection.items.map(story => story.narrative_fingerprint)).size, 3)
+  assert.equal(new Set(titleFingerprints).size, 3)
+  assert.equal(new Set(openingSentences).size, 3)
+})
+
+test('seed stories reserve their narrative fingerprints for page-level variety', () => {
+  const seededLead = evaluateStoryCandidate(workloadStory, context).story
+  const similarWorkload = {
+    ...workloadStory,
+    teamId: 146,
+    teamName: 'Miami Marlins',
+    abbr: 'MIA',
+  }
+  const unseeded = selectStoryCandidates([similarWorkload], context, { limit: 1 }).items[0]
+  const seeded = selectStoryCandidates([similarWorkload], context, { limit: 1, seedStories: [seededLead] }).items[0]
+
+  assert.equal(unseeded.narrative_variant_index, seededLead.narrative_variant_index)
+  assert.notEqual(seeded.narrative_variant_index, seededLead.narrative_variant_index)
+  assert.notEqual(seeded.narrative_fingerprint, seededLead.narrative_fingerprint)
 })
 
 test('orders significance from broad stress and workload above lower-signal notes', () => {
@@ -202,7 +271,8 @@ test('strong league-wide workload concentration can lead over one team stress st
     leagueWorkloadStory,
   ], leagueWorkloadContext)
 
-  assert.equal(selection.items[0].title, leagueWorkloadStory.title)
+  assert.equal(selection.items[0].title, 'Several bullpens are carrying heavier late-inning work')
+  assert.equal(selection.items[0].archetype_key, 'league_wide_pressure')
   assert.equal(selection.items[0].tier.key, STORY_TIERS.league.key)
   assert.ok(selection.items[0].evidence.some(item => item.label === 'League watch-list arms'))
 })
@@ -424,7 +494,9 @@ test('evidence-rich repeated workload can beat a raw-count spike with weaker evi
     evidenceRichPattern,
   ], context)
 
-  assert.equal(selection.items[0].title, evidenceRichPattern.title)
+  assert.equal(selection.items[0].teamId, evidenceRichPattern.teamId)
+  assert.equal(selection.items[0].archetype_key, 'concentrated_workload')
+  assert.equal(selection.items[0].narrative_template_key, 'concentrated_workload:1')
 })
 
 test('adds the evidence contract to every surfaced story', () => {
@@ -527,4 +599,39 @@ test('selection output is deterministic for the same candidate set', () => {
     selectStoryCandidates(candidates, context),
     selectStoryCandidates(candidates, context),
   )
+})
+
+test('narrative variants avoid prediction, betting, and fantasy language', () => {
+  const selection = selectStoryCandidates([
+    pressureStory,
+    workloadStory,
+    restStory,
+    leagueWorkloadStory,
+    {
+      ...leagueWorkloadStory,
+      storyKind: 'league_recovery',
+      tone: 'rest',
+      title: 'The league still has rested options in reserve',
+      body: 'Rested options are visible across the league, but this is a supporting note.',
+    },
+    dataObservationStory,
+  ], leagueWorkloadContext, { limit: 6 })
+  const copy = selection.items
+    .map(story => `${story.title || story.headline} ${story.body || story.observation} ${story.whyItMatters}`)
+    .join(' ')
+    .toLowerCase()
+
+  for (const forbidden of [
+    'prediction',
+    'projected',
+    'betting',
+    'fantasy',
+    'odds',
+    'will win',
+    'expected to win',
+    'bet on',
+    'moneyline',
+  ]) {
+    assert.ok(!copy.includes(forbidden), `forbidden story language leaked: ${forbidden}`)
+  }
 })

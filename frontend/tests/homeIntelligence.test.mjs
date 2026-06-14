@@ -295,7 +295,7 @@ test('the hero falls back to the heaviest watch list, then the most rested pen',
   const restHero = getHeroStory(restOnly)
   assert.equal(restHero.angle, 'rest')
   assert.equal(restHero.team.teamName, 'Washington Nationals')
-  assert.match(restHero.headline, /more ways through the late innings than anyone today/)
+  assert.match(restHero.headline, /more room to maneuver late today/)
 })
 
 test('a quiet league day still produces a hero story', () => {

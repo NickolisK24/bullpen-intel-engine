@@ -831,7 +831,7 @@ export function getTodayWatchItems(dashboard) {
     })
   }
 
-  const selection = selectStoryCandidates(items, storyEngineContext(dashboard), { limit: 3 })
+  const selection = selectStoryCandidates(items, storyEngineContext(dashboard), { limit: 3, seedStories: [hero] })
   return {
     hasStories: selection.items.length > 0,
     items: selection.items,
@@ -1150,7 +1150,7 @@ export function getBullpenStories(dashboard, observations = null) {
   const selection = selectStoryCandidates(
     candidates.map(candidate => withStoryContinuity(candidate, candidate.team || candidate, dashboard)),
     storyEngineContext(dashboard),
-    { limit: 8, excludedTeamIds: [...usedTeamIds] },
+    { limit: 8, excludedTeamIds: [...usedTeamIds], seedStories: [hero] },
   )
 
   return {
