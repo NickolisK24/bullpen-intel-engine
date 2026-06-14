@@ -17,7 +17,11 @@ after(async () => {
 })
 
 const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
-const { default: BullpenStories } = await server.ssrLoadModule('/src/components/home/BullpenStories.jsx')
+const {
+  default: BullpenStories,
+  StoryPresentation,
+  shouldRenderStoryContext,
+} = await server.ssrLoadModule('/src/components/home/BullpenStories.jsx')
 const { default: RankingsPreview } = await server.ssrLoadModule('/src/components/home/RankingsPreview.jsx')
 const {
   getHeroStory,
@@ -329,6 +333,99 @@ test('the flagship story renders context after continuity when evidence fits the
   assert.ok(continuityIndex >= 0, 'continuity note should render')
   assert.ok(contextIndex >= 0, 'context note should render')
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
+})
+
+test('story presentation renders a labeled observation without empty support sections', () => {
+  const html = render(React.createElement(BullpenStories, {
+    showCta: false,
+    stories: {
+      hasStories: true,
+      items: [{
+        kicker: 'Pressure Watch',
+        tone: 'stress',
+        title: 'A pen has less room to breathe late',
+        body: 'The late-inning bench is thinner here too.',
+        storyKind: 'team_pressure',
+        teamId: 121,
+      }],
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'Observation'))
+  assert.ok(htmlIncludes(html, 'The late-inning bench is thinner here too.'))
+  assert.ok(!htmlIncludes(html, 'Continuity'))
+  assert.ok(!htmlIncludes(html, 'Context'))
+})
+
+test('context does not render automatically just because a note exists', () => {
+  const story = {
+    storyKind: 'league_workload',
+    kicker: 'Across The League',
+    tone: 'watch',
+    title: 'The heavy lifting is not isolated to one bullpen',
+    body: 'Heavy recent work is showing up in more than one place.',
+    context_note: contextNote,
+  }
+  const html = render(React.createElement(StoryPresentation, { story, compact: true }))
+
+  assert.equal(shouldRenderStoryContext(story), false)
+  assert.ok(htmlIncludes(html, 'Observation'))
+  assert.ok(!htmlIncludes(html, contextNote))
+  assert.ok(!htmlIncludes(html, 'Context'))
+})
+
+test('context renders for flagship team stories but stays off compact normal cards', () => {
+  const allowedFlagship = {
+    storyKind: 'team_pressure',
+    teamId: 121,
+    title: 'A thin-margin team story',
+    body: 'This pen has less room to breathe late.',
+    context_note: contextNote,
+  }
+  const generic = {
+    storyKind: 'general_note',
+    teamId: 121,
+    title: 'A generic team note',
+    body: 'This is a team note without a context presentation lane.',
+    context_note: contextNote,
+  }
+  const flagshipHtml = render(React.createElement(StoryPresentation, { story: allowedFlagship }))
+  const compactHtml = render(React.createElement(StoryPresentation, { story: allowedFlagship, compact: true }))
+
+  assert.equal(shouldRenderStoryContext(allowedFlagship), true)
+  assert.equal(shouldRenderStoryContext(allowedFlagship, { compact: true }), false)
+  assert.equal(shouldRenderStoryContext(generic), false)
+  assert.ok(htmlIncludes(flagshipHtml, 'Context'))
+  assert.ok(htmlIncludes(flagshipHtml, contextNote))
+  assert.ok(!htmlIncludes(compactHtml, contextNote))
+})
+
+test('compact cards render context only for major workload continuity stories', () => {
+  const major = {
+    storyKind: 'team_workload_continuity',
+    teamId: 141,
+    title: 'A workload story with context',
+    body: 'This bullpen keeps leaning on the same group.',
+    continuity_note: continuityNote,
+    context_note: contextNote,
+    context: {
+      type: 'usage_demand',
+      evidence: { trend: 'increasing_demand' },
+    },
+  }
+  const weak = {
+    ...major,
+    context: {
+      type: 'usage_demand',
+      evidence: { trend: 'insufficient_data' },
+    },
+  }
+  const html = render(React.createElement(StoryPresentation, { story: major, compact: true }))
+
+  assert.equal(shouldRenderStoryContext(major, { compact: true }), true)
+  assert.equal(shouldRenderStoryContext(weak, { compact: true }), false)
+  assert.ok(htmlIncludes(html, 'Context'))
+  assert.ok(htmlIncludes(html, contextNote))
 })
 
 // ── League intelligence cards ───────────────────────────────────────────────

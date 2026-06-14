@@ -53,23 +53,138 @@ export function SectionHeading({ title, subtitle, right }) {
   )
 }
 
-export function StoryContinuityNote({ note, className = '' }) {
-  if (typeof note !== 'string' || !note.trim()) return null
+function cleanText(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const CONTEXT_STORY_KINDS = new Set([
+  'team_pressure',
+  'team_workload',
+  'team_workload_continuity',
+  'team_recovery',
+])
+
+const COMPACT_CONTEXT_STORY_KINDS = new Set([
+  'team_workload_continuity',
+])
+
+const MEANINGFUL_CONTEXT_TYPES = new Set([
+  'rotation_length',
+  'usage_demand',
+])
+
+function storyHasTeam(story = {}) {
+  return story.teamId != null || story.team?.teamId != null || Boolean(story.teamName || story.team?.teamName)
+}
+
+function storyContextHasMeaningfulSignal(story = {}) {
+  const type = cleanText(story.context?.type || story.contextType).toLowerCase()
+  if (!type) return false
+  if (!MEANINGFUL_CONTEXT_TYPES.has(type)) return false
+
+  const trend = cleanText(story.context?.evidence?.trend || story.context?.trend).toLowerCase()
+  return !['insufficient_data', 'unclear', 'stable', 'flat'].includes(trend)
+}
+
+export function shouldRenderStoryContext(story = {}, options = {}) {
+  if (!cleanText(story.context_note)) return false
+  if (!storyHasTeam(story)) return false
+
+  const kind = cleanText(story.storyKind || story.family || story.kicker).toLowerCase()
+  // Fallback stays conservative until every future story source carries a
+  // reliable family/type. Context is supporting explanation, not a reason to
+  // make generic or league-wide cards longer.
+  if (!CONTEXT_STORY_KINDS.has(kind)) return false
+
+  if (options.compact) {
+    return (
+      COMPACT_CONTEXT_STORY_KINDS.has(kind)
+      && Boolean(cleanText(story.continuity_note))
+      && storyContextHasMeaningfulSignal(story)
+    )
+  }
+
+  return true
+}
+
+export function StorySection({
+  label,
+  text,
+  children,
+  compact = false,
+  tone = 'observation',
+  bodyClassName = '',
+  className = '',
+}) {
+  const body = children ?? cleanText(text)
+  if (body == null || body === '') return null
+
+  const labelClass = {
+    observation: 'text-chalk600/70',
+    continuity: 'text-chalk600/60',
+    context: 'text-chalk600/50',
+  }[tone] || 'text-chalk600/65'
+  const bodyClass = {
+    observation: compact ? 'text-chalk400' : 'text-chalk300',
+    continuity: 'text-chalk400/85',
+    context: 'text-chalk400/65',
+  }[tone] || 'text-chalk400'
+  const bodySize = tone === 'observation'
+    ? (compact ? 'text-xs' : 'text-sm')
+    : 'text-[11px]'
 
   return (
-    <p className={`border-t border-dirt/60 pt-3 text-xs leading-relaxed text-chalk300 ${className}`}>
-      {note}
-    </p>
+    <section
+      className={`space-y-0.5 ${className}`}
+      aria-label={label}
+    >
+      <div className={`font-mono text-[9px] uppercase tracking-[0.14em] ${labelClass}`}>{label}</div>
+      {typeof body === 'string' ? (
+        <p className={`${bodySize} leading-relaxed ${bodyClass} ${bodyClassName}`}>{body}</p>
+      ) : body}
+    </section>
   )
 }
 
-export function StoryContextNote({ note, className = '' }) {
-  if (typeof note !== 'string' || !note.trim()) return null
+export function StoryPresentation({
+  story,
+  observation,
+  compact = false,
+  className = '',
+  observationBodyClassName = '',
+}) {
+  const observationText = cleanText(observation ?? story?.body ?? story?.observation)
+  const hasContinuity = Boolean(cleanText(story?.continuity_note))
+  const hasContext = shouldRenderStoryContext(story, { compact })
 
   return (
-    <p className={`border-t border-dirt/60 pt-3 text-xs leading-relaxed text-chalk400 ${className}`}>
-      {note}
-    </p>
+    <div className={`story-presentation ${className}`}>
+      <StorySection
+        label="Observation"
+        text={observationText}
+        compact={compact}
+        tone="observation"
+        bodyClassName={observationBodyClassName}
+      />
+      {hasContinuity && (
+        <StorySection
+          label="Continuity"
+          text={story.continuity_note}
+          compact
+          tone="continuity"
+          className="mt-2 border-l border-dirt/60 pl-2"
+        />
+      )}
+      {hasContext && (
+        <StorySection
+          label="Context"
+          text={story.context_note}
+          compact
+          tone="context"
+          className="mt-1.5 border-l border-dirt/40 pl-2"
+        />
+      )}
+    </div>
   )
 }
 
@@ -95,10 +210,7 @@ function StoryCard({ story }) {
         {story.title}
       </h3>
 
-      <p className="mt-2 flex-1 text-sm leading-relaxed text-chalk400">{story.body}</p>
-
-      <StoryContinuityNote note={story.continuity_note} className="mt-3" />
-      <StoryContextNote note={story.context_note} className="mt-3" />
+      <StoryPresentation story={story} compact className="mt-2 flex-1" />
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
