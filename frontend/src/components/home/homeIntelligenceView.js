@@ -351,6 +351,47 @@ function flagshipEvidenceFacts(story) {
   return facts.slice(0, 4)
 }
 
+function teamNameFromChange(item) {
+  return cleanStoryText(
+    item?.team_name
+    || item?.teamName
+    || item?.team?.team_name
+    || item?.team?.teamName
+    || item?.team_abbreviation
+    || item?.team?.team_abbreviation,
+  )
+}
+
+function normalizeHomepageChange(item, index) {
+  const teamName = teamNameFromChange(item)
+  const change = cleanStoryText(item?.change || item?.summary)
+  const whyChanged = cleanStoryText(item?.why_changed || item?.whyChanged || item?.reason)
+  if (!teamName || !change || !whyChanged) return null
+
+  return {
+    key: cleanStoryText(item?.key) || `${teamName}-${index}`,
+    teamName,
+    teamAbbr: cleanStoryText(item?.team_abbreviation || item?.teamAbbr || item?.team?.team_abbreviation),
+    change,
+    whyChanged,
+  }
+}
+
+export function getWhatChangedSinceYesterday(dashboard) {
+  const payload = dashboard?.what_changed_since_yesterday || dashboard?.whatChangedSinceYesterday
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  const normalized = items
+    .map(normalizeHomepageChange)
+    .filter(Boolean)
+    .slice(0, 3)
+
+  return {
+    hasChanges: normalized.length > 0,
+    items: normalized,
+    comparison: payload?.comparison || null,
+  }
+}
+
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
 // One flagship observation, picked by a fixed priority: the most constrained
 // pen, then the heaviest watch list, then the most rested group, then a quiet

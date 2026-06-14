@@ -42,6 +42,7 @@ from services.bullpen_population import (
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
+from services.homepage_changes import build_homepage_changes_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -1546,7 +1547,7 @@ def build_bullpen_dashboard_payload():
     continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
     context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
 
-    return {
+    payload = {
         'capability': 'bullpen_dashboard',
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'ranking_applied': False,
@@ -1564,6 +1565,20 @@ def build_bullpen_dashboard_payload():
         'freshness': freshness,
         'availability_summary': summary,
     }
+    previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(
+        parse_reference_date(
+            freshness.get('data_through')
+            or freshness.get('latest_workload_date')
+        )
+    )
+    changes = build_homepage_changes_payload(
+        payload,
+        previous_snapshot.payload if previous_snapshot is not None else None,
+    )
+    if changes['items']:
+        payload['what_changed_since_yesterday'] = changes
+
+    return payload
 
 
 def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=None):
@@ -1629,6 +1644,19 @@ def _dashboard_snapshot_unavailable_payload(reason):
         'story_context': {
             'capability': 'bullpen_context_story_v1',
             'teams': {},
+            'limitations': [
+                'Dashboard snapshot is unavailable; production live fallback is disabled.',
+            ],
+        },
+        'what_changed_since_yesterday': {
+            'capability': 'homepage_bullpen_changes_v1',
+            'ranking_applied': False,
+            'selection_made': False,
+            'comparison': {
+                'current_data_through': None,
+                'previous_data_through': None,
+            },
+            'items': [],
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],
