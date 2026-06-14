@@ -732,10 +732,14 @@ test('today watch items are briefing-only and exclude the flagship club', () => 
   assert.deepEqual(
     watchItems.items.map(item => item.title),
     [
-      'Another pen has less room to breathe late',
-      'Another club is leaning on the same names',
-      'A rested pen has more ways through the late innings',
+      'The New York Mets enter today with a thin late-inning margin',
+      'The Toronto Blue Jays keep asking the same relievers for the heavy lifting',
+      'The Washington Nationals have more ways through the late innings',
     ],
+  )
+  assert.deepEqual(
+    watchItems.items.map(item => item.archetype_key),
+    ['thin_margin', 'concentrated_workload', 'recovery_window'],
   )
 })
 
@@ -746,7 +750,7 @@ test('today story cards render continuity when present and stay unchanged withou
   }))
   const plainHtml = render(React.createElement(HomeView, { dashboard, observations }))
 
-  assert.ok(htmlIncludes(html, 'Another club is leaning on the same names'))
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays keep asking the same relievers for the heavy lifting'))
   assert.ok(htmlIncludes(html, continuityNote))
   assert.ok(!htmlIncludes(plainHtml, continuityNote))
 })
@@ -833,12 +837,91 @@ test('stories are derived from the landscape without repeating the hero club', (
   assert.ok(/Washington Nationals/.test(titles))
 })
 
+test('stories carry a broader archetype mix when existing context supports it', () => {
+  const diversityDashboard = {
+    ...dashboard,
+    landscape: {
+      ...dashboard.landscape,
+      available_bullpens: [
+        ...dashboard.landscape.available_bullpens,
+        { team_id: 114, team_name: 'Cleveland Guardians', team_abbreviation: 'CLE', total_relievers: 8, available: 4, monitor: 2, restricted: 1, pct_available: 50, pct_restricted: 12 },
+      ],
+    },
+    story_context: {
+      capability: 'bullpen_context_story_v1',
+      teams: {
+        114: {
+          team_id: 114,
+          context_note: 'Recent bullpen work has picked up: 5 appearances over the last 7 days, up from 2 the week before.',
+          context: {
+            type: 'usage_demand',
+            window_days: 7,
+            data_through_date: '2026-06-05',
+            evidence: {
+              trend: 'increasing_demand',
+              bullpen_appearances_last_7: 5,
+              bullpen_appearances_prev_7: 2,
+            },
+            limitations: [],
+          },
+          by_type: {
+            usage_demand: {
+              team_id: 114,
+              context_note: 'Recent bullpen work has picked up: 5 appearances over the last 7 days, up from 2 the week before.',
+              context: {
+                type: 'usage_demand',
+                window_days: 7,
+                data_through_date: '2026-06-05',
+                evidence: {
+                  trend: 'increasing_demand',
+                  bullpen_appearances_last_7: 5,
+                  bullpen_appearances_prev_7: 2,
+                },
+                limitations: [],
+              },
+            },
+          },
+        },
+      },
+    },
+  }
+  const stories = getBullpenStories(diversityDashboard, observations)
+  const archetypes = new Set(stories.items.map(story => story.archetype_key))
+  const usageShift = stories.items.find(story => story.archetype_key === 'usage_shift')
+
+  assert.ok(archetypes.has('thin_margin'))
+  assert.ok(archetypes.has('concentrated_workload'))
+  assert.ok(archetypes.has('recovery_window'))
+  assert.ok(archetypes.has('deep_pen_advantage'))
+  assert.ok(usageShift)
+  assert.equal(usageShift.teamName, 'Cleveland Guardians')
+  assert.equal(usageShift.archetype_label, 'Usage Shift')
+  assert.equal(usageShift.story_lane, 'team')
+  assert.equal(usageShift.team_specific, true)
+})
+
 test('story titles read like a baseball writer, not a system', () => {
   const stories = getBullpenStories(dashboard, null)
   const titles = stories.items.map(story => story.title)
   // Toronto (4 monitor, 0 restricted) is the hidden-workload shape.
   assert.ok(titles.includes('The Toronto Blue Jays box score looks calm. The bullpen does not.'))
   assert.ok(titles.includes('The New York Mets are managing from a thinner late-inning bench'))
+})
+
+test('story copy avoids prediction, betting, fantasy, and outcome language', () => {
+  const stories = getBullpenStories(dashboard, observations)
+  const copy = stories.items.map(story => `${story.title} ${story.body}`).join(' ').toLowerCase()
+  for (const forbidden of [
+    'prediction',
+    'projected',
+    'betting',
+    'fantasy',
+    'odds',
+    'will win',
+    'expected to win',
+  ]) {
+    assert.ok(!copy.includes(forbidden), `forbidden story language leaked: ${forbidden}`)
+  }
 })
 
 test('governed observations are retold in editorial language, never verbatim', () => {
@@ -947,9 +1030,11 @@ test('today is curated: no team explorer, feedback CTA intact', () => {
 
 test('today shows three briefing watch items without repeating Stories titles', () => {
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'Another pen has less room to breathe late'))
-  assert.ok(htmlIncludes(html, 'Another club is leaning on the same names'))
-  assert.ok(htmlIncludes(html, 'A rested pen has more ways through the late innings'))
+  assert.ok(htmlIncludes(html, 'The New York Mets enter today with a thin late-inning margin'))
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays keep asking the same relievers for the heavy lifting'))
+  assert.ok(htmlIncludes(html, 'The Washington Nationals have more ways through the late innings'))
+  assert.ok(!htmlIncludes(html, 'Another pen has less room to breathe late'))
+  assert.ok(!htmlIncludes(html, 'Another club is leaning on the same names'))
   // Full-feed story titles stay in Stories, not on the briefing.
   assert.ok(!htmlIncludes(html, 'box score looks calm'))
   assert.ok(!htmlIncludes(html, 'managing from a thinner late-inning bench'))

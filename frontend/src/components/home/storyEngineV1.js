@@ -42,8 +42,106 @@ export const SIGNIFICANCE_LEVELS = Object.freeze({
   low: Object.freeze({ key: 'low', label: 'Low significance', min: 0 }),
 })
 
+export const STORY_ARCHETYPES = Object.freeze({
+  concentratedWorkload: Object.freeze({
+    key: 'concentrated_workload',
+    label: 'Concentrated Workload',
+    lane: 'team',
+    theme: 'workload',
+  }),
+  heavyLifting: Object.freeze({
+    key: 'heavy_lifting',
+    label: 'Heavy Lifting',
+    lane: 'team',
+    theme: 'workload',
+  }),
+  thinMargin: Object.freeze({
+    key: 'thin_margin',
+    label: 'Thin Margin',
+    lane: 'team',
+    theme: 'pressure',
+  }),
+  recoveryWindow: Object.freeze({
+    key: 'recovery_window',
+    label: 'Recovery Window',
+    lane: 'team',
+    theme: 'recovery',
+  }),
+  deepPenAdvantage: Object.freeze({
+    key: 'deep_pen_advantage',
+    label: 'Deep Pen Advantage',
+    lane: 'team',
+    theme: 'recovery',
+  }),
+  watchListGrowth: Object.freeze({
+    key: 'watch_list_growth',
+    label: 'Watch List Growth',
+    lane: 'team',
+    theme: 'movement',
+  }),
+  usageShift: Object.freeze({
+    key: 'usage_shift',
+    label: 'Usage Shift',
+    lane: 'team',
+    theme: 'movement',
+  }),
+  bridgeDependency: Object.freeze({
+    key: 'bridge_dependency',
+    label: 'Bridge Dependency',
+    lane: 'team',
+    theme: 'dependency',
+  }),
+  trustArmDependency: Object.freeze({
+    key: 'trust_arm_dependency',
+    label: 'Trust Arm Dependency',
+    lane: 'team',
+    theme: 'dependency',
+  }),
+  coverageGap: Object.freeze({
+    key: 'coverage_gap',
+    label: 'Coverage Gap',
+    lane: 'team',
+    theme: 'depth',
+  }),
+  depthConstraint: Object.freeze({
+    key: 'depth_constraint',
+    label: 'Depth Constraint',
+    lane: 'team',
+    theme: 'depth',
+  }),
+  leagueWidePressure: Object.freeze({
+    key: 'league_wide_pressure',
+    label: 'League-Wide Pressure',
+    lane: 'league',
+    theme: 'pressure',
+  }),
+  leagueWideRecovery: Object.freeze({
+    key: 'league_wide_recovery',
+    label: 'League-Wide Recovery',
+    lane: 'league',
+    theme: 'recovery',
+  }),
+  leagueCheckIn: Object.freeze({
+    key: 'league_check_in',
+    label: 'League Check-In',
+    lane: 'league',
+    theme: 'quiet',
+  }),
+  dataContext: Object.freeze({
+    key: 'data_context',
+    label: 'Data Context',
+    lane: 'data',
+    theme: 'data',
+  }),
+})
+
+const STORY_ARCHETYPE_BY_KEY = Object.freeze(
+  Object.fromEntries(Object.values(STORY_ARCHETYPES).map(archetype => [archetype.key, archetype])),
+)
+
 const DEFAULT_MIN_SIGNIFICANCE = 42
 const DATA_MIN_SIGNIFICANCE = 36
+const LEAGUE_CROWD_OUT_MARGIN = 8
 
 const MECHANICAL_LANGUAGE_PATTERNS = [
   /\bavailability inventory\b/i,
@@ -86,6 +184,57 @@ function candidateText(candidate) {
 
 function storyKind(candidate) {
   return text(candidate?.storyKind || candidate?.family || candidate?.kicker).toLowerCase()
+}
+
+function normalizedArchetypeKey(value) {
+  return text(value).toLowerCase().replace(/-/g, '_')
+}
+
+export function getStoryArchetype(candidate = {}) {
+  const explicitKey = normalizedArchetypeKey(candidate.archetype_key || candidate.archetypeKey)
+  if (STORY_ARCHETYPE_BY_KEY[explicitKey]) return STORY_ARCHETYPE_BY_KEY[explicitKey]
+
+  const kind = storyKind(candidate)
+  const family = text(candidate.family || sourceObservation(candidate)?.family).toLowerCase()
+  const contextType = text(candidate.context?.type).toLowerCase()
+  const trend = text(candidate.context?.evidence?.trend).toLowerCase()
+
+  if (kind === 'team_workload_continuity') return STORY_ARCHETYPES.concentratedWorkload
+  if (kind === 'team_workload') return STORY_ARCHETYPES.heavyLifting
+  if (kind === 'team_pressure') return STORY_ARCHETYPES.thinMargin
+  if (kind === 'team_recovery') return STORY_ARCHETYPES.recoveryWindow
+  if (kind === 'team_depth') return STORY_ARCHETYPES.deepPenAdvantage
+  if (kind === 'team_usage_shift') return STORY_ARCHETYPES.usageShift
+  if (contextType === 'usage_demand' || contextType === 'rotation_length') {
+    return trend === 'decreasing_demand' || trend === 'longer_outings'
+      ? STORY_ARCHETYPES.recoveryWindow
+      : STORY_ARCHETYPES.usageShift
+  }
+  if (kind === 'league_check_in') return STORY_ARCHETYPES.leagueCheckIn
+  if (kind === 'league_recovery') return STORY_ARCHETYPES.leagueWideRecovery
+  if (kind === 'league_workload' || kind === 'league_workload_continuity') {
+    return STORY_ARCHETYPES.leagueWidePressure
+  }
+  if (family === 'availability_movement' || family === 'snapshot_change') return STORY_ARCHETYPES.watchListGrowth
+  if (family === 'workload_pressure' || family === 'constraint') return STORY_ARCHETYPES.leagueWidePressure
+  if (family === 'readiness') return STORY_ARCHETYPES.leagueWideRecovery
+  if (family === 'inventory') return STORY_ARCHETYPES.depthConstraint
+  if (family === 'freshness' || family === 'trust' || kind.includes('data')) return STORY_ARCHETYPES.dataContext
+  if (kind.includes('depth')) return STORY_ARCHETYPES.depthConstraint
+  if (kind.includes('pressure') || kind.includes('stress')) return STORY_ARCHETYPES.thinMargin
+  if (kind.includes('recovery') || kind.includes('rest')) return STORY_ARCHETYPES.recoveryWindow
+  if (kind.includes('workload') || kind.includes('watch')) return STORY_ARCHETYPES.heavyLifting
+
+  return STORY_ARCHETYPES.dataContext
+}
+
+function storyLane(candidate, tier, archetype) {
+  const explicitLane = text(candidate.story_lane || candidate.storyLane).toLowerCase()
+  if (['team', 'league', 'pitcher', 'data'].includes(explicitLane)) return explicitLane
+  if (tier.key === STORY_TIERS.pitcher.key) return 'pitcher'
+  if (tier.key === STORY_TIERS.data.key) return 'data'
+  if (teamFromCandidate(candidate)) return 'team'
+  return archetype?.lane || 'league'
 }
 
 function teamFromCandidate(candidate) {
@@ -576,8 +725,17 @@ function selectionReason(tier, significance) {
 
 function decorateCandidate(candidate, evaluation) {
   const { tier, significance, evidence } = evaluation
+  const archetype = getStoryArchetype(candidate)
+  const lane = storyLane(candidate, tier, archetype)
+  const teamSpecific = lane === 'team'
+  const leagueWide = lane === 'league'
   return {
     ...candidate,
+    archetype_key: archetype.key,
+    archetype_label: archetype.label,
+    story_lane: lane,
+    team_specific: teamSpecific,
+    league_wide: leagueWide,
     tier,
     significance,
     evidence,
@@ -590,6 +748,11 @@ function decorateCandidate(candidate, evaluation) {
       evidence,
       tier: tier.label,
       significance: significance.levelLabel,
+      archetype_key: archetype.key,
+      archetype_label: archetype.label,
+      story_lane: lane,
+      team_specific: teamSpecific,
+      league_wide: leagueWide,
       ...(candidate.continuity_note ? { continuity_note: candidate.continuity_note } : {}),
       ...(candidate.continuity ? { continuity: candidate.continuity } : {}),
       ...(candidate.context_note ? { context_note: candidate.context_note } : {}),
@@ -629,25 +792,15 @@ function normalizedKey(value) {
 
 function narrativeKey(story) {
   if (teamKey(story) != null) return `team:${normalizedKey(teamKey(story))}`
+  const archetype = getStoryArchetype(story)
+  if (story.league_wide || archetype.lane === 'league') return `league:${archetype.key}`
   const theme = storyTheme(story)
-  if (theme) return `theme:${theme}`
+  if (theme) return `${archetype.lane || 'theme'}:${theme}`
   return `title:${text(story.title).toLowerCase()}`
 }
 
 function storyTheme(story) {
-  const kind = storyKind(story)
-  const family = text(story.family || sourceObservation(story)?.family).toLowerCase()
-
-  if (family === 'workload_pressure' || kind.includes('workload') || kind.includes('watch')) {
-    return 'workload'
-  }
-  if (family === 'freshness' || kind.includes('freshness')) return 'data:freshness'
-  if (family === 'trust' || kind.includes('trust')) return 'data:trust'
-  if (family === 'inventory' || kind.includes('depth')) return 'depth'
-  if (family === 'readiness' || kind.includes('pressure') || kind.includes('stress')) return 'pressure'
-  if (kind.includes('recovery') || kind.includes('rest')) return 'recovery'
-  if (kind.includes('data')) return `data:${family || 'general'}`
-  return kind
+  return getStoryArchetype(story).theme
 }
 
 function suppressedEvaluation(evaluation, reason) {
@@ -658,43 +811,78 @@ function suppressedEvaluation(evaluation, reason) {
   }
 }
 
+function selectionBlocker(evaluation, excludedTeams, usedTeams, usedNarratives) {
+  const key = normalizedKey(teamKey(evaluation.story))
+  const storyNarrative = narrativeKey(evaluation.story)
+
+  if (evaluation.suppressed) return evaluation
+  if (key && excludedTeams.has(key)) {
+    return suppressedEvaluation(evaluation, 'duplicate_flagship_team_story')
+  }
+  if (key && usedTeams.has(key)) {
+    return suppressedEvaluation(evaluation, 'duplicate_team_narrative')
+  }
+  if (storyNarrative && usedNarratives.has(storyNarrative)) {
+    return suppressedEvaluation(evaluation, 'duplicate_story_narrative')
+  }
+  return null
+}
+
+function compareForDiversity(a, b, usedArchetypes, options = {}) {
+  const diversify = options.diversifyArchetypes !== false
+  if (diversify) {
+    const aArchetypeUsed = usedArchetypes.has(a.story.archetype_key)
+    const bArchetypeUsed = usedArchetypes.has(b.story.archetype_key)
+    if (aArchetypeUsed !== bArchetypeUsed) return aArchetypeUsed ? 1 : -1
+  }
+
+  const leagueMargin = Number.isFinite(options.leagueCrowdOutMargin)
+    ? options.leagueCrowdOutMargin
+    : LEAGUE_CROWD_OUT_MARGIN
+  if (a.story.league_wide !== b.story.league_wide) {
+    const league = a.story.league_wide ? a : b
+    const team = a.story.league_wide ? b : a
+    const leagueIsClearlyStronger = league.significance.total >= team.significance.total + leagueMargin
+    if (!leagueIsClearlyStronger && team.story.team_specific) {
+      return a.story.league_wide ? 1 : -1
+    }
+  }
+
+  return compareEvaluations(a, b)
+}
+
 export function selectStoryCandidates(candidates = [], context = {}, options = {}) {
   const limit = Number.isFinite(options.limit) ? options.limit : 8
   const excludedTeams = new Set((options.excludedTeamIds || []).map(normalizedKey))
   const usedTeams = new Set()
   const usedNarratives = new Set()
+  const usedArchetypes = new Set()
   const surfaced = []
   const suppressed = []
 
-  const evaluated = (Array.isArray(candidates) ? candidates : [])
+  let pending = (Array.isArray(candidates) ? candidates : [])
     .map((candidate, index) => evaluateStoryCandidate(candidate, context, index, options))
     .sort(compareEvaluations)
 
-  for (const evaluation of evaluated) {
-    const key = normalizedKey(teamKey(evaluation.story))
-    const storyNarrative = narrativeKey(evaluation.story)
+  while (surfaced.length < limit && pending.length > 0) {
+    const eligible = []
+    for (const evaluation of pending) {
+      const blocked = selectionBlocker(evaluation, excludedTeams, usedTeams, usedNarratives)
+      if (blocked) suppressed.push(blocked)
+      else eligible.push(evaluation)
+    }
+    if (eligible.length === 0) break
 
-    if (evaluation.suppressed) {
-      suppressed.push(evaluation)
-      continue
-    }
-    if (key && excludedTeams.has(key)) {
-      suppressed.push(suppressedEvaluation(evaluation, 'duplicate_flagship_team_story'))
-      continue
-    }
-    if (key && usedTeams.has(key)) {
-      suppressed.push(suppressedEvaluation(evaluation, 'duplicate_team_narrative'))
-      continue
-    }
-    if (storyNarrative && usedNarratives.has(storyNarrative)) {
-      suppressed.push(suppressedEvaluation(evaluation, 'duplicate_story_narrative'))
-      continue
-    }
-
-    surfaced.push(evaluation.story)
+    const [next] = surfaced.length === 0 || limit === 1
+      ? eligible
+      : [...eligible].sort((a, b) => compareForDiversity(a, b, usedArchetypes, options))
+    const key = normalizedKey(teamKey(next.story))
+    const storyNarrative = narrativeKey(next.story)
+    surfaced.push(next.story)
     if (key) usedTeams.add(key)
     if (storyNarrative) usedNarratives.add(storyNarrative)
-    if (surfaced.length >= limit) break
+    if (next.story.archetype_key) usedArchetypes.add(next.story.archetype_key)
+    pending = eligible.filter(evaluation => evaluation !== next)
   }
 
   return {

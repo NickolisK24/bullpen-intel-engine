@@ -2,10 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  STORY_ARCHETYPES,
   STORY_TIERS,
   buildStoryEvidence,
   classifyStoryTier,
   evaluateStoryCandidate,
+  getStoryArchetype,
   scoreStorySignificance,
   selectStoryCandidates,
 } from '../src/components/home/storyEngineV1.js'
@@ -137,6 +139,22 @@ test('classifies league, team, pitcher, and suppressible data tiers', () => {
     evidence: [{ label: 'Appearance count', value: 1, source: 'test' }],
   }).key, STORY_TIERS.pitcher.key)
   assert.equal(classifyStoryTier(dataObservationStory).key, STORY_TIERS.data.key)
+})
+
+test('formalizes story archetypes and adds metadata to surfaced stories', () => {
+  assert.equal(STORY_ARCHETYPES.heavyLifting.label, 'Heavy Lifting')
+  assert.equal(STORY_ARCHETYPES.thinMargin.label, 'Thin Margin')
+  assert.equal(STORY_ARCHETYPES.leagueWideRecovery.lane, 'league')
+  assert.equal(getStoryArchetype({ storyKind: 'team_usage_shift' }).key, 'usage_shift')
+
+  const evaluation = evaluateStoryCandidate(workloadStory, context)
+  assert.equal(evaluation.story.archetype_key, 'concentrated_workload')
+  assert.equal(evaluation.story.archetype_label, 'Concentrated Workload')
+  assert.equal(evaluation.story.story_lane, 'team')
+  assert.equal(evaluation.story.team_specific, true)
+  assert.equal(evaluation.story.league_wide, false)
+  assert.equal(evaluation.story.storySelection.archetype_key, 'concentrated_workload')
+  assert.equal(evaluation.story.storySelection.story_lane, 'team')
 })
 
 test('orders significance from broad stress and workload above lower-signal notes', () => {
@@ -273,6 +291,58 @@ test('duplicate team narratives keep only the stronger story for that club', () 
   assert.equal(torontoStories.length, 1)
   assert.equal(torontoStories[0].title, workloadStory.title)
   assert.ok(selection.suppressionReasons.includes('duplicate_team_narrative'))
+})
+
+test('story selection keeps the lead while preferring unused archetypes afterward', () => {
+  const secondWorkload = {
+    ...workloadStory,
+    teamId: 139,
+    teamName: 'Tampa Bay Rays',
+    abbr: 'TB',
+    monitor: 3,
+    title: 'The Tampa Bay Rays are leaning on the same names again',
+    body: '3 of 8 relievers are carrying the heavier recent work for this bullpen.',
+  }
+  const selection = selectStoryCandidates([
+    workloadStory,
+    secondWorkload,
+    restStory,
+  ], context, { limit: 3 })
+
+  assert.equal(selection.items[0].teamId, workloadStory.teamId)
+  assert.deepEqual(
+    selection.items.map(story => story.archetype_key),
+    ['concentrated_workload', 'recovery_window', 'concentrated_workload'],
+  )
+})
+
+test('league notes do not crowd out team stories unless clearly stronger', () => {
+  const calmLeagueContext = {
+    ...context,
+    leagueMetrics: {
+      total: 64,
+      available: 42,
+      monitor: 2,
+      restricted: 1,
+      pctAvailable: 65,
+      pctRestricted: 2,
+    },
+  }
+  const selection = selectStoryCandidates([
+    pressureStory,
+    {
+      ...leagueWorkloadStory,
+      storyKind: 'league_recovery',
+      tone: 'rest',
+      title: 'The league still has rested options in reserve',
+      body: 'Rested options are visible across the league, but this is a supporting note.',
+    },
+    restStory,
+  ], calmLeagueContext, { limit: 2 })
+
+  assert.equal(selection.items[0].teamId, pressureStory.teamId)
+  assert.equal(selection.items[1].teamId, restStory.teamId)
+  assert.equal(selection.items[1].archetype_key, 'recovery_window')
 })
 
 test('mechanical-language stories suppress instead of beating baseball-language stories', () => {
