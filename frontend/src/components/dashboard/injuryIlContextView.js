@@ -38,9 +38,13 @@ export function normalizeInjuryIlContext(payload) {
   if (!source.league || typeof source.league !== 'object') return null
 
   const league = {
+    populationScope: source.league.population_scope || 'dashboard_bullpen_population',
     injuredListCount: asNumber(source.league.injured_list_count),
     inactiveCount: asNumber(source.league.inactive_count),
     teamsWithMultipleUnavailable: asNumber(source.league.teams_with_multiple_unavailable),
+    bullpenPopulationCount: asNumber(
+      source.league.bullpen_population_count ?? source.league.tracked_pitchers_count
+    ),
     trackedPitchersCount: asNumber(source.league.tracked_pitchers_count),
   }
 
@@ -61,7 +65,9 @@ export function getInjuryIlContextSummary(view) {
     + asNumber(league.inactiveCount)
   )
   if (unavailable <= 0) {
-    return 'No tracked bullpen arms are marked IL or inactive in this roster-status context.'
+    return 'No bullpen arms in the dashboard roster-status context are marked IL or inactive.'
   }
-  return `${unavailable} tracked bullpen arms are marked IL or inactive across the current roster-status context.`
+  const injured = asNumber(league.injuredListCount)
+  const inactive = asNumber(league.inactiveCount)
+  return `${injured} bullpen arms are currently on the injured list. ${inactive} bullpen arms are currently inactive.`
 }

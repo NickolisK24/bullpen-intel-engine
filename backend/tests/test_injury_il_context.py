@@ -18,6 +18,7 @@ def _context(
     status,
     mlb_id=None,
     team_name=None,
+    eligible=True,
 ):
     return {
         'pitcher': SimpleNamespace(
@@ -30,6 +31,9 @@ def _context(
         'roster_status': {
             'status': status,
             'label': status.replace('_', '-').title(),
+        },
+        'eligibility': {
+            'eligible': eligible,
         },
     }
 
@@ -82,6 +86,54 @@ def test_league_totals_and_multiple_unavailable_team_count_are_deterministic():
     assert league['inactive_count'] == 2
     assert league['teams_with_multiple_unavailable'] == 1
     assert league['tracked_pitchers_count'] == 4
+
+
+def test_population_count_uses_dashboard_bullpen_population_not_context_count():
+    payload = build_injury_il_context_from_contexts(
+        [
+            _context('Visible Dashboard Arm', 1, STATUS_ACTIVE),
+            _context('Team One IL', 1, STATUS_IL_15),
+            _context('Team One Optioned', 1, STATUS_OPTIONED),
+            _context('Team Two IL', 2, STATUS_IL_15),
+        ],
+        bullpen_population_count=1,
+        team_ids={1},
+    )
+
+    league = payload['league']
+    assert league['population_scope'] == 'dashboard_bullpen_population'
+    assert league['bullpen_population_count'] == 1
+    assert league['tracked_pitchers_count'] == 1
+    assert league['injured_list_count'] == 1
+    assert league['inactive_count'] == 1
+    assert league['teams_with_multiple_unavailable'] == 1
+
+
+def test_empty_dashboard_team_filter_does_not_count_other_populations():
+    payload = build_injury_il_context_from_contexts(
+        [
+            _context('Team One IL', 1, STATUS_IL_15),
+            _context('Team Two Optioned', 2, STATUS_OPTIONED),
+        ],
+        bullpen_population_count=0,
+        team_ids=set(),
+    )
+
+    league = payload['league']
+    assert league['bullpen_population_count'] == 0
+    assert league['tracked_pitchers_count'] == 0
+    assert league['injured_list_count'] == 0
+    assert league['inactive_count'] == 0
+    assert league['teams_with_multiple_unavailable'] == 0
+
+
+def test_non_bullpen_contexts_do_not_inflate_injury_context_counts():
+    payload = build_injury_il_context_from_contexts([
+        _context('Bullpen IL Arm', 1, STATUS_IL_15, eligible=True),
+        _context('Non Bullpen IL Arm', 1, STATUS_IL_15, eligible=False),
+    ])
+
+    assert payload['league']['injured_list_count'] == 1
 
 
 def test_followed_team_payload_is_limited_to_requested_team():

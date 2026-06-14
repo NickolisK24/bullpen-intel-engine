@@ -59,10 +59,12 @@ const injuryIlContext = {
   prediction_applied: false,
   selection_made: false,
   league: {
+    population_scope: 'dashboard_bullpen_population',
     injured_list_count: 9,
     inactive_count: 6,
     teams_with_multiple_unavailable: 4,
-    tracked_pitchers_count: 240,
+    bullpen_population_count: 6,
+    tracked_pitchers_count: 6,
   },
   followed_team: {
     team_id: 135,
@@ -87,22 +89,29 @@ test('injury il context normalizes the dashboard payload', () => {
   assert.equal(view.league.injuredListCount, 9)
   assert.equal(view.league.inactiveCount, 6)
   assert.equal(view.league.teamsWithMultipleUnavailable, 4)
-  assert.equal(view.league.trackedPitchersCount, 240)
+  assert.equal(view.league.populationScope, 'dashboard_bullpen_population')
+  assert.equal(view.league.bullpenPopulationCount, 6)
+  assert.equal(view.league.trackedPitchersCount, 6)
   assert.equal(view.followedTeam.teamName, 'Padres')
   assert.equal(view.rankingApplied, false)
   assert.equal(view.predictionApplied, false)
 })
 
-test('dashboard renders compact league injury il context', () => {
+test('dashboard renders compact league bullpen availability context', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: { ...dashboardData, injury_il_context: injuryIlContext },
   }))
 
-  assert.ok(htmlIncludes(html, 'Injury / IL Context'))
-  assert.ok(htmlIncludes(html, 'Injured List'))
+  assert.ok(htmlIncludes(html, 'Bullpen Availability Context'))
+  assert.ok(htmlIncludes(html, 'On Injured List'))
   assert.ok(htmlIncludes(html, 'Inactive Roster'))
-  assert.ok(htmlIncludes(html, '2+ Unavailable'))
-  assert.ok(htmlIncludes(html, '240 tracked arms'))
+  assert.ok(htmlIncludes(html, 'Clubs With 2+'))
+  assert.ok(htmlIncludes(html, '9 bullpen arms are currently on the injured list.'))
+  assert.ok(htmlIncludes(html, '6 bullpen arms are currently inactive.'))
+  assert.ok(htmlIncludes(html, '6 dashboard relievers'))
+  assert.ok(!htmlIncludes(html, 'tracked arms'))
+  assert.ok(htmlIncludes(html, 'Why it matters:'))
+  assert.ok(htmlIncludes(html, 'Bullpen workload can become concentrated when active relief depth is reduced.'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based.'))
 })
 
@@ -120,7 +129,7 @@ test('dashboard renders followed team unavailable pitcher context when present',
 test('dashboard suppresses injury il section when payload is missing', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
 
-  assert.ok(!htmlIncludes(html, 'Injury / IL Context'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Availability Context'))
   assert.ok(!htmlIncludes(html, 'Availability classifications are workload-based.'))
 })
 
@@ -129,5 +138,5 @@ test('dashboard suppresses injury il section when league context is unusable', (
     data: { ...dashboardData, injury_il_context: { capability: 'injury_il_context_v1' } },
   }))
 
-  assert.ok(!htmlIncludes(html, 'Injury / IL Context'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Availability Context'))
 })

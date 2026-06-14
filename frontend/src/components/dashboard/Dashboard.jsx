@@ -200,27 +200,27 @@ function InjuryIlContextSection({ context }) {
 
   const stats = [
     {
-      label: 'Injured List',
+      label: 'On Injured List',
       value: context.league.injuredListCount,
-      detail: 'Known IL status',
+      detail: 'Bullpen arms with known IL status',
     },
     {
       label: 'Inactive Roster',
       value: context.league.inactiveCount,
-      detail: 'Optioned, minors, or inactive roster status',
+      detail: 'Bullpen arms optioned, in the minors, or inactive',
     },
     {
-      label: '2+ Unavailable',
+      label: 'Clubs With 2+',
       value: context.league.teamsWithMultipleUnavailable,
-      detail: 'Tracked bullpens with multiple known unavailable arms',
+      detail: 'Clubs with multiple unavailable bullpen arms',
     },
   ]
   const followed = context.followedTeam
 
   return (
     <Section
-      title="Injury / IL Context"
-      subtitle="Roster-status context for bullpen depth. Workload availability remains separate."
+      title="Bullpen Availability Context"
+      subtitle="Roster-status context for the dashboard bullpen population. Workload availability remains separate."
     >
       <div className="card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -233,7 +233,7 @@ function InjuryIlContextSection({ context }) {
             </p>
           </div>
           <div className="shrink-0 rounded border border-dirt bg-dugout/60 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            {context.league.trackedPitchersCount} tracked arms
+            {context.league.bullpenPopulationCount} dashboard relievers
           </div>
         </div>
 
@@ -278,6 +278,10 @@ function InjuryIlContextSection({ context }) {
         )}
 
         <p className="mt-3 text-[11px] leading-relaxed text-chalk500">
+          <span className="text-chalk300">Why it matters:</span> Bullpen workload can become concentrated when active relief depth is reduced.
+        </p>
+
+        <p className="mt-2 text-[11px] leading-relaxed text-chalk500">
           Availability classifications are workload-based. Roster status context is separate and does not change the availability model.
         </p>
       </div>

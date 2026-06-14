@@ -13,7 +13,7 @@ from flask import Flask
 
 import services.sync as sync_service
 from services.availability import ACTIVE_WINDOW_DAYS
-from services.pitcher_role import ROLE_KEYS
+from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
 from models.pitcher import Pitcher
@@ -142,7 +142,7 @@ class TestDashboardEndpoint:
             )
             _seed_pitcher(
                 'IL League Reliever',
-                team_id=2,
+                team_id=1,
                 mlb_id=21,
                 innings=[1.0, 0.2, 1.0],
                 days_ago=[1, 3, 5],
@@ -150,11 +150,19 @@ class TestDashboardEndpoint:
             )
             _seed_pitcher(
                 'Minors League Reliever',
-                team_id=3,
+                team_id=1,
                 mlb_id=22,
                 innings=[1.0, 0.2, 1.0],
                 days_ago=[1, 3, 5],
                 roster_status=STATUS_MINORS,
+            )
+            _seed_pitcher(
+                'Stale IL League Reliever',
+                team_id=1,
+                mlb_id=23,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[ROLE_WINDOW_DAYS + 5, ROLE_WINDOW_DAYS + 7, ROLE_WINDOW_DAYS + 9],
+                roster_status=STATUS_IL_15,
             )
 
         body = client.get('/api/bullpen/dashboard').get_json()
@@ -168,6 +176,10 @@ class TestDashboardEndpoint:
         assert body['injury_il_context']['prediction_applied'] is False
         assert body['injury_il_context']['league']['injured_list_count'] == 1
         assert body['injury_il_context']['league']['inactive_count'] == 1
+        assert body['injury_il_context']['league']['teams_with_multiple_unavailable'] == 1
+        assert body['injury_il_context']['league']['population_scope'] == 'dashboard_bullpen_population'
+        assert body['injury_il_context']['league']['tracked_pitchers_count'] == body['availability_summary']['total_pitchers']
+        assert body['injury_il_context']['league']['bullpen_population_count'] == body['availability_summary']['total_pitchers']
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
         with client.application.app_context():

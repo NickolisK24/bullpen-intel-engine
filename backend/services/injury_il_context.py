@@ -106,7 +106,26 @@ def _empty_team_counts():
     }
 
 
-def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
+def _team_filter_allows(pitcher, team_ids):
+    if team_ids is None:
+        return True
+    team_id = _pitcher_attr(pitcher, 'team_id')
+    return team_id in team_ids or str(team_id) in team_ids
+
+
+def _is_bullpen_context(context):
+    eligibility = context.get('eligibility')
+    if not isinstance(eligibility, dict):
+        return True
+    return eligibility.get('eligible') is True
+
+
+def build_injury_il_context_from_contexts(
+    contexts,
+    followed_team_id=None,
+    bullpen_population_count=None,
+    team_ids=None,
+):
     """
     Build roster-status context from the already filtered bullpen population.
 
@@ -114,11 +133,15 @@ def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
     not alter workload-based availability, team rankings, or story selection.
     """
     contexts = list(contexts or [])
+    team_id_filter = None if team_ids is None else set(team_ids)
+    population_count = (
+        len(contexts)
+        if bullpen_population_count is None
+        else int(bullpen_population_count or 0)
+    )
     league_counts = {
         STATUS_GROUP_INJURED_LIST: 0,
         STATUS_GROUP_INACTIVE_ROSTER: 0,
-        STATUS_GROUP_ACTIVE: 0,
-        STATUS_GROUP_UNKNOWN: 0,
     }
     team_counts = defaultdict(_empty_team_counts)
 
@@ -132,8 +155,16 @@ def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
 
     for context in sorted_contexts:
         pitcher = context.get('pitcher')
+        if not _team_filter_allows(pitcher, team_id_filter):
+            continue
+        if not _is_bullpen_context(context):
+            continue
+
         roster_status = context.get('roster_status') or classify_roster_status(pitcher)
         status_group = status_group_for_roster_status(roster_status)
+        if status_group not in {STATUS_GROUP_INJURED_LIST, STATUS_GROUP_INACTIVE_ROSTER}:
+            continue
+
         league_counts[status_group] += 1
 
         team_key = _team_key_for(pitcher)
@@ -144,10 +175,9 @@ def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
         if team['team_name'] is None:
             team['team_name'] = _pitcher_attr(pitcher, 'team_name')
 
-        if status_group in {STATUS_GROUP_INJURED_LIST, STATUS_GROUP_INACTIVE_ROSTER}:
-            team['unavailable_pitchers'].append(
-                _pitcher_entry(context, roster_status, status_group)
-            )
+        team['unavailable_pitchers'].append(
+            _pitcher_entry(context, roster_status, status_group)
+        )
 
     teams_with_multiple_unavailable = sum(
         1
@@ -177,10 +207,12 @@ def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
         'prediction_applied': False,
         'selection_made': False,
         'league': {
+            'population_scope': 'dashboard_bullpen_population',
             'injured_list_count': league_counts[STATUS_GROUP_INJURED_LIST],
             'inactive_count': league_counts[STATUS_GROUP_INACTIVE_ROSTER],
             'teams_with_multiple_unavailable': teams_with_multiple_unavailable,
-            'tracked_pitchers_count': len(sorted_contexts),
+            'bullpen_population_count': population_count,
+            'tracked_pitchers_count': population_count,
         },
         'followed_team': followed_team,
         'limitations': [
@@ -192,11 +224,19 @@ def build_injury_il_context_from_contexts(contexts, followed_team_id=None):
 
 def build_injury_il_context_payload(
     pitchers=None,
+    availability_records=None,
     followed_team_id=None,
     reference_date=None,
     logs_by_pitcher=None,
 ):
     ref = reference_date or product_current_date()
+    dashboard_records = list(availability_records or [])
+    dashboard_team_ids = {
+        _pitcher_attr(record.get('pitcher'), 'team_id')
+        for record in dashboard_records
+        if record.get('pitcher') is not None
+        and _pitcher_attr(record.get('pitcher'), 'team_id') is not None
+    }
     pitcher_list = (
         list(pitchers)
         if pitchers is not None
@@ -209,7 +249,9 @@ def build_injury_il_context_payload(
     )
     contexts, _ = eligible_bullpen_pitcher_contexts(
         pitcher_list,
-        include_stale=True,
+        # Current roster-status context should not revive stale historical usage
+        # to classify unavailable pitchers into the dashboard bullpen universe.
+        include_stale=False,
         include_inactive_context=True,
         reference_date=ref,
         logs_by_pitcher=logs_by_pitcher,
@@ -217,4 +259,10 @@ def build_injury_il_context_payload(
     return build_injury_il_context_from_contexts(
         contexts,
         followed_team_id=followed_team_id,
+        bullpen_population_count=(
+            len(dashboard_records)
+            if availability_records is not None
+            else None
+        ),
+        team_ids=dashboard_team_ids,
     )

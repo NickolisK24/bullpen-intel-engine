@@ -1552,6 +1552,8 @@ def build_bullpen_dashboard_payload():
     continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
     context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
     injury_il_context = build_injury_il_context_payload(
+        pitchers=[pitcher for _score, pitcher in latest_rows],
+        availability_records=availability_records,
         reference_date=reference_date,
     )
 
