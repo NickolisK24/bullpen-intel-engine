@@ -20,7 +20,6 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from services import dead_letter
-from services import dashboard_snapshot
 from services import sync_metadata
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
@@ -435,12 +434,6 @@ def run_daily_sync(app, days_back: int = 7):
                 source=sync_metadata.SOURCE_SCHEDULED,
                 started_at=started_at.replace(tzinfo=None),
             )
-            persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
-            dashboard_snapshot.build_bullpen_dashboard_snapshot(
-                sync_run_id=persisted_run_id,
-                source=sync_metadata.SOURCE_SCHEDULED,
-            )
-
     except Exception as e:
         status['status']  = sync_metadata.STATUS_FAILED
         status['message'] = str(e)

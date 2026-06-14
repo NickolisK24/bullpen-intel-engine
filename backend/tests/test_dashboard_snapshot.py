@@ -277,7 +277,7 @@ class TestDashboardRouteSnapshotBehavior:
 
 
 class TestSyncSnapshotIntegration:
-    def test_successful_sync_builds_dashboard_snapshot(self, client, monkeypatch):
+    def test_successful_manual_sync_does_not_build_dashboard_snapshot_inline(self, client, monkeypatch):
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
@@ -290,6 +290,11 @@ class TestSyncSnapshotIntegration:
             'cutoff': date.today().isoformat(),
         })
         monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+        monkeypatch.setattr(
+            dashboard_snapshot,
+            'build_bullpen_dashboard_snapshot',
+            lambda **kwargs: pytest.fail('manual sync must not build dashboard snapshots inline'),
+        )
 
         with client.application.app_context():
             _seed_dashboard_data()
@@ -299,7 +304,30 @@ class TestSyncSnapshotIntegration:
 
         with client.application.app_context():
             snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
-            assert snapshot is not None
-            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
-            assert snapshot.sync_run_id == response.get_json()['sync_run_id']
-            assert snapshot.payload['capability'] == 'bullpen_dashboard'
+            assert snapshot is None
+
+    def test_successful_scheduled_sync_does_not_build_dashboard_snapshot_inline(self, app, monkeypatch):
+        monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+            'new_logs_added': 0,
+            'pitchers_touched': 0,
+            'errors': 0,
+            'records_failed': 0,
+            'days_back': 7,
+            'season': date.today().year,
+            'cutoff': date.today().isoformat(),
+        })
+        monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+        monkeypatch.setattr(
+            dashboard_snapshot,
+            'build_bullpen_dashboard_snapshot',
+            lambda **kwargs: pytest.fail('scheduled sync must not build dashboard snapshots inline'),
+        )
+
+        status = sync_service.run_daily_sync(app, days_back=7)
+        assert status['status'] == 'success'
+
+        with app.app_context():
+            snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
+            assert snapshot is None

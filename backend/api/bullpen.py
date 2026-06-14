@@ -521,10 +521,6 @@ def sync_recent_logs():
         started_at=started.replace(tzinfo=None),
     )
     persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
-    dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
-        sync_run_id=persisted_run_id,
-        source=source,
-    )
 
     # Mirror what the daily APScheduler job writes for local diagnostics. The
     # public freshness endpoint reads durable sync_runs metadata instead.
