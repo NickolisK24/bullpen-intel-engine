@@ -184,7 +184,7 @@ function HeroStory({ hero }) {
 }
 
 function FlagshipEvidence({ facts = [] }) {
-  if (!Array.isArray(facts) || facts.length < 2) return null
+  if (!Array.isArray(facts) || facts.length < 1) return null
 
   return (
     <div className="mt-3 max-w-3xl border-t border-dirt/70 pt-3">
