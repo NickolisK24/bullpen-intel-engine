@@ -52,6 +52,27 @@ const mixedRosterBoard = makeBoard({
   },
 })
 
+const staleActivatedMinorAssignmentCard = {
+  ...rosterContextBoard.groups[4].pitchers[2],
+  pitcher_id: 11,
+  name: 'Valente Bellozo',
+  short_reason: 'Roster status: Minors.',
+  reasons: ['Roster status: Minors.'],
+  roster_status: {
+    ...rosterContextBoard.groups[4].pitchers[2].roster_status,
+    raw_status: 'fullRoster',
+    source: 'mlb_stats_api:team_assignment_sync:fullRoster',
+    evidence: ['Current roster assignment: Minors.'],
+  },
+}
+
+const staleActivatedAssignmentBoard = makeBoard({
+  cardsByStatus: {
+    Available: populatedBoard.groups[0].pitchers,
+    Unavailable: [staleActivatedMinorAssignmentCard],
+  },
+})
+
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
   for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
@@ -197,6 +218,20 @@ test('Unavailable Only does not treat active rested or workload-unavailable reli
 
   assert.deepEqual(pitcherNames(staleOnly), [])
   assert.deepEqual(pitcherNames(workloadUnavailableOnly), [])
+})
+
+test('Unavailable Only does not show corrected current-minors assignment as active', () => {
+  const activeOnly = view.filterBoardForViewMode(
+    staleActivatedAssignmentBoard,
+    view.BULLPEN_VIEW_MODE_ACTIVE,
+  )
+  const unavailableOnly = view.filterBoardForViewMode(
+    staleActivatedAssignmentBoard,
+    view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  )
+
+  assert.ok(!pitcherNames(activeOnly).includes('Valente Bellozo'))
+  assert.deepEqual(pitcherNames(unavailableOnly), ['Valente Bellozo'])
 })
 
 test('Unavailable Only empty state appears without showing active relievers', () => {

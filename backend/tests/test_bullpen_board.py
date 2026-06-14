@@ -32,6 +32,7 @@ from services.roster_status import (
     STATUS_MINORS,
     STATUS_UNKNOWN,
 )
+from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -224,6 +225,10 @@ def _seed_pitcher(
     position='P',
     roster_status=None,
     roster_status_source='test_fixture',
+    roster_status_updated_at=None,
+    team_assignment_status=None,
+    team_assignment_source=None,
+    team_assignment_updated_at=None,
 ):
     """Create a pitcher with a recent game log and a fatigue score."""
     pitcher = Pitcher(
@@ -236,7 +241,14 @@ def _seed_pitcher(
         active=active,
         roster_status=roster_status,
         roster_status_source=roster_status_source if roster_status else None,
-        roster_status_updated_at=datetime.utcnow() if roster_status else None,
+        roster_status_updated_at=(
+            roster_status_updated_at
+            if roster_status_updated_at is not None
+            else datetime.utcnow() if roster_status else None
+        ),
+        team_assignment_status=team_assignment_status,
+        team_assignment_source=team_assignment_source,
+        team_assignment_updated_at=team_assignment_updated_at,
     )
     db.session.add(pitcher)
     db.session.commit()
@@ -527,6 +539,49 @@ class TestBoardEndpoint:
         assert body['total_pitchers'] == 1
         assert body['context']['metrics']['total_relievers'] == 1
         assert body['roster_status']['excluded_inactive_count'] == 3
+
+    def test_current_minor_assignment_overrides_stale_activated_label_on_board(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Valente Bellozo',
+                team_id=115,
+                team_abbr='COL',
+                mlb_id=678129,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+                roster_status_source='mlb_stats_api:transactions:activated',
+                roster_status_updated_at=datetime(2026, 4, 1, 12, 0, 0),
+                team_assignment_status=TEAM_ASSIGNMENT_ASSIGNED,
+                team_assignment_source='mlb_stats_api:team_assignment_sync:fullRoster',
+                team_assignment_updated_at=datetime(2026, 4, 13, 12, 0, 0),
+            )
+
+        default_body = client.get('/api/bullpen/teams/115/board').get_json()
+        default_names = [
+            card['name']
+            for group in default_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert default_names == []
+        assert default_body['roster_status']['excluded_inactive_count'] == 1
+
+        expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
+        expanded_cards = [
+            card
+            for group in expanded_body['groups']
+            for card in group['pitchers']
+        ]
+
+        assert [card['name'] for card in expanded_cards] == ['Valente Bellozo']
+        card = expanded_cards[0]
+        assert card['availability_status'] == 'Unavailable'
+        assert card['roster_status']['status'] == STATUS_MINORS
+        assert card['roster_status']['label'] == 'Minors'
+        assert card['roster_status']['source'] == 'mlb_stats_api:team_assignment_sync:fullRoster'
+        assert card['roster_status']['is_active_mlb'] is False
+        assert card['visibility']['is_unavailable_roster_status'] is True
 
     def test_inactive_toggle_shows_roster_status_context_not_available(self, client):
         with client.application.app_context():

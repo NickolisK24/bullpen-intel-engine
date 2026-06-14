@@ -236,5 +236,6 @@ def test_pitcher_search_unresolved_team_assignment_does_not_emit_stale_team(clie
 
     assert result['team_id'] is None
     assert result['team_name'] is None
-    assert result['roster_status'] == 'ACTIVE'
+    expected_roster_status = 'UNKNOWN' if assignment_status == TEAM_ASSIGNMENT_UNKNOWN else 'ACTIVE'
+    assert result['roster_status'] == expected_roster_status
     assert result['availability'] == 'Unavailable'
