@@ -231,6 +231,31 @@ test('every flagship story answers the briefing questions', () => {
   }
 })
 
+test('selected flagship stories carry two to four supporting facts', () => {
+  const noStress = {
+    ...dashboard,
+    landscape: { ...dashboard.landscape, constrained_bullpens: [] },
+  }
+  const restOnly = {
+    ...dashboard,
+    landscape: { ...dashboard.landscape, constrained_bullpens: [], monitoring_concentration: [] },
+  }
+
+  for (const hero of [
+    getHeroStory(dashboard),
+    getHeroStory(noStress),
+    getHeroStory(restOnly),
+  ]) {
+    assert.ok(hero.hasStory, `expected selected story for ${hero.kicker}`)
+    assert.ok(hero.whatBaseballOSSaw.length >= 2, `too few facts for ${hero.kicker}`)
+    assert.ok(hero.whatBaseballOSSaw.length <= 4, `too many facts for ${hero.kicker}`)
+    for (const fact of hero.whatBaseballOSSaw) {
+      assert.ok(fact.label.length > 0, `missing fact label for ${hero.kicker}`)
+      assert.ok(String(fact.value).length > 0, `missing fact value for ${hero.kicker}`)
+    }
+  }
+})
+
 test('story candidates attach matching continuity from the dashboard payload', () => {
   const concentrationNote = 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.'
   const easingNote = 'Bullpen flexibility has improved over the last 14 days.'
@@ -367,11 +392,29 @@ test('the flagship story renders observation, continuity, context, and why in or
   const continuityIndex = html.indexOf('Continuity')
   const contextIndex = html.indexOf('Context')
   const whyIndex = html.indexOf('Why It Matters')
+  const evidenceIndex = html.indexOf('What BaseballOS Saw')
 
   assert.ok(observationIndex >= 0, 'observation section should render')
   assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
   assert.ok(whyIndex > contextIndex, 'why it matters should render after context')
+  assert.ok(evidenceIndex > whyIndex, 'evidence should render after why it matters')
+})
+
+test('the flagship story renders compact supporting facts from existing evidence', () => {
+  const hero = getHeroStory(dashboard)
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+
+  assert.equal(hero.whatBaseballOSSaw.length, 3)
+  assert.deepEqual(
+    hero.whatBaseballOSSaw.map(fact => fact.label),
+    ['Relievers needing rest', 'Watch-list arms', 'Rested options'],
+  )
+  assert.ok(htmlIncludes(html, 'What BaseballOS Saw'))
+  assert.ok(htmlIncludes(html, 'Relievers needing rest'))
+  assert.ok(htmlIncludes(html, '4 of 8'))
+  assert.ok(htmlIncludes(html, 'Watch-list arms'))
+  assert.ok(htmlIncludes(html, 'Rested options'))
 })
 
 test('story presentation renders a labeled observation without empty support sections', () => {

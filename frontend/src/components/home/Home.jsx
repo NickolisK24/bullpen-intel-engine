@@ -145,6 +145,8 @@ function HeroStory({ hero }) {
           <p className="mt-1 text-sm leading-relaxed text-chalk200">{hero.whyItMatters}</p>
         </div>
 
+        <FlagshipEvidence facts={hero.whatBaseballOSSaw} />
+
         {hero.chips.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
             {hero.chips.map(chip => (
@@ -177,6 +179,27 @@ function HeroStory({ hero }) {
           </Link>
         </div>
       </div>
+    </div>
+  )
+}
+
+function FlagshipEvidence({ facts = [] }) {
+  if (!Array.isArray(facts) || facts.length < 2) return null
+
+  return (
+    <div className="mt-3 max-w-3xl border-t border-dirt/70 pt-3">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">What BaseballOS Saw</div>
+      <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {facts.map(fact => (
+          <li key={fact.key} className="flex min-w-0 items-start gap-2 border border-dirt/70 bg-field/40 px-2.5 py-2">
+            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block font-mono text-[10px] uppercase tracking-widest text-chalk500">{fact.label}</span>
+              <span className="mt-0.5 block text-sm leading-tight text-chalk100">{fact.value}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
