@@ -22,6 +22,7 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
 const countWord = (n) => COUNT_WORDS[n] || String(n)
 
 const capitalize = (text) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : text)
+const cleanStoryText = (value) => (typeof value === 'string' ? value.trim() : '')
 
 // Neutral display tones shared across the homepage. Tones describe the
 // situation being observed (stress / watch / rest), never quality.
@@ -215,6 +216,59 @@ const heroChips = (team) => [
   { key: 'total', label: 'Relievers', value: team.total, tone: 'neutral' },
 ]
 
+function continuityWindowNote(story) {
+  const days = Number(story?.continuity?.window_days)
+  if (!Number.isFinite(days) || days <= 1) return ''
+  if (story?.storyKind === 'team_recovery') {
+    return `This flexibility has been visible across the last ${days} days.`
+  }
+  return `This pattern has been visible across the last ${days} days.`
+}
+
+function flagshipContinuityNote(story) {
+  const existing = cleanStoryText(story?.continuity_note)
+  if (existing) return existing
+
+  const windowNote = continuityWindowNote(story)
+  if (windowNote) return windowNote
+
+  if (story?.storyKind === 'team_pressure') {
+    return 'At this point, this reads as a current-day pressure point rather than a confirmed weeklong trend.'
+  }
+  if (story?.storyKind === 'team_workload_continuity') {
+    return 'This reads as an ongoing recent-use pattern rather than a one-night availability issue.'
+  }
+  if (story?.storyKind === 'team_recovery') {
+    return 'At this point, this reads as a current-day flexibility window rather than a confirmed long reset.'
+  }
+  return 'At this point, the league read is quiet today rather than an ongoing stress pattern.'
+}
+
+function flagshipContextNote(story) {
+  const existing = cleanStoryText(story?.context_note)
+  if (existing) return existing
+
+  if (story?.storyKind === 'team_pressure') {
+    return 'The pressure is workload-driven: recent use has left fewer rested options behind the late innings.'
+  }
+  if (story?.storyKind === 'team_workload_continuity') {
+    return 'Recent usage has centered tightly enough that the pen can look available while still leaning on the same core.'
+  }
+  if (story?.storyKind === 'team_recovery') {
+    return 'The room comes from recent workload staying spread out enough that more relievers remain usable.'
+  }
+  return 'No club is separating for stress, watch-list volume, or unusually deep rest on the current bullpen board.'
+}
+
+function withFlagshipBriefingSupport(story) {
+  if (!story) return story
+  return {
+    ...story,
+    continuity_note: flagshipContinuityNote(story),
+    context_note: flagshipContextNote(story),
+  }
+}
+
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
 // One flagship observation, picked by a fixed priority: the most constrained
 // pen, then the heaviest watch list, then the most rested group, then a quiet
@@ -236,7 +290,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       read: getReadsForLandscapeEntry(stressed).byKey.pressure,
       headline: SIGNAL_HEADLINES.stretchedPen.hero(stressed.teamName),
       observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. That leaves less room to breathe late than any club in baseball today.`,
-      whyItMatters: 'A stretched pen narrows the late innings. The more arms already carrying work, the fewer clean paths a club has through a close game.',
+      whyItMatters: 'If the pattern continues, late-game flexibility could become increasingly concentrated. For fans, the key is whether the club still has more than one clean path through a close game.',
       chips: heroChips(stressed),
     })
   }
@@ -253,7 +307,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       read: getReadsForLandscapeEntry(watched).byKey.concentration,
       headline: SIGNAL_HEADLINES.sameArms.hero(watched.teamName),
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
-      whyItMatters: 'Heavy use on the same few arms can hide behind a normal-looking box score. It narrows the margin before anyone is listed as unavailable.',
+      whyItMatters: 'If the pattern continues, late-game flexibility could become increasingly concentrated. The bullpen still has options, but the current workload distribution is becoming less balanced.',
       chips: heroChips(watched),
       ...storyContinuityProps(watched, 'team_workload_continuity'),
     })
@@ -271,7 +325,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       read: getReadsForLandscapeEntry(rested).byKey.recovery,
       headline: SIGNAL_HEADLINES.freshPen.hero(rested.teamName),
       observation: `${rested.available} of the pen's ${rested.total} relievers come in rested enough to be usable. No pen in baseball has more late-inning room today.`,
-      whyItMatters: 'Rested options are flexibility. A full slate of usable arms gives a club more ways to get through the late innings.',
+      whyItMatters: 'Rested options give a club more ways to get through close innings. For fans, that matters because one busy stretch does not have to force the same small group into every late spot.',
       chips: heroChips(rested),
       ...storyContinuityProps(rested, 'team_recovery'),
     })
@@ -282,11 +336,12 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     storyEngineContext(dashboard),
   )
   if (lead) {
-    return lead
+    return withFlagshipBriefingSupport(lead)
   }
 
-  return {
+  return withFlagshipBriefingSupport({
     hasStory: false,
+    storyKind: 'league_check_in',
     angle: 'quiet',
     tone: 'neutral',
     kicker: 'League Check-In',
@@ -295,9 +350,9 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     headline: 'A quiet morning across baseball’s bullpens',
     observation: dashboard?.context?.health?.label
       || 'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
-    whyItMatters: 'Quiet days are when bullpens reset. The next story usually starts the night after.',
+    whyItMatters: 'Quiet days give bullpens a reset point. For fans, a balanced baseline makes the next real pressure point easier to spot.',
     chips: [],
-  }
+  })
 }
 
 // ── Shared League Cards ────────────────────────────────────────────────────

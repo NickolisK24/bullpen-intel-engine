@@ -203,7 +203,32 @@ test('a quiet league day still produces a hero story', () => {
   assert.equal(quiet.hasStory, false)
   assert.equal(quiet.angle, 'quiet')
   assert.ok(quiet.headline.length > 0)
+  assert.ok(quiet.continuity_note.length > 0)
+  assert.ok(quiet.context_note.length > 0)
   assert.ok(quiet.whyItMatters.length > 0)
+})
+
+test('every flagship story answers the briefing questions', () => {
+  const noStress = {
+    ...dashboard,
+    landscape: { ...dashboard.landscape, constrained_bullpens: [] },
+  }
+  const restOnly = {
+    ...dashboard,
+    landscape: { ...dashboard.landscape, constrained_bullpens: [], monitoring_concentration: [] },
+  }
+
+  for (const hero of [
+    getHeroStory(dashboard),
+    getHeroStory(noStress),
+    getHeroStory(restOnly),
+    getHeroStory({}),
+  ]) {
+    assert.ok(hero.observation.length > 0, `missing observation for ${hero.kicker}`)
+    assert.ok(hero.continuity_note.length > 0, `missing continuity for ${hero.kicker}`)
+    assert.ok(hero.context_note.length > 0, `missing context for ${hero.kicker}`)
+    assert.ok(hero.whyItMatters.length > 0, `missing why it matters for ${hero.kicker}`)
+  }
 })
 
 test('story candidates attach matching continuity from the dashboard payload', () => {
@@ -283,9 +308,10 @@ test('story candidates attach matching continuity from the dashboard payload', (
   assert.ok(!JSON.stringify([workloadHero, recoveryHero]).includes('Narrative Memory'))
 })
 
-test('stories without continuity stay unchanged', () => {
+test('flagship support copy does not invent continuity objects', () => {
   const hero = getHeroStory(dashboard)
-  assert.equal(hero.continuity_note, undefined)
+  assert.match(hero.continuity_note, /current-day pressure point/)
+  assert.match(hero.context_note, /workload-driven/)
   assert.equal(hero.continuity, undefined)
 })
 
@@ -333,6 +359,19 @@ test('the flagship story renders context after continuity when evidence fits the
   assert.ok(continuityIndex >= 0, 'continuity note should render')
   assert.ok(contextIndex >= 0, 'context note should render')
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
+})
+
+test('the flagship story renders observation, continuity, context, and why in order', () => {
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+  const observationIndex = html.indexOf('Observation')
+  const continuityIndex = html.indexOf('Continuity')
+  const contextIndex = html.indexOf('Context')
+  const whyIndex = html.indexOf('Why It Matters')
+
+  assert.ok(observationIndex >= 0, 'observation section should render')
+  assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
+  assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
+  assert.ok(whyIndex > contextIndex, 'why it matters should render after context')
 })
 
 test('story presentation renders a labeled observation without empty support sections', () => {
