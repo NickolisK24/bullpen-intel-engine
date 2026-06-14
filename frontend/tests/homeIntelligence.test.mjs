@@ -31,6 +31,7 @@ const {
   getRankingsPreview,
   getTodayWatchItems,
   getWhatChangedSinceYesterday,
+  getFlagshipStoryStatus,
   getMastheadView,
   STORIES_FALLBACK,
   STORY_TITLE_GUIDELINES,
@@ -202,6 +203,54 @@ function dashboardWithHomepageChanges(base = dashboard) {
           team_abbreviation: 'SF',
           change: 'Watch-list arms decreased from 3 to 2.',
           why_changed: 'Fewer relievers now sit in the watch-list workload band than in the prior window.',
+        },
+      ],
+      limitations: [],
+    },
+  }
+}
+
+const storyStatusFixtures = {
+  new: {
+    status: 'new',
+    label: 'New Story',
+    description: 'First appearance in the morning briefing.',
+    consecutive_days: null,
+  },
+  ongoing: {
+    status: 'ongoing',
+    label: 'Ongoing Story',
+    description: 'Observed for 3 consecutive briefing days.',
+    consecutive_days: 3,
+  },
+  returning: {
+    status: 'returning',
+    label: 'Returning Story',
+    description: 'Previously observed earlier in the lookback window.',
+    consecutive_days: null,
+  },
+}
+
+function dashboardWithFlagshipStoryStatus(statusKey, base = dashboard) {
+  const fixture = storyStatusFixtures[statusKey]
+  return {
+    ...base,
+    story_continuity: {
+      capability: 'homepage_story_continuity_v1',
+      ranking_applied: false,
+      selection_made: false,
+      current_data_through: '2026-06-05',
+      lookback_days: 7,
+      items: [
+        {
+          signature: 'team:158|theme:pressure',
+          team_id: 158,
+          team_name: 'Milwaukee Brewers',
+          team_abbreviation: 'MIL',
+          story_kind: 'team_pressure',
+          theme: 'pressure',
+          lookback_days: 7,
+          ...fixture,
         },
       ],
       limitations: [],
@@ -454,6 +503,65 @@ test('the flagship story renders observation, continuity, context, and why in or
   assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
   assert.ok(whyIndex > contextIndex, 'why it matters should render after context')
+})
+
+test('flagship story status normalizes the matching team and theme payload', () => {
+  const statusDashboard = dashboardWithFlagshipStoryStatus('ongoing')
+  const hero = getHeroStory(statusDashboard)
+  const status = getFlagshipStoryStatus(statusDashboard, hero)
+
+  assert.equal(hero.storyStatus.status, 'ongoing')
+  assert.equal(status.label, 'Ongoing Story')
+  assert.equal(status.description, 'Observed for 3 consecutive briefing days.')
+  assert.equal(status.consecutiveDays, 3)
+})
+
+test('the homepage renders New Story status when supplied', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithFlagshipStoryStatus('new'),
+    observations,
+  }))
+  const statusIndex = html.indexOf('Story Status')
+  const observationIndex = html.indexOf('Observation')
+
+  assert.ok(htmlIncludes(html, 'Story Status'))
+  assert.ok(htmlIncludes(html, 'New Story'))
+  assert.ok(htmlIncludes(html, 'First appearance in the morning briefing.'))
+  assert.ok(statusIndex > html.indexOf('Milwaukee Brewers'))
+  assert.ok(statusIndex < observationIndex)
+})
+
+test('the homepage renders Ongoing Story status when supplied', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithFlagshipStoryStatus('ongoing'),
+    observations,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Story Status'))
+  assert.ok(htmlIncludes(html, 'Ongoing Story'))
+  assert.ok(htmlIncludes(html, 'Observed for 3 consecutive briefing days.'))
+})
+
+test('the homepage renders Returning Story status when supplied', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithFlagshipStoryStatus('returning'),
+    observations,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Story Status'))
+  assert.ok(htmlIncludes(html, 'Returning Story'))
+  assert.ok(htmlIncludes(html, 'Previously observed earlier in the lookback window.'))
+})
+
+test('the homepage suppresses story status when continuity payload is missing', () => {
+  const hero = getHeroStory(dashboard)
+  const html = render(React.createElement(HomeView, { dashboard, observations }))
+
+  assert.equal(hero.storyStatus, null)
+  assert.equal(getFlagshipStoryStatus(dashboard, hero), null)
+  assert.ok(!htmlIncludes(html, 'Story Status'))
+  assert.ok(!htmlIncludes(html, 'Unknown'))
+  assert.ok(!htmlIncludes(html, 'N/A'))
 })
 
 test('the flagship story omits evidence when only summary counts are available', () => {

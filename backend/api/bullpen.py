@@ -51,6 +51,10 @@ from services.narrative_memory import (
 )
 from services.narrative_memory_story import build_dashboard_story_continuity
 from services.pitcher_role import ROLE_KEYS, classify_usage_role
+from services.story_continuity import (
+    LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
+    build_story_continuity_payload,
+)
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
     apply_roster_status_to_availability,
@@ -1565,18 +1569,28 @@ def build_bullpen_dashboard_payload():
         'freshness': freshness,
         'availability_summary': summary,
     }
-    previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(
-        parse_reference_date(
-            freshness.get('data_through')
-            or freshness.get('latest_workload_date')
-        )
+    data_through = parse_reference_date(
+        freshness.get('data_through')
+        or freshness.get('latest_workload_date')
     )
+    previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     changes = build_homepage_changes_payload(
         payload,
         previous_snapshot.payload if previous_snapshot is not None else None,
     )
     if changes['items']:
         payload['what_changed_since_yesterday'] = changes
+
+    recent_snapshots = dashboard_snapshot_service.get_recent_dashboard_snapshots_before(
+        data_through,
+        lookback_days=STORY_CONTINUITY_LOOKBACK_DAYS,
+    )
+    story_continuity = build_story_continuity_payload(
+        payload,
+        [snapshot.payload for snapshot in recent_snapshots],
+    )
+    if story_continuity['items']:
+        payload['story_continuity'] = story_continuity
 
     return payload
 
@@ -1656,6 +1670,17 @@ def _dashboard_snapshot_unavailable_payload(reason):
                 'current_data_through': None,
                 'previous_data_through': None,
             },
+            'items': [],
+            'limitations': [
+                'Dashboard snapshot is unavailable; production live fallback is disabled.',
+            ],
+        },
+        'story_continuity': {
+            'capability': 'homepage_story_continuity_v1',
+            'ranking_applied': False,
+            'selection_made': False,
+            'current_data_through': None,
+            'lookback_days': STORY_CONTINUITY_LOOKBACK_DAYS,
             'items': [],
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',

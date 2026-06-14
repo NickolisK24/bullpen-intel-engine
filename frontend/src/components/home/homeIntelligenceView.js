@@ -260,7 +260,7 @@ function flagshipContextNote(story) {
   return 'No club is separating for stress, watch-list volume, or unusually deep rest on the current bullpen board.'
 }
 
-function withFlagshipBriefingSupport(story) {
+function withFlagshipBriefingSupport(story, dashboard = null) {
   if (!story) return story
   const supported = {
     ...story,
@@ -269,6 +269,7 @@ function withFlagshipBriefingSupport(story) {
   }
   return {
     ...supported,
+    storyStatus: getFlagshipStoryStatus(dashboard, supported),
     whatBaseballOSSaw: flagshipEvidenceFacts(supported),
   }
 }
@@ -392,6 +393,68 @@ export function getWhatChangedSinceYesterday(dashboard) {
   }
 }
 
+const STORY_STATUS_TONES = {
+  new: 'neutral',
+  ongoing: 'watch',
+  returning: 'rest',
+}
+
+function storyStatusTheme(story) {
+  const kind = cleanStoryText(story?.storyKind || story?.family || story?.kicker).toLowerCase()
+  if (kind === 'team_pressure' || kind.includes('pressure') || kind.includes('stress')) return 'pressure'
+  if (kind === 'team_workload_continuity' || kind.includes('workload') || kind.includes('watch')) return 'workload'
+  if (kind === 'team_recovery' || kind.includes('recovery') || kind.includes('rest')) return 'recovery'
+  if (kind === 'league_check_in' || kind.includes('quiet')) return 'quiet'
+  return kind || null
+}
+
+function storyStatusTeamKey(story) {
+  const team = story?.team || {}
+  const teamId = story?.teamId ?? team.teamId ?? team.team_id
+  if (teamId != null) return String(teamId)
+  const abbr = cleanStoryText(story?.abbr || team.abbr || team.team_abbreviation)
+  if (abbr) return abbr.toLowerCase()
+  const teamName = cleanStoryText(story?.teamName || team.teamName || team.team_name)
+  return teamName ? teamName.toLowerCase() : null
+}
+
+function storyStatusSignature(story) {
+  const theme = storyStatusTheme(story)
+  if (!theme) return null
+  const teamKey = storyStatusTeamKey(story)
+  return teamKey ? `team:${teamKey}|theme:${theme}` : `league|theme:${theme}`
+}
+
+function normalizeStoryStatus(item) {
+  const status = cleanStoryText(item?.status).toLowerCase()
+  if (!['new', 'ongoing', 'returning'].includes(status)) return null
+  const label = cleanStoryText(item?.label)
+  const description = cleanStoryText(item?.description)
+  if (!label || !description) return null
+
+  return {
+    status,
+    label,
+    description,
+    consecutiveDays: Number.isFinite(Number(item?.consecutive_days))
+      ? Number(item.consecutive_days)
+      : null,
+    lookbackDays: Number.isFinite(Number(item?.lookback_days))
+      ? Number(item.lookback_days)
+      : null,
+    tone: STORY_STATUS_TONES[status] || 'neutral',
+  }
+}
+
+export function getFlagshipStoryStatus(dashboard, story) {
+  const signature = storyStatusSignature(story)
+  if (!signature) return null
+  const payload = dashboard?.story_continuity || dashboard?.storyContinuity
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  const match = items.find(item => cleanStoryText(item?.signature) === signature)
+  return normalizeStoryStatus(match)
+}
+
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
 // One flagship observation, picked by a fixed priority: the most constrained
 // pen, then the heaviest watch list, then the most rested group, then a quiet
@@ -459,7 +522,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     storyEngineContext(dashboard),
   )
   if (lead) {
-    return withFlagshipBriefingSupport(lead)
+    return withFlagshipBriefingSupport(lead, dashboard)
   }
 
   return withFlagshipBriefingSupport({
@@ -475,7 +538,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       || 'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
     whyItMatters: 'Quiet days give bullpens a reset point. For fans, a balanced baseline makes the next real pressure point easier to spot.',
     chips: [],
-  })
+  }, dashboard)
 }
 
 // ── Shared League Cards ────────────────────────────────────────────────────
