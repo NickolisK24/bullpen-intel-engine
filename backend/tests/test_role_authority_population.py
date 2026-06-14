@@ -15,6 +15,7 @@ from services.bullpen_population import (
     population_diagnostic,
 )
 from services.role_authority import ROLE_AMBIGUOUS, ROLE_RELIEVER, ROLE_UNKNOWN
+from services.roster_status import STATUS_ACTIVE
 
 REF = date(2026, 6, 9)
 
@@ -29,7 +30,7 @@ def log(days_ago, games_started=None, innings_pitched=1.0, save=False, hold=Fals
 
 
 def pitcher(pid, name):
-    return SimpleNamespace(id=pid, full_name=name, active=True)
+    return SimpleNamespace(id=pid, full_name=name, active=True, roster_status=STATUS_ACTIVE)
 
 
 def _scenario():

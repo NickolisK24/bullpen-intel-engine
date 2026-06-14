@@ -40,7 +40,7 @@ def client(tmp_path, monkeypatch):
             db.drop_all()
 
 
-def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1, roster_status=None):
+def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1, roster_status=STATUS_ACTIVE):
     pitcher = Pitcher(mlb_id=mlb_id, full_name=name, team_id=team_id,
                       team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True,
                       roster_status=roster_status,

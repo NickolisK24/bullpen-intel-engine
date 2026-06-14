@@ -26,6 +26,12 @@ STATUS_UNKNOWN = 'UNKNOWN'
 ROSTER_STATUS_UNAVAILABLE_LIMITATION = (
     'Roster status unavailable; bullpen eligibility is based on stored usage and position data.'
 )
+TEAM_ASSIGNMENT_UNRESOLVED_LIMITATION = (
+    'Current team assignment is unresolved; historical roster labels are not treated as active.'
+)
+ROSTER_ASSIGNMENT_TIER_UNRESOLVED_LIMITATION = (
+    'Current roster assignment tier is unresolved; historical roster labels are not treated as active.'
+)
 
 INACTIVE_STATUSES = {
     STATUS_IL_10,
@@ -59,6 +65,19 @@ _STATUS_ATTRS = (
     'player_status',
     'status',
 )
+
+_TEAM_ASSIGNMENT_ASSIGNED = 'ASSIGNED'
+_TEAM_ASSIGNMENT_NO_ORGANIZATION = 'NO_ORGANIZATION'
+_TEAM_ASSIGNMENT_UNKNOWN = 'UNKNOWN'
+_TEAM_ASSIGNMENT_SOURCE_PREFIX = 'mlb_stats_api:team_assignment_sync:'
+_ROSTER_SYNC_SOURCE_PREFIX = 'mlb_stats_api:roster_sync:'
+
+_ASSIGNMENT_SOURCE_STATUSES = {
+    'active': STATUS_ACTIVE,
+    'fullRoster': STATUS_MINORS,
+    'nonRosterInvitees': STATUS_NON_ROSTER,
+    '40Man': STATUS_40_MAN_ONLY,
+}
 
 _ACTIVE_VALUES = {
     'A',
@@ -203,6 +222,8 @@ def normalize_roster_status_value(raw):
 
 
 def _raw_status_from_pitcher(pitcher):
+    if pitcher is None:
+        return None
     for attr in _STATUS_ATTRS:
         raw = getattr(pitcher, attr, None)
         if raw not in (None, ''):
@@ -219,6 +240,8 @@ def _iso_or_none(value):
 
 
 def _source_for(pitcher, raw):
+    if pitcher is None:
+        return 'unavailable'
     source = getattr(pitcher, 'roster_status_source', None)
     if source:
         return str(source)
@@ -229,6 +252,158 @@ def _source_for(pitcher, raw):
     return 'unavailable'
 
 
+def _team_assignment_status(pitcher):
+    return _norm(getattr(pitcher, 'team_assignment_status', None))
+
+
+def _team_assignment_source(pitcher):
+    source = getattr(pitcher, 'team_assignment_source', None)
+    return str(source) if source else None
+
+
+def _assignment_source_type(source):
+    if not source or not source.startswith(_TEAM_ASSIGNMENT_SOURCE_PREFIX):
+        return None
+    return source.removeprefix(_TEAM_ASSIGNMENT_SOURCE_PREFIX).split(':', 1)[0]
+
+
+def _is_current_roster_sync_source(source):
+    return bool(source and str(source).startswith(_ROSTER_SYNC_SOURCE_PREFIX))
+
+
+def _is_current_roster_sync_candidate(candidate):
+    return bool(candidate and _is_current_roster_sync_source(candidate.get('source')))
+
+
+def _updated_at_from(pitcher, attr):
+    if pitcher is None:
+        return None
+    return getattr(pitcher, attr, None)
+
+
+def _candidate(status, *, raw_status, source, updated_at, evidence=None,
+               limitations=None, authoritative=True, current_assignment_unresolved=False):
+    return {
+        'status': status,
+        'raw_status': raw_status,
+        'source': source,
+        'updated_at': updated_at,
+        'evidence': list(evidence or []),
+        'limitations': list(limitations or []),
+        'authoritative': authoritative,
+        'current_assignment_unresolved': current_assignment_unresolved,
+    }
+
+
+def _current_assignment_candidate(pitcher):
+    assignment_status = _team_assignment_status(pitcher)
+    assignment_source = _team_assignment_source(pitcher)
+    assignment_type = _assignment_source_type(assignment_source)
+    updated_at = _updated_at_from(pitcher, 'team_assignment_updated_at')
+
+    if assignment_status == _TEAM_ASSIGNMENT_ASSIGNED:
+        status = _ASSIGNMENT_SOURCE_STATUSES.get(assignment_type)
+        if status:
+            label = STATUS_LABELS.get(status, STATUS_LABELS[STATUS_UNKNOWN])
+            return _candidate(
+                status,
+                raw_status=assignment_type,
+                source=assignment_source,
+                updated_at=updated_at,
+                evidence=[f'Current roster assignment: {label}.'],
+            )
+        if assignment_source and assignment_source.startswith(_TEAM_ASSIGNMENT_SOURCE_PREFIX):
+            return _candidate(
+                STATUS_UNKNOWN,
+                raw_status=assignment_type or assignment_status,
+                source=assignment_source,
+                updated_at=updated_at,
+                evidence=['Current roster assignment tier is unresolved.'],
+                limitations=[
+                    ROSTER_STATUS_UNAVAILABLE_LIMITATION,
+                    ROSTER_ASSIGNMENT_TIER_UNRESOLVED_LIMITATION,
+                ],
+                authoritative=False,
+                current_assignment_unresolved=True,
+            )
+        return None
+
+    if assignment_status in {_TEAM_ASSIGNMENT_NO_ORGANIZATION, _TEAM_ASSIGNMENT_UNKNOWN}:
+        return _candidate(
+            STATUS_UNKNOWN,
+            raw_status=assignment_status,
+            source=assignment_source or 'team_assignment_unavailable',
+            updated_at=updated_at,
+            evidence=['Current team assignment is unresolved.'],
+            limitations=[
+                ROSTER_STATUS_UNAVAILABLE_LIMITATION,
+                TEAM_ASSIGNMENT_UNRESOLVED_LIMITATION,
+            ],
+            authoritative=False,
+            current_assignment_unresolved=True,
+        )
+
+    return None
+
+
+def _stored_roster_candidate(pitcher):
+    raw = _raw_status_from_pitcher(pitcher)
+    status = _status_from_raw(raw)
+    source = _source_for(pitcher, raw)
+    if raw in (None, '') or status == STATUS_UNKNOWN:
+        return None
+
+    return _candidate(
+        status,
+        raw_status=str(raw),
+        source=source,
+        updated_at=_updated_at_from(pitcher, 'roster_status_updated_at'),
+        evidence=[f'Stored roster status: {STATUS_LABELS[status]}.'],
+    )
+
+
+def _select_status_candidate(pitcher):
+    """
+    Deterministic current-state precedence for roster status.
+
+    Current assignment evidence is consulted before historical transaction
+    labels, so a stale activation label cannot override a newer minor-league
+    assignment. Stored roster-sync ACTIVE still wins when the current active
+    roster endpoint says the player is on the MLB active roster.
+    """
+    assignment = _current_assignment_candidate(pitcher)
+    stored = _stored_roster_candidate(pitcher)
+
+    if stored and stored['status'] == STATUS_ACTIVE and _is_current_roster_sync_candidate(stored):
+        return stored
+    if assignment and assignment['status'] == STATUS_ACTIVE:
+        return assignment
+    if assignment and assignment['status'] == STATUS_MINORS:
+        return assignment
+    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
+        return stored
+    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in INACTIVE_STATUSES:
+        return stored
+    if assignment and assignment['status'] in INACTIVE_STATUSES:
+        return assignment
+    if assignment and assignment['current_assignment_unresolved']:
+        return assignment
+    if stored and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
+        return stored
+    if stored and stored['status'] in INACTIVE_STATUSES:
+        return stored
+    if stored:
+        return stored
+    return _candidate(
+        STATUS_UNKNOWN,
+        raw_status=None,
+        source=_source_for(pitcher, None),
+        updated_at=_updated_at_from(pitcher, 'roster_status_updated_at'),
+        limitations=[ROSTER_STATUS_UNAVAILABLE_LIMITATION],
+        authoritative=False,
+    )
+
+
 def classify_roster_status(pitcher):
     """
     Return a serializable roster-status classification for a pitcher.
@@ -237,29 +412,29 @@ def classify_roster_status(pitcher):
     ``active`` flag. That keeps roster status separate from freshness and role
     inference until authoritative data is stored.
     """
-    raw = _raw_status_from_pitcher(pitcher)
-    status = _status_from_raw(raw)
-    authoritative = raw not in (None, '') and status != STATUS_UNKNOWN
+    selected = _select_status_candidate(pitcher)
+    status = selected['status']
+    authoritative = bool(selected['authoritative']) and status != STATUS_UNKNOWN
     active_mlb = True if status == STATUS_ACTIVE else False if status in INACTIVE_STATUSES else None
-    limitations = []
-    evidence = []
+    limitations = list(selected['limitations'])
+    evidence = list(selected['evidence'])
 
-    if authoritative:
-        evidence.append(f'Stored roster status: {STATUS_LABELS[status]}.')
-    else:
+    if not authoritative and ROSTER_STATUS_UNAVAILABLE_LIMITATION not in limitations:
         limitations.append(ROSTER_STATUS_UNAVAILABLE_LIMITATION)
-        if getattr(pitcher, 'active', True) is False:
+    if not authoritative:
+        if pitcher is not None and getattr(pitcher, 'active', True) is False:
             evidence.append('Legacy local active flag is false; no authoritative roster status is stored.')
 
     return {
         'status': status,
         'label': STATUS_LABELS.get(status, STATUS_LABELS[STATUS_UNKNOWN]),
-        'raw_status': str(raw) if raw not in (None, '') else None,
-        'source': _source_for(pitcher, raw),
-        'updated_at': _iso_or_none(getattr(pitcher, 'roster_status_updated_at', None)),
+        'raw_status': selected['raw_status'],
+        'source': selected['source'],
+        'updated_at': _iso_or_none(selected['updated_at']),
         'is_authoritative': authoritative,
         'is_active_mlb': active_mlb,
         'is_inactive_context': status in INACTIVE_STATUSES,
+        'current_assignment_unresolved': bool(selected['current_assignment_unresolved']),
         'confidence': 'high' if authoritative else 'low',
         'evidence': evidence,
         'limitations': limitations,
@@ -270,12 +445,11 @@ def allows_default_board(status_payload):
     """
     True when a pitcher can appear on the default board after bullpen filtering.
 
-    Known inactive statuses are excluded. Unknown status is allowed only as a
-    data-limited state so the board can keep operating without asserting active
-    MLB roster authority.
+    Active-only board inclusion requires a resolved active MLB roster state.
+    Unknown roster state and historical workload/transaction evidence do not
+    imply active roster eligibility.
     """
-    status = (status_payload or {}).get('status') or STATUS_UNKNOWN
-    return status == STATUS_ACTIVE or status == STATUS_UNKNOWN
+    return (status_payload or {}).get('is_active_mlb') is True
 
 
 def allows_inactive_context(status_payload):

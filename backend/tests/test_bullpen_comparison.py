@@ -18,6 +18,7 @@ from flask import Flask
 import services.sync as sync_service
 from services.bullpen_board import build_board_payload
 from services.bullpen_comparison import build_team_comparison
+from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -180,6 +181,9 @@ def _seed_pitcher(full_name, team_id, mlb_id, raw_score=10.0):
         team_name=f'Team {team_id}',
         team_abbreviation=f'T{team_id}',
         active=True,
+        roster_status=STATUS_ACTIVE,
+        roster_status_source='test_fixture',
+        roster_status_updated_at=datetime.utcnow(),
     )
     db.session.add(pitcher)
     db.session.commit()

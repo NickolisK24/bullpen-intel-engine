@@ -11,6 +11,7 @@ from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401  (register on db.metadata)
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.roster_status import STATUS_ACTIVE
 from api.bullpen import bullpen_bp
 from utils.db import db
 
@@ -39,7 +40,7 @@ def _pitcher(
     team_id=1,
     active=True,
     position='P',
-    roster_status=None,
+    roster_status=STATUS_ACTIVE,
 ):
     pitcher = Pitcher(
         mlb_id=mlb_id,

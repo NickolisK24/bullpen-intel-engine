@@ -144,16 +144,38 @@ function rosterStatusFromCard(card) {
 export function isRosterUnavailableCard(card) {
   const rosterStatus = rosterStatusFromCard(card)
   const visibility = card?.visibility || {}
-  const hiddenReasons = Array.isArray(visibility.hidden_reasons)
-    ? visibility.hidden_reasons
-    : []
-
-  return (
+  const hasInactiveRosterStatus = (
     rosterStatus?.is_inactive_context === true
     || INACTIVE_ROSTER_STATUSES.has(rosterStatus?.status)
-    || visibility.is_unavailable_roster_status === true
-    || hiddenReasons.includes('roster_status_unavailable')
   )
+
+  return (
+    hasInactiveRosterStatus
+    || visibility.is_unavailable_roster_status === true
+  )
+}
+
+export function isActiveRosterCard(card) {
+  if (isRosterUnavailableCard(card)) return false
+
+  const rosterStatus = rosterStatusFromCard(card)
+  const visibility = card?.visibility || {}
+  if (visibility.is_active_roster_option === false) return false
+  if (visibility.is_active_roster_option === true) return true
+
+  if (rosterStatus && typeof rosterStatus === 'object') {
+    if (rosterStatus.is_active_mlb === true) return true
+    if (
+      rosterStatus.is_active_mlb === false
+      || rosterStatus.is_authoritative === false
+      || rosterStatus.status === 'UNKNOWN'
+    ) {
+      return false
+    }
+    return rosterStatus.status === 'ACTIVE'
+  }
+
+  return true
 }
 
 export function cardMatchesBullpenViewMode(card, mode) {
@@ -161,7 +183,7 @@ export function cardMatchesBullpenViewMode(card, mode) {
   if (normalized === BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE) return true
   const rosterUnavailable = isRosterUnavailableCard(card)
   if (normalized === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY) return rosterUnavailable
-  return !rosterUnavailable
+  return isActiveRosterCard(card)
 }
 
 export function filterBoardForViewMode(board, mode) {
