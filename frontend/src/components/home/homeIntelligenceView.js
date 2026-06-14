@@ -290,10 +290,35 @@ function evidenceKey(label, value) {
   return `${cleanStoryText(label).toLowerCase()}:${evidenceValueText(value).toLowerCase()}`
 }
 
+function comparableEvidenceText(value) {
+  return evidenceValueText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9%\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function isSummaryCountEvidence(item) {
   const label = cleanStoryText(item?.label).toLowerCase()
   const sourceType = cleanStoryText(item?.sourceType || item?.source_type).toLowerCase()
   return sourceType === 'team_bullpen_counts' || SUMMARY_EVIDENCE_LABELS.has(label)
+}
+
+function flagshipStoryTextSections(story) {
+  return [
+    story?.observation,
+    story?.continuity_note,
+    story?.context_note,
+    story?.whyItMatters,
+  ].map(comparableEvidenceText).filter(Boolean)
+}
+
+function repeatsFlagshipStoryText(story, value) {
+  const text = comparableEvidenceText(value)
+  if (text.length < 24) return false
+  return flagshipStoryTextSections(story).some(section => (
+    section.includes(text) || text.includes(section)
+  ))
 }
 
 function addFlagshipEvidenceFact(facts, seen, label, value, detail = '') {
@@ -319,14 +344,11 @@ function flagshipEvidenceFacts(story) {
 
   for (const item of evidence) {
     if (isSummaryCountEvidence(item)) continue
+    if (repeatsFlagshipStoryText(story, item?.value)) continue
     addFlagshipEvidenceFact(facts, seen, item?.label, item?.value, item?.detail)
   }
 
-  addFlagshipEvidenceFact(facts, seen, 'Pattern check', story?.continuity_note)
-  addFlagshipEvidenceFact(facts, seen, 'Usage driver', story?.context_note)
-
-  const orderedFacts = facts.slice(0, 4)
-  return orderedFacts.length >= 2 ? orderedFacts : []
+  return facts.slice(0, 4)
 }
 
 // ── Section 1 — What BaseballOS Sees Today ─────────────────────────────────
