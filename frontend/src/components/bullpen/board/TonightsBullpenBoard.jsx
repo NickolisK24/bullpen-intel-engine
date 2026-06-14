@@ -5,6 +5,14 @@ import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import PitcherDetail from '../PitcherDetail'
+import {
+  BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  BULLPEN_VIEW_MODES,
+  DEFAULT_BULLPEN_VIEW_MODE,
+  bullpenViewModeRequiresUnavailableContext,
+  filterBoardForViewMode,
+  getBullpenViewModeEmptyState,
+} from './tonightsBullpenBoardView'
 
 // Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
 // against the loaded team list. Returns the matching team_id, or null.
@@ -32,7 +40,7 @@ export function resolveTeamId(teamList, requested) {
 export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   const teamList = teams?.data || []
   const [selectedTeam, setSelectedTeam] = useState(null)
-  const [includeStale, setIncludeStale] = useState(false)
+  const [boardViewMode, setBoardViewMode] = useState(DEFAULT_BULLPEN_VIEW_MODE)
   // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
   // board never duplicates that screen.
   const [detailPitcherId, setDetailPitcherId] = useState(null)
@@ -67,9 +75,12 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   const board = useFetch(
     () => {
       if (selectedTeam == null) return Promise.resolve(null)
-      return getTeamBullpenBoard(selectedTeam, includeStale ? { include_stale: true } : {})
+      return getTeamBullpenBoard(
+        selectedTeam,
+        bullpenViewModeRequiresUnavailableContext(boardViewMode) ? { include_stale: true } : {},
+      )
     },
-    [selectedTeam, includeStale],
+    [selectedTeam, boardViewMode],
   )
 
   // Game context for the selected team (stored game-log only).
@@ -77,6 +88,8 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamGameContext(selectedTeam)),
     [selectedTeam],
   )
+  const filteredBoard = filterBoardForViewMode(board.data, boardViewMode)
+  const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
 
   return (
     <div>
@@ -102,19 +115,38 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
         )}
       </div>
 
-      <div className="mb-5">
-        <label className="inline-flex cursor-pointer items-center gap-2 font-mono text-xs text-chalk400">
-          <input
-            type="checkbox"
-            checked={includeStale}
-            onChange={() => setIncludeStale(v => !v)}
-            className="h-3.5 w-3.5 accent-amber"
-          />
-          Show unavailable pitchers
-        </label>
-        <div className="mt-1 text-xs leading-relaxed text-chalk500">
-          These pitchers are shown for roster awareness but are not counted as active bullpen options.
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">View</div>
+          <div className="mt-1 flex w-fit max-w-full flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1">
+            {BULLPEN_VIEW_MODES.map(mode => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setBoardViewMode(mode.id)}
+                aria-pressed={boardViewMode === mode.id}
+                title={mode.description}
+                className={`rounded px-3 py-1.5 font-mono text-xs transition-all ${
+                  boardViewMode === mode.id
+                    ? 'bg-chalk text-chalk200 shadow'
+                    : 'text-chalk400 hover:text-chalk200'
+                }`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          {selectedViewMode?.description && (
+            <p className="mt-1 text-xs leading-relaxed text-chalk500">
+              {selectedViewMode.description}
+            </p>
+          )}
         </div>
+        {bullpenViewModeRequiresUnavailableContext(boardViewMode) && (
+          <p className="max-w-md text-xs leading-relaxed text-chalk500">
+            Unavailable relievers are shown for roster awareness and are not counted as active bullpen options.
+          </p>
+        )}
       </div>
 
       {selectedTeam == null ? (
@@ -131,7 +163,12 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               loading={gameContext.loading}
               error={gameContext.error}
             />
-            <BullpenBoardView board={board.data} onSelectPitcher={setDetailPitcherId} showStoryPanel />
+            <BullpenBoardView
+              board={filteredBoard}
+              onSelectPitcher={setDetailPitcherId}
+              showStoryPanel={boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY}
+              emptyState={getBullpenViewModeEmptyState(boardViewMode)}
+            />
           </div>
           {detailPitcherId != null && (
             <div

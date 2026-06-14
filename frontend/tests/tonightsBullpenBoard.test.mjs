@@ -26,6 +26,9 @@ after(async () => {
 const { default: BullpenBoardView } = await server.ssrLoadModule(
   '/src/components/bullpen/board/BullpenBoardView.jsx',
 )
+const { default: TonightsBullpenBoard } = await server.ssrLoadModule(
+  '/src/components/bullpen/board/TonightsBullpenBoard.jsx',
+)
 const view = await server.ssrLoadModule(
   '/src/components/bullpen/board/tonightsBullpenBoardView.js',
 )
@@ -33,6 +36,21 @@ const view = await server.ssrLoadModule(
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
+const renderWithOptions = (props) => renderToStaticMarkup(React.createElement(BullpenBoardView, props))
+const pitcherNames = (board) => view.getBoardGroups(board).flatMap(group => (
+  group.pitchers.map(card => card.name)
+))
+
+const mixedRosterBoard = makeBoard({
+  cardsByStatus: {
+    Available: populatedBoard.groups[0].pitchers,
+    Monitor: staleBoard.groups[1].pitchers,
+    Unavailable: [
+      populatedBoard.groups[4].pitchers[0],
+      ...rosterContextBoard.groups[4].pitchers,
+    ],
+  },
+})
 
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
@@ -41,6 +59,22 @@ test('renders all five availability groups in order', () => {
   }
   // Available Tonight must appear before Unavailable Pitchers on the board.
   assert.ok(html.indexOf('Available Tonight') < html.lastIndexOf('Unavailable Pitchers'))
+})
+
+test('board view mode control defaults to Active and replaces show-unavailable copy', () => {
+  const html = renderToStaticMarkup(React.createElement(TonightsBullpenBoard, {
+    teams: {
+      loading: false,
+      data: [{ team_id: 1, team_name: 'Test Club', team_abbreviation: 'TST' }],
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'View'))
+  assert.ok(htmlIncludes(html, 'Active'))
+  assert.ok(htmlIncludes(html, 'Active + Unavailable'))
+  assert.ok(htmlIncludes(html, 'Unavailable Only'))
+  assert.ok(htmlIncludes(html, 'aria-pressed="true"'))
+  assert.ok(!htmlIncludes(html, 'Show unavailable pitchers'))
 })
 
 test('renders bullpen stress from the backend payload', () => {
@@ -115,6 +149,69 @@ test('unavailable roster pitchers render status labels without active availabili
   assert.ok(!htmlIncludes(html, 'Availability status: Available'))
   assert.ok(!htmlIncludes(html, 'Inactive Context'))
   assert.ok(!htmlIncludes(html, 'inactive context'))
+})
+
+test('Active view shows active relievers and hides roster-status unavailable relievers', () => {
+  const filtered = view.filterBoardForViewMode(mixedRosterBoard, view.BULLPEN_VIEW_MODE_ACTIVE)
+  const names = pitcherNames(filtered)
+
+  assert.ok(names.includes('Zane Available'))
+  assert.ok(names.includes('Stale Sam'))
+  assert.ok(names.includes('Uri Unavailable'))
+  assert.ok(!names.includes('Graham Ashcraft'))
+  assert.ok(!names.includes('Jose Franco'))
+  assert.equal(view.getBoardTotals(filtered).total, 4)
+})
+
+test('Active + Unavailable view shows active and roster-status unavailable relievers', () => {
+  const filtered = view.filterBoardForViewMode(
+    mixedRosterBoard,
+    view.BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
+  )
+  const names = pitcherNames(filtered)
+
+  assert.ok(names.includes('Zane Available'))
+  assert.ok(names.includes('Stale Sam'))
+  assert.ok(names.includes('Graham Ashcraft'))
+  assert.ok(names.includes('Jose Franco'))
+  assert.equal(view.getBoardTotals(filtered).total, 7)
+})
+
+test('Unavailable Only view shows roster-status unavailable relievers only', () => {
+  const filtered = view.filterBoardForViewMode(
+    mixedRosterBoard,
+    view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  )
+  const names = pitcherNames(filtered)
+
+  assert.deepEqual(names, ['Graham Ashcraft', 'Jose Franco', 'Connor Phillips'])
+  assert.equal(view.getBoardTotals(filtered).total, 3)
+})
+
+test('Unavailable Only does not treat active rested or workload-unavailable relievers as roster unavailable', () => {
+  const staleOnly = view.filterBoardForViewMode(staleBoard, view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY)
+  const workloadUnavailableOnly = view.filterBoardForViewMode(
+    populatedBoard,
+    view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  )
+
+  assert.deepEqual(pitcherNames(staleOnly), [])
+  assert.deepEqual(pitcherNames(workloadUnavailableOnly), [])
+})
+
+test('Unavailable Only empty state appears without showing active relievers', () => {
+  const filtered = view.filterBoardForViewMode(
+    populatedBoard,
+    view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  )
+  const html = renderWithOptions({
+    board: filtered,
+    emptyState: view.getBullpenViewModeEmptyState(view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY),
+  })
+
+  assert.ok(htmlIncludes(html, 'No unavailable relievers found for this bullpen.'))
+  assert.ok(!htmlIncludes(html, 'Zane Available'))
+  assert.ok(!htmlIncludes(html, 'Uri Unavailable'))
 })
 
 test('team switching reflects the selected team in the heading', () => {
