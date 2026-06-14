@@ -163,6 +163,11 @@ class TestDashboardEndpoint:
         assert body['roles']['total'] == 1
         assert body['availability_summary']['total_pitchers'] == 1
         assert body['landscape']['teams_evaluated'] == 1
+        assert body['injury_il_context']['capability'] == 'injury_il_context_v1'
+        assert body['injury_il_context']['ranking_applied'] is False
+        assert body['injury_il_context']['prediction_applied'] is False
+        assert body['injury_il_context']['league']['injured_list_count'] == 1
+        assert body['injury_il_context']['league']['inactive_count'] == 1
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
         with client.application.app_context():
