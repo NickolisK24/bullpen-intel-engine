@@ -193,6 +193,24 @@ class TestDashboardSnapshotService:
             snapshot = dashboard_snapshot.get_latest_dashboard_snapshot()
             assert snapshot.payload['name'] == 'new'
 
+    def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
+        with app.app_context():
+            _seed_dashboard_data()
+            payload = bullpen_api.build_bullpen_dashboard_payload()
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                payload,
+                sync_run_id=1,
+                source='test',
+            )
+            snapshot.payload_version = dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION + 1
+            db.session.commit()
+
+            assert (
+                dashboard_snapshot.snapshot_unavailable_reason(snapshot)
+                == 'dashboard_snapshot_version_mismatch'
+            )
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
+
     def test_build_dashboard_snapshot_records_failed_status(self, app):
         with app.app_context():
             snapshot = dashboard_snapshot.build_dashboard_snapshot(
@@ -204,6 +222,41 @@ class TestDashboardSnapshotService:
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_FAILED
             assert snapshot.sync_run_id == 123
             assert 'builder failed' in snapshot.error_message
+
+    def test_snapshot_builder_v2_creates_dashboard_servable_snapshot(self, app):
+        with app.app_context():
+            _seed_dashboard_data()
+
+            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+
+            assert result['status'] == 'ready'
+            assert result['reason'] is None
+            assert result['snapshot_served_by_dashboard'] is True
+            assert result['snapshot_id'] is not None
+            snapshot = db.session.get(DashboardSnapshot, result['snapshot_id'])
+            assert snapshot is not None
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert snapshot.payload['capability'] == 'bullpen_dashboard'
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == snapshot.id
+
+    def test_snapshot_builder_v2_records_failure_without_raising(self, app, monkeypatch):
+        def fail_builder():
+            raise RuntimeError('builder exploded')
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            fail_builder,
+        )
+
+        with app.app_context():
+            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+
+            assert result['status'] == 'failed'
+            assert result['reason'] == 'dashboard_snapshot_not_ready'
+            snapshot = db.session.get(DashboardSnapshot, result['snapshot_id'])
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_FAILED
+            assert 'builder exploded' in snapshot.error_message
 
 
 class TestDashboardRouteSnapshotBehavior:
@@ -225,6 +278,24 @@ class TestDashboardRouteSnapshotBehavior:
         assert body['capability'] == 'bullpen_dashboard'
         assert body['snapshot']['served_from'] == 'cache'
         assert body['snapshot']['payload_version'] == 1
+
+    def test_dashboard_route_serves_snapshot_created_by_builder_v2(self, client, monkeypatch):
+        with client.application.app_context():
+            _seed_dashboard_data()
+            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            assert result['status'] == 'ready'
+        client.application.config['APP_ENV'] = 'production'
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: pytest.fail('production dashboard must serve builder snapshot'),
+        )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['snapshot']['served_from'] == 'cache'
+        assert body['snapshot']['snapshot_id'] == result['snapshot_id']
+        assert body['capability'] == 'bullpen_dashboard'
 
     def test_dashboard_route_falls_back_when_cache_missing(self, client, monkeypatch):
         monkeypatch.setattr(
@@ -352,6 +423,34 @@ class TestSyncSnapshotIntegration:
         with client.application.app_context():
             snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
             assert snapshot is None
+
+    def test_snapshot_build_failure_does_not_affect_manual_sync(self, client, monkeypatch):
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: (_ for _ in ()).throw(RuntimeError('builder exploded')),
+        )
+        with client.application.app_context():
+            failed_result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            assert failed_result['status'] == 'failed'
+
+        monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+            'new_logs_added': 0,
+            'pitchers_touched': 0,
+            'errors': 0,
+            'records_failed': 0,
+            'days_back': 7,
+            'season': date.today().year,
+            'cutoff': date.today().isoformat(),
+        })
+        monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+
+        response = client.post('/api/bullpen/sync', json={'days_back': 7})
+
+        assert response.status_code == 200
+        assert response.get_json()['status'] == 'ok'
 
     def test_successful_scheduled_sync_does_not_build_dashboard_snapshot_inline(self, app, monkeypatch):
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)

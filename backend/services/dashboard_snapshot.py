@@ -1,5 +1,6 @@
 import json
 import logging
+from time import perf_counter
 from collections.abc import Mapping
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,6 +21,7 @@ SNAPSHOT_TYPE_BULLPEN_DASHBOARD = 'bullpen_dashboard'
 SNAPSHOT_STATUS_READY = 'ready'
 SNAPSHOT_STATUS_FAILED = 'failed'
 DASHBOARD_PAYLOAD_VERSION = 1
+SNAPSHOT_SOURCE_BUILDER_V2 = 'snapshot_builder_v2'
 
 
 def _json_payload(payload):
@@ -193,6 +195,80 @@ def build_bullpen_dashboard_snapshot(*, sync_run_id=None, source='sync'):
         sync_run_id=sync_run_id,
         source=source,
     )
+
+
+def _snapshot_build_result(snapshot, *, duration_ms, source):
+    reason = snapshot_unavailable_reason(snapshot)
+    if snapshot is None:
+        status = 'failed'
+    elif snapshot.status == SNAPSHOT_STATUS_FAILED:
+        status = 'failed'
+    elif reason is None:
+        status = 'ready'
+    else:
+        status = 'stored_invalid'
+
+    return {
+        'status': status,
+        'reason': reason,
+        'snapshot_served_by_dashboard': reason is None,
+        'snapshot_id': snapshot.id if snapshot is not None else None,
+        'snapshot_status': snapshot.status if snapshot is not None else None,
+        'snapshot_type': (
+            snapshot.snapshot_type
+            if snapshot is not None
+            else SNAPSHOT_TYPE_BULLPEN_DASHBOARD
+        ),
+        'sync_run_id': snapshot.sync_run_id if snapshot is not None else None,
+        'payload_version': (
+            snapshot.payload_version
+            if snapshot is not None
+            else DASHBOARD_PAYLOAD_VERSION
+        ),
+        'data_through': (
+            snapshot.data_through.isoformat()
+            if snapshot is not None and snapshot.data_through
+            else None
+        ),
+        'availability_reference_date': (
+            snapshot.availability_reference_date.isoformat()
+            if snapshot is not None and snapshot.availability_reference_date
+            else None
+        ),
+        'snapshot_generated_at': (
+            snapshot.snapshot_generated_at.isoformat()
+            if snapshot is not None and snapshot.snapshot_generated_at
+            else None
+        ),
+        'source': source,
+        'duration_ms': duration_ms,
+    }
+
+
+def build_bullpen_dashboard_snapshot_v2(*, source=SNAPSHOT_SOURCE_BUILDER_V2):
+    started = perf_counter()
+    logger.info('Dashboard snapshot builder v2 starting.')
+    snapshot = build_bullpen_dashboard_snapshot(source=source)
+    duration_ms = round((perf_counter() - started) * 1000, 2)
+    result = _snapshot_build_result(
+        snapshot,
+        duration_ms=duration_ms,
+        source=source,
+    )
+    if result['status'] == 'ready':
+        logger.info(
+            'Dashboard snapshot builder v2 stored ready snapshot id=%s in %.2f ms.',
+            result['snapshot_id'],
+            duration_ms,
+        )
+    else:
+        logger.warning(
+            'Dashboard snapshot builder v2 finished with status=%s reason=%s in %.2f ms.',
+            result['status'],
+            result['reason'],
+            duration_ms,
+        )
+    return result
 
 
 def get_latest_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD):
