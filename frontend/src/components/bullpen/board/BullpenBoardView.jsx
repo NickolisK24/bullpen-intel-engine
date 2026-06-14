@@ -379,7 +379,12 @@ function BoardGroup({ group, onViewDetails }) {
 // `showStoryPanel` mounts Today's Bullpen Story between the context strips and
 // the board. Tonight's Board (the homepage destination) opts in; embedded uses
 // like the side-by-side comparison stay as they are.
-export default function BullpenBoardView({ board, onSelectPitcher, showStoryPanel = false }) {
+export default function BullpenBoardView({
+  board,
+  onSelectPitcher,
+  showStoryPanel = false,
+  emptyState = null,
+}) {
   const groups = getBoardGroups(board)
   const totals = getBoardTotals(board)
   const teamName = board?.team?.team_name || board?.team?.team_abbreviation
@@ -407,8 +412,8 @@ export default function BullpenBoardView({ board, onSelectPitcher, showStoryPane
 
       {totals.isEmpty ? (
         <EmptyState
-          title="No pitchers to show for this team"
-          subtitle="No active bullpen options are available under the current roster and freshness filters."
+          title={emptyState?.title || 'No pitchers to show for this team'}
+          subtitle={emptyState?.subtitle || 'No active bullpen options are available under the current roster and freshness filters.'}
         />
       ) : (
         <>

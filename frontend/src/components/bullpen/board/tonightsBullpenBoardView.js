@@ -17,6 +17,31 @@ export const BOARD_GROUP_ORDER = [
   'Unavailable',
 ]
 
+export const BULLPEN_VIEW_MODE_ACTIVE = 'active'
+export const BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE = 'active_plus_unavailable'
+export const BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY = 'unavailable_only'
+export const DEFAULT_BULLPEN_VIEW_MODE = BULLPEN_VIEW_MODE_ACTIVE
+
+export const BULLPEN_VIEW_MODES = [
+  {
+    id: BULLPEN_VIEW_MODE_ACTIVE,
+    label: 'Active',
+    description: 'Active bullpen options only.',
+  },
+  {
+    id: BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
+    label: 'Active + Unavailable',
+    description: 'Active board plus roster-status unavailable relievers.',
+  },
+  {
+    id: BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+    label: 'Unavailable Only',
+    description: 'Roster-status unavailable relievers only.',
+  },
+]
+
+const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id))
+
 const GROUP_FALLBACK_META = {
   Available: { label: 'Available Tonight', description: 'Workload signals are inside normal ranges.' },
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
@@ -103,6 +128,80 @@ const INACTIVE_ROSTER_STATUSES = new Set([
   'NON_ROSTER',
   '40_MAN_ONLY',
 ])
+
+export function normalizeBullpenViewMode(mode) {
+  return VALID_BULLPEN_VIEW_MODES.has(mode) ? mode : DEFAULT_BULLPEN_VIEW_MODE
+}
+
+export function bullpenViewModeRequiresUnavailableContext(mode) {
+  return normalizeBullpenViewMode(mode) !== BULLPEN_VIEW_MODE_ACTIVE
+}
+
+function rosterStatusFromCard(card) {
+  return card?.roster_status || card?.availability?.roster_status || null
+}
+
+export function isRosterUnavailableCard(card) {
+  const rosterStatus = rosterStatusFromCard(card)
+  const visibility = card?.visibility || {}
+  const hiddenReasons = Array.isArray(visibility.hidden_reasons)
+    ? visibility.hidden_reasons
+    : []
+
+  return (
+    rosterStatus?.is_inactive_context === true
+    || INACTIVE_ROSTER_STATUSES.has(rosterStatus?.status)
+    || visibility.is_unavailable_roster_status === true
+    || hiddenReasons.includes('roster_status_unavailable')
+  )
+}
+
+export function cardMatchesBullpenViewMode(card, mode) {
+  const normalized = normalizeBullpenViewMode(mode)
+  if (normalized === BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE) return true
+  const rosterUnavailable = isRosterUnavailableCard(card)
+  if (normalized === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY) return rosterUnavailable
+  return !rosterUnavailable
+}
+
+export function filterBoardForViewMode(board, mode) {
+  const normalized = normalizeBullpenViewMode(mode)
+  if (!board || normalized === BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE) {
+    return board
+  }
+
+  const sourceGroups = getBoardGroups(board)
+  const filteredGroups = sourceGroups
+    .map(group => ({
+      ...group,
+      pitchers: group.pitchers.filter(card => cardMatchesBullpenViewMode(card, normalized)),
+    }))
+    .map(group => ({
+      ...group,
+      count: group.pitchers.length,
+    }))
+  const displayGroups = normalized === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY
+    ? filteredGroups.filter(group => group.status === 'Unavailable' || group.count > 0)
+    : filteredGroups
+  const totalPitchers = displayGroups.reduce((sum, group) => sum + group.count, 0)
+
+  return {
+    ...board,
+    groups: displayGroups,
+    total_pitchers: totalPitchers,
+    view_mode: normalized,
+  }
+}
+
+export function getBullpenViewModeEmptyState(mode) {
+  if (normalizeBullpenViewMode(mode) === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY) {
+    return {
+      title: 'No unavailable relievers found for this bullpen.',
+      subtitle: 'Active relievers remain hidden in Unavailable Only view.',
+    }
+  }
+  return null
+}
 
 export function getEligibilityView(eligibility) {
   if (!eligibility) return null
