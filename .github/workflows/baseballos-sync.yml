@@ -9,6 +9,7 @@ name: Daily Bullpen Sync
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   BASEBALLOS_SYNC_URL         e.g. https://baseballos-api.onrender.com/api/bullpen/sync
 #   BASEBALLOS_ADMIN_API_TOKEN  must match the backend's ADMIN_API_TOKEN
+#   DASHBOARD_SNAPSHOT_BUILD_TOKEN must match the backend's DASHBOARD_SNAPSHOT_BUILD_TOKEN
 #
 # To disable: comment out the `schedule:` block below (manual runs still work
 # via the "Run workflow" button), or disable this workflow in the Actions tab.
@@ -57,3 +58,48 @@ jobs:
             401|403) echo "::error::Unauthorized ($http_code) — check BASEBALLOS_ADMIN_API_TOKEN matches the backend ADMIN_API_TOKEN."; exit 1 ;;
             *) echo "::error::Sync failed with HTTP $http_code"; exit 1 ;;
           esac
+
+      - name: Build dashboard snapshot cache
+        env:
+          SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
+          SNAPSHOT_TOKEN: ${{ secrets.DASHBOARD_SNAPSHOT_BUILD_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SYNC_URL:-}" ] || [ -z "${SNAPSHOT_TOKEN:-}" ]; then
+            echo "::error::Missing BASEBALLOS_SYNC_URL or DASHBOARD_SNAPSHOT_BUILD_TOKEN repository secret."
+            exit 1
+          fi
+
+          normalized_sync_url="${SYNC_URL%/}"
+          backend_base_url="${normalized_sync_url%/api/bullpen/sync}"
+          if [ "$backend_base_url" = "$normalized_sync_url" ]; then
+            echo "::error::BASEBALLOS_SYNC_URL must end with /api/bullpen/sync so the dashboard snapshot URL can be derived safely."
+            exit 1
+          fi
+          snapshot_url="$backend_base_url/api/bullpen/dashboard/snapshot/build"
+
+          snapshot_response="$(mktemp)"
+          trap 'rm -f "$snapshot_response"' EXIT
+
+          if ! http_code=$(curl -sS -o "$snapshot_response" -w '%{http_code}' \
+            --retry 1 --max-time 700 \
+            -X POST "$snapshot_url" \
+            -H "Authorization: Bearer $SNAPSHOT_TOKEN"); then
+            echo "::error::Snapshot build request failed before an HTTP response was returned."
+            echo "Response body:"
+            cat "$snapshot_response" || true
+            echo
+            exit 1
+          fi
+
+          echo "Snapshot build HTTP status: $http_code"
+          echo "Snapshot build response body:"
+          cat "$snapshot_response" || true
+          echo
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Snapshot build failed with HTTP $http_code"
+            exit 1
+          fi
+
+          echo "Dashboard snapshot build succeeded."
