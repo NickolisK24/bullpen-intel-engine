@@ -12,6 +12,7 @@ import pytest
 from flask import Flask
 
 import services.sync as sync_service
+from services.availability import ACTIVE_WINDOW_DAYS
 from services.pitcher_role import ROLE_KEYS
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
@@ -57,6 +58,16 @@ def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1
                                 risk_level='LOW', calculated_at=datetime.utcnow()))
     db.session.commit()
     return pitcher
+
+
+def _landscape_entries_for_team(landscape, team_id):
+    entries = []
+    for key in ('constrained_bullpens', 'available_bullpens', 'monitoring_concentration'):
+        entries.extend(
+            entry for entry in landscape.get(key, [])
+            if entry.get('team_id') == team_id
+        )
+    return entries
 
 
 class TestDashboardEndpoint:
@@ -152,6 +163,71 @@ class TestDashboardEndpoint:
         assert body['roles']['total'] == 1
         assert body['availability_summary']['total_pitchers'] == 1
         assert body['landscape']['teams_evaluated'] == 1
+
+    def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
+        with client.application.app_context():
+            for idx in range(5):
+                _seed_pitcher(
+                    f'Tampa Available Arm {idx}',
+                    team_id=139,
+                    mlb_id=139100 + idx,
+                    raw_score=10,
+                    innings=[1.0, 0.2, 1.0],
+                    days_ago=[6, 8, 10],
+                    roster_status=STATUS_ACTIVE,
+                )
+            for idx in range(4):
+                _seed_pitcher(
+                    f'Tampa Monitor Arm {idx}',
+                    team_id=139,
+                    mlb_id=139200 + idx,
+                    raw_score=45,
+                    innings=[1.0, 0.2, 1.0],
+                    days_ago=[6, 8, 10],
+                    roster_status=STATUS_ACTIVE,
+                )
+            _seed_pitcher(
+                'Nick Martinez',
+                team_id=139,
+                mlb_id=607259,
+                raw_score=10,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[ACTIVE_WINDOW_DAYS + 2, ACTIVE_WINDOW_DAYS + 4, ACTIVE_WINDOW_DAYS + 6],
+                roster_status=STATUS_ACTIVE,
+            )
+
+        default_board = client.get('/api/bullpen/teams/139/board').get_json()
+        default_names = [
+            card['name']
+            for group in default_board['groups']
+            for card in group['pitchers']
+        ]
+        expanded_board = client.get('/api/bullpen/teams/139/board?include_stale=true').get_json()
+        expanded_names = [
+            card['name']
+            for group in expanded_board['groups']
+            for card in group['pitchers']
+        ]
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        landscape_entries = _landscape_entries_for_team(dashboard['landscape'], 139)
+
+        assert 'Nick Martinez' not in default_names
+        assert 'Nick Martinez' in expanded_names
+        assert default_board['total_pitchers'] == 9
+        assert expanded_board['total_pitchers'] == 10
+        assert default_board['visibility']['hidden_but_available_count'] == 0
+        assert expanded_board['visibility']['hidden_but_available_count'] == 0
+
+        assert dashboard['context']['metrics']['total_relievers'] == 9
+        assert dashboard['availability_summary']['total_pitchers'] == 9
+        assert dashboard['availability_summary']['statuses']['Available'] == 5
+        assert dashboard['availability_summary']['statuses']['Monitor'] == 4
+        assert dashboard['roles']['total'] == 9
+        assert dashboard['landscape']['teams_evaluated'] == 1
+        assert landscape_entries
+        assert all(entry['total_relievers'] == 9 for entry in landscape_entries)
+        assert all(entry['available'] == 5 for entry in landscape_entries)
+        assert all(entry['monitor'] == 4 for entry in landscape_entries)
 
     def test_dashboard_attaches_story_continuity_for_landscape_teams_only(self, client):
         with client.application.app_context():

@@ -170,6 +170,12 @@ class TestPayload:
         assert payload['stress']['state'] == payload['context']['health']['state']
         assert payload['stress']['label'] == 'Monitoring'
         assert 'score' not in payload['stress']
+        assert payload['visibility'] == {
+            'active_count': 2,
+            'default_visible_count': 2,
+            'hidden_unavailable_count': 0,
+            'hidden_but_available_count': 0,
+        }
 
     def test_empty_team_still_returns_all_groups(self):
         payload = build_board_payload(
@@ -376,6 +382,56 @@ class TestBoardEndpoint:
         assert names == ['Reds Stale Reliever']
         assert cards[0]['eligibility']['status'] == 'inactive_bullpen_relevant'
         assert any('unavailable or stale workload pitchers are included' in limitation for limitation in cards[0]['limitations'])
+
+    def test_show_unavailable_reveals_stale_relief_context_without_default_visibility(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Tampa Current Relief',
+                team_id=139,
+                team_abbr='TB',
+                mlb_id=13901,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                roster_status=STATUS_ACTIVE,
+            )
+            _seed_pitcher(
+                'Nick Martinez',
+                team_id=139,
+                team_abbr='TB',
+                mlb_id=607259,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[ACTIVE_WINDOW_DAYS + 2, ACTIVE_WINDOW_DAYS + 4, ACTIVE_WINDOW_DAYS + 6],
+                roster_status=STATUS_ACTIVE,
+            )
+
+        default_body = client.get('/api/bullpen/teams/139/board').get_json()
+        default_cards = [card for group in default_body['groups'] for card in group['pitchers']]
+        assert [card['name'] for card in default_cards] == ['Tampa Current Relief']
+        assert default_body['total_pitchers'] == 1
+        assert default_body['visibility'] == {
+            'active_count': 1,
+            'default_visible_count': 1,
+            'hidden_unavailable_count': 0,
+            'hidden_but_available_count': 0,
+        }
+
+        expanded_body = client.get('/api/bullpen/teams/139/board?include_stale=true').get_json()
+        expanded_cards = [card for group in expanded_body['groups'] for card in group['pitchers']]
+        by_name = {card['name']: card for card in expanded_cards}
+
+        assert set(by_name) == {'Nick Martinez', 'Tampa Current Relief'}
+        assert by_name['Tampa Current Relief']['visibility']['is_visible_by_default'] is True
+        nick_visibility = by_name['Nick Martinez']['visibility']
+        assert nick_visibility['is_visible_by_default'] is False
+        assert nick_visibility['is_public_bullpen_option'] is False
+        assert nick_visibility['hidden_until_show_unavailable'] is True
+        assert 'outside_active_workload_window' in nick_visibility['hidden_reasons']
+        assert expanded_body['visibility'] == {
+            'active_count': 1,
+            'default_visible_count': 1,
+            'hidden_unavailable_count': 1,
+            'hidden_but_available_count': 0,
+        }
 
     def test_il_and_minors_pitchers_are_excluded_from_default_board_counts(self, client):
         with client.application.app_context():

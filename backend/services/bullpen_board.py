@@ -24,6 +24,7 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.bullpen_stress import build_bullpen_stress
+from services.bullpen_visibility import default_visible_contract, summarize_visibility
 
 
 # Canonical group order: least-restricted to most-restricted. This is a fixed
@@ -264,7 +265,16 @@ def short_reason_for(availability):
     return 'Workload indicators elevated'
 
 
-def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibility=None, roster_status=None):
+def build_card(
+    name,
+    pitcher_id,
+    fatigue_score,
+    availability,
+    role=None,
+    eligibility=None,
+    roster_status=None,
+    visibility=None,
+):
     """Build a single display card from existing availability output."""
     availability = availability or {}
     score = None
@@ -291,6 +301,10 @@ def build_card(name, pitcher_id, fatigue_score, availability, role=None, eligibi
         'eligibility': eligibility,
         # Roster status is separate from workload freshness and role inference.
         'roster_status': roster_status,
+        # Visibility is the explicit board/story trust contract. Default board
+        # payload tests pass already-visible records, so a safe visible default
+        # preserves the pure grouping API.
+        'visibility': visibility or default_visible_contract(),
     }
 
 
@@ -358,6 +372,7 @@ def build_board_payload(
             role=record.get('role'),
             eligibility=record.get('eligibility'),
             roster_status=record.get('roster_status'),
+            visibility=record.get('visibility'),
         )
         for record in records
     ]
@@ -366,6 +381,7 @@ def build_board_payload(
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
     stress = build_bullpen_stress(context)
+    visibility = summarize_visibility(cards)
 
     return {
         'capability': CAPABILITY,
@@ -377,6 +393,7 @@ def build_board_payload(
         'group_order': list(BOARD_GROUP_ORDER),
         'context': context,
         'stress': stress,
+        'visibility': visibility,
         'groups': groups,
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),
