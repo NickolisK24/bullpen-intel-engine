@@ -170,6 +170,8 @@ function HeroStory({ hero }) {
           {hero.headline}
         </h2>
 
+        <FlagshipStoryStatus status={hero.storyStatus} />
+
         <StoryPresentation
           story={hero}
           observation={hero.observation}
@@ -217,6 +219,25 @@ function HeroStory({ hero }) {
           </Link>
         </div>
       </div>
+    </div>
+  )
+}
+
+function FlagshipStoryStatus({ status }) {
+  if (!status) return null
+  const tone = homeTone(status.tone)
+
+  return (
+    <div
+      className="mt-3 inline-flex max-w-3xl flex-wrap items-center gap-x-2 gap-y-1 rounded border px-2.5 py-1.5 text-xs leading-relaxed"
+      style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor }}
+      aria-label="Story Status"
+    >
+      <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Story Status
+      </span>
+      <span className="font-semibold text-chalk100">{status.label}</span>
+      <span className="text-chalk400">{status.description}</span>
     </div>
   )
 }
