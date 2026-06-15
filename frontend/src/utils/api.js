@@ -1494,3 +1494,4 @@ export const getPipelineOverview = () => request('/prospects/stats/overview')
 
 // ── Methodology ───────────────────────────────────────────────
 export const getMethodology = () => request('/methodology/')
+export const getAvailabilityBacktest = () => request('/methodology/availability-backtest')

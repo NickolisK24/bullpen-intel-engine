@@ -1,7 +1,8 @@
 import { useFetch } from '../../hooks/useFetch'
-import { getMethodology } from '../../utils/api'
+import { getAvailabilityBacktest, getMethodology } from '../../utils/api'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
+import AvailabilityBacktestCard from '../trust/AvailabilityBacktestCard'
 
 const TIER_HEX = {
   LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
@@ -12,6 +13,7 @@ const TIER_HEX = {
 
 export default function Methodology() {
   const { data, loading, error, refetch } = useFetch(getMethodology)
+  const backtest = useFetch(getAvailabilityBacktest)
 
   if (loading) {
     return (
@@ -39,6 +41,13 @@ export default function Methodology() {
       <SectionHeader
         title="Methodology"
         subtitle="How every fatigue and availability number is computed"
+      />
+
+      <AvailabilityBacktestCard
+        data={backtest.data}
+        loading={backtest.loading}
+        error={backtest.error}
+        onRetry={backtest.refetch}
       />
 
       {/* ── Fatigue Engine ─────────────────────────────────────────────── */}
@@ -125,7 +134,7 @@ export default function Methodology() {
         </section>
       )}
 
-      {/* ── Insights ───────────────────────────────────────────────────── */}
+      {/* ── Secondary Exploratory Insight ──────────────────────────────── */}
       {insights && (
         <section
           className="card p-6 animate-fade-up opacity-0"

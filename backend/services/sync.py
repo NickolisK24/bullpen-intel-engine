@@ -417,6 +417,21 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
 
+            try:
+                from services.availability_backtest import refresh_availability_backtest
+                backtest = refresh_availability_backtest()
+                status['availability_backtest_status'] = backtest.get('status')
+                status['availability_backtest_computed_at'] = backtest.get('computed_at')
+                run_logger.info(
+                    'Refreshed availability backtest (%s)',
+                    backtest.get('computed_at') or backtest.get('status'),
+                )
+            except Exception as exc:
+                db.session.rollback()
+                status['availability_backtest_status'] = 'failed'
+                status['availability_backtest_error'] = str(exc)
+                run_logger.warning('Availability backtest refresh failed: %s', exc)
+
             # Partial when records were dead-lettered but the run still
             # refreshed its domains; otherwise success.
             records_failed = pull['records_failed']
