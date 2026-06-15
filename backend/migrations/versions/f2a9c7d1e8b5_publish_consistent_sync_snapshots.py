@@ -36,11 +36,11 @@ def upgrade():
         connection.execute(
             sa.text("""
                 UPDATE dashboard_snapshots
-                SET is_published = 1,
+                SET is_published = :is_published,
                     published_at = COALESCE(snapshot_generated_at, created_at)
                 WHERE id = :snapshot_id
             """),
-            {'snapshot_id': row.snapshot_id},
+            {'snapshot_id': row.snapshot_id, 'is_published': True},
         )
 
     with op.batch_alter_table('sync_runs', schema=None) as batch_op:
