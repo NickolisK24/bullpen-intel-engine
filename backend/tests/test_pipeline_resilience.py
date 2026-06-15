@@ -30,13 +30,14 @@ from api.bullpen import bullpen_bp
 from api.system import system_bp
 
 
-def _valid_split(pk, game_date, innings='1.0'):
+def _valid_split(pk, game_date, innings='1.0', games_started=0):
     return {
         'game': {'gamePk': pk, 'gameType': 'R'},
         'date': game_date.isoformat(),
         'opponent': {'id': 2, 'name': 'Opp'},
         'stat': {
             'inningsPitched': innings,
+            'gamesStarted': games_started,
             'numberOfPitches': 12,
             'strikes': 8,
         },
@@ -131,6 +132,19 @@ class TestPartialFailure:
             log = GameLog.query.one()
             assert log.innings_pitched_outs == 2
             assert log.innings_pitched == pytest.approx(2 / 3)
+
+    def test_sync_stores_games_started_from_mlb_source(self, app, monkeypatch):
+        with app.app_context():
+            today = date.today()
+            splits = [_valid_split(4100, today, games_started=1)]
+            monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs',
+                                lambda mlb_id, season=None: splits)
+
+            result = sync_service.sync_recent_logs(days_back=7)
+            assert result['new_logs_added'] == 1
+
+            log = GameLog.query.one()
+            assert log.games_started == 1
 
     def test_sync_endpoint_marks_run_partial_and_domain_refreshes(self, app, monkeypatch):
         today = date.today()

@@ -14,6 +14,12 @@ from sqlalchemy import desc
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability_reference_date import product_current_date
+from utils.games_started import (
+    MATERIAL_UNKNOWN_START_LIMITATION,
+    UNKNOWN_START_LIMITATION,
+    games_started_summary,
+    is_relief,
+)
 
 
 DEFAULT_WINDOWS = (7, 10, 14)
@@ -43,8 +49,8 @@ OBSERVED_GAMES_LIMITATION = (
     'separate team-game schedule.'
 )
 NULL_START_LIMITATION = (
-    'Some appearances are missing gamesStarted; null starts are treated as '
-    'bullpen workload unless contradicted by stored data.'
+    'Some appearances are missing gamesStarted; unknown rows are excluded from '
+    'bullpen-only workload evidence.'
 )
 
 
@@ -115,7 +121,7 @@ def _window_for(reference_date, window_days):
 
 
 def _is_bullpen_log(log):
-    return _value(log, 'games_started') != 1
+    return is_relief(log)
 
 
 def _filter_logs(logs, start, end, bullpen_only=True):
@@ -130,8 +136,30 @@ def _filter_logs(logs, start, end, bullpen_only=True):
     return filtered
 
 
-def _has_null_start(logs):
-    return any(_value(log, 'games_started') is None for log in logs or [])
+def _start_signal_fields(logs):
+    summary = games_started_summary(logs)
+    if summary.material_unknown:
+        state = 'material_unknown'
+    elif summary.unknown:
+        state = 'partial'
+    else:
+        state = 'complete'
+    return {
+        'start_classification_state': state,
+        'unknown_start_rows': summary.unknown,
+        'unknown_start_row_share': round(summary.unknown_share, 2),
+    }
+
+
+def _add_start_signal_limitations(contract, signal):
+    if not signal.get('unknown_start_rows'):
+        return
+    limitations = [NULL_START_LIMITATION]
+    if signal.get('start_classification_state') == 'material_unknown':
+        limitations.append(MATERIAL_UNKNOWN_START_LIMITATION)
+    else:
+        limitations.append(UNKNOWN_START_LIMITATION)
+    contract['limitations'] = _merge_unique(contract.get('limitations'), limitations)
 
 
 def _pitcher_id(log):
@@ -306,9 +334,9 @@ def build_workload_concentration_continuity(
     """
     Identify repeated bullpen workload concentration in a fixed date window.
 
-    The evidence is based on relief appearances only. A row with
-    games_started=1 is excluded; a null gamesStarted value is included with a
-    limitation because older stored rows may not have the start signal.
+    The evidence is based on relief appearances only. Rows with
+    games_started=1 or unknown gamesStarted are excluded from bullpen workload
+    evidence.
     """
     all_logs = list(logs or [])
     ref = _resolve_reference_date(all_logs, reference_date=reference_date)
@@ -322,8 +350,8 @@ def build_workload_concentration_continuity(
         limitations=limitations,
     )
 
-    if _has_null_start(_filter_logs(all_logs, start, end, bullpen_only=False)):
-        contract['limitations'] = _merge_unique(contract['limitations'], [NULL_START_LIMITATION])
+    signal = _start_signal_fields(_filter_logs(all_logs, start, end, bullpen_only=False))
+    _add_start_signal_limitations(contract, signal)
 
     summary = _segment_summary(bullpen_logs, pitchers=pitchers)
     total = summary['appearances']
@@ -354,7 +382,9 @@ def build_workload_concentration_continuity(
     core_share = _pct(core_appearances, total)
     persistence_share = _pct(len(core_dates), len(observed_dates))
 
-    if total < MIN_CONCENTRATION_APPEARANCES or not top_pitchers:
+    if signal['start_classification_state'] == 'material_unknown':
+        state = STATE_LIMITED
+    elif total < MIN_CONCENTRATION_APPEARANCES or not top_pitchers:
         state = STATE_LIMITED
         contract['limitations'] = _merge_unique(
             contract['limitations'],
@@ -378,6 +408,8 @@ def build_workload_concentration_continuity(
         'evidence': {
             'bullpen_appearances': total,
             'excluded_starter_appearances': _starter_count(_filter_logs(all_logs, start, end, bullpen_only=False)),
+            'unknown_start_rows_excluded': signal['unknown_start_rows'],
+            **signal,
             'observed_bullpen_games': summary['observed_games'],
             'observed_usage_dates': [_iso(day) for day in sorted(observed_dates)],
             'pitchers_used': summary['pitchers_used'],
@@ -453,8 +485,8 @@ def build_bullpen_recovery_continuity(
         bullpen_logs,
         limitations=limitations,
     )
-    if _has_null_start(_filter_logs(all_logs, start, end, bullpen_only=False)):
-        contract['limitations'] = _merge_unique(contract['limitations'], [NULL_START_LIMITATION])
+    signal = _start_signal_fields(_filter_logs(all_logs, start, end, bullpen_only=False))
+    _add_start_signal_limitations(contract, signal)
 
     prior_logs = _filter_logs(bullpen_logs, start, prior_end)
     recent_logs = _filter_logs(bullpen_logs, recent_start, end)
@@ -484,7 +516,13 @@ def build_bullpen_recovery_continuity(
     }
     easing_signal_count = sum(1 for value in easing_signals.values() if value)
 
-    if prior['appearances'] == 0 or recent['appearances'] == 0:
+    if signal['start_classification_state'] == 'material_unknown':
+        state = STATE_LIMITED
+        contract['limitations'] = _merge_unique(
+            contract['limitations'],
+            ['Start/relief coverage is too incomplete for a workload-easing read.'],
+        )
+    elif prior['appearances'] == 0 or recent['appearances'] == 0:
         state = STATE_LIMITED
         contract['limitations'] = _merge_unique(
             contract['limitations'],
@@ -526,6 +564,8 @@ def build_bullpen_recovery_continuity(
             'workload_easing_signal_count': easing_signal_count,
             'bullpen_pool_size': len(pool_ids),
             'excluded_starter_appearances': _starter_count(_filter_logs(all_logs, start, end, bullpen_only=False)),
+            'unknown_start_rows_excluded': signal['unknown_start_rows'],
+            **signal,
         },
     })
     return contract
@@ -602,8 +642,8 @@ def build_pitcher_usage_trend_continuity(
         limitations=limitations,
     )
     contract['limitations'] = _merge_unique(contract['limitations'], [OBSERVED_GAMES_LIMITATION])
-    if _has_null_start(_filter_logs(all_logs, start, end, bullpen_only=False)):
-        contract['limitations'] = _merge_unique(contract['limitations'], [NULL_START_LIMITATION])
+    signal = _start_signal_fields(_filter_logs(all_logs, start, end, bullpen_only=False))
+    _add_start_signal_limitations(contract, signal)
 
     games = _observed_games(bullpen_team_logs)
     pitcher_game_keys = {_game_key(log) for log in bullpen_pitcher_logs}
@@ -646,6 +686,8 @@ def build_pitcher_usage_trend_continuity(
         prior_count=prior_count,
         days_since=days_since,
     )
+    if signal['start_classification_state'] == 'material_unknown':
+        state = STATE_LIMITED
     contract.update({
         'state': state,
         'summary': _pitcher_usage_summary(
@@ -660,6 +702,8 @@ def build_pitcher_usage_trend_continuity(
             'appearance_frequency': frequency,
             'window_appearances': len(bullpen_pitcher_logs),
             'excluded_starter_appearances': _starter_count(_filter_logs(pitcher_logs, start, end, bullpen_only=False)),
+            'unknown_start_rows_excluded': signal['unknown_start_rows'],
+            **signal,
             'prior_segment_appearances': prior_count,
             'recent_segment_appearances': recent_count,
             'appearance_count_change': recent_count - prior_count,

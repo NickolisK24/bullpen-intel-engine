@@ -29,6 +29,7 @@ from api.bullpen import bullpen_bp
 def client(tmp_path, monkeypatch):
     # No real sync_status.json. The status endpoint must not depend on it.
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
+    monkeypatch.setattr(sync_metadata, 'product_current_date', lambda: date(2026, 6, 1))
 
     app = Flask(__name__)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'

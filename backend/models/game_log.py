@@ -15,6 +15,10 @@ class GameLog(db.Model):
             'innings_pitched_outs IS NULL OR innings_pitched_outs >= 0',
             name='ck_game_logs_innings_pitched_outs_nonnegative',
         ),
+        db.CheckConstraint(
+            'games_started IS NULL OR games_started IN (0, 1)',
+            name='ck_game_logs_games_started_valid',
+        ),
         db.Index('ix_game_log_pitcher_date', 'pitcher_id', 'game_date'),
         db.Index('ix_game_log_game_pk',      'mlb_game_pk'),
         db.Index('ix_game_log_game_type',    'game_type'),

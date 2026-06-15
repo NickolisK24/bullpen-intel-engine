@@ -28,6 +28,9 @@ ROTATION_CONTEXT_KEYS = {
     'delta_ip',
     'trend',
     'windows',
+    'start_classification_state',
+    'unknown_start_rows',
+    'unknown_start_row_share',
 }
 
 USAGE_DEMAND_CONTEXT_KEYS = {
@@ -42,7 +45,10 @@ USAGE_DEMAND_CONTEXT_KEYS = {
     'pitch_delta',
     'appearance_pct_delta',
     'pitch_pct_delta',
-    'null_start_rows_included_as_bullpen',
+    'unknown_start_rows_excluded',
+    'start_classification_state',
+    'unknown_start_rows',
+    'unknown_start_row_share',
     'trend',
     'windows',
 }
@@ -119,6 +125,9 @@ def test_no_data_team_returns_normalized_rotation_context_shape(client):
     assert rotation['delta_ip'] is None
     assert rotation['trend'] == 'insufficient_data'
     assert rotation['windows'] is None
+    assert rotation['start_classification_state'] == 'complete'
+    assert rotation['unknown_start_rows'] == 0
+    assert rotation['unknown_start_row_share'] == 0.0
     assert 'No stored game-log context was found for this team.' in context['limitations']
 
 
@@ -140,7 +149,10 @@ def test_no_data_team_returns_normalized_usage_demand_context_shape(client):
     assert demand['pitch_delta'] == 0
     assert demand['appearance_pct_delta'] is None
     assert demand['pitch_pct_delta'] is None
-    assert demand['null_start_rows_included_as_bullpen'] == 0
+    assert demand['unknown_start_rows_excluded'] == 0
+    assert demand['start_classification_state'] == 'complete'
+    assert demand['unknown_start_rows'] == 0
+    assert demand['unknown_start_row_share'] == 0.0
     assert demand['trend'] == 'insufficient_data'
     assert demand['windows'] is None
     assert 'No stored game-log context was found for this team.' in context['limitations']
@@ -203,6 +215,25 @@ def test_rising_bullpen_demand_detected(client):
     assert demand['bullpen_pitches_last_7'] == 72
     assert demand['bullpen_pitches_prev_7'] == 24
     assert demand['trend'] == 'increasing_demand'
+
+
+def test_unknown_games_started_rows_do_not_count_as_bullpen_demand(client):
+    with client.application.app_context():
+        reliever = _seed_pitcher(125, 'Known Reliever', 12501)
+        unknown = _seed_pitcher(125, 'Unknown Role', 12502)
+        _seed_log(reliever, 1, 125011, innings=1.0, pitches=12, games_started=0)
+        _seed_log(unknown, 1, 125012, innings=1.0, pitches=14, games_started=None)
+        _seed_log(unknown, 2, 125013, innings=1.0, pitches=13, games_started=None)
+
+        context = build_team_bullpen_context(125, reference_date=REF)
+
+    demand = context['usage_demand_context']
+    assert demand['bullpen_appearances_last_7'] == 1
+    assert demand['unknown_start_rows_excluded'] == 2
+    assert demand['start_classification_state'] == 'material_unknown'
+    assert demand['context_available'] is False
+    assert demand['trend'] == 'insufficient_start_data'
+    assert any('More than 25%' in item for item in context['limitations'])
 
 
 def test_falling_bullpen_demand_detected(client):

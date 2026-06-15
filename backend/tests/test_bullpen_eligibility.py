@@ -19,14 +19,21 @@ from services.bullpen_eligibility import (
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 REF = date(2026, 6, 6)
+_DERIVE_GAMES_STARTED = object()
 
 
 class LogStub:
-    def __init__(self, days_ago, innings_pitched, game_type='R', save=False, hold=False, save_situation=False):
+    def __init__(
+        self, days_ago, innings_pitched, game_type='R', save=False, hold=False,
+        save_situation=False, games_started=_DERIVE_GAMES_STARTED,
+    ):
         innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         self.game_date = REF - timedelta(days=days_ago)
         self.innings_pitched = outs_to_decimal_innings(innings_outs)
         self.innings_pitched_outs = innings_outs
+        self.games_started = games_started if games_started is not _DERIVE_GAMES_STARTED else (
+            1 if innings_outs >= 9 else 0
+        )
         self.game_type = game_type
         self.save = save
         self.hold = hold
@@ -46,7 +53,7 @@ def test_clear_starter_pattern_is_excluded():
 
     assert result['eligible'] is False
     assert result['status'] == STATUS_CLEAR_STARTER
-    assert 'starter-length pattern' in result['reason']
+    assert 'mark the sampled appearances as starts' in result['reason']
 
 
 def test_recent_relief_usage_is_included_without_explicit_role_data():
@@ -115,7 +122,11 @@ def test_save_situation_alone_does_not_override_starter_history():
 def test_uncertain_non_bullpen_usage_is_withheld():
     result = evaluate_bullpen_eligibility(
         pitcher(),
-        [LogStub(1, 2.2), LogStub(5, 2.1), LogStub(9, 2.2)],
+        [
+            LogStub(1, 2.2, games_started=None),
+            LogStub(5, 2.1, games_started=None),
+            LogStub(9, 2.2, games_started=None),
+        ],
         reference_date=REF,
     )
 

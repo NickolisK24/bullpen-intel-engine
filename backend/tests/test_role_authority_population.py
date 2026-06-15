@@ -102,8 +102,12 @@ def test_legacy_path_still_available_for_rollback():
     contexts, _ = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=False,
     )
-    # Legacy innings heuristic excludes the long reliever (3+ IP reads as starter).
-    assert 3 not in _ids(contexts)
+    ids = _ids(contexts)
+    # The live legacy path now honors explicit gamesStarted relief flags, but
+    # still leaves Role Authority disabled for mixed-role decisions.
+    assert 3 in ids
+    assert 4 not in ids
+    assert 5 not in ids
 
 
 def test_diagnostic_reports_additions_and_removals():
@@ -112,10 +116,10 @@ def test_diagnostic_reports_additions_and_removals():
     addition_ids = {row['pitcher_id'] for row in diag['additions']}
     removal_ids = {row['pitcher_id'] for row in diag['removals']}
 
-    # Long reliever: legacy excludes (IP heuristic), role includes → addition.
-    assert 3 in addition_ids
-    # Unknown: legacy includes (short relief sample), role withholds → removal.
-    assert 5 in removal_ids
+    # Swingman: Role Authority includes with a caveat; legacy still withholds.
+    assert 4 in addition_ids
+    # Unknown start data is withheld by both paths rather than treated as relief.
+    assert 5 not in removal_ids
     assert diag['role_distribution'][ROLE_RELIEVER] >= 1
     assert diag['totals']['role_population'] >= 3
 
