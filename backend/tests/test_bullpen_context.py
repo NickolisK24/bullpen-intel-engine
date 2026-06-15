@@ -12,6 +12,7 @@ from services.bullpen_context import (
     build_team_bullpen_context,
 )
 from utils.db import db
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 
 REF = date(2026, 6, 8)
@@ -78,11 +79,13 @@ def _seed_pitcher(team_id, name, mlb_id):
 
 
 def _seed_log(pitcher, days_ago, game_pk, innings, pitches=15, games_started=0):
+    innings_outs = parse_mlb_innings_to_outs(innings)
     db.session.add(GameLog(
         pitcher_id=pitcher.id,
         mlb_game_pk=game_pk,
         game_date=REF - timedelta(days=days_ago),
-        innings_pitched=innings,
+        innings_pitched=outs_to_decimal_innings(innings_outs),
+        innings_pitched_outs=innings_outs,
         pitches_thrown=pitches,
         games_started=games_started,
         game_type='R',
@@ -147,7 +150,7 @@ def test_shorter_starter_outings_detected(client):
     with client.application.app_context():
         starter = _seed_pitcher(118, 'Shorter Starter', 11801)
         _seed_log(starter, 1, 118011, innings=4.2, pitches=82, games_started=1)
-        _seed_log(starter, 3, 118012, innings=4.8, pitches=88, games_started=1)
+        _seed_log(starter, 3, 118012, innings=4.1, pitches=88, games_started=1)
         _seed_log(starter, 8, 118013, innings=6.0, pitches=96, games_started=1)
         _seed_log(starter, 10, 118014, innings=6.2, pitches=98, games_started=1)
 
@@ -158,16 +161,16 @@ def test_shorter_starter_outings_detected(client):
     assert rotation['context_available'] is True
     assert rotation['window_days'] == 7
     assert rotation['starter_avg_ip_last_7'] == 4.5
-    assert rotation['starter_avg_ip_prev_7'] == 6.1
+    assert rotation['starter_avg_ip_prev_7'] == 6.3
     assert rotation['trend'] == 'shorter_outings'
 
 
 def test_longer_starter_outings_detected(client):
     with client.application.app_context():
         starter = _seed_pitcher(119, 'Longer Starter', 11901)
-        _seed_log(starter, 1, 119011, innings=6.4, pitches=92, games_started=1)
+        _seed_log(starter, 1, 119011, innings=6.2, pitches=92, games_started=1)
         _seed_log(starter, 4, 119012, innings=6.0, pitches=90, games_started=1)
-        _seed_log(starter, 8, 119013, innings=4.8, pitches=84, games_started=1)
+        _seed_log(starter, 8, 119013, innings=4.2, pitches=84, games_started=1)
         _seed_log(starter, 12, 119014, innings=5.0, pitches=86, games_started=1)
 
         context = build_team_bullpen_context(119, reference_date=REF)
@@ -176,8 +179,8 @@ def test_longer_starter_outings_detected(client):
     _assert_normalized_context_shapes(context)
     assert rotation['context_available'] is True
     assert rotation['window_days'] == 7
-    assert rotation['starter_avg_ip_last_7'] == 6.2
-    assert rotation['starter_avg_ip_prev_7'] == 4.9
+    assert rotation['starter_avg_ip_last_7'] == 6.3
+    assert rotation['starter_avg_ip_prev_7'] == 4.8
     assert rotation['trend'] == 'longer_outings'
 
 

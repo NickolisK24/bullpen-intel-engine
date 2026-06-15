@@ -16,6 +16,7 @@ from services.availability import ACTIVE_WINDOW_DAYS
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
@@ -51,9 +52,13 @@ def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1
     innings_values = innings if isinstance(innings, list) else [innings]
     day_values = days_ago if isinstance(days_ago, list) else list(range(days_ago, days_ago + len(innings_values)))
     for idx, innings_pitched in enumerate(innings_values):
+        innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10 + idx,
-                               game_date=date.today() - timedelta(days=day_values[idx]),
-                               pitches_thrown=12, innings_pitched=innings_pitched, game_type='R'))
+                                game_date=date.today() - timedelta(days=day_values[idx]),
+                                pitches_thrown=12,
+                                innings_pitched=outs_to_decimal_innings(innings_outs),
+                                innings_pitched_outs=innings_outs,
+                                game_type='R'))
     db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=raw_score,
                                 risk_level='LOW', calculated_at=datetime.utcnow()))
     db.session.commit()

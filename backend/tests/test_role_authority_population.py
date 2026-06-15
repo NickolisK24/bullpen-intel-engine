@@ -16,15 +16,18 @@ from services.bullpen_population import (
 )
 from services.role_authority import ROLE_AMBIGUOUS, ROLE_RELIEVER, ROLE_UNKNOWN
 from services.roster_status import STATUS_ACTIVE
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 REF = date(2026, 6, 9)
 
 
 def log(days_ago, games_started=None, innings_pitched=1.0, save=False, hold=False):
+    innings_outs = parse_mlb_innings_to_outs(innings_pitched)
     return SimpleNamespace(
         game_date=REF - timedelta(days=days_ago),
         games_started=games_started,
-        innings_pitched=innings_pitched,
+        innings_pitched=outs_to_decimal_innings(innings_outs),
+        innings_pitched_outs=innings_outs,
         save=save, hold=hold, save_situation=False,
     )
 

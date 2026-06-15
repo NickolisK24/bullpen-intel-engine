@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from utils.db import db
+from utils.innings import log_innings_decimal
 
 
 BULLPEN_CONTEXT_SAMPLE_CAP = 5
@@ -139,7 +140,11 @@ def _bullpen_logs(logs):
 
 
 def _avg_innings(logs):
-    values = [float(log.innings_pitched or 0.0) for log in logs or []]
+    values = [
+        value
+        for value in (log_innings_decimal(log) for log in logs or [])
+        if value is not None
+    ]
     if not values:
         return None
     return _round(sum(values) / len(values))

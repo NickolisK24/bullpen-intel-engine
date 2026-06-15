@@ -15,6 +15,7 @@ from datetime import date, timedelta
 
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import product_current_date
+from utils.innings import log_innings_decimal
 
 
 SAMPLE_SIZE = 10
@@ -61,13 +62,10 @@ def _analysis_logs(logs):
 def _inning_values(logs):
     values = []
     for log in logs:
-        value = getattr(log, 'innings_pitched', None)
+        value = log_innings_decimal(log)
         if value is None:
             continue
-        try:
-            values.append(float(value))
-        except (TypeError, ValueError):
-            continue
+        values.append(value)
     return values
 
 

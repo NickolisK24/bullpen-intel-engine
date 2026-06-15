@@ -23,16 +23,19 @@ from services.role_authority import (
     classify_role,
     role_authority_enabled,
 )
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 REF = date(2026, 6, 9)
 
 
 def log(days_ago, games_started=None, innings_pitched=1.0,
         save=False, hold=False, save_situation=False):
+    innings_outs = parse_mlb_innings_to_outs(innings_pitched)
     return SimpleNamespace(
         game_date=REF - timedelta(days=days_ago),
         games_started=games_started,
-        innings_pitched=innings_pitched,
+        innings_pitched=outs_to_decimal_innings(innings_outs),
+        innings_pitched_outs=innings_outs,
         save=save, hold=hold, save_situation=save_situation,
     )
 
@@ -158,3 +161,5 @@ def test_flag_defaults_off_for_safe_rollout():
 def test_game_log_model_declares_games_started_column():
     assert 'games_started' in GameLog.__table__.columns
     assert GameLog.__table__.columns['games_started'].nullable is True
+    assert 'innings_pitched_outs' in GameLog.__table__.columns
+    assert GameLog.__table__.columns['innings_pitched_outs'].nullable is True

@@ -33,6 +33,7 @@ from services.roster_status import (
 )
 from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED
 from utils.db import db
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
@@ -256,12 +257,14 @@ def _seed_pitcher(
     days_ago = list(days_ago) if days_ago is not None else list(range(1, len(innings) + 1))
     base_game_pk = (mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000) * 100
     for i, innings_pitched in enumerate(innings):
+        innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         db.session.add(GameLog(
             pitcher_id=pitcher.id,
             mlb_game_pk=base_game_pk + i,
             game_date=today - timedelta(days=days_ago[i]),
             pitches_thrown=12,
-            innings_pitched=innings_pitched,
+            innings_pitched=outs_to_decimal_innings(innings_outs),
+            innings_pitched_outs=innings_outs,
             game_type='R',
         ))
     db.session.add(FatigueScore(

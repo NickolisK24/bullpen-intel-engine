@@ -17,6 +17,7 @@ from services.bullpen_context_story import (
 )
 from services.roster_status import STATUS_ACTIVE
 from utils.db import db
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from utils.time import utc_now_naive
 
 
@@ -66,11 +67,13 @@ def _seed_pitcher(team_id, name, mlb_id, raw_score=None):
 
 
 def _seed_log(pitcher, days_ago, game_pk, innings, pitches=15, games_started=0):
+    innings_outs = parse_mlb_innings_to_outs(innings)
     db.session.add(GameLog(
         pitcher_id=pitcher.id,
         mlb_game_pk=game_pk,
         game_date=REF - timedelta(days=days_ago),
-        innings_pitched=innings,
+        innings_pitched=outs_to_decimal_innings(innings_outs),
+        innings_pitched_outs=innings_outs,
         pitches_thrown=pitches,
         games_started=games_started,
         game_type='R',
@@ -82,7 +85,7 @@ def test_rotation_context_emitted_for_shorter_starter_outings(client):
     with client.application.app_context():
         starter = _seed_pitcher(118, 'Shorter Starter', 11801)
         _seed_log(starter, 1, 118011, innings=4.2, pitches=82, games_started=1)
-        _seed_log(starter, 3, 118012, innings=4.8, pitches=88, games_started=1)
+        _seed_log(starter, 3, 118012, innings=4.1, pitches=88, games_started=1)
         _seed_log(starter, 8, 118013, innings=6.0, pitches=96, games_started=1)
         _seed_log(starter, 10, 118014, innings=6.2, pitches=98, games_started=1)
 
@@ -93,7 +96,7 @@ def test_rotation_context_emitted_for_shorter_starter_outings(client):
     assert rotation['context']['evidence']['trend'] == 'shorter_outings'
     assert rotation['context_note'] == (
         "Team 118's starters have averaged 4.5 innings over the last 7 days, "
-        'down from 6.1 the week before, leaving more innings for the bullpen in those games.'
+        'down from 6.3 the week before, leaving more innings for the bullpen in those games.'
     )
 
 

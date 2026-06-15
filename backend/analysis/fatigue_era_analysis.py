@@ -27,27 +27,12 @@ from app import create_app
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.fatigue import calculate_fatigue
+from utils.innings import log_innings_decimal
 
 SEASONS = [2024, 2025]
 TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL']
 RESULTS_PATH = os.path.join(os.path.dirname(__file__), 'fatigue_era_results.json')
 WINDOW_DAYS = 14
-
-
-def ip_to_decimal(ip):
-    """
-    Convert MLB-style innings (e.g. 1.1 = 1⅓, 1.2 = 1⅔) to a true decimal.
-    Pure decimals pass through unchanged. None becomes 0.0.
-    """
-    if ip is None:
-        return 0.0
-    whole = int(ip)
-    frac = ip - whole
-    if abs(frac - 0.1) < 0.01:
-        return whole + 1 / 3
-    if abs(frac - 0.2) < 0.01:
-        return whole + 2 / 3
-    return float(ip)
 
 
 def collect_appearance_pairs(pitcher, logs):
@@ -56,7 +41,7 @@ def collect_appearance_pairs(pitcher, logs):
     pitcher carried into it and pair it with their NEXT appearance's IP/ER.
 
     `logs` must be ordered by game_date ascending and pre-filtered to drop
-    appearances where innings_pitched is null or zero.
+    appearances where innings are null or zero.
     """
     pairs = []
     for i in range(len(logs) - 1):
@@ -80,7 +65,7 @@ def collect_appearance_pairs(pitcher, logs):
             'appearance_n_date': ref_date,
             'fatigue_score_before_next': score.raw_score,
             'risk_tier': score.risk_level,
-            'next_appearance_ip': ip_to_decimal(nxt.innings_pitched),
+            'next_appearance_ip': log_innings_decimal(nxt) or 0.0,
             'next_appearance_er': int(nxt.earned_runs or 0),
         })
     return pairs
@@ -204,8 +189,7 @@ def run():
         logs = [
             g for g in logs
             if g.game_date.year in SEASONS
-            and g.innings_pitched is not None
-            and g.innings_pitched > 0
+            and (log_innings_decimal(g) or 0.0) > 0
         ]
 
         if len(logs) < 2:

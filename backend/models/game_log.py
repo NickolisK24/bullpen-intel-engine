@@ -11,6 +11,10 @@ class GameLog(db.Model):
     # behind the application-level dedup checks in services/sync.py and seed.py.
     __table_args__ = (
         db.UniqueConstraint('pitcher_id', 'mlb_game_pk', name='uq_game_logs_pitcher_game'),
+        db.CheckConstraint(
+            'innings_pitched_outs IS NULL OR innings_pitched_outs >= 0',
+            name='ck_game_logs_innings_pitched_outs_nonnegative',
+        ),
         db.Index('ix_game_log_pitcher_date', 'pitcher_id', 'game_date'),
         db.Index('ix_game_log_game_pk',      'mlb_game_pk'),
         db.Index('ix_game_log_game_type',    'game_type'),
@@ -31,6 +35,7 @@ class GameLog(db.Model):
     # Nullable so existing rows backfill safely; a null reads as "start unknown".
     games_started = db.Column(db.Integer, nullable=True)
     innings_pitched = db.Column(db.Float, default=0.0)
+    innings_pitched_outs = db.Column(db.Integer, nullable=True)
     pitches_thrown = db.Column(db.Integer, default=0)
     strikes = db.Column(db.Integer, default=0)
     hits_allowed = db.Column(db.Integer, default=0)
@@ -64,6 +69,7 @@ class GameLog(db.Model):
             'opponent_abbreviation': self.opponent_abbreviation,
             'games_started': self.games_started,
             'innings_pitched': self.innings_pitched,
+            'innings_pitched_outs': self.innings_pitched_outs,
             'pitches_thrown': self.pitches_thrown,
             'strikes': self.strikes,
             'hits_allowed': self.hits_allowed,
