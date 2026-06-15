@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from flask import Blueprint, jsonify, request
 from sqlalchemy import desc
 
+from api.query_params import parse_positive_int_param
 from explanations import (
     V4GovernancePayload,
     require_v4_governance_safe,
@@ -265,11 +266,11 @@ def _availability_explanation_payload(pitcher_id: int) -> dict[str, Any]:
 
 
 def _team_readiness_payload_from_request() -> dict[str, Any]:
-    team_id = request.args.get('team_id', type=int)
-    if 'team_id' in request.args and team_id is None:
+    team_id, team_id_error = parse_positive_int_param(request.args, 'team_id')
+    if team_id_error:
         raise ExplanationRouteError(
             reason_code='invalid_request_parameter',
-            summary='Team Operations readiness explanation requires team_id to be an integer when supplied.',
+            summary=f'Team Operations readiness explanation requires {team_id_error.message}',
             limitation_type='insufficient_context',
             status_code=400,
         )

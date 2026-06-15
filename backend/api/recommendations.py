@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from api.query_params import parse_positive_int_param, query_param_error_response
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
@@ -109,8 +110,12 @@ def evaluate_candidate_recommendation():
 @recommendations_bp.route('/v2/bullpen-state', methods=['GET'])
 def get_v2_bullpen_state():
     rows = ()
-    team_id = request.args.get('team_id', type=int)
-    limit = _v2_limit_from_request()
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
+    limit, error = _v2_limit_from_request()
+    if error:
+        return query_param_error_response(error)
     unsafe_request_errors = _v2_unsafe_request_errors(request.args)
     sync_status = _v2_sync_status_payload()
     reference_date = _v2_availability_reference_date(sync_status)
@@ -153,10 +158,13 @@ def get_v2_bullpen_state():
 
 
 def _v2_limit_from_request():
-    limit = request.args.get('limit', V2_DEFAULT_LIMIT, type=int)
-    if not isinstance(limit, int) or limit <= 0:
-        return V2_DEFAULT_LIMIT
-    return min(limit, V2_MAX_LIMIT)
+    return parse_positive_int_param(
+        request.args,
+        'limit',
+        default=V2_DEFAULT_LIMIT,
+        maximum=V2_MAX_LIMIT,
+        clamp_max=True,
+    )
 
 
 def _v2_unsafe_request_errors(args):
