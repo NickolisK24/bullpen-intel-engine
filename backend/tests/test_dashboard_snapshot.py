@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from sqlalchemy.exc import IntegrityError
 
 import api.bullpen as bullpen_api
 import services.sync as sync_service
@@ -100,6 +101,34 @@ def _seed_dashboard_data():
     return workload_date
 
 
+def _create_sync_run(workload_date=None, *, stage='published'):
+    workload_date = workload_date or date.today() - timedelta(days=1)
+    run = SyncRun(
+        started_at=utc_now_naive() - timedelta(minutes=4),
+        completed_at=utc_now_naive() - timedelta(minutes=3),
+        status='success',
+        stage=stage,
+        source='manual',
+        latest_game_date=workload_date,
+        latest_workload_date=workload_date,
+        latest_fatigue_calculated_at=utc_now_naive() - timedelta(minutes=2),
+        created_at=utc_now_naive() - timedelta(minutes=4),
+    )
+    db.session.add(run)
+    db.session.flush()
+    return run
+
+
+def _build_published_dashboard_snapshot(source='test'):
+    run = _create_sync_run()
+    result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(
+        source=source,
+        publish=True,
+        sync_run_id=run.id,
+    )
+    return result, run
+
+
 def _minimal_dashboard_payload():
     return {
         'capability': 'bullpen_dashboard',
@@ -163,8 +192,10 @@ class TestDashboardSnapshotService:
 
     def test_latest_snapshot_uses_published_ready_row(self, app):
         with app.app_context():
+            run = _create_sync_run()
             old_ready = DashboardSnapshot(
                 snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
                 is_published=True,
                 published_at=utc_now_naive() - timedelta(minutes=10),
@@ -184,6 +215,7 @@ class TestDashboardSnapshotService:
             )
             newer_ready = DashboardSnapshot(
                 snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
                 is_published=False,
                 payload={'name': 'new'},
@@ -201,6 +233,65 @@ class TestDashboardSnapshotService:
             snapshot = dashboard_snapshot.get_latest_dashboard_snapshot()
             assert snapshot.payload['name'] == 'new'
             assert old_ready.is_published is False
+
+    def test_published_snapshot_requires_sync_run_provenance(self, app):
+        with app.app_context():
+            snapshot = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                payload={'name': 'unprovenanced'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive(),
+                source='test',
+            )
+            db.session.add(snapshot)
+            with pytest.raises(IntegrityError):
+                db.session.commit()
+            db.session.rollback()
+
+    def test_publish_reconciles_prior_sync_pointer(self, app):
+        with app.app_context():
+            first_run = _create_sync_run()
+            first = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=first_run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=False,
+                payload={'name': 'first'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='test',
+            )
+            db.session.add(first)
+            db.session.flush()
+            dashboard_snapshot.publish_dashboard_snapshot(first)
+            first_run.published_dashboard_snapshot_id = first.id
+            db.session.commit()
+
+            second_run = _create_sync_run()
+            second = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=second_run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
+                is_published=False,
+                payload={'name': 'second'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive(),
+                source='test',
+            )
+            db.session.add(second)
+            db.session.flush()
+            dashboard_snapshot.publish_dashboard_snapshot(second)
+
+            db.session.refresh(first_run)
+            db.session.refresh(second_run)
+            db.session.refresh(first)
+            db.session.refresh(second)
+            assert first.is_published is False
+            assert second.is_published is True
+            assert first_run.published_dashboard_snapshot_id == second.id
+            assert second_run.published_dashboard_snapshot_id == second.id
 
     def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
         with app.app_context():
@@ -235,8 +326,13 @@ class TestDashboardSnapshotService:
     def test_snapshot_builder_v2_creates_dashboard_servable_snapshot(self, app):
         with app.app_context():
             _seed_dashboard_data()
+            run = _create_sync_run()
 
-            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(
+                source='test',
+                publish=True,
+                sync_run_id=run.id,
+            )
 
             assert result['status'] == 'ready'
             assert result['reason'] is None
@@ -270,7 +366,7 @@ class TestDashboardSnapshotService:
     def test_standalone_builder_does_not_publish_during_running_sync(self, app):
         with app.app_context():
             _seed_dashboard_data()
-            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior, _ = _build_published_dashboard_snapshot()
             prior_snapshot_id = prior['snapshot_id']
             db.session.add(SyncRun(
                 started_at=utc_now_naive(),
@@ -283,7 +379,7 @@ class TestDashboardSnapshotService:
 
             result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
 
-            assert result['status'] == 'failed'
+            assert result['status'] == 'pending'
             assert result['snapshot_served_by_dashboard'] is False
             assert (
                 dashboard_snapshot.get_latest_valid_dashboard_snapshot().id
@@ -314,7 +410,7 @@ class TestDashboardRouteSnapshotBehavior:
     def test_dashboard_route_serves_snapshot_created_by_builder_v2(self, client, monkeypatch):
         with client.application.app_context():
             _seed_dashboard_data()
-            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            result, _ = _build_published_dashboard_snapshot()
             assert result['status'] == 'ready'
         client.application.config['APP_ENV'] = 'production'
         monkeypatch.setattr(
@@ -504,13 +600,13 @@ class TestDashboardSnapshotBuildEndpoint:
             headers={'X-Internal-Token': 'secret'},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         body = response.get_json()
-        assert body['status'] == 'ok'
-        assert body['snapshot']['served_from'] == 'cache'
+        assert body['status'] == 'pending'
+        assert body['snapshot']['served_from'] == 'pending'
         assert body['snapshot']['snapshot_id'] is not None
 
-    def test_snapshot_build_endpoint_valid_token_builds_servable_snapshot(
+    def test_snapshot_build_endpoint_valid_token_builds_pending_snapshot(
         self,
         client,
         monkeypatch,
@@ -518,28 +614,31 @@ class TestDashboardSnapshotBuildEndpoint:
         monkeypatch.setenv('DASHBOARD_SNAPSHOT_BUILD_TOKEN', 'secret')
         with client.application.app_context():
             _seed_dashboard_data()
+            prior, _ = _build_published_dashboard_snapshot()
+            prior_snapshot_id = prior['snapshot_id']
 
         response = client.post(
             '/api/bullpen/dashboard/snapshot/build',
             headers={'Authorization': 'Bearer secret'},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         body = response.get_json()
-        assert body['status'] == 'ok'
-        assert body['snapshot']['served_from'] == 'cache'
+        assert body['status'] == 'pending'
+        assert body['snapshot']['served_from'] == 'pending'
         assert body['snapshot']['payload_version'] == dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION
-        assert body['builder']['snapshot_served_by_dashboard'] is True
+        assert body['builder']['snapshot_served_by_dashboard'] is False
+        assert body['snapshot']['snapshot_id'] != prior_snapshot_id
 
         client.application.config['APP_ENV'] = 'production'
         monkeypatch.setattr(
             bullpen_api,
             'build_bullpen_dashboard_payload',
-            lambda: pytest.fail('dashboard GET must serve endpoint-created snapshot'),
+            lambda: pytest.fail('dashboard GET must serve existing published snapshot'),
         )
         dashboard = client.get('/api/bullpen/dashboard').get_json()
         assert dashboard['snapshot']['served_from'] == 'cache'
-        assert dashboard['snapshot']['snapshot_id'] == body['snapshot']['snapshot_id']
+        assert dashboard['snapshot']['snapshot_id'] == prior_snapshot_id
 
     def test_snapshot_build_endpoint_returns_controlled_error_on_build_failure(
         self,
@@ -665,7 +764,7 @@ class TestSyncSnapshotIntegration:
 
         with client.application.app_context():
             _seed_dashboard_data()
-            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior, _ = _build_published_dashboard_snapshot()
             prior_snapshot_id = prior['snapshot_id']
 
         def commit_new_log(**kwargs):
@@ -732,7 +831,7 @@ class TestSyncSnapshotIntegration:
 
         with client.application.app_context():
             _seed_dashboard_data()
-            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior, _ = _build_published_dashboard_snapshot()
             prior_snapshot_id = prior['snapshot_id']
 
         monkeypatch.setattr(
@@ -756,6 +855,7 @@ class TestSyncSnapshotIntegration:
 
     def test_pending_snapshot_does_not_advance_served_pointer_until_publish(self, app):
         with app.app_context():
+            old_run = _create_sync_run()
             old_snapshot = dashboard_snapshot.store_dashboard_snapshot(
                 {
                     **_minimal_dashboard_payload(),
@@ -765,8 +865,10 @@ class TestSyncSnapshotIntegration:
                         'availability_reference_date': (date.today() - timedelta(days=1)).isoformat(),
                     },
                 },
+                sync_run_id=old_run.id,
                 source='test',
             )
+            pending_run = _create_sync_run()
             pending = dashboard_snapshot.store_dashboard_snapshot(
                 {
                     **_minimal_dashboard_payload(),
@@ -776,6 +878,7 @@ class TestSyncSnapshotIntegration:
                         'availability_reference_date': date.today().isoformat(),
                     },
                 },
+                sync_run_id=pending_run.id,
                 source='test',
                 publish=False,
             )
@@ -872,8 +975,13 @@ class TestSyncSnapshotIntegration:
                 latest_fatigue_calculated_at=utc_now_naive() - timedelta(minutes=5),
                 created_at=utc_now_naive() - timedelta(minutes=4),
             ))
-            db.session.commit()
-            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            db.session.flush()
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(
+                source='test',
+                publish=True,
+                sync_run_id=run.id,
+            )
             db.session.add(FatigueScore(
                 pitcher_id=pitcher.id,
                 raw_score=88.0,

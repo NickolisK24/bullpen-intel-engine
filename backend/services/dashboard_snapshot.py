@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.dashboard_snapshot import DashboardSnapshot
+from models.sync_run import SyncRun
 from services import sync_metadata
 from services.availability_reference_date import (
     parse_reference_date,
@@ -143,13 +144,29 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
         return None
     if snapshot.id is None:
         db.session.flush()
+    if snapshot.sync_run_id is None:
+        raise ValueError('Published dashboard snapshots require sync_run_id provenance.')
 
     now = utc_now_naive()
+    prior_published_ids = [
+        row.id
+        for row in (
+            DashboardSnapshot.query
+            .with_entities(DashboardSnapshot.id)
+            .filter(
+                DashboardSnapshot.snapshot_type == snapshot.snapshot_type,
+                DashboardSnapshot.is_published == True,
+                DashboardSnapshot.id != snapshot.id,
+            )
+            .all()
+        )
+    ]
     (
         DashboardSnapshot.query
         .filter(
             DashboardSnapshot.snapshot_type == snapshot.snapshot_type,
             DashboardSnapshot.is_published == True,
+            DashboardSnapshot.id != snapshot.id,
         )
         .update({DashboardSnapshot.is_published: False}, synchronize_session=False)
     )
@@ -157,6 +174,26 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
     snapshot.is_published = True
     snapshot.published_at = now
     db.session.add(snapshot)
+    if prior_published_ids:
+        (
+            SyncRun.query
+            .filter(SyncRun.published_dashboard_snapshot_id.in_(prior_published_ids))
+            .update(
+                {SyncRun.published_dashboard_snapshot_id: snapshot.id},
+                synchronize_session=False,
+            )
+        )
+    (
+        SyncRun.query
+        .filter(SyncRun.id == snapshot.sync_run_id)
+        .update(
+            {
+                SyncRun.stage: sync_metadata.STAGE_PUBLISHED,
+                SyncRun.published_dashboard_snapshot_id: snapshot.id,
+            },
+            synchronize_session=False,
+        )
+    )
     if commit:
         db.session.commit()
     else:
@@ -241,11 +278,9 @@ def build_bullpen_dashboard_snapshot(
                 raise
             payload = build_bullpen_dashboard_payload()
         if publish and sync_run_id is None:
-            freshness = _payload_freshness(payload)
-            if freshness.get('sync_status') not in sync_metadata.SUCCESSFUL_STATUSES:
-                raise RuntimeError(
-                    'Dashboard snapshot publish requires completed sync metadata.'
-                )
+            raise RuntimeError(
+                'Dashboard snapshot publish requires sync_run_id provenance.'
+            )
         return payload
 
     return build_dashboard_snapshot(
@@ -264,6 +299,9 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
         status = 'failed'
     elif snapshot.status == SNAPSHOT_STATUS_FAILED:
         status = 'failed'
+    elif snapshot.status == SNAPSHOT_STATUS_PENDING and not snapshot.is_published:
+        status = 'pending'
+        reason = 'dashboard_snapshot_pending_not_published'
     elif reason is None:
         status = 'ready'
     else:
@@ -306,10 +344,19 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
     }
 
 
-def build_bullpen_dashboard_snapshot_v2(*, source=SNAPSHOT_SOURCE_BUILDER_V2):
+def build_bullpen_dashboard_snapshot_v2(
+    *,
+    source=SNAPSHOT_SOURCE_BUILDER_V2,
+    publish=False,
+    sync_run_id=None,
+):
     started = perf_counter()
     logger.info('Dashboard snapshot builder v2 starting.')
-    snapshot = build_bullpen_dashboard_snapshot(source=source)
+    snapshot = build_bullpen_dashboard_snapshot(
+        source=source,
+        publish=publish,
+        sync_run_id=sync_run_id,
+    )
     duration_ms = round((perf_counter() - started) * 1000, 2)
     result = _snapshot_build_result(
         snapshot,

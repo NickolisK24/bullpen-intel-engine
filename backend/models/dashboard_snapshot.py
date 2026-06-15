@@ -6,6 +6,10 @@ class DashboardSnapshot(db.Model):
     __tablename__ = 'dashboard_snapshots'
 
     __table_args__ = (
+        db.CheckConstraint(
+            'is_published IS NOT TRUE OR sync_run_id IS NOT NULL',
+            name='ck_dashboard_snapshots_published_requires_sync_run',
+        ),
         db.Index('ix_dashboard_snapshots_type_status_created',
                  'snapshot_type', 'status', 'created_at'),
         db.Index('ix_dashboard_snapshots_sync_run', 'sync_run_id'),

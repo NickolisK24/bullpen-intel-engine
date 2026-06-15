@@ -1911,7 +1911,9 @@ def _dashboard_snapshot_build_token_error():
 
 def _dashboard_snapshot_build_response(result):
     snapshot = {
-        'served_from': 'cache',
+        'served_from': (
+            'cache' if result.get('snapshot_served_by_dashboard') else 'pending'
+        ),
         'snapshot_type': result.get('snapshot_type'),
         'snapshot_id': result.get('snapshot_id'),
         'sync_run_id': result.get('sync_run_id'),
@@ -1921,7 +1923,7 @@ def _dashboard_snapshot_build_response(result):
         'snapshot_generated_at': result.get('snapshot_generated_at'),
     }
     return {
-        'status': 'ok',
+        'status': 'ok' if result.get('snapshot_served_by_dashboard') else 'pending',
         'snapshot': snapshot,
         'builder': {
             'source': result.get('source'),
@@ -1949,7 +1951,7 @@ def build_dashboard_snapshot_endpoint():
             'reason': 'dashboard_snapshot_build_failed',
         }), 500
 
-    if result.get('status') != 'ready' or not result.get('snapshot_served_by_dashboard'):
+    if result.get('status') == 'failed':
         current_app.logger.warning(
             'Dashboard snapshot build endpoint produced non-servable snapshot: %s',
             result,
@@ -1960,7 +1962,8 @@ def build_dashboard_snapshot_endpoint():
             'builder': result,
         }), 500
 
-    return jsonify(_dashboard_snapshot_build_response(result))
+    status_code = 200 if result.get('snapshot_served_by_dashboard') else 202
+    return jsonify(_dashboard_snapshot_build_response(result)), status_code
 
 
 @bullpen_bp.route('/dashboard', methods=['GET'])
