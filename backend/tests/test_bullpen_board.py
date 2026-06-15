@@ -229,6 +229,7 @@ def _seed_pitcher(
     team_assignment_status=None,
     team_assignment_source=None,
     team_assignment_updated_at=None,
+    games_started=None,
 ):
     """Create a pitcher with a recent game log and a fatigue score."""
     pitcher = Pitcher(
@@ -255,9 +256,13 @@ def _seed_pitcher(
     today = date.today()
     innings = list(innings) if innings is not None else [1.0] * games
     days_ago = list(days_ago) if days_ago is not None else list(range(1, len(innings) + 1))
+    games_started_values = list(games_started) if games_started is not None else None
     base_game_pk = (mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000) * 100
     for i, innings_pitched in enumerate(innings):
         innings_outs = parse_mlb_innings_to_outs(innings_pitched)
+        start_flag = games_started_values[i] if games_started_values is not None else (
+            1 if innings_outs >= 9 else 0
+        )
         db.session.add(GameLog(
             pitcher_id=pitcher.id,
             mlb_game_pk=base_game_pk + i,
@@ -265,6 +270,7 @@ def _seed_pitcher(
             pitches_thrown=12,
             innings_pitched=outs_to_decimal_innings(innings_outs),
             innings_pitched_outs=innings_outs,
+            games_started=start_flag,
             game_type='R',
         ))
     db.session.add(FatigueScore(
@@ -837,4 +843,7 @@ class TestBoardEndpoint:
 
         assert [card['name'] for card in cards] == ['Limited Sample Reliever']
         assert cards[0]['eligibility']['confidence'] == 'low'
-        assert any('limited recent relief-length usage' in limitation for limitation in cards[0]['limitations'])
+        assert any(
+            'limited recent relief-length sample' in limitation
+            for limitation in cards[0]['eligibility']['limitations']
+        )

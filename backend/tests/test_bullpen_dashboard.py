@@ -41,7 +41,10 @@ def client(tmp_path, monkeypatch):
             db.drop_all()
 
 
-def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1, roster_status=STATUS_ACTIVE):
+def _seed_pitcher(
+    name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1,
+    roster_status=STATUS_ACTIVE, games_started=None,
+):
     pitcher = Pitcher(mlb_id=mlb_id, full_name=name, team_id=team_id,
                       team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True,
                       roster_status=roster_status,
@@ -51,13 +54,22 @@ def _seed_pitcher(name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1
     db.session.commit()
     innings_values = innings if isinstance(innings, list) else [innings]
     day_values = days_ago if isinstance(days_ago, list) else list(range(days_ago, days_ago + len(innings_values)))
+    games_started_values = (
+        games_started if isinstance(games_started, list)
+        else [games_started] * len(innings_values) if games_started is not None
+        else None
+    )
     for idx, innings_pitched in enumerate(innings_values):
         innings_outs = parse_mlb_innings_to_outs(innings_pitched)
+        start_flag = games_started_values[idx] if games_started_values is not None else (
+            1 if innings_outs >= 9 else 0
+        )
         db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10 + idx,
                                 game_date=date.today() - timedelta(days=day_values[idx]),
                                 pitches_thrown=12,
                                 innings_pitched=outs_to_decimal_innings(innings_outs),
                                 innings_pitched_outs=innings_outs,
+                                games_started=start_flag,
                                 game_type='R'))
     db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=raw_score,
                                 risk_level='LOW', calculated_at=datetime.utcnow()))

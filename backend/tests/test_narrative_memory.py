@@ -93,6 +93,27 @@ def test_workload_concentration_excludes_starters_and_reports_thin_evidence():
     assert any('Fewer than 5 stored bullpen appearances' in item for item in result['limitations'])
 
 
+def test_workload_concentration_suppresses_material_unknown_start_share():
+    logs = [
+        game_log(1, 0, 100, pitches=12, games_started=0),
+        game_log(2, 1, 101, pitches=13, games_started=None),
+        game_log(3, 2, 102, pitches=14, games_started=None),
+        game_log(4, 3, 103, pitches=15, games_started=None),
+    ]
+
+    result = build_workload_concentration_continuity(
+        logs,
+        reference_date=REFERENCE_DATE,
+        window_days=7,
+    )
+
+    assert result['state'] == 'limited'
+    assert result['evidence']['bullpen_appearances'] == 1
+    assert result['evidence']['unknown_start_rows_excluded'] == 3
+    assert result['evidence']['start_classification_state'] == 'material_unknown'
+    assert any('More than 25%' in item for item in result['limitations'])
+
+
 def test_bullpen_recovery_continuity_detects_more_rest_and_less_concentration():
     pitchers = [
         pitcher(1, 'Heavy Arm'),

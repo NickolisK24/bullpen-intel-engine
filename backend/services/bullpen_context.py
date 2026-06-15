@@ -10,6 +10,13 @@ from datetime import date, timedelta
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from utils.db import db
+from utils.games_started import (
+    MATERIAL_UNKNOWN_START_LIMITATION,
+    UNKNOWN_START_LIMITATION,
+    games_started_summary,
+    is_relief,
+    is_start,
+)
 from utils.innings import log_innings_decimal
 
 
@@ -29,8 +36,7 @@ CURRENT_TEAM_ASSIGNMENT_LIMITATION = (
     'membership is not modeled separately.'
 )
 NULL_START_LIMITATION = (
-    'Rows missing gamesStarted are treated as bullpen appearances for usage '
-    'demand only.'
+    'Rows missing gamesStarted are excluded from start/relief-specific context.'
 )
 NO_GAME_LOG_CONTEXT_LIMITATION = (
     'No stored game-log context was found for this team.'
@@ -132,11 +138,28 @@ def _team_logs(team_id, start_date, end_date):
 
 
 def _starter_logs(logs):
-    return [log for log in logs or [] if log.games_started == 1]
+    return [log for log in logs or [] if is_start(log)]
 
 
 def _bullpen_logs(logs):
-    return [log for log in logs or [] if log.games_started != 1]
+    return [log for log in logs or [] if is_relief(log)]
+
+
+def _start_signal_state(summary):
+    if summary.material_unknown:
+        return 'material_unknown'
+    if summary.unknown:
+        return 'partial'
+    return 'complete'
+
+
+def _start_signal_fields(logs):
+    summary = games_started_summary(logs)
+    return {
+        'start_classification_state': _start_signal_state(summary),
+        'unknown_start_rows': summary.unknown,
+        'unknown_start_row_share': round(summary.unknown_share, 2),
+    }
 
 
 def _avg_innings(logs):
@@ -177,14 +200,18 @@ def _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches
 
 
 def _rotation_context(last_logs, prev_logs, windows):
+    all_logs = [*(last_logs or []), *(prev_logs or [])]
+    signal = _start_signal_fields(all_logs)
     last_starts = _starter_logs(last_logs)
     prev_starts = _starter_logs(prev_logs)
     last_avg = _avg_innings(last_starts)
     prev_avg = _avg_innings(prev_starts)
     trend = _rotation_trend(last_avg, prev_avg)
     delta = None if last_avg is None or prev_avg is None else round(last_avg - prev_avg, 1)
+    if signal['start_classification_state'] == 'material_unknown':
+        trend = 'insufficient_start_data'
     return {
-        'context_available': trend != 'insufficient_data',
+        'context_available': trend not in ('insufficient_data', 'insufficient_start_data'),
         'evidence_type': 'starter_innings_pitched',
         'window_days': _window_days(),
         'starter_avg_ip_last_7': last_avg,
@@ -194,6 +221,7 @@ def _rotation_context(last_logs, prev_logs, windows):
         'delta_ip': delta,
         'trend': trend,
         'windows': _serialize_windows(windows),
+        **signal,
     }
 
 
@@ -209,10 +237,15 @@ def _empty_rotation_context(windows=None):
         'delta_ip': None,
         'trend': 'insufficient_data',
         'windows': _serialize_windows(windows),
+        'start_classification_state': 'complete',
+        'unknown_start_rows': 0,
+        'unknown_start_row_share': 0.0,
     }
 
 
 def _usage_demand_context(last_logs, prev_logs, windows):
+    all_logs = [*(last_logs or []), *(prev_logs or [])]
+    signal = _start_signal_fields(all_logs)
     last_bullpen = _bullpen_logs(last_logs)
     prev_bullpen = _bullpen_logs(prev_logs)
     last_appearances = len(last_bullpen)
@@ -220,13 +253,10 @@ def _usage_demand_context(last_logs, prev_logs, windows):
     last_pitches = sum(int(log.pitches_thrown or 0) for log in last_bullpen)
     prev_pitches = sum(int(log.pitches_thrown or 0) for log in prev_bullpen)
     trend = _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches)
-    null_start_rows = sum(
-        1
-        for log in [*(last_logs or []), *(prev_logs or [])]
-        if log.games_started is None
-    )
+    if signal['start_classification_state'] == 'material_unknown':
+        trend = 'insufficient_start_data'
     return {
-        'context_available': trend != 'insufficient_data',
+        'context_available': trend not in ('insufficient_data', 'insufficient_start_data'),
         'evidence_type': 'bullpen_appearance_and_pitch_volume',
         'window_days': _window_days(),
         'bullpen_appearances_last_7': last_appearances,
@@ -237,9 +267,10 @@ def _usage_demand_context(last_logs, prev_logs, windows):
         'pitch_delta': last_pitches - prev_pitches,
         'appearance_pct_delta': _pct_delta(last_appearances, prev_appearances),
         'pitch_pct_delta': _pct_delta(last_pitches, prev_pitches),
-        'null_start_rows_included_as_bullpen': null_start_rows,
+        'unknown_start_rows_excluded': signal['unknown_start_rows'],
         'trend': trend,
         'windows': _serialize_windows(windows),
+        **signal,
     }
 
 
@@ -256,9 +287,12 @@ def _empty_usage_demand_context(windows=None):
         'pitch_delta': 0,
         'appearance_pct_delta': None,
         'pitch_pct_delta': None,
-        'null_start_rows_included_as_bullpen': 0,
+        'unknown_start_rows_excluded': 0,
         'trend': 'insufficient_data',
         'windows': _serialize_windows(windows),
+        'start_classification_state': 'complete',
+        'unknown_start_rows': 0,
+        'unknown_start_row_share': 0.0,
     }
 
 
@@ -273,8 +307,13 @@ def _availability_context():
 def _context_limitations(last_logs, prev_logs):
     limitations = list(CONTEXT_LIMITATIONS)
     limitations.append(CURRENT_TEAM_ASSIGNMENT_LIMITATION)
-    if any(log.games_started is None for log in [*(last_logs or []), *(prev_logs or [])]):
+    summary = games_started_summary([*(last_logs or []), *(prev_logs or [])])
+    if summary.unknown:
         limitations.append(NULL_START_LIMITATION)
+    if summary.material_unknown:
+        limitations.append(MATERIAL_UNKNOWN_START_LIMITATION)
+    elif summary.unknown:
+        limitations.append(UNKNOWN_START_LIMITATION)
     return limitations
 
 

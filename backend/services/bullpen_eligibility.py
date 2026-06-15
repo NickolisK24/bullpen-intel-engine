@@ -15,6 +15,11 @@ from datetime import date, timedelta
 
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import product_current_date
+from utils.games_started import (
+    MATERIAL_UNKNOWN_START_LIMITATION,
+    UNKNOWN_START_LIMITATION,
+    games_started_summary,
+)
 from utils.innings import log_innings_decimal
 
 
@@ -143,6 +148,7 @@ def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None, respect_loc
     sample, sample_label = _analysis_logs(logs)
     latest_game_date = max((_log_date(log) for log in sample), default=None)
     latest_game_date = None if latest_game_date == date.min else latest_game_date
+    start_signal = games_started_summary(sample)
     innings = _inning_values(sample)
     evidence = []
 
@@ -163,6 +169,14 @@ def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None, respect_loc
             confidence='none',
         )
 
+    if start_signal.known:
+        evidence.extend([
+            f'{start_signal.starts} sampled appearance(s) marked as starts.',
+            f'{start_signal.relief} sampled appearance(s) marked as relief.',
+        ])
+    if start_signal.unknown:
+        evidence.append(f'{start_signal.unknown} sampled appearance(s) missing gamesStarted.')
+
     total = len(innings)
     start_like = sum(1 for value in innings if value >= STARTER_IP_THRESHOLD)
     relief_like = sum(1 for value in innings if value <= RELIEF_IP_THRESHOLD)
@@ -181,6 +195,42 @@ def evaluate_bullpen_eligibility(pitcher, logs, reference_date=None, respect_loc
     ])
     if relief_context:
         evidence.append('Save or hold evidence is present.')
+
+    if start_signal.material_unknown and not relief_context:
+        return _limited_result(
+            STATUS_UNCERTAIN,
+            'Too many sampled appearances are missing gamesStarted to infer bullpen relevance.',
+            evidence=evidence,
+            limitations=[
+                MATERIAL_UNKNOWN_START_LIMITATION,
+                'Uncertain bullpen eligibility is withheld from default bullpen counts.',
+            ],
+            confidence='low',
+        )
+
+    if start_signal.known and start_signal.starts == start_signal.known and not relief_context:
+        return _limited_result(
+            STATUS_CLEAR_STARTER,
+            'Known gamesStarted flags mark the sampled appearances as starts.',
+            evidence=evidence,
+            limitations=['Known starts are excluded from default bullpen availability counts.'],
+            confidence='high' if start_signal.starts >= 2 else 'medium',
+        )
+
+    if start_signal.known and start_signal.relief == start_signal.known:
+        limitations = []
+        if start_signal.unknown and not start_signal.material_unknown:
+            limitations.append(UNKNOWN_START_LIMITATION)
+        if start_signal.relief < 2:
+            limitations.append('Bullpen eligibility is inferred from a limited recent relief-length sample.')
+        result = _eligible_result(
+            STATUS_BULLPEN_RELEVANT,
+            'Known gamesStarted flags mark the sampled appearances as relief.',
+            evidence=evidence,
+            limitations=limitations,
+            confidence='high' if start_signal.relief >= 2 else 'low',
+        )
+        return _with_inactive_context(result, latest_game_date, ref)
 
     if relief_context:
         result = _eligible_result(

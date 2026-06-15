@@ -26,6 +26,7 @@ from services.mlb_api import mlb_client
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import sync_team_assignments
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
+from utils.games_started import parse_games_started
 
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
         game_type=game_type,
         opponent=opponent.get('name'),
         opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
-        games_started=int(stat.get('gamesStarted', 0) or 0),
+        games_started=parse_games_started(stat.get('gamesStarted')),
         innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
         innings_pitched_outs=innings_pitched_outs,
         pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),

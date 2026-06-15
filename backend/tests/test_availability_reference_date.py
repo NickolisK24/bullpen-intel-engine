@@ -87,6 +87,8 @@ def _seed_reference_date_case():
         game_date=date(2026, 6, 6),
         pitches_thrown=10,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
+        games_started=0,
         game_type='R',
     ))
     db.session.add(GameLog(
@@ -95,6 +97,8 @@ def _seed_reference_date_case():
         game_date=date(2026, 6, 7),
         pitches_thrown=50,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
+        games_started=0,
         game_type='R',
     ))
     db.session.add(FatigueScore(

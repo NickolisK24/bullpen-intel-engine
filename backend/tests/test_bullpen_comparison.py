@@ -191,6 +191,10 @@ def _seed_pitcher(full_name, team_id, mlb_id, raw_score=10.0):
     db.session.add(GameLog(
         pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10,
         game_date=today - timedelta(days=1), pitches_thrown=12,
+        innings_pitched=1.0,
+        innings_pitched_outs=3,
+        games_started=0,
+        game_type='R',
     ))
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id, raw_score=raw_score, risk_level='LOW',
