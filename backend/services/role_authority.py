@@ -73,13 +73,12 @@ def role_authority_enabled():
     Whether role authority drives the live bullpen population.
 
     Controlled by the ROLE_AUTHORITY_ENABLED environment flag. It defaults to
-    OFF so merging this code never silently changes production: the authoritative
-    gamesStarted signal must first be captured by sync and backfilled, and the
-    read-only diagnostic reviewed, before an operator flips the flag on. Until
-    then the legacy innings heuristic remains the live behavior. The role service
-    and diagnostic are fully available regardless of the flag.
+    ON after the gamesStarted signal has been captured, backfilled, and
+    validated. Setting the flag false restores the legacy innings heuristic for
+    rollback. The role service and diagnostic are fully available regardless of
+    the flag.
     """
-    raw = os.environ.get('ROLE_AUTHORITY_ENABLED', 'false')
+    raw = os.environ.get('ROLE_AUTHORITY_ENABLED', 'true')
     return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
