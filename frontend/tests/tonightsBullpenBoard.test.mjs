@@ -37,6 +37,9 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 const renderWithOptions = (props) => renderToStaticMarkup(React.createElement(BullpenBoardView, props))
+const detailsTagFor = (html, ariaLabel) => (
+  html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
+)
 const pitcherNames = (board) => view.getBoardGroups(board).flatMap(group => (
   group.pitchers.map(card => card.name)
 ))
@@ -106,6 +109,23 @@ test('renders bullpen stress from the backend payload', () => {
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
   assert.ok(!htmlIncludes(html, 'Stress Score'))
+})
+
+test('normal freshness, roster context, and pitcher label key are collapsed by default', () => {
+  const html = render(populatedBoard)
+  const freshnessTag = detailsTagFor(html, 'Data freshness details')
+  const rosterTag = detailsTagFor(html, 'Roster status details')
+  const labelKeyTag = detailsTagFor(html, 'Pitcher Label Key')
+
+  assert.ok(freshnessTag)
+  assert.ok(rosterTag)
+  assert.ok(labelKeyTag)
+  assert.ok(!freshnessTag.includes('open'))
+  assert.ok(!rosterTag.includes('open'))
+  assert.ok(!labelKeyTag.includes('open'))
+  assert.ok(htmlIncludes(html, 'Data Freshness'))
+  assert.ok(htmlIncludes(html, 'Roster Context'))
+  assert.ok(htmlIncludes(html, 'Role and read definitions'))
 })
 
 test('renders pitcher cards with name, status, fatigue, confidence and short reason', () => {

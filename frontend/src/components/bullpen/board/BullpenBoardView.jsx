@@ -19,6 +19,34 @@ import {
 function FreshnessBanner({ freshness }) {
   const view = getBoardFreshnessView(freshness)
   const provenance = getDataProvenance(freshness)
+  const isProminent = view.isStale || view.limitations.length > 0 || !view.dataThrough
+  const summaryLabel = provenance.dataThrough
+    ? `Latest completed MLB data: ${provenance.dataThrough}`
+    : 'No completed MLB data loaded'
+
+  if (!isProminent) {
+    return (
+      <details
+        className="mb-3 rounded border border-dirt bg-dugout/35 p-3"
+        aria-label="Data freshness details"
+      >
+        <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
+            Data Freshness
+          </span>
+          <span className="normal-case tracking-normal text-chalk400">{summaryLabel}</span>
+        </summary>
+        <div className="mt-2 space-y-1 text-xs leading-relaxed text-chalk400">
+          {view.lastSync && (
+            <p><span className="text-chalk500">Last synced:</span> {view.lastSync}</p>
+          )}
+          {view.label && <p>{view.label}</p>}
+        </div>
+      </details>
+    )
+  }
+
   return (
     <div
       className="mb-6 rounded-lg border p-4"
@@ -33,9 +61,7 @@ function FreshnessBanner({ freshness }) {
           title={provenance.throughHint}
         >
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
-          {provenance.dataThrough
-            ? `Latest completed MLB data: ${provenance.dataThrough}`
-            : 'No completed MLB data loaded'}
+          {summaryLabel}
         </span>
         {view.lastSync && (
           <span className="font-mono text-xs">
@@ -65,6 +91,50 @@ function FreshnessBanner({ freshness }) {
 function RosterStatusBanner({ summary }) {
   const view = getRosterStatusSummaryView(summary)
   if (!view.shouldShow) return null
+  const isProminent = (
+    view.authority !== 'available'
+    || view.unknownCount > 0
+    || view.unavailablePitchersCount > 0
+    || view.limitations.length > 0
+  )
+  const rosterFacts = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span className="font-mono text-[11px] uppercase tracking-widest">{view.label}</span>
+      <span className="font-mono text-xs">
+        <span className="text-chalk500">Bullpen Arms</span> {view.activeMlbCount}
+      </span>
+      <span
+        className="font-mono text-xs"
+        title="Pitchers not currently available for bullpen planning due to roster status."
+      >
+        <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
+      </span>
+      <span className="font-mono text-xs">
+        <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
+      </span>
+      <span className="font-mono text-xs">
+        <span className="text-chalk500">Roster Unknown</span> {view.unknownCount}
+      </span>
+    </div>
+  )
+
+  if (!isProminent) {
+    return (
+      <details
+        className="mb-3 rounded border border-dirt bg-dugout/35 p-3"
+        aria-label="Roster status details"
+      >
+        <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+          <span>Roster Context</span>
+          <span className="normal-case tracking-normal text-chalk400">
+            {view.activeMlbCount} bullpen arms · {view.coverageLabel} coverage
+          </span>
+        </summary>
+        <div className="mt-2">{rosterFacts}</div>
+      </details>
+    )
+  }
+
   return (
     <div
       className="mb-6 rounded-lg border p-4"
@@ -72,24 +142,7 @@ function RosterStatusBanner({ summary }) {
       role="status"
       aria-live="polite"
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="font-mono text-[11px] uppercase tracking-widest">{view.label}</span>
-        <span className="font-mono text-xs">
-          <span className="text-chalk500">Bullpen Arms</span> {view.activeMlbCount}
-        </span>
-        <span
-          className="font-mono text-xs"
-          title="Pitchers not currently available for bullpen planning due to roster status."
-        >
-          <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
-        </span>
-        <span className="font-mono text-xs">
-          <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
-        </span>
-        <span className="font-mono text-xs">
-          <span className="text-chalk500">Roster Unknown</span> {view.unknownCount}
-        </span>
-      </div>
+      {rosterFacts}
       {view.limitations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {view.limitations.map((limitation, index) => (
@@ -241,10 +294,11 @@ function PitcherLabelKey() {
   const roleLabels = Object.values(PITCHER_ROLE_LABELS)
   const readLabels = Object.values(PITCHER_READ_LABELS)
   return (
-    <section className="mb-5 rounded-lg border border-dirt bg-dugout/35 p-3 sm:p-4" aria-label={PITCHER_LABEL_KEY_COPY.title}>
-      <h3 className="font-mono text-[11px] uppercase tracking-widest text-chalk300">
-        {PITCHER_LABEL_KEY_COPY.title}
-      </h3>
+    <details className="mb-4 rounded-lg border border-dirt bg-dugout/35 p-3 sm:p-4" aria-label={PITCHER_LABEL_KEY_COPY.title}>
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        <span>{PITCHER_LABEL_KEY_COPY.title}</span>
+        <span className="text-[10px] text-chalk600">Role and read definitions</span>
+      </summary>
       <p className="mt-1 text-xs leading-relaxed text-chalk500">
         {PITCHER_LABEL_KEY_COPY.roleSummary} {PITCHER_LABEL_KEY_COPY.readSummary}
       </p>
@@ -272,7 +326,7 @@ function PitcherLabelKey() {
           </div>
         </div>
       </div>
-    </section>
+    </details>
   )
 }
 
@@ -396,19 +450,19 @@ export default function BullpenBoardView({
       <RosterStatusBanner summary={board?.roster_status} />
       {showStoryPanel && <TeamBullpenStoryPanel board={board} />}
 
-      <div className="mb-5">
-        <h2 className="font-display text-2xl tracking-wide text-chalk100">
+      <div className="mb-4">
+        <h2 className="font-display text-xl tracking-wide text-chalk100">
           Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
         </h2>
-        <p className="mt-1 text-sm text-chalk400">
-          What this bullpen looks like tonight, grouped by availability. {totals.total} pitcher
-          {totals.total === 1 ? '' : 's'} shown. Fatigue score: higher = heavier recent workload.
+        <p className="mt-1 text-xs text-chalk500">
+          Grouped by availability. {totals.total} pitcher
+          {totals.total === 1 ? '' : 's'} shown.
         </p>
       </div>
 
-      <BullpenStressSummary stress={board?.stress} />
+      <BullpenStressSummary stress={board?.stress} compact={showStoryPanel} />
 
-      <BullpenContextSummary board={board} showHealthSummary={!hasStress} />
+      <BullpenContextSummary board={board} showHealthSummary={!hasStress} compactSnapshot={showStoryPanel} />
 
       {totals.isEmpty ? (
         <EmptyState

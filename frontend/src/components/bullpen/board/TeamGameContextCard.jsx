@@ -11,9 +11,12 @@ const CONTEXT_BANNER =
 
 function ContextBanner() {
   return (
-    <p className="mt-4 rounded border-l-2 border-amber/40 bg-amber/5 px-3 py-2 text-[11px] leading-relaxed text-chalk400">
-      {CONTEXT_BANNER}
-    </p>
+    <details className="mt-3 rounded border-l-2 border-amber/40 bg-amber/5 px-3 py-2" aria-label="Game context note">
+      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        Game context note
+      </summary>
+      <p className="mt-1 text-[11px] leading-relaxed text-chalk400">{CONTEXT_BANNER}</p>
+    </details>
   )
 }
 
@@ -65,7 +68,7 @@ function cardTitleFor(view, { loading }) {
   return view.isToday ? 'Upcoming Game Context' : 'Most Recent Completed Game'
 }
 
-export default function TeamGameContextCard({ gameContext, loading = false, error = null }) {
+export default function TeamGameContextCard({ gameContext, loading = false, error = null, compact = false }) {
   const view = getTeamGameContextView(gameContext)
   const title = cardTitleFor(view, { loading })
 
@@ -87,7 +90,7 @@ export default function TeamGameContextCard({ gameContext, loading = false, erro
   }
 
   return (
-    <section className="mb-5 rounded-lg border border-dirt bg-field/60 p-4" aria-label={title}>
+    <section className={`${compact ? 'mt-5' : 'mb-5'} rounded-lg border border-dirt bg-field/60 p-3 sm:p-4`} aria-label={title}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">{title}</h3>
         <span className="rounded border border-dirt bg-dugout px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk500">

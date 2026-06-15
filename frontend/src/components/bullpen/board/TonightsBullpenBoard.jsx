@@ -94,7 +94,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   return (
     <div>
       {/* Team selector — single team; the board is always one bullpen. */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-1.5">
         {teams?.loading && teamList.length === 0 ? (
           <span className="font-mono text-xs text-chalk500">Loading teams…</span>
         ) : (
@@ -103,7 +103,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               key={team.team_id}
               onClick={() => setSelectedTeam(team.team_id)}
               aria-pressed={selectedTeam === team.team_id}
-              className={`px-3 py-1.5 rounded border text-xs font-mono transition-all ${
+              className={`rounded border px-2.5 py-1 text-xs font-mono transition-all ${
                 selectedTeam === team.team_id
                   ? 'bg-amber/10 border-amber/40 text-amber'
                   : 'border-dirt text-chalk400 hover:border-chalk400'
@@ -115,7 +115,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
         )}
       </div>
 
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">View</div>
           <div className="mt-1 flex w-fit max-w-full flex-wrap gap-1 rounded-lg border border-dirt bg-chalk/30 p-1">
@@ -137,15 +137,15 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
             ))}
           </div>
           {selectedViewMode?.description && (
-            <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            <p className="sr-only" aria-live="polite">
               {selectedViewMode.description}
             </p>
           )}
         </div>
         {bullpenViewModeRequiresUnavailableContext(boardViewMode) && (
-          <p className="max-w-md text-xs leading-relaxed text-chalk500">
-            Unavailable relievers are shown for roster awareness and are not counted as active bullpen options.
-          </p>
+          <span className="w-fit rounded border border-dirt bg-dugout px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Unavailable relievers are context only.
+          </span>
         )}
       </div>
 
@@ -158,16 +158,17 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            <TeamGameContextCard
-              gameContext={gameContext.data}
-              loading={gameContext.loading}
-              error={gameContext.error}
-            />
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
               showStoryPanel={boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY}
               emptyState={getBullpenViewModeEmptyState(boardViewMode)}
+            />
+            <TeamGameContextCard
+              gameContext={gameContext.data}
+              loading={gameContext.loading}
+              error={gameContext.error}
+              compact
             />
           </div>
           {detailPitcherId != null && (
