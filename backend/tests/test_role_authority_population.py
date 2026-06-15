@@ -14,7 +14,13 @@ from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
 )
-from services.role_authority import ROLE_AMBIGUOUS, ROLE_RELIEVER, ROLE_UNKNOWN
+from services.role_authority import (
+    ROLE_AMBIGUOUS,
+    ROLE_RELIEVER,
+    ROLE_STARTER,
+    ROLE_UNKNOWN,
+    classify_role,
+)
 from services.roster_status import STATUS_ACTIVE
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
@@ -61,8 +67,74 @@ def _scenario():
     return pitchers, logs_by_pitcher
 
 
+def _case_logs(starts, relief, legacy_relief_context=False):
+    flags = [1] * starts + [0] * relief
+    logs = []
+    relief_context_applied = False
+    for offset, games_started in enumerate(flags, start=1):
+        relief_entry = games_started == 0
+        innings = 1.0 if (legacy_relief_context and relief_entry) else 4.0
+        hold = bool(legacy_relief_context and relief_entry and not relief_context_applied)
+        relief_context_applied = relief_context_applied or hold
+        logs.append(log(offset, games_started=games_started, innings_pitched=innings, hold=hold))
+    return logs
+
+
+CUTOVER_CASES = [
+    ('Sam Aldegheri', 6, 4, False, ROLE_AMBIGUOUS),
+    ('Michael Soroka', 9, 1, True, ROLE_STARTER),
+    ('Albert Suarez', 1, 9, False, ROLE_RELIEVER),
+    ('Javier Assad', 4, 6, False, ROLE_AMBIGUOUS),
+    ('Chase Petty', 4, 3, False, ROLE_AMBIGUOUS),
+    ('Mike Burrows', 9, 1, True, ROLE_STARTER),
+    ('Luinder Avila', 3, 7, False, ROLE_AMBIGUOUS),
+    ('Justin Wrobleski', 8, 2, True, ROLE_STARTER),
+    ('Roki Sasaki', 8, 2, True, ROLE_STARTER),
+    ('Miles Mikolas', 4, 6, False, ROLE_AMBIGUOUS),
+    ('Zack Littell', 7, 3, False, ROLE_AMBIGUOUS),
+    ('Sean Manaea', 2, 8, False, ROLE_RELIEVER),
+    ('Luis Castillo', 8, 2, True, ROLE_STARTER),
+    ('Nick Martinez', 8, 2, True, ROLE_STARTER),
+    ('Simeon Woods Richardson', 7, 3, False, ROLE_AMBIGUOUS),
+    ('Erick Fedde', 5, 5, False, ROLE_AMBIGUOUS),
+    ('Sean Burke', 7, 3, False, ROLE_AMBIGUOUS),
+    ('Chris Paddack', 6, 4, False, ROLE_AMBIGUOUS),
+    ('Ryan Gusto', 7, 3, False, ROLE_AMBIGUOUS),
+]
+
+ORACLE_STARTERS = {
+    'Michael Soroka',
+    'Mike Burrows',
+    'Justin Wrobleski',
+    'Roki Sasaki',
+    'Luis Castillo',
+    'Nick Martinez',
+}
+ORACLE_RELIEVERS = {'Albert Suarez', 'Sean Manaea'}
+
+
+def _cutover_scenario():
+    pitchers = []
+    logs_by_pitcher = {}
+    by_name = {}
+    for pid, (name, starts, relief, legacy_relief_context, _role) in enumerate(CUTOVER_CASES, start=10):
+        player = pitcher(pid, name)
+        pitchers.append(player)
+        by_name[name] = player
+        logs_by_pitcher[pid] = _case_logs(
+            starts,
+            relief,
+            legacy_relief_context=legacy_relief_context,
+        )
+    return pitchers, logs_by_pitcher, by_name
+
+
 def _ids(contexts):
     return {ctx['pitcher'].id for ctx in contexts}
+
+
+def _names(contexts):
+    return {ctx['pitcher'].full_name for ctx in contexts}
 
 
 def test_default_population_excludes_starters_includes_relievers_and_swing():
@@ -133,3 +205,108 @@ def test_cross_surface_parity_single_definition():
     b, _ = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=True)
     assert _ids(a) == _ids(b)
+
+
+def test_role_authority_cutover_named_oracle_current_patterns():
+    pitchers, lbp, by_name = _cutover_scenario()
+    role_contexts, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=True,
+    )
+    legacy_contexts, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=False,
+    )
+    role_names = _names(role_contexts)
+    legacy_names = _names(legacy_contexts)
+
+    for name in ORACLE_STARTERS:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        assert result['role'] == ROLE_STARTER
+        assert result['eligible'] is False
+        assert name in legacy_names
+        assert name not in role_names
+
+    for name in ORACLE_RELIEVERS:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        assert result['role'] == ROLE_RELIEVER
+        assert result['eligible'] is True
+        assert name not in legacy_names
+        assert name in role_names
+
+
+def test_role_authority_cutover_diff_structural_sanity():
+    pitchers, lbp, by_name = _cutover_scenario()
+    role_contexts, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=True,
+    )
+    legacy_contexts, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=False,
+    )
+    role_names = _names(role_contexts)
+    legacy_names = _names(legacy_contexts)
+
+    expected_removed = {name for name, _s, _r, _legacy, role in CUTOVER_CASES if role == ROLE_STARTER}
+    expected_added = {name for name, _s, _r, _legacy, role in CUTOVER_CASES if role != ROLE_STARTER}
+
+    assert legacy_names - role_names == expected_removed
+    assert role_names - legacy_names == expected_added
+
+    for name in expected_removed:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        assert result['role'] == ROLE_STARTER
+        assert result['eligible'] is False
+
+    for name in expected_added:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        assert result['role'] in {ROLE_RELIEVER, ROLE_AMBIGUOUS}
+        assert result['eligible'] is True
+
+
+def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
+    pitchers, lbp, _by_name = _cutover_scenario()
+
+    explicit_role, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=True,
+    )
+    explicit_legacy, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=False,
+    )
+
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'true')
+    default_role, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=None,
+    )
+    assert _ids(default_role) == _ids(explicit_role)
+
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'false')
+    rollback_legacy, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=None,
+    )
+    assert _ids(rollback_legacy) == _ids(explicit_legacy)

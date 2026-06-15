@@ -152,10 +152,11 @@ def test_eligibility_shape_is_drop_in_compatible():
         assert key in result
 
 
-def test_flag_defaults_off_for_safe_rollout():
-    # Defaults OFF so merging never silently changes the live board before the
-    # gamesStarted backfill runs and the diagnostic is reviewed.
+def test_role_authority_flag_supports_explicit_enable_and_disable(monkeypatch):
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'false')
     assert role_authority_enabled() is False
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'true')
+    assert role_authority_enabled() is True
 
 
 def test_game_log_model_declares_games_started_column():
