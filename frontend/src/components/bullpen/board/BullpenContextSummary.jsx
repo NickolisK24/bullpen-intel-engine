@@ -3,9 +3,14 @@ import { getBoardContextView } from './tonightsBullpenBoardView'
 // Team Context Layer (Board V2). Sits between the freshness banner and the
 // availability groups. Presents a deterministic, self-explaining read of
 // bullpen shape — never a ranking, selection, or recommendation.
-export default function BullpenContextSummary({ board, showHealthSummary = true }) {
+export default function BullpenContextSummary({ board, showHealthSummary = true, compactSnapshot = false }) {
   const view = getBoardContextView(board)
   if (!view.hasContext) return null
+  const snapshotClass = compactSnapshot ? 'card p-3' : 'card p-4'
+  const countClass = compactSnapshot ? 'mt-1 font-mono text-xl text-chalk100' : 'mt-1 font-mono text-2xl text-chalk100'
+  const snapshotGridClass = compactSnapshot
+    ? 'mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'
+    : 'mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'
 
   return (
     <section className="mb-6" aria-label={showHealthSummary ? 'Team bullpen context' : 'Bullpen availability snapshot'}>
@@ -28,7 +33,7 @@ export default function BullpenContextSummary({ board, showHealthSummary = true 
           )}
 
           {view.reasons.length > 0 && (
-            <details className="mt-3 rounded border border-dirt/60 bg-dugout/50 p-2" open>
+            <details className="mt-3 rounded border border-dirt/60 bg-dugout/50 p-2">
               <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
                 Why?
               </summary>
@@ -51,7 +56,7 @@ export default function BullpenContextSummary({ board, showHealthSummary = true 
       )}
 
       {/* Bullpen Snapshot — descriptive counts only. */}
-      <div className={showHealthSummary ? 'mt-4 card p-4' : 'card p-4'}>
+      <div className={showHealthSummary ? `mt-4 ${snapshotClass}` : snapshotClass}>
         <div className="flex items-baseline justify-between">
           <h4 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Snapshot</h4>
           <span className="font-mono text-[11px] text-chalk500">
@@ -59,14 +64,14 @@ export default function BullpenContextSummary({ board, showHealthSummary = true 
             {view.metrics.total > 0 ? ` · ${view.metrics.pctAvailable}% available` : ''}
           </span>
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <dl className={snapshotGridClass}>
           {view.snapshot.map(row => (
             <div key={row.status} className="rounded border border-dirt bg-field/50 px-3 py-2">
               <dt className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500">
                 <span className="h-1.5 w-1.5 rounded-full" style={row.badge.dotStyle} aria-hidden="true" />
                 {row.label}
               </dt>
-              <dd className="mt-1 font-mono text-2xl text-chalk100">{row.count}</dd>
+              <dd className={countClass}>{row.count}</dd>
             </div>
           ))}
         </dl>

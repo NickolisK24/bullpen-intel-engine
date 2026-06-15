@@ -34,6 +34,7 @@ const view = await server.ssrLoadModule(
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const firstDetailsTag = (html) => html.match(/<details[^>]*>/)?.[0] || ''
 const renderSummary = (board) => renderToStaticMarkup(React.createElement(BullpenContextSummary, { board }))
 const renderBoard = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 
@@ -57,7 +58,11 @@ test('summary renders a health statement and the bullpen snapshot counts', () =>
 
 test('every context statement explains itself with real counts', () => {
   const html = renderSummary(populatedBoard) // elevated: 2 avail / 6, 2 restricted / 6
+  const detailsTag = firstDetailsTag(html)
+
   assert.ok(htmlIncludes(html, 'Why?'))
+  assert.ok(detailsTag)
+  assert.ok(!detailsTag.includes('open'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are Available Tonight.'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are Avoid or Unavailable.'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))

@@ -29,6 +29,9 @@ const {
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const detailsTagFor = (html, ariaLabel) => (
+  html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
+)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
 const ROLE_KEYS = {
@@ -328,6 +331,7 @@ test('the panel renders headline, both bullet sections, and the framing line', (
 
 test('the panel renders Today’s Bullpen Shape in the required order with explanations', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
+  const shapeTag = detailsTagFor(html, 'Today’s bullpen shape')
   const orderedLabels = [
     'Trust Arm Availability',
     'Clean Options',
@@ -352,6 +356,8 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
   assert.ok(htmlIncludes(html, '2 Clean Options from 7 active arms.'))
   assert.ok(htmlIncludes(html, 'Pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
   assert.ok(htmlIncludes(html, 'aria-label="Stable Trust Arm Availability. Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
+  assert.ok(shapeTag)
+  assert.ok(!shapeTag.includes('open'))
 })
 
 test('the shape section stays label-led and avoids score ranking or grade language', () => {

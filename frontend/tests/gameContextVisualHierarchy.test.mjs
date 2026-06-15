@@ -19,6 +19,9 @@ const { default: TeamGameContextCard } = await server.ssrLoadModule('/src/compon
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const detailsTagFor = (html, ariaLabel) => (
+  html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
+)
 const render = (props) => renderToStaticMarkup(React.createElement(TeamGameContextCard, props))
 
 const present = {
@@ -61,6 +64,11 @@ test('trust metadata stays visible: data state, confidence, status, missing fiel
 
 test('the context banner / disclaimer is present', () => {
   const html = render({ gameContext: present })
+  const contextNoteTag = detailsTagFor(html, 'Game context note')
+
+  assert.ok(contextNoteTag)
+  assert.ok(!contextNoteTag.includes('open'))
+  assert.ok(htmlIncludes(html, 'Game context note'))
   assert.ok(htmlIncludes(html, 'Game context helps explain bullpen workload and availability'))
   assert.ok(htmlIncludes(html, 'does not provide matchup advice or game predictions'))
 })

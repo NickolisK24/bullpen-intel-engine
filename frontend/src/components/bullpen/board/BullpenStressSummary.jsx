@@ -5,6 +5,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
   if (!view.hasStress) return null
 
   const visibleReasons = compact ? view.reasons.slice(0, 2) : view.reasons
+  const hasDetails = visibleReasons.length > 0 || view.limitations.length > 0
 
   return (
     <section
@@ -34,7 +35,27 @@ export default function BullpenStressSummary({ stress, compact = false }) {
         </p>
       )}
 
-      {visibleReasons.length > 0 && (
+      {compact && hasDetails ? (
+        <details className="mt-2 rounded border border-dirt/60 bg-dugout/45 p-2">
+          <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+            Stress details
+          </summary>
+          {visibleReasons.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-4">
+              {visibleReasons.map((reason, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk300">{reason}</li>
+              ))}
+            </ul>
+          )}
+          {view.limitations.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-4">
+              {view.limitations.map((limitation, index) => (
+                <li key={index} className="text-xs leading-relaxed text-chalk400">{limitation}</li>
+              ))}
+            </ul>
+          )}
+        </details>
+      ) : visibleReasons.length > 0 && (
         <ul className={compact ? 'mt-2 list-disc space-y-1 pl-4' : 'mt-3 list-disc space-y-1 pl-4'}>
           {visibleReasons.map((reason, index) => (
             <li key={index} className="text-xs leading-relaxed text-chalk300">{reason}</li>
@@ -42,7 +63,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
         </ul>
       )}
 
-      {view.limitations.length > 0 && (
+      {!compact && view.limitations.length > 0 && (
         <ul className="mt-2 list-disc space-y-1 pl-4">
           {view.limitations.map((limitation, index) => (
             <li key={index} className="text-xs leading-relaxed text-chalk400">{limitation}</li>

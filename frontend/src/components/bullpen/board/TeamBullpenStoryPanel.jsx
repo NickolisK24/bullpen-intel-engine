@@ -82,10 +82,11 @@ function TeamBullpenShape({ reads }) {
   if (!Array.isArray(reads) || reads.length === 0) return null
 
   return (
-    <section className="mt-4 border-t border-dirt/60 pt-3" aria-label="Today’s bullpen shape">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-        Today’s Bullpen Shape
-      </div>
+    <details className="mt-4 border-t border-dirt/60 pt-3" aria-label="Today’s bullpen shape">
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-amber/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        <span>Today’s Bullpen Shape</span>
+        <span className="text-chalk600">{reads.length} reads</span>
+      </summary>
       <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-5">
         {reads.map(read => {
           const tone = homeTone(read.tone)
@@ -113,7 +114,7 @@ function TeamBullpenShape({ reads }) {
           )
         })}
       </dl>
-    </section>
+    </details>
   )
 }
 
