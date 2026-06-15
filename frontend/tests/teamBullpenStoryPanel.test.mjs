@@ -147,6 +147,24 @@ const oneValidNameBoard = makeBoard({
   },
 })
 
+const substituteBridgeBoard = makeBoard({
+  teamName: 'Arizona Diamondbacks', abbr: 'AZ', state: 'manageable',
+  metrics: { total_relievers: 5, available: 2, monitor: 0, limited: 2, avoid: 1, unavailable: 0, pct_available: 40, pct_restricted: 60 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(51, 'Justin Martinez', 'Trust Arm', 'Available', { fatigue_score: 18 }),
+      storyPitcher(52, 'Kevin Ginkel', 'Bridge Arm', 'Available', { fatigue_score: 22 }),
+    ],
+    Limited: [
+      storyPitcher(53, 'Ryan Thompson', 'Bridge Arm', 'Limited', { fatigue_score: 64 }),
+      storyPitcher(54, 'Joe Mantiply', 'Bridge Arm', 'Limited', { fatigue_score: 66 }),
+    ],
+    Avoid: [
+      storyPitcher(55, 'Andrew Saalfrank', 'Depth Arm', 'Avoid', { fatigue_score: 84 }),
+    ],
+  },
+})
+
 const restedBoard = makeBoard({
   teamName: 'Washington Nationals', abbr: 'WSH', state: 'manageable',
   metrics: { total_relievers: 8, available: 6, monitor: 1, limited: 0, avoid: 1, unavailable: 0, pct_available: 75, pct_restricted: 12 },
@@ -219,6 +237,39 @@ test('a constrained club gets a specific story with real counts', () => {
   assert.ok(!/Cal Coverage|Cooper Coverage|Drew Depth/.test(story.evidence.join(' ')))
   assert.ok(!story.evidence.some(item => /most directly shaping the coverage read/.test(item)))
   assert.ok(story.watchItems.length >= 2 && story.watchItems.length <= 4)
+})
+
+test('Coverage Concern requires actual Coverage Arms under stress', () => {
+  const story = getTeamBullpenStoryView(constrainedBoard)
+  const storyText = [
+    story.headline,
+    story.observation,
+    story.whyItMatters,
+    ...story.evidence,
+  ].join(' ')
+
+  assert.equal(deriveTeamStoryArchetype(constrainedBoard), 'coverage_concern')
+  assert.equal(story.label, 'Coverage Concern')
+  assert.match(story.observation, /1 of 2 Coverage Arms are clean or on watch/)
+  assert.ok(!storyText.includes('0 of 0 Coverage Arms'))
+})
+
+test('zero Coverage Arms fall to Bridge Dependency when substitute bridge stress exists', () => {
+  const story = getTeamBullpenStoryView(substituteBridgeBoard)
+  const html = render(React.createElement(TeamBullpenStoryPanel, { board: substituteBridgeBoard }))
+  const storyText = [
+    story.headline,
+    story.observation,
+    story.whyItMatters,
+    ...story.evidence,
+    ...story.watchItems,
+    html,
+  ].join(' ')
+
+  assert.equal(deriveTeamStoryArchetype(substituteBridgeBoard), 'bridge_dependency')
+  assert.equal(story.label, 'Bridge Dependency')
+  assert.ok(!storyText.includes('0 of 0 Coverage Arms'))
+  assert.ok(!/tighter coverage picture|coverage layer is tighter/.test(storyText))
 })
 
 test('a watch-list club reads calm surface, heavy workload', () => {

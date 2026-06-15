@@ -234,6 +234,16 @@ function hasStrongOrStable(label) {
   return /^(Strong|Stable|Deep|Healthy|Low)\b/.test(label)
 }
 
+function hasCoverageSpecificStress(coverage) {
+  const coverageArms = number(coverage?.coverageArms)
+  if (coverageArms <= 0) return false
+
+  const stressedCoverageArms =
+    number(coverage?.restRestrictedCoverageArms) + number(coverage?.unavailableCoverageArms)
+  const availableCoverageArms = number(coverage?.availableCoverageArms)
+  return stressedCoverageArms > 0 || availableCoverageArms / coverageArms <= 0.5
+}
+
 function flattenPitchers(board) {
   const groups = Array.isArray(board?.groups) ? board.groups : []
   return groups.flatMap((group, groupIndex) => {
@@ -472,11 +482,18 @@ export function deriveTeamStoryArchetype(board) {
   if (
     hasThinOrLimited(readLabel(shape, 'coverageSafety'))
     && (healthState === 'constrained' || counts.ready <= 3 || readLabel(shape, 'bullpenPressure') === 'High Bullpen Pressure')
-    && (coverage.coverageArms > 0 || coverage.substituteCoverageApplied)
-    && ((coverage.restRestrictedCoverageArms || 0) + (coverage.unavailableCoverageArms || 0) > 0 || coverage.availableCoverageArms <= 1)
+    && hasCoverageSpecificStress(coverage)
   ) {
     return TEAM_STORY_ARCHETYPES.coverage_concern.key
   }
+  if (
+    number(coverage.coverageArms) === 0
+    && coverage.substituteCoverageApplied
+    && number(pressure.stressedBridgeArms) >= 2
+  ) {
+    return TEAM_STORY_ARCHETYPES.bridge_dependency.key
+  }
+  if (counts.watch >= 4 && counts.watch > counts.needRest) return TEAM_STORY_ARCHETYPES.heavy_lifting.key
   if (counts.needRest >= 3 || readLabel(shape, 'bullpenPressure') === 'High Bullpen Pressure') {
     return TEAM_STORY_ARCHETYPES.thin_margin.key
   }
@@ -547,17 +564,19 @@ function observationFor(archetypeKey, counts, shape) {
     case TEAM_STORY_ARCHETYPES.concentrated_workload.key:
       return `${relievers(counts.watch)} are carrying enough recent work to change how clean the bullpen looks beneath the overall count.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
-      return `${relievers(counts.needRest)} of ${counts.total} need rest after recent work, leaving fewer clean paths through the late innings.`
+      return `${relievers(counts.needRest)} of ${counts.total} ${one(counts.needRest, 'needs', 'need')} rest after recent work, leaving fewer clean paths through the late innings.`
     case TEAM_STORY_ARCHETYPES.recovery_window.key:
       return `${relievers(counts.ready)} of ${counts.total} come in rested, giving this bullpen more room than it had during heavier stretches.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return `The clean group runs beyond one or two primary arms, with ${depth.availableDepthArms || 0} depth arms still usable behind the main late-inning layer.`
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
-      return `The coverage layer is tighter than usual: ${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or on watch.`
+      return number(coverage.coverageArms) > 0
+        ? `The coverage layer is tighter than usual: ${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or on watch.`
+        : 'The coverage layer is tighter than usual because the board has no designated Coverage Arm support today.'
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
       return `The trust group is carrying the shape of this bullpen, with ${trust.cleanTrustArms || 0} clean Trust Arms and ${((trust.watchTrustArms || 0) + (trust.restRestrictedTrustArms || 0) + (trust.unavailableTrustArms || 0))} trust reads under pressure.`
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      return `${pressure.stressedBridgeArms || 0} Bridge Arms are carrying stress in the current read, tightening the handoff before the late innings.`
+      return `${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'Bridge Arm is', 'Bridge Arms are')} carrying stress in the current read, tightening the handoff before the late innings.`
     case TEAM_STORY_ARCHETYPES.usage_shift.key:
       return `The current window is reading differently from the prior bullpen shape, so the workload is landing in new places.`
     case TEAM_STORY_ARCHETYPES.pressure_building.key:
@@ -642,7 +661,9 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options across ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
-      evidence.push(`${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or on watch.`)
+      if (number(coverage.coverageArms) > 0) {
+        evidence.push(`${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or on watch.`)
+      }
       if (coverage.substituteCoverageApplied) evidence.push('Bridge Arms are helping cover emergency innings behind the coverage layer.')
       break
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
@@ -655,11 +676,11 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
-      evidence.push(`${counts.needRest} of ${counts.total} relievers need rest after recent work.`)
-      evidence.push(`${pressure.watchArmCount || counts.watch} Watch Arms and ${pressure.restRestrictedCount || counts.needRest} Rest-Restricted arms are in the pressure read.`)
+      evidence.push(`${counts.needRest} of ${counts.total} ${one(counts.total, 'reliever', 'relievers')} ${one(counts.needRest, 'needs', 'need')} rest after recent work.`)
+      evidence.push(`${readCount(pressure.watchArmCount || counts.watch, 'Watch Arm')} and ${pressure.restRestrictedCount || counts.needRest} ${one(pressure.restRestrictedCount || counts.needRest, 'Rest-Restricted arm', 'Rest-Restricted arms')} are in the pressure read.`)
       break
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      evidence.push(`${pressure.stressedBridgeArms || 0} Bridge Arms are stressed in the bullpen pressure read.`)
+      evidence.push(`${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'Bridge Arm is', 'Bridge Arms are')} stressed in the bullpen pressure read.`)
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
     case TEAM_STORY_ARCHETYPES.data_limited.key:
