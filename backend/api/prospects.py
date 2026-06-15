@@ -1,10 +1,18 @@
 from flask import Blueprint, jsonify, request
+from api.query_params import (
+    parse_enum_param,
+    parse_int_param,
+    parse_positive_int_param,
+    query_param_error_response,
+)
 from models.prospect import Prospect
 from utils.db import db
 
 prospects_bp = Blueprint('prospects', __name__)
 
 LEVELS_ORDER = ['ROK', 'A', 'A+', 'AA', 'AAA', 'MLB']
+POSITIONS = {'P', 'C', '1B', '2B', '3B', 'SS', 'OF', 'LF', 'CF', 'RF', 'DH'}
+PROSPECT_LIMIT_MAX = 500
 
 
 @prospects_bp.route('/', methods=['GET'])
@@ -13,11 +21,32 @@ def get_prospects():
     Get prospects with optional filters.
     Params: team_id, level, position, min_grade, limit
     """
-    team_id = request.args.get('team_id', type=int)
-    level = request.args.get('level')
-    position = request.args.get('position')
-    min_grade = request.args.get('min_grade', type=int)
-    limit = request.args.get('limit', 100, type=int)
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
+    level, error = parse_enum_param(request.args, 'level', LEVELS_ORDER)
+    if error:
+        return query_param_error_response(error)
+    position, error = parse_enum_param(request.args, 'position', POSITIONS)
+    if error:
+        return query_param_error_response(error)
+    min_grade, error = parse_int_param(
+        request.args,
+        'min_grade',
+        minimum=20,
+        maximum=80,
+    )
+    if error:
+        return query_param_error_response(error)
+    limit, error = parse_positive_int_param(
+        request.args,
+        'limit',
+        default=100,
+        maximum=PROSPECT_LIMIT_MAX,
+        clamp_max=True,
+    )
+    if error:
+        return query_param_error_response(error)
 
     query = Prospect.query.filter_by(active=True)
 
@@ -93,8 +122,12 @@ def compare_prospects():
     Compare two prospects side by side.
     Params: id1, id2
     """
-    id1 = request.args.get('id1', type=int)
-    id2 = request.args.get('id2', type=int)
+    id1, error = parse_positive_int_param(request.args, 'id1')
+    if error:
+        return query_param_error_response(error)
+    id2, error = parse_positive_int_param(request.args, 'id2')
+    if error:
+        return query_param_error_response(error)
 
     if not id1 or not id2:
         return jsonify({'error': 'id1 and id2 are required'}), 400

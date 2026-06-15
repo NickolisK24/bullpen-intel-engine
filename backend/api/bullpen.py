@@ -6,6 +6,13 @@ from flask import Blueprint, abort, current_app, jsonify, request
 from sqlalchemy import desc
 from datetime import date, datetime, timedelta, timezone
 
+from api.query_params import (
+    QueryParamError,
+    parse_enum_param,
+    parse_int_param,
+    parse_positive_int_param,
+    query_param_error_response,
+)
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -81,6 +88,11 @@ bullpen_bp = Blueprint('bullpen', __name__)
 NARRATIVE_MEMORY_DIAGNOSTIC_SAMPLE_CAP = 5
 DASHBOARD_SNAPSHOT_BUILD_TOKEN_ENV = 'DASHBOARD_SNAPSHOT_BUILD_TOKEN'
 INTERNAL_TOKEN_HEADER = 'X-Internal-Token'
+BULLPEN_LIST_LIMIT_MAX = 750
+PITCHER_LOG_DAYS_MAX = 3650
+MLB_SEASON_MIN = 1876
+MLB_SEASON_MAX = 2100
+RISK_LEVELS = {'LOW', 'MODERATE', 'HIGH', 'CRITICAL'}
 
 FATIGUE_ERA_RESULTS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -259,9 +271,21 @@ def get_fatigue_scores():
                        appearance is older than 14 days. Default false.
       - with_meta: when truthy, return {data, meta} instead of the legacy array.
     """
-    team_id       = request.args.get('team_id', type=int)
-    risk_level    = request.args.get('risk_level')
-    limit         = request.args.get('limit', 50, type=int)
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
+    risk_level, error = parse_enum_param(request.args, 'risk_level', RISK_LEVELS)
+    if error:
+        return query_param_error_response(error)
+    limit, error = parse_positive_int_param(
+        request.args,
+        'limit',
+        default=50,
+        maximum=BULLPEN_LIST_LIMIT_MAX,
+        clamp_max=True,
+    )
+    if error:
+        return query_param_error_response(error)
     include_stale = _truthy(request.args.get('include_stale'))
     with_meta     = _truthy(request.args.get('with_meta'))
     freshness     = _board_freshness_block()
@@ -327,9 +351,21 @@ def get_latest_workload_snapshot():
     datasets can exercise availability thresholds without changing public
     calendar-based freshness behavior.
     """
-    team_id    = request.args.get('team_id', type=int)
-    risk_level = request.args.get('risk_level')
-    limit      = request.args.get('limit', 750, type=int)
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
+    risk_level, error = parse_enum_param(request.args, 'risk_level', RISK_LEVELS)
+    if error:
+        return query_param_error_response(error)
+    limit, error = parse_positive_int_param(
+        request.args,
+        'limit',
+        default=BULLPEN_LIST_LIMIT_MAX,
+        maximum=BULLPEN_LIST_LIMIT_MAX,
+        clamp_max=True,
+    )
+    if error:
+        return query_param_error_response(error)
 
     rows = availability_latest_fatigue_rows(
         team_id=team_id,
@@ -739,7 +775,9 @@ def get_sync_status():
 @bullpen_bp.route('/pitchers', methods=['GET'])
 def get_pitchers():
     """Get all pitchers, optionally filtered by team."""
-    team_id  = request.args.get('team_id', type=int)
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
     query    = Pitcher.query.filter_by(active=True)
     if team_id:
         query = query.filter_by(team_id=team_id)
@@ -750,7 +788,15 @@ def get_pitchers():
 @bullpen_bp.route('/pitchers/<int:pitcher_id>/logs', methods=['GET'])
 def get_pitcher_logs(pitcher_id):
     """Get game logs for a pitcher."""
-    days  = request.args.get('days', 30, type=int)
+    days, error = parse_int_param(
+        request.args,
+        'days',
+        default=30,
+        minimum=0,
+        maximum=PITCHER_LOG_DAYS_MAX,
+    )
+    if error:
+        return query_param_error_response(error)
     since = date.today() - timedelta(days=days)
     logs  = (
         GameLog.query
@@ -1173,10 +1219,16 @@ def compare_team_bullpens():
     Optional:
       - include_stale: include stale workload pitchers and roster-status context.
     """
-    team_a = request.args.get('team_a', type=int)
-    team_b = request.args.get('team_b', type=int)
+    team_a, error = parse_positive_int_param(request.args, 'team_a')
+    if error:
+        return query_param_error_response(error)
+    team_b, error = parse_positive_int_param(request.args, 'team_b')
+    if error:
+        return query_param_error_response(error)
     if team_a is None or team_b is None:
-        abort(400, description='team_a and team_b query parameters are required.')
+        return query_param_error_response(
+            QueryParamError('team_a', 'team_a and team_b query parameters are required.')
+        )
 
     include_stale = _truthy(request.args.get('include_stale'))
     # One freshness read shared by both boards — it is system-wide, not per-team.
@@ -1212,13 +1264,10 @@ def _diagnostic_error(message, status_code=400, reason_code='invalid_request'):
 
 
 def _optional_int_arg(name):
-    raw = request.args.get(name)
-    if raw in (None, ''):
-        return None, None
-    try:
-        return int(raw), None
-    except (TypeError, ValueError):
-        return None, f'{name} must be an integer.'
+    value, error = parse_positive_int_param(request.args, name)
+    if error:
+        return None, error.message
+    return value, None
 
 
 def _diagnostic_window_days():
@@ -1544,7 +1593,9 @@ def get_role_authority_diagnostic():
       - team_id: scope to one team (default: all active pitchers).
       - include_stale: widen the usage window and surface Unknown roles.
     """
-    team_id = request.args.get('team_id', type=int)
+    team_id, error = parse_positive_int_param(request.args, 'team_id')
+    if error:
+        return query_param_error_response(error)
     include_stale = _truthy(request.args.get('include_stale'))
 
     query = Pitcher.query.filter(Pitcher.active == True)
@@ -2069,6 +2120,13 @@ def get_mlb_teams():
 @bullpen_bp.route('/mlb/pitcher/<int:player_id>/logs', methods=['GET'])
 def get_mlb_pitcher_logs(player_id):
     """Proxy: Get live pitcher game logs from MLB Stats API."""
-    season = request.args.get('season', type=int)
+    season, error = parse_int_param(
+        request.args,
+        'season',
+        minimum=MLB_SEASON_MIN,
+        maximum=MLB_SEASON_MAX,
+    )
+    if error:
+        return query_param_error_response(error)
     logs   = mlb_client.get_pitcher_game_logs(player_id, season=season)
     return jsonify(logs)

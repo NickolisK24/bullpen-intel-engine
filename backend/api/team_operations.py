@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from api.query_params import parse_positive_int_param
 from services import sync_metadata
 from services.availability_reference_date import (
     product_availability_reference_date_from_sync_status,
@@ -57,7 +58,7 @@ def get_team_operations_bullpen_readiness():
     sync_status = _sync_status_payload()
     reference_date = _availability_reference_date(sync_status)
     request_refusal = _request_refusal(request.args)
-    team_id = request.args.get('team_id', type=int)
+    team_id, _team_id_error = parse_positive_int_param(request.args, 'team_id')
     team_abbreviation = request.args.get('team_abbreviation')
 
     if request_refusal:
@@ -180,11 +181,12 @@ def _request_refusal(args):
                     message='Readiness output is refused because request parameters are not supported for this internal route.',
                 )
 
-    if 'team_id' in args and args.get('team_id', type=int) is None:
+    _team_id, team_id_error = parse_positive_int_param(args, 'team_id')
+    if team_id_error:
         return _refusal(
             refusal_id='invalid_request_parameter',
             reason='invalid_request_parameter',
-            message='Readiness output is refused because team_id must be an integer.',
+            message=f'Readiness output is refused because {team_id_error.message}',
         )
 
     if 'include_details' in args and str(args.get('include_details')).lower() not in {
