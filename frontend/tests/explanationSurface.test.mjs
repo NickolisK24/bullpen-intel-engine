@@ -242,7 +242,7 @@ test('renders compact Why this state action while explanation details stay close
 
   assert.ok(htmlIncludes(html, 'Why this state?'))
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
-  assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
+  assert.ok(htmlIncludes(html, 'Explanation'))
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
 })
@@ -288,7 +288,7 @@ test('renders fail-closed explanation responses safely', () => {
   })
 
   assert.ok(htmlIncludes(html, 'Explanation unavailable for this state.'))
-  assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable or not certified for this request.'))
+  assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable for this request.'))
   assert.ok(htmlIncludes(html, 'missing_source_data'))
   assert.ok(htmlIncludes(html, 'Required Explanation Inputs Are Unavailable'))
   assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
@@ -323,7 +323,7 @@ test('Operational Readiness renders the Why this state action without inline evi
   const html = renderOperationalReadiness()
 
   assert.ok(htmlIncludes(html, 'Why this state?'))
-  assert.ok(htmlIncludes(html, 'Certified V4 Explanation'))
+  assert.ok(htmlIncludes(html, 'Explanation'))
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
   // The Dashboard surface now states governance in plain language; the raw

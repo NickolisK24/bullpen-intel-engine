@@ -608,33 +608,31 @@ def _v2_fail_closed_reason_summary(
     reason_codes = tuple(reason_codes or ())
     if 'data_state_stale' in reason_codes:
         return (
-            'Source freshness is stale. V2 is preserving fail-closed '
-            'protection while displaying degraded context only.'
+            'Source freshness is stale. Full output is withheld while degraded '
+            'context remains visible.'
         )
     if 'data_state_missing' in reason_codes:
         return (
-            'Source evidence is missing or incomplete. V2 is preserving '
-            'fail-closed protection before full context is shown.'
+            'Source evidence is missing or incomplete. Full context is withheld.'
         )
     if 'governance_unsafe_source_evidence' in reason_codes:
         return (
-            'Unsupported decision-style fields were rejected. V2 output is '
+            'Unsupported decision-style fields were rejected. Output is '
             'withheld to preserve governance boundaries.'
         )
     if trust_failed:
         return (
-            'Required trust metadata failed validation. V2 output is withheld '
+            'Required trust metadata failed validation. Output is withheld '
             'until trust metadata is represented.'
         )
     if freshness_failed:
         return (
-            'Source freshness is degraded. V2 is preserving fail-closed '
-            'protection while exposing refusal metadata.'
+            'Source freshness is degraded. Full output is withheld while '
+            'refusal metadata remains visible.'
         )
     if reason_codes:
         return (
-            'V2 fail-closed protection is active for the reported refusal '
-            'reason.'
+            'Output is withheld for the reported refusal reason.'
         )
     return 'No fail-closed refusal reason is active.'
 
@@ -646,12 +644,12 @@ def _v2_fail_closed_display_label(
     freshness_failed,
 ):
     if freshness_failed and not trust_failed:
-        return 'Data freshness protection active'
+        return 'Data freshness unavailable'
     if trust_failed:
-        return 'Trust protection active'
+        return 'Trust metadata unavailable'
     if refusal_fail_closed.get('failed_closed'):
-        return 'Fail-closed protection active'
-    return 'V2 contract available'
+        return 'Output withheld'
+    return 'Contract available'
 
 
 def _v2_withheld_summary(
@@ -672,7 +670,7 @@ def _v2_withheld_summary(
         )
     if safe_partial:
         return 'Degraded context remains visible with refusal metadata.'
-    return 'No V2 bullpen context is withheld.'
+    return 'No bullpen context is withheld.'
 
 
 def _v2_api_trust_metadata(context, refusal_fail_closed):

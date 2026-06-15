@@ -221,7 +221,7 @@ function UnavailableExplanation({ explanationView }) {
       <div className="rounded border border-amber/35 bg-amber/10 p-3" role="status" aria-live="polite">
         <div className="font-mono text-xs uppercase tracking-widest text-amber">Explanation unavailable for this state.</div>
         <p className="mt-1 text-sm leading-relaxed text-chalk400">
-          Required explanation inputs were unavailable or not certified for this request.
+          Required explanation inputs were unavailable for this request.
         </p>
         {refusal.reason_code && (
           <>
@@ -326,7 +326,7 @@ export default function ExplanationDisclosure({
     <section className="rounded border border-dirt bg-chalk/20 p-3" aria-label={contextLabel}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Certified V4 Explanation</div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Explanation</div>
           <p className="mt-1 text-xs leading-relaxed text-chalk500">
             Explanation only. Evidence remains on demand.
           </p>

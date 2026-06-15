@@ -186,7 +186,7 @@ function renderPanel(state, props = {}) {
 test('renders governed V2 bullpen intelligence in available state', () => {
   const html = renderPanel(availableState)
 
-  assert.ok(htmlIncludes(html, 'V2 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Trust'))
@@ -209,11 +209,11 @@ test('renders governed V2 bullpen intelligence in available state', () => {
 test('renders compact V2 bullpen intelligence with evidence collapsed and governance visible', () => {
   const html = renderPanel(availableState, { compact: true })
 
-  assert.ok(htmlIncludes(html, 'V2 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'ranking_applied'))
   assert.ok(htmlIncludes(html, 'selection_made'))
-  assert.ok(htmlIncludes(html, 'View V2 Evidence And Metadata'))
+  assert.ok(htmlIncludes(html, 'View Evidence And Metadata'))
   assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
   assert.equal(htmlIncludes(html, 'Available Inventory'), false)
   assert.equal(htmlIncludes(html, 'Neutral Candidate Groups'), false)
@@ -641,7 +641,7 @@ test('renders mobile and accessibility anchors for governed V2 metadata', () => 
   assert.ok(htmlIncludes(html, 'id="recommendation-v2-limitations"'))
   assert.ok(htmlIncludes(html, 'id="recommendation-v2-explanations"'))
   assert.ok(htmlIncludes(html, 'id="recommendation-v2-refusal"'))
-  assert.ok(htmlIncludes(html, 'aria-label="V2 contract state: Available"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Bullpen intelligence state: Available"'))
   assert.ok(htmlIncludes(html, 'aria-live="polite"'))
   assert.ok(htmlIncludes(html, 'aria-atomic="true"'))
   assert.ok(cssSource.includes('button:focus-visible'))
@@ -676,7 +676,7 @@ test('renders fail-closed state with refusal metadata visible', () => {
       aggregate_v2_freshness_status: 'stale',
       fail_closed_state: 'degraded',
       fail_closed_reason_code: 'data_state_stale',
-      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
+      reason_summary: 'Source freshness is stale. Full output is withheld while degraded context remains visible.',
       trust_status: 'passed',
       freshness_status: 'failed',
       trust_failed: false,
@@ -695,8 +695,8 @@ test('renders fail-closed state with refusal metadata visible', () => {
       partial_context_safe: true,
       reason_codes: ['data_state_stale'],
       primary_reason_code: 'data_state_stale',
-      reason_summary: 'Source freshness is stale. V2 is preserving fail-closed protection while displaying degraded context only.',
-      display_label: 'Data freshness protection active',
+      reason_summary: 'Source freshness is stale. Full output is withheld while degraded context remains visible.',
+      display_label: 'Unavailable - freshness failed',
       withheld_summary: 'Current-state interpretation is withheld; degraded context remains visible with refusal metadata.',
       trust_failed: false,
       freshness_failed: true,
@@ -706,7 +706,7 @@ test('renders fail-closed state with refusal metadata visible', () => {
       {
         refusal_id: 'stale_freshness',
         reason: 'data_state_stale',
-        message: 'V2 context is degraded or refused because source data state is stale.',
+        message: 'Context is degraded or refused because source data state is stale.',
         applies_to: 'bullpen_state',
       },
     ],
@@ -715,8 +715,8 @@ test('renders fail-closed state with refusal metadata visible', () => {
   const view = getRecommendationV2BullpenStateView(failClosedState)
   const html = renderPanel(failClosedState)
 
-  assert.equal(view.statusLabel, 'Freshness Protected')
-  assert.ok(htmlIncludes(html, 'Data freshness protection active'))
+  assert.equal(view.statusLabel, 'Unavailable - freshness failed')
+  assert.ok(htmlIncludes(html, 'Unavailable - freshness failed'))
   assert.ok(htmlIncludes(html, 'Fail-closed state'))
   assert.ok(htmlIncludes(html, 'degraded'))
   assert.ok(htmlIncludes(html, 'Reason code'))
@@ -724,7 +724,7 @@ test('renders fail-closed state with refusal metadata visible', () => {
   assert.ok(htmlIncludes(html, 'Source freshness is stale.'))
   assert.ok(htmlIncludes(html, '2026-06-03T07:44:27'))
   assert.ok(htmlIncludes(html, 'Source Freshness'))
-  assert.ok(htmlIncludes(html, 'Aggregate V2 Freshness'))
+  assert.ok(htmlIncludes(html, 'Aggregate Freshness'))
   assert.ok(htmlIncludes(html, 'Overall Sync'))
   assert.ok(htmlIncludes(html, 'Trust failed'))
   assert.ok(htmlIncludes(html, 'false'))
@@ -737,7 +737,7 @@ test('renders fail-closed state with refusal metadata visible', () => {
   assert.ok(htmlIncludes(html, 'role="alert"'))
   assert.ok(htmlIncludes(html, 'aria-live="assertive"'))
   assert.ok(htmlIncludes(html, 'Refusal'))
-  assert.ok(htmlIncludes(html, 'V2 context is degraded or refused because source data state is stale.'))
+  assert.ok(htmlIncludes(html, 'Context is degraded or refused because source data state is stale.'))
   assert.ok(htmlIncludes(html, 'No inventory summary available.'))
   assert.ok(htmlIncludes(html, 'No neutral groups available from the current contract state.'))
   assert.ok(!htmlIncludes(html, 'V2 declined full bullpen-state output'))
@@ -839,10 +839,10 @@ test('renders loading and error states without exposing unsafe claims', () => {
   const loadingHtml = renderPanel(null, { loading: true })
   const errorHtml = renderPanel(null, { error: 'network unavailable' })
 
-  assert.ok(htmlIncludes(loadingHtml, 'Loading V2 bullpen intelligence...'))
+  assert.ok(htmlIncludes(loadingHtml, 'Loading bullpen intelligence...'))
   assert.ok(htmlIncludes(loadingHtml, 'role="status"'))
   assert.ok(htmlIncludes(loadingHtml, 'aria-busy="true"'))
-  assert.ok(htmlIncludes(errorHtml, 'V2 bullpen intelligence could not be loaded.'))
+  assert.ok(htmlIncludes(errorHtml, 'Bullpen intelligence could not be loaded.'))
   assert.ok(htmlIncludes(errorHtml, 'role="alert"'))
   assert.ok(!htmlIncludes(errorHtml, 'network unavailable'))
 })

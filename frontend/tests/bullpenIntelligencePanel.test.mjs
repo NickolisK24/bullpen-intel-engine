@@ -212,7 +212,7 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   const state = normalizeBullpenObservationsResponse(baseObservationResponse)
   const html = renderPanel(state)
 
-  assert.ok(htmlIncludes(html, 'V5 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'Governed Observations'))
   assert.ok(htmlIncludes(html, 'Availability inventory contracted since the previous snapshot.'))
   assert.ok(htmlIncludes(html, 'Availability inventory changed based on trusted platform state.'))
@@ -284,7 +284,7 @@ test('renders empty and fail-closed states with safe copy', () => {
   assert.equal(failClosedState.contractState, 'fail_closed')
   assert.ok(htmlIncludes(html, 'No governed bullpen observations are available from the current trusted state.'))
   assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
-  assert.ok(htmlIncludes(html, 'Protected'))
+  assert.ok(htmlIncludes(html, 'Unavailable - output withheld'))
   assert.ok(htmlIncludes(html, 'unavailable'))
   assert.ok(htmlIncludes(html, 'Unclear Read'))
   assert.ok(!htmlIncludes(html, 'Availability inventory contracted since the previous snapshot.'))
@@ -324,6 +324,6 @@ test('does not render prohibited recommendation language or ranking and selectio
   assert.equal(htmlIncludes(html, 'Selection Controls'), false)
 })
 
-test('Dashboard imports cleanly with the V5 Bullpen Intelligence surface dependency', () => {
+test('Dashboard imports cleanly with the Bullpen Intelligence surface dependency', () => {
   assert.equal(typeof Dashboard, 'function')
 })

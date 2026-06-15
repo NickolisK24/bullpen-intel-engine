@@ -47,7 +47,22 @@ function displayValue(value, fallback = 'Unavailable') {
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return fallback
   if (typeof value === 'object') return summarizeDisplayValue(value, fallback)
-  return String(value)
+  return stripTrustChrome(String(value))
+}
+
+function stripTrustChrome(value) {
+  return value
+    .replace(/\bV[2-4]\s+is preserving fail-closed protection while displaying degraded context only\./gi, 'Full output is withheld while degraded context remains visible.')
+    .replace(/\bV[2-4]\s+context\b/g, 'Context')
+    .replace(/\bV[2-4]\s+/g, '')
+    .replace(/\bV[2-4]\b/g, '')
+    .replace(/\bdata freshness protection active\b/gi, 'Unavailable - freshness failed')
+    .replace(/\btrust protection active\b/gi, 'Unavailable - trust metadata failed')
+    .replace(/\bfail-closed protection\b/gi, 'fail-closed handling')
+    .replace(/\bprotection\b/gi, 'withholding')
+    .replace(/\bprotected\b/gi, 'withheld')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function sectionId(label) {
@@ -64,14 +79,15 @@ function orderingPolicyLabel(value) {
 }
 
 function messageFrom(item) {
-  if (typeof item === 'string') return item
+  if (typeof item === 'string') return stripTrustChrome(item)
   if (!item || typeof item !== 'object') return null
-  return (
+  const message = (
     item.message
     || item.reason
     || toTitle(item.limitation_id || item.explanation_id || item.refusal_id)
     || null
   )
+  return message ? stripTrustChrome(message) : null
 }
 
 function compactText(value, maxLength = SUMMARY_TEXT_LIMIT) {
@@ -136,7 +152,7 @@ function inventorySummaryText(item) {
     return `Freshness ${displayValue(freshnessState, 'unavailable')} | Workload Read ${displayValue(item.confidence, 'unavailable')}`
   }
 
-  return 'Inventory category reported by the V2 contract.'
+  return 'Inventory category reported by the governed contract.'
 }
 
 function inventoryFreshnessRows(item) {
@@ -173,7 +189,7 @@ function candidateGroupSummaryText(group) {
   const refusalReasons = asArray(group.refusal_reasons).map(messageFrom).filter(Boolean)
   if (refusalReasons.length) return refusalReasons[0]
 
-  return 'Neutral group reported by the V2 contract.'
+  return 'Neutral group reported by the governed contract.'
 }
 
 function candidateGroupFreshnessRows(group) {
@@ -251,10 +267,10 @@ function failClosedAlertLabel(failClosed, statusMetadata) {
 function failClosedStatusLabel(failClosed, statusMetadata) {
   const label = failClosedAlertLabel(failClosed, statusMetadata)
   if (/data freshness protection active/i.test(label)) {
-    return 'Freshness Protected'
+    return 'Unavailable - freshness failed'
   }
   if (/trust protection active/i.test(label)) {
-    return 'Trust Protected'
+    return 'Unavailable - trust metadata failed'
   }
   return label
 }
@@ -262,14 +278,14 @@ function failClosedStatusLabel(failClosed, statusMetadata) {
 function failClosedReasonSummary(failClosed, statusMetadata) {
   return displayValue(
     failClosed.reason_summary || statusMetadata.reason_summary,
-    'V2 fail-closed protection is active and refusal metadata is preserved.',
+    'Output is unavailable and refusal metadata is preserved.',
   )
 }
 
 function failClosedWithheldSummary(failClosed, statusMetadata) {
   return displayValue(
     failClosed.withheld_summary || statusMetadata.withheld_summary,
-    'Bullpen state output is controlled by the current V2 protection state.',
+    'Bullpen state output is withheld by the current fail-closed state.',
   )
 }
 
@@ -293,7 +309,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
       isAvailable: false,
       isFailClosed: false,
       isUnavailable: true,
-      title: 'V2 Bullpen Intelligence',
+      title: 'Bullpen Intelligence',
       statusLabel: 'Unavailable',
       statusTone: 'border-dirt bg-field/40 text-chalk400',
       failClosedLabel: null,
@@ -345,7 +361,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
     isAvailable,
     isFailClosed,
     isUnavailable,
-    title: 'V2 Bullpen Intelligence',
+    title: 'Bullpen Intelligence',
     statusLabel: isFailClosed ? failClosedStatusLabel(failClosed, statusMetadata) : isUnavailable ? 'Unavailable' : 'Available',
     statusTone,
     failClosedLabel,
@@ -375,7 +391,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
     freshnessRows: [
       { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
       { label: 'Source Freshness', value: displayValue(freshness.source_freshness_status || statusMetadata.source_freshness_status) },
-      { label: 'Aggregate V2 Freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
+      { label: 'Aggregate Freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
       { label: 'Data Through', value: displayValue(freshness.data_through) },
       { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
       { label: 'Overall Sync', value: displayValue(freshness.overall_sync_status || statusMetadata.overall_sync_status) },
@@ -1112,9 +1128,9 @@ export default function RecommendationV2BullpenStatePanel({
         role="status"
         aria-live="polite"
         aria-busy="true"
-        aria-label="Loading V2 bullpen intelligence"
+        aria-label="Loading bullpen intelligence"
       >
-        <LoadingPane message="Loading V2 bullpen intelligence..." />
+        <LoadingPane message="Loading bullpen intelligence..." />
       </section>
     )
   }
@@ -1125,9 +1141,9 @@ export default function RecommendationV2BullpenStatePanel({
         className={outerClassName}
         style={outerStyle}
         role="alert"
-        aria-label="V2 bullpen intelligence unavailable"
+        aria-label="Bullpen intelligence unavailable"
       >
-        <ErrorState message="V2 bullpen intelligence could not be loaded." onRetry={onRetry} />
+        <ErrorState message="Bullpen intelligence could not be loaded." onRetry={onRetry} />
       </section>
     )
   }
@@ -1175,12 +1191,12 @@ export default function RecommendationV2BullpenStatePanel({
             <div className="font-mono text-xs uppercase tracking-widest text-chalk400">{view.title}</div>
             <h2 id="recommendation-v2-heading" className={`${compact ? 'text-xl' : 'text-2xl'} mt-1 font-display tracking-wider text-chalk100`}>Bullpen State</h2>
             <p id="recommendation-v2-description" className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
-              Governed bullpen visibility from the V2 contract. This surface summarizes context and evidence only.
+              Governed bullpen visibility. This surface summarizes context and evidence only.
             </p>
           </div>
           <div
             className={`shrink-0 self-start rounded border px-3 py-2 font-mono text-xs uppercase tracking-widest ${view.statusTone}`}
-            aria-label={`V2 contract state: ${view.statusLabel}`}
+            aria-label={`Bullpen intelligence state: ${view.statusLabel}`}
           >
             {view.statusLabel}
           </div>
@@ -1189,14 +1205,14 @@ export default function RecommendationV2BullpenStatePanel({
 
       <div className={`${compact ? 'space-y-4 p-4' : 'space-y-5 p-4 sm:p-5 lg:p-6'}`}>
         <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {`V2 bullpen intelligence ${view.statusLabel}. ranking_applied ${displayValue(state?.governance?.rankingApplied, 'missing')}. selection_made ${displayValue(state?.governance?.selectionMade, 'missing')}.`}
+          {`Bullpen intelligence ${view.statusLabel}. ranking_applied ${displayValue(state?.governance?.rankingApplied, 'missing')}. selection_made ${displayValue(state?.governance?.selectionMade, 'missing')}.`}
         </div>
 
         {view.isUnavailable && (
           <div className="min-w-0 rounded border border-red-500/35 bg-red-500/5 p-4" role="alert" aria-live="assertive">
             <div className="font-mono text-xs uppercase tracking-widest text-red-300">Contract Unavailable</div>
             <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk400">
-              Required V2 metadata is missing, malformed, or outside governed display boundaries.
+              Required metadata is missing, malformed, or outside governed display boundaries.
               Bullpen state output is withheld from this surface.
             </p>
             {view.diagnosticCount > 0 && (
@@ -1242,7 +1258,7 @@ export default function RecommendationV2BullpenStatePanel({
 
         {compact ? (
           <PanelDisclosure
-            title="V2 Evidence And Metadata"
+            title="Evidence And Metadata"
             summary="Trust, freshness, inventory, neutral groups, team context, explanations, limitations, and refusal details remain available on demand."
           >
             {evidenceSections}

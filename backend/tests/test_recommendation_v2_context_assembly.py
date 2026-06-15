@@ -242,7 +242,7 @@ class TestRecommendationEngineV2ContextAssembly:
         assert leverage_inventory['source_evidence_available'] is False
         assert leverage_inventory['available_high_leverage_evidence_count'] == 0
         assert leverage_inventory['leverage_evidence_limitations'] == [
-            'No leverage evidence was supplied to V2 context assembly.'
+            'No leverage evidence was supplied to context assembly.'
         ]
 
     def test_v1_recommendation_behavior_remains_unchanged(self):

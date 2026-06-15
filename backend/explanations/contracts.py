@@ -106,7 +106,7 @@ LIMITATION_TYPE_DEFINITIONS = {
     'missing_data': 'Required data or metadata is unavailable.',
     'stale_data': 'Source data is not current.',
     'partial_coverage': 'Evidence coverage is incomplete.',
-    'uncertified_source': 'The source is not certified for this explanation.',
+    'uncertified_source': 'The source is not available for this explanation.',
     'limited_confidence': 'Explanation confidence is limited.',
     'insufficient_context': 'BaseballOS lacks context needed for deeper claims.',
 }
