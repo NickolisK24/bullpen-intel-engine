@@ -69,6 +69,7 @@ def seed_pitcher(
         game_date=date.today() - timedelta(days=3),
         pitches_thrown=8,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
         game_type='R',
     ))
     db.session.add(FatigueScore(

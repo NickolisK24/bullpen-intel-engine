@@ -92,6 +92,7 @@ def seed_pitcher(name, mlb_id, team_id=113, days_ago=1, innings=1.0):
         game_date=date.today() - timedelta(days=days_ago),
         pitches_thrown=12,
         innings_pitched=innings,
+        innings_pitched_outs=round(innings * 3),
         games_started=1 if innings >= 3 else 0,
         game_type='R',
     ))

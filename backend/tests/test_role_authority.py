@@ -162,4 +162,4 @@ def test_game_log_model_declares_games_started_column():
     assert 'games_started' in GameLog.__table__.columns
     assert GameLog.__table__.columns['games_started'].nullable is True
     assert 'innings_pitched_outs' in GameLog.__table__.columns
-    assert GameLog.__table__.columns['innings_pitched_outs'].nullable is True
+    assert GameLog.__table__.columns['innings_pitched_outs'].nullable is False

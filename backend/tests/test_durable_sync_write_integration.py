@@ -63,7 +63,9 @@ def client(tmp_path, monkeypatch):
         db.session.add(pitcher)
         db.session.commit()
         db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=10,
-                               game_date=date.today() - timedelta(days=3), pitches_thrown=12))
+                               game_date=date.today() - timedelta(days=3),
+                               innings_pitched=1.0, innings_pitched_outs=3,
+                               pitches_thrown=12))
         db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=20.0,
                                     risk_level='LOW', calculated_at=datetime.utcnow()))
         db.session.commit()

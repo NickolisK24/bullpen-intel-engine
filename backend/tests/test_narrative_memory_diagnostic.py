@@ -45,12 +45,14 @@ def _seed_pitcher(name, team_id, mlb_id):
 
 
 def _seed_log(pitcher, days_ago, game_pk, pitches=12, games_started=0):
+    innings = 1.0 if games_started == 0 else 5.0
     db.session.add(GameLog(
         pitcher_id=pitcher.id,
         mlb_game_pk=game_pk,
         game_date=REFERENCE_DATE - timedelta(days=days_ago),
         pitches_thrown=pitches,
-        innings_pitched=1.0 if games_started == 0 else 5.0,
+        innings_pitched=innings,
+        innings_pitched_outs=round(innings * 3),
         games_started=games_started,
         game_type='R',
     ))

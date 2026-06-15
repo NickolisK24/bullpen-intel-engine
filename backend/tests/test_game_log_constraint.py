@@ -45,7 +45,9 @@ def _add_pitcher(mlb_id):
 
 def _log(pitcher_id, game_pk, day=1):
     return GameLog(pitcher_id=pitcher_id, mlb_game_pk=game_pk,
-                   game_date=date(2024, 9, day))
+                   game_date=date(2024, 9, day),
+                   innings_pitched=1.0,
+                   innings_pitched_outs=3)
 
 
 class TestGameLogUniqueness:
@@ -78,3 +80,29 @@ class TestGameLogUniqueness:
         db.session.add(_log(p2.id, 100))
         db.session.commit()
         assert GameLog.query.filter_by(mlb_game_pk=100).count() == 2
+
+    def test_null_innings_outs_is_rejected(self, app_ctx):
+        p = _add_pitcher(1)
+        db.session.add(GameLog(
+            pitcher_id=p.id,
+            mlb_game_pk=200,
+            game_date=date(2024, 9, 1),
+            innings_pitched=1.0,
+            innings_pitched_outs=None,
+        ))
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+    def test_innings_decimal_must_match_outs(self, app_ctx):
+        p = _add_pitcher(1)
+        db.session.add(GameLog(
+            pitcher_id=p.id,
+            mlb_game_pk=201,
+            game_date=date(2024, 9, 1),
+            innings_pitched=0.1,
+            innings_pitched_outs=1,
+        ))
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()

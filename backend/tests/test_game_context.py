@@ -52,7 +52,8 @@ def _seed_team_with_game(team_id, mlb_id, opponent='Rivals', opp_abbr='RIV', day
     db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 100,
                            game_date=date.today() - timedelta(days=days_ago),
                            opponent=opponent, opponent_abbreviation=opp_abbr,
-                           pitches_thrown=12, innings_pitched=1.0))
+                           pitches_thrown=12, innings_pitched=1.0,
+                           innings_pitched_outs=3))
     db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=20.0,
                                 risk_level='LOW', calculated_at=datetime.utcnow()))
     db.session.commit()

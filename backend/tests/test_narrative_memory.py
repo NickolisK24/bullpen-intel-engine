@@ -334,21 +334,27 @@ def test_team_workload_concentration_reads_persisted_game_logs():
         db.session.commit()
         db.session.add_all([
             GameLog(pitcher_id=pitchers[0].id, mlb_game_pk=9000, game_date=REFERENCE_DATE,
-                    pitches_thrown=15, games_started=0, game_type='R'),
+                    pitches_thrown=15, innings_pitched=1.0, innings_pitched_outs=3,
+                    games_started=0, game_type='R'),
             GameLog(pitcher_id=pitchers[0].id, mlb_game_pk=9002,
                     game_date=REFERENCE_DATE - timedelta(days=2),
-                    pitches_thrown=14, games_started=0, game_type='R'),
+                    pitches_thrown=14, innings_pitched=1.0, innings_pitched_outs=3,
+                    games_started=0, game_type='R'),
             GameLog(pitcher_id=pitchers[0].id, mlb_game_pk=9004,
                     game_date=REFERENCE_DATE - timedelta(days=4),
-                    pitches_thrown=13, games_started=0, game_type='R'),
+                    pitches_thrown=13, innings_pitched=1.0, innings_pitched_outs=3,
+                    games_started=0, game_type='R'),
             GameLog(pitcher_id=pitchers[1].id, mlb_game_pk=9000, game_date=REFERENCE_DATE,
-                    pitches_thrown=12, games_started=0, game_type='R'),
+                    pitches_thrown=12, innings_pitched=1.0, innings_pitched_outs=3,
+                    games_started=0, game_type='R'),
             GameLog(pitcher_id=pitchers[1].id, mlb_game_pk=9003,
                     game_date=REFERENCE_DATE - timedelta(days=3),
-                    pitches_thrown=11, games_started=0, game_type='R'),
+                    pitches_thrown=11, innings_pitched=1.0, innings_pitched_outs=3,
+                    games_started=0, game_type='R'),
             GameLog(pitcher_id=pitchers[2].id, mlb_game_pk=9001,
                     game_date=REFERENCE_DATE - timedelta(days=1),
-                    pitches_thrown=84, games_started=1, game_type='R'),
+                    pitches_thrown=84, innings_pitched=5.0, innings_pitched_outs=15,
+                    games_started=1, game_type='R'),
         ])
         db.session.commit()
 
@@ -387,6 +393,8 @@ def test_team_pitcher_usage_wrapper_reads_latest_prior_appearance():
             mlb_game_pk=9108,
             game_date=REFERENCE_DATE - timedelta(days=8),
             pitches_thrown=12,
+            innings_pitched=1.0,
+            innings_pitched_outs=3,
             games_started=0,
             game_type='R',
         ))
@@ -396,6 +404,8 @@ def test_team_pitcher_usage_wrapper_reads_latest_prior_appearance():
                 mlb_game_pk=9100 + days_ago,
                 game_date=REFERENCE_DATE - timedelta(days=days_ago),
                 pitches_thrown=9,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
                 games_started=0,
                 game_type='R',
             ))

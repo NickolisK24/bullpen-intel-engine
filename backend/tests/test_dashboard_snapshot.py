@@ -72,6 +72,7 @@ def _seed_dashboard_data():
         game_date=workload_date,
         games_started=0,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
         pitches_thrown=14,
         game_type='R',
     ))

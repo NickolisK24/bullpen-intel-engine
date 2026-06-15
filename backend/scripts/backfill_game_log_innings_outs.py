@@ -15,6 +15,7 @@ from app import app
 from services.innings_backfill import (  # noqa: E402
     backfill_game_log_innings_outs,
     count_raw_mlb_fraction_rows,
+    repair_missing_innings_outs,
 )
 from utils.db import db  # noqa: E402
 
@@ -28,12 +29,21 @@ def main():
         action='store_true',
         help='Persist the backfill. Without this flag the command reports a dry run.',
     )
+    parser.add_argument(
+        '--missing-outs-only',
+        action='store_true',
+        help='Repair only rows where innings_pitched_outs is null.',
+    )
     args = parser.parse_args()
 
     with app.app_context():
-        stats = backfill_game_log_innings_outs(db.session, apply=args.apply)
+        if args.missing_outs_only:
+            stats = repair_missing_innings_outs(db.session, apply=args.apply)
+        else:
+            stats = backfill_game_log_innings_outs(db.session, apply=args.apply)
         payload = stats.to_dict()
         payload['mode'] = 'apply' if args.apply else 'dry_run'
+        payload['scope'] = 'missing_outs_only' if args.missing_outs_only else 'all_game_logs'
         payload['raw_mlb_fraction_rows_remaining'] = count_raw_mlb_fraction_rows(db.session)
 
     print(json.dumps(payload, indent=2, sort_keys=True))
