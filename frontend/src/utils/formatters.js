@@ -2,7 +2,15 @@
 export const fmtAvg = (n) => n != null ? Number(n).toFixed(3).replace(/^0/, '') : '---'
 export const fmtPct = (n) => n != null ? Number(n).toFixed(3).replace(/^0/, '') : '---'
 export const fmtEra = (n) => n != null ? Number(n).toFixed(2) : '---'
-export const fmtIP  = (n) => n != null ? Number(n).toFixed(1) : '0.0'
+export const fmtIP = (innings, outs = null) => {
+  const rawOuts = outs != null ? Number(outs) : Number(innings) * 3
+  if (!Number.isFinite(rawOuts) || rawOuts < 0) return '0.0'
+
+  const totalOuts = Math.round(rawOuts)
+  const whole = Math.floor(totalOuts / 3)
+  const remainder = totalOuts % 3
+  return `${whole}.${remainder}`
+}
 export const fmtNum = (n) => n != null ? n : '---'
 
 // ── Fatigue ──────────────────────────────────────────────────
