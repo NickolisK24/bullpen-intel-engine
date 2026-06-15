@@ -52,13 +52,19 @@ STATUS_ROLE_UNKNOWN = 'role_unknown'
 # ── Calibration defaults (tunable; deterministic) ───────────────────────────
 STARTER_SHARE = 0.80          # known-start share at/above → Starter
 RELIEVER_SHARE = 0.20         # known-start share at/below → Reliever
+AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD = 0.60
 OPENER_MAX_AVG_START_IP = 2.0  # "starts" this short read as opener, not starter
 HIGH_CONFIDENCE_EVIDENCE = 5   # known-start appearances at/above → High eligible
 MIN_BINARY_EVIDENCE = 2        # below this, confident binary is capped to Low
+AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES = HIGH_CONFIDENCE_EVIDENCE
 
 AMBIGUOUS_LIMITATION = (
     'Swing/ambiguous role — shown on the bullpen surface with a caveat because '
     'this pitcher both starts and relieves.'
+)
+START_LEANING_AMBIGUOUS_LIMITATION = (
+    'Ambiguous role leans starter over the recent window; excluded from default '
+    'bullpen counts.'
 )
 UNKNOWN_LIMITATION = (
     'Role not yet established from start data; withheld from default bullpen counts.'
@@ -240,6 +246,22 @@ def classify_role(pitcher, logs, reference_date=None):
         conf = CONF_MEDIUM
     else:
         conf = CONF_LOW
+
+    if (
+        coverage >= AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES
+        and start_share >= AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD
+    ):
+        evidence.append(
+            f'Start share {start_share:.2f} is at or above the ambiguous eligibility '
+            f'threshold {AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD:.2f}.'
+        )
+        return _result(
+            ROLE_AMBIGUOUS, conf, STATUS_ROLE_AMBIGUOUS, False,
+            f'Mixed usage leans starter ({starts} of {coverage} appearances were starts).',
+            evidence,
+            limitations=[AMBIGUOUS_LIMITATION, START_LEANING_AMBIGUOUS_LIMITATION],
+        )
+
     return _result(
         ROLE_AMBIGUOUS, conf, STATUS_ROLE_AMBIGUOUS, True,
         f'Mixed starting and relief usage ({starts} of {coverage} appearances were starts).',

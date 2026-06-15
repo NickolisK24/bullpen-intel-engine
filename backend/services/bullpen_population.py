@@ -88,7 +88,8 @@ def eligible_bullpen_pitcher_contexts(
     Role mapping (Role Authority V1):
       - Starter   → excluded from the bullpen population.
       - Reliever  → included.
-      - Ambiguous → included with a visible caveat (they relieve).
+      - Ambiguous → included with a visible caveat unless the recent start
+                    share gate excludes a starter-leaning profile.
       - Unknown   → withheld by default; surfaced only in expanded
                     (include_inactive_context) mode, never silently a reliever.
     """

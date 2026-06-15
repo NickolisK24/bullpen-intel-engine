@@ -14,7 +14,11 @@ from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
 )
+import services.role_authority as role_authority
 from services.role_authority import (
+    AMBIGUOUS_LIMITATION,
+    AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD,
+    AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES,
     ROLE_AMBIGUOUS,
     ROLE_RELIEVER,
     ROLE_STARTER,
@@ -111,6 +115,21 @@ ORACLE_STARTERS = {
     'Nick Martinez',
 }
 ORACLE_RELIEVERS = {'Albert Suarez', 'Sean Manaea'}
+ORACLE_AMBIGUOUS_EXCLUDED = {
+    'Ryan Gusto',
+    'Sean Burke',
+    'Simeon Woods Richardson',
+    'Zack Littell',
+    'Chris Paddack',
+    'Sam Aldegheri',
+}
+ORACLE_AMBIGUOUS_ELIGIBLE = {
+    'Chase Petty',
+    'Erick Fedde',
+    'Javier Assad',
+    'Luinder Avila',
+    'Miles Mikolas',
+}
 
 
 def _cutover_scenario():
@@ -135,6 +154,13 @@ def _ids(contexts):
 
 def _names(contexts):
     return {ctx['pitcher'].full_name for ctx in contexts}
+
+
+def _start_share(logs):
+    known = [getattr(log, 'games_started', None) for log in logs]
+    covered = [flag for flag in known if flag is not None]
+    starts = sum(1 for flag in covered if flag and flag > 0)
+    return starts / len(covered), len(covered)
 
 
 def test_default_population_excludes_starters_includes_relievers_and_swing():
@@ -240,6 +266,27 @@ def test_role_authority_cutover_named_oracle_current_patterns():
         assert name not in legacy_names
         assert name in role_names
 
+    for name in ORACLE_AMBIGUOUS_EXCLUDED:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        share, known = _start_share(lbp[player.id])
+        assert result['role'] == ROLE_AMBIGUOUS
+        assert result['eligible'] is False
+        assert share >= AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD
+        assert known >= AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES
+        assert name not in role_names
+
+    for name in ORACLE_AMBIGUOUS_ELIGIBLE:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        share, known = _start_share(lbp[player.id])
+        assert result['role'] == ROLE_AMBIGUOUS
+        assert result['eligible'] is True
+        assert share < AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD
+        assert known >= AMBIGUOUS_START_SHARE_MIN_KNOWN_APPEARANCES
+        assert AMBIGUOUS_LIMITATION in result['limitations']
+        assert name in role_names
+
 
 def test_role_authority_cutover_diff_structural_sanity():
     pitchers, lbp, by_name = _cutover_scenario()
@@ -259,7 +306,7 @@ def test_role_authority_cutover_diff_structural_sanity():
     legacy_names = _names(legacy_contexts)
 
     expected_removed = {name for name, _s, _r, _legacy, role in CUTOVER_CASES if role == ROLE_STARTER}
-    expected_added = {name for name, _s, _r, _legacy, role in CUTOVER_CASES if role != ROLE_STARTER}
+    expected_added = ORACLE_RELIEVERS | ORACLE_AMBIGUOUS_ELIGIBLE
 
     assert legacy_names - role_names == expected_removed
     assert role_names - legacy_names == expected_added
@@ -270,11 +317,27 @@ def test_role_authority_cutover_diff_structural_sanity():
         assert result['role'] == ROLE_STARTER
         assert result['eligible'] is False
 
-    for name in expected_added:
+    for name in ORACLE_RELIEVERS:
         player = by_name[name]
         result = classify_role(player, lbp[player.id], reference_date=REF)
-        assert result['role'] in {ROLE_RELIEVER, ROLE_AMBIGUOUS}
+        assert result['role'] == ROLE_RELIEVER
         assert result['eligible'] is True
+
+    for name in ORACLE_AMBIGUOUS_ELIGIBLE:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        share, _known = _start_share(lbp[player.id])
+        assert result['role'] == ROLE_AMBIGUOUS
+        assert result['eligible'] is True
+        assert share < AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD
+
+    for name in ORACLE_AMBIGUOUS_EXCLUDED:
+        player = by_name[name]
+        result = classify_role(player, lbp[player.id], reference_date=REF)
+        share, _known = _start_share(lbp[player.id])
+        assert result['role'] == ROLE_AMBIGUOUS
+        assert result['eligible'] is False
+        assert share >= AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD
 
 
 def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
@@ -310,3 +373,21 @@ def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
         use_role_authority=None,
     )
     assert _ids(rollback_legacy) == _ids(explicit_legacy)
+
+
+def test_ambiguous_threshold_above_one_restores_all_ambiguous_population(monkeypatch):
+    monkeypatch.setattr(
+        role_authority,
+        'AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD',
+        1.01,
+    )
+    pitchers, lbp, _by_name = _cutover_scenario()
+    contexts, _ = eligible_bullpen_pitcher_contexts(
+        pitchers,
+        reference_date=REF,
+        logs_by_pitcher=lbp,
+        use_role_authority=True,
+    )
+    names = _names(contexts)
+    assert ORACLE_AMBIGUOUS_EXCLUDED.issubset(names)
+    assert ORACLE_AMBIGUOUS_ELIGIBLE.issubset(names)
