@@ -10,7 +10,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from services import sync_metadata
 from services.availability_reference_date import (
     parse_reference_date,
-    product_availability_reference_date_from_sync_status,
+    product_current_date,
 )
 from utils.db import db
 from utils.time import utc_now_naive
@@ -19,6 +19,7 @@ from utils.time import utc_now_naive
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_TYPE_BULLPEN_DASHBOARD = 'bullpen_dashboard'
+SNAPSHOT_STATUS_PENDING = 'pending'
 SNAPSHOT_STATUS_READY = 'ready'
 SNAPSHOT_STATUS_FAILED = 'failed'
 DASHBOARD_PAYLOAD_VERSION = 1
@@ -75,39 +76,27 @@ def snapshot_unavailable_reason(snapshot, sync_status=None):
         return 'dashboard_snapshot_missing'
     if snapshot.status != SNAPSHOT_STATUS_READY:
         return 'dashboard_snapshot_not_ready'
+    if not getattr(snapshot, 'is_published', False):
+        return 'dashboard_snapshot_not_published'
     if not payload_version_valid(snapshot):
         return 'dashboard_snapshot_version_mismatch'
     if not isinstance(snapshot.payload, Mapping):
         return 'dashboard_snapshot_payload_invalid'
 
-    try:
-        sync_status = sync_status or sync_metadata.build_sync_status_payload()
-    except Exception as exc:
-        db.session.rollback()
-        logger.warning('Could not validate dashboard snapshot freshness: %s', exc)
-        return 'dashboard_snapshot_freshness_validation_unavailable'
-
-    current_freshness = _current_freshness(sync_status)
-    degradation = current_freshness.get('degradation') or {}
+    payload_freshness = _payload_freshness(snapshot.payload)
+    data_age_days = (
+        (product_current_date() - snapshot.data_through).days
+        if snapshot.data_through is not None
+        else None
+    )
+    degradation = sync_metadata.build_degradation_block(data_age_days)
     if degradation.get('fail_closed'):
         return 'dashboard_snapshot_freshness_fail_closed'
 
-    if snapshot.data_through != _current_data_through(sync_status):
+    if snapshot.data_through != _data_through_from_payload(snapshot.payload):
         return 'dashboard_snapshot_data_through_mismatch'
-
-    availability_reference_date = product_availability_reference_date_from_sync_status(
-        sync_status
-    )
-    if snapshot.availability_reference_date != availability_reference_date:
+    if snapshot.availability_reference_date != _availability_reference_date_from_payload(snapshot.payload):
         return 'dashboard_snapshot_availability_reference_mismatch'
-
-    payload_freshness = _payload_freshness(snapshot.payload)
-    if payload_freshness.get('reference_date') != current_freshness.get('reference_date'):
-        return 'dashboard_snapshot_reference_date_mismatch'
-    if payload_freshness.get('sync_status') != sync_status.get('status'):
-        return 'dashboard_snapshot_sync_status_mismatch'
-    if payload_freshness.get('last_successful_sync') != sync_status.get('last_successful_sync'):
-        return 'dashboard_snapshot_last_successful_sync_mismatch'
 
     return None
 
@@ -124,12 +113,15 @@ def store_dashboard_snapshot(
     sync_run_id=None,
     source='sync',
     snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+    publish=True,
+    commit=True,
 ):
     stored_payload = _json_payload(payload)
     snapshot = DashboardSnapshot(
         snapshot_type=snapshot_type,
         sync_run_id=sync_run_id,
-        status=SNAPSHOT_STATUS_READY,
+        status=SNAPSHOT_STATUS_PENDING,
+        is_published=False,
         payload=stored_payload,
         payload_version=DASHBOARD_PAYLOAD_VERSION,
         data_through=_data_through_from_payload(stored_payload),
@@ -138,7 +130,37 @@ def store_dashboard_snapshot(
         source=source or 'sync',
     )
     db.session.add(snapshot)
-    db.session.commit()
+    db.session.flush()
+    if publish:
+        publish_dashboard_snapshot(snapshot, commit=commit)
+    elif commit:
+        db.session.commit()
+    return snapshot
+
+
+def publish_dashboard_snapshot(snapshot, *, commit=True):
+    if snapshot is None:
+        return None
+    if snapshot.id is None:
+        db.session.flush()
+
+    now = utc_now_naive()
+    (
+        DashboardSnapshot.query
+        .filter(
+            DashboardSnapshot.snapshot_type == snapshot.snapshot_type,
+            DashboardSnapshot.is_published == True,
+        )
+        .update({DashboardSnapshot.is_published: False}, synchronize_session=False)
+    )
+    snapshot.status = SNAPSHOT_STATUS_READY
+    snapshot.is_published = True
+    snapshot.published_at = now
+    db.session.add(snapshot)
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return snapshot
 
 
@@ -154,6 +176,7 @@ def mark_dashboard_snapshot_failed(
         snapshot_type=snapshot_type,
         sync_run_id=sync_run_id,
         status=SNAPSHOT_STATUS_FAILED,
+        is_published=False,
         payload=None,
         payload_version=DASHBOARD_PAYLOAD_VERSION,
         snapshot_generated_at=utc_now_naive(),
@@ -170,16 +193,28 @@ def mark_dashboard_snapshot_failed(
         return None
 
 
-def build_dashboard_snapshot(payload_builder, *, sync_run_id=None, source='sync'):
+def build_dashboard_snapshot(
+    payload_builder,
+    *,
+    sync_run_id=None,
+    source='sync',
+    publish=True,
+    commit=True,
+    raise_errors=False,
+):
     try:
         payload = payload_builder()
         return store_dashboard_snapshot(
             payload,
             sync_run_id=sync_run_id,
             source=source,
+            publish=publish,
+            commit=commit,
         )
     except Exception as exc:
         db.session.rollback()
+        if raise_errors:
+            raise
         logger.warning('Dashboard snapshot build failed: %s', exc)
         return mark_dashboard_snapshot_failed(
             exc,
@@ -188,13 +223,38 @@ def build_dashboard_snapshot(payload_builder, *, sync_run_id=None, source='sync'
         )
 
 
-def build_bullpen_dashboard_snapshot(*, sync_run_id=None, source='sync'):
+def build_bullpen_dashboard_snapshot(
+    *,
+    sync_run_id=None,
+    source='sync',
+    publish=True,
+    commit=True,
+    raise_errors=False,
+):
     from api.bullpen import build_bullpen_dashboard_payload
 
+    def payload_builder():
+        try:
+            payload = build_bullpen_dashboard_payload(use_published_freshness=False)
+        except TypeError as exc:
+            if 'use_published_freshness' not in str(exc):
+                raise
+            payload = build_bullpen_dashboard_payload()
+        if publish and sync_run_id is None:
+            freshness = _payload_freshness(payload)
+            if freshness.get('sync_status') not in sync_metadata.SUCCESSFUL_STATUSES:
+                raise RuntimeError(
+                    'Dashboard snapshot publish requires completed sync metadata.'
+                )
+        return payload
+
     return build_dashboard_snapshot(
-        build_bullpen_dashboard_payload,
+        payload_builder,
         sync_run_id=sync_run_id,
         source=source,
+        publish=publish,
+        commit=commit,
+        raise_errors=raise_errors,
     )
 
 
@@ -279,6 +339,7 @@ def get_latest_dashboard_snapshot(snapshot_type=SNAPSHOT_TYPE_BULLPEN_DASHBOARD)
             .filter_by(
                 snapshot_type=snapshot_type,
                 status=SNAPSHOT_STATUS_READY,
+                is_published=True,
                 payload_version=DASHBOARD_PAYLOAD_VERSION,
             )
             .order_by(

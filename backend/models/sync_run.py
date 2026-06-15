@@ -20,6 +20,10 @@ class SyncRun(db.Model):
     completed_at = db.Column(db.DateTime)
     # status is one of: running / success / partial / failed.
     status = db.Column(db.String(20), nullable=False, default='running')
+    # Pipeline stage reached by this run. Failed runs also carry failed_stage.
+    stage = db.Column(db.String(50), nullable=False, default='started')
+    failed_stage = db.Column(db.String(50))
+    published_dashboard_snapshot_id = db.Column(db.Integer, nullable=True)
     source = db.Column(db.String(30), nullable=False, default='manual')
 
     latest_game_date = db.Column(db.Date)
@@ -50,6 +54,9 @@ class SyncRun(db.Model):
             # Spec-facing alias so consumers can read either name.
             'finished_at': self.completed_at.isoformat() if self.completed_at else None,
             'status': self.status,
+            'stage': self.stage,
+            'failed_stage': self.failed_stage,
+            'published_dashboard_snapshot_id': self.published_dashboard_snapshot_id,
             'source': self.source,
             'latest_game_date': self.latest_game_date.isoformat() if self.latest_game_date else None,
             'latest_workload_date': self.latest_workload_date.isoformat() if self.latest_workload_date else None,
