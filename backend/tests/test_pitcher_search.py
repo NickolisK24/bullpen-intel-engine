@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.prospect  # noqa: F401
 from api.pitchers import pitchers_bp
@@ -27,12 +27,12 @@ def client():
     db.init_app(app)
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         try:
             yield app.test_client()
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 def seed_pitcher(

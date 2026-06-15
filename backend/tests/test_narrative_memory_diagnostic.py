@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.fatigue_score  # noqa: F401
 from api.bullpen import bullpen_bp
@@ -23,12 +23,12 @@ def client():
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         try:
             yield app.test_client()
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 def _seed_pitcher(name, team_id, mlb_id):

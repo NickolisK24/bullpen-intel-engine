@@ -19,7 +19,18 @@ BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
-from tests.db_config import configure_test_database, test_database_url  # noqa: E402,F401
+from tests.db_config import (  # noqa: E402,F401
+    assert_disposable_test_target,
+    configure_test_database,
+    create_test_schema,
+    drop_test_schema,
+    test_database_url,
+)
+
+
+def pytest_sessionstart(session):
+    database_url = test_database_url()
+    assert_disposable_test_target(database_url, operation='pytest session')
 
 
 class PitcherStub:

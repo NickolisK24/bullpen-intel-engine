@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from sqlalchemy import event
 
 import models.prospect  # noqa: F401  (register on db.metadata)
@@ -61,12 +61,12 @@ class _SnapshotAppClient:
     def __enter__(self):
         self.context = self.app.app_context()
         self.context.push()
-        db.create_all()
+        create_test_schema(self.app)
         return self.app.test_client()
 
     def __exit__(self, exc_type, exc, tb):
         db.session.remove()
-        db.drop_all()
+        drop_test_schema(self.app)
         self.context.pop()
 
 

@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
 from services import sync_metadata
@@ -80,14 +80,14 @@ def app(tmp_path, monkeypatch):
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(system_bp, url_prefix='/api/system')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         pitcher = Pitcher(mlb_id=100, full_name='Reliever A', team_id=1,
                           team_abbreviation='AAA', active=True)
         db.session.add(pitcher)
         db.session.commit()
         yield app
         db.session.remove()
-        db.drop_all()
+        drop_test_schema(app)
 
 
 class TestPartialFailure:

@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
 from services import sync_metadata
@@ -58,7 +58,7 @@ def client(tmp_path, monkeypatch):
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         # Recent data so collect_data_metadata() has something current to record.
         pitcher = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
         db.session.add(pitcher)
@@ -74,7 +74,7 @@ def client(tmp_path, monkeypatch):
             yield app.test_client()
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 def _count_runs(client):

@@ -17,7 +17,7 @@ from datetime import date, datetime
 
 import pytest
 from flask import Flask
-from tests.db_config import configure_test_database
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
 from api.bullpen import bullpen_bp
@@ -43,12 +43,12 @@ def app(tmp_path, monkeypatch):
     db.init_app(flask_app)
     flask_app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     with flask_app.app_context():
-        db.create_all()
+        create_test_schema(flask_app)
         try:
             yield flask_app
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(flask_app)
 
 
 def _add_pitcher(mlb_id, name, abbr='REF', team_id=1):
