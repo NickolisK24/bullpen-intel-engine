@@ -34,6 +34,20 @@ const liveBoard = makeBoard({ cardsByStatus: { Available: [{ pitcher_id: 7, name
 test('getDataProvenance distinguishes live, sample, and no-data', () => {
   assert.equal(view.getDataProvenance({ is_current: true, sync_status: 'success', data_through: '2026-06-04' }).label, 'Live data')
   assert.equal(view.getDataProvenance({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01' }).label, 'Sample data')
+  assert.equal(view.getDataProvenance({
+    is_current: true,
+    sync_status: 'success',
+    data_through: '2026-06-04',
+    served_consistency_state: 'previous_published_view',
+    current_sync_status: 'running',
+  }).label, 'Sync in progress')
+  assert.equal(view.getDataProvenance({
+    is_current: true,
+    sync_status: 'success',
+    data_through: '2026-06-04',
+    served_consistency_state: 'previous_published_view',
+    current_sync_status: 'failed',
+  }).label, 'Last published view')
   assert.equal(view.getDataProvenance({ data_through: null }).label, 'No data loaded')
   // The through-date meaning is always explained.
   assert.ok(view.getDataProvenance({ is_current: false, data_through: '2026-04-01' }).throughHint.includes('most recent completed game'))

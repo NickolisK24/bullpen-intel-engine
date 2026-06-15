@@ -161,11 +161,13 @@ class TestDashboardSnapshotService:
             assert snapshot.availability_reference_date is not None
             assert snapshot.payload['capability'] == 'bullpen_dashboard'
 
-    def test_latest_ready_snapshot_ignores_failed_rows(self, app):
+    def test_latest_snapshot_uses_published_ready_row(self, app):
         with app.app_context():
             old_ready = DashboardSnapshot(
                 snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
                 payload={'name': 'old'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
@@ -183,6 +185,7 @@ class TestDashboardSnapshotService:
             newer_ready = DashboardSnapshot(
                 snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=False,
                 payload={'name': 'new'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive() - timedelta(minutes=1),
@@ -192,7 +195,12 @@ class TestDashboardSnapshotService:
             db.session.commit()
 
             snapshot = dashboard_snapshot.get_latest_dashboard_snapshot()
+            assert snapshot.payload['name'] == 'old'
+
+            dashboard_snapshot.publish_dashboard_snapshot(newer_ready)
+            snapshot = dashboard_snapshot.get_latest_dashboard_snapshot()
             assert snapshot.payload['name'] == 'new'
+            assert old_ready.is_published is False
 
     def test_snapshot_validation_rejects_payload_version_mismatch(self, app):
         with app.app_context():
@@ -258,6 +266,29 @@ class TestDashboardSnapshotService:
             snapshot = db.session.get(DashboardSnapshot, result['snapshot_id'])
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_FAILED
             assert 'builder exploded' in snapshot.error_message
+
+    def test_standalone_builder_does_not_publish_during_running_sync(self, app):
+        with app.app_context():
+            _seed_dashboard_data()
+            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior_snapshot_id = prior['snapshot_id']
+            db.session.add(SyncRun(
+                started_at=utc_now_naive(),
+                status='running',
+                stage='log_ingestion',
+                source='manual',
+                created_at=utc_now_naive(),
+            ))
+            db.session.commit()
+
+            result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+
+            assert result['status'] == 'failed'
+            assert result['snapshot_served_by_dashboard'] is False
+            assert (
+                dashboard_snapshot.get_latest_valid_dashboard_snapshot().id
+                == prior_snapshot_id
+            )
 
 
 class TestDashboardRouteSnapshotBehavior:
@@ -536,7 +567,7 @@ class TestDashboardSnapshotBuildEndpoint:
 
 
 class TestSyncSnapshotIntegration:
-    def test_successful_manual_sync_does_not_build_dashboard_snapshot_inline(self, client, monkeypatch):
+    def test_successful_manual_sync_publishes_dashboard_snapshot(self, client, monkeypatch):
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
@@ -549,23 +580,25 @@ class TestSyncSnapshotIntegration:
             'cutoff': date.today().isoformat(),
         })
         monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
-        monkeypatch.setattr(
-            dashboard_snapshot,
-            'build_bullpen_dashboard_snapshot',
-            lambda **kwargs: pytest.fail('manual sync must not build dashboard snapshots inline'),
-        )
 
         with client.application.app_context():
             _seed_dashboard_data()
 
         response = client.post('/api/bullpen/sync', json={'days_back': 7})
         assert response.status_code == 200
+        body = response.get_json()
+        assert body['dashboard_snapshot_id'] is not None
 
         with client.application.app_context():
             snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
-            assert snapshot is None
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            assert snapshot is not None
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert snapshot.is_published is True
+            assert run.stage == 'published'
+            assert run.published_dashboard_snapshot_id == snapshot.id
 
-    def test_snapshot_build_failure_does_not_affect_manual_sync(self, client, monkeypatch):
+    def test_snapshot_build_failure_fails_manual_sync_without_publish(self, client, monkeypatch):
         monkeypatch.setattr(
             bullpen_api,
             'build_bullpen_dashboard_payload',
@@ -590,10 +623,14 @@ class TestSyncSnapshotIntegration:
 
         response = client.post('/api/bullpen/sync', json={'days_back': 7})
 
-        assert response.status_code == 200
-        assert response.get_json()['status'] == 'ok'
+        assert response.status_code == 500
+        with client.application.app_context():
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            assert run.status == 'failed'
+            assert run.failed_stage == 'dashboard_snapshot'
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
 
-    def test_successful_scheduled_sync_does_not_build_dashboard_snapshot_inline(self, app, monkeypatch):
+    def test_successful_scheduled_sync_publishes_dashboard_snapshot(self, app, monkeypatch):
         monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
         monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
@@ -606,15 +643,248 @@ class TestSyncSnapshotIntegration:
             'cutoff': date.today().isoformat(),
         })
         monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
-        monkeypatch.setattr(
-            dashboard_snapshot,
-            'build_bullpen_dashboard_snapshot',
-            lambda **kwargs: pytest.fail('scheduled sync must not build dashboard snapshots inline'),
-        )
+        with app.app_context():
+            _seed_dashboard_data()
 
         status = sync_service.run_daily_sync(app, days_back=7)
         assert status['status'] == 'success'
+        assert status['dashboard_snapshot_id'] is not None
 
         with app.app_context():
             snapshot = DashboardSnapshot.query.order_by(DashboardSnapshot.id.desc()).first()
-            assert snapshot is None
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            assert snapshot is not None
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert snapshot.is_published is True
+            assert run.stage == 'published'
+            assert run.published_dashboard_snapshot_id == snapshot.id
+
+    def test_failure_after_logs_keeps_previous_published_snapshot(self, client, monkeypatch):
+        monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+
+        with client.application.app_context():
+            _seed_dashboard_data()
+            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior_snapshot_id = prior['snapshot_id']
+
+        def commit_new_log(**kwargs):
+            pitcher = Pitcher.query.first()
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id,
+                mlb_game_pk=9090,
+                game_date=date.today(),
+                games_started=0,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+                pitches_thrown=12,
+                game_type='R',
+            ))
+            db.session.commit()
+            return {
+                'new_logs_added': 1,
+                'pitchers_touched': 1,
+                'errors': 0,
+                'records_failed': 0,
+                'days_back': 7,
+                'season': date.today().year,
+                'cutoff': date.today().isoformat(),
+            }
+
+        monkeypatch.setattr(sync_service, 'sync_recent_logs', commit_new_log)
+        monkeypatch.setattr(
+            sync_service,
+            'recalculate_all_fatigue',
+            lambda: (_ for _ in ()).throw(RuntimeError('recalc crashed')),
+        )
+
+        response = client.post('/api/bullpen/sync', json={'days_back': 7})
+        assert response.status_code == 500
+
+        client.application.config['APP_ENV'] = 'production'
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        assert dashboard['snapshot']['snapshot_id'] == prior_snapshot_id
+        assert dashboard['snapshot']['served_from'] == 'cache'
+        assert (
+            'latest_sync_failed_serving_previous_published_view'
+            in dashboard['freshness']['reason_codes']
+        )
+
+        with client.application.app_context():
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            assert run.status == 'failed'
+            assert run.failed_stage == 'fatigue_recalculation'
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == prior_snapshot_id
+
+    def test_failure_after_recalc_keeps_previous_published_snapshot(self, client, monkeypatch):
+        monkeypatch.setattr(sync_service, 'sync_team_assignments', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_roster_statuses', _sync_scaffolding)
+        monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **kwargs: {
+            'new_logs_added': 0,
+            'pitchers_touched': 0,
+            'errors': 0,
+            'records_failed': 0,
+            'days_back': 7,
+            'season': date.today().year,
+            'cutoff': date.today().isoformat(),
+        })
+        monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 1)
+
+        with client.application.app_context():
+            _seed_dashboard_data()
+            prior = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            prior_snapshot_id = prior['snapshot_id']
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_bullpen_dashboard_payload',
+            lambda: (_ for _ in ()).throw(RuntimeError('snapshot crashed')),
+        )
+
+        response = client.post('/api/bullpen/sync', json={'days_back': 7})
+        assert response.status_code == 500
+
+        client.application.config['APP_ENV'] = 'production'
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        assert dashboard['snapshot']['snapshot_id'] == prior_snapshot_id
+
+        with client.application.app_context():
+            run = SyncRun.query.order_by(SyncRun.id.desc()).first()
+            assert run.status == 'failed'
+            assert run.failed_stage == 'dashboard_snapshot'
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == prior_snapshot_id
+
+    def test_pending_snapshot_does_not_advance_served_pointer_until_publish(self, app):
+        with app.app_context():
+            old_snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                {
+                    **_minimal_dashboard_payload(),
+                    'freshness': {
+                        **_minimal_dashboard_payload()['freshness'],
+                        'data_through': (date.today() - timedelta(days=2)).isoformat(),
+                        'availability_reference_date': (date.today() - timedelta(days=1)).isoformat(),
+                    },
+                },
+                source='test',
+            )
+            pending = dashboard_snapshot.store_dashboard_snapshot(
+                {
+                    **_minimal_dashboard_payload(),
+                    'freshness': {
+                        **_minimal_dashboard_payload()['freshness'],
+                        'data_through': (date.today() - timedelta(days=1)).isoformat(),
+                        'availability_reference_date': date.today().isoformat(),
+                    },
+                },
+                source='test',
+                publish=False,
+            )
+
+            assert pending.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == old_snapshot.id
+
+            dashboard_snapshot.publish_dashboard_snapshot(pending)
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == pending.id
+
+    def test_recalculate_all_fatigue_commits_only_after_all_scores(self, app, monkeypatch):
+        with app.app_context():
+            today = date.today() - timedelta(days=1)
+            pitchers = [
+                Pitcher(mlb_id=201, full_name='Atomic One', active=True),
+                Pitcher(mlb_id=202, full_name='Atomic Two', active=True),
+            ]
+            db.session.add_all(pitchers)
+            db.session.commit()
+            for index, pitcher in enumerate(pitchers, start=1):
+                db.session.add(GameLog(
+                    pitcher_id=pitcher.id,
+                    mlb_game_pk=9200 + index,
+                    game_date=today,
+                    games_started=0,
+                    innings_pitched=1.0,
+                    innings_pitched_outs=3,
+                    pitches_thrown=12,
+                    game_type='R',
+                ))
+            db.session.commit()
+
+            calls = {'count': 0}
+
+            def score_or_fail(pitcher, logs, reference_date=None):
+                calls['count'] += 1
+                if calls['count'] == 2:
+                    raise RuntimeError('score failed')
+                return FatigueScore(
+                    pitcher_id=pitcher.id,
+                    raw_score=10.0,
+                    risk_level='LOW',
+                    calculated_at=utc_now_naive(),
+                )
+
+            monkeypatch.setattr(sync_service, 'calculate_fatigue', score_or_fail)
+
+            with pytest.raises(RuntimeError):
+                sync_service.recalculate_all_fatigue(reference_date=date.today())
+            db.session.rollback()
+
+            assert FatigueScore.query.count() == 0
+
+    def test_public_fatigue_list_uses_published_score_generation(self, client):
+        with client.application.app_context():
+            workload_date = date.today() - timedelta(days=1)
+            pitcher = Pitcher(
+                mlb_id=303,
+                full_name='Published Arm',
+                team_id=1,
+                team_name='Published Club',
+                team_abbreviation='PC',
+                active=True,
+                roster_status=STATUS_ACTIVE,
+                roster_status_source='test_fixture',
+                roster_status_updated_at=utc_now_naive(),
+            )
+            db.session.add(pitcher)
+            db.session.commit()
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id,
+                mlb_game_pk=9301,
+                game_date=workload_date,
+                games_started=0,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+                pitches_thrown=12,
+                game_type='R',
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=pitcher.id,
+                raw_score=12.0,
+                risk_level='LOW',
+                calculated_at=utc_now_naive() - timedelta(minutes=5),
+            ))
+            db.session.add(SyncRun(
+                started_at=utc_now_naive() - timedelta(minutes=4),
+                completed_at=utc_now_naive() - timedelta(minutes=3),
+                status='success',
+                stage='published',
+                source='manual',
+                latest_game_date=workload_date,
+                latest_workload_date=workload_date,
+                latest_fatigue_calculated_at=utc_now_naive() - timedelta(minutes=5),
+                created_at=utc_now_naive() - timedelta(minutes=4),
+            ))
+            db.session.commit()
+            snapshot = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
+            db.session.add(FatigueScore(
+                pitcher_id=pitcher.id,
+                raw_score=88.0,
+                risk_level='CRITICAL',
+                calculated_at=utc_now_naive() + timedelta(minutes=5),
+            ))
+            db.session.commit()
+            assert snapshot['snapshot_id'] is not None
+
+        response = client.get('/api/bullpen/fatigue?with_meta=true&limit=10')
+        body = response.get_json()
+
+        row = next(item for item in body['data'] if item['pitcher']['full_name'] == 'Published Arm')
+        assert row['raw_score'] == 12.0

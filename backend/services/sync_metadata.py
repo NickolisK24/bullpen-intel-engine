@@ -23,6 +23,16 @@ STATUS_FAILED = 'failed'
 STATUS_NEVER = 'never'
 STATUS_METADATA_UNAVAILABLE = 'metadata_unavailable'
 
+STAGE_STARTED = 'started'
+STAGE_TEAM_ASSIGNMENTS = 'team_assignments'
+STAGE_ROSTER_STATUS = 'roster_status'
+STAGE_LOG_INGESTION = 'log_ingestion'
+STAGE_FATIGUE_RECALCULATION = 'fatigue_recalculation'
+STAGE_BACKTEST_REFRESH = 'backtest_refresh'
+STAGE_DASHBOARD_SNAPSHOT = 'dashboard_snapshot'
+STAGE_PUBLISHED = 'published'
+STAGE_FAILED = 'failed'
+
 # A run counts as a "successful" data write for freshness purposes when it
 # either fully succeeded or completed with partial dead-lettered records — in
 # both cases the domains it touched were refreshed.
@@ -163,6 +173,7 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYN
             job_name=job_name,
             started_at=started_at,
             status=STATUS_RUNNING,
+            stage=STAGE_STARTED,
             source=source,
             created_at=started_at,
         )
@@ -173,6 +184,25 @@ def start_sync_run(source=SOURCE_MANUAL, started_at=None, job_name=JOB_DAILY_SYN
         db.session.rollback()
         # Loud: a failed durable write must not hide behind the legacy file.
         logger.error('Could not persist sync start metadata: %s', exc)
+        return None
+
+
+def set_sync_stage(sync_run_id, stage, *, commit=True):
+    if not sync_run_id:
+        return None
+    try:
+        run = db.session.get(SyncRun, sync_run_id)
+        if run is None:
+            return None
+        run.stage = stage
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+        return run
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning('Could not persist sync stage %s: %s', stage, exc)
         return None
 
 
@@ -191,6 +221,11 @@ def finish_sync_run(
     source=SOURCE_MANUAL,
     started_at=None,
     job_name=JOB_DAILY_SYNC,
+    stage=None,
+    failed_stage=None,
+    published_dashboard_snapshot_id=None,
+    commit=True,
+    rollback_before=True,
 ):
     """
     Record the outcome of a sync as a durable sync_runs row.
@@ -202,10 +237,11 @@ def finish_sync_run(
     legacy status file simply because the start write hiccuped.
     """
     completed_at = completed_at or _now()
-    try:
-        db.session.rollback()
-    except SQLAlchemyError:
-        pass
+    if rollback_before:
+        try:
+            db.session.rollback()
+        except SQLAlchemyError:
+            pass
     try:
         run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
         if run is None:
@@ -215,6 +251,9 @@ def finish_sync_run(
                 job_name=job_name,
                 started_at=started_at or completed_at,
                 status=status,
+                stage=stage or (
+                    STAGE_FAILED if status == STATUS_FAILED else STAGE_PUBLISHED
+                ),
                 source=source,
                 created_at=started_at or completed_at,
             )
@@ -223,6 +262,12 @@ def finish_sync_run(
         metadata = collect_data_metadata()
         run.completed_at = completed_at
         run.status = status
+        run.stage = stage or (
+            STAGE_FAILED if status == STATUS_FAILED else STAGE_PUBLISHED
+        )
+        run.failed_stage = failed_stage
+        if published_dashboard_snapshot_id is not None:
+            run.published_dashboard_snapshot_id = published_dashboard_snapshot_id
         run.latest_game_date = metadata['latest_game_date']
         run.latest_workload_date = metadata['latest_workload_date']
         run.latest_fatigue_calculated_at = metadata['latest_fatigue_calculated_at']
@@ -234,7 +279,10 @@ def finish_sync_run(
         run.api_calls_made = api_calls_made or 0
         run.retries_used = retries_used or 0
         run.error_message = error_message
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
         return run
     except SQLAlchemyError as exc:
         db.session.rollback()

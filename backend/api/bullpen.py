@@ -10,6 +10,7 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
+from models.sync_run import SyncRun
 from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
 from services.availability_reference_date import (
     parse_reference_date,
@@ -134,14 +135,26 @@ def _recent_pitcher_ids_subquery(days: int = ACTIVE_WINDOW_DAYS, reference_date=
     )
 
 
-def _latest_fatigue_query(team_id=None, risk_level=None):
+def _served_score_cutoff():
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is None:
+        return None
+    return snapshot.snapshot_generated_at
+
+
+def _latest_fatigue_query(team_id=None, risk_level=None, calculated_at_lte=None):
     """Latest fatigue-score rows with optional user-visible filters applied."""
+    score_scope = db.session.query(FatigueScore)
+    if calculated_at_lte is not None:
+        score_scope = score_scope.filter(FatigueScore.calculated_at <= calculated_at_lte)
+    score_scope = score_scope.subquery()
+
     subq = (
         db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc')
+            score_scope.c.pitcher_id,
+            db.func.max(score_scope.c.calculated_at).label('max_calc')
         )
-        .group_by(FatigueScore.pitcher_id)
+        .group_by(score_scope.c.pitcher_id)
         .subquery()
     )
 
@@ -253,8 +266,13 @@ def get_fatigue_scores():
     with_meta     = _truthy(request.args.get('with_meta'))
     freshness     = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
+    score_cutoff = _served_score_cutoff()
 
-    base_query     = _latest_fatigue_query(team_id=team_id, risk_level=risk_level)
+    base_query     = _latest_fatigue_query(
+        team_id=team_id,
+        risk_level=risk_level,
+        calculated_at_lte=score_cutoff,
+    )
     filtered_count = base_query.count()
     recent         = _recent_pitcher_ids_subquery(reference_date=reference_date)
     fresh_query    = base_query.join(recent, recent.c.pitcher_id == Pitcher.id)
@@ -360,12 +378,11 @@ def get_pitcher_fatigue(pitcher_id):
     if pitcher is None:
         abort(404)
 
-    latest = (
-        FatigueScore.query
-        .filter_by(pitcher_id=pitcher_id)
-        .order_by(desc(FatigueScore.calculated_at))
-        .first()
-    )
+    score_cutoff = _served_score_cutoff()
+    latest_query = FatigueScore.query.filter_by(pitcher_id=pitcher_id)
+    if score_cutoff is not None:
+        latest_query = latest_query.filter(FatigueScore.calculated_at <= score_cutoff)
+    latest = latest_query.order_by(desc(FatigueScore.calculated_at)).first()
 
     freshness = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
@@ -397,8 +414,10 @@ def get_pitcher_fatigue(pitcher_id):
             FatigueScore.calculated_at >= thirty_days_ago
         )
         .order_by(FatigueScore.calculated_at)
-        .all()
     )
+    if score_cutoff is not None:
+        history = history.filter(FatigueScore.calculated_at <= score_cutoff)
+    history = history.all()
 
     workload_signal = _availability_for(pitcher_id, latest, reference_date=reference_date)
     roster_status = classify_roster_status(pitcher)
@@ -474,8 +493,20 @@ def sync_recent_logs():
     mlb_client.metrics.reset()
 
     try:
+        sync_metadata.set_sync_stage(
+            sync_run_id,
+            sync_metadata.STAGE_TEAM_ASSIGNMENTS,
+        )
         team_assignment = sync_service.sync_team_assignments()
+        sync_metadata.set_sync_stage(
+            sync_run_id,
+            sync_metadata.STAGE_ROSTER_STATUS,
+        )
         roster = sync_service.sync_roster_statuses()
+        sync_metadata.set_sync_stage(
+            sync_run_id,
+            sync_metadata.STAGE_LOG_INGESTION,
+        )
         pull = sync_service.sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
     except Exception as e:
         db.session.rollback()
@@ -492,6 +523,12 @@ def sync_recent_logs():
             error_message=str(e),
             source=source,
             started_at=started.replace(tzinfo=None),
+            stage=sync_metadata.STAGE_FAILED,
+            failed_stage=(
+                db.session.get(SyncRun, sync_run_id).stage
+                if sync_run_id and db.session.get(SyncRun, sync_run_id) is not None
+                else None
+            ),
         )
         # Persist failure status so the dashboard reflects the bad state. The
         # file write is best-effort and never gates the durable row above.
@@ -506,38 +543,90 @@ def sync_recent_logs():
         })
         return jsonify({'error': f'Sync failed: {str(e)}'}), 500
 
-    # Canonical authority: score against the latest completed workload date + 1
-    # day — the same reference the scheduled sync and recalculate endpoint use.
-    fatigue_updated = sync_service.recalculate_all_fatigue()
-    finished        = datetime.now(timezone.utc)
-    # Partial when records were dead-lettered but domains still refreshed.
-    records_failed = pull['records_failed']
-    final_status = (
-        sync_metadata.STATUS_PARTIAL if records_failed
-        else sync_metadata.STATUS_SUCCESS
-    )
-    partial_message = (
-        f'{records_failed} record(s) dead-lettered; see sync_failures.'
-        if records_failed else None
-    )
-    api_metrics = mlb_client.metrics.snapshot()
-    # Durable first (self-healing if the start row never persisted), then the
-    # best-effort cache file. The durable row is the source of truth.
-    completed_run = sync_metadata.finish_sync_run(
-        sync_run_id,
-        status=final_status,
-        completed_at=finished.replace(tzinfo=None),
-        records_processed=pull['new_logs_added'],
-        records_failed=records_failed,
-        new_logs_added=pull['new_logs_added'],
-        pitchers_updated=fatigue_updated,
-        errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
-        api_calls_made=api_metrics['api_calls'],
-        retries_used=api_metrics['retries'],
-        error_message=partial_message,
-        source=source,
-        started_at=started.replace(tzinfo=None),
-    )
+    try:
+        # Canonical authority: score against the latest completed workload date + 1
+        # day — the same reference the scheduled sync and recalculate endpoint use.
+        sync_metadata.set_sync_stage(
+            sync_run_id,
+            sync_metadata.STAGE_FATIGUE_RECALCULATION,
+        )
+        fatigue_updated = sync_service.recalculate_all_fatigue()
+        sync_metadata.set_sync_stage(
+            sync_run_id,
+            sync_metadata.STAGE_BACKTEST_REFRESH,
+        )
+        try:
+            from services.availability_backtest import refresh_availability_backtest
+            backtest = refresh_availability_backtest()
+        except Exception as exc:
+            db.session.rollback()
+            backtest = {'status': 'failed', 'error': str(exc)}
+        finished        = datetime.now(timezone.utc)
+        # Partial when records were dead-lettered but domains still refreshed.
+        records_failed = pull['records_failed']
+        final_status = (
+            sync_metadata.STATUS_PARTIAL if records_failed
+            else sync_metadata.STATUS_SUCCESS
+        )
+        partial_message = (
+            f'{records_failed} record(s) dead-lettered; see sync_failures.'
+            if records_failed else None
+        )
+        api_metrics = mlb_client.metrics.snapshot()
+        # Durable first (self-healing if the start row never persisted), then the
+        # best-effort cache file. The durable row is the source of truth.
+        completed_run, snapshot = sync_service.complete_sync_run_with_snapshot(
+            sync_run_id,
+            final_status=final_status,
+            completed_at=finished.replace(tzinfo=None),
+            records_processed=pull['new_logs_added'],
+            records_failed=records_failed,
+            new_logs_added=pull['new_logs_added'],
+            pitchers_updated=fatigue_updated,
+            errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
+            api_calls_made=api_metrics['api_calls'],
+            retries_used=api_metrics['retries'],
+            error_message=partial_message,
+            source=source,
+            started_at=started.replace(tzinfo=None),
+            snapshot_source='manual_sync',
+        )
+    except Exception as exc:
+        db.session.rollback()
+        finished = datetime.now(timezone.utc)
+        fatigue_updated = locals().get('fatigue_updated', 0)
+        records_failed = pull.get('records_failed', 0)
+        api_metrics = mlb_client.metrics.snapshot()
+        existing_run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+        if existing_run is None or existing_run.status != sync_metadata.STATUS_FAILED:
+            sync_metadata.finish_sync_run(
+                sync_run_id,
+                status=sync_metadata.STATUS_FAILED,
+                completed_at=finished.replace(tzinfo=None),
+                records_processed=pull['new_logs_added'],
+                records_failed=records_failed,
+                new_logs_added=pull['new_logs_added'],
+                pitchers_updated=fatigue_updated,
+                errors=pull['errors'] + roster['errors'] + team_assignment['errors'] + 1,
+                api_calls_made=api_metrics['api_calls'],
+                retries_used=api_metrics['retries'],
+                error_message=str(exc),
+                source=source,
+                started_at=started.replace(tzinfo=None),
+                stage=sync_metadata.STAGE_FAILED,
+                failed_stage=existing_run.stage if existing_run is not None else None,
+            )
+        sync_service.write_status({
+            'last_sync':       started.isoformat(),
+            'status':          sync_metadata.STATUS_FAILED,
+            'pitchers_updated': fatigue_updated,
+            'new_logs_added':  pull['new_logs_added'],
+            'records_failed':  records_failed,
+            'errors':          pull['errors'] + roster['errors'] + team_assignment['errors'] + 1,
+            'message':         str(exc),
+            'finished_at':     finished.isoformat(),
+        })
+        return jsonify({'error': f'Sync failed: {str(exc)}'}), 500
     persisted_run_id = completed_run.id if completed_run is not None else sync_run_id
 
     # Mirror what the daily APScheduler job writes for local diagnostics. The
@@ -557,8 +646,11 @@ def sync_recent_logs():
         'roster_statuses_refreshed': roster['pitchers_refreshed'],
         'roster_statuses_changed': roster['pitchers_changed'],
         'roster_status_unknown': roster['unknown_count'],
+        'availability_backtest_status': backtest.get('status'),
+        'availability_backtest_computed_at': backtest.get('computed_at'),
         'message':         '',
         'finished_at':     finished.isoformat(),
+        'dashboard_snapshot_id': snapshot.id if snapshot is not None else None,
     })
 
     return jsonify({
@@ -581,6 +673,9 @@ def sync_recent_logs():
         'synced_at':            finished.isoformat(),
         'sync_run_id':          persisted_run_id,
         'sync_run_persisted':   persisted_run_id is not None,
+        'dashboard_snapshot_id': snapshot.id if snapshot is not None else None,
+        'availability_backtest_status': backtest.get('status'),
+        'availability_backtest_computed_at': backtest.get('computed_at'),
         'days_back':            days_back,
     })
 
@@ -695,7 +790,7 @@ def get_teams():
     ])
 
 
-def _team_bullpen_rows(team_id, include_stale=False, reference_date=None):
+def _team_bullpen_rows(team_id, include_stale=False, reference_date=None, calculated_at_lte=None):
     """
     Latest fatigue + availability for a team's active pitchers.
 
@@ -703,12 +798,17 @@ def _team_bullpen_rows(team_id, include_stale=False, reference_date=None):
     {pitcher_id: availability} map so the bullpen overview and Tonight's Bullpen
     Board share one availability calculation instead of duplicating it.
     """
+    score_scope = db.session.query(FatigueScore)
+    if calculated_at_lte is not None:
+        score_scope = score_scope.filter(FatigueScore.calculated_at <= calculated_at_lte)
+    score_scope = score_scope.subquery()
+
     subq = (
         db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc')
+            score_scope.c.pitcher_id,
+            db.func.max(score_scope.c.calculated_at).label('max_calc')
         )
-        .group_by(FatigueScore.pitcher_id)
+        .group_by(score_scope.c.pitcher_id)
         .subquery()
     )
 
@@ -757,6 +857,7 @@ def get_team_bullpen(team_id):
         team_id,
         include_stale,
         reference_date=reference_date,
+        calculated_at_lte=_served_score_cutoff(),
     )
 
     return jsonify([
@@ -769,14 +870,14 @@ def get_team_bullpen(team_id):
     ])
 
 
-def _board_freshness_block():
+def _sync_status_freshness_block(status_payload=None):
     """
     Compact freshness/trust block for the board, derived from the same durable
     sync metadata the dashboard trusts. Never raises — a DB hiccup degrades to a
     clearly-labelled "unavailable" state instead of failing the board.
     """
     try:
-        status_payload = sync_metadata.build_sync_status_payload()
+        status_payload = status_payload or sync_metadata.build_sync_status_payload()
         availability_reference_date = product_availability_reference_date_from_sync_status(
             status_payload
         )
@@ -840,6 +941,65 @@ def _board_freshness_block():
             'degradation_state': 'unavailable',
             'fail_closed': True,
         }
+
+
+def _published_snapshot_overlay(snapshot):
+    try:
+        status_payload = sync_metadata.build_sync_status_payload()
+    except Exception:
+        return {}
+    latest_sync = status_payload.get('sync') or {}
+    latest_id = latest_sync.get('id')
+    snapshot_sync_id = snapshot.sync_run_id if snapshot is not None else None
+    if latest_id == snapshot_sync_id:
+        return {}
+    if status_payload.get('status') not in (
+        sync_metadata.STATUS_RUNNING,
+        sync_metadata.STATUS_FAILED,
+    ):
+        return {}
+    return {
+        'served_consistency_state': 'previous_published_view',
+        'current_sync_status': status_payload.get('status'),
+        'current_sync_stage': latest_sync.get('stage'),
+        'current_sync_run_id': latest_id,
+    }
+
+
+def _published_snapshot_freshness_block():
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is None or not isinstance(snapshot.payload, dict):
+        return None
+    freshness = dict((snapshot.payload or {}).get('freshness') or {})
+    if not freshness:
+        return None
+    overlay = _published_snapshot_overlay(snapshot)
+    if overlay:
+        reason_codes = list(freshness.get('reason_codes') or [])
+        limitations = list(freshness.get('limitations') or [])
+        status = overlay.get('current_sync_status')
+        if status == sync_metadata.STATUS_RUNNING:
+            code = 'sync_in_progress_serving_previous_published_view'
+            message = 'A sync is in progress; this is the last fully published view.'
+        else:
+            code = 'latest_sync_failed_serving_previous_published_view'
+            message = 'The latest sync failed before publish; this is the last fully published view.'
+        if code not in reason_codes:
+            reason_codes.append(code)
+        if message not in limitations:
+            limitations.append(message)
+        freshness.update(overlay)
+        freshness['reason_codes'] = reason_codes
+        freshness['limitations'] = limitations
+    return freshness
+
+
+def _board_freshness_block(*, use_published=True):
+    if use_published:
+        published = _published_snapshot_freshness_block()
+        if published is not None:
+            return published
+    return _sync_status_freshness_block()
 
 
 def _team_info_lookup(team_id):
@@ -931,6 +1091,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         team_id,
         include_stale,
         reference_date=ref,
+        calculated_at_lte=_served_score_cutoff(),
     )
 
     team_info = None
@@ -1408,6 +1569,12 @@ def get_role_authority_diagnostic():
 @bullpen_bp.route('/stats/overview', methods=['GET'])
 def get_stats_overview():
     """Dashboard overview stats."""
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is not None and isinstance(snapshot.payload, dict):
+        overview = (snapshot.payload or {}).get('stats_overview')
+        if isinstance(overview, dict):
+            return jsonify(dict(overview))
+
     total_pitchers = Pitcher.query.filter_by(active=True).count()
     total_logs     = GameLog.query.count()
     freshness = _board_freshness_block()
@@ -1443,7 +1610,7 @@ def get_stats_overview():
     })
 
 
-def build_bullpen_dashboard_payload():
+def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     """
     League-wide bullpen overview for the landing dashboard.
 
@@ -1453,9 +1620,14 @@ def build_bullpen_dashboard_payload():
     pitchers. Presentation/context only:
     no ranking, selection, recommendation, or prediction.
     """
-    freshness = _board_freshness_block()
+    freshness = _board_freshness_block(use_published=use_published_freshness)
     reference_date = _public_availability_reference_date(freshness)
     latest_rows = availability_latest_fatigue_rows()
+    inventory_records = classify_latest_fatigue_rows(
+        latest_rows,
+        reference_date=reference_date,
+        mode=CURRENT_AVAILABILITY_MODE,
+    )
     availability_records = current_availability_records(
         latest_rows,
         reference_date=reference_date,
@@ -1499,6 +1671,24 @@ def build_bullpen_dashboard_payload():
         availability_records=availability_records,
         reference_date=reference_date,
     )
+    latest_scores = [score for score, _pitcher in latest_rows]
+    risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
+    for score in latest_scores:
+        if score.risk_level in risk_breakdown:
+            risk_breakdown[score.risk_level] += 1
+    avg_fatigue = (
+        sum(score.raw_score for score in latest_scores) / len(latest_scores)
+        if latest_scores else 0
+    )
+    inventory_summary = summarize_scored_pitcher_inventory(inventory_records)
+    stats_overview = {
+        'total_pitchers': Pitcher.query.filter_by(active=True).count(),
+        'total_game_logs': GameLog.query.count(),
+        'risk_breakdown': risk_breakdown,
+        'avg_fatigue_score': round(float(avg_fatigue), 1),
+        'scored_pitchers': len(latest_scores),
+        'scored_pitcher_inventory': inventory_summary,
+    }
 
     payload = {
         'capability': 'bullpen_dashboard',
@@ -1518,6 +1708,8 @@ def build_bullpen_dashboard_payload():
         'story_context': context_support,
         'freshness': freshness,
         'availability_summary': summary,
+        'scored_pitcher_inventory': inventory_summary,
+        'stats_overview': stats_overview,
     }
     data_through = parse_reference_date(
         freshness.get('data_through')
@@ -1547,6 +1739,27 @@ def build_bullpen_dashboard_payload():
 
 def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=None):
     result = dict(payload or {})
+    if snapshot is not None:
+        freshness = dict(result.get('freshness') or {})
+        overlay = _published_snapshot_overlay(snapshot)
+        if overlay:
+            reason_codes = list(freshness.get('reason_codes') or [])
+            limitations = list(freshness.get('limitations') or [])
+            status = overlay.get('current_sync_status')
+            if status == sync_metadata.STATUS_RUNNING:
+                code = 'sync_in_progress_serving_previous_published_view'
+                message = 'A sync is in progress; this is the last fully published view.'
+            else:
+                code = 'latest_sync_failed_serving_previous_published_view'
+                message = 'The latest sync failed before publish; this is the last fully published view.'
+            if code not in reason_codes:
+                reason_codes.append(code)
+            if message not in limitations:
+                limitations.append(message)
+            freshness.update(overlay)
+            freshness['reason_codes'] = reason_codes
+            freshness['limitations'] = limitations
+            result['freshness'] = freshness
     snapshot_generated_at = (
         snapshot.snapshot_generated_at.isoformat()
         if snapshot is not None and snapshot.snapshot_generated_at
@@ -1562,6 +1775,8 @@ def _dashboard_payload_with_snapshot_metadata(payload, served_from, snapshot=Non
         result['snapshot'].update({
             'snapshot_id': snapshot.id,
             'sync_run_id': snapshot.sync_run_id,
+            'is_published': bool(snapshot.is_published),
+            'published_at': snapshot.published_at.isoformat() if snapshot.published_at else None,
             'data_through': snapshot.data_through.isoformat() if snapshot.data_through else None,
             'availability_reference_date': (
                 snapshot.availability_reference_date.isoformat()
@@ -1777,6 +1992,12 @@ def get_bullpen_landscape():
     stored games-today anchor. Descriptive and deterministic; no ranking,
     selection, recommendation, or prediction.
     """
+    snapshot = dashboard_snapshot_service.get_latest_valid_dashboard_snapshot()
+    if snapshot is not None and isinstance(snapshot.payload, dict):
+        landscape = (snapshot.payload or {}).get('landscape')
+        if isinstance(landscape, dict):
+            return jsonify(landscape)
+
     freshness = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
     records = current_availability_records(

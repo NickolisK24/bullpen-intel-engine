@@ -58,13 +58,24 @@ def availability_mode_metadata(mode, records=None, reference_date=None):
     }
 
 
-def latest_fatigue_rows(team_id=None, risk_level=None, limit=None, order_by_score=False):
+def latest_fatigue_rows(
+    team_id=None,
+    risk_level=None,
+    limit=None,
+    order_by_score=False,
+    calculated_at_lte=None,
+):
+    score_scope = db.session.query(FatigueScore)
+    if calculated_at_lte is not None:
+        score_scope = score_scope.filter(FatigueScore.calculated_at <= calculated_at_lte)
+    score_scope = score_scope.subquery()
+
     subq = (
         db.session.query(
-            FatigueScore.pitcher_id,
-            db.func.max(FatigueScore.calculated_at).label('max_calc'),
+            score_scope.c.pitcher_id,
+            db.func.max(score_scope.c.calculated_at).label('max_calc'),
         )
-        .group_by(FatigueScore.pitcher_id)
+        .group_by(score_scope.c.pitcher_id)
         .subquery()
     )
 

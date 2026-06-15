@@ -19,6 +19,7 @@ from sqlalchemy import desc
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
+from models.sync_run import SyncRun
 from services import dead_letter
 from services import sync_metadata
 from services.fatigue import calculate_fatigue
@@ -317,6 +318,83 @@ def recalculate_all_fatigue(reference_date: date | None = None):
     return updated
 
 
+def complete_sync_run_with_snapshot(
+    sync_run_id,
+    *,
+    final_status,
+    completed_at=None,
+    records_processed=0,
+    records_failed=0,
+    new_logs_added=0,
+    pitchers_updated=0,
+    errors=0,
+    api_calls_made=0,
+    retries_used=0,
+    error_message=None,
+    source=sync_metadata.SOURCE_MANUAL,
+    started_at=None,
+    snapshot_source='sync_completion',
+):
+    from services import dashboard_snapshot as dashboard_snapshot_service
+
+    completed_at = completed_at or datetime.now(timezone.utc).replace(tzinfo=None)
+    sync_metadata.set_sync_stage(
+        sync_run_id,
+        sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
+    )
+    try:
+        run = sync_metadata.finish_sync_run(
+            sync_run_id,
+            status=final_status,
+            completed_at=completed_at,
+            records_processed=records_processed,
+            records_failed=records_failed,
+            new_logs_added=new_logs_added,
+            pitchers_updated=pitchers_updated,
+            errors=errors,
+            api_calls_made=api_calls_made,
+            retries_used=retries_used,
+            error_message=error_message,
+            source=source,
+            started_at=started_at,
+            stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
+            commit=False,
+            rollback_before=False,
+        )
+        snapshot = dashboard_snapshot_service.build_bullpen_dashboard_snapshot(
+            sync_run_id=run.id if run is not None else sync_run_id,
+            source=snapshot_source,
+            publish=True,
+            commit=False,
+            raise_errors=True,
+        )
+        if run is not None:
+            run.stage = sync_metadata.STAGE_PUBLISHED
+            run.published_dashboard_snapshot_id = snapshot.id
+        db.session.commit()
+        return run, snapshot
+    except Exception as exc:
+        db.session.rollback()
+        sync_metadata.finish_sync_run(
+            sync_run_id,
+            status=sync_metadata.STATUS_FAILED,
+            completed_at=completed_at,
+            records_processed=records_processed,
+            records_failed=records_failed,
+            new_logs_added=new_logs_added,
+            pitchers_updated=pitchers_updated,
+            errors=(errors or 0) + 1,
+            api_calls_made=api_calls_made,
+            retries_used=retries_used,
+            error_message=str(exc),
+            source=source,
+            started_at=started_at,
+            stage=sync_metadata.STAGE_FAILED,
+            failed_stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
+        )
+        raise
+
+
 def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_SCHEDULED):
     """
     Full daily refresh — pulls new logs, recalculates fatigue using each
@@ -367,6 +445,10 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             # Fresh API metrics for this run so api_calls_made / retries_used
             # reflect only this sync's activity.
             mlb_client.metrics.reset()
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_TEAM_ASSIGNMENTS,
+            )
             team_assignment = sync_team_assignments()
             run_logger.info(
                 'Refreshed team assignment for %s pitchers (%s changed, %s reassigned, %s no org, %s unknown, %s errors)',
@@ -377,6 +459,10 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 team_assignment['unknown_count'],
                 team_assignment['errors'],
             )
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_ROSTER_STATUS,
+            )
             roster = sync_roster_statuses()
             run_logger.info(
                 'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
@@ -384,6 +470,10 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 roster['pitchers_changed'],
                 roster['unknown_count'],
                 roster['errors'],
+            )
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_LOG_INGESTION,
             )
             pull = sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
             run_logger.info(
@@ -413,10 +503,18 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                     status['message'] = 'No games found — offseason skip.'
                     run_logger.info('No games found — offseason skip.')
 
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_FATIGUE_RECALCULATION,
+            )
             pitchers_updated = recalculate_all_fatigue()
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
 
+            sync_metadata.set_sync_stage(
+                sync_run_id,
+                sync_metadata.STAGE_BACKTEST_REFRESH,
+            )
             try:
                 from services.availability_backtest import refresh_availability_backtest
                 backtest = refresh_availability_backtest()
@@ -445,9 +543,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                     f'{records_failed} record(s) dead-lettered; see sync_failures.'
                 )
             api_metrics = mlb_client.metrics.snapshot()
-            completed_run = sync_metadata.finish_sync_run(
+            completed_run, snapshot = complete_sync_run_with_snapshot(
                 sync_run_id,
-                status=final_status,
+                final_status=final_status,
                 records_processed=pull['new_logs_added'],
                 records_failed=records_failed,
                 new_logs_added=pull['new_logs_added'],
@@ -458,7 +556,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 error_message=status['message'] or None,
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
+                snapshot_source='scheduled_sync',
             )
+            status['dashboard_snapshot_id'] = snapshot.id
     except Exception as e:
         status['status']  = sync_metadata.STATUS_FAILED
         status['message'] = str(e)
@@ -470,16 +570,20 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
         except Exception:
             api_metrics = {'api_calls': 0, 'retries': 0}
         with app.app_context():
-            sync_metadata.finish_sync_run(
-                sync_run_id,
-                status=sync_metadata.STATUS_FAILED,
-                source=source,
-                started_at=started_at.replace(tzinfo=None),
-                errors=1,
-                api_calls_made=api_metrics['api_calls'],
-                retries_used=api_metrics['retries'],
-                error_message=str(e),
-            )
+            existing_run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+            if existing_run is None or existing_run.status != sync_metadata.STATUS_FAILED:
+                sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=sync_metadata.STATUS_FAILED,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    errors=1,
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=str(e),
+                    stage=sync_metadata.STAGE_FAILED,
+                    failed_stage=existing_run.stage if existing_run is not None else None,
+                )
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
 
