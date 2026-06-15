@@ -334,9 +334,9 @@ def build_workload_concentration_continuity(
     """
     Identify repeated bullpen workload concentration in a fixed date window.
 
-    The evidence is based on relief appearances only. A row with
-    games_started=1 is excluded; a null gamesStarted value is included with a
-    limitation because older stored rows may not have the start signal.
+    The evidence is based on relief appearances only. Rows with
+    games_started=1 or unknown gamesStarted are excluded from bullpen workload
+    evidence.
     """
     all_logs = list(logs or [])
     ref = _resolve_reference_date(all_logs, reference_date=reference_date)
