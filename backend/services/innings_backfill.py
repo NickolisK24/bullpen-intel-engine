@@ -28,6 +28,30 @@ class InningsBackfillStats:
         return payload
 
 
+@dataclass
+class MissingInningsOutsRepair:
+    state: str
+    outs: int | None
+    innings_pitched: float | None
+
+
+@dataclass
+class MissingInningsOutsRepairStats:
+    total_rows: int = 0
+    rows_repaired: int = 0
+    rows_missing: int = 0
+    rows_flagged_anomalous: int = 0
+    aggregate_ip_before: float = 0.0
+    aggregate_ip_after: float = 0.0
+    anomalous_examples: list[dict] = field(default_factory=list)
+
+    def to_dict(self):
+        payload = asdict(self)
+        payload['aggregate_ip_before'] = round(float(self.aggregate_ip_before), 6)
+        payload['aggregate_ip_after'] = round(float(self.aggregate_ip_after), 6)
+        return payload
+
+
 def _numeric(value):
     try:
         return float(value)
@@ -60,12 +84,89 @@ def _has_raw_mlb_fraction(value, *, tolerance=1e-6):
     )
 
 
+def resolve_missing_innings_outs(log) -> MissingInningsOutsRepair:
+    classification = classify_existing_decimal_innings(log.innings_pitched)
+    if classification.outs is None:
+        return MissingInningsOutsRepair(classification.state, None, None)
+    return MissingInningsOutsRepair(
+        classification.state,
+        classification.outs,
+        outs_to_decimal_innings(classification.outs),
+    )
+
+
 def count_raw_mlb_fraction_rows(session) -> int:
     count = 0
     for (value,) in session.query(GameLog.innings_pitched).all():
         if _has_raw_mlb_fraction(value):
             count += 1
     return count
+
+
+def repair_missing_innings_outs(
+    session,
+    *,
+    apply: bool = False,
+    anomaly_limit: int = 20,
+    batch_size: int = 1000,
+) -> MissingInningsOutsRepairStats:
+    stats = MissingInningsOutsRepairStats()
+    logs = (
+        session.query(GameLog)
+        .filter(GameLog.innings_pitched_outs.is_(None))
+        .order_by(GameLog.id)
+        .all()
+    )
+    updates = []
+
+    def flush_updates():
+        nonlocal updates
+        if not apply or not updates:
+            return
+        session.bulk_update_mappings(GameLog, updates)
+        session.commit()
+        updates = []
+
+    for log in logs:
+        stats.total_rows += 1
+        before = _numeric(log.innings_pitched)
+        if before is not None:
+            stats.aggregate_ip_before += before
+
+        repair = resolve_missing_innings_outs(log)
+        if repair.state == 'missing':
+            stats.rows_missing += 1
+            continue
+        if repair.state == 'anomalous':
+            stats.rows_flagged_anomalous += 1
+            if len(stats.anomalous_examples) < anomaly_limit:
+                stats.anomalous_examples.append({
+                    'id': log.id,
+                    'pitcher_id': log.pitcher_id,
+                    'mlb_game_pk': log.mlb_game_pk,
+                    'innings_pitched': log.innings_pitched,
+                })
+            if before is not None:
+                stats.aggregate_ip_after += before
+            continue
+
+        stats.rows_repaired += 1
+        stats.aggregate_ip_after += repair.innings_pitched
+        if apply:
+            updates.append({
+                'id': log.id,
+                'innings_pitched_outs': repair.outs,
+                'innings_pitched': repair.innings_pitched,
+            })
+            if len(updates) >= batch_size:
+                flush_updates()
+
+    if apply:
+        flush_updates()
+    else:
+        session.rollback()
+
+    return stats
 
 
 def _apply_postgres_set_based(session, *, tolerance=1e-6):
