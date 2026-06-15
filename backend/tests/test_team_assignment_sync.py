@@ -112,6 +112,7 @@ def seed_pitcher(name, mlb_id, team_id, position='RP', days_ago=1, raw_score=10.
         pitches_thrown=12,
         innings_pitched=1.0,
         innings_pitched_outs=3,
+        games_started=0,
         game_type='R',
     ))
     db.session.add(FatigueScore(
