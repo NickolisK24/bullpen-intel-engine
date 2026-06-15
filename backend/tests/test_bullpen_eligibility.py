@@ -16,14 +16,17 @@ from services.bullpen_eligibility import (
     STATUS_UNCERTAIN,
     evaluate_bullpen_eligibility,
 )
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 REF = date(2026, 6, 6)
 
 
 class LogStub:
     def __init__(self, days_ago, innings_pitched, game_type='R', save=False, hold=False, save_situation=False):
+        innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         self.game_date = REF - timedelta(days=days_ago)
-        self.innings_pitched = innings_pitched
+        self.innings_pitched = outs_to_decimal_innings(innings_outs)
+        self.innings_pitched_outs = innings_outs
         self.game_type = game_type
         self.save = save
         self.hold = hold

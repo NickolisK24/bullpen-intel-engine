@@ -184,6 +184,19 @@ class TestCalculateFatigue:
         assert score.appearances_last_7 == 0
         assert score.appearances_last_14 == 0
 
+    def test_innings_load_sums_outs_not_display_decimals(self, pitcher, make_log):
+        ref = date(2024, 9, 10)
+        logs = [
+            make_log("2024-09-10", innings_pitched=2 / 3, innings_pitched_outs=2),
+            make_log("2024-09-09", innings_pitched=2 / 3, innings_pitched_outs=2),
+            make_log("2024-09-08", innings_pitched=2 / 3, innings_pitched_outs=2),
+        ]
+
+        score = calculate_fatigue(pitcher, logs, reference_date=ref)
+
+        assert score.innings_last_7_days == 2.0
+        assert score.innings_score == pytest.approx(25.0)
+
     def test_raw_score_clamped_to_100(self, pitcher, make_log):
         # Heavy back-to-back usage drives every component toward its max.
         ref = date(2024, 9, 10)

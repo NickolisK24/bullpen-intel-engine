@@ -29,6 +29,7 @@ All thresholds are tunable via the WEIGHTS and THRESHOLDS dicts below.
 from datetime import date, timedelta
 from models.fatigue_score import FatigueScore
 from utils.db import db
+from utils.innings import sum_log_innings_decimal
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -179,7 +180,7 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
         days_since_last = (ref - last_log.game_date).days
 
     pitches_last_7  = sum(g.pitches_thrown or 0   for g in logs_7)
-    innings_last_7  = sum(g.innings_pitched or 0.0 for g in logs_7)
+    innings_last_7  = sum_log_innings_decimal(logs_7)
     appearances_7   = len(logs_7)
     appearances_14  = len(logs_14)
 

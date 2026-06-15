@@ -27,6 +27,7 @@ bullpen population helper, with added ``role`` / ``role_confidence`` fields.
 import os
 
 from services.availability_reference_date import product_current_date
+from utils.innings import log_innings_decimal
 
 
 # ── Role categories ─────────────────────────────────────────────────────────
@@ -89,13 +90,7 @@ def _games_started(log):
 
 
 def _innings(log):
-    value = getattr(log, 'innings_pitched', None)
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return log_innings_decimal(log)
 
 
 def _has_relief_context(logs):

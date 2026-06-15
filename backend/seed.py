@@ -21,6 +21,7 @@ from services.fatigue import calculate_fatigue
 from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED, sync_team_assignments
+from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from utils.time import utc_now_naive
 
 app = create_app()
@@ -169,6 +170,8 @@ def seed_game_logs():
 
                 opponent = split.get('opponent', {})
 
+                innings_pitched_outs = parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
+
                 log = GameLog(
                     pitcher_id=pitcher.id,
                     mlb_game_pk=game_pk,
@@ -176,7 +179,8 @@ def seed_game_logs():
                     opponent=opponent.get('name'),
                     opponent_abbreviation=opponent.get('abbreviation'),
                     games_started=int(stat.get('gamesStarted', 0) or 0),
-                    innings_pitched=float(stat.get('inningsPitched', 0) or 0),
+                    innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
+                    innings_pitched_outs=innings_pitched_outs,
                     pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
                     strikes=int(stat.get('strikes', 0) or 0),
                     hits_allowed=int(stat.get('hits', 0) or 0),

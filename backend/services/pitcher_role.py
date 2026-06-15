@@ -10,16 +10,16 @@ predict usage; it does not tell anyone who to pitch or where. Role is inferred
 only from data in this repo (innings, appearances, recency, and the save/hold/
 save-situation/leverage fields when present) — never from reputation or names.
 
-Innings handling: ``innings_pitched`` is treated as a decimal innings count
-(1.0 = one inning, 2.0 = two). MLB box-score notation (.1 = ⅓, .2 = ⅔) is a
-close approximation under this reading and only ever slightly understates
-fractional innings, which keeps the multi-inning rules conservative.
+Innings handling: ``innings_pitched_outs`` is the lossless source of truth when
+present. Decimal ``innings_pitched`` values are display-compatible derived
+values and are only a fallback for older in-memory objects.
 """
 
 from datetime import timedelta
 
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import product_current_date
+from utils.innings import log_innings_decimal
 
 
 # Recent window used to read usage. Wider than the availability window so role
@@ -97,7 +97,7 @@ def _derive(logs, reference_date):
     valid = [log for log in (logs or []) if getattr(log, 'game_date', None) is not None]
     appearances = len(valid)
 
-    ip_values = [getattr(log, 'innings_pitched', None) for log in valid]
+    ip_values = [log_innings_decimal(log) for log in valid]
     known_ip = [v for v in ip_values if v is not None]
     incomplete = (
         any(v is None for v in ip_values)

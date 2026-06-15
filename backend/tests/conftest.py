@@ -29,14 +29,17 @@ class PitcherStub:
 class GameLogStub:
     """
     Minimal stand-in for a GameLog row. calculate_fatigue only reads
-    game_date, pitches_thrown, and innings_pitched.
+    game_date, pitches_thrown, innings_pitched, and optionally
+    innings_pitched_outs.
     """
-    def __init__(self, game_date, pitches_thrown=0, innings_pitched=0.0):
+    def __init__(self, game_date, pitches_thrown=0, innings_pitched=0.0,
+                 innings_pitched_outs=None):
         if isinstance(game_date, str):
             game_date = date.fromisoformat(game_date)
         self.game_date = game_date
         self.pitches_thrown = pitches_thrown
         self.innings_pitched = innings_pitched
+        self.innings_pitched_outs = innings_pitched_outs
 
 
 @pytest.fixture
@@ -47,8 +50,14 @@ def pitcher():
 @pytest.fixture
 def make_log():
     """Factory for GameLogStub so each test builds exactly the logs it needs."""
-    def _make(game_date, pitches_thrown=0, innings_pitched=0.0):
-        return GameLogStub(game_date, pitches_thrown, innings_pitched)
+    def _make(game_date, pitches_thrown=0, innings_pitched=0.0,
+              innings_pitched_outs=None):
+        return GameLogStub(
+            game_date,
+            pitches_thrown,
+            innings_pitched,
+            innings_pitched_outs,
+        )
     return _make
 
 
