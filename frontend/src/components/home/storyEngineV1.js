@@ -139,6 +139,368 @@ const STORY_ARCHETYPE_BY_KEY = Object.freeze(
   Object.fromEntries(Object.values(STORY_ARCHETYPES).map(archetype => [archetype.key, archetype])),
 )
 
+function plural(value, singular, pluralWord = `${singular}s`) {
+  return asNumber(value) === 1 ? singular : pluralWord
+}
+
+function teamDisplayName(candidate) {
+  const team = teamFromCandidate(candidate)
+  return text(candidate?.teamName || team?.teamName || candidate?.abbr || team?.abbr) || 'This bullpen'
+}
+
+function withTeam(teamName, sentence) {
+  return sentence.replace(/\{team\}/g, teamName)
+}
+
+function storyCounts(candidate, context = {}) {
+  const team = teamFromCandidate(candidate)
+  const league = context?.leagueMetrics || {}
+  const source = team || league
+  return {
+    available: asNumber(candidate.available ?? source.available),
+    monitor: asNumber(candidate.monitor ?? source.monitor),
+    restricted: asNumber(candidate.restricted ?? source.restricted),
+    total: asNumber(candidate.total ?? source.total),
+  }
+}
+
+function firstSentence(value) {
+  const clean = text(value)
+  if (!clean) return ''
+  const match = clean.match(/^.*?[.!?](?:\s|$)/)
+  return text(match ? match[0] : clean)
+}
+
+function escapeRegExp(value) {
+  return text(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function teamFingerprintNames(candidate) {
+  const team = teamFromCandidate(candidate) || {}
+  return [
+    teamDisplayName(candidate),
+    team.teamName,
+    team.abbr,
+    candidate?.teamName,
+    candidate?.abbr,
+  ].map(text).filter(Boolean)
+}
+
+function fingerprintText(value, candidate = null) {
+  let clean = text(value).toLowerCase()
+  if (candidate) {
+    for (const name of teamFingerprintNames(candidate)) {
+      clean = clean.replace(new RegExp(`\\b${escapeRegExp(name.toLowerCase())}\\b`, 'g'), 'team')
+    }
+  }
+  return clean
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(the|a|an)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function narrativeTemplate(title, body, whyItMatters = null) {
+  return Object.freeze({ title, body, whyItMatters })
+}
+
+function titleTarget(story) {
+  return text(story.title) ? 'title' : 'headline'
+}
+
+function bodyTarget(story) {
+  return text(story.body) ? 'body' : 'observation'
+}
+
+function renderNarrativeTemplate(template, candidate, context = {}) {
+  const teamName = teamDisplayName(candidate)
+  const { available, monitor, restricted, total } = storyCounts(candidate, context)
+  const safeTotal = total > 0 ? total : 'the group'
+  const replacements = {
+    team: teamName,
+    available,
+    monitor,
+    restricted,
+    total: safeTotal,
+    availableRelievers: plural(available, 'reliever'),
+    monitorArms: plural(monitor, 'arm'),
+    restrictedRelievers: plural(restricted, 'reliever'),
+  }
+  const apply = value => Object.entries(replacements).reduce(
+    (line, [key, replacement]) => line.replace(new RegExp(`\\{${key}\\}`, 'g'), replacement),
+    withTeam(teamName, value),
+  )
+  return {
+    title: apply(template.title),
+    body: apply(template.body),
+    whyItMatters: template.whyItMatters ? apply(template.whyItMatters) : null,
+  }
+}
+
+export const STORY_NARRATIVE_TEMPLATES = Object.freeze({
+  concentrated_workload: Object.freeze([
+    narrativeTemplate(
+      'The {team} box score looks calm. The bullpen does not.',
+      'Nobody in this pen is flashing red, but {monitor} of {total} arms are carrying heavy recent work. That is how a calm-looking bullpen can still have a story underneath.',
+      'The bullpen still has options, but the work is collecting on a narrower group than the surface read suggests.',
+    ),
+    narrativeTemplate(
+      'The {team} keep asking the same relievers for the heavy lifting',
+      '{monitor} {monitorArms} in the {team} pen are carrying the heavier recent work. That is the kind of quiet strain a box score can miss.',
+      'When the same group keeps absorbing the work, late-game flexibility can become less balanced.',
+    ),
+    narrativeTemplate(
+      'The {team} bullpen work is flowing through a small core',
+      '{monitor} of {total} relievers are on the watch list, so the recent workload is not spreading evenly across the pen.',
+      'A concentrated workload can matter even before anyone is fully unavailable.',
+    ),
+    narrativeTemplate(
+      'A familiar group keeps carrying the {team} bullpen',
+      'Recent work is still centered on {monitor} {monitorArms}, leaving the rest of the bullpen in a more supporting role.',
+      'For fans, repeated late-inning usage can narrow the manager\'s cleanest paths.',
+    ),
+  ]),
+  heavy_lifting: Object.freeze([
+    narrativeTemplate(
+      'The {team} are leaning on the same names again',
+      '{monitor} of {total} arms sit on the watch list. No club is asking more of one group today.',
+      'That kind of heavy lifting can shape how much bullpen room exists before the late innings even start.',
+    ),
+    narrativeTemplate(
+      'A handful of {team} relievers are doing most of the lifting',
+      '{monitor} {monitorArms} are carrying enough recent work to sit on the watch list, keeping the workload centered on a small group.',
+      'The issue is not just who is available; it is how much recent work the same arms have already carried.',
+    ),
+    narrativeTemplate(
+      'Recent {team} leverage is centered on a familiar group',
+      'The watch list has {monitor} of {total} relievers, a sign that the recent work is clustering around the same names.',
+      'That can make a deep bullpen feel more dependent on one familiar core.',
+    ),
+  ]),
+  thin_margin: Object.freeze([
+    narrativeTemplate(
+      'The {team} have the thinnest late-inning margin in baseball today',
+      '{restricted} of the pen\'s {total} relievers come in needing rest after the work they have carried lately. That leaves less room to breathe late than any club in baseball today.',
+      'For fans, the key is whether the club still has more than one clean path through a close game.',
+    ),
+    narrativeTemplate(
+      'The {team} enter today with a thin late-inning margin',
+      'The {team} also have {restricted} {restrictedRelievers} needing rest after recent work. The late-inning bench is thinner here too.',
+      'The bullpen still has options, but the cleanest late-game routes are more limited than usual.',
+    ),
+    narrativeTemplate(
+      'The {team} are managing from a thinner late-inning bench',
+      '{restricted} of {total} relievers need rest after recent work. This pen has less room to breathe late than it would like.',
+      'A thinner margin changes how quickly one more busy night can narrow the available options.',
+    ),
+    narrativeTemplate(
+      'The {team} bullpen has less room to absorb more work',
+      '{restricted} {restrictedRelievers} already need rest, so another demanding game would press harder on the remaining options.',
+      'That matters because the bullpen has less margin for a long starter exit or extra late-inning traffic.',
+    ),
+    narrativeTemplate(
+      'The {team} coverage picture is tighter than usual',
+      'With {restricted} of {total} relievers needing rest, the late-inning map has fewer clean routes than normal.',
+      'For fans, the key is whether the club can avoid pushing the same available arms into every important inning.',
+    ),
+  ]),
+  recovery_window: Object.freeze([
+    narrativeTemplate(
+      'No club has more room to maneuver late today than the {team}',
+      '{available} of {total} relievers come in rested. That gives this pen more ways through the late innings.',
+      'Rested options give a club more ways to get through close innings without forcing the same small group into every spot.',
+    ),
+    narrativeTemplate(
+      'The {team} bullpen has regained flexibility',
+      '{available} {availableRelievers} are rested enough to use today, giving the club more room than it had during heavier stretches.',
+      'For fans, that matters because one busy stretch does not have to define the next late-game plan.',
+    ),
+    narrativeTemplate(
+      'The recent workload squeeze has eased for the {team}',
+      'More options are available now: {available} of {total} relievers come in rested enough to use.',
+      'A softer workload picture gives the bullpen more ways to cover a close game.',
+    ),
+    narrativeTemplate(
+      'The {team} have more ways through the late innings',
+      'The {team} have {available} {availableRelievers} rested enough to use today. That is the other side of the workload picture.',
+      'Depth in rested arms helps keep late-game work from landing on only one narrow path.',
+    ),
+  ]),
+  deep_pen_advantage: Object.freeze([
+    narrativeTemplate(
+      'The {team} have rested options behind the late innings today',
+      '{available} of {total} arms come in rested enough to use, and nobody is carrying too much of the recent load. Depth is part of this pen\'s story today.',
+      'Extra rested depth gives the club more ways to bridge a game without leaning only on its core group.',
+    ),
+    narrativeTemplate(
+      'Few bullpens have more routes to the finish than the {team}',
+      '{available} {availableRelievers} are rested enough to use, giving this bullpen options beyond its usual late-inning core.',
+      'That matters because depth can protect the highest-use arms from taking every close spot.',
+    ),
+    narrativeTemplate(
+      'Depth is creating flexibility for the {team}',
+      'The rested group is broad enough that the bullpen can cover innings without forcing one narrow sequence.',
+      'A deeper set of usable arms gives the club more room if the game changes shape.',
+    ),
+  ]),
+  watch_list_growth: Object.freeze([
+    narrativeTemplate(
+      'Who is rested changed overnight',
+      'Arms are rotating on and off rest around the league. Today\'s picture is not yesterday\'s.',
+      'The change matters because bullpen flexibility can move quickly after one completed game window.',
+    ),
+    narrativeTemplate(
+      'The watch-list picture moved after the latest games',
+      'Recent appearances changed which arms need monitoring and which clubs have more room today.',
+      'Those shifts explain why the bullpen map can feel different from one morning to the next.',
+    ),
+    narrativeTemplate(
+      'Last night rearranged a few bullpen reads',
+      'The newest completed games changed who is rested and who is not. Today\'s bullpen picture reflects it.',
+      'That movement is useful because yesterday\'s clean path may not be today\'s clean path.',
+    ),
+  ]),
+  usage_shift: Object.freeze([
+    narrativeTemplate(
+      'The {team} bullpen workload has shifted recently',
+      'Recent usage has picked up around the {team}, giving the bullpen a different shape than it had in the prior window.',
+      'A usage shift matters because the same bullpen can look different once the work starts landing in new places.',
+    ),
+    narrativeTemplate(
+      'Recent {team} usage looks different than it did a week ago',
+      'The current window is not matching the earlier workload pattern, so this bullpen is entering a different phase of the cycle.',
+      'For fans, changing usage can alter which arms are cleanest for the next close game.',
+    ),
+    narrativeTemplate(
+      'The {team} bullpen is entering a different workload phase',
+      'The recent shape has changed around the group, with the current window telling a different story than the one before it.',
+      'When the usage phase changes, the bullpen\'s flexibility changes with it.',
+    ),
+    narrativeTemplate(
+      'Workload has redistributed across the {team} bullpen',
+      'Recent usage is landing differently across the group, changing the way this bullpen reads today.',
+      'That matters because a redistributed workload can create pressure in places the box score does not highlight.',
+    ),
+  ]),
+  bridge_dependency: Object.freeze([
+    narrativeTemplate(
+      'The {team} are leaning on the bridge again',
+      'The middle innings are asking a familiar group to carry the handoff toward the late innings.',
+      'Bridge dependency matters because it can narrow the path before the highest-leverage arms even enter.',
+    ),
+    narrativeTemplate(
+      'The {team} middle innings are flowing through a small group',
+      'Recent work has kept the bridge portion of the bullpen centered on a familiar set of arms.',
+      'That can change how much flexibility remains by the time the late innings arrive.',
+    ),
+  ]),
+  trust_arm_dependency: Object.freeze([
+    narrativeTemplate(
+      'The {team} trust group is carrying the shape of the pen',
+      'The bullpen read is leaning heavily on its most trusted options rather than a broad spread of arms.',
+      'That matters because a narrow trust group can make late-game flexibility feel thinner.',
+    ),
+    narrativeTemplate(
+      'The {team} are asking a familiar trust core to hold the line',
+      'Recent usage is centered enough that the dependable group is doing much of the stabilizing work.',
+      'The key is whether the workload can spread before the core gets overused.',
+    ),
+  ]),
+  coverage_gap: Object.freeze([
+    narrativeTemplate(
+      'The {team} coverage picture has a gap today',
+      'The bullpen has fewer clean ways to cover the middle-to-late bridge than it would like.',
+      'Coverage gaps matter because one early exit can force the same arms into harder work.',
+    ),
+    narrativeTemplate(
+      'The {team} have less coverage behind the primary group',
+      'The bullpen still has options, but the supporting layer is thinner than usual.',
+      'That can matter quickly if the game asks for more than the planned late-inning sequence.',
+    ),
+  ]),
+  depth_constraint: Object.freeze([
+    narrativeTemplate(
+      'A few bullpens have less room to breathe',
+      'Around the league, some clubs are managing from a thinner late-inning bench. The usable options are there, but the margin is tighter.',
+      'Depth constraints matter because a narrow bullpen can change quickly after one demanding game.',
+    ),
+    narrativeTemplate(
+      'Depth is tighter in a few bullpen rooms',
+      'The bullpen map has pockets where the usable group is narrower than usual.',
+      'That gives fans a clearer read on which clubs have less margin if the game stretches.',
+    ),
+    narrativeTemplate(
+      'Some clubs are working with a shorter bullpen runway',
+      'The available depth is not spread evenly, so a few pens have fewer clean ways through the night.',
+      'A shorter runway matters because one extra inning of work can change tomorrow\'s bullpen shape.',
+    ),
+  ]),
+  league_wide_pressure: Object.freeze([
+    narrativeTemplate(
+      'The heavy lifting is not isolated to one bullpen',
+      '{monitor} tracked arms sit on the watch list and {restricted} need rest. Some of the strain is obvious, and some of it is hiding below a calm surface.',
+      'League-wide pressure helps explain whether one club is an outlier or part of a broader bullpen day.',
+    ),
+    narrativeTemplate(
+      'Several bullpens are carrying heavier late-inning work',
+      '{monitor} tracked arms sit on the watch list around the league. Heavy recent work is showing up in more than one place.',
+      'The wider pattern matters because bullpen pressure is not always isolated to the headline team.',
+    ),
+    narrativeTemplate(
+      'The league-wide workload picture is starting to tighten',
+      'Several pens have been busy lately, and the work has not been spread evenly. The same pockets of arms are doing a lot of the lifting.',
+      'When the league picture tightens, today\'s team story has useful context around it.',
+    ),
+  ]),
+  league_wide_recovery: Object.freeze([
+    narrativeTemplate(
+      'The league is not running on empty',
+      '{available} tracked relievers are rested enough to be usable today. That does not erase the pressure points, but most bullpens still have room to maneuver.',
+      'League-wide recovery matters because not every bullpen pressure point is part of a broad shortage.',
+    ),
+    narrativeTemplate(
+      'The league still has rested options in reserve',
+      '{available} tracked relievers are rested enough to be usable today. The pressure points matter, but the league is not running on empty.',
+      'That wider recovery picture helps separate isolated stress from a league-wide squeeze.',
+    ),
+    narrativeTemplate(
+      'Rest is quietly changing tonight\'s bullpen map',
+      'Some managers have more ways through the late innings than others because the rested options are not spread evenly.',
+      'The uneven recovery map helps explain why some clubs have more flexibility than others.',
+    ),
+  ]),
+  league_check_in: Object.freeze([
+    narrativeTemplate(
+      'A quiet morning across baseball\'s bullpens',
+      'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
+      'Quiet days give bullpens a reset point and make the next real pressure point easier to spot.',
+    ),
+    narrativeTemplate(
+      'No bullpen story is separating from the pack today',
+      'The current league read is balanced enough that no single club is forcing the headline.',
+      'A quiet baseline matters because it gives the next shift more context.',
+    ),
+  ]),
+  data_context: Object.freeze([
+    narrativeTemplate(
+      'BaseballOS is staying quiet where the data is thin',
+      'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
+      'Thin data changes how much BaseballOS can say out loud.',
+    ),
+    narrativeTemplate(
+      'Today\'s picture is waiting on completed games',
+      'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
+      'Data context matters because the page separates a true bullpen read from an incomplete window.',
+    ),
+    narrativeTemplate(
+      'The data note is part of the bullpen story today',
+      'The current read includes a trust limitation, so the page keeps the language narrower rather than stretching beyond the inputs.',
+      'That restraint matters because a clear limitation is more useful than a forced conclusion.',
+    ),
+  ]),
+})
+
 const DEFAULT_MIN_SIGNIFICANCE = 42
 const DATA_MIN_SIGNIFICANCE = 36
 const LEAGUE_CROWD_OUT_MARGIN = 8
@@ -226,6 +588,147 @@ export function getStoryArchetype(candidate = {}) {
   if (kind.includes('workload') || kind.includes('watch')) return STORY_ARCHETYPES.heavyLifting
 
   return STORY_ARCHETYPES.dataContext
+}
+
+export function getNarrativeTemplatesForArchetype(archetypeKey) {
+  return STORY_NARRATIVE_TEMPLATES[normalizedArchetypeKey(archetypeKey)] || []
+}
+
+function preferredNarrativeTemplateIndex(candidate, archetype, templates, context = {}) {
+  if (templates.length <= 1) return 0
+  const { available, monitor, restricted, total } = storyCounts(candidate, context)
+  const restrictedShare = total > 0 ? restricted / total : 0
+  const monitorShare = total > 0 ? monitor / total : 0
+  const availableShare = total > 0 ? available / total : 0
+  const kind = storyKind(candidate)
+  const kicker = text(candidate.kicker).toLowerCase()
+  const contextType = text(candidate.context?.type).toLowerCase()
+  const trend = text(candidate.context?.evidence?.trend).toLowerCase()
+  const lastIndex = templates.length - 1
+  const at = index => Math.min(index, lastIndex)
+
+  switch (archetype.key) {
+    case STORY_ARCHETYPES.concentratedWorkload.key:
+      if (kicker.includes('hidden')) return 0
+      if (monitor >= 4 || monitorShare >= 0.5) return at(1)
+      if (monitor >= 3 || monitorShare >= 0.35) return at(2)
+      return at(3)
+    case STORY_ARCHETYPES.heavyLifting.key:
+      if (monitor >= 4 || monitorShare >= 0.5) return 0
+      if (monitor >= 3) return at(1)
+      return at(2)
+    case STORY_ARCHETYPES.thinMargin.key:
+      if (restricted >= 4 || restrictedShare >= 0.45) return 0
+      if (kicker.includes('pressure watch')) return at(1)
+      if (restricted >= 3) return at(2)
+      if (restricted >= 2) return at(3)
+      return at(4)
+    case STORY_ARCHETYPES.recoveryWindow.key:
+      if (kicker.includes('rested options')) return at(3)
+      if (available >= 6 || availableShare >= 0.7) return 0
+      if (trend === 'decreasing_demand' || trend === 'longer_outings') return at(2)
+      if (restricted <= 1 && monitor <= 1) return at(1)
+      return at(3)
+    case STORY_ARCHETYPES.deepPenAdvantage.key:
+      if (available >= 6 || availableShare >= 0.7) return at(1)
+      if (monitor === 0 && restricted === 0) return at(2)
+      return 0
+    case STORY_ARCHETYPES.usageShift.key:
+      if (contextType === 'rotation_length') return at(1)
+      if (trend === 'increasing_demand' || trend === 'shorter_outings') return 0
+      if (trend === 'decreasing_demand' || trend === 'longer_outings') return at(2)
+      return at(3)
+    case STORY_ARCHETYPES.watchListGrowth.key:
+      if (kicker.includes('movement')) return 0
+      if (kicker.includes('what changed')) return at(2)
+      return at(1)
+    case STORY_ARCHETYPES.bridgeDependency.key:
+    case STORY_ARCHETYPES.trustArmDependency.key:
+      return monitor >= 3 ? at(1) : 0
+    case STORY_ARCHETYPES.coverageGap.key:
+      return restricted >= 2 ? 0 : at(1)
+    case STORY_ARCHETYPES.depthConstraint.key:
+      if (restricted >= 2) return 0
+      if (available <= 3) return at(2)
+      return at(1)
+    case STORY_ARCHETYPES.leagueWidePressure.key:
+      if (restricted > monitor) return 0
+      if (monitor >= 20 || monitorShare >= 0.3) return at(1)
+      return at(2)
+    case STORY_ARCHETYPES.leagueWideRecovery.key:
+      if (available >= 40 || availableShare >= 0.6) return 0
+      if (available >= 25) return at(1)
+      return at(2)
+    case STORY_ARCHETYPES.leagueCheckIn.key:
+      return contextFreshness(context).is_current === false ? at(1) : 0
+    case STORY_ARCHETYPES.dataContext.key:
+      if (kind.includes('freshness')) return at(1)
+      if (kind.includes('trust')) return 0
+      return at(2)
+    default:
+      return Math.abs((available * 7) + (monitor * 5) + (restricted * 3) + total) % templates.length
+  }
+}
+
+function storyTitleValue(story) {
+  return text(story.title || story.headline)
+}
+
+function storyOpeningValue(story) {
+  return firstSentence(story.body || story.observation || story.noticed)
+}
+
+function storyTitleFingerprint(story, candidate) {
+  return fingerprintText(storyTitleValue(story), candidate || story)
+}
+
+function storyOpeningFingerprint(story, candidate) {
+  return fingerprintText(storyOpeningValue(story), candidate || story)
+}
+
+function selectNarrativeVariant(candidate, narrativeContext = {}) {
+  const archetype = getStoryArchetype(candidate)
+  const templates = getNarrativeTemplatesForArchetype(archetype.key)
+  if (templates.length === 0) return null
+
+  const storyContext = narrativeContext.storyContext || {}
+  const preferred = preferredNarrativeTemplateIndex(candidate, archetype, templates, storyContext)
+  const usedTitleFingerprints = narrativeContext.usedTitleFingerprints || new Set()
+  const usedOpeningFingerprints = narrativeContext.usedOpeningFingerprints || new Set()
+  const choices = []
+
+  for (let offset = 0; offset < templates.length; offset += 1) {
+    const index = (preferred + offset) % templates.length
+    const rendered = renderNarrativeTemplate(templates[index], candidate, storyContext)
+    const titleFingerprint = fingerprintText(rendered.title, candidate)
+    const openingFingerprint = fingerprintText(firstSentence(rendered.body), candidate)
+    const duplicates = usedTitleFingerprints.has(titleFingerprint)
+      || usedOpeningFingerprints.has(openingFingerprint)
+    choices.push({ index, rendered, titleFingerprint, openingFingerprint, duplicates })
+    if (!duplicates) return choices[choices.length - 1]
+  }
+
+  return choices[0]
+}
+
+function applyNarrativeVariant(story, candidate, narrativeContext = {}) {
+  const variant = selectNarrativeVariant(candidate, narrativeContext)
+  if (!variant) return story
+
+  const titleField = titleTarget(story)
+  const bodyField = bodyTarget(story)
+  const next = {
+    ...story,
+    [titleField]: variant.rendered.title || story[titleField],
+    [bodyField]: variant.rendered.body || story[bodyField],
+    narrative_template_key: `${story.archetype_key}:${variant.index + 1}`,
+    narrative_variant_index: variant.index,
+    narrative_fingerprint: `${variant.titleFingerprint}|${variant.openingFingerprint}`,
+  }
+  if (variant.rendered.whyItMatters) {
+    next.whyItMatters = variant.rendered.whyItMatters
+  }
+  return next
 }
 
 function storyLane(candidate, tier, archetype) {
@@ -700,7 +1203,7 @@ function defaultWhyItMatters(candidate, tier) {
     return 'Rested options give a club more room to handle the late innings.'
   }
   if (tier.key === STORY_TIERS.data.key) {
-    return 'Thin or limited data changes how much BaseballOS should say out loud.'
+    return 'Thin or limited data changes how much BaseballOS can say out loud.'
   }
   return 'The wider league picture helps explain whether one club is an outlier or part of the day\'s broader bullpen shape.'
 }
@@ -723,13 +1226,13 @@ function selectionReason(tier, significance) {
   return `${tier.label} surfaced for ${strongest || 'supporting evidence'}.`
 }
 
-function decorateCandidate(candidate, evaluation) {
+function decorateCandidate(candidate, evaluation, narrativeContext = {}) {
   const { tier, significance, evidence } = evaluation
   const archetype = getStoryArchetype(candidate)
   const lane = storyLane(candidate, tier, archetype)
   const teamSpecific = lane === 'team'
   const leagueWide = lane === 'league'
-  return {
+  const base = {
     ...candidate,
     archetype_key: archetype.key,
     archetype_label: archetype.label,
@@ -739,12 +1242,19 @@ function decorateCandidate(candidate, evaluation) {
     tier,
     significance,
     evidence,
-    noticed: noticed(candidate),
-    whyItMatters: defaultWhyItMatters(candidate, tier),
     selectionReason: selectionReason(tier, significance),
+  }
+  const story = applyNarrativeVariant(base, candidate, narrativeContext)
+  const storyNoticed = noticed(story)
+  const storyWhyItMatters = text(story.whyItMatters) || defaultWhyItMatters(story, tier)
+
+  return {
+    ...story,
+    noticed: storyNoticed,
+    whyItMatters: storyWhyItMatters,
     storySelection: {
-      noticed: noticed(candidate),
-      whyItMatters: defaultWhyItMatters(candidate, tier),
+      noticed: storyNoticed,
+      whyItMatters: storyWhyItMatters,
       evidence,
       tier: tier.label,
       significance: significance.levelLabel,
@@ -753,6 +1263,9 @@ function decorateCandidate(candidate, evaluation) {
       story_lane: lane,
       team_specific: teamSpecific,
       league_wide: leagueWide,
+      ...(story.narrative_template_key ? { narrative_template_key: story.narrative_template_key } : {}),
+      ...(story.narrative_variant_index != null ? { narrative_variant_index: story.narrative_variant_index } : {}),
+      ...(story.narrative_fingerprint ? { narrative_fingerprint: story.narrative_fingerprint } : {}),
       ...(candidate.continuity_note ? { continuity_note: candidate.continuity_note } : {}),
       ...(candidate.continuity ? { continuity: candidate.continuity } : {}),
       ...(candidate.context_note ? { context_note: candidate.context_note } : {}),
@@ -774,7 +1287,7 @@ export function evaluateStoryCandidate(candidate = {}, context = {}, index = 0, 
     evidence,
     suppressed: suppressionReasons.length > 0,
     suppressionReasons,
-    story: decorateCandidate(candidate, { tier, significance, evidence }),
+    story: decorateCandidate(candidate, { tier, significance, evidence }, { storyContext: context }),
   }
 }
 
@@ -857,8 +1370,18 @@ export function selectStoryCandidates(candidates = [], context = {}, options = {
   const usedTeams = new Set()
   const usedNarratives = new Set()
   const usedArchetypes = new Set()
+  const usedTitleFingerprints = new Set()
+  const usedOpeningFingerprints = new Set()
   const surfaced = []
   const suppressed = []
+
+  for (const story of Array.isArray(options.seedStories) ? options.seedStories : []) {
+    const [titleFingerprint, openingFingerprint] = text(story?.narrative_fingerprint).split('|')
+    const title = titleFingerprint || storyTitleFingerprint(story)
+    const opening = openingFingerprint || storyOpeningFingerprint(story)
+    if (title) usedTitleFingerprints.add(title)
+    if (opening) usedOpeningFingerprints.add(opening)
+  }
 
   let pending = (Array.isArray(candidates) ? candidates : [])
     .map((candidate, index) => evaluateStoryCandidate(candidate, context, index, options))
@@ -876,12 +1399,21 @@ export function selectStoryCandidates(candidates = [], context = {}, options = {
     const [next] = surfaced.length === 0 || limit === 1
       ? eligible
       : [...eligible].sort((a, b) => compareForDiversity(a, b, usedArchetypes, options))
-    const key = normalizedKey(teamKey(next.story))
-    const storyNarrative = narrativeKey(next.story)
-    surfaced.push(next.story)
+    const selectedStory = decorateCandidate(next.candidate, next, {
+      storyContext: context,
+      usedTitleFingerprints,
+      usedOpeningFingerprints,
+    })
+    const key = normalizedKey(teamKey(selectedStory))
+    const storyNarrative = narrativeKey(selectedStory)
+    surfaced.push(selectedStory)
     if (key) usedTeams.add(key)
     if (storyNarrative) usedNarratives.add(storyNarrative)
-    if (next.story.archetype_key) usedArchetypes.add(next.story.archetype_key)
+    if (selectedStory.archetype_key) usedArchetypes.add(selectedStory.archetype_key)
+    const titleFingerprint = storyTitleFingerprint(selectedStory, next.candidate)
+    const openingFingerprint = storyOpeningFingerprint(selectedStory, next.candidate)
+    if (titleFingerprint) usedTitleFingerprints.add(titleFingerprint)
+    if (openingFingerprint) usedOpeningFingerprints.add(openingFingerprint)
     pending = eligible.filter(evaluation => evaluation !== next)
   }
 
