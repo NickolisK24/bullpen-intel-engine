@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from flask import Flask
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.fatigue_score  # noqa: F401
 from models.game_log import GameLog
@@ -316,12 +317,12 @@ def test_tied_pitcher_summary_ordering_is_stable_by_name_then_id():
 
 def test_team_workload_concentration_reads_persisted_game_logs():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
 
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         pitchers = [
             Pitcher(mlb_id=901, full_name='Persisted Arm One', team_id=90, team_name='Persisted',
                     team_abbreviation='PST', active=True),
@@ -371,17 +372,17 @@ def test_team_workload_concentration_reads_persisted_game_logs():
         assert any('currently assigned to the team' in item for item in result['limitations'])
 
         db.session.remove()
-        db.drop_all()
+        drop_test_schema(app)
 
 
 def test_team_pitcher_usage_wrapper_reads_latest_prior_appearance():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
 
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         tracked = Pitcher(mlb_id=911, full_name='Quiet Arm', team_id=91, team_name='Persisted',
                           team_abbreviation='PST', active=True)
         active_teammate = Pitcher(mlb_id=912, full_name='Active Arm', team_id=91,
@@ -425,4 +426,4 @@ def test_team_pitcher_usage_wrapper_reads_latest_prior_appearance():
         assert result['summary'] == 'Quiet Arm has no stored bullpen appearance in the last 7 days.'
 
         db.session.remove()
-        db.drop_all()
+        drop_test_schema(app)

@@ -3,7 +3,7 @@ Database-level tests for the game_logs uniqueness constraint
 (uq_game_logs_pitcher_game on pitcher_id + mlb_game_pk).
 
 These run against an in-memory SQLite database created from the models'
-metadata via db.create_all(), so they exercise the real constraint defined on
+metadata via create_test_schema(app), so they exercise the real constraint defined on
 the model (the same one the Alembic migration adds for PostgreSQL) without
 needing a Postgres server, the MLB API, or network access.
 """
@@ -12,6 +12,7 @@ from datetime import date
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from sqlalchemy.exc import IntegrityError
 
 from utils.db import db
@@ -24,16 +25,16 @@ import models.prospect        # noqa: F401  (register on db.metadata)
 @pytest.fixture
 def app_ctx():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         try:
             yield app
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 def _add_pitcher(mlb_id):

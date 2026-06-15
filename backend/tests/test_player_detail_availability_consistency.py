@@ -9,6 +9,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import models.prospect  # noqa: F401
 import services.sync as sync_service
@@ -25,17 +26,17 @@ from utils.time import utc_now_naive
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         try:
             yield app.test_client()
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 def seed_pitcher(name, mlb_id, roster_status, risk_level='LOW', raw_score=12.0):

@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from sqlalchemy.exc import IntegrityError
 
 import api.bullpen as bullpen_api
@@ -22,17 +23,17 @@ from utils.time import utc_now_naive
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_api.bullpen_bp, url_prefix='/api/bullpen')
     with app.app_context():
-        db.create_all()
+        create_test_schema(app)
         try:
             yield app
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(app)
 
 
 @pytest.fixture
@@ -313,14 +314,16 @@ class TestDashboardSnapshotService:
 
     def test_build_dashboard_snapshot_records_failed_status(self, app):
         with app.app_context():
+            run = _create_sync_run()
+            db.session.commit()
             snapshot = dashboard_snapshot.build_dashboard_snapshot(
                 lambda: (_ for _ in ()).throw(RuntimeError('builder failed')),
-                sync_run_id=123,
+                sync_run_id=run.id,
                 source='test',
             )
 
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_FAILED
-            assert snapshot.sync_run_id == 123
+            assert snapshot.sync_run_id == run.id
             assert 'builder failed' in snapshot.error_message
 
     def test_snapshot_builder_v2_creates_dashboard_servable_snapshot(self, app):
@@ -486,9 +489,10 @@ class TestDashboardRouteSnapshotBehavior:
     ):
         client.application.config['APP_ENV'] = 'production'
         with client.application.app_context():
+            run = _create_sync_run()
             dashboard_snapshot.mark_dashboard_snapshot_failed(
                 RuntimeError('snapshot failed'),
-                sync_run_id=10,
+                sync_run_id=run.id,
                 source='test',
             )
         monkeypatch.setattr(

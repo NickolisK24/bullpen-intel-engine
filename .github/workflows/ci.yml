@@ -15,12 +15,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-tests:
+  postgres-migrations:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: baseballos_ci_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d baseballos_ci_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
+    env:
+      APP_ENV: development
+      AUTO_SYNC: 'false'
+      FLASK_APP: app.py
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_migration_test
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +52,47 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
 
-      - name: Run backend tests
+      - name: Run migrations on Postgres
+        run: python -m flask db upgrade
+
+  backend-postgres-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: baseballos_ci_tests
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d baseballos_ci_tests"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test
+      AUTO_SYNC: 'false'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_tests
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/baseballos_ci_tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backend tests on Postgres
         run: python -m pytest tests -q
 
   frontend-tests:

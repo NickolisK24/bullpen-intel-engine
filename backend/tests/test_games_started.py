@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from sqlalchemy.exc import IntegrityError
 
 from models.game_log import GameLog
@@ -44,17 +45,16 @@ class FakeClient:
 @pytest.fixture
 def app():
     flask_app = Flask(__name__)
-    flask_app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    flask_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    configure_test_database(flask_app)
     db.init_app(flask_app)
 
     with flask_app.app_context():
-        db.create_all()
+        create_test_schema(flask_app)
         try:
             yield flask_app
         finally:
             db.session.remove()
-            db.drop_all()
+            drop_test_schema(flask_app)
 
 
 def _split(game_pk, games_started):
