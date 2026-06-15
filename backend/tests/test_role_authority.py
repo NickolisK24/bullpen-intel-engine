@@ -128,6 +128,15 @@ def test_no_logs_is_unknown_and_withheld():
     assert result['confidence'] == CONF_NONE
 
 
+def test_relief_position_without_logs_is_included_with_low_confidence():
+    pitcher = SimpleNamespace(id=1, full_name='Roster Reliever', active=True, position='RP')
+    result = classify_role(pitcher, [], reference_date=REF)
+    assert result['role'] == ROLE_RELIEVER
+    assert result['eligible'] is True
+    assert result['confidence'] == CONF_LOW
+    assert result['limitations']
+
+
 def test_no_start_data_no_relief_context_is_unknown_not_reliever():
     # Thin-evidence pitchers must NOT silently become relievers.
     logs = [log(2, games_started=None, innings_pitched=1.0),
@@ -152,10 +161,11 @@ def test_eligibility_shape_is_drop_in_compatible():
         assert key in result
 
 
-def test_flag_defaults_off_for_safe_rollout():
-    # Defaults OFF so merging never silently changes the live board before the
-    # gamesStarted backfill runs and the diagnostic is reviewed.
+def test_role_authority_flag_supports_explicit_enable_and_disable(monkeypatch):
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'false')
     assert role_authority_enabled() is False
+    monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'true')
+    assert role_authority_enabled() is True
 
 
 def test_game_log_model_declares_games_started_column():

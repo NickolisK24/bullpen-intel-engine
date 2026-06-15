@@ -408,8 +408,9 @@ class TestBoardEndpoint:
         names = [card['name'] for card in cards]
 
         assert names == ['Reds Stale Reliever']
-        assert cards[0]['eligibility']['status'] == 'inactive_bullpen_relevant'
-        assert any('unavailable or stale workload pitchers are included' in limitation for limitation in cards[0]['limitations'])
+        assert cards[0]['eligibility']['status'] == 'role_reliever'
+        assert cards[0]['data_state'] == 'stale'
+        assert cards[0]['visibility']['has_current_workload'] is False
 
     def test_active_rested_relief_context_stays_visible_without_show_unavailable(self, client):
         with client.application.app_context():
@@ -493,7 +494,7 @@ class TestBoardEndpoint:
         assert [card['name'] for card in cards] == ['Fully Rested Relief Option']
         assert cards[0]['availability_status'] == 'Monitor'
         assert cards[0]['data_state'] == 'missing'
-        assert cards[0]['eligibility']['status'] == 'bullpen_relevant'
+        assert cards[0]['eligibility']['status'] == 'role_reliever'
         assert cards[0]['visibility']['is_visible_by_default'] is True
         assert cards[0]['visibility']['has_current_workload'] is False
         assert cards[0]['visibility']['hidden_until_show_unavailable'] is False

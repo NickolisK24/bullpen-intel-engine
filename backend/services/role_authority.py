@@ -35,6 +35,7 @@ ROLE_STARTER = 'Starter'
 ROLE_RELIEVER = 'Reliever'
 ROLE_AMBIGUOUS = 'Ambiguous'
 ROLE_UNKNOWN = 'Unknown'
+RELIEF_POSITIONS = {'RP', 'CL'}
 
 # ── Confidence levels ───────────────────────────────────────────────────────
 CONF_HIGH = 'high'
@@ -62,6 +63,9 @@ AMBIGUOUS_LIMITATION = (
 UNKNOWN_LIMITATION = (
     'Role not yet established from start data; withheld from default bullpen counts.'
 )
+LIMITED_RELIEF_SAMPLE_LIMITATION = (
+    'Bullpen role is inferred from a limited recent relief-length sample.'
+)
 
 
 def role_authority_enabled():
@@ -69,13 +73,12 @@ def role_authority_enabled():
     Whether role authority drives the live bullpen population.
 
     Controlled by the ROLE_AUTHORITY_ENABLED environment flag. It defaults to
-    OFF so merging this code never silently changes production: the authoritative
-    gamesStarted signal must first be captured by sync and backfilled, and the
-    read-only diagnostic reviewed, before an operator flips the flag on. Until
-    then the legacy innings heuristic remains the live behavior. The role service
-    and diagnostic are fully available regardless of the flag.
+    ON after the gamesStarted signal has been captured, backfilled, and
+    validated. Setting the flag false restores the legacy innings heuristic for
+    rollback. The role service and diagnostic are fully available regardless of
+    the flag.
     """
-    raw = os.environ.get('ROLE_AUTHORITY_ENABLED', 'false')
+    raw = os.environ.get('ROLE_AUTHORITY_ENABLED', 'true')
     return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
@@ -87,6 +90,10 @@ def _games_started(log):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _position(pitcher):
+    return str(getattr(pitcher, 'position', '') or '').strip().upper()
 
 
 def _innings(log):
@@ -132,9 +139,17 @@ def classify_role(pitcher, logs, reference_date=None):
     _ = reference_date or product_current_date()
     logs = list(logs or [])
     appearances = len(logs)
+    pos = _position(pitcher)
 
     # No usable evidence at all → Unknown (evidence absent, not conflicting).
     if appearances == 0:
+        if pos in RELIEF_POSITIONS:
+            return _result(
+                ROLE_RELIEVER, CONF_LOW, STATUS_ROLE_RELIEVER, True,
+                f'Roster position {pos} indicates a bullpen role, but no recent appearances are on record.',
+                ['0 recent appearances.', f'Roster position: {pos}.'],
+                limitations=['No recent workload logs are available for role confirmation.'],
+            )
         return _result(
             ROLE_UNKNOWN, CONF_NONE, STATUS_ROLE_UNKNOWN, False,
             'No recent appearances on record to establish a role.',
@@ -208,10 +223,14 @@ def classify_role(pitcher, logs, reference_date=None):
         conf = binary_conf
         if relief_context and conf == CONF_MEDIUM:
             conf = CONF_HIGH
+        limitations = []
+        if coverage < MIN_BINARY_EVIDENCE:
+            limitations.append(LIMITED_RELIEF_SAMPLE_LIMITATION)
         return _result(
             ROLE_RELIEVER, conf, STATUS_ROLE_RELIEVER, True,
             'Recent usage is primarily relief; few or no starts.',
             evidence,
+            limitations=limitations,
         )
 
     # Ambiguous — genuinely mixed start/relief usage (swingman).
