@@ -19,6 +19,8 @@ BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
+from tests.db_config import configure_test_database, test_database_url  # noqa: E402,F401
+
 
 class PitcherStub:
     """Minimal stand-in for the Pitcher model — calculate_fatigue only reads .id."""

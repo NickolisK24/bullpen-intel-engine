@@ -12,6 +12,7 @@ from datetime import date
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 from sqlalchemy.exc import IntegrityError
 
 from utils.db import db
@@ -24,7 +25,7 @@ import models.prospect        # noqa: F401  (register on db.metadata)
 @pytest.fixture
 def app_ctx():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     with app.app_context():

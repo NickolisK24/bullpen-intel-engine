@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 
 from api.bullpen import bullpen_bp
 from models.game_log import GameLog
@@ -57,7 +58,7 @@ USAGE_DEMAND_CONTEXT_KEYS = {
 @pytest.fixture
 def client():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')

@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from flask import Flask
+from tests.db_config import configure_test_database
 
 import models.fatigue_score  # noqa: F401
 from models.game_log import GameLog
@@ -316,7 +317,7 @@ def test_tied_pitcher_summary_ordering_is_stable_by_name_then_id():
 
 def test_team_workload_concentration_reads_persisted_game_logs():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
 
@@ -376,7 +377,7 @@ def test_team_workload_concentration_reads_persisted_game_logs():
 
 def test_team_pitcher_usage_wrapper_reads_latest_prior_appearance():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
 

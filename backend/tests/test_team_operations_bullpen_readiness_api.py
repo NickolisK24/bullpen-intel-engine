@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 
 import models.prospect  # noqa: F401
 from api.team_operations import team_operations_bp
@@ -52,7 +53,7 @@ ALLOWED_GOVERNANCE_KEYS = {'ranking_applied', 'selection_made'}
 @pytest.fixture
 def client():
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(team_operations_bp, url_prefix='/api/team-operations')

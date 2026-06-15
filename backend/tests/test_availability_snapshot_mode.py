@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 from sqlalchemy import event
 
 import models.prospect  # noqa: F401  (register on db.metadata)
@@ -50,8 +51,7 @@ def production_no_token_client():
 class _SnapshotAppClient:
     def __init__(self, app_env='development', admin_token='secret'):
         self.app = Flask(__name__)
-        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-        self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        configure_test_database(self.app)
         self.app.config['APP_ENV'] = app_env
         self.app.config['ADMIN_API_TOKEN'] = admin_token
         db.init_app(self.app)

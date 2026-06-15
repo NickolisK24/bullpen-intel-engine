@@ -17,6 +17,7 @@ from datetime import date, datetime
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 
 import services.sync as sync_service
 from api.bullpen import bullpen_bp
@@ -38,8 +39,7 @@ CANONICAL_REFERENCE = date(2026, 6, 10)  # latest workload + 1 day
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
     flask_app = Flask(__name__)
-    flask_app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    flask_app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    configure_test_database(flask_app)
     db.init_app(flask_app)
     flask_app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     with flask_app.app_context():

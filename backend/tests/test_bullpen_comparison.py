@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
+from tests.db_config import configure_test_database
 
 import services.sync as sync_service
 from services.bullpen_board import build_board_payload
@@ -160,7 +161,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
 
     app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
