@@ -96,6 +96,7 @@ def add_scored_pitcher(
             game_date=game_date,
             pitches_thrown=log_pitches,
             innings_pitched=1.0,
+            innings_pitched_outs=3,
         )
     )
     db.session.add(

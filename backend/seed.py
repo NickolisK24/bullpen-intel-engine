@@ -22,7 +22,11 @@ from services.roster_status import STATUS_UNKNOWN, normalize_roster_status_value
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import TEAM_ASSIGNMENT_ASSIGNED, sync_team_assignments
 from utils.games_started import parse_games_started
-from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
+from utils.innings import (
+    outs_to_decimal_innings,
+    parse_mlb_innings_to_outs,
+    validate_innings_outs,
+)
 from utils.time import utc_now_naive
 
 app = create_app()
@@ -171,7 +175,9 @@ def seed_game_logs():
 
                 opponent = split.get('opponent', {})
 
-                innings_pitched_outs = parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
+                innings_pitched_outs = validate_innings_outs(
+                    parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
+                )
 
                 log = GameLog(
                     pitcher_id=pitcher.id,

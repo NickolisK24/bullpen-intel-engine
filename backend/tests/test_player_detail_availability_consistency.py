@@ -59,6 +59,7 @@ def seed_pitcher(name, mlb_id, roster_status, risk_level='LOW', raw_score=12.0):
         game_date=date.today() - timedelta(days=3),
         pitches_thrown=8,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
         game_type='R',
     ))
     db.session.add(FatigueScore(

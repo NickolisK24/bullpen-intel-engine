@@ -12,8 +12,12 @@ class GameLog(db.Model):
     __table_args__ = (
         db.UniqueConstraint('pitcher_id', 'mlb_game_pk', name='uq_game_logs_pitcher_game'),
         db.CheckConstraint(
-            'innings_pitched_outs IS NULL OR innings_pitched_outs >= 0',
+            'innings_pitched_outs >= 0',
             name='ck_game_logs_innings_pitched_outs_nonnegative',
+        ),
+        db.CheckConstraint(
+            'innings_pitched IS NOT NULL AND abs(innings_pitched - (innings_pitched_outs / 3.0)) < 0.000001',
+            name='ck_game_logs_innings_pitched_matches_outs',
         ),
         db.CheckConstraint(
             'games_started IS NULL OR games_started IN (0, 1)',
@@ -39,7 +43,7 @@ class GameLog(db.Model):
     # Nullable so existing rows backfill safely; a null reads as "start unknown".
     games_started = db.Column(db.Integer, nullable=True)
     innings_pitched = db.Column(db.Float, default=0.0)
-    innings_pitched_outs = db.Column(db.Integer, nullable=True)
+    innings_pitched_outs = db.Column(db.Integer, nullable=False)
     pitches_thrown = db.Column(db.Integer, default=0)
     strikes = db.Column(db.Integer, default=0)
     hits_allowed = db.Column(db.Integer, default=0)

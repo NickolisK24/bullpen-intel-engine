@@ -58,6 +58,29 @@ def outs_to_decimal_innings(outs: Any) -> float:
     return parsed / 3.0
 
 
+def validate_innings_outs(outs: Any) -> int:
+    if outs is None:
+        raise InvalidInningsNotation('Innings outs are required')
+    if isinstance(outs, bool):
+        raise InvalidInningsNotation(f'Outs value must be an integer: {outs!r}')
+
+    try:
+        parsed = int(outs)
+    except (TypeError, ValueError) as exc:
+        raise InvalidInningsNotation(f'Outs value must be an integer: {outs!r}') from exc
+
+    try:
+        numeric = float(outs)
+    except (TypeError, ValueError) as exc:
+        raise InvalidInningsNotation(f'Outs value must be an integer: {outs!r}') from exc
+
+    if not math.isclose(numeric, parsed, abs_tol=0.0):
+        raise InvalidInningsNotation(f'Outs value must be an integer: {outs!r}')
+    if parsed < 0:
+        raise InvalidInningsNotation(f'Outs value must not be negative: {outs!r}')
+    return parsed
+
+
 def decimal_innings_to_outs(value: Any, *, tolerance: float = 1e-6) -> int | None:
     """
     Convert canonical decimal innings to outs.

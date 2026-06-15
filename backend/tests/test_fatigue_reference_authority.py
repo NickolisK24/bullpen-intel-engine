@@ -76,6 +76,7 @@ def _add_log(pitcher, game_pk, game_date, pitches, innings=1.0):
         game_date=game_date,
         pitches_thrown=pitches,
         innings_pitched=innings,
+        innings_pitched_outs=round(innings * 3),
         game_type='R',
     ))
     db.session.commit()

@@ -66,6 +66,7 @@ def _log(pitcher, game_date, game_pk, pitches=12, innings=1.0, hold=False, save=
         game_date=game_date,
         pitches_thrown=pitches,
         innings_pitched=innings,
+        innings_pitched_outs=round(innings * 3),
         games_started=1 if innings >= 3 else 0,
         hold=hold,
         save=save,

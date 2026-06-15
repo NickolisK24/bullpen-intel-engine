@@ -62,7 +62,8 @@ def _seed_healthy_durable_sync(app, recent_days=3, source='github_actions'):
         game_day = date.today() - timedelta(days=recent_days)
         synced_at = datetime.utcnow()
         db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=10, game_date=game_day,
-                               pitches_thrown=12, innings_pitched=1.0))
+                               pitches_thrown=12, innings_pitched=1.0,
+                               innings_pitched_outs=3))
         db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=20.0,
                                     risk_level='LOW', calculated_at=synced_at))
         db.session.add(SyncRun(

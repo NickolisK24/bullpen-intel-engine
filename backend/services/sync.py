@@ -25,7 +25,11 @@ from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import sync_team_assignments
-from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
+from utils.innings import (
+    outs_to_decimal_innings,
+    parse_mlb_innings_to_outs,
+    validate_innings_outs,
+)
 from utils.games_started import parse_games_started
 
 
@@ -208,7 +212,9 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
         return False
 
     opponent = split.get('opponent', {})
-    innings_pitched_outs = parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
+    innings_pitched_outs = validate_innings_outs(
+        parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
+    )
 
     log = GameLog(
         pitcher_id=pitcher.id,

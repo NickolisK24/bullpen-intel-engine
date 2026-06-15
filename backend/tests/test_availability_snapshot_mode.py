@@ -99,6 +99,7 @@ def _add_pitcher(name, latest_game_date=None, raw_score=20.0, log_pitches=None, 
             game_date=latest_game_date - timedelta(days=index),
             pitches_thrown=pitches,
             innings_pitched=1.0,
+            innings_pitched_outs=3,
             games_started=0,
         ))
 

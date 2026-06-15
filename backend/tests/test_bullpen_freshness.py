@@ -47,6 +47,7 @@ def _add_scored_pitcher(days_since_last_game, team_id=1, risk_level='HIGH', raw_
         game_date=game_date,
         pitches_thrown=18,
         innings_pitched=1.0,
+        innings_pitched_outs=3,
     ))
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,

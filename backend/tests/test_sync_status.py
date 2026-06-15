@@ -51,8 +51,10 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=10, game_date=date(2025, 9, 1)))
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=11, game_date=date(2025, 9, 10)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=10, game_date=date(2025, 9, 1),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=11, game_date=date(2025, 9, 10),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.commit()
 
         res = client.get('/api/bullpen/sync/status')
@@ -114,7 +116,8 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.add(FatigueScore(
                 pitcher_id=p.id,
                 raw_score=42.0,
@@ -164,7 +167,8 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.add(FatigueScore(
                 pitcher_id=p.id,
                 raw_score=42.0,
@@ -214,7 +218,8 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.commit()
 
         res = client.get('/api/bullpen/sync/status')
@@ -259,7 +264,8 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.add(FatigueScore(
                 pitcher_id=p.id,
                 raw_score=42.0,
@@ -298,7 +304,8 @@ class TestSyncStatusSnapshot:
             p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
             db.session.add(p)
             db.session.commit()
-            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31)))
+            db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
+                                   innings_pitched=1.0, innings_pitched_outs=3))
             db.session.add(FatigueScore(
                 pitcher_id=p.id,
                 raw_score=42.0,
