@@ -6,13 +6,14 @@ from flask import Blueprint, jsonify, request
 
 from observations.api_assembly import (
     build_preview_observation_collection,
-    build_sample_observation_collection,
     fail_closed_observation_api_payload,
     observation_api_payload,
 )
 
 
 observations_bp = Blueprint('observations', __name__)
+
+LIVE_OBSERVATION_SOURCE_UNAVAILABLE = 'live_observation_source_unavailable'
 
 OBSERVATION_PROHIBITED_QUERY_TOKENS = (
     'best',
@@ -34,20 +35,14 @@ def get_observations():
     if query_refusal:
         return jsonify(query_refusal), 400
 
-    collection = build_sample_observation_collection()
-    if collection is None:
-        return jsonify(
-            fail_closed_observation_api_payload(
-                reason_code='builder_validation_failed',
-                summary='Observation output is withheld because deterministic builder validation failed.',
-                source_mode='deterministic_sample_state',
-            )
-        )
-
     return jsonify(
-        observation_api_payload(
-            collection,
-            source_mode='deterministic_sample_state',
+        fail_closed_observation_api_payload(
+            reason_code=LIVE_OBSERVATION_SOURCE_UNAVAILABLE,
+            summary=(
+                'Current bullpen observations are unavailable because live '
+                'observation generation is not integrated for this route.'
+            ),
+            source_mode=LIVE_OBSERVATION_SOURCE_UNAVAILABLE,
         )
     )
 
@@ -88,7 +83,7 @@ def _query_refusal(args):
         return fail_closed_observation_api_payload(
             reason_code=reason_code,
             summary='Observation output is withheld because request parameters are not supported for this route.',
-            source_mode='deterministic_sample_state',
+            source_mode=LIVE_OBSERVATION_SOURCE_UNAVAILABLE,
         )
     return None
 

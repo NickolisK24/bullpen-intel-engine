@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
+import { readFileSync } from 'node:fs'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
@@ -106,6 +107,19 @@ const observations = {
   ],
 }
 
+const failClosedObservations = {
+  contractState: 'fail_closed',
+  isFailClosed: true,
+  observations: observations.observations,
+  freshness: { status: 'unavailable', reason_code: 'live_observation_source_unavailable' },
+  limitations: [
+    {
+      limitation_type: 'live_observation_source_unavailable',
+      summary: 'Current bullpen observations are unavailable.',
+    },
+  ],
+}
+
 const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
 const contextNote = 'Recent bullpen work has picked up: 4 appearances and 72 pitches over the last 7 days, up from 2 appearances and 24 pitches the week before.'
 
@@ -181,6 +195,20 @@ test('the feed derives deeper observations and adds browse categories', () => {
       assert.ok(item.teamName, `team story missing teamName: ${item.title}`)
     }
   }
+})
+
+test('the live Stories component does not fetch the observations endpoint', () => {
+  const source = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
+
+  assert.equal(source.includes('getBullpenObservations'), false)
+  assert.equal(source.includes('observations.data'), false)
+})
+
+test('fail-closed observations do not add sample-derived story cards', () => {
+  const feed = getStoryFeed(dashboard, failClosedObservations)
+
+  assert.ok(feed.hasStories)
+  assert.equal(feed.items.some(item => item.sourceObservation), false)
 })
 
 test('the feed preserves story continuity without exposing internal memory language', () => {

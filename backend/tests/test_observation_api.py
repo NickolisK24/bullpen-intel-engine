@@ -5,6 +5,7 @@ from flask import Flask
 
 from api.observations import observations_bp
 from observations import observation_governance_errors
+from observations.api_assembly import build_sample_observation_collection
 
 
 ROUTE = '/api/observations'
@@ -175,19 +176,23 @@ class TestObservationApi:
         assert f'{ROUTE}/' in routes
         assert PREVIEW_ROUTE in routes
 
-    def test_api_returns_governed_observation_collection(self, client):
+    def test_live_route_fails_closed_until_current_observations_exist(self, client):
         response = client.get(ROUTE)
         payload = response.get_json()
 
         assert response.status_code == 200
-        assert payload['status'] == 'ok'
-        assert payload['collection_id'] == 'bullpen-observations:deterministic-sample'
-        assert payload['observation_count'] == 5
-        assert payload['trust_status'] == 'supported'
-        assert payload['freshness']['status'] == 'current'
-        assert payload['confidence']['status'] == 'medium'
+        assert payload['status'] == 'fail_closed'
+        assert payload['collection_id'] == 'bullpen-observations:fail-closed'
+        assert payload['observation_count'] == 0
+        assert payload['observations'] == []
+        assert payload['trust_status'] == 'fail_closed'
+        assert payload['freshness']['status'] == 'unavailable'
+        assert payload['freshness']['reason_code'] == 'live_observation_source_unavailable'
+        assert payload['confidence']['status'] == 'low'
         assert payload['limitations']
+        assert payload['suppression_reasons'] == ['live_observation_source_unavailable']
         assert payload['route_metadata']['route'] == ROUTE
+        assert payload['route_metadata']['source_mode'] == 'live_observation_source_unavailable'
         assert payload['route_metadata']['read_only'] is True
         assert payload['route_metadata']['frontend_exposure'] is False
         assert payload['route_metadata']['database_required'] is False
@@ -195,48 +200,29 @@ class TestObservationApi:
         assert_governed_payload(payload)
         assert_no_prohibited_output(payload)
 
-    def test_each_observation_preserves_governance_flags_and_contract_fields(self, client):
+    def test_live_route_never_serves_deterministic_sample_as_current(self, client):
         payload = client.get(ROUTE).get_json()
-        observed_types = [
-            observation['observation_type']
-            for observation in payload['observations']
-        ]
+        text = ' '.join(collect_strings(payload))
 
-        assert observed_types == [
-            'inventory',
-            'readiness',
-            'workload_pressure',
-            'freshness',
-            'trust',
-        ]
+        assert payload['observations'] == []
+        assert payload['freshness']['status'] != 'current'
+        assert 'deterministic_sample_state' not in text
+        assert '2026-06-04' not in text
+
+    def test_retained_static_sample_collection_is_not_marked_current(self):
+        collection = build_sample_observation_collection()
+        payload = collection.to_dict()
+
+        assert payload['freshness']['status'] == 'static_sample'
         for observation in payload['observations']:
-            assert observation['ranking_applied'] is False
-            assert observation['selection_made'] is False
-            assert observation['observation_id']
-            assert observation['family'] == observation['observation_type']
-            assert observation['severity']
-            assert observation['title']
-            assert observation['summary']
-            assert observation['evidence']
-            assert observation['limitations']
-            assert observation['confidence']
-            assert observation['freshness']
-            assert observation['trust_status']
-            assert observation['explanation_reference']
-        assert_governed_payload(payload)
-
-    def test_response_serializes_evidence_limitations_trust_freshness_and_confidence(self, client):
-        payload = client.get(ROUTE).get_json()
-        observation = payload['observations'][0]
-
-        assert observation['evidence'][0]['source_type'] == 'trusted_platform_state'
-        assert observation['limitations'][0]['limitation_type']
-        assert observation['trust_status'] == 'supported'
-        assert observation['freshness']['data_through'] == '2026-06-04'
-        assert observation['confidence']['status'] == 'medium'
-        assert payload['trust_status'] == 'supported'
-        assert payload['freshness']['data_through'] == '2026-06-04'
-        assert payload['confidence']['status'] == 'medium'
+            assert observation['freshness']['status'] == 'static_sample'
+            for evidence in observation['evidence']:
+                assert evidence['freshness_status'] == 'static_sample'
+                assert evidence.get('data_through') is None
+        assert all(
+            observation['freshness']['status'] != 'current'
+            for observation in payload['observations']
+        )
         assert_governed_payload(payload)
 
     def test_preview_route_returns_supplied_state_observation_collection(self, client):
