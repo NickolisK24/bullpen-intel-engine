@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from models.game_log import GameLog
 from services.role_authority import (
+    AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD,
     CONF_HIGH,
     CONF_LOW,
     CONF_MEDIUM,
@@ -23,6 +24,7 @@ from services.role_authority import (
     classify_role,
     role_authority_enabled,
 )
+import services.role_authority as role_authority
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 
 REF = date(2026, 6, 9)
@@ -109,6 +111,56 @@ def test_swingman_is_ambiguous_with_caveat_and_included():
     assert result['role'] == ROLE_AMBIGUOUS
     assert result['eligible'] is True
     assert result['limitations']  # caveat present
+
+
+def test_start_leaning_ambiguous_is_excluded():
+    logs = [log(2, games_started=1, innings_pitched=5.0),
+            log(4, games_started=1, innings_pitched=5.0),
+            log(6, games_started=1, innings_pitched=5.0),
+            log(8, games_started=1, innings_pitched=5.0),
+            log(10, games_started=1, innings_pitched=5.0),
+            log(12, games_started=1, innings_pitched=5.0),
+            log(14, games_started=0, innings_pitched=1.0),
+            log(16, games_started=0, innings_pitched=1.0),
+            log(18, games_started=0, innings_pitched=1.0),
+            log(20, games_started=0, innings_pitched=1.0)]
+    result = classify_role(_pitcher(), logs, reference_date=REF)
+    assert result['role'] == ROLE_AMBIGUOUS
+    assert result['eligible'] is False
+    assert any('leans starter' in limitation for limitation in result['limitations'])
+
+
+def test_low_sample_start_leaning_ambiguous_stays_eligible():
+    logs = [log(2, games_started=1, innings_pitched=5.0),
+            log(4, games_started=1, innings_pitched=5.0),
+            log(6, games_started=1, innings_pitched=5.0),
+            log(8, games_started=0, innings_pitched=1.0)]
+    result = classify_role(_pitcher(), logs, reference_date=REF)
+    assert result['role'] == ROLE_AMBIGUOUS
+    assert result['eligible'] is True
+    assert result['limitations']
+
+
+def test_ambiguous_threshold_above_one_admits_all_ambiguous(monkeypatch):
+    monkeypatch.setattr(
+        role_authority,
+        'AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD',
+        1.01,
+    )
+    logs = [log(2, games_started=1, innings_pitched=5.0),
+            log(4, games_started=1, innings_pitched=5.0),
+            log(6, games_started=1, innings_pitched=5.0),
+            log(8, games_started=1, innings_pitched=5.0),
+            log(10, games_started=1, innings_pitched=5.0),
+            log(12, games_started=1, innings_pitched=5.0),
+            log(14, games_started=0, innings_pitched=1.0),
+            log(16, games_started=0, innings_pitched=1.0),
+            log(18, games_started=0, innings_pitched=1.0),
+            log(20, games_started=0, innings_pitched=1.0)]
+    result = classify_role(_pitcher(), logs, reference_date=REF)
+    assert AMBIGUOUS_START_SHARE_ELIGIBILITY_THRESHOLD < 1.0
+    assert result['role'] == ROLE_AMBIGUOUS
+    assert result['eligible'] is True
 
 
 def test_opener_short_starts_are_ambiguous_not_starter():
