@@ -7,6 +7,7 @@ query persistence, call services, or integrate live runtime data.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from observations.builders import (
@@ -30,7 +31,7 @@ OBSERVATION_API_ROUTE = '/api/observations'
 OBSERVATION_API_PREVIEW_ROUTE = '/api/observations/preview'
 OBSERVATION_API_DOCUMENT = 'docs/V5_PHASE_6_OBSERVATION_API_SURFACE.md'
 OBSERVATION_COLLECTION_ID = 'bullpen-observations:deterministic-sample'
-OBSERVATION_GENERATED_AT = '2026-06-04T18:00:00Z'
+STATIC_SAMPLE_GENERATED_AT = '2026-06-04T18:00:00Z'
 
 FAMILY_BUILDERS = (
     ('inventory', InventoryObservationBuilder()),
@@ -43,7 +44,7 @@ SUPPORTED_PREVIEW_FAMILIES = frozenset(family for family, _builder in FAMILY_BUI
 
 
 def build_sample_observation_collection() -> ObservationCollection | None:
-    """Build deterministic sample observations for the read-only API route."""
+    """Build deterministic sample observations for non-production contract tests."""
 
     return build_observation_collection(
         OBSERVATION_COLLECTION_ID,
@@ -51,7 +52,7 @@ def build_sample_observation_collection() -> ObservationCollection | None:
             (builder, _sample_state_for_family(family))
             for family, builder in FAMILY_BUILDERS
         ),
-        generated_at=OBSERVATION_GENERATED_AT,
+        generated_at=STATIC_SAMPLE_GENERATED_AT,
         freshness=_sample_collection_freshness(),
         confidence=_sample_collection_confidence(),
         limitations=(_sample_collection_limitation(),),
@@ -89,10 +90,11 @@ def build_preview_observation_collection(
     if not builder_inputs:
         return None
 
+    generated_at = payload.get('generated_at') or _generated_at()
     collection = build_observation_collection(
         str(payload.get('collection_id') or 'bullpen-observations:preview'),
         builder_inputs,
-        generated_at=payload.get('generated_at') or OBSERVATION_GENERATED_AT,
+        generated_at=generated_at,
         freshness=payload.get('freshness') or _sample_collection_freshness(),
         confidence=payload.get('confidence') or _sample_collection_confidence(),
         limitations=payload.get('limitations') or (_sample_collection_limitation(),),
@@ -129,14 +131,15 @@ def fail_closed_observation_api_payload(
     summary: str,
     source_mode: str,
 ) -> dict[str, Any]:
+    generated_at = _generated_at()
     collection = ObservationCollection(
         collection_id='bullpen-observations:fail-closed',
         observations=(),
-        generated_at=OBSERVATION_GENERATED_AT,
+        generated_at=generated_at,
         freshness={
             'status': 'unavailable',
             'reason_code': reason_code,
-            'generated_at': OBSERVATION_GENERATED_AT,
+            'generated_at': generated_at,
         },
         confidence={
             'status': 'low',
@@ -204,9 +207,9 @@ def _sample_state_for_family(family: str) -> dict[str, Any]:
                 'source_type': 'trusted_platform_state',
                 'label': config['evidence_label'],
                 'value': config['evidence_value'],
-                'freshness_status': 'current',
-                'data_through': '2026-06-04',
-                'generated_at': OBSERVATION_GENERATED_AT,
+                'freshness_status': 'static_sample',
+                'sample_date': '2026-06-04',
+                'generated_at': STATIC_SAMPLE_GENERATED_AT,
                 'metadata': {'field': config['metadata_field']},
             }
         ],
@@ -225,20 +228,20 @@ def _sample_state_for_family(family: str) -> dict[str, Any]:
             'reason': 'Supplied deterministic state is sufficient for API contract validation.',
         },
         'freshness': {
-            'status': 'current',
-            'data_through': '2026-06-04',
-            'generated_at': OBSERVATION_GENERATED_AT,
+            'status': 'static_sample',
+            'sample_date': '2026-06-04',
+            'generated_at': STATIC_SAMPLE_GENERATED_AT,
         },
         'trust_status': ObservationTrustStatus.SUPPORTED,
-        'generated_at': OBSERVATION_GENERATED_AT,
+        'generated_at': STATIC_SAMPLE_GENERATED_AT,
     }
 
 
 def _sample_collection_freshness() -> dict[str, Any]:
     return {
-        'status': 'current',
-        'data_through': '2026-06-04',
-        'generated_at': OBSERVATION_GENERATED_AT,
+        'status': 'static_sample',
+        'sample_date': '2026-06-04',
+        'generated_at': STATIC_SAMPLE_GENERATED_AT,
     }
 
 
@@ -273,3 +276,7 @@ def _route_metadata(*, source_mode: str) -> dict[str, Any]:
         'live_runtime_integration': False,
         'sequence_basis': 'family_sequence',
     }
+
+
+def _generated_at() -> str:
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')

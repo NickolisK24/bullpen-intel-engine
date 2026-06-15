@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard, getBullpenObservations } from '../../utils/api'
+import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState } from '../UI'
 import { SectionHeading, StoryPresentation } from '../home/BullpenStories'
 import {
@@ -21,17 +21,15 @@ import {
 } from './storiesFeedView'
 
 // BaseballOS Stories — the browseable bullpen intelligence feed. Today is the
-// curated morning briefing; this page is the stream behind it: observations
-// not promoted to Today, additional team stories, league notes, and watch
-// items. Same derivations, same destinations, no new signals.
+// curated morning briefing; this page is the stream behind it: dashboard-derived
+// team storylines, league notes, and watch items. Same derivations, same
+// destinations, no new signals.
 export default function Stories() {
   const dash = useFetch(getBullpenDashboard)
-  const observations = useFetch(getBullpenObservations)
 
   return (
     <StoriesView
       dashboard={dash.data}
-      observations={observations.data}
       loading={dash.loading}
       error={dash.error}
       onRetry={dash.refetch}
