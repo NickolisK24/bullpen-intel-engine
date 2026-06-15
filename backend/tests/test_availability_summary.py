@@ -1,4 +1,7 @@
-from services.availability_summary import summarize_availability_records
+from services.availability_summary import (
+    summarize_availability_records,
+    summarize_scored_pitcher_inventory,
+)
 
 
 def _record(status, confidence, data_state):
@@ -83,3 +86,15 @@ def test_availability_summary_reports_empty_classification_set():
 
     assert summary['total_pitchers'] == 0
     assert summary['notes'] == ['No availability classifications are available yet.']
+
+
+def test_scored_pitcher_inventory_summary_is_not_current_availability():
+    summary = summarize_scored_pitcher_inventory([
+        _record('Monitor', 'low', 'stale'),
+    ])
+
+    assert summary['mode'] == 'scored_pitcher_inventory'
+    assert summary['is_current_availability'] is False
+    assert summary['total_pitchers'] == 1
+    assert summary['statuses']['Monitor'] == 1
+    assert 'Stale workload data is retained here as inventory context, not bullpen availability.' in summary['notes']

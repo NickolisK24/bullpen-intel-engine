@@ -24,7 +24,15 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows as availability_latest_fatigue_rows,
 )
-from services.availability_summary import summarize_availability_records
+from services.availability_summary import (
+    summarize_availability_records,
+    summarize_scored_pitcher_inventory,
+)
+from services.availability_population import (
+    CURRENT_AVAILABILITY_SCOPE,
+    availability_with_eligibility,
+    current_availability_records,
+)
 from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
 from services.bullpen_comparison import build_team_comparison
 from services.bullpen_context import (
@@ -855,17 +863,6 @@ def _merge_limitations(*groups):
     return merged
 
 
-def _availability_with_eligibility(availability, eligibility, roster_status=None):
-    """Attach roster-status and eligibility caveats to availability output."""
-    merged = apply_roster_status_to_availability(availability, roster_status)
-    limitations = list(merged.get('limitations') or [])
-    for limitation in (eligibility or {}).get('limitations') or []:
-        if limitation not in limitations:
-            limitations.append(limitation)
-    merged['limitations'] = limitations
-    return merged
-
-
 def _eligible_records_for_rows(
     rows,
     availability_by_pitcher,
@@ -896,7 +893,7 @@ def _eligible_records_for_rows(
         if context is None:
             continue
 
-        availability = _availability_with_eligibility(
+        availability = availability_with_eligibility(
             availability_by_pitcher.get(pitcher.id),
             context['eligibility'],
             context['roster_status'],
@@ -918,61 +915,6 @@ def _eligible_records_for_rows(
             'pitcher': pitcher,
         })
     return records, roster_summary
-
-
-def _eligible_classified_records(rows, include_stale=False, reference_date=None):
-    """
-    Classify availability rows and remove non-bullpen pitchers for league-wide
-    bullpen-specific public surfaces.
-
-    Default mode intentionally matches the default team board universe: active
-    bullpen options remain visible even without recent workload, while inactive
-    roster context is reserved for explicit unavailable views and must not
-    inflate public story counts.
-    """
-    classified = classify_latest_fatigue_rows(
-        rows,
-        reference_date=reference_date,
-        mode=CURRENT_AVAILABILITY_MODE,
-    )
-    ref = reference_date or product_current_date()
-    contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
-        [record['pitcher'] for record in classified],
-        include_stale=True,
-        include_inactive_context=False,
-        reference_date=ref,
-    )
-    contexts_by_pitcher = {
-        context['pitcher'].id: context
-        for context in contexts
-    }
-    eligible = []
-    for record in classified:
-        pitcher = record['pitcher']
-        context = contexts_by_pitcher.get(pitcher.id)
-        if context is None:
-            continue
-
-        visibility = build_visibility_contract(
-            context['eligibility'],
-            context['roster_status'],
-            context['logs'],
-            ref,
-        )
-        if not visibility['is_visible_by_default']:
-            continue
-
-        updated = dict(record)
-        updated['eligibility'] = context['eligibility']
-        updated['roster_status'] = context['roster_status']
-        updated['availability'] = _availability_with_eligibility(
-            updated.get('availability'),
-            context['eligibility'],
-            context['roster_status'],
-        )
-        updated['visibility'] = visibility
-        eligible.append(updated)
-    return eligible
 
 
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
@@ -1489,13 +1431,15 @@ def get_stats_overview():
         if latest_scores else 0
     )
 
+    inventory_summary = summarize_scored_pitcher_inventory(availability_records)
+
     return jsonify({
         'total_pitchers':    total_pitchers,
         'total_game_logs':   total_logs,
         'risk_breakdown':    risk_breakdown,
         'avg_fatigue_score': round(float(avg_fatigue), 1),
         'scored_pitchers':   len(latest_scores),
-        'availability_summary': summarize_availability_records(availability_records),
+        'scored_pitcher_inventory': inventory_summary,
     })
 
 
@@ -1512,9 +1456,8 @@ def build_bullpen_dashboard_payload():
     freshness = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
     latest_rows = availability_latest_fatigue_rows()
-    availability_records = _eligible_classified_records(
+    availability_records = current_availability_records(
         latest_rows,
-        include_stale=False,
         reference_date=reference_date,
     )
     summary = summarize_availability_records(availability_records)
@@ -1562,7 +1505,7 @@ def build_bullpen_dashboard_payload():
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'ranking_applied': False,
         'selection_made': False,
-        'scope': 'all_tracked_bullpens',
+        'scope': CURRENT_AVAILABILITY_SCOPE,
         'context': context,
         'roles': {
             'order': list(ROLE_KEYS),
@@ -1647,7 +1590,7 @@ def _dashboard_snapshot_unavailable_payload(reason):
         'generated_at': generated_at,
         'ranking_applied': False,
         'selection_made': False,
-        'scope': 'all_tracked_bullpens',
+        'scope': CURRENT_AVAILABILITY_SCOPE,
         'context': {},
         'roles': {
             'order': list(ROLE_KEYS),
@@ -1836,9 +1779,8 @@ def get_bullpen_landscape():
     """
     freshness = _board_freshness_block()
     reference_date = _public_availability_reference_date(freshness)
-    records = _eligible_classified_records(
+    records = current_availability_records(
         availability_latest_fatigue_rows(),
-        include_stale=False,
         reference_date=reference_date,
     )
     return jsonify(build_landscape(

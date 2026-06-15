@@ -50,6 +50,16 @@ const staleDominantSummary = {
   ],
 }
 
+const inventorySummary = {
+  ...staleDominantSummary,
+  mode: 'scored_pitcher_inventory',
+  is_current_availability: false,
+  notes: [
+    'Recent usage information is missing for most scored pitchers, so inventory workload reads are less certain.',
+    'Stale workload data is retained here as inventory context, not bullpen availability.',
+  ],
+}
+
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -65,7 +75,7 @@ test('formats current-mode availability summary distributions', () => {
   assert.equal(view.statusRows.find(row => row.label === 'Monitor').count, 704)
   assert.equal(view.statusTotal, 704)
   assert.equal(view.dominantStatus.label, 'Monitor')
-  assert.equal(view.operationalSummary, 'Availability inventory is currently concentrated in Monitor status.')
+  assert.equal(view.operationalSummary, 'Current availability is concentrated in Monitor status.')
   assert.equal(view.confidenceRows.find(row => row.label === 'Unclear Read').count, 704)
   assert.equal(view.dataStateRows.find(row => row.label === 'Recent Usage Unknown').count, 640)
   assert.equal(view.dataStateRows.find(row => row.label === 'Missing').count, 64)
@@ -99,7 +109,7 @@ test('renders compact availability summary with secondary evidence collapsed', (
   assert.ok(htmlIncludes(collapsedHtml, 'Availability Summary'))
   assert.ok(htmlIncludes(collapsedHtml, 'Availability Distribution'))
   assert.ok(htmlIncludes(collapsedHtml, 'role="img"'))
-  assert.ok(htmlIncludes(collapsedHtml, 'Availability inventory is currently concentrated in Monitor status.'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Current availability is concentrated in Monitor status.'))
   assert.ok(htmlIncludes(collapsedHtml, 'Available: 0'))
   assert.ok(htmlIncludes(collapsedHtml, 'Monitor: 704'))
   assert.ok(htmlIncludes(collapsedHtml, 'Limited: 0'))
@@ -123,4 +133,26 @@ test('availability distribution summary avoids recommendation language', () => {
   const text = visibleText(html)
 
   assert.equal(/\buse\b|\bbest\b|\bpreferred\b|\brecommended\b|\bmanager should\b/i.test(text), false)
+})
+
+test('renders scored pitcher inventory without current availability labeling', () => {
+  const view = getAvailabilityDashboardSummaryView(inventorySummary)
+  const html = renderToStaticMarkup(
+    React.createElement(AvailabilityDashboardSummary, { summary: inventorySummary, compact: true }),
+  )
+
+  assert.equal(view.mode, 'scored_pitcher_inventory')
+  assert.equal(view.modeLabel, 'Scored pitcher inventory')
+  assert.equal(view.isCurrentAvailability, false)
+  assert.equal(view.title, 'Scored Pitcher Inventory')
+  assert.equal(view.distributionTitle, 'Workload Status Distribution')
+  assert.equal(view.totalLabel, 'scored pitchers')
+  assert.equal(view.primaryTrustNote, 'Recent usage information is incomplete for many scored pitchers, so inventory workload reads are less certain.')
+  assert.equal(view.operationalSummary, 'Scored pitcher inventory is concentrated in Monitor workload status.')
+
+  assert.ok(htmlIncludes(html, 'Scored Pitcher Inventory'))
+  assert.ok(htmlIncludes(html, 'Scored pitcher inventory · 704 scored pitchers'))
+  assert.ok(htmlIncludes(html, 'Workload Status Distribution'))
+  assert.equal(htmlIncludes(html, 'Current availability'), false)
+  assert.equal(htmlIncludes(html, 'Availability Summary'), false)
 })

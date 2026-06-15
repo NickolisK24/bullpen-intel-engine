@@ -106,7 +106,7 @@ def _minimal_dashboard_payload():
         'generated_at': utc_now_naive().isoformat(),
         'ranking_applied': False,
         'selection_made': False,
-        'scope': 'all_tracked_bullpens',
+        'scope': 'bullpen_eligible',
         'context': {},
         'roles': {'order': [], 'counts': {}, 'total': 0},
         'landscape': {},

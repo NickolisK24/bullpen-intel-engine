@@ -46,15 +46,15 @@ function DistributionRows({ title, rows, total }) {
   )
 }
 
-function AvailabilityDistributionBar({ rows, total, summary }) {
+function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel }) {
   const maxCount = rows.reduce((max, row) => Math.max(max, row.count), 0)
 
   return (
-    <section className="rounded border border-dirt bg-chalk/25 p-3" aria-label="Availability distribution">
+    <section className="rounded border border-dirt bg-chalk/25 p-3" aria-label={ariaLabel}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">
-            Availability Distribution
+            {title}
           </div>
           <p className="mt-1 text-xs leading-relaxed text-chalk500">{summary}</p>
         </div>
@@ -66,7 +66,7 @@ function AvailabilityDistributionBar({ rows, total, summary }) {
       <div
         className="mt-3 flex h-3 overflow-hidden rounded-full border border-dirt bg-dirt"
         role="img"
-        aria-label={`Availability distribution. ${summary}`}
+        aria-label={`${ariaLabel}. ${summary}`}
       >
         {rows.map((row) => {
           const pct = total > 0 ? (row.count / total) * 100 : 0
@@ -135,9 +135,9 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
       <section className="card p-4 mb-5 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Availability Summary</div>
+            <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">{view.title}</div>
             <div className="mt-1 text-chalk600 font-mono text-[11px] leading-relaxed">
-              {view.modeLabel} · {view.totalPitchers.toLocaleString()} classified pitchers
+              {view.modeLabel} · {view.totalPitchers.toLocaleString()} {view.totalLabel}
             </div>
           </div>
           <div className={`rounded border px-3 py-2 text-xs font-mono leading-relaxed ${trustClass}`}>
@@ -149,6 +149,8 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           rows={view.statusRows}
           total={view.statusTotal}
           summary={view.operationalSummary}
+          title={view.distributionTitle}
+          ariaLabel={view.distributionAriaLabel}
         />
 
         <button
@@ -158,7 +160,7 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
           aria-controls="availability-summary-details"
           onClick={() => setDetailsOpen(current => !current)}
         >
-          {detailsOpen ? 'Hide Availability Evidence' : 'View Availability Evidence'}
+          {detailsOpen ? view.detailsOpenLabel : view.detailsClosedLabel}
         </button>
 
         {detailsOpen && (
@@ -189,9 +191,9 @@ export default function AvailabilityDashboardSummary({ summary, compact = false,
     <section className="card p-5 mb-8 animate-fade-up opacity-0 delay-3" style={{ animationFillMode: 'forwards' }}>
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">Availability Summary</div>
+          <div className="text-chalk400 font-mono text-xs uppercase tracking-widest">{view.title}</div>
           <div className="mt-1 text-chalk600 font-mono text-[11px] leading-relaxed">
-            {view.modeLabel} · {view.totalPitchers.toLocaleString()} classified pitchers
+            {view.modeLabel} · {view.totalPitchers.toLocaleString()} {view.totalLabel}
           </div>
         </div>
         <div className={`rounded border px-3 py-2 text-xs font-mono leading-relaxed ${trustClass}`}>

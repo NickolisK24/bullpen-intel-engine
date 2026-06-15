@@ -169,7 +169,7 @@ test('renders the Operational Readiness hero and snapshot for V2 and V3 state', 
   assert.ok(htmlIncludes(html, 'Operationally Stable'))
   assert.ok(htmlIncludes(html, 'Workload Pressure'))
   assert.ok(htmlIncludes(html, 'elevated'))
-  assert.ok(htmlIncludes(html, 'Availability Concentration'))
+  assert.ok(htmlIncludes(html, 'Inventory Concentration'))
   assert.ok(htmlIncludes(html, 'Available: 240 / 679 total'))
   assert.ok(htmlIncludes(html, 'Freshness Status'))
   assert.ok(htmlIncludes(html, 'current'))

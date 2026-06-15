@@ -63,10 +63,10 @@ export default function DataTrust() {
         <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
       </section>
 
-      {/* Availability transparency */}
-      <section className="mb-6" aria-label="Availability transparency">
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Workload Read</h2>
-        <AvailabilityDashboardSummary summary={overview.data?.availability_summary} initialDetailsOpen />
+      {/* Scored pitcher inventory */}
+      <section className="mb-6" aria-label="Scored pitcher inventory">
+        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Scored Pitcher Inventory</h2>
+        <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
       </section>
 
       {/* Governance protections & operational context */}

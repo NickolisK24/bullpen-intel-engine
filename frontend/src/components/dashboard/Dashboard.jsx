@@ -58,14 +58,14 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              Availability and workload across all tracked MLB bullpens tonight — who's
-              available, how stressed each pen is, and what usage each arm appears suited for.
+              Availability and workload across bullpen-eligible MLB arms tonight — who's
+              available, how stressed the governed set is, and what usage each arm appears suited for.
               Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className="rounded border border-amber/30 bg-amber/5 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-amber/80">
-                League-Wide · All tracked MLB bullpens
+                League-Wide · Bullpen-eligible MLB arms
               </span>
               <SeasonBanner season={season} isLive={isLive} />
               <FreshnessPill
@@ -101,7 +101,7 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           <InjuryIlContextSection context={injuryIlContext} />
 
           {/* Section 2 — Bullpen Snapshot */}
-          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} relievers across all tracked MLB bullpens`}>
+          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} bullpen-eligible relievers in the governed availability set`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {context.snapshot.map(row => (
                 <div key={row.status} className="card p-4">
@@ -118,7 +118,7 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           {/* Section 3 — Bullpen Health */}
           <Section
             title="League-Wide Bullpen Health"
-            subtitle="Aggregated across all tracked MLB bullpens — not a single team. Open Bullpen for one team's health."
+            subtitle="Aggregated across the governed bullpen-eligible set — not a single team. Open Bullpen for one team's health."
           >
             <div className="card p-4" style={context.tone} role="status" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -153,7 +153,7 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
           {/* Section 4 — Usage Roles Summary */}
           <Section
             title="League-Wide Usage Roles"
-            subtitle="Observed usage-role distribution across all tracked MLB bullpens — not a single team, and not assigned roles."
+            subtitle="Observed usage-role distribution across bullpen-eligible MLB arms — not a single team, and not assigned roles."
           >
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               {roles.rows.map(row => (

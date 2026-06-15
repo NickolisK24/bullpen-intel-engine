@@ -127,13 +127,15 @@ class TestBullpenFreshness:
         assert body['total_game_logs'] == 1
         assert body['scored_pitchers'] == 1
         assert body['risk_breakdown']['HIGH'] == 1
-        assert body['availability_summary']['mode'] == 'current_availability'
-        assert body['availability_summary']['is_current_availability'] is True
-        assert body['availability_summary']['total_pitchers'] == 1
-        assert body['availability_summary']['statuses']['Monitor'] == 1
-        assert body['availability_summary']['confidence']['low'] == 1
-        assert body['availability_summary']['data_state']['stale'] == 1
-        assert any('recent usage information' in note.lower() for note in body['availability_summary']['notes'])
+        assert 'availability_summary' not in body
+        inventory = body['scored_pitcher_inventory']
+        assert inventory['mode'] == 'scored_pitcher_inventory'
+        assert inventory['is_current_availability'] is False
+        assert inventory['total_pitchers'] == 1
+        assert inventory['statuses']['Monitor'] == 1
+        assert inventory['confidence']['low'] == 1
+        assert inventory['data_state']['stale'] == 1
+        assert any('inventory workload reads' in note.lower() for note in inventory['notes'])
 
     def test_detail_and_team_responses_include_availability(self, client):
         with client.application.app_context():

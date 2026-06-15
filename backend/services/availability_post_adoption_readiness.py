@@ -27,7 +27,10 @@ from services.availability_snapshot import (
     classify_latest_fatigue_rows,
     latest_fatigue_rows,
 )
-from services.availability_summary import summarize_availability_records
+from services.availability_summary import (
+    summarize_availability_records,
+    summarize_scored_pitcher_inventory,
+)
 
 
 REPORT_FILENAMES = {
@@ -164,7 +167,7 @@ def collect_readiness_evidence(app, repo_root, reference_date=None):
         reference_date=reference_date,
         mode=LATEST_WORKLOAD_SNAPSHOT_MODE,
     )
-    current_summary = summarize_availability_records(current_records)
+    inventory_summary = summarize_scored_pitcher_inventory(current_records)
     snapshot_summary = summarize_availability_records(
         snapshot_records,
         mode=LATEST_WORKLOAD_SNAPSHOT_MODE,
@@ -201,13 +204,13 @@ def collect_readiness_evidence(app, repo_root, reference_date=None):
 
     docs_issues = find_current_threshold_doc_issues(repo_root)
     snapshot_counts = ordered_status_counts(snapshot_records)
-    overview_summary = overview_json.get('availability_summary') or {}
+    overview_summary = overview_json.get('scored_pitcher_inventory') or {}
     dashboard_reconciles = (
         overview_response.status_code == 200
-        and overview_summary.get('total_pitchers') == current_summary['total_pitchers']
-        and overview_summary.get('statuses') == current_summary['statuses']
-        and overview_summary.get('confidence') == current_summary['confidence']
-        and overview_summary.get('data_state') == current_summary['data_state']
+        and overview_summary.get('total_pitchers') == inventory_summary['total_pitchers']
+        and overview_summary.get('statuses') == inventory_summary['statuses']
+        and overview_summary.get('confidence') == inventory_summary['confidence']
+        and overview_summary.get('data_state') == inventory_summary['data_state']
     )
 
     snapshot_meta = snapshot_json.get('meta') or {}
@@ -224,7 +227,7 @@ def collect_readiness_evidence(app, repo_root, reference_date=None):
         'rows_total': len(rows),
         'current_records_total': len(current_records),
         'snapshot_records_total': len(snapshot_records),
-        'current_summary': current_summary,
+        'inventory_summary': inventory_summary,
         'snapshot_summary': snapshot_summary,
         'snapshot_status_distribution': snapshot_counts,
         'documentation': {
@@ -256,7 +259,7 @@ def collect_readiness_evidence(app, repo_root, reference_date=None):
         },
         'dashboard': {
             'overview_summary': overview_summary,
-            'classifier_summary': current_summary,
+            'classifier_summary': inventory_summary,
             'reconciles': dashboard_reconciles,
             'status': pass_fail(dashboard_reconciles),
         },
@@ -643,7 +646,7 @@ def render_reports(evidence, reports_dir):
             '',
             '## Dashboard Status',
             '',
-            'Dashboard availability_summary reconciles with the current classifier output.',
+            'Dashboard scored_pitcher_inventory reconciles with the inventory classifier output.',
             '',
             '## Explanation Status',
             '',
