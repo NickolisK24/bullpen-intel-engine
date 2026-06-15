@@ -530,7 +530,7 @@ def _recommendation_context(
             V2Refusal(
                 refusal_id='missing_context_evidence',
                 reason='missing_inputs',
-                message='V2 context assembly requires availability evidence.',
+                message='Context assembly requires availability evidence.',
                 applies_to=scope,
             )
         )
@@ -544,7 +544,7 @@ def _recommendation_context(
         limitations.append(
             V2Limitation(
                 limitation_id='missing_availability_evidence',
-                message='No availability records were available for V2 assembly.',
+                message='No availability records were available for context assembly.',
                 applies_to=scope,
             )
         )
@@ -553,7 +553,7 @@ def _recommendation_context(
             V2Explanation(
                 code='context_assembled_from_existing_evidence',
                 message=(
-                    'V2 context was assembled from existing availability and '
+                    'Context was assembled from existing availability and '
                     'workload evidence without ranking or selection.'
                 ),
                 applies_to=scope,
@@ -569,7 +569,7 @@ def _recommendation_context(
                 refusal_id=refusal_id,
                 reason=refusal_id,
                 message=(
-                    'V2 context failed closed because required trust metadata '
+                    'Context failed closed because required trust metadata '
                     f'is missing or unsupported: {field_name}.'
                 ),
                 applies_to=scope,
@@ -579,7 +579,7 @@ def _recommendation_context(
             V2Limitation(
                 limitation_id=refusal_id,
                 message=(
-                    'Required V2 trust metadata is missing or unsupported: '
+                    'Required trust metadata is missing or unsupported: '
                     f'{field_name}.'
                 ),
                 applies_to=scope,
@@ -590,7 +590,7 @@ def _recommendation_context(
         explanations.append(
             V2Explanation(
                 code='trust_metadata_validation_failed',
-                message='V2 trust metadata validation produced fail-closed metadata.',
+                message='Trust metadata validation produced fail-closed metadata.',
                 applies_to=scope,
                 details={
                     'error_count': len(trust_validation_errors),
@@ -605,7 +605,7 @@ def _recommendation_context(
                 refusal_id=f'{data_state}_data_state',
                 reason=f'data_state_{data_state}',
                 message=(
-                    'V2 context is degraded or refused because source data '
+                    'Context is degraded or refused because source data '
                     f'state is {data_state}.'
                 ),
                 applies_to=scope,
@@ -1541,7 +1541,7 @@ def _leverage_inventory(records):
         'leverage_evidence_limitations': (
             []
             if any(record['high_leverage_evidence'] for record in records)
-            else ['No leverage evidence was supplied to V2 context assembly.']
+            else ['No leverage evidence was supplied to context assembly.']
         ),
     }
 

@@ -32,7 +32,7 @@ function countValue(value) {
 function readinessTone(state) {
   if (state === 'loading') return 'border-ice/30 bg-ice/5 text-ice'
   if (state === 'error') return 'border-red-400/40 bg-red-400/10 text-red-300'
-  if (state === 'protected') return 'border-amber/40 bg-amber/10 text-amber'
+  if (state === 'withheld') return 'border-amber/40 bg-amber/10 text-amber'
   return 'border-emerald-400/35 bg-emerald-400/10 text-emerald-300'
 }
 
@@ -187,8 +187,8 @@ export default function OperationalReadinessSection({
   const readinessGovernance = asObject(readinessView.governance)
   const rankingApplied = v2Governance.rankingApplied ?? readinessGovernance.rankingApplied
   const selectionMade = v2Governance.selectionMade ?? readinessGovernance.selectionMade
-  const v2LoadState = v2Loading ? 'loading' : v2Error ? 'error' : v2View.isFailClosed ? 'protected' : 'ready'
-  const readinessLoadState = readinessLoading ? 'loading' : readinessError ? 'error' : readinessView.isRefused || readinessView.isFailClosed ? 'protected' : 'ready'
+  const v2LoadState = v2Loading ? 'loading' : v2Error ? 'error' : v2View.isFailClosed ? 'withheld' : 'ready'
+  const readinessLoadState = readinessLoading ? 'loading' : readinessError ? 'error' : readinessView.isRefused || readinessView.isFailClosed ? 'withheld' : 'ready'
   const bullpenStateLabel = v2Loading
     ? 'Loading'
     : v2Error
@@ -196,7 +196,7 @@ export default function OperationalReadinessSection({
       : v2View.statusLabel
   const bullpenStateDetail = v2View.bullpenState?.status
     ? `State source: ${metricLabel(v2View.bullpenState.status)}`
-    : 'V2 bullpen state context'
+    : 'Bullpen state context'
   const teamReadinessLabel = readinessLoading
     ? 'Loading'
     : readinessError
@@ -245,10 +245,10 @@ export default function OperationalReadinessSection({
           </div>
           <div className="flex flex-wrap gap-2">
             <span className={`rounded border px-3 py-2 font-mono text-xs uppercase tracking-widest ${readinessTone(v2LoadState)}`}>
-              V2 {v2Loading ? 'Loading' : v2Error ? 'Unavailable' : v2View.statusLabel}
+              Bullpen State {v2Loading ? 'Loading' : v2Error ? 'Unavailable' : v2View.statusLabel}
             </span>
             <span className={`rounded border px-3 py-2 font-mono text-xs uppercase tracking-widest ${readinessTone(readinessLoadState)}`}>
-              V3 {readinessLoading ? 'Loading' : readinessError ? 'Unavailable' : readinessView.statusCopy.label}
+              Team Readiness {readinessLoading ? 'Loading' : readinessError ? 'Unavailable' : readinessView.statusCopy.label}
             </span>
           </div>
         </div>
@@ -338,12 +338,12 @@ export default function OperationalReadinessSection({
             <div className="mt-3 flex flex-wrap gap-2">
               {v2Error && (
                 <button type="button" className="rounded border border-dirt bg-field px-3 py-2 font-mono text-xs text-chalk300 hover:border-amber/40 hover:text-amber" onClick={onRetryV2}>
-                  Retry V2
+                  Retry Bullpen State
                 </button>
               )}
               {readinessError && (
                 <button type="button" className="rounded border border-dirt bg-field px-3 py-2 font-mono text-xs text-chalk300 hover:border-amber/40 hover:text-amber" onClick={onRetryReadiness}>
-                  Retry V3
+                  Retry Team Readiness
                 </button>
               )}
             </div>
@@ -369,7 +369,7 @@ export default function OperationalReadinessSection({
 
           <DetailDisclosure
             title="Evidence & Metadata"
-            summary="V2 trust, freshness, fail-closed, inventory, neutral groups, and governance evidence remain available on demand."
+            summary="Trust, freshness, fail-closed, inventory, neutral groups, and governance evidence remain available on demand."
             expanded={evidenceOpen}
             onToggle={() => setEvidenceOpen(current => !current)}
           >

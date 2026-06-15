@@ -1181,7 +1181,7 @@ export const getBullpenObservations = async () => {
   return normalizeBullpenObservationsResponse(response)
 }
 
-// ── V4 Certified Explanations ──────────────────────────────
+// ── Governed Explanations ──────────────────────────────────
 function v4GovernanceDefaults() {
   return {
     ranking_applied: false,
@@ -1466,7 +1466,7 @@ export const getTeamReadinessExplanation = async (params = {}) => {
     return normalizeV4ExplanationApiResponse(buildClientFailClosedExplanationEnvelope({
       explanationType: 'team_readiness_explanation',
       reasonCode: 'unsupported_scope',
-      summary: 'The requested readiness explanation scope is not certified for frontend exposure.',
+      summary: 'The requested readiness explanation scope is not available for frontend exposure.',
       limitationType: 'uncertified_source',
     }))
   }
@@ -1494,3 +1494,4 @@ export const getPipelineOverview = () => request('/prospects/stats/overview')
 
 // ── Methodology ───────────────────────────────────────────────
 export const getMethodology = () => request('/methodology/')
+export const getAvailabilityBacktest = () => request('/methodology/availability-backtest')

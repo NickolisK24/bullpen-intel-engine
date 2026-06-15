@@ -1,6 +1,13 @@
 from flask import Blueprint, jsonify
 
+from services.availability_backtest import latest_backtest_payload
+
 methodology_bp = Blueprint('methodology', __name__)
+
+
+@methodology_bp.route('/availability-backtest', methods=['GET'])
+def get_availability_backtest():
+    return jsonify(latest_backtest_payload())
 
 
 @methodology_bp.route('/', methods=['GET'])
@@ -90,7 +97,7 @@ def get_methodology():
         },
 
         'insights': {
-            'title':   'Fatigue Score vs. Next-Outing ERA (Exploratory)',
+            'title':   'Fatigue Score vs. Next-Outing ERA (Exploratory, Secondary)',
             'summary': (
                 'A retrospective, exploratory look across the 2024 and 2025 '
                 'MLB seasons at whether a higher fatigue score going into an '
@@ -117,7 +124,7 @@ def get_methodology():
                 'recently enough to form a next-appearance pair, so MODERATE '
                 'is used as the rested baseline. CRITICAL is also very sparse '
                 '(see sample sizes). Treat the result as a preliminary, '
-                'directional finding worth deeper study, not a validated '
+                'directional finding worth deeper study, not a settled '
                 'conclusion.'
             ),
             # n per tier mirrors the current generated artifact

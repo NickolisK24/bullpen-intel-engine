@@ -1,4 +1,4 @@
-"""V4 explanation API routes for certified explanation tracks."""
+"""Governed explanation API routes."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def reject_uncertified_explanation_type(explanation_type):
     return _fail_closed_response(
         explanation_type=str(explanation_type),
         reason_code='uncertified_explanation_type',
-        summary='The requested explanation type is not certified for API exposure.',
+        summary='The requested explanation type is not available for API exposure.',
         limitation_type='uncertified_source',
         status_code=403,
     )
@@ -174,7 +174,7 @@ def _team_readiness_response(scope: str):
         return _fail_closed_response(
             explanation_type=TEAM_READINESS_EXPLANATION_TYPE,
             reason_code='unsupported_scope',
-            summary='The requested readiness explanation scope is not certified for API exposure.',
+            summary='The requested readiness explanation scope is not available for API exposure.',
             limitation_type='uncertified_source',
             status_code=422,
         )
@@ -493,7 +493,7 @@ def _limitation_label(limitation_type: str) -> str:
         'missing_data': 'Required explanation inputs are unavailable',
         'stale_data': 'Required explanation inputs are stale',
         'partial_coverage': 'Required explanation inputs have partial coverage',
-        'uncertified_source': 'Requested explanation scope is uncertified',
+        'uncertified_source': 'Requested explanation scope is unavailable',
         'limited_confidence': 'Explanation confidence is limited',
         'insufficient_context': 'Explanation context is insufficient',
     }

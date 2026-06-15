@@ -69,7 +69,18 @@ function displayValue(value) {
     return value.length ? value.map(displayValue).join(', ') : 'None'
   }
   if (typeof value === 'object') return summarizeDisplayValue(value)
-  return String(value)
+  return stripTrustChrome(String(value))
+}
+
+function stripTrustChrome(value) {
+  return value
+    .replace(/\binternal_uncertified\b/gi, 'internal')
+    .replace(/\buncertified\b/gi, 'internal')
+    .replace(/\bcertified\b/gi, 'available')
+    .replace(/\bV[2-4]\s+/g, '')
+    .replace(/\bV[2-4]\b/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function titleCase(value) {
@@ -319,13 +330,12 @@ function RouteStatusBadge({ view }) {
   const routeStatus = asObject(view.routeStatus)
   const labels = [
     routeStatus.exposure === 'internal' ? 'Internal' : titleCase(routeStatus.exposure || 'internal'),
-    routeStatus.productionStatus === 'non_production' ? 'Non-production' : titleCase(routeStatus.productionStatus || 'non production'),
-    routeStatus.certificationStatus === 'uncertified' ? 'Uncertified' : titleCase(routeStatus.certificationStatus || 'uncertified'),
+    routeStatus.productionStatus === 'non_production' ? 'Limited Exposure' : titleCase(routeStatus.productionStatus || 'limited exposure'),
   ].filter(Boolean)
 
   return (
     <span className="inline-flex rounded border border-amber/35 bg-amber/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-amber">
-      {labels.join(' / ') || 'Internal / Non-production / Uncertified'}
+      {labels.join(' / ') || 'Internal / Limited Exposure'}
     </span>
   )
 }

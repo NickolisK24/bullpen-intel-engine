@@ -1,5 +1,6 @@
 import { useFetch } from '../../hooks/useFetch'
 import {
+  getAvailabilityBacktest,
   getBullpenOverview,
   getRecommendationV2BullpenState,
   getSyncStatus,
@@ -10,13 +11,15 @@ import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
+import AvailabilityBacktestCard from './AvailabilityBacktestCard'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
-// Data & Trust — the home for freshness, confidence, governance protections,
-// evidence, limitations, and diagnostics. The dashboard shows the summaries;
-// the full depth lives here behind intentional navigation.
+// Data & Trust — the home for freshness, confidence, operational evidence,
+// limitations, and diagnostics. The dashboard shows the summaries; the full
+// depth lives here behind intentional navigation.
 export default function DataTrust() {
+  const backtest = useFetch(getAvailabilityBacktest)
   const overview = useFetch(getBullpenOverview)
   const sync = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
@@ -32,9 +35,16 @@ export default function DataTrust() {
       <p className="mb-6 max-w-3xl text-sm leading-relaxed text-chalk400">
         The bullpen views show the summary you need to act. This page keeps the
         full depth — how fresh the data is, how clear each workload read is,
-        the governance protections that keep the product descriptive (no ranking,
-        selection, recommendation, or prediction), and the supporting evidence.
+        the operational backtest behind the availability tiers, and the
+        supporting evidence and limitations.
       </p>
+
+      <AvailabilityBacktestCard
+        data={backtest.data}
+        loading={backtest.loading}
+        error={backtest.error}
+        onRetry={backtest.refetch}
+      />
 
       {/* Freshness & sync */}
       <section className="mb-6" aria-label="Data freshness and sync detail">
@@ -69,7 +79,7 @@ export default function DataTrust() {
         <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
       </section>
 
-      {/* Governance protections & operational context */}
+      {/* Operational context */}
       <OperationalReadinessSection
         v2State={v2BullpenState.data}
         v2Loading={v2BullpenState.loading}
@@ -81,9 +91,9 @@ export default function DataTrust() {
         onRetryReadiness={teamOperationsReadiness.refetch}
       />
 
-      {/* Exploratory study */}
+      {/* Secondary exploratory study */}
       <section className="mb-6" aria-label="Exploratory fatigue insight">
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Exploratory Fatigue Insight</h2>
+        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Secondary Exploratory ERA Study</h2>
         <FatigueInsightCard embedded />
       </section>
 

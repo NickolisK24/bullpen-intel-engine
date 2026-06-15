@@ -12,7 +12,7 @@ const DASHBOARD_OBSERVATION_LIMIT = 3
 const STATUS_LABELS = {
   available: 'Available',
   empty: 'No Observations',
-  fail_closed: 'Protected',
+  fail_closed: 'Unavailable - output withheld',
   unavailable: 'Unavailable',
 }
 
@@ -30,8 +30,8 @@ const VISIBILITY_LABELS = {
   data_limited: 'Limited Visibility',
   stale: 'Recent Usage Unknown',
   missing: 'Missing Recent Usage',
-  refused: 'Protected',
-  fail_closed: 'Protected',
+  refused: 'Output Withheld',
+  fail_closed: 'Output Withheld',
   unsupported: 'Visibility Unknown',
 }
 
@@ -292,7 +292,7 @@ export default function BullpenIntelligencePanel({
   const [showAllObservations, setShowAllObservations] = useState(false)
   const observations = asArray(state?.observations)
   const statusLabel = STATUS_LABELS[state?.contractState] || 'Not Loaded'
-  const emptyOrProtected = Boolean(state?.isEmpty || state?.isFailClosed)
+  const emptyOrWithheld = Boolean(state?.isEmpty || state?.isFailClosed)
   const hasObservationLimit =
     Number.isFinite(observationLimit) && observationLimit > 0 && observations.length > observationLimit
   const visibleObservations =
@@ -310,7 +310,7 @@ export default function BullpenIntelligencePanel({
       <div className="card-header flex-col items-start gap-3 sm:flex-row sm:items-start">
         <div className="min-w-0">
           <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-            V5 Bullpen Intelligence
+            Bullpen Intelligence
           </div>
           <h2 id="bullpen-intelligence-heading" className="mt-1 text-xl font-semibold text-chalk100">
             Governed Observations
@@ -354,14 +354,14 @@ export default function BullpenIntelligencePanel({
               />
               <MetadataCell
                 label="Governance"
-                value="Protected"
+                value="Context Only"
                 subtext={GOVERNANCE_CONTEXT_COPY}
               />
             </div>
 
             <CollectionLimitations limitations={state.limitations} />
 
-            {emptyOrProtected ? (
+            {emptyOrWithheld ? (
               <div className="rounded-lg border border-dirt bg-field/45 p-6 text-center">
                 <p className="text-sm text-chalk300">{OBSERVATION_EMPTY_COPY}</p>
                 {state.suppressionReasons?.length > 0 && (

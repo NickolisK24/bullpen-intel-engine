@@ -196,7 +196,7 @@ test('renders successful Team Operations readiness payloads', () => {
 
   assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
   assert.ok(htmlIncludes(html, 'Bullpen Readiness Context'))
-  assert.ok(htmlIncludes(html, 'Internal / Non-production / Uncertified'))
+  assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Operationally Stable'))
   assert.ok(htmlIncludes(html, 'Team-level bullpen readiness is operationally stable.'))
@@ -273,10 +273,10 @@ test('renders refused fail-closed Team Operations readiness payloads', () => {
   assert.ok(htmlIncludes(html, 'Critical Failure'))
 })
 
-test('keeps internal non-production uncertified status visible', () => {
+test('keeps internal limited-exposure status visible', () => {
   const html = renderPanel(baseState)
 
-  assert.ok(htmlIncludes(html, 'Internal / Non-production / Uncertified'))
+  assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
   assert.ok(htmlIncludes(html, 'Governed Output'))
   assert.ok(htmlIncludes(html, 'Team-level context only.'))
 })
@@ -285,7 +285,7 @@ test('renders compact Team Operations summary with evidence collapsed and govern
   const html = renderPanel(baseState, { compact: true })
 
   assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
-  assert.ok(htmlIncludes(html, 'Internal / Non-production / Uncertified'))
+  assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
   assert.ok(htmlIncludes(html, 'ranking_applied === false'))
   assert.ok(htmlIncludes(html, 'selection_made === false'))
   assert.ok(htmlIncludes(html, 'View Context Details'))

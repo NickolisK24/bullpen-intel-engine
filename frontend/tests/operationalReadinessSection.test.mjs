@@ -157,8 +157,8 @@ test('renders the Operational Readiness hero and snapshot for V2 and V3 state', 
 
   assert.ok(htmlIncludes(html, 'Operational Readiness'))
   assert.ok(htmlIncludes(html, 'Bullpen State + Team Readiness'))
-  assert.ok(htmlIncludes(html, 'V2 Available'))
-  assert.ok(htmlIncludes(html, 'V3 Available'))
+  assert.ok(htmlIncludes(html, 'Bullpen State Available'))
+  assert.ok(htmlIncludes(html, 'Team Readiness Available'))
   assert.ok(htmlIncludes(html, 'Operational Snapshot'))
   assert.ok(htmlIncludes(html, 'Observational context only'))
   assert.ok(htmlIncludes(html, 'Current State'))
@@ -200,9 +200,9 @@ test('preserves readiness and evidence detail views on demand', () => {
   assert.ok(htmlIncludes(html, 'Hide Readiness Details'))
   assert.ok(htmlIncludes(html, 'Hide Evidence &amp; Metadata'))
   assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
-  assert.ok(htmlIncludes(html, 'V2 Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'View Context Details'))
-  assert.ok(htmlIncludes(html, 'View V2 Evidence And Metadata'))
+  assert.ok(htmlIncludes(html, 'View Evidence And Metadata'))
 })
 
 test('does not introduce prohibited dashboard guidance language', () => {
