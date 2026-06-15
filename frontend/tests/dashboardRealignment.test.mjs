@@ -114,7 +114,7 @@ test('Data & Trust page hosts the relocated trust and governance detail', () => 
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Workload Read'))
+  assert.ok(htmlIncludes(html, 'Scored Pitcher Inventory'))
   assert.ok(htmlIncludes(html, 'Exploratory Fatigue Insight'))
   // The V5 Bullpen Intelligence surface runs on deterministic sample state, so it
   // is not mounted on the live Trust page until it is wired to live MLB data.

@@ -7,6 +7,7 @@ import {
 
 export const DASHBOARD_CONFIDENCE_ORDER = ['high', 'medium', 'low']
 export const DASHBOARD_DATA_STATE_ORDER = ['fresh', 'stale', 'missing', 'incomplete']
+export const SCORED_PITCHER_INVENTORY_MODE = 'scored_pitcher_inventory'
 
 const CONFIDENCE_STYLE = {
   high: {
@@ -58,12 +59,16 @@ function buildRows(counts = {}, order = [], labelFor = value => value, styleFor 
   }))
 }
 
-function getPrimaryTrustNote(summary, limitedByData) {
+function getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability) {
   const notes = Array.isArray(summary?.notes) ? summary.notes : []
   if (limitedByData) {
-    return 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'
+    return isCurrentAvailability
+      ? 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'
+      : 'Recent usage information is incomplete for many scored pitchers, so inventory workload reads are less certain.'
   }
-  return notes[0] || 'Availability summary is based on current-mode classifier output.'
+  return notes[0] || (isCurrentAvailability
+    ? 'Availability summary is based on current-mode classifier output.'
+    : 'Scored pitcher inventory is based on current-mode classifier output.')
 }
 
 function getDominantStatusRow(rows = []) {
@@ -73,25 +78,70 @@ function getDominantStatusRow(rows = []) {
   }, null)
 }
 
-function getOperationalSummary(rows = [], total = 0) {
+function getOperationalSummary(rows = [], total = 0, isCurrentAvailability = true) {
   if (total <= 0) {
-    return 'No classified availability records are available for this summary.'
+    return isCurrentAvailability
+      ? 'No classified availability records are available for this summary.'
+      : 'No scored pitcher inventory records are available for this summary.'
   }
 
   const dominant = getDominantStatusRow(rows)
   if (!dominant || dominant.count <= 0) {
-    return 'Availability inventory has no populated status category in this summary.'
+    return isCurrentAvailability
+      ? 'Current availability has no populated status category in this summary.'
+      : 'Scored pitcher inventory has no populated workload status category in this summary.'
   }
 
   const pct = Math.round((dominant.count / total) * 100)
   if (pct >= 50) {
-    return `Availability inventory is currently concentrated in ${dominant.label} status.`
+    return isCurrentAvailability
+      ? `Current availability is concentrated in ${dominant.label} status.`
+      : `Scored pitcher inventory is concentrated in ${dominant.label} workload status.`
   }
 
-  return 'Availability inventory is distributed across multiple status categories.'
+  return isCurrentAvailability
+    ? 'Current availability is distributed across multiple status categories.'
+    : 'Scored pitcher inventory is distributed across multiple workload status categories.'
+}
+
+function getModeCopy(mode, isCurrentAvailability) {
+  if (isCurrentAvailability) {
+    return {
+      modeLabel: 'Current availability',
+      title: 'Availability Summary',
+      distributionTitle: 'Availability Distribution',
+      distributionAriaLabel: 'Availability distribution',
+      detailsOpenLabel: 'Hide Availability Evidence',
+      detailsClosedLabel: 'View Availability Evidence',
+      totalLabel: 'classified pitchers',
+    }
+  }
+
+  if (mode === SCORED_PITCHER_INVENTORY_MODE) {
+    return {
+      modeLabel: 'Scored pitcher inventory',
+      title: 'Scored Pitcher Inventory',
+      distributionTitle: 'Workload Status Distribution',
+      distributionAriaLabel: 'Inventory workload status distribution',
+      detailsOpenLabel: 'Hide Inventory Evidence',
+      detailsClosedLabel: 'View Inventory Evidence',
+      totalLabel: 'scored pitchers',
+    }
+  }
+
+  return {
+    modeLabel: 'Non-current workload snapshot',
+    title: 'Workload Snapshot',
+    distributionTitle: 'Workload Status Distribution',
+    distributionAriaLabel: 'Workload status distribution',
+    detailsOpenLabel: 'Hide Workload Evidence',
+    detailsClosedLabel: 'View Workload Evidence',
+    totalLabel: 'classified pitchers',
+  }
 }
 
 export function getAvailabilityDashboardSummaryView(summary = null) {
+  const mode = summary?.mode || 'unknown'
   const totalPitchers = Number(summary?.total_pitchers || 0)
   const dataState = summary?.data_state || {}
   const stale = Number(dataState.stale || 0)
@@ -100,6 +150,7 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const limitedDataCount = stale + missing + incomplete
   const limitedByData = totalPitchers > 0 && limitedDataCount > totalPitchers / 2
   const isCurrentAvailability = summary?.is_current_availability === true
+  const modeCopy = getModeCopy(mode, isCurrentAvailability)
   const statusRows = buildRows(
     summary?.statuses,
     AVAILABILITY_FILTERS.filter(status => status !== 'ALL'),
@@ -109,18 +160,18 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const statusTotal = statusRows.reduce((total, row) => total + row.count, 0)
 
   return {
-    mode: summary?.mode || 'unknown',
-    modeLabel: isCurrentAvailability ? 'Current availability' : 'Non-current availability',
+    mode,
+    ...modeCopy,
     isCurrentAvailability,
     totalPitchers,
     limitedByData,
     limitedDataCount,
-    primaryTrustNote: getPrimaryTrustNote(summary, limitedByData),
+    primaryTrustNote: getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability),
     notes: Array.isArray(summary?.notes) ? summary.notes : [],
     statusRows,
     statusTotal,
     dominantStatus: getDominantStatusRow(statusRows),
-    operationalSummary: getOperationalSummary(statusRows, statusTotal),
+    operationalSummary: getOperationalSummary(statusRows, statusTotal, isCurrentAvailability),
     confidenceRows: buildRows(
       summary?.confidence,
       DASHBOARD_CONFIDENCE_ORDER,

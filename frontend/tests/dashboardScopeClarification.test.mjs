@@ -48,16 +48,16 @@ const renderDashboard = () => inRouter(React.createElement(DashboardView, { data
 test('hero states the dashboard is a league-wide / MLB-wide view', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen Overview'))
-  assert.ok(htmlIncludes(html, 'All tracked MLB bullpens'))      // scope chip
-  assert.ok(htmlIncludes(html, 'all tracked MLB bullpens'))      // subtitle
+  assert.ok(htmlIncludes(html, 'Bullpen-eligible MLB arms'))     // scope chip
+  assert.ok(htmlIncludes(html, 'bullpen-eligible MLB arms'))     // subtitle
   // It points the user to the team-specific section for a single pen.
   assert.ok(htmlIncludes(html, 'for a single team'))
 })
 
-test('snapshot is scoped to all tracked MLB bullpens', () => {
+test('snapshot is scoped to the governed bullpen-eligible set', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen Snapshot'))
-  assert.ok(htmlIncludes(html, 'relievers across all tracked MLB bullpens'))
+  assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the governed availability set'))
 })
 
 test('bullpen health is clearly league-wide, not a single team', () => {
@@ -71,7 +71,7 @@ test('bullpen health is clearly league-wide, not a single team', () => {
 test('usage roles are described as a league-wide distribution', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Usage Roles'))
-  assert.ok(htmlIncludes(html, 'across all tracked MLB bullpens'))
+  assert.ok(htmlIncludes(html, 'across bullpen-eligible MLB arms'))
 })
 
 test('quick actions reinforce the league -> team / matchup / pitcher hierarchy', () => {

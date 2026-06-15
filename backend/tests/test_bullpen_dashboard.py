@@ -13,6 +13,9 @@ from flask import Flask
 
 import services.sync as sync_service
 from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current_availability_records
+from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
+from services.availability_summary import summarize_availability_records
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
@@ -146,6 +149,45 @@ class TestDashboardEndpoint:
         assert body['roles']['total'] == 1
         assert body['availability_summary']['total_pitchers'] == 1
         assert body['landscape']['teams_evaluated'] == 1
+
+    def test_current_availability_summary_uses_governed_authority(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Governed Starter',
+                team_id=1,
+                mlb_id=12,
+                innings=[6.0, 5.1, 6.0],
+                days_ago=[1, 6, 11],
+                games_started=[1, 1, 1],
+            )
+            _seed_pitcher(
+                'Governed Reliever',
+                team_id=2,
+                mlb_id=13,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                games_started=[0, 0, 0],
+            )
+            authority_records = current_availability_records(
+                availability_latest_fatigue_rows(),
+                reference_date=date.today(),
+            )
+            authority_summary = summarize_availability_records(authority_records)
+
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        overview = client.get('/api/bullpen/stats/overview').get_json()
+
+        assert dashboard['scope'] == CURRENT_AVAILABILITY_SCOPE
+        assert dashboard['availability_summary']['is_current_availability'] is True
+        assert dashboard['availability_summary']['total_pitchers'] == authority_summary['total_pitchers']
+        assert dashboard['availability_summary']['statuses'] == authority_summary['statuses']
+        assert dashboard['availability_summary']['total_pitchers'] == 1
+
+        assert 'availability_summary' not in overview
+        inventory = overview['scored_pitcher_inventory']
+        assert inventory['mode'] == 'scored_pitcher_inventory'
+        assert inventory['is_current_availability'] is False
+        assert inventory['total_pitchers'] == 2
 
     def test_dashboard_counts_exclude_known_inactive_roster_statuses(self, client):
         with client.application.app_context():

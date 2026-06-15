@@ -294,9 +294,9 @@ export default function OperationalReadinessSection({
               subtext={workload.summary}
             />
             <SnapshotMetric
-              label="Availability Concentration"
+              label="Inventory Concentration"
               value={availabilitySnapshot.label}
-              subtext="Largest current availability category"
+              subtext="Largest inventory workload-status category"
             />
             <SnapshotMetric
               label="Freshness Status"

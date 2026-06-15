@@ -1,4 +1,4 @@
-"""Aggregate current Availability Engine output for dashboard trust summaries."""
+"""Aggregate classified workload records for availability and inventory summaries."""
 
 from collections import Counter
 
@@ -14,6 +14,9 @@ from services.availability import (
 )
 from services.availability_explanations import STALE_WORKLOAD_LIMITATION
 from services.availability_snapshot import CURRENT_AVAILABILITY_MODE
+
+
+SCORED_PITCHER_INVENTORY_MODE = 'scored_pitcher_inventory'
 
 
 STATUS_ORDER = [
@@ -51,9 +54,11 @@ def _availability_from_record(record):
     return record.get('availability') or {}
 
 
-def _summary_notes(total_pitchers, data_state_counts):
+def _summary_notes(total_pitchers, data_state_counts, is_current_availability=True):
     if total_pitchers == 0:
-        return ['No availability classifications are available yet.']
+        if is_current_availability:
+            return ['No availability classifications are available yet.']
+        return ['No scored pitcher inventory records are available yet.']
 
     stale = data_state_counts.get('stale', 0)
     missing = data_state_counts.get('missing', 0)
@@ -62,18 +67,36 @@ def _summary_notes(total_pitchers, data_state_counts):
     notes = []
 
     if limited > total_pitchers / 2:
-        notes.append('Recent usage information is missing for most pitchers, so most availability reads are less certain.')
+        if is_current_availability:
+            notes.append('Recent usage information is missing for most pitchers, so most availability reads are less certain.')
+        else:
+            notes.append('Recent usage information is missing for most scored pitchers, so inventory workload reads are less certain.')
     elif limited > 0:
-        notes.append('Recent usage information is incomplete for some pitchers, so some availability reads are less certain.')
+        if is_current_availability:
+            notes.append('Recent usage information is incomplete for some pitchers, so some availability reads are less certain.')
+        else:
+            notes.append('Recent usage information is incomplete for some scored pitchers, so inventory workload reads are less certain.')
     else:
-        notes.append('Availability classifications are based on current workload data.')
+        if is_current_availability:
+            notes.append('Availability classifications are based on current workload data.')
+        else:
+            notes.append('Scored pitcher inventory is based on current workload data.')
 
     if stale:
-        notes.append(STALE_WORKLOAD_LIMITATION)
+        if is_current_availability:
+            notes.append(STALE_WORKLOAD_LIMITATION)
+        else:
+            notes.append('Stale workload data is retained here as inventory context, not bullpen availability.')
     if missing:
-        notes.append('Missing workload history makes availability reads less certain.')
+        if is_current_availability:
+            notes.append('Missing workload history makes availability reads less certain.')
+        else:
+            notes.append('Missing workload history makes inventory reads less certain.')
     if incomplete:
-        notes.append('Incomplete workload inputs make availability reads less certain.')
+        if is_current_availability:
+            notes.append('Incomplete workload inputs make availability reads less certain.')
+        else:
+            notes.append('Incomplete workload inputs make inventory reads less certain.')
 
     return notes
 
@@ -100,5 +123,17 @@ def summarize_availability_records(records, mode=CURRENT_AVAILABILITY_MODE, is_c
         'statuses': _ordered_count(status_counts, STATUS_ORDER),
         'confidence': _ordered_count(confidence_counts, CONFIDENCE_ORDER),
         'data_state': _ordered_count(data_state_counts, DATA_STATE_ORDER),
-        'notes': _summary_notes(total_pitchers, data_state_counts),
+        'notes': _summary_notes(
+            total_pitchers,
+            data_state_counts,
+            is_current_availability=is_current_availability,
+        ),
     }
+
+
+def summarize_scored_pitcher_inventory(records):
+    return summarize_availability_records(
+        records,
+        mode=SCORED_PITCHER_INVENTORY_MODE,
+        is_current_availability=False,
+    )
