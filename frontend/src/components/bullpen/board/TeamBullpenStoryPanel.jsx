@@ -2,10 +2,9 @@ import { getTeamBullpenStoryView } from './teamBullpenStoryView'
 import { CONCEPT_DEFINITIONS } from '../../../utils/bullpenConcepts'
 import { homeTone } from '../../home/homeIntelligenceView'
 
-// Today's Bullpen Story — a compact analyst note that sits between the
-// context strips and the availability board. It answers why BaseballOS is
-// watching this pen, what the recent work says, and what to look at on
-// the board below. Additive context only; the board remains the detail.
+// Team Story Surface V1 — a compact analyst note that sits between the
+// context strips and the availability board. It explains what BaseballOS sees
+// inside this bullpen before the user reaches the detailed classifications.
 export default function TeamBullpenStoryPanel({ board }) {
   const story = getTeamBullpenStoryView(board)
   if (!story.hasStory) return null
@@ -13,11 +12,11 @@ export default function TeamBullpenStoryPanel({ board }) {
   return (
     <section
       className="mb-6 rounded-lg border border-dirt bg-dugout p-4 sm:p-5"
-      aria-label="Today's bullpen story"
+      aria-label="Team bullpen intelligence"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-          Why BaseballOS Is Watching This Pen
+          What BaseballOS Sees About This Bullpen
         </div>
         <span
           className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
@@ -32,34 +31,47 @@ export default function TeamBullpenStoryPanel({ board }) {
         {story.headline}
       </h3>
 
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk200">{story.summary}</p>
-
-      <BaseballOSReads reads={story.reads} />
-
-      <TeamBullpenShape reads={story.shapeReads} />
+      <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
+            Observation
+          </div>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk200">{story.observation}</p>
+        </div>
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
+            Why It Matters
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-chalk200">{story.whyItMatters}</p>
+        </div>
+      </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            What The Recent Work Says
+            Evidence
           </div>
           <ul className="mt-2 space-y-1.5">
-            {story.workloadBullets.map((bullet, index) => (
+            {story.evidence.map((bullet, index) => (
               <li key={index} className="text-xs leading-relaxed text-chalk200">• {bullet}</li>
             ))}
           </ul>
         </div>
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            What To Watch On The Board
+            What BaseballOS Is Watching
           </div>
           <ul className="mt-2 space-y-1.5">
-            {story.watchBullets.map((bullet, index) => (
+            {story.watchItems.map((bullet, index) => (
               <li key={index} className="text-xs leading-relaxed text-chalk200">• {bullet}</li>
             ))}
           </ul>
         </div>
       </div>
+
+      <BaseballOSReads reads={story.reads} />
+
+      <TeamBullpenShape reads={story.shapeReads} />
 
       <p className="mt-3 border-t border-dirt/60 pt-2 text-[11px] text-chalk600">{story.framing}</p>
     </section>

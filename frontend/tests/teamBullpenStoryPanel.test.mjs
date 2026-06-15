@@ -18,8 +18,14 @@ after(async () => {
 
 const { default: TeamBullpenStoryPanel } = await server.ssrLoadModule('/src/components/bullpen/board/TeamBullpenStoryPanel.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')
-const { getTeamBullpenStoryView, deriveStoryFamily, STORY_FRAMING_LINE } =
-  await server.ssrLoadModule('/src/components/bullpen/board/teamBullpenStoryView.js')
+const {
+  getTeamBullpenStoryView,
+  deriveStoryFamily,
+  deriveTeamStoryArchetype,
+  STORY_FRAMING_LINE,
+  getPitcherEvidenceName,
+  isValidPitcherEvidenceName,
+} = await server.ssrLoadModule('/src/components/bullpen/board/teamBullpenStoryView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -106,16 +112,83 @@ const constrainedBoard = makeBoard({
 const watchBoard = makeBoard({
   teamName: 'Toronto Blue Jays', abbr: 'TOR', state: 'manageable',
   metrics: { total_relievers: 8, available: 4, monitor: 4, limited: 0, avoid: 0, unavailable: 0, pct_available: 50, pct_restricted: 0 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(11, 'Erik Swanson', 'Bridge Arm', 'Available'),
+      storyPitcher(12, 'Genesis Cabrera', 'Coverage Arm', 'Available'),
+      storyPitcher(13, 'Brendon Little', 'Depth Arm', 'Available'),
+      storyPitcher(14, 'Bowden Francis', 'Depth Arm', 'Available'),
+    ],
+    Monitor: [
+      storyPitcher(15, 'Chad Green', 'Trust Arm', 'Monitor', { fatigue_score: 78 }),
+      storyPitcher(16, 'Jeff Hoffman', 'Trust Arm', 'Monitor', { fatigue_score: 72 }),
+      storyPitcher(17, 'Yimi Garcia', 'Bridge Arm', 'Monitor', { fatigue_score: 68 }),
+      storyPitcher(18, 'Tim Mayza', 'Coverage Arm', 'Monitor', { fatigue_score: 54 }),
+    ],
+  },
+})
+
+const oneValidNameBoard = makeBoard({
+  teamName: 'Texas Rangers', abbr: 'TEX', state: 'manageable',
+  metrics: { total_relievers: 8, available: 4, monitor: 4, limited: 0, avoid: 0, unavailable: 0, pct_available: 50, pct_restricted: 0 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(41, 'Rested Reliever', 'Bridge Arm', 'Available'),
+      storyPitcher(42, 'Clean Option', 'Coverage Arm', 'Available'),
+      storyPitcher(43, 'Depth Arm', 'Depth Arm', 'Available'),
+      storyPitcher(44, 'Available Arm', 'Depth Arm', 'Available'),
+    ],
+    Monitor: [
+      storyPitcher(45, 'Josh Sborz', 'Trust Arm', 'Monitor', { fatigue_score: 78 }),
+      storyPitcher(46, 'Trust Arm', 'Trust Arm', 'Monitor', { fatigue_score: 72 }),
+      storyPitcher(47, 'Bridge Arm', 'Bridge Arm', 'Monitor', { fatigue_score: 68 }),
+      storyPitcher(48, 'Cal Coverage', 'Coverage Arm', 'Monitor', { fatigue_score: 54 }),
+    ],
+  },
 })
 
 const restedBoard = makeBoard({
   teamName: 'Washington Nationals', abbr: 'WSH', state: 'manageable',
   metrics: { total_relievers: 8, available: 6, monitor: 1, limited: 0, avoid: 1, unavailable: 0, pct_available: 75, pct_restricted: 12 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(21, 'Kyle Finnegan', 'Trust Arm', 'Available', { fatigue_score: 18 }),
+      storyPitcher(22, 'Hunter Harvey', 'Bridge Arm', 'Available', { fatigue_score: 20 }),
+      storyPitcher(23, 'Derek Law', 'Coverage Arm', 'Available', { fatigue_score: 24 }),
+      storyPitcher(24, 'Jordan Weems', 'Depth Arm', 'Available', { fatigue_score: 19 }),
+      storyPitcher(25, 'Robert Garcia', 'Depth Arm', 'Available', { fatigue_score: 22 }),
+      storyPitcher(26, 'Tanner Rainey', 'Depth Arm', 'Available', { fatigue_score: 28 }),
+    ],
+    Monitor: [
+      storyPitcher(27, 'Jacob Barnes', 'Bridge Arm', 'Monitor', { fatigue_score: 42 }),
+    ],
+    Avoid: [
+      storyPitcher(28, 'Dylan Floro', 'Coverage Arm', 'Avoid', { fatigue_score: 84 }),
+    ],
+  },
 })
 
 const balancedBoard = makeBoard({
   teamName: 'Chicago Cubs', abbr: 'CHC', state: 'manageable',
   metrics: { total_relievers: 8, available: 4, monitor: 1, limited: 1, avoid: 0, unavailable: 2, pct_available: 50, pct_restricted: 37 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(31, 'Adbert Alzolay', 'Trust Arm', 'Available'),
+      storyPitcher(32, 'Julian Merryweather', 'Bridge Arm', 'Available'),
+      storyPitcher(33, 'Keegan Thompson', 'Coverage Arm', 'Available'),
+      storyPitcher(34, 'Luke Little', 'Depth Arm', 'Available'),
+    ],
+    Monitor: [
+      storyPitcher(35, 'Mark Leiter Jr.', 'Bridge Arm', 'Monitor'),
+    ],
+    Limited: [
+      storyPitcher(36, 'Yency Almonte', 'Depth Arm', 'Limited'),
+    ],
+    Unavailable: [
+      storyPitcher(37, 'Caleb Kilian', 'Depth Arm', 'Unavailable'),
+      storyPitcher(38, 'Jose Cuas', 'Depth Arm', 'Unavailable'),
+    ],
+  },
 })
 
 const dataLimitedBoard = makeBoard({
@@ -131,52 +204,58 @@ test('each board shape lands in its story family', () => {
   assert.equal(deriveStoryFamily(restedBoard), 'rested')
   assert.equal(deriveStoryFamily(balancedBoard), 'balanced')
   assert.equal(deriveStoryFamily(dataLimitedBoard), 'data_limited')
+  assert.equal(deriveTeamStoryArchetype(watchBoard), 'heavy_lifting')
+  assert.equal(deriveTeamStoryArchetype(restedBoard), 'depth_advantage')
 })
 
-test('a constrained club gets constrained story copy with real counts', () => {
+test('a constrained club gets a specific story with real counts', () => {
   const story = getTeamBullpenStoryView(constrainedBoard)
-  assert.equal(story.label, 'Short-Handed Pen')
-  assert.match(story.headline, /Milwaukee Brewers enter today with a thin late-inning margin/)
-  assert.match(story.summary, /3 arms of 8 come in needing rest|3 arms/)
-  assert.ok(story.workloadBullets.some(bullet => /2 arms of 8 come in rested and ready/.test(bullet)))
-  assert.ok(story.workloadBullets.some(bullet => /3 arms have earned a rest day/.test(bullet)))
-  assert.ok(story.watchBullets.length >= 2 && story.watchBullets.length <= 3)
+  assert.equal(story.family, 'constrained')
+  assert.equal(story.archetypeKey, 'coverage_concern')
+  assert.equal(story.label, 'Coverage Concern')
+  assert.match(story.headline, /Milwaukee Brewers have a tighter coverage picture/)
+  assert.match(story.observation, /coverage layer is tighter/)
+  assert.ok(story.evidence.some(item => /1 of 2 Coverage Arms are clean or on watch/.test(item)))
+  assert.ok(!/Cal Coverage|Cooper Coverage|Drew Depth/.test(story.evidence.join(' ')))
+  assert.ok(!story.evidence.some(item => /most directly shaping the coverage read/.test(item)))
+  assert.ok(story.watchItems.length >= 2 && story.watchItems.length <= 4)
 })
 
 test('a watch-list club reads calm surface, heavy workload', () => {
   const story = getTeamBullpenStoryView(watchBoard)
-  assert.equal(story.label, 'Watch-List Pen')
-  assert.match(story.headline, /look calm on the surface/)
-  assert.match(story.summary, /4 arms of 8/)
-  assert.match(story.summary, /nobody is down outright yet/)
+  assert.equal(story.label, 'Heavy Lifting')
+  assert.match(story.headline, /same relievers to carry the workload/)
+  assert.match(story.observation, /4 relievers of 8 sit on the watch list/)
+  assert.ok(story.evidence.some(item => /Chad Green, Jeff Hoffman, Yimi Garcia/.test(item)))
 })
 
 test('a rested club reads as a deeper bullpen with room to maneuver', () => {
   const story = getTeamBullpenStoryView(restedBoard)
-  assert.equal(story.label, 'Rested Pen')
-  assert.match(story.headline, /deeper bullpens available today/)
-  assert.match(story.summary, /6 arms of 8 come in rested and ready/)
-  assert.match(story.summary, /room to breathe today/)
+  assert.equal(story.label, 'Depth Advantage')
+  assert.match(story.headline, /multiple routes through the late innings/)
+  assert.match(story.observation, /clean group runs beyond one or two primary arms/)
+  assert.ok(story.evidence.some(item => /Kyle Finnegan, Hunter Harvey, and Derek Law/.test(item)))
 })
 
-test('single-arm workload counts read grammatically after density trimming', () => {
-  const story = getTeamBullpenStoryView(restedBoard)
-  assert.ok(story.workloadBullets.some(bullet => bullet === '1 arm has earned a rest day after the work it has carried.'),
-    `got: ${story.workloadBullets.join(' | ')}`)
-  assert.equal(story.workloadBullets.length, 2)
+test('story generation is deterministic for the same board', () => {
+  assert.deepEqual(
+    getTeamBullpenStoryView(restedBoard),
+    getTeamBullpenStoryView(restedBoard),
+  )
 })
 
 test('a neutral club gets balanced story copy', () => {
   const story = getTeamBullpenStoryView(balancedBoard)
-  assert.equal(story.label, 'Balanced Pen')
-  assert.match(story.headline, /come in steady — nothing tilting the pen either way today/)
+  assert.equal(story.label, 'Stable Bullpen')
+  assert.match(story.headline, /holding a steady shape today/)
+  assert.match(story.observation, /4 clean options, 1 watch-list arm, and 1 needing rest/)
 })
 
 test('a thin dataset gets an honest limited read', () => {
   const story = getTeamBullpenStoryView(dataLimitedBoard)
   assert.equal(story.label, 'Limited Read')
-  assert.match(story.headline, /Not enough current workload data for a strong read/)
-  assert.ok(story.workloadBullets.length >= 1)
+  assert.match(story.headline, /limited bullpen read/)
+  assert.ok(story.evidence.length >= 1)
 })
 
 test('no board means no story', () => {
@@ -188,9 +267,11 @@ test('no board means no story', () => {
 
 test('the panel renders headline, both bullet sections, and the framing line', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
-  assert.ok(htmlIncludes(html, 'Why BaseballOS Is Watching This Pen'))
-  assert.ok(htmlIncludes(html, 'What The Recent Work Says'))
-  assert.ok(htmlIncludes(html, 'What To Watch On The Board'))
+  assert.ok(htmlIncludes(html, 'What BaseballOS Sees About This Bullpen'))
+  assert.ok(htmlIncludes(html, 'Observation'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Why It Matters'))
+  assert.ok(htmlIncludes(html, 'What BaseballOS Is Watching'))
   assert.ok(htmlIncludes(html, STORY_FRAMING_LINE))
 })
 
@@ -225,7 +306,7 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
 test('the shape section stays label-led and avoids score ranking or grade language', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   const start = html.indexOf('Today’s Bullpen Shape')
-  const end = html.indexOf('What The Recent Work Says')
+  const end = html.indexOf(STORY_FRAMING_LINE)
   const shapeHtml = html.slice(start, end)
 
   for (const term of [
@@ -238,15 +319,101 @@ test('the shape section stays label-led and avoids score ranking or grade langua
 
 test('the board view mounts the story panel above the board only when asked', () => {
   const withPanel = render(React.createElement(BullpenBoardView, { board: constrainedBoard, showStoryPanel: true }))
-  assert.ok(htmlIncludes(withPanel, 'Why BaseballOS Is Watching This Pen'))
+  assert.ok(htmlIncludes(withPanel, 'What BaseballOS Sees About This Bullpen'))
   assert.ok(
-    withPanel.indexOf('Why BaseballOS Is Watching This Pen') < withPanel.indexOf('Bullpen Board'),
+    withPanel.indexOf('What BaseballOS Sees About This Bullpen') < withPanel.indexOf('Bullpen Board'),
     'story panel should sit above the board heading',
   )
 
   // Embedded uses (e.g. the side-by-side comparison) stay unchanged.
   const withoutPanel = render(React.createElement(BullpenBoardView, { board: constrainedBoard }))
-  assert.ok(!htmlIncludes(withoutPanel, 'Why BaseballOS Is Watching This Pen'))
+  assert.ok(!htmlIncludes(withoutPanel, 'What BaseballOS Sees About This Bullpen'))
+})
+
+test('different bullpen shapes create different narratives', () => {
+  const stories = [constrainedBoard, watchBoard, restedBoard, balancedBoard]
+    .map(board => getTeamBullpenStoryView(board))
+
+  assert.equal(new Set(stories.map(story => story.archetypeKey)).size, stories.length)
+  assert.equal(new Set(stories.map(story => story.headline)).size, stories.length)
+  assert.equal(new Set(stories.map(story => story.observation)).size, stories.length)
+})
+
+test('evidence names are deterministic and support the observation', () => {
+  const story = getTeamBullpenStoryView(watchBoard)
+  const evidenceText = story.evidence.join(' ')
+
+  assert.ok(/Chad Green/.test(evidenceText))
+  assert.ok(/Jeff Hoffman/.test(evidenceText))
+  assert.ok(/Yimi Garcia/.test(evidenceText))
+  assert.ok(!/Erik Swanson/.test(evidenceText), 'clean options should not drive the heavy-lifting evidence')
+  assert.ok(story.evidence.length >= 2 && story.evidence.length <= 4)
+})
+
+test('evidence name helper only uses actual player name fields', () => {
+  assert.equal(getPitcherEvidenceName({ name: 'Chad Green' }), 'Chad Green')
+  assert.equal(getPitcherEvidenceName({ name: 'Coverage Arm', player_name: 'Elvis Peguero' }), 'Elvis Peguero')
+  assert.equal(getPitcherEvidenceName({ name: '', pitcher_name: 'Bryan Hudson' }), 'Bryan Hudson')
+  assert.equal(getPitcherEvidenceName({ name: 'Coverage Arm', role_label: 'Chad Green' }), '')
+})
+
+test('role and read labels are not treated as evidence names', () => {
+  for (const label of [
+    'Trust Arm',
+    'Bridge Arm',
+    'Coverage Arm',
+    'Depth Arm',
+    'Limited Read',
+    'Watch Arm',
+    'Clean Option',
+    'Rest-Restricted',
+    'Unavailable',
+    'Active MLB',
+    'Strong Read',
+  ]) {
+    assert.equal(isValidPitcherEvidenceName(label), false, `${label} should not be a pitcher name`)
+  }
+})
+
+test('coverage and depth labels are rejected as synthetic evidence names', () => {
+  for (const label of [
+    'Coverage Safety',
+    'Depth Safety',
+    'Coverage Concern',
+    'Depth Advantage',
+    'Cal Coverage',
+    'Cooper Coverage',
+    'Drew Depth',
+    'Uri Depth',
+  ]) {
+    assert.equal(isValidPitcherEvidenceName(label), false, `${label} should not be a pitcher name`)
+  }
+})
+
+test('pitcher-name evidence falls back to counts when fewer than two valid names exist', () => {
+  const story = getTeamBullpenStoryView(oneValidNameBoard)
+  const evidenceText = story.evidence.join(' ')
+
+  assert.equal(story.label, 'Heavy Lifting')
+  assert.ok(!/Josh Sborz/.test(evidenceText), 'single valid name should not produce a name sentence')
+  assert.ok(!/Trust Arm|Bridge Arm|Cal Coverage/.test(evidenceText))
+  assert.ok(story.evidence.some(item => /4 of 8 relievers are on the watch list/.test(item)))
+  assert.ok(story.evidence.some(item => /4 clean options remain available/.test(item)))
+})
+
+test('pitcher names stay out of headline, observation, why, and watch items', () => {
+  const story = getTeamBullpenStoryView(watchBoard)
+  const nonEvidenceText = [
+    story.headline,
+    story.observation,
+    story.whyItMatters,
+    ...story.watchItems,
+  ].join(' ')
+
+  for (const name of ['Chad Green', 'Jeff Hoffman', 'Yimi Garcia']) {
+    assert.ok(story.evidence.join(' ').includes(name), `${name} should appear in evidence`)
+    assert.ok(!nonEvidenceText.includes(name), `${name} leaked outside evidence`)
+  }
 })
 
 // ── Language guardrails ────────────────────────────────────────────────────
@@ -270,8 +437,6 @@ test('the story panel never renders raw system phrasing', () => {
 
 test('the story panel avoids prediction, betting, injury, and recommendation language', () => {
   for (const board of allBoards) {
-    // The required framing line ("— not a prediction.") is the one sanctioned
-    // use of the word; everything else must stay clean.
     const html = render(React.createElement(TeamBullpenStoryPanel, { board }))
       .replace(new RegExp(escapeRegExp(STORY_FRAMING_LINE), 'g'), '')
       .toLowerCase()
