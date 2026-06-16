@@ -25,6 +25,8 @@ from services.bullpen_board import (
     group_cards,
     short_reason_for,
 )
+from services.availability_population import current_availability_records
+from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.roster_status import (
     ROSTER_STATUS_UNAVAILABLE_LIMITATION,
     STATUS_ACTIVE,
@@ -284,6 +286,53 @@ def _seed_pitcher(
     return pitcher
 
 
+def _seed_unscored_pitcher(
+    full_name,
+    team_id=1,
+    team_abbr='TST',
+    mlb_id=None,
+    innings=None,
+    days_ago=None,
+    active=True,
+    roster_status=STATUS_ACTIVE,
+    games_started=None,
+):
+    pitcher = Pitcher(
+        mlb_id=mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000,
+        full_name=full_name,
+        team_id=team_id,
+        team_name=f'Team {team_id}',
+        team_abbreviation=team_abbr,
+        position='P',
+        active=active,
+        roster_status=roster_status,
+        roster_status_source='test_fixture' if roster_status else None,
+        roster_status_updated_at=datetime.utcnow() if roster_status else None,
+    )
+    db.session.add(pitcher)
+    db.session.commit()
+
+    today = date.today()
+    innings = list(innings) if innings is not None else [1.0, 0.2, 1.0]
+    days_ago = list(days_ago) if days_ago is not None else list(range(1, len(innings) + 1))
+    games_started_values = list(games_started) if games_started is not None else [0] * len(innings)
+    base_game_pk = (mlb_id if mlb_id is not None else abs(hash(full_name)) % 100000) * 100
+    for i, innings_pitched in enumerate(innings):
+        innings_outs = parse_mlb_innings_to_outs(innings_pitched)
+        db.session.add(GameLog(
+            pitcher_id=pitcher.id,
+            mlb_game_pk=base_game_pk + i,
+            game_date=today - timedelta(days=days_ago[i]),
+            pitches_thrown=12,
+            innings_pitched=outs_to_decimal_innings(innings_outs),
+            innings_pitched_outs=innings_outs,
+            games_started=games_started_values[i],
+            game_type='R',
+        ))
+    db.session.commit()
+    return pitcher
+
+
 class TestBoardEndpoint:
     def test_returns_grouped_board_for_team(self, client):
         with client.application.app_context():
@@ -345,6 +394,111 @@ class TestBoardEndpoint:
             assert 'role' in card and card['role'] is not None
             assert 'role_key' in card['role']
             assert card['role']['confidence'] in ('high', 'medium', 'low', 'none')
+
+    def test_default_board_population_is_governed_scored_authority_subset(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Authority Relief Arm',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11330,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                games_started=[0, 0, 0],
+            )
+            _seed_unscored_pitcher(
+                'Unscored Active Arm',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11331,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                games_started=[0, 0, 0],
+            )
+            _seed_pitcher(
+                'Authority Starter',
+                team_id=113,
+                team_abbr='CIN',
+                mlb_id=11332,
+                innings=[6.0, 5.1, 6.0],
+                days_ago=[1, 6, 11],
+                games_started=[1, 1, 1],
+            )
+            authority = current_availability_records(
+                availability_latest_fatigue_rows(team_id=113),
+                reference_date=date.today(),
+            )
+            authority_ids = {record['pitcher'].id for record in authority}
+
+        body = client.get('/api/bullpen/teams/113/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        card_ids = {card['pitcher_id'] for card in cards}
+        names = {card['name'] for card in cards}
+
+        assert card_ids <= authority_ids
+        assert card_ids == authority_ids
+        assert names == {'Authority Relief Arm'}
+        assert 'Unscored Active Arm' not in names
+        assert 'Authority Starter' not in names
+        assert all(card['fatigue_score'] is not None for card in cards)
+
+    def test_summed_team_boards_match_governed_authority_total(self, client):
+        with client.application.app_context():
+            _seed_pitcher('Team One Relief', team_id=1, team_abbr='ONE', mlb_id=1001)
+            _seed_pitcher('Team Two Relief', team_id=2, team_abbr='TWO', mlb_id=2001)
+            _seed_unscored_pitcher('Team Two Unscored Relief', team_id=2, team_abbr='TWO', mlb_id=2002)
+            _seed_pitcher(
+                'Team Two Starter',
+                team_id=2,
+                team_abbr='TWO',
+                mlb_id=2003,
+                innings=[6.0, 6.1, 5.2],
+                days_ago=[1, 6, 11],
+                games_started=[1, 1, 1],
+            )
+            authority_total = len(current_availability_records(
+                availability_latest_fatigue_rows(),
+                reference_date=date.today(),
+            ))
+
+        board_total = 0
+        for team_id in (1, 2):
+            body = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
+            board_total += body['total_pitchers']
+            for group in body['groups']:
+                for card in group['pitchers']:
+                    assert card['fatigue_score'] is not None
+
+        assert board_total == authority_total
+
+    def test_active_unscored_arm_does_not_render_as_availability_card(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Scored Relief Option',
+                team_id=140,
+                team_abbr='TEX',
+                mlb_id=14001,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                games_started=[0, 0, 0],
+            )
+            _seed_unscored_pitcher(
+                'Unscored Relief Option',
+                team_id=140,
+                team_abbr='TEX',
+                mlb_id=14002,
+                innings=[1.0, 0.2, 1.0],
+                days_ago=[1, 3, 5],
+                games_started=[0, 0, 0],
+            )
+
+        body = client.get('/api/bullpen/teams/140/board').get_json()
+        cards = [card for group in body['groups'] for card in group['pitchers']]
+        names = [card['name'] for card in cards]
+
+        assert names == ['Scored Relief Option']
+        assert all(card['fatigue_score'] is not None for card in cards)
+        assert all(card['data_state'] != 'missing' for card in cards)
 
     def test_reds_default_board_excludes_clear_starters_but_keeps_rested_relievers(self, client):
         with client.application.app_context():
