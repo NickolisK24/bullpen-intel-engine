@@ -195,7 +195,7 @@ test('pitcher label key uses the approved public terminology only', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
   const html = render(board)
   const keyStart = html.indexOf('Pitcher Label Key')
-  const boardStart = html.indexOf('Available Tonight', keyStart)
+  const boardStart = html.indexOf('Available', keyStart)
   const keyHtml = html.slice(keyStart, boardStart)
 
   for (const label of APPROVED_ROLE_LABELS) {

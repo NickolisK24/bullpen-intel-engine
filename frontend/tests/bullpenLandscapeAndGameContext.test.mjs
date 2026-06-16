@@ -45,7 +45,7 @@ const landscape = {
   reference_date: '2026-06-06',
   teams_evaluated: 3,
   games: { available: true, data_state: 'historical', today_count: 0, as_of_date: '2026-06-04', as_of_count: 5, is_today: false, message: null },
-  constrained_bullpens: [{ team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE', total_relievers: 8, available: 2, monitor: 2, restricted: 4, pct_available: 25, pct_restricted: 50, health_state: 'constrained', health_label: 'Availability is constrained tonight.' }],
+  constrained_bullpens: [{ team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE', total_relievers: 8, available: 2, monitor: 2, restricted: 4, pct_available: 25, pct_restricted: 50, health_state: 'constrained', health_label: 'Availability is constrained in the current read.' }],
   available_bullpens: [{ team_id: 2, team_name: 'Bears', team_abbreviation: 'BEA', total_relievers: 8, available: 6, monitor: 1, restricted: 1, pct_available: 75, pct_restricted: 12, health_state: 'manageable', health_label: 'Bullpen workload appears manageable.' }],
   monitoring_concentration: [{ team_id: 3, team_name: 'Cubs', team_abbreviation: 'CHC', total_relievers: 8, available: 3, monitor: 4, restricted: 1, pct_available: 37, pct_restricted: 12, health_state: 'monitoring', health_label: 'Several relievers require monitoring.' }],
   notes: ['Descriptive groupings of bullpen situations only — this is bullpen context, not a league ranking or a game forecast.', 'Game context is from the latest stored game log, not a live schedule.'],

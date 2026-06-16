@@ -4,7 +4,7 @@
 import { makeBoard } from './bullpenBoardFixtures.mjs'
 
 const DIMENSIONS = [
-  { key: 'available', metric: 'available', descriptor: 'classified Available Tonight', reasonLabel: 'Available Tonight' },
+  { key: 'available', metric: 'available', descriptor: 'classified Available', reasonLabel: 'Available' },
   { key: 'restricted', metric: 'restricted', descriptor: 'marked Avoid or Unavailable', reasonLabel: 'Avoid or Unavailable' },
   { key: 'monitor', metric: 'monitor', descriptor: 'in the Monitor group', reasonLabel: 'Monitor' },
 ]

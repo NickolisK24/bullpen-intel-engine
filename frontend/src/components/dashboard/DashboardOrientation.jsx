@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 // points to the next click. No analytics, recommendations, rankings, predictions,
 // onboarding flows, or marketing copy.
 const GUIDANCE = [
-  { label: 'Explore Tonight\'s Bullpen Landscape', to: null },          // the section just below
+  { label: 'Explore Current Bullpen Landscape', to: null },          // the section just below
   { label: 'Select a team bullpen', to: '/bullpen?view=board' },
   { label: 'Compare bullpen conditions across teams', to: '/bullpen?view=compare' },
 ]

@@ -70,7 +70,7 @@ test('dashboard renders the five bullpen sections', () => {
 
 test('snapshot cards show the five availability counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
+  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
     assert.ok(htmlIncludes(html, label), `missing snapshot label: ${label}`)
   }
 })
@@ -79,7 +79,7 @@ test('bullpen health reuses the Team Context Layer statement and confidence', ()
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Workload Read:'))
-  assert.ok(htmlIncludes(html, 'of 12 relievers are Available Tonight.'))
+  assert.ok(htmlIncludes(html, 'of 12 relievers are classified Available.'))
 })
 
 test('usage-roles summary shows role composition counts', () => {

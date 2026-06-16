@@ -50,7 +50,7 @@ test('summary renders a health statement and the bullpen snapshot counts', () =>
   const html = renderSummary(board)
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
-  assert.ok(htmlIncludes(html, 'Available Tonight'))
+  assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
   assert.ok(htmlIncludes(html, '10 relievers'))
   assert.ok(htmlIncludes(html, '50% available'))
@@ -63,7 +63,7 @@ test('every context statement explains itself with real counts', () => {
   assert.ok(htmlIncludes(html, 'Why?'))
   assert.ok(detailsTag)
   assert.ok(!detailsTag.includes('open'))
-  assert.ok(htmlIncludes(html, '2 of 6 relievers are Available Tonight.'))
+  assert.ok(htmlIncludes(html, '2 of 6 relievers are classified Available.'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are Avoid or Unavailable.'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
 })
@@ -77,7 +77,7 @@ test('stale data degrades confidence and communicates limitations', () => {
 
 test('empty bullpen renders the no-data context without implying availability', () => {
   const html = renderSummary(emptyBoard)
-  assert.ok(htmlIncludes(html, 'No bullpen availability to summarize tonight.'))
+  assert.ok(htmlIncludes(html, 'No bullpen availability to summarize from the latest completed data.'))
   assert.ok(htmlIncludes(html, 'Workload Read: No Read'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
 })
@@ -90,7 +90,7 @@ test('summary renders nothing when the board carries no context', () => {
 test('context summary appears above the availability groups on the full board', () => {
   const html = renderBoard(populatedBoard)
   const summaryIdx = html.indexOf('Bullpen Snapshot')
-  const groupIdx = html.indexOf('Available Tonight group')
+  const groupIdx = html.indexOf('Available group')
   assert.ok(summaryIdx > -1 && groupIdx > -1)
   assert.ok(summaryIdx < groupIdx, 'snapshot should render before the groups')
 })
@@ -99,7 +99,7 @@ test('full board uses stress read instead of a duplicate health statement', () =
   const html = renderBoard(populatedBoard)
   assert.ok(htmlIncludes(html, 'Bullpen Stress: Elevated'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
-  assert.ok(htmlIncludes(html, '2 of 6 relievers are Available Tonight.'))
+  assert.ok(htmlIncludes(html, '2 of 6 relievers are classified Available.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
 })
 

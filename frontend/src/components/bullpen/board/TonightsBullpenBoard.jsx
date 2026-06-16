@@ -150,9 +150,9 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
       </div>
 
       {selectedTeam == null ? (
-        <EmptyState title="Pick a team" subtitle="Select a team above to see tonight's bullpen." />
+        <EmptyState title="Pick a team" subtitle="Select a team above to see its current bullpen board." />
       ) : board.loading ? (
-        <LoadingPane message="Building tonight's board…" />
+        <LoadingPane message="Building current bullpen board..." />
       ) : board.error ? (
         <ErrorState message={board.error} onRetry={board.refetch} />
       ) : (

@@ -2,7 +2,7 @@ import { formatConfidence } from '../availabilityView'
 import { fmtDataDate } from '../../dashboard/syncStatusView'
 
 const DATA_STATE_LABEL = {
-  live: 'Live',
+  live: 'Current',
   historical: 'Historical',
   stale: 'Not Current',
   unavailable: 'Unavailable',

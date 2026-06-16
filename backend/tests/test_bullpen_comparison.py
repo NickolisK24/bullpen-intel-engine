@@ -68,7 +68,7 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['leader'] == 'A'
-        assert available['statement'] == 'Aces currently has more relievers classified Available Tonight.'
+        assert available['statement'] == 'Aces currently has more relievers classified Available.'
         assert available['team_a_value'] == 6
         assert available['team_b_value'] == 3
 
@@ -78,8 +78,8 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['reasons'] == [
-            'Aces Available Tonight: 6.',
-            'Bears Available Tonight: 3.',
+            'Aces Available: 6.',
+            'Bears Available: 3.',
         ]
 
     def test_restricted_dimension_combines_avoid_and_unavailable(self):

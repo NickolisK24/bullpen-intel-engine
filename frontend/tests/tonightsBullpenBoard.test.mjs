@@ -78,11 +78,11 @@ const staleActivatedAssignmentBoard = makeBoard({
 
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
-  for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
+  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
-  // Available Tonight must appear before Unavailable Pitchers on the board.
-  assert.ok(html.indexOf('Available Tonight') < html.lastIndexOf('Unavailable Pitchers'))
+  // Available must appear before Unavailable Pitchers on the board.
+  assert.ok(html.indexOf('Available') < html.lastIndexOf('Unavailable Pitchers'))
 })
 
 test('board view mode control defaults to Active and replaces show-unavailable copy', () => {

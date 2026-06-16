@@ -4,11 +4,11 @@
 const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
 
 const GROUP_META = {
-  Available: { label: 'Available Tonight', description: 'Workload signals are inside normal ranges.' },
+  Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
-  Limited: { label: 'Limited', description: 'Recent workload suggests restricted use tonight.' },
+  Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
   Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen planning." },
+  Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
 }
 
 function card(pitcherId, name, status, overrides = {}) {
@@ -61,14 +61,14 @@ function contextFromGroups(groups, freshness) {
     manageable: 'Bullpen workload appears manageable.',
     monitoring: 'Several relievers require monitoring.',
     elevated: 'Bullpen workload is elevated.',
-    constrained: 'Availability is constrained tonight.',
-    no_data: 'No bullpen availability to summarize tonight.',
+    constrained: 'Availability is constrained in the current read.',
+    no_data: 'No bullpen availability to summarize from the latest completed data.',
   }
   const pct = (part) => (total ? Math.round((part / total) * 100) : 0)
   const reasons = total === 0
     ? ['No active relievers fall inside the current freshness window.']
     : [
-      `${available} of ${total} relievers are Available Tonight.`,
+      `${available} of ${total} relievers are classified Available.`,
       restricted === 0
         ? 'No relievers are marked Avoid or Unavailable.'
         : `${restricted} of ${total} relievers are Avoid or Unavailable.`,
@@ -79,7 +79,7 @@ function contextFromGroups(groups, freshness) {
   if (total === 0) confidence = 'none'
   else if (!isCurrent) {
     confidence = 'low'
-    const note = 'Latest workload data is outside the active freshness window, so this snapshot may not reflect tonight.'
+    const note = 'Latest workload data is outside the active freshness window, so this snapshot may not reflect current bullpen planning.'
     reasons.push(note)
     limitations.push(note)
   }

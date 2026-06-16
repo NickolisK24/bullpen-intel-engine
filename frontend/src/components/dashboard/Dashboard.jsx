@@ -59,8 +59,9 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              Availability and workload across bullpen-eligible MLB arms tonight — who's
-              available, how stressed the governed set is, and what usage each arm appears suited for.
+              Governed availability and workload across bullpen-eligible MLB arms from
+              the latest completed data - which arms are classified available, how stressed
+              the governed set is, and what usage each arm appears suited for.
               Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
             </p>
 
@@ -179,8 +180,8 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             subtitle="From the league-wide view, drill into a single team, a matchup, or a pitcher."
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ActionCard to="/bullpen?view=board" icon="🔥" title="Tonight's Bullpen Board"
-                desc="One team's bullpen tonight" />
+              <ActionCard to="/bullpen?view=board" icon="🔥" title="Team Bullpen Board"
+                desc="One team's current availability read" />
               <ActionCard to="/bullpen?view=compare" icon="⚖️" title="Compare Bullpens"
                 desc="Two teams, side-by-side" />
               <ActionCard to="/bullpen?view=pitchers" icon="📋" title="Pitcher Details"
