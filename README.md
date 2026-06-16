@@ -205,6 +205,7 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 cp .env.example .env
+# Edit .env so DATABASE_URL points at your local database.
 python seed.py
 python app.py
 ```
@@ -227,7 +228,7 @@ Backend:
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string; required in production |
+| `DATABASE_URL` | Explicit database connection string; required locally and in production. Local development must use a local database. |
 | `FLASK_APP` | Flask CLI entry point, usually `app.py` |
 | `APP_ENV` | Runtime environment; use `production` for hosted production |
 | `SECRET_KEY` | Flask secret key; must be non-default in production |

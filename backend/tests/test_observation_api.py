@@ -166,9 +166,10 @@ def assert_no_prohibited_output(payload):
 
 
 class TestObservationApi:
-    def test_application_factory_registers_observation_routes(self):
+    def test_application_factory_registers_observation_routes(self, monkeypatch):
         from app import create_app
 
+        monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
         app = create_app('development')
         routes = {str(rule) for rule in app.url_map.iter_rules()}
 

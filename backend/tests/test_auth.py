@@ -58,23 +58,24 @@ class TestRequireAdminToken:
 class TestRealRouteWiring:
     """The guard is actually applied to the real write routes (and reads stay open)."""
 
-    def _app(self):
+    def _app(self, monkeypatch):
         from app import create_app
+        monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
         app = create_app('development')
         app.config['ADMIN_API_TOKEN'] = 'secret'   # require a token at runtime
         return app
 
-    def test_sync_requires_token(self):
-        res = self._app().test_client().post('/api/bullpen/sync')
+    def test_sync_requires_token(self, monkeypatch):
+        res = self._app(monkeypatch).test_client().post('/api/bullpen/sync')
         assert res.status_code == 401
 
-    def test_recalculate_requires_token(self):
-        res = self._app().test_client().post('/api/bullpen/fatigue/recalculate')
+    def test_recalculate_requires_token(self, monkeypatch):
+        res = self._app(monkeypatch).test_client().post('/api/bullpen/fatigue/recalculate')
         assert res.status_code == 401
 
-    def test_public_read_endpoint_needs_no_token(self):
+    def test_public_read_endpoint_needs_no_token(self, monkeypatch):
         # A protected token is configured, yet GET reads remain public.
-        res = self._app().test_client().get('/api/bullpen/sync/status')
+        res = self._app(monkeypatch).test_client().get('/api/bullpen/sync/status')
         assert res.status_code == 200
 
 
