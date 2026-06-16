@@ -1141,6 +1141,71 @@ def _eligible_records_for_rows(
     return records, roster_summary
 
 
+def _board_records_from_authority_records(authority_records, reference_date=None):
+    """
+    Convert governed current-availability records into board presentation rows.
+
+    The board's default availability cards must come from the same scored,
+    bullpen-eligible authority as the dashboard. Unscored pitchers are not
+    availability-classifiable and are intentionally not adapted here.
+    """
+    ref = reference_date or product_current_date()
+    records = list(authority_records or [])
+    pitcher_ids = [
+        record['pitcher'].id
+        for record in records
+        if record.get('pitcher') is not None
+    ]
+    logs_by_pitcher = usage_logs_by_pitcher(
+        pitcher_ids,
+        include_stale=True,
+        reference_date=ref,
+    )
+
+    board_records = []
+    for record in records:
+        pitcher = record.get('pitcher')
+        score = record.get('score')
+        if pitcher is None or score is None:
+            continue
+        board_records.append({
+            'name': pitcher.full_name,
+            'pitcher_id': pitcher.id,
+            'fatigue_score': score.raw_score,
+            'availability': record.get('availability'),
+            'role': classify_usage_role(
+                logs_by_pitcher.get(pitcher.id, []),
+                reference_date=ref,
+            ),
+            'eligibility': record.get('eligibility'),
+            'roster_status': record.get('roster_status'),
+            'visibility': record.get('visibility'),
+            'pitcher': pitcher,
+        })
+    return board_records
+
+
+def _inactive_context_records(records, authority_pitcher_ids):
+    """
+    Keep expanded roster-status context without widening availability membership.
+    """
+    authority_pitcher_ids = set(authority_pitcher_ids or [])
+    context = []
+    for record in records:
+        pitcher_id = record.get('pitcher_id')
+        if pitcher_id in authority_pitcher_ids:
+            continue
+        visibility = record.get('visibility') or {}
+        if visibility.get('is_visible_by_default'):
+            continue
+        if not visibility.get('is_unavailable_roster_status'):
+            continue
+        if record.get('fatigue_score') is None:
+            continue
+        context.append(record)
+    return context
+
+
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
@@ -1151,7 +1216,25 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     """
     freshness = freshness or _board_freshness_block()
     ref = reference_date or _public_availability_reference_date(freshness)
-    results, availability_by_pitcher = _team_bullpen_rows(
+
+    scored_rows = availability_latest_fatigue_rows(
+        team_id=team_id,
+        calculated_at_lte=_served_score_cutoff(),
+    )
+    authority_records = current_availability_records(
+        scored_rows,
+        reference_date=ref,
+    )
+    records = _board_records_from_authority_records(
+        authority_records,
+        reference_date=ref,
+    )
+    authority_pitcher_ids = {
+        record['pitcher_id']
+        for record in records
+    }
+
+    context_rows, availability_by_pitcher = _team_bullpen_rows(
         team_id,
         include_stale,
         reference_date=ref,
@@ -1159,13 +1242,29 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     )
 
     team_info = None
-    records, roster_summary = _eligible_records_for_rows(
-        results,
+    context_records, roster_summary = _eligible_records_for_rows(
+        context_rows,
         availability_by_pitcher,
         include_stale=include_stale,
         reference_date=ref,
     )
-    for pitcher, score in results:
+    if include_stale:
+        records.extend(_inactive_context_records(
+            context_records,
+            authority_pitcher_ids,
+        ))
+
+    for record in authority_records:
+        pitcher = record.get('pitcher')
+        if pitcher is None:
+            continue
+        if team_info is None:
+            team_info = {
+                'team_id': pitcher.team_id,
+                'team_name': pitcher.team_name,
+                'team_abbreviation': pitcher.team_abbreviation,
+            }
+    for pitcher, _score in context_rows:
         if team_info is None:
             team_info = {
                 'team_id': pitcher.team_id,
