@@ -20,6 +20,7 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.sync_run import SyncRun
+from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import sync_metadata
 from services.fatigue import calculate_fatigue
@@ -35,6 +36,7 @@ from utils.games_started import parse_games_started
 
 
 logger = logging.getLogger(__name__)
+PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -109,7 +111,7 @@ def sync_recent_logs(
             errors += 1
             records_failed += 1
             dead_letter.record_failure(
-                'pitcher_game_logs',
+                PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
                 e,
                 entity_ref=pitcher.mlb_id,
                 payload={
@@ -122,6 +124,12 @@ def sync_recent_logs(
                 job_name=job_name,
             )
             continue
+
+        dead_letter.resolve_entity_failures(
+            PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE,
+            pitcher.mlb_id,
+            job_name=job_name,
+        )
 
         touched_this_pitcher = False
 
@@ -294,9 +302,20 @@ def recalculate_all_fatigue(reference_date: date | None = None):
 
     window_start = ref - timedelta(days=14)
     pitchers = Pitcher.query.filter_by(active=True).all()
+    failed_fetch_refs = {
+        row[0]
+        for row in (
+            db.session.query(SyncFailure.entity_ref)
+            .filter(SyncFailure.entity_type == PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE)
+            .filter(SyncFailure.resolved.is_(False))
+            .all()
+        )
+    }
     updated  = 0
 
     for pitcher in pitchers:
+        if str(pitcher.mlb_id) in failed_fetch_refs:
+            continue
         logs = (
             GameLog.query
             .filter(
@@ -316,6 +335,34 @@ def recalculate_all_fatigue(reference_date: date | None = None):
 
     db.session.commit()
     return updated
+
+
+def record_sync_error_details(
+    entity_type,
+    error_details,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_DAILY_SYNC,
+):
+    """Persist fetch-domain error details from sub-syncs as dead letters."""
+    count = 0
+    for detail in error_details or []:
+        payload = dict(detail)
+        entity_ref = (
+            payload.get('pitcher_mlb_id')
+            or payload.get('team_id')
+            or payload.get('source')
+        )
+        failure = dead_letter.record_failure(
+            entity_type,
+            payload.get('error') or 'MLB API fetch failed',
+            entity_ref=entity_ref,
+            payload=payload,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        if failure is not None:
+            count += 1
+    return count
 
 
 def complete_sync_run_with_snapshot(
@@ -450,6 +497,11 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 sync_metadata.STAGE_TEAM_ASSIGNMENTS,
             )
             team_assignment = sync_team_assignments()
+            team_assignment_records_failed = record_sync_error_details(
+                'team_assignment_fetch',
+                team_assignment.get('error_details'),
+                sync_run_id=sync_run_id,
+            )
             run_logger.info(
                 'Refreshed team assignment for %s pitchers (%s changed, %s reassigned, %s no org, %s unknown, %s errors)',
                 team_assignment['pitchers_refreshed'],
@@ -464,6 +516,11 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 sync_metadata.STAGE_ROSTER_STATUS,
             )
             roster = sync_roster_statuses()
+            roster_records_failed = record_sync_error_details(
+                'roster_status_fetch',
+                roster.get('error_details'),
+                sync_run_id=sync_run_id,
+            )
             run_logger.info(
                 'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
                 roster['pitchers_refreshed'],
@@ -481,8 +538,13 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
                 pull['records_failed'],
             )
+            records_failed = (
+                pull['records_failed']
+                + team_assignment_records_failed
+                + roster_records_failed
+            )
             status['new_logs_added'] = pull['new_logs_added']
-            status['records_failed'] = pull['records_failed']
+            status['records_failed'] = records_failed
             status['errors']         = pull['errors'] + roster['errors'] + team_assignment['errors']
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
@@ -532,7 +594,6 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
 
             # Partial when records were dead-lettered but the run still
             # refreshed its domains; otherwise success.
-            records_failed = pull['records_failed']
             final_status = (
                 sync_metadata.STATUS_PARTIAL if records_failed
                 else sync_metadata.STATUS_SUCCESS

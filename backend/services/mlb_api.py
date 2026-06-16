@@ -51,12 +51,16 @@ class MlbApiMetrics:
 
 
 class MlbApiError(Exception):
-    """Raised on a non-transient (non-retryable) MLB API client error (4xx)."""
+    """Base class for MLB Stats API client errors."""
 
     def __init__(self, message, status_code=None, endpoint=None):
         super().__init__(message)
         self.status_code = status_code
         self.endpoint = endpoint
+
+
+class MlbApiFetchError(MlbApiError):
+    """Raised when an MLB API fetch fails before producing usable JSON."""
 
 
 class MLBApiClient:
@@ -127,10 +131,9 @@ class MLBApiClient:
         """
         Make a resilient GET request to the MLB API.
 
-        Returns parsed JSON on success, or None when the endpoint cannot be
-        reached after exhausting retries / on a non-transient client error. The
-        None contract is preserved for every existing caller — failures degrade
-        to empty results rather than raising.
+        Returns parsed JSON on success. A successful empty payload still returns
+        normally; fetch failures raise MlbApiFetchError so callers cannot mistake
+        them for "no rows."
         """
         settings = self._request_settings()
         url = f"{settings['base_url']}{endpoint}"
@@ -175,17 +178,25 @@ class MLBApiClient:
                         'outcome=give_up latency_ms=%.1f',
                         endpoint, attempt, max_retries + 1, status, latency_ms,
                     )
-                    return None
+                    raise MlbApiFetchError(
+                        f'MLB API fetch failed for {endpoint}: status {status}',
+                        status_code=status,
+                        endpoint=endpoint,
+                    )
 
                 if 400 <= status < 500:
                     # Non-transient client error — classify and log distinctly,
-                    # never retry. Degrade to None for callers.
+                    # never retry.
                     logger.error(
                         'MLB API client_error endpoint=%s attempt=%s status=%s '
                         'outcome=non_transient latency_ms=%.1f',
                         endpoint, attempt, status, latency_ms,
                     )
-                    return None
+                    raise MlbApiFetchError(
+                        f'MLB API fetch failed for {endpoint}: status {status}',
+                        status_code=status,
+                        endpoint=endpoint,
+                    )
 
                 response.raise_for_status()
                 logger.info(
@@ -193,7 +204,14 @@ class MLBApiClient:
                     'latency_ms=%.1f',
                     endpoint, attempt, status, latency_ms,
                 )
-                return response.json()
+                try:
+                    return response.json()
+                except ValueError as exc:
+                    raise MlbApiFetchError(
+                        f'MLB API returned malformed JSON for {endpoint}',
+                        status_code=status,
+                        endpoint=endpoint,
+                    ) from exc
 
             except (requests.exceptions.ConnectionError,
                     requests.exceptions.Timeout) as exc:
@@ -220,7 +238,10 @@ class MLBApiClient:
                     'error=%s latency_ms=%.1f',
                     endpoint, attempt, max_retries + 1, type(exc).__name__, latency_ms,
                 )
-                return None
+                raise MlbApiFetchError(
+                    f'MLB API fetch failed for {endpoint}: {type(exc).__name__}',
+                    endpoint=endpoint,
+                ) from exc
 
             except requests.exceptions.RequestException as exc:
                 # Anything else (e.g. malformed URL, too many redirects) is not
@@ -231,12 +252,15 @@ class MLBApiClient:
                     'error=%s latency_ms=%.1f',
                     endpoint, attempt, type(exc).__name__, latency_ms,
                 )
-                return None
+                raise MlbApiFetchError(
+                    f'MLB API fetch failed for {endpoint}: {type(exc).__name__}',
+                    endpoint=endpoint,
+                ) from exc
 
         # Defensive: loop always returns above, but never imply success.
         if last_exc is not None:
             logger.error('MLB API failed endpoint=%s error=%s', endpoint, last_exc)
-        return None
+        raise MlbApiFetchError(f'MLB API fetch failed for {endpoint}', endpoint=endpoint)
 
     # ─── Teams ───────────────────────────────────────────────
 

@@ -105,3 +105,43 @@ def resolve(failure_id):
         db.session.rollback()
         logger.error('Could not resolve dead-letter %s: %s', failure_id, exc)
         return False
+
+
+def resolve_entity_failures(entity_type, entity_ref, job_name='daily_sync'):
+    """
+    Mark unresolved failures for one retryable entity as resolved.
+
+    The caller owns the surrounding commit so this helper can run inside a sync
+    transaction without adding a new commit boundary.
+    """
+    if entity_ref is None:
+        return 0
+    try:
+        rows = (
+            SyncFailure.query
+            .filter_by(
+                entity_type=entity_type,
+                entity_ref=str(entity_ref),
+                job_name=job_name,
+                resolved=False,
+            )
+            .all()
+        )
+        if not rows:
+            return 0
+        resolved_at = utc_now_naive()
+        for row in rows:
+            row.resolved = True
+            row.resolved_at = resolved_at
+            db.session.add(row)
+        db.session.flush()
+        return len(rows)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.error(
+            'Could not resolve dead-letter entity_type=%s entity_ref=%s: %s',
+            entity_type,
+            entity_ref,
+            exc,
+        )
+        return 0

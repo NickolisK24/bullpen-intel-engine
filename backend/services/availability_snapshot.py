@@ -14,7 +14,18 @@ from sqlalchemy import desc
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
-from services.availability import ACTIVE_WINDOW_DAYS, classify_availability
+from models.sync_failure import SyncFailure
+from services.availability import (
+    ACTIVE_WINDOW_DAYS,
+    CONFIDENCE_LOW,
+    STATUS_AVAILABLE,
+    STATUS_MONITOR,
+    classify_availability,
+)
+from services.availability_explanations import (
+    FETCH_FAILED_WORKLOAD_LIMITATION,
+    FETCH_FAILED_WORKLOAD_REASON,
+)
 from services.availability_reference_date import product_current_date
 from utils.db import db
 
@@ -26,10 +37,58 @@ SNAPSHOT_WARNING = (
     'Historical workload snapshot for validation only. '
     'Do not treat as current bullpen availability.'
 )
+WORKLOAD_FETCH_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 
 
 def _iso_or_none(value):
     return value.isoformat() if value else None
+
+
+def _append_unique(items, value):
+    if value not in items:
+        items.append(value)
+
+
+def _unresolved_workload_fetch_failure_refs(pitchers):
+    refs = [
+        str(pitcher.mlb_id)
+        for pitcher in pitchers
+        if getattr(pitcher, 'mlb_id', None) is not None
+    ]
+    if not refs:
+        return set()
+    rows = (
+        db.session.query(SyncFailure.entity_ref)
+        .filter(SyncFailure.entity_type == WORKLOAD_FETCH_FAILURE_ENTITY_TYPE)
+        .filter(SyncFailure.resolved.is_(False))
+        .filter(SyncFailure.entity_ref.in_(refs))
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _apply_workload_fetch_failure(availability):
+    updated = dict(availability or {})
+    if updated.get('availability_status') == STATUS_AVAILABLE:
+        updated['availability_status'] = STATUS_MONITOR
+    elif not updated.get('availability_status'):
+        updated['availability_status'] = STATUS_MONITOR
+    updated['confidence'] = CONFIDENCE_LOW
+    updated['data_state'] = 'incomplete'
+
+    reasons = list(updated.get('reasons') or [])
+    _append_unique(reasons, FETCH_FAILED_WORKLOAD_REASON)
+    updated['reasons'] = reasons
+
+    limitations = list(updated.get('limitations') or [])
+    _append_unique(limitations, FETCH_FAILED_WORKLOAD_LIMITATION)
+    updated['limitations'] = limitations
+
+    inputs = dict(updated.get('inputs') or {})
+    inputs['freshness_state'] = 'incomplete'
+    inputs['workload_fetch_failed'] = True
+    updated['inputs'] = inputs
+    return updated
 
 
 def _truthy_limit(limit):
@@ -191,7 +250,15 @@ def evaluation_date_for_mode(mode, latest_game_date, current_reference_date=None
     return current_reference_date
 
 
-def _classified_record(score, pitcher, latest_game_date, evaluation_date, logs, mode):
+def _classified_record(
+    score,
+    pitcher,
+    latest_game_date,
+    evaluation_date,
+    logs,
+    mode,
+    workload_fetch_failed=False,
+):
     availability = classify_availability(
         score=score,
         game_logs=logs,
@@ -199,6 +266,8 @@ def _classified_record(score, pitcher, latest_game_date, evaluation_date, logs, 
         latest_game_date=latest_game_date,
         active_window_days=ACTIVE_WINDOW_DAYS,
     )
+    if mode == CURRENT_AVAILABILITY_MODE and workload_fetch_failed:
+        availability = _apply_workload_fetch_failure(availability)
 
     return {
         'pitcher_id': pitcher.id,
@@ -229,6 +298,10 @@ def classify_fatigue_row(score, pitcher, reference_date=None, mode=CURRENT_AVAIL
         evaluation_date=evaluation_date,
         logs=logs,
         mode=mode,
+        workload_fetch_failed=(
+            mode == CURRENT_AVAILABILITY_MODE
+            and str(pitcher.mlb_id) in _unresolved_workload_fetch_failure_refs([pitcher])
+        ),
     )
 
 
@@ -246,6 +319,11 @@ def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_M
         for _score, pitcher in rows
     }
     logs_by_pitcher = logs_for_availability_windows(pitcher_ids, evaluation_dates)
+    fetch_failure_refs = (
+        _unresolved_workload_fetch_failure_refs([pitcher for _score, pitcher in rows])
+        if mode == CURRENT_AVAILABILITY_MODE
+        else set()
+    )
 
     return [
         _classified_record(
@@ -255,6 +333,7 @@ def classify_fatigue_rows(rows, reference_date=None, mode=CURRENT_AVAILABILITY_M
             evaluation_date=evaluation_dates[pitcher.id],
             logs=logs_by_pitcher.get(pitcher.id, []),
             mode=mode,
+            workload_fetch_failed=str(pitcher.mlb_id) in fetch_failure_refs,
         )
         for score, pitcher in rows
     ]
