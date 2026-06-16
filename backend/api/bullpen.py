@@ -58,6 +58,10 @@ from services.bullpen_population import (
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
+from services.four_beat_stories import (
+    build_four_beat_story_feed,
+    four_beat_stories_enabled,
+)
 from services.homepage_changes import build_homepage_changes_payload
 from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
@@ -1879,6 +1883,13 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
     }
+    if four_beat_stories_enabled(current_app.config):
+        payload['four_beat_stories'] = build_four_beat_story_feed(
+            availability_records=availability_records,
+            logs_by_pitcher=logs_by_pitcher,
+            reference_date=reference_date,
+            freshness=freshness,
+        )
     data_through = parse_reference_date(
         freshness.get('data_through')
         or freshness.get('latest_workload_date')

@@ -1,8 +1,8 @@
 import { getBullpenStories } from '../home/homeIntelligenceView'
 
 // The BaseballOS story feed — the browseable surface behind Today's briefing.
-// The feed keeps the deeper story derivation here, then adds a category on top
-// so simple client-side filters work. No new signals, no new endpoints.
+// The current path keeps its frontend derivation here; the comparison path
+// normalizes backend-authored four-beat stories when they are present.
 
 export const DEFAULT_STORY_FILTER = 'all'
 
@@ -59,6 +59,7 @@ export const FEED_EMPTY_COPY = {
 }
 
 export const FEED_EMPTY_SUPPORT_COPY = 'Try another category or return to the full feed.'
+export const FOUR_BEAT_STORIES_FALLBACK = 'No four-beat bullpen stories are active today.'
 
 export function normalizeStoryFilter(filter) {
   return STORY_FILTER_BY_KEY[filter] ? filter : DEFAULT_STORY_FILTER
@@ -92,6 +93,50 @@ export function getStoryFeed(dashboard, observations = null) {
       : (TONE_CATEGORY[story.tone] || 'watch'),
   }))
   return { hasStories: items.length > 0, items, fallback: stories.fallback }
+}
+
+function normalizeFourBeatStory(story) {
+  if (!story || typeof story !== 'object') return null
+  const teamId = story.team_id ?? story.teamId ?? null
+  const teamName = story.team_name || story.teamName || null
+  const abbr = story.team_abbreviation || story.abbr || null
+  const beats = Array.isArray(story.beats)
+    ? story.beats
+        .map(beat => ({
+          key: beat?.key,
+          label: beat?.label,
+          text: typeof beat?.text === 'string' ? beat.text.trim() : '',
+        }))
+        .filter(beat => beat.key && beat.text)
+    : []
+  return {
+    ...story,
+    teamId,
+    teamName,
+    abbr,
+    kicker: story.kicker || story.rule_label || 'Four Beat Story',
+    tone: story.tone || 'watch',
+    category: story.category || (story.tone === 'stress' ? 'stressed' : 'rested'),
+    title: story.title || story.signal || story.rule_label || 'Bullpen story',
+    body: story.body || beats.map(beat => beat.text).join(' '),
+    href: story.href || null,
+    cta: story.cta || 'Open the team board',
+    beats,
+    source: 'backend_four_beat',
+  }
+}
+
+export function getFourBeatStoryFeed(dashboard) {
+  const payload = dashboard?.four_beat_stories || dashboard?.fourBeatStories
+  const items = Array.isArray(payload?.items)
+    ? payload.items.map(normalizeFourBeatStory).filter(Boolean)
+    : []
+  return {
+    hasStories: items.length > 0,
+    items,
+    fallback: payload?.fallback || FOUR_BEAT_STORIES_FALLBACK,
+    payload: payload || null,
+  }
 }
 
 export function filterStoryFeed(items, filter) {
