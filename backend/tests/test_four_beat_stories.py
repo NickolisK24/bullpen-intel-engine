@@ -44,13 +44,13 @@ def _availability(status):
     }
 
 
-def _record(pitcher, status=STATUS_AVAILABLE, risk='LOW'):
+def _record(pitcher, status=STATUS_AVAILABLE, risk='LOW', is_active_mlb=True):
     return {
         'pitcher': pitcher,
         'score': _score(pitcher.id, risk=risk),
         'availability': _availability(status),
         'eligibility': {'eligible': True, 'role': 'Reliever', 'limitations': []},
-        'roster_status': {'status': 'ACTIVE', 'is_active_mlb': True},
+        'roster_status': {'status': 'ACTIVE' if is_active_mlb else 'IL_15', 'is_active_mlb': is_active_mlb},
     }
 
 
@@ -69,7 +69,7 @@ def _log(pid, days_ago, pitches, *, leverage_index=None):
     )
 
 
-def _team_inputs(records, logs_by_pitcher, team=None):
+def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None):
     return TeamInputs(
         team=team or {
             'team_id': 1,
@@ -79,6 +79,7 @@ def _team_inputs(records, logs_by_pitcher, team=None):
         records=records,
         logs_by_pitcher=logs_by_pitcher,
         reference_date=REF,
+        season_era_by_team=season_era_by_team,
     )
 
 
@@ -91,6 +92,21 @@ def _story_text(story):
         story['title'],
         *(beat['text'] for beat in story['beats'] if beat['key'] != 'signal'),
     ])
+
+
+def _ranked_era(team_id=1, *, era=2.75, rank=5, total=30, strong=True, solid=True):
+    return {
+        team_id: {
+            'team_id': team_id,
+            'era': era,
+            'innings_outs': 120,
+            'earned_runs': 12,
+            'rank': rank,
+            'rank_total': total,
+            'strong_results': strong,
+            'solid_results': solid,
+        }
+    }
 
 
 def _split_pitch_total(total):
@@ -197,22 +213,168 @@ def test_pressure_distribution_fires_only_when_light_and_broad():
     assert _rule_eval(not_broad, RULE_PRESSURE_DISTRIBUTION)['can_fire'] is False
 
 
-def test_dormant_rules_and_special_situation_never_fire():
+def test_era_rules_are_live_but_fail_closed_without_era_and_special_situation_is_dormant():
     pitchers = [_pitcher(idx, f'Arm {idx}') for idx in range(1, 7)]
     result = evaluate_team_rules(_team_inputs(
         [_record(pitcher, STATUS_AVAILABLE) for pitcher in pitchers],
         {pitcher.id: [_log(pitcher.id, 1, 10)] for pitcher in pitchers},
     ))
-    for key in (
-        RULE_SUSTAINABILITY_QUESTION,
-        RULE_HIDDEN_CAPACITY_LOSS,
-        RULE_SPECIAL_SITUATION,
-    ):
+    for key in (RULE_SUSTAINABILITY_QUESTION, RULE_HIDDEN_CAPACITY_LOSS):
         evaluation = _rule_eval(result, key)
-        assert evaluation['status'] == 'dormant'
+        assert evaluation['status'] == 'live'
         assert evaluation['can_fire'] is False
-        assert evaluation['reason'] == 'missing_input'
         assert evaluation['story'] is None
+
+    special = _rule_eval(result, RULE_SPECIAL_SITUATION)
+    assert special['status'] == 'dormant'
+    assert special['can_fire'] is False
+    assert special['reason'] == 'missing_input'
+    assert special['story'] is None
+
+
+def test_sustainability_question_fires_only_when_strong_era_and_heavy_workload():
+    pitchers = [_pitcher(idx, f'Heavy Arm {idx}') for idx in range(1, 7)]
+    records = [_record(pitcher, STATUS_AVAILABLE) for pitcher in pitchers]
+    heavy_logs = {
+        pitcher.id: [_log(pitcher.id, 1, 35)]
+        for pitcher in pitchers
+    }
+
+    fired = evaluate_team_rules(_team_inputs(
+        records,
+        heavy_logs,
+        season_era_by_team=_ranked_era(rank=4, strong=True, solid=True),
+    ))
+    sustainability = _rule_eval(fired, RULE_SUSTAINABILITY_QUESTION)
+
+    assert sustainability['can_fire'] is True
+    assert sustainability['story']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
+    assert '2.75 season ERA' in _story_text(sustainability['story'])
+    assert 'leaning on it hard tonight' in sustainability['story']['title']
+
+    not_strong = evaluate_team_rules(_team_inputs(
+        records,
+        heavy_logs,
+        season_era_by_team=_ranked_era(rank=12, strong=False, solid=True),
+    ))
+    assert _rule_eval(not_strong, RULE_SUSTAINABILITY_QUESTION)['can_fire'] is False
+
+    light_logs = {
+        pitcher.id: [_log(pitcher.id, 1, 10)]
+        for pitcher in pitchers
+    }
+    not_heavy = evaluate_team_rules(_team_inputs(
+        records,
+        light_logs,
+        season_era_by_team=_ranked_era(rank=4, strong=True, solid=True),
+    ))
+    assert _rule_eval(not_heavy, RULE_SUSTAINABILITY_QUESTION)['can_fire'] is False
+
+
+def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
+    pitchers = [_pitcher(idx, f'Thin Arm {idx}') for idx in range(1, 8)]
+    records = [
+        _record(pitchers[0], STATUS_AVAILABLE),
+        _record(pitchers[1], STATUS_AVAILABLE),
+        *[_record(pitcher, STATUS_MONITOR) for pitcher in pitchers[2:]],
+    ]
+    spread_logs = {
+        pitcher.id: [_log(pitcher.id, 1, 20)]
+        for pitcher in pitchers[:5]
+    }
+
+    fired = evaluate_team_rules(_team_inputs(
+        records,
+        spread_logs,
+        season_era_by_team=_ranked_era(rank=15, strong=False, solid=True),
+    ))
+    hidden = _rule_eval(fired, RULE_HIDDEN_CAPACITY_LOSS)
+
+    assert hidden['can_fire'] is True
+    assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
+    assert 'usable depth underneath them is thin tonight' in hidden['story']['title']
+    assert '2 of 7 arms Available' in _story_text(hidden['story'])
+
+    not_solid = evaluate_team_rules(_team_inputs(
+        records,
+        spread_logs,
+        season_era_by_team=_ranked_era(rank=21, strong=False, solid=False),
+    ))
+    assert _rule_eval(not_solid, RULE_HIDDEN_CAPACITY_LOSS)['can_fire'] is False
+
+    not_depleted = evaluate_team_rules(_team_inputs(
+        [_record(pitcher, STATUS_AVAILABLE) for pitcher in pitchers],
+        spread_logs,
+        season_era_by_team=_ranked_era(rank=15, strong=False, solid=True),
+    ))
+    assert _rule_eval(not_depleted, RULE_HIDDEN_CAPACITY_LOSS)['can_fire'] is False
+
+
+def test_pressure_distribution_wins_when_hidden_capacity_also_qualifies():
+    pitchers = [_pitcher(idx, f'Light Thin Arm {idx}') for idx in range(1, 9)]
+    records = [
+        _record(pitchers[0], STATUS_AVAILABLE),
+        _record(pitchers[1], STATUS_AVAILABLE),
+        _record(pitchers[2], STATUS_AVAILABLE),
+        *[_record(pitcher, STATUS_MONITOR) for pitcher in pitchers[3:]],
+    ]
+    logs_by_pitcher = {
+        pitcher.id: [_log(pitcher.id, 1, 10)]
+        for pitcher in pitchers
+    }
+    feed = build_four_beat_story_feed(
+        records,
+        logs_by_pitcher,
+        reference_date=REF,
+        season_era={
+            'bullpens': [{
+                'team_id': 1,
+                'team_name': 'Test Club',
+                'team_abbreviation': 'TST',
+                'era': 3.10,
+                'innings_outs': 120,
+                'earned_runs': 12,
+            }],
+        },
+    )
+
+    assert feed['items'][0]['rule_key'] == RULE_PRESSURE_DISTRIBUTION
+    rules = {
+        rule['rule_key']: rule
+        for rule in feed['evaluations'][0]['rules']
+    }
+    assert rules[RULE_PRESSURE_DISTRIBUTION]['can_fire'] is True
+    assert rules[RULE_HIDDEN_CAPACITY_LOSS]['can_fire'] is True
+
+
+def test_era_rule_mechanisms_stay_static_and_honest():
+    heavy_pitchers = [_pitcher(idx, f'Heavy Arm {idx}') for idx in range(1, 7)]
+    sustainability = _rule_eval(evaluate_team_rules(_team_inputs(
+        [_record(pitcher, STATUS_AVAILABLE) for pitcher in heavy_pitchers],
+        {pitcher.id: [_log(pitcher.id, 1, 35)] for pitcher in heavy_pitchers},
+        season_era_by_team=_ranked_era(rank=3, strong=True, solid=True),
+    )), RULE_SUSTAINABILITY_QUESTION)['story']
+
+    thin_pitchers = [_pitcher(idx, f'Thin Arm {idx}', team_id=2, team_name='Thin Club', abbr='THN') for idx in range(1, 8)]
+    hidden = _rule_eval(evaluate_team_rules(_team_inputs(
+        [
+            _record(thin_pitchers[0], STATUS_AVAILABLE),
+            _record(thin_pitchers[1], STATUS_AVAILABLE),
+            *[_record(pitcher, STATUS_MONITOR) for pitcher in thin_pitchers[2:]],
+        ],
+        {pitcher.id: [_log(pitcher.id, 1, 20)] for pitcher in thin_pitchers[:5]},
+        team={'team_id': 2, 'team_name': 'Thin Club', 'team_abbreviation': 'THN'},
+        season_era_by_team=_ranked_era(2, rank=16, strong=False, solid=True),
+    )), RULE_HIDDEN_CAPACITY_LOSS)['story']
+
+    for story in (sustainability, hidden):
+        assert story is not None
+        for beat in story['beats']:
+            assert '{' not in beat['text']
+            assert '}' not in beat['text']
+        mechanism = next(beat['text'].lower() for beat in story['beats'] if beat['key'] == 'mechanism')
+        for banned in ('slipping', 'starting to show', 'hasn\'t shown', 'haven\'t shown', 'yet'):
+            assert banned not in mechanism
 
 
 def test_beats_fill_slots_or_omit_and_mechanism_stays_associative():

@@ -155,10 +155,7 @@ class TestDashboardEndpoint:
         assert body['four_beat_stories']['selection_made'] is False
         assert body['four_beat_stories']['items']
         assert 'season_era' not in body['four_beat_stories']
-        assert all(
-            'season_era' not in item.get('computed', {})
-            for item in body['four_beat_stories']['items']
-        )
+        assert all('computed' in item for item in body['four_beat_stories']['items'])
 
     def test_dashboard_surfaces_backend_authored_season_era(self, client):
         with client.application.app_context():
