@@ -133,7 +133,7 @@ export function FollowMyTeamCard({
                   {teamLabel(followedTeam)}
                 </h2>
                 <p className="mt-1 text-sm leading-relaxed text-chalk400">
-                  What shape is my bullpen in tonight?
+                  What shape is my bullpen in the current read?
                 </p>
               </>
             ) : (

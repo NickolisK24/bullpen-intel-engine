@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
-import { LoadingPane, ErrorState } from '../UI'
+import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import {
@@ -25,6 +25,7 @@ export default function Home() {
       dashboard={dash.data}
       loading={dash.loading}
       error={dash.error}
+      staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
     />
   )
@@ -34,6 +35,7 @@ export function HomeView({
   dashboard,
   loading = false,
   error = null,
+  staleWithError = false,
   onRetry,
 }) {
   const masthead = getMastheadView(dashboard)
@@ -52,6 +54,13 @@ export function HomeView({
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
         <>
+          {staleWithError && (
+            <StaleDataNotice
+              message="This briefing is from the last loaded dashboard snapshot because the latest refresh failed."
+              onRetry={onRetry}
+            />
+          )}
+
           <section className="mb-8" aria-label="What BaseballOS sees today">
             <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
               What BaseballOS Sees Today

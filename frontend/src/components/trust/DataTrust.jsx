@@ -6,7 +6,7 @@ import {
   getSyncStatus,
   getTeamOperationsBullpenReadiness,
 } from '../../utils/api'
-import { SectionHeader } from '../UI'
+import { SectionHeader, StaleDataNotice } from '../UI'
 import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
@@ -42,9 +42,15 @@ export default function DataTrust() {
       <AvailabilityBacktestCard
         data={backtest.data}
         loading={backtest.loading}
-        error={backtest.error}
+        error={backtest.staleWithError ? null : backtest.error}
         onRetry={backtest.refetch}
       />
+      {backtest.staleWithError && (
+        <StaleDataNotice
+          message="The operational backtest shown is the last loaded result because the latest refresh failed."
+          onRetry={backtest.refetch}
+        />
+      )}
 
       {/* Freshness & sync */}
       <section className="mb-6" aria-label="Data freshness and sync detail">
@@ -70,12 +76,24 @@ export default function DataTrust() {
             </div>
           )
         })()}
-        <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.error} />
+        {sync.staleWithError && (
+          <StaleDataNotice
+            message="Sync details are from the last loaded status because the latest refresh failed."
+            onRetry={sync.refetch}
+          />
+        )}
+        <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.staleWithError ? null : sync.error} />
       </section>
 
       {/* Scored pitcher inventory */}
       <section className="mb-6" aria-label="Scored pitcher inventory">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Scored Pitcher Inventory</h2>
+        {overview.staleWithError && (
+          <StaleDataNotice
+            message="Inventory diagnostics are from the last loaded overview because the latest refresh failed."
+            onRetry={overview.refetch}
+          />
+        )}
         <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
       </section>
 
@@ -83,13 +101,22 @@ export default function DataTrust() {
       <OperationalReadinessSection
         v2State={v2BullpenState.data}
         v2Loading={v2BullpenState.loading}
-        v2Error={v2BullpenState.error}
+        v2Error={v2BullpenState.staleWithError ? null : v2BullpenState.error}
         onRetryV2={v2BullpenState.refetch}
         readinessState={teamOperationsReadiness.data}
         readinessLoading={teamOperationsReadiness.loading}
-        readinessError={teamOperationsReadiness.error}
+        readinessError={teamOperationsReadiness.staleWithError ? null : teamOperationsReadiness.error}
         onRetryReadiness={teamOperationsReadiness.refetch}
       />
+      {(v2BullpenState.staleWithError || teamOperationsReadiness.staleWithError) && (
+        <StaleDataNotice
+          message="Operational readiness detail is from the last loaded governed response because the latest refresh failed."
+          onRetry={() => {
+            if (v2BullpenState.staleWithError) v2BullpenState.refetch()
+            if (teamOperationsReadiness.staleWithError) teamOperationsReadiness.refetch()
+          }}
+        />
+      )}
 
       {/* Secondary exploratory study */}
       <section className="mb-6" aria-label="Exploratory fatigue insight">

@@ -76,20 +76,20 @@ const DATA_STATE_COPY = {
     message: 'Latest workload information is inside the active freshness window.',
   },
   stale: {
-    label: 'Recent Usage Unknown',
-    message: 'Latest workload information is older than the active freshness window.',
+    label: 'Outside Freshness Window',
+    message: 'Workload history exists, but the latest appearance is older than the active freshness window.',
   },
   missing: {
-    label: 'Missing',
-    message: 'Required workload inputs are not available, so the workload read is less certain.',
+    label: 'No Workload Record',
+    message: 'No workload history or fatigue score is available for this pitcher.',
   },
   incomplete: {
-    label: 'Incomplete',
+    label: 'Incomplete Workload Inputs',
     message: 'Some workload inputs are incomplete, so the status should be treated cautiously.',
   },
   failed: {
-    label: 'Failed',
-    message: 'Availability data could not be calculated for this pitcher.',
+    label: 'Fetch Failed',
+    message: 'The latest workload fetch failed, so the read is unresolved until data refresh succeeds.',
   },
   historical: {
     label: 'Historical',

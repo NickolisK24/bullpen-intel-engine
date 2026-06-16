@@ -1,6 +1,6 @@
 import { useFetch } from '../../hooks/useFetch'
 import { getFatigueEraInsight } from '../../utils/api'
-import { LoadingPane, ErrorState, SectionHeader, EmptyState } from '../UI'
+import { LoadingPane, ErrorState, SectionHeader, EmptyState, StaleDataNotice } from '../UI'
 
 // Inline hex — Tailwind purge can't drop these.
 const LOWER_STYLE = {
@@ -52,7 +52,7 @@ function ComparisonCard({ label, era, apps, sublabel, style }) {
 }
 
 export default function FatigueInsightCard({ embedded = false }) {
-  const { data, loading, error, refetch } = useFetch(getFatigueEraInsight)
+  const { data, loading, error, staleWithError, refetch } = useFetch(getFatigueEraInsight)
 
   return (
     <div
@@ -66,7 +66,7 @@ export default function FatigueInsightCard({ embedded = false }) {
 
       {loading ? (
         <LoadingPane message="Loading insight..." />
-      ) : error ? (
+      ) : error && !staleWithError ? (
         <ErrorState message={error} onRetry={refetch} />
       ) : data?.status === 'not_generated' ? (
         <EmptyState
@@ -76,6 +76,14 @@ export default function FatigueInsightCard({ embedded = false }) {
         />
       ) : (
         <>
+          {staleWithError && (
+            <StaleDataNotice
+              compact
+              message="This exploratory study is the last loaded result because the latest refresh failed."
+              onRetry={refetch}
+            />
+          )}
+
           <p className="text-chalk100 text-base md:text-lg leading-relaxed font-mono mb-5">
             {data?.headline}
           </p>

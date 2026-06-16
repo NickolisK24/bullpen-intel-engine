@@ -20,7 +20,7 @@ import {
 
 const RISK_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 const VIEW_MODES   = [
-  { id: 'board',    label: "Tonight's Board" },
+  { id: 'board',    label: 'Team Board' },
   { id: 'compare',  label: 'Compare Bullpens' },
   { id: 'pitchers', label: 'All Pitchers' },
   { id: 'teams',    label: 'All Teams' },
@@ -116,7 +116,7 @@ export default function Bullpen() {
     <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
         title="Bullpen"
-        subtitle="Team-specific bullpen analysis — who's available tonight and how stressed a team's pen is"
+        subtitle="Team-specific bullpen analysis from latest completed data - current availability, stress, and role context"
         action={
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
@@ -537,7 +537,7 @@ function StaleToggle({ active, onToggle }) {
           )}
         </span>
         <span className="font-mono text-xs" style={{ color: labelColor }}>
-          Show pitchers with unclear recent workload
+          Show pitchers outside the freshness window
         </span>
       </div>
       <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">

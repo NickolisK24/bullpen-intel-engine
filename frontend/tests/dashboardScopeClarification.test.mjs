@@ -77,7 +77,7 @@ test('usage roles are described as a league-wide distribution', () => {
 test('quick actions reinforce the league -> team / matchup / pitcher hierarchy', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'drill into a single team'))
-  assert.ok(htmlIncludes(html, 'One team\'s bullpen tonight') || htmlIncludes(html, 'One team&#x27;s bullpen tonight'))
+  assert.ok(htmlIncludes(html, "One team's current availability read") || htmlIncludes(html, 'One team&#x27;s current availability read'))
   assert.ok(htmlIncludes(html, 'Two teams, side-by-side'))
 })
 

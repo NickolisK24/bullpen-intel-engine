@@ -41,8 +41,8 @@ BOARD_GROUP_ORDER = [
 # Plain baseball language only — no governance/contract jargon on this surface.
 GROUP_META = {
     STATUS_AVAILABLE: {
-        'label': 'Available Tonight',
-        'description': 'Workload signals are inside normal ranges.',
+        'label': 'Available',
+        'description': 'Workload signals are inside normal ranges in the latest completed data.',
     },
     STATUS_MONITOR: {
         'label': 'Monitor',
@@ -50,7 +50,7 @@ GROUP_META = {
     },
     STATUS_LIMITED: {
         'label': 'Limited',
-        'description': 'Recent workload suggests restricted use tonight.',
+        'description': 'Recent workload suggests limited use in the current availability read.',
     },
     STATUS_AVOID: {
         'label': 'Avoid',
@@ -58,7 +58,7 @@ GROUP_META = {
     },
     STATUS_UNAVAILABLE: {
         'label': 'Unavailable Pitchers',
-        'description': "Not available for tonight's bullpen planning.",
+        'description': 'Not available in the current bullpen planning read.',
     },
 }
 
@@ -88,8 +88,8 @@ HEALTH_LABELS = {
     HEALTH_MANAGEABLE: 'Bullpen workload appears manageable.',
     HEALTH_MONITORING: 'Several relievers require monitoring.',
     HEALTH_ELEVATED: 'Bullpen workload is elevated.',
-    HEALTH_CONSTRAINED: 'Availability is constrained tonight.',
-    HEALTH_NO_DATA: 'No bullpen availability to summarize tonight.',
+    HEALTH_CONSTRAINED: 'Availability is constrained in the current read.',
+    HEALTH_NO_DATA: 'No bullpen availability to summarize from the latest completed data.',
 }
 
 METHODOLOGY_REASON = 'Availability classifications are workload-based only.'
@@ -156,7 +156,7 @@ def _health_reasons(state, counts, total, freshness_note=None):
     monitor = counts[STATUS_MONITOR]
     restricted = counts[STATUS_AVOID] + counts[STATUS_UNAVAILABLE]
 
-    reasons.append(f'{available} of {total} relievers are Available Tonight.')
+    reasons.append(f'{available} of {total} relievers are classified Available.')
     if restricted == 0:
         reasons.append('No relievers are marked Avoid or Unavailable.')
     else:
@@ -198,7 +198,7 @@ def build_team_context(groups, freshness=None):
         confidence = 'low'
         freshness_note = (
             'Latest workload data is outside the active freshness window, '
-            'so this snapshot may not reflect tonight.'
+            'so this snapshot may not reflect current bullpen planning.'
         )
         limitations.append(freshness_note)
     else:
@@ -245,11 +245,13 @@ def short_reason_for(availability):
     inputs = availability.get('inputs') or {}
 
     if data_state == 'stale':
-        return 'Data freshness limits confidence'
+        return 'Outside active freshness window'
     if data_state == 'missing':
-        return 'Limited recent workload data'
+        return 'No workload record available'
     if data_state == 'incomplete':
         return 'Some recent workload data is incomplete'
+    if data_state == 'failed':
+        return 'Recent workload fetch failed'
 
     if status == STATUS_AVAILABLE:
         appearances = inputs.get('appearances_last_5_days')

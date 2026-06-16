@@ -43,17 +43,17 @@ export const BULLPEN_VIEW_MODES = [
 const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id))
 
 const GROUP_FALLBACK_META = {
-  Available: { label: 'Available Tonight', description: 'Workload signals are inside normal ranges.' },
+  Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
-  Limited: { label: 'Limited', description: 'Recent workload suggests restricted use tonight.' },
+  Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
   Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen planning." },
+  Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
 }
 
 const EMPTY_GROUP_COPY = {
   Available: 'No arms are clear of recent workload right now.',
-  Monitor: 'No arms need a workload check tonight.',
-  Limited: 'No arms are workload-restricted tonight.',
+  Monitor: 'No arms need a workload check in the current read.',
+  Limited: 'No arms are limited by workload in the current read.',
   Avoid: 'No arms are carrying heavy recent use.',
   Unavailable: 'No unavailable pitchers are shown right now.',
 }
@@ -96,7 +96,7 @@ const ROLE_SHORT_LABELS = {
 }
 
 const ELIGIBILITY_LABELS = {
-  inactive_bullpen_relevant: 'Recent Workload Unclear',
+  inactive_bullpen_relevant: 'Outside Freshness Window',
   uncertain_bullpen_relevance: 'Bullpen Role Unclear',
   // Role Authority V1 caveats (surfaced when role authority drives the board).
   // Relievers and starters need no chip: relievers are the default population
@@ -418,7 +418,7 @@ export function getDataProvenance(freshness) {
   if (isLive) {
     return {
       state: 'live',
-      label: 'Live data',
+      label: 'Current stored data',
       detail: `through ${dataThrough}`,
       dataThrough,
       throughHint: 'Latest completed MLB data = most recent completed game in the dataset, not necessarily today.',
@@ -512,7 +512,7 @@ export function getBullpenStressView(stress) {
 
 // Snapshot rows mirror the board's five groups, in the same reading order.
 const SNAPSHOT_ROWS = [
-  { status: 'Available', label: 'Available Tonight', key: 'available' },
+  { status: 'Available', label: 'Available', key: 'available' },
   { status: 'Monitor', label: 'Monitor', key: 'monitor' },
   { status: 'Limited', label: 'Limited', key: 'limited' },
   { status: 'Avoid', label: 'Avoid', key: 'avoid' },

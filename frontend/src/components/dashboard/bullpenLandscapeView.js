@@ -71,7 +71,7 @@ export function getLandscapeView(landscape) {
       { key: 'constrained', title: 'Most constrained bullpen situations', metric: 'restricted',
         suffix: 'Avoid / Unavailable', tone: COLUMN_TONE.constrained, entries: mapEntries(landscape.constrained_bullpens) },
       { key: 'available', title: 'Most available bullpen situations', metric: 'available',
-        suffix: 'Available Tonight', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
+        suffix: 'Available', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
       { key: 'monitoring', title: 'Monitoring concentration', metric: 'monitor',
         suffix: 'in Monitor', tone: COLUMN_TONE.monitoring, entries: mapEntries(landscape.monitoring_concentration) },
     ],
@@ -117,7 +117,7 @@ export function getStorylines(landscape) {
   // the storyline matches what a user would see when scanning that section.
   const topConstrained = constrained[0]
   if (topConstrained && topConstrained.restricted > 0 && storyTeamName(topConstrained)) {
-    items.push(`${storyTeamName(topConstrained)} appears to have the most constrained bullpen tonight.`)
+    items.push(`${storyTeamName(topConstrained)} appears to have the most constrained bullpen in the current read.`)
   }
 
   const topAvailable = available[0]

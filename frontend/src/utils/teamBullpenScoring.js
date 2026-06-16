@@ -261,7 +261,7 @@ function cleanOptions(summary) {
   if (summary.dataQuality.readSparse) {
     return limitedRead(
       'cleanOptions',
-      `Only ${summary.dataQuality.readKnownCount} of ${summary.totalBullpenArms} bullpen arms have clear today reads, so Clean Options is a Limited Read.`,
+      `Only ${summary.dataQuality.readKnownCount} of ${summary.totalBullpenArms} bullpen arms have clear current reads, so Clean Options is a Limited Read.`,
       supportingCounts,
     )
   }
@@ -311,7 +311,7 @@ const ROLE_STRESS_ELEVATED = 2
 const PRESSURE_SHARE_HIGH = 0.45
 const PRESSURE_SHARE_ELEVATED = 0.25
 
-// Pressure contributed by a role's today-reads, scaled by role influence. Only
+// Pressure contributed by a role's current reads, scaled by role influence. Only
 // Watch / Rest-Restricted / Unavailable reads carry pressure (Clean Options and
 // Limited Reads add none), matching the prior model's inputs but weighting them
 // by role. Read pressure is the inverse of read usability, so a Watch Arm is
@@ -356,7 +356,7 @@ function bullpenPressure(summary) {
   const usableTrustArms = cleanTrustArms + watchTrustArms
   const stressedBridgeArms = bridgeReads[READ_LABELS.restricted] + bridgeReads[READ_LABELS.unavailable]
   const stressedCoverageArms = coverageReads[READ_LABELS.restricted] + coverageReads[READ_LABELS.unavailable]
-  // No usable Trust Arm means no trusted option to lean on tonight, regardless
+  // No usable Trust Arm means no trusted option to lean on in the current read, regardless
   // of how many rested Depth Arms remain. This is the "meaningful options"
   // floor: such a bullpen can never read Low and lands at least Elevated.
   const noUsableTrust = usableTrustArms === 0
@@ -380,7 +380,7 @@ function bullpenPressure(summary) {
   if (summary.dataQuality.readSparse) {
     return limitedRead(
       'bullpenPressure',
-      `Only ${summary.dataQuality.readKnownCount} of ${summary.totalBullpenArms} bullpen arms have clear today reads, so Bullpen Pressure is a Limited Read.`,
+      `Only ${summary.dataQuality.readKnownCount} of ${summary.totalBullpenArms} bullpen arms have clear current reads, so Bullpen Pressure is a Limited Read.`,
       supportingCounts,
     )
   }

@@ -59,9 +59,22 @@ test('describes stale data state clearly for Monitor fixture', () => {
   const stale = getDataStateView('stale')
   const monitor = availabilityFixtureRows.find(row => row.availability.availability_status === 'Monitor')
 
-  assert.equal(stale.label, 'Recent Usage Unknown')
-  assert.match(stale.message, /active freshness window/i)
-  assert.equal(getDataStateView(monitor.availability.data_state).label, 'Recent Usage Unknown')
+  assert.equal(stale.label, 'Outside Freshness Window')
+  assert.match(stale.message, /latest appearance is older than the active freshness window/i)
+  assert.doesNotMatch(stale.message, /fetch failed|no workload history/i)
+  assert.equal(getDataStateView(monitor.availability.data_state).label, 'Outside Freshness Window')
+})
+
+test('distinguishes missing and failed workload states from stale usage', () => {
+  const missing = getDataStateView('missing')
+  const failed = getDataStateView('failed')
+
+  assert.equal(missing.label, 'No Workload Record')
+  assert.match(missing.message, /No workload history or fatigue score/i)
+  assert.doesNotMatch(missing.message, /fetch failed|freshness window/i)
+  assert.equal(failed.label, 'Fetch Failed')
+  assert.match(failed.message, /workload fetch failed/i)
+  assert.doesNotMatch(failed.message, /older than the active freshness window|No workload history/i)
 })
 
 test('preserves explanation reasons and limitations from fixture backend output', () => {

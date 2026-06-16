@@ -17,8 +17,8 @@ COMPARISON_DIMENSIONS = [
     {
         'key': 'available',
         'metric': 'available',
-        'descriptor': 'classified Available Tonight',
-        'reason_label': 'Available Tonight',
+        'descriptor': 'classified Available',
+        'reason_label': 'Available',
     },
     {
         'key': 'restricted',

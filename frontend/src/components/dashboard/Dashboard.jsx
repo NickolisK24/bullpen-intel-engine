@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
-import { LoadingPane, ErrorState } from '../UI'
+import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
@@ -28,12 +28,13 @@ export default function Dashboard() {
       data={dash.data}
       loading={dash.loading}
       error={dash.error}
+      staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
     />
   )
 }
 
-export function DashboardView({ data, loading = false, error = null, onRetry }) {
+export function DashboardView({ data, loading = false, error = null, staleWithError = false, onRetry }) {
   const context = getBoardContextView(data || {})
   const roles = getRolesSummaryView(data?.roles)
   const injuryIlContext = normalizeInjuryIlContext(data)
@@ -58,8 +59,9 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              Availability and workload across bullpen-eligible MLB arms tonight — who's
-              available, how stressed the governed set is, and what usage each arm appears suited for.
+              Governed availability and workload across bullpen-eligible MLB arms from
+              the latest completed data - which arms are classified available, how stressed
+              the governed set is, and what usage each arm appears suited for.
               Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
             </p>
 
@@ -95,6 +97,13 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
         <ErrorState message={error} onRetry={onRetry} />
       ) : !data ? null : (
         <>
+          {staleWithError && (
+            <StaleDataNotice
+              message="Dashboard data is still the last loaded snapshot because the latest refresh failed."
+              onRetry={onRetry}
+            />
+          )}
+
           {/* Tonight's Bullpen Landscape — first-time league orientation */}
           <BullpenLandscape landscape={data.landscape} />
 
@@ -171,8 +180,8 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
             subtitle="From the league-wide view, drill into a single team, a matchup, or a pitcher."
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <ActionCard to="/bullpen?view=board" icon="🔥" title="Tonight's Bullpen Board"
-                desc="One team's bullpen tonight" />
+              <ActionCard to="/bullpen?view=board" icon="🔥" title="Team Bullpen Board"
+                desc="One team's current availability read" />
               <ActionCard to="/bullpen?view=compare" icon="⚖️" title="Compare Bullpens"
                 desc="Two teams, side-by-side" />
               <ActionCard to="/bullpen?view=pitchers" icon="📋" title="Pitcher Details"

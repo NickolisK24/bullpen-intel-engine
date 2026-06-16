@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
-import { LoadingPane, ErrorState } from '../UI'
+import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { SectionHeading, StoryPresentation } from '../home/BullpenStories'
 import {
   getMastheadView,
@@ -32,6 +32,7 @@ export default function Stories() {
       dashboard={dash.data}
       loading={dash.loading}
       error={dash.error}
+      staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
     />
   )
@@ -42,6 +43,7 @@ export function StoriesView({
   observations = null,
   loading = false,
   error = null,
+  staleWithError = false,
   onRetry,
   initialFilter = 'all',
 }) {
@@ -85,6 +87,13 @@ export function StoriesView({
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
         <>
+          {staleWithError && (
+            <StaleDataNotice
+              message="Stories are based on the last loaded dashboard snapshot because the latest refresh failed."
+              onRetry={onRetry}
+            />
+          )}
+
           <FeedScope feed={feed} counts={counts} />
 
           <section className="mb-8" aria-label="Story feed">

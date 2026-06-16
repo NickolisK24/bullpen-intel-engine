@@ -37,21 +37,21 @@ test('renders side-by-side snapshot with both teams and their counts', () => {
   assert.ok(htmlIncludes(html, 'Side-by-side Snapshot'))
   assert.ok(htmlIncludes(html, 'Aces'))
   assert.ok(htmlIncludes(html, 'Bears'))
-  assert.ok(htmlIncludes(html, 'Available Tonight'))
+  assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Total relievers'))
 })
 
 test('renders deterministic comparison observations naming the team with more', () => {
   const html = render(differingComparison)
-  assert.ok(htmlIncludes(html, 'Aces currently has more relievers classified Available Tonight.'))
+  assert.ok(htmlIncludes(html, 'Aces currently has more relievers classified Available.'))
   assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Avoid or Unavailable.'))
 })
 
 test('each observation explains itself with both raw counts', () => {
   const html = render(differingComparison)
   assert.ok(htmlIncludes(html, 'Why?'))
-  assert.ok(htmlIncludes(html, 'Aces Available Tonight: 6.'))
-  assert.ok(htmlIncludes(html, 'Bears Available Tonight: 3.'))
+  assert.ok(htmlIncludes(html, 'Aces Available: 6.'))
+  assert.ok(htmlIncludes(html, 'Bears Available: 3.'))
 })
 
 test('similar distributions read as similar, not as a winner', () => {
@@ -70,7 +70,7 @@ test('stale bullpen surfaces freshness limitations and degraded confidence', () 
 test('renders both full bullpen boards beneath the comparison', () => {
   const html = render(differingComparison)
   // Board section labels come from BullpenBoardView's groups.
-  assert.ok(htmlIncludes(html, 'Available Tonight group'))
+  assert.ok(htmlIncludes(html, 'Available group'))
   // Both team headings present.
   const acesIdx = html.indexOf('Aces')
   const bearsBoardIdx = html.lastIndexOf('Bears')

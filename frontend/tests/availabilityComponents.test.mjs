@@ -43,7 +43,7 @@ test('AvailabilityBadge renders non-current data state when requested', () => {
   )
 
   assert.ok(htmlIncludes(html, 'Monitor'))
-  assert.ok(htmlIncludes(html, 'Data: Recent Usage Unknown'))
+  assert.ok(htmlIncludes(html, 'Data: Outside Freshness Window'))
 })
 
 test('AvailabilitySummary renders status, confidence, reasons, and limitations for every fixture', () => {

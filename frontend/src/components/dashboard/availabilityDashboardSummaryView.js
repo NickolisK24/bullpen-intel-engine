@@ -6,7 +6,7 @@ import {
 } from '../bullpen/availabilityView'
 
 export const DASHBOARD_CONFIDENCE_ORDER = ['high', 'medium', 'low']
-export const DASHBOARD_DATA_STATE_ORDER = ['fresh', 'stale', 'missing', 'incomplete']
+export const DASHBOARD_DATA_STATE_ORDER = ['fresh', 'stale', 'missing', 'incomplete', 'failed', 'historical', 'unknown']
 export const SCORED_PITCHER_INVENTORY_MODE = 'scored_pitcher_inventory'
 
 const CONFIDENCE_STYLE = {
@@ -48,6 +48,21 @@ const DATA_STATE_STYLE = {
     borderColor: 'rgba(249,115,22,0.35)',
     backgroundColor: 'rgba(249,115,22,0.10)',
   },
+  failed: {
+    color: '#fca5a5',
+    borderColor: 'rgba(239,68,68,0.36)',
+    backgroundColor: 'rgba(239,68,68,0.10)',
+  },
+  historical: {
+    color: '#9aa8b8',
+    borderColor: 'rgba(154,168,184,0.32)',
+    backgroundColor: 'rgba(154,168,184,0.08)',
+  },
+  unknown: {
+    color: '#9aa8b8',
+    borderColor: 'rgba(154,168,184,0.32)',
+    backgroundColor: 'rgba(154,168,184,0.08)',
+  },
 }
 
 function buildRows(counts = {}, order = [], labelFor = value => value, styleFor = () => ({})) {
@@ -63,8 +78,8 @@ function getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability) {
   const notes = Array.isArray(summary?.notes) ? summary.notes : []
   if (limitedByData) {
     return isCurrentAvailability
-      ? 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'
-      : 'Recent usage information is incomplete for many scored pitchers, so inventory workload reads are less certain.'
+      ? 'Some pitchers have stale, missing, failed, or incomplete workload evidence, so availability reads are less certain.'
+      : 'Some scored pitchers have stale, missing, failed, or incomplete workload evidence, so inventory workload reads are less certain.'
   }
   return notes[0] || (isCurrentAvailability
     ? 'Availability summary is based on current-mode classifier output.'
@@ -147,7 +162,10 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const stale = Number(dataState.stale || 0)
   const missing = Number(dataState.missing || 0)
   const incomplete = Number(dataState.incomplete || 0)
-  const limitedDataCount = stale + missing + incomplete
+  const failed = Number(dataState.failed || 0)
+  const historical = Number(dataState.historical || 0)
+  const unknown = Number(dataState.unknown || 0)
+  const limitedDataCount = stale + missing + incomplete + failed + historical + unknown
   const limitedByData = totalPitchers > 0 && limitedDataCount > totalPitchers / 2
   const isCurrentAvailability = summary?.is_current_availability === true
   const modeCopy = getModeCopy(mode, isCurrentAvailability)

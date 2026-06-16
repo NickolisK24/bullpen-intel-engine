@@ -19,8 +19,11 @@ export default {
         // Text
         chalk100: '#f0f4f8',
         chalk200: '#d1dce8',
-        chalk400: '#8899aa',
-        chalk600: '#4a5568',
+        chalk300: '#b7c4d1',
+        chalk400: '#9aa8b8',
+        chalk500: '#8b9bae',
+        chalk600: '#8294aa',
+        chalk700: '#8294aa',
       },
       fontFamily: {
         display: ['"Bebas Neue"', 'sans-serif'],

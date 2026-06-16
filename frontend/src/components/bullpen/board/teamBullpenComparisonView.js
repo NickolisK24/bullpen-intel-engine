@@ -5,7 +5,7 @@ import { getDataProvenance } from './tonightsBullpenBoardView'
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
 const SNAPSHOT_ROWS = [
-  { key: 'available', label: 'Available Tonight', status: 'Available' },
+  { key: 'available', label: 'Available', status: 'Available' },
   { key: 'monitor', label: 'Monitor', status: 'Monitor' },
   { key: 'limited', label: 'Limited', status: 'Limited' },
   { key: 'avoid', label: 'Avoid', status: 'Avoid' },
@@ -43,7 +43,7 @@ function freshnessRow(freshness) {
     label: f.label || null,
     dataThrough: fmtDataDate(f.data_through) || null,
     lastSync: fmtSyncDate(f.last_successful_sync) || null,
-    healthLabel: provenance.label,         // "Live data" / "Sample data"
+    healthLabel: provenance.label,         // "Current stored data" / "Sample data"
     provenanceDetail: provenance.detail,
     throughHint: provenance.throughHint,
     dot: provenance.tone.dot,

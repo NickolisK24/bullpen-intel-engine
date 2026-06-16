@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 
+export function getFetchStatus({ data, error, loading }) {
+  const hasData = data !== null && data !== undefined
+  const hasError = Boolean(error)
+  return {
+    hasData,
+    noDataError: hasError && !hasData,
+    staleWithError: hasError && hasData && !loading,
+  }
+}
+
 export function useFetch(fetchFn, deps = []) {
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
@@ -20,5 +30,11 @@ export function useFetch(fetchFn, deps = []) {
 
   useEffect(() => { run() }, [run])
 
-  return { data, loading, error, refetch: run }
+  return {
+    data,
+    loading,
+    error,
+    refetch: run,
+    ...getFetchStatus({ data, error, loading }),
+  }
 }

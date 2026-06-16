@@ -78,11 +78,11 @@ const staleActivatedAssignmentBoard = makeBoard({
 
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
-  for (const label of ['Available Tonight', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
+  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
-  // Available Tonight must appear before Unavailable Pitchers on the board.
-  assert.ok(html.indexOf('Available Tonight') < html.lastIndexOf('Unavailable Pitchers'))
+  // Available must appear before Unavailable Pitchers on the board.
+  assert.ok(html.indexOf('Available') < html.lastIndexOf('Unavailable Pitchers'))
 })
 
 test('board view mode control defaults to Active and replaces show-unavailable copy', () => {
@@ -161,17 +161,16 @@ test('groups with no pitchers render their own empty copy', () => {
 
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
-  assert.ok(htmlIncludes(html, 'Recent Usage Unknown'))
+  assert.ok(htmlIncludes(html, 'Outside Freshness Window'))
   assert.ok(htmlIncludes(html, 'Bullpen Stress: No Read'))
   assert.ok(htmlIncludes(html, 'Bullpen stress read is limited by data freshness.'))
   assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
-  assert.ok(htmlIncludes(html, 'Recent Workload Unclear'))
   assert.ok(htmlIncludes(html, 'Roster Unknown'))
   assert.ok(htmlIncludes(html, 'Roster status unavailable'))
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
   assert.ok(htmlIncludes(html, 'Roster Status Coverage'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
-  assert.ok(htmlIncludes(html, 'Data freshness limits confidence'))
+  assert.ok(htmlIncludes(html, 'Outside active freshness window'))
   assert.ok(htmlIncludes(html, 'Historical baseball data through 2026-04-01.'))
   assert.ok(!htmlIncludes(html, 'Inactive Context'))
 })
@@ -303,7 +302,7 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBullpenStressView(populatedBoard.stress).label, 'Elevated')
   assert.equal(view.getBullpenStressView(staleBoard.stress).label, 'No Read')
   assert.equal(view.getBullpenStressView(staleBoard.stress).isLimited, true)
-  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Recent Workload Unclear')
+  assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Outside Freshness Window')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).rosterStatus.label, 'Roster Unknown')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).pitcherLabels.read.label, 'Limited Read')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, 'IL-60')
