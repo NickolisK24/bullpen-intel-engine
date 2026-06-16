@@ -22,9 +22,10 @@ from services.availability_reference_date import product_current_date
 from utils.innings import log_innings_decimal
 
 
-# Recent window used to read usage. Wider than the availability window so role
-# has enough appearances to describe a pattern.
-ROLE_WINDOW_DAYS = 21
+# Stability-leaning role window. This is reasoned judgment, not a validated
+# threshold: long enough to preserve an established usage role through a quiet
+# stretch, still time-bounded so stale history cannot define current trust.
+ROLE_WINDOW_DAYS = 45
 
 MIN_ROLE_APPEARANCES = 2        # fewer than this → Low Recent Usage / Unclear
 SMALL_SAMPLE_APPEARANCES = 3    # fewer than this → confidence capped at medium

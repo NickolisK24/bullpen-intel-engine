@@ -54,7 +54,6 @@ from services.bullpen_context_story import build_dashboard_story_context
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
-    usage_logs_by_pitcher,
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
@@ -71,7 +70,8 @@ from services.narrative_memory import (
     build_team_workload_concentration_continuity,
 )
 from services.narrative_memory_story import build_dashboard_story_continuity
-from services.pitcher_role import ROLE_KEYS, classify_usage_role
+from services.pitcher_role import ROLE_KEYS
+from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.story_continuity import (
     LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
     build_story_continuity_payload,
@@ -1104,8 +1104,8 @@ def _eligible_records_for_rows(
     ref = reference_date or product_current_date()
     contexts, roster_summary = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
-        # Stale workload can still establish an active bullpen role. The
-        # unavailable toggle should only add inactive roster-state context.
+        # Stale workload can still supply board visibility context. Role labels
+        # below come from the bounded role authority, not this population helper.
         include_stale=True,
         include_inactive_context=include_stale,
         reference_date=ref,
@@ -1114,6 +1114,10 @@ def _eligible_records_for_rows(
         context['pitcher'].id: context
         for context in contexts
     }
+    logs_by_pitcher = role_logs_by_pitcher(
+        [pitcher.id for pitcher, _score in rows],
+        reference_date=ref,
+    )
 
     records = []
     for pitcher, score in rows:
@@ -1126,12 +1130,20 @@ def _eligible_records_for_rows(
             context['eligibility'],
             context['roster_status'],
         )
+        role_record = {
+            'pitcher': pitcher,
+            'availability': availability,
+            'eligibility': context['eligibility'],
+            'roster_status': context['roster_status'],
+        }
+        role, labels = author_role_read_labels(role_record, logs_by_pitcher, ref)
         records.append({
             'name': pitcher.full_name,
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability,
-            'role': classify_usage_role(context['logs'], reference_date=ref),
+            'role': role,
+            'pitcher_labels': labels,
             'eligibility': context['eligibility'],
             'roster_status': context['roster_status'],
             'visibility': build_visibility_contract(
@@ -1160,9 +1172,8 @@ def _board_records_from_authority_records(authority_records, reference_date=None
         for record in records
         if record.get('pitcher') is not None
     ]
-    logs_by_pitcher = usage_logs_by_pitcher(
+    logs_by_pitcher = role_logs_by_pitcher(
         pitcher_ids,
-        include_stale=True,
         reference_date=ref,
     )
 
@@ -1172,15 +1183,14 @@ def _board_records_from_authority_records(authority_records, reference_date=None
         score = record.get('score')
         if pitcher is None or score is None:
             continue
+        role, labels = author_role_read_labels(record, logs_by_pitcher, ref)
         board_records.append({
             'name': pitcher.full_name,
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score,
             'availability': record.get('availability'),
-            'role': classify_usage_role(
-                logs_by_pitcher.get(pitcher.id, []),
-                reference_date=ref,
-            ),
+            'role': role,
+            'pitcher_labels': labels,
             'eligibility': record.get('eligibility'),
             'roster_status': record.get('roster_status'),
             'visibility': record.get('visibility'),
@@ -1815,17 +1825,13 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
 
     # Usage-role composition across the same bullpen-eligible scored-pitcher set.
     pitcher_ids = [record['pitcher'].id for record in availability_records]
-    logs_by_pitcher = usage_logs_by_pitcher(
+    logs_by_pitcher = role_logs_by_pitcher(
         pitcher_ids,
-        include_stale=False,
         reference_date=reference_date,
     )
     role_counts = {key: 0 for key in ROLE_KEYS}
-    for pitcher_id in pitcher_ids:
-        role = classify_usage_role(
-            logs_by_pitcher.get(pitcher_id, []),
-            reference_date=reference_date,
-        )
+    for record in availability_records:
+        role, _labels = author_role_read_labels(record, logs_by_pitcher, reference_date)
         key = role['role_key']
         role_counts[key] = role_counts.get(key, 0) + 1
 

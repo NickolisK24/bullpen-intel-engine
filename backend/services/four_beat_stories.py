@@ -20,8 +20,7 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.bullpen_context import BULLPEN_CONTEXT_WINDOW_DAYS
-from services.pitcher_public_labels import build_pitcher_labels
-from services.pitcher_role import classify_usage_role
+from services.pitcher_role_authority import author_role_read_labels
 from utils.games_started import is_relief
 
 
@@ -323,17 +322,6 @@ def _high_risk_count(records):
     return count
 
 
-def _role_read_payload(record, logs, reference_date):
-    role = classify_usage_role(logs or [], reference_date=reference_date)
-    labels = build_pitcher_labels(
-        availability=record.get('availability'),
-        role=role,
-        eligibility=record.get('eligibility'),
-        roster_status=record.get('roster_status'),
-    )
-    return role, labels
-
-
 def _clean_options(records, logs_by_pitcher, reference_date):
     clean = []
     clean_trust = []
@@ -342,9 +330,9 @@ def _clean_options(records, logs_by_pitcher, reference_date):
         pitcher_id = _value(pitcher, 'id')
         if pitcher_id is None:
             continue
-        _role, labels = _role_read_payload(
+        _role, labels = author_role_read_labels(
             record,
-            logs_by_pitcher.get(pitcher_id, []),
+            logs_by_pitcher,
             reference_date,
         )
         read_key = ((labels.get('read') or {}).get('key') or '')
