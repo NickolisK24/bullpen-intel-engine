@@ -110,6 +110,18 @@ test('dashboard renders the hero without data and does not crash', () => {
   assert.ok(!htmlIncludes(html, 'Bullpen Snapshot'))
 })
 
+test('dashboard labels retained data when the latest refresh failed', () => {
+  const html = inRouter(React.createElement(DashboardView, {
+    data: dashboardData,
+    error: 'Network failed',
+    staleWithError: true,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
+  assert.ok(htmlIncludes(html, 'Dashboard data is still the last loaded snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+})
+
 test('Data & Trust page hosts the relocated trust and governance detail', () => {
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))

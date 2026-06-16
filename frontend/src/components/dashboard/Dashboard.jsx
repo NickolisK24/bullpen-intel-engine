@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
-import { LoadingPane, ErrorState } from '../UI'
+import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
@@ -28,12 +28,13 @@ export default function Dashboard() {
       data={dash.data}
       loading={dash.loading}
       error={dash.error}
+      staleWithError={dash.staleWithError}
       onRetry={dash.refetch}
     />
   )
 }
 
-export function DashboardView({ data, loading = false, error = null, onRetry }) {
+export function DashboardView({ data, loading = false, error = null, staleWithError = false, onRetry }) {
   const context = getBoardContextView(data || {})
   const roles = getRolesSummaryView(data?.roles)
   const injuryIlContext = normalizeInjuryIlContext(data)
@@ -95,6 +96,13 @@ export function DashboardView({ data, loading = false, error = null, onRetry }) 
         <ErrorState message={error} onRetry={onRetry} />
       ) : !data ? null : (
         <>
+          {staleWithError && (
+            <StaleDataNotice
+              message="Dashboard data is still the last loaded snapshot because the latest refresh failed."
+              onRetry={onRetry}
+            />
+          )}
+
           {/* Tonight's Bullpen Landscape — first-time league orientation */}
           <BullpenLandscape landscape={data.landscape} />
 
