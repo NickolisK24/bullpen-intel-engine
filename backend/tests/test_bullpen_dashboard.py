@@ -118,6 +118,38 @@ class TestDashboardEndpoint:
         # Freshness/data-through is present for the hero.
         assert 'data_through' in body['freshness']
 
+    def test_four_beat_story_path_defaults_off(self, client):
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=101)
+            _seed_pitcher('A Two', team_id=1, mlb_id=102)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert 'four_beat_stories' not in body
+
+    def test_four_beat_story_path_is_opt_in(self, client):
+        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = True
+        with client.application.app_context():
+            for idx in range(6):
+                _seed_pitcher(
+                    f'Fresh Arm {idx}',
+                    team_id=101,
+                    mlb_id=10100 + idx,
+                    raw_score=10,
+                    innings=1.0,
+                    days_ago=1,
+                    roster_status=STATUS_ACTIVE,
+                    games_started=0,
+                )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
+        assert body['four_beat_stories']['ranking_applied'] is True
+        assert body['four_beat_stories']['ranking_basis'] == 'story_strength'
+        assert body['four_beat_stories']['selection_made'] is False
+        assert body['four_beat_stories']['items']
+
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
             _seed_pitcher('Solo', team_id=1, mlb_id=1)

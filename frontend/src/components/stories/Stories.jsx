@@ -13,6 +13,7 @@ import {
   STORY_FILTERS,
   filterStoryFeed,
   getActiveStoryFilterLabel,
+  getFourBeatStoryFeed,
   getFeedEmptyState,
   getFilterCounts,
   getStoryFilterOption,
@@ -20,10 +21,11 @@ import {
   normalizeStoryFilter,
 } from './storiesFeedView'
 
-// BaseballOS Stories — the browseable bullpen intelligence feed. Today is the
-// curated morning briefing; this page is the stream behind it: dashboard-derived
-// team storylines, league notes, and watch items. Same derivations, same
-// destinations, no new signals.
+const FOUR_BEAT_STORIES_ENABLED = import.meta.env.VITE_FOUR_BEAT_STORIES_ENABLED === 'true'
+
+// BaseballOS Stories — the browseable bullpen intelligence feed. The default
+// path stays dashboard-derived; the optional comparison path renders backend-
+// authored four-beat stories when the payload and feature flag are present.
 export default function Stories() {
   const dash = useFetch(getBullpenDashboard)
 
@@ -46,10 +48,17 @@ export function StoriesView({
   staleWithError = false,
   onRetry,
   initialFilter = 'all',
+  initialStoryPath = 'current',
+  enableFourBeatStories = FOUR_BEAT_STORIES_ENABLED,
 }) {
   const [filter, setFilter] = useState(initialFilter)
+  const [storyPath, setStoryPath] = useState(initialStoryPath)
   const masthead = getMastheadView(dashboard)
-  const feed = getStoryFeed(dashboard, observations)
+  const currentFeed = getStoryFeed(dashboard, observations)
+  const fourBeatFeed = getFourBeatStoryFeed(dashboard)
+  const canCompare = Boolean(enableFourBeatStories && fourBeatFeed.hasStories)
+  const activeStoryPath = canCompare && storyPath === 'fourBeat' ? 'fourBeat' : 'current'
+  const feed = activeStoryPath === 'fourBeat' ? fourBeatFeed : currentFeed
   const counts = getFilterCounts(feed.items)
   const activeFilter = normalizeStoryFilter(filter)
   const activeOption = getStoryFilterOption(activeFilter)
@@ -94,7 +103,13 @@ export function StoriesView({
             />
           )}
 
-          <FeedScope feed={feed} counts={counts} />
+          <FeedScope
+            feed={feed}
+            counts={counts}
+            canCompare={canCompare}
+            activeStoryPath={activeStoryPath}
+            onStoryPathChange={setStoryPath}
+          />
 
           <section className="mb-8" aria-label="Story feed">
             <SectionHeading
@@ -147,7 +162,7 @@ export function StoriesView({
   )
 }
 
-function FeedScope({ feed, counts }) {
+function FeedScope({ feed, counts, canCompare = false, activeStoryPath = 'current', onStoryPathChange }) {
   const lanes = [
     { key: 'stressed', label: 'Pressure', tone: 'stress' },
     { key: 'watch', label: 'Watch', tone: 'watch' },
@@ -171,6 +186,9 @@ function FeedScope({ feed, counts }) {
               : feed.fallback}
           </p>
         </div>
+        {canCompare && (
+          <StoryPathSwitch active={activeStoryPath} onChange={onStoryPathChange} />
+        )}
         <Link
           to="/"
           className="rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
@@ -196,6 +214,32 @@ function FeedScope({ feed, counts }) {
         })}
       </div>
     </section>
+  )
+}
+
+function StoryPathSwitch({ active, onChange }) {
+  const options = [
+    { key: 'current', label: 'Current' },
+    { key: 'fourBeat', label: 'Four Beat' },
+  ]
+  return (
+    <div className="flex rounded border border-dirt bg-field/50 p-0.5" role="group" aria-label="Story path">
+      {options.map(option => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => onChange?.(option.key)}
+          aria-pressed={active === option.key}
+          className={`rounded px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest transition-colors ${
+            active === option.key
+              ? 'bg-amber/15 text-amber'
+              : 'text-chalk500 hover:text-chalk200'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -252,7 +296,11 @@ function FeedStoryCard({ story }) {
         {story.title}
       </h3>
 
-      <StoryPresentation story={story} compact className="mt-2 flex-1" />
+      {Array.isArray(story.beats) && story.beats.length > 0 ? (
+        <FourBeatPresentation beats={story.beats} />
+      ) : (
+        <StoryPresentation story={story} compact className="mt-2 flex-1" />
+      )}
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
@@ -273,5 +321,20 @@ function FeedStoryCard({ story }) {
     >
       {inner}
     </Link>
+  )
+}
+
+function FourBeatPresentation({ beats }) {
+  return (
+    <div className="mt-3 flex-1 space-y-2">
+      {beats.map(beat => (
+        <section key={beat.key} aria-label={beat.label || beat.key} className="border-l border-dirt/60 pl-2">
+          <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-chalk600/70">
+            {beat.label || beat.key}
+          </div>
+          <p className="mt-0.5 text-xs leading-relaxed text-chalk400">{beat.text}</p>
+        </section>
+      ))}
+    </div>
   )
 }

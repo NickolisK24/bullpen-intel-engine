@@ -25,6 +25,7 @@ const {
   STORY_FILTERS,
   filterStoryFeed,
   getActiveStoryFilterLabel,
+  getFourBeatStoryFeed,
   getFeedEmptyState,
   getFilterCounts,
   getStoryFeed,
@@ -120,6 +121,54 @@ const failClosedObservations = {
   ],
 }
 
+const fourBeatDashboard = {
+  ...dashboard,
+  four_beat_stories: {
+    capability: 'four_beat_story_template_v1',
+    enabled: true,
+    items: [
+      {
+        story_id: '141:stress_transfer',
+        rule_key: 'stress_transfer',
+        rule_label: 'Stress Transfer',
+        team_id: 141,
+        team_name: 'Toronto Blue Jays',
+        team_abbreviation: 'TOR',
+        kicker: 'Stress Transfer',
+        tone: 'stress',
+        category: 'stressed',
+        title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+        body: 'The top 3 arms have carried 73% of recent relief pitches. That combination usually means the next close innings lean harder on the remaining clean late-inning path. Tonight, Chad Green is the clean Trust Arm path.',
+        href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
+        cta: 'Open the team board',
+        strength: 112,
+        beats: [
+          {
+            key: 'signal',
+            label: 'Signal',
+            text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+          },
+          {
+            key: 'evidence',
+            label: 'Evidence',
+            text: 'The top 3 arms have carried 73% of recent relief pitches, while 2 of 8 bullpen arms are Available.',
+          },
+          {
+            key: 'mechanism',
+            label: 'Mechanism',
+            text: 'That combination usually means the next close innings lean harder on the remaining clean late-inning path.',
+          },
+          {
+            key: 'implication',
+            label: 'Implication',
+            text: 'Tonight, Chad Green is the clean Trust Arm path; 2 of 8 bullpen arms are clean options behind it.',
+          },
+        ],
+      },
+    ],
+  },
+}
+
 const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
 const contextNote = 'Recent bullpen work has picked up: 4 appearances and 72 pitches over the last 7 days, up from 2 appearances and 24 pitches the week before.'
 
@@ -195,6 +244,22 @@ test('the feed derives deeper observations and adds browse categories', () => {
       assert.ok(item.teamName, `team story missing teamName: ${item.title}`)
     }
   }
+})
+
+test('four-beat feed normalizes backend-authored stories without touching current feed', () => {
+  const current = getStoryFeed(dashboard, observations)
+  const currentWithPayload = getStoryFeed(fourBeatDashboard, observations)
+  const fourBeat = getFourBeatStoryFeed(fourBeatDashboard)
+
+  assert.deepEqual(
+    currentWithPayload.items.map(item => item.title),
+    current.items.map(item => item.title),
+  )
+  assert.equal(fourBeat.hasStories, true)
+  assert.equal(fourBeat.items.length, 1)
+  assert.equal(fourBeat.items[0].teamId, 141)
+  assert.equal(fourBeat.items[0].category, 'stressed')
+  assert.equal(fourBeat.items[0].beats.length, 4)
 })
 
 test('the live Stories component does not fetch the observations endpoint', () => {
@@ -375,6 +440,36 @@ test('the stories page renders as a feed-first surface beyond Today', () => {
   assert.ok(!htmlIncludes(html, 'Top Story'))
   assert.ok(!htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
+})
+
+test('four-beat story path defaults off even when backend payload is present', () => {
+  const html = render(React.createElement(StoriesView, {
+    dashboard: fourBeatDashboard,
+    observations,
+  }))
+
+  assert.ok(!htmlIncludes(html, 'Four Beat'))
+  assert.ok(!htmlIncludes(html, 'Mechanism'))
+  assert.ok(!htmlIncludes(html, 'transferring bullpen pressure onto a smaller group'))
+})
+
+test('four-beat story path renders authored beats when enabled', () => {
+  const html = render(React.createElement(StoriesView, {
+    dashboard: fourBeatDashboard,
+    observations,
+    enableFourBeatStories: true,
+    initialStoryPath: 'fourBeat',
+  }))
+
+  assert.ok(htmlIncludes(html, 'Four Beat'))
+  assert.ok(htmlIncludes(html, 'Signal'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Mechanism'))
+  assert.ok(htmlIncludes(html, 'Implication'))
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.'))
+  assert.ok(htmlIncludes(html, 'That combination usually means'))
+  assert.ok(!htmlIncludes(html, 'causes'))
+  assert.ok(!htmlIncludes(html, '{team_name}'))
 })
 
 test('stories is the feed, not a second homepage', () => {
