@@ -1901,6 +1901,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             logs_by_pitcher=logs_by_pitcher,
             reference_date=reference_date,
             freshness=freshness,
+            season_era=season_era,
         )
     data_through = parse_reference_date(
         freshness.get('data_through')
