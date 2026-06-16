@@ -3,6 +3,9 @@ from utils.time import utc_now_naive
 
 class Pitcher(db.Model):
     __tablename__ = 'pitchers'
+    __table_args__ = (
+        db.Index('ix_pitchers_team_active', 'team_id', 'active'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     mlb_id = db.Column(db.Integer, unique=True, nullable=False)
