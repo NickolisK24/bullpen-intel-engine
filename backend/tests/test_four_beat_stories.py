@@ -310,6 +310,65 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
     assert _rule_eval(not_depleted, RULE_HIDDEN_CAPACITY_LOSS)['can_fire'] is False
 
 
+def test_season_era_rank_uses_raw_components_not_display_rounded_era():
+    tor_pitchers = [
+        _pitcher(idx, f'Toronto Arm {idx}', team_id=141, team_name='Toronto Blue Jays', abbr='TOR')
+        for idx in range(1, 7)
+    ]
+    cle_pitchers = [
+        _pitcher(idx, f'Cleveland Arm {idx}', team_id=114, team_name='Cleveland Guardians', abbr='CLE')
+        for idx in range(11, 17)
+    ]
+    records = [
+        *[_record(pitcher, STATUS_AVAILABLE) for pitcher in tor_pitchers],
+        *[_record(pitcher, STATUS_AVAILABLE) for pitcher in cle_pitchers],
+    ]
+    logs_by_pitcher = {
+        pitcher.id: [_log(pitcher.id, 1, 35)]
+        for pitcher in [*tor_pitchers, *cle_pitchers]
+    }
+
+    feed = build_four_beat_story_feed(
+        records,
+        logs_by_pitcher,
+        reference_date=REF,
+        season_era={
+            'bullpens': [
+                {
+                    'team_id': 114,
+                    'team_name': 'Cleveland Guardians',
+                    'team_abbreviation': 'CLE',
+                    'era': 3.14,
+                    'innings_outs': 482,
+                    'earned_runs': 56,
+                },
+                {
+                    'team_id': 141,
+                    'team_name': 'Toronto Blue Jays',
+                    'team_abbreviation': 'TOR',
+                    'era': 3.14,
+                    'innings_outs': 663,
+                    'earned_runs': 77,
+                },
+            ],
+        },
+    )
+
+    stories = {
+        item['team_abbreviation']: item
+        for item in feed['items']
+    }
+    tor_text = _story_text(stories['TOR'])
+    cle_text = _story_text(stories['CLE'])
+
+    assert stories['TOR']['computed']['season_era']['rank'] == 1
+    assert stories['CLE']['computed']['season_era']['rank'] == 2
+    assert stories['TOR']['computed']['season_era']['era'] == 3.14
+    assert stories['CLE']['computed']['season_era']['era'] == 3.14
+    assert '1st among the bullpens teams are carrying right now' in tor_text
+    assert '2nd among the bullpens teams are carrying right now' in cle_text
+
+
 def test_pressure_distribution_wins_when_hidden_capacity_also_qualifies():
     pitchers = [_pitcher(idx, f'Light Thin Arm {idx}') for idx in range(1, 9)]
     records = [
@@ -369,6 +428,9 @@ def test_era_rule_mechanisms_stay_static_and_honest():
 
     for story in (sustainability, hidden):
         assert story is not None
+        story_text = _story_text(story)
+        assert 'among 30 bullpens' not in story_text
+        assert 'among the bullpens teams are carrying right now' in story_text
         for beat in story['beats']:
             assert '{' not in beat['text']
             assert '}' not in beat['text']

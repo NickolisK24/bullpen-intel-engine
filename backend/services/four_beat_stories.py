@@ -145,16 +145,16 @@ SKELETONS = {
     },
     RULE_SUSTAINABILITY_QUESTION: {
         BEAT_SIGNAL: 'The {team_name} bullpen has pitched well this year, but they are leaning on it hard tonight.',
-        'evidence_with_high_risk': 'Their bullpen owns a {season_era} season ERA, {era_rank_ordinal} among {era_rank_total} bullpens, while recent workload sits at {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
-        'evidence_without_high_risk': 'Their bullpen owns a {season_era} season ERA, {era_rank_ordinal} among {era_rank_total} bullpens, while recent workload sits at {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
+        'evidence_with_high_risk': 'Their current bullpen group owns a {season_era} season ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, while recent workload sits at {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
+        'evidence_without_high_risk': 'Their current bullpen group owns a {season_era} season ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, while recent workload sits at {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
         BEAT_MECHANISM: 'That does not say the results are changing; it does make tonight\'s clean innings feel more expensive to spend.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} still the clean Trust Arm path, so the watch is how early that lane has to open.',
         'implication_without_clean_trust': 'Tonight, there is no clean Trust Arm path; the watch is whether {clean_option_count} clean options can cover leverage without stretching the same group.',
     },
     RULE_HIDDEN_CAPACITY_LOSS: {
         BEAT_SIGNAL: 'The {team_name} results are solid, but the usable depth underneath them is thin tonight.',
-        'evidence_with_roster_gap': 'Their bullpen is carrying a {season_era} season ERA, {era_rank_ordinal} among {era_rank_total} bullpens, with {available_count} of {total_bullpen_arms} arms Available and {roster_unavailable_count} {roster_unavailable_word} off the active lane.',
-        'evidence_without_roster_gap': 'Their bullpen is carrying a {season_era} season ERA, {era_rank_ordinal} among {era_rank_total} bullpens, with {available_count} of {total_bullpen_arms} arms Available tonight.',
+        'evidence_with_roster_gap': 'Their current bullpen group is carrying a {season_era} season ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, with {available_count} of {total_bullpen_arms} arms Available and {roster_unavailable_count} {roster_unavailable_word} off the active lane.',
+        'evidence_without_roster_gap': 'Their current bullpen group is carrying a {season_era} season ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, with {available_count} of {total_bullpen_arms} arms Available tonight.',
         BEAT_MECHANISM: 'That does not make the results false; it means there is less margin behind them if tonight turns into a bullpen game.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} the clean Trust Arm path, but the depth behind that lane is the watch point.',
         'implication_without_clean_trust': 'Tonight, the clean options are outside the Trust Arm lane; the depth behind those options is the watch point.',
@@ -202,6 +202,14 @@ def _format_era(value):
     if value is None:
         return None
     return f'{float(value):.2f}'
+
+
+def _era_rank_value(item):
+    outs = int(item.get('innings_outs') or 0)
+    earned_runs = item.get('earned_runs')
+    if outs > 0 and earned_runs is not None:
+        return (float(earned_runs) * 27.0) / outs
+    return float(item.get('era'))
 
 
 def _ordinal(value):
@@ -291,7 +299,7 @@ def _ranked_era_by_team(season_era):
         and int(item.get('innings_outs') or 0) > 0
     ]
     eligible.sort(key=lambda item: (
-        float(item.get('era')),
+        _era_rank_value(item),
         item.get('team_abbreviation') or '',
         item.get('team_id') or 0,
     ))
