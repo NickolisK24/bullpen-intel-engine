@@ -10,7 +10,7 @@ import requests
 import pytest
 from flask import Flask
 
-from services.mlb_api import MLBApiClient
+from services.mlb_api import MLBApiClient, MlbApiFetchError
 
 
 @pytest.fixture
@@ -34,6 +34,8 @@ class FakeResponse:
         self.headers = headers or {}
 
     def json(self):
+        if isinstance(self._json, Exception):
+            raise self._json
         return self._json
 
     def raise_for_status(self):
@@ -102,13 +104,13 @@ class TestTransientRetries:
         assert result == {'value': 3}
         assert client.metrics.retries == 2
 
-    def test_exhausted_retries_returns_none_without_hanging(self, app, monkeypatch, sleeps):
+    def test_exhausted_retries_raises_typed_fetch_error_without_hanging(self, app, monkeypatch, sleeps):
         client = _client_with_responses(monkeypatch, [
             requests.exceptions.Timeout('slow'),
         ])
         with app.app_context():
-            result = client._get('/thing')
-        assert result is None
+            with pytest.raises(MlbApiFetchError):
+                client._get('/thing')
         # 1 initial + 3 retries = 4 attempts; then it gives up (never hangs).
         assert client._calls['n'] == 4
         assert client.metrics.retries == 3
@@ -118,8 +120,8 @@ class TestNonTransient:
     def test_404_is_not_retried(self, app, monkeypatch, sleeps):
         client = _client_with_responses(monkeypatch, [FakeResponse(404)])
         with app.app_context():
-            result = client._get('/missing')
-        assert result is None
+            with pytest.raises(MlbApiFetchError):
+                client._get('/missing')
         assert client._calls['n'] == 1          # no retry on a 4xx
         assert client.metrics.retries == 0
         assert sleeps == []
@@ -127,9 +129,25 @@ class TestNonTransient:
     def test_400_is_not_retried(self, app, monkeypatch, sleeps):
         client = _client_with_responses(monkeypatch, [FakeResponse(400)])
         with app.app_context():
-            result = client._get('/bad')
-        assert result is None
+            with pytest.raises(MlbApiFetchError):
+                client._get('/bad')
         assert client._calls['n'] == 1
+
+    def test_malformed_json_raises_typed_fetch_error(self, app, monkeypatch, sleeps):
+        client = _client_with_responses(monkeypatch, [
+            FakeResponse(200, ValueError('bad json')),
+        ])
+        with app.app_context():
+            with pytest.raises(MlbApiFetchError):
+                client._get('/bad-json')
+        assert client._calls['n'] == 1
+
+    def test_successful_empty_collection_remains_empty_not_failure(self, app, monkeypatch, sleeps):
+        client = _client_with_responses(monkeypatch, [
+            FakeResponse(200, {'stats': [{'splits': []}]}),
+        ])
+        with app.app_context():
+            assert client.get_pitcher_game_logs(123, season=2026) == []
 
 
 class TestRateLimiting:

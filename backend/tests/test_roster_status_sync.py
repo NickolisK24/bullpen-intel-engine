@@ -45,7 +45,10 @@ class FakeRosterClient:
 
     def get_team_roster(self, team_id, roster_type='pitchers', **_kwargs):
         self.calls.append((team_id, roster_type))
-        return list(self.rosters.get((team_id, roster_type), []))
+        value = self.rosters.get((team_id, roster_type), [])
+        if isinstance(value, Exception):
+            raise value
+        return list(value)
 
 
 @pytest.fixture
@@ -232,6 +235,28 @@ def test_sync_persists_authoritative_roster_statuses(client):
     assert by_name['Graham Ashcraft'].roster_status_source == 'mlb_stats_api:roster_sync:40Man'
     assert by_name['Missing Roster Arm'].roster_status_source == 'mlb_stats_api:roster_sync:unavailable'
     assert by_name['Graham Ashcraft'].roster_status_updated_at == datetime(2026, 6, 7, 12, 0, 0)
+
+
+def test_roster_fetch_failure_preserves_prior_status(client):
+    with client.application.app_context():
+        pitcher = seed_pitcher('Reds Active Relief Context', 11320)
+        pitcher.roster_status = STATUS_ACTIVE
+        pitcher.roster_status_source = 'prior_sync'
+        db.session.commit()
+
+        result = sync_roster_statuses(
+            team_ids=[113],
+            client=FakeRosterClient({
+                (113, ROSTER_TYPE_ACTIVE): RuntimeError('roster unavailable'),
+            }),
+            timestamp=datetime(2026, 6, 7, 12, 0, 0),
+        )
+        updated = db.session.get(Pitcher, pitcher.id)
+
+    assert result['errors'] == 1
+    assert result['pitchers_refreshed'] == 0
+    assert updated.roster_status == STATUS_ACTIVE
+    assert updated.roster_status_source == 'prior_sync'
 
 
 def test_roster_sync_feeds_default_board_filtering_and_context_labels(client):

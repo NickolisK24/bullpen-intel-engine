@@ -19,7 +19,9 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 
 import services.sync as sync_service
 from services import sync_metadata
-from services.mlb_api import mlb_client
+from services.availability_explanations import FETCH_FAILED_WORKLOAD_REASON
+from services.availability_snapshot import classify_latest_fatigue_rows
+from services.mlb_api import MlbApiFetchError, mlb_client
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -146,6 +148,145 @@ class TestPartialFailure:
 
             log = GameLog.query.one()
             assert log.games_started == 1
+
+    def test_failed_fetch_dead_letters_but_successful_empty_does_not(self, app, monkeypatch):
+        with app.app_context():
+            first = Pitcher.query.filter_by(mlb_id=100).one()
+            second = Pitcher(mlb_id=101, full_name='Reliever B', team_id=1,
+                             team_abbreviation='AAA', active=True)
+            db.session.add(second)
+            db.session.flush()
+            db.session.add(GameLog(
+                pitcher_id=first.id,
+                mlb_game_pk=5100,
+                game_date=date.today() - timedelta(days=1),
+                pitches_thrown=10,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+                games_started=0,
+                game_type='R',
+            ))
+            db.session.commit()
+
+            def fake_logs(mlb_id, season=None):
+                if mlb_id == 100:
+                    raise MlbApiFetchError('timeout', endpoint='/people/100/stats')
+                return []
+
+            monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs', fake_logs)
+
+            run_id = sync_metadata.start_sync_run(source='test')
+            result = sync_service.sync_recent_logs(days_back=7, sync_run_id=run_id)
+
+            assert result['new_logs_added'] == 0
+            assert result['records_failed'] == 1
+            assert result['errors'] == 1
+            assert db.session.query(db.func.count(GameLog.id)).scalar() == 1
+
+            failures = SyncFailure.query.order_by(SyncFailure.id).all()
+            assert len(failures) == 1
+            assert failures[0].entity_type == 'pitcher_game_logs'
+            assert failures[0].entity_ref == '100'
+            assert failures[0].sync_run_id == run_id
+
+    def test_successful_fetch_resolves_prior_pitcher_fetch_dead_letter(self, app, monkeypatch):
+        with app.app_context():
+            pitcher = Pitcher.query.filter_by(mlb_id=100).one()
+            db.session.add(SyncFailure(
+                entity_type='pitcher_game_logs',
+                entity_ref='100',
+                payload={'pitcher_id': pitcher.id, 'mlb_id': 100},
+                error='timeout',
+                resolved=False,
+            ))
+            db.session.commit()
+            monkeypatch.setattr(mlb_client, 'get_pitcher_game_logs',
+                                lambda mlb_id, season=None: [])
+
+            result = sync_service.sync_recent_logs(days_back=7)
+
+            assert result['records_failed'] == 0
+            failure = SyncFailure.query.one()
+            assert failure.resolved is True
+            assert failure.resolved_at is not None
+
+    def test_unresolved_pitcher_fetch_failure_degrades_availability_confidence(self, app):
+        with app.app_context():
+            pitcher = Pitcher.query.filter_by(mlb_id=100).one()
+            today = date.today()
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id,
+                mlb_game_pk=5200,
+                game_date=today,
+                pitches_thrown=8,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+                games_started=0,
+                game_type='R',
+            ))
+            score = FatigueScore(
+                pitcher_id=pitcher.id,
+                raw_score=10.0,
+                risk_level='LOW',
+                calculated_at=datetime.utcnow(),
+            )
+            db.session.add(score)
+            db.session.add(SyncFailure(
+                entity_type='pitcher_game_logs',
+                entity_ref='100',
+                payload={'pitcher_id': pitcher.id, 'mlb_id': 100},
+                error='timeout',
+                resolved=False,
+            ))
+            db.session.commit()
+
+            records = classify_latest_fatigue_rows(
+                [(score, pitcher)],
+                reference_date=today,
+            )
+            availability = records[0]['availability']
+
+            assert availability['availability_status'] == 'Monitor'
+            assert availability['confidence'] == 'low'
+            assert availability['data_state'] == 'incomplete'
+            assert FETCH_FAILED_WORKLOAD_REASON in availability['reasons']
+            assert availability['inputs']['workload_fetch_failed'] is True
+
+    def test_unresolved_pitcher_fetch_failure_preserves_prior_fatigue_score(self, app):
+        with app.app_context():
+            pitcher = Pitcher.query.filter_by(mlb_id=100).one()
+            today = date.today()
+            db.session.add(GameLog(
+                pitcher_id=pitcher.id,
+                mlb_game_pk=5300,
+                game_date=today,
+                pitches_thrown=8,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+                games_started=0,
+                game_type='R',
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=pitcher.id,
+                raw_score=10.0,
+                risk_level='LOW',
+                calculated_at=datetime.utcnow(),
+            ))
+            db.session.add(SyncFailure(
+                entity_type='pitcher_game_logs',
+                entity_ref='100',
+                payload={'pitcher_id': pitcher.id, 'mlb_id': 100},
+                error='timeout',
+                resolved=False,
+            ))
+            db.session.commit()
+
+            updated = sync_service.recalculate_all_fatigue(
+                reference_date=today + timedelta(days=1),
+            )
+
+            assert updated == 0
+            assert FatigueScore.query.filter_by(pitcher_id=pitcher.id).count() == 1
 
     def test_sync_endpoint_marks_run_partial_and_domain_refreshes(self, app, monkeypatch):
         today = date.today()

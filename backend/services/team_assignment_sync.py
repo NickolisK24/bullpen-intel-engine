@@ -10,7 +10,7 @@ uses the current team instead of the stale locally stored team.
 from collections import Counter, defaultdict
 
 from models.pitcher import Pitcher
-from services.mlb_api import mlb_client
+from services.mlb_api import MlbApiFetchError, mlb_client
 from services.roster_status import STATUS_UNKNOWN
 from services.roster_status_sync import (
     ROSTER_TYPES,
@@ -251,11 +251,12 @@ def _classification_from_roster_evidence(evidence, team_map):
 def _classification_from_player_info(pitcher, client, team_map):
     try:
         info = client.get_player_info(pitcher.mlb_id)
-    except Exception as exc:
+    except MlbApiFetchError as exc:
         return _classification(
             TEAM_ASSIGNMENT_UNKNOWN,
-            f'{SOURCE_PREFIX}:people:unavailable',
+            f'{SOURCE_PREFIX}:people:fetch_failed',
             lookup_error=str(exc),
+            fetch_failed=True,
         )
 
     if not info:
@@ -348,6 +349,11 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
     roster_index = evidence['index']
     team_map = evidence['team_map']
     errors = list(evidence['errors'])
+    roster_error_team_ids = {
+        item.get('team_id')
+        for item in errors
+        if item.get('team_id') is not None
+    }
 
     pitchers = Pitcher.query.filter(Pitcher.mlb_id.isnot(None)).all()
     by_status = Counter()
@@ -364,7 +370,6 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
             team_map=team_map,
             client=client,
         )
-        by_status[classification['status']] += 1
         if classification.get('lookup_error'):
             lookup_errors += 1
             errors.append({
@@ -372,6 +377,13 @@ def sync_team_assignments(team_ids=None, client=None, timestamp=None, commit=Tru
                 'source': classification['source'],
                 'error': classification['lookup_error'],
             })
+        if classification.get('fetch_failed') or (
+            classification['status'] == TEAM_ASSIGNMENT_UNKNOWN
+            and pitcher.team_id in roster_error_team_ids
+        ):
+            continue
+
+        by_status[classification['status']] += 1
 
         was_changed, before = _apply_assignment(pitcher, classification, timestamp)
         if was_changed:

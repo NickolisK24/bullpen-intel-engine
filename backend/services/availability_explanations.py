@@ -31,8 +31,10 @@ BASE_LIMITATIONS = [
 
 MISSING_WORKLOAD_REASON = 'Missing workload history or fatigue score'
 INCOMPLETE_WORKLOAD_REASON = 'Incomplete workload inputs'
+FETCH_FAILED_WORKLOAD_REASON = 'Recent MLB workload fetch failed'
 MISSING_WORKLOAD_LIMITATION = 'Availability read is unclear because workload inputs are missing'
 INCOMPLETE_WORKLOAD_LIMITATION = 'Some game-log workload fields are incomplete'
+FETCH_FAILED_WORKLOAD_LIMITATION = 'Recent usage information is incomplete because the latest MLB game-log fetch failed'
 # Wording must keep a data-state keyword (stale/missing/incomplete) so
 # categorize_limitation continues to map it to CATEGORY_DATA_STATE.
 STALE_WORKLOAD_LIMITATION = 'Recent usage information is incomplete, so workload data must not be treated as current availability'
@@ -114,6 +116,12 @@ REASON_CATALOG = [
     },
     {
         'category': CATEGORY_DATA_STATE,
+        'rule': 'Failed workload fetch',
+        'template': FETCH_FAILED_WORKLOAD_REASON,
+        'example': FETCH_FAILED_WORKLOAD_REASON,
+    },
+    {
+        'category': CATEGORY_DATA_STATE,
         'rule': 'Stale workload data',
         'template': 'Latest workload data is outside the {days}-day freshness window',
         'example': 'Latest workload data is outside the 14-day freshness window',
@@ -178,7 +186,12 @@ def categorize_reason(reason):
     text = (reason or '').lower()
     if not text:
         return CATEGORY_UNKNOWN
-    if 'freshness window' in text or text.startswith('missing workload') or text.startswith('incomplete workload'):
+    if (
+        'freshness window' in text
+        or text.startswith('missing workload')
+        or text.startswith('incomplete workload')
+        or text.startswith('recent mlb workload fetch failed')
+    ):
         return CATEGORY_DATA_STATE
     if 'pitch' in text:
         return CATEGORY_PITCH_COUNT

@@ -77,7 +77,7 @@ from services.roster_status import (
     apply_roster_status_to_availability,
     classify_roster_status,
 )
-from services.mlb_api import mlb_client
+from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
 from services import sync_metadata
@@ -534,11 +534,21 @@ def sync_recent_logs():
             sync_metadata.STAGE_TEAM_ASSIGNMENTS,
         )
         team_assignment = sync_service.sync_team_assignments()
+        team_assignment_records_failed = sync_service.record_sync_error_details(
+            'team_assignment_fetch',
+            team_assignment.get('error_details'),
+            sync_run_id=sync_run_id,
+        )
         sync_metadata.set_sync_stage(
             sync_run_id,
             sync_metadata.STAGE_ROSTER_STATUS,
         )
         roster = sync_service.sync_roster_statuses()
+        roster_records_failed = sync_service.record_sync_error_details(
+            'roster_status_fetch',
+            roster.get('error_details'),
+            sync_run_id=sync_run_id,
+        )
         sync_metadata.set_sync_stage(
             sync_run_id,
             sync_metadata.STAGE_LOG_INGESTION,
@@ -599,7 +609,11 @@ def sync_recent_logs():
             backtest = {'status': 'failed', 'error': str(exc)}
         finished        = datetime.now(timezone.utc)
         # Partial when records were dead-lettered but domains still refreshed.
-        records_failed = pull['records_failed']
+        records_failed = (
+            pull['records_failed']
+            + team_assignment_records_failed
+            + roster_records_failed
+        )
         final_status = (
             sync_metadata.STATUS_PARTIAL if records_failed
             else sync_metadata.STATUS_SUCCESS
@@ -631,7 +645,11 @@ def sync_recent_logs():
         db.session.rollback()
         finished = datetime.now(timezone.utc)
         fatigue_updated = locals().get('fatigue_updated', 0)
-        records_failed = pull.get('records_failed', 0)
+        records_failed = (
+            pull.get('records_failed', 0)
+            + locals().get('team_assignment_records_failed', 0)
+            + locals().get('roster_records_failed', 0)
+        )
         api_metrics = mlb_client.metrics.snapshot()
         existing_run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
         if existing_run is None or existing_run.status != sync_metadata.STATUS_FAILED:
@@ -2113,7 +2131,13 @@ def get_fatigue_era_insight():
 @bullpen_bp.route('/mlb/teams', methods=['GET'])
 def get_mlb_teams():
     """Proxy: Get all MLB teams from the Stats API."""
-    teams = mlb_client.get_all_teams()
+    try:
+        teams = mlb_client.get_all_teams()
+    except MlbApiFetchError as exc:
+        return jsonify({
+            'error': 'MLB Stats API fetch failed',
+            'endpoint': exc.endpoint,
+        }), 503
     return jsonify(teams)
 
 
@@ -2128,5 +2152,11 @@ def get_mlb_pitcher_logs(player_id):
     )
     if error:
         return query_param_error_response(error)
-    logs   = mlb_client.get_pitcher_game_logs(player_id, season=season)
+    try:
+        logs = mlb_client.get_pitcher_game_logs(player_id, season=season)
+    except MlbApiFetchError as exc:
+        return jsonify({
+            'error': 'MLB Stats API fetch failed',
+            'endpoint': exc.endpoint,
+        }), 503
     return jsonify(logs)

@@ -228,6 +228,8 @@ def sync_roster_statuses(team_ids=None, client=None, timestamp=None, commit=True
     for team_id in team_ids:
         index, team_errors = build_team_roster_status_index(team_id, client=client)
         errors.extend(team_errors)
+        if team_errors:
+            continue
         pitchers = (
             Pitcher.query
             .filter(Pitcher.team_id == team_id)

@@ -24,6 +24,7 @@ from services.roster_status_sync import (
     ROSTER_TYPE_FULL,
     sync_roster_statuses,
 )
+from services.mlb_api import MlbApiFetchError
 from services.team_assignment_sync import (
     TEAM_ASSIGNMENT_ASSIGNED,
     TEAM_ASSIGNMENT_NO_ORGANIZATION,
@@ -63,7 +64,10 @@ class FakeAssignmentClient:
         return list(self.rosters.get((team_id, roster_type), []))
 
     def get_player_info(self, player_id):
-        return self.player_info.get(player_id)
+        value = self.player_info.get(player_id)
+        if isinstance(value, Exception):
+            raise value
+        return value
 
 
 @pytest.fixture
@@ -309,3 +313,23 @@ def test_unknown_ownership_fails_closed_instead_of_retaining_stale_team(client):
     assert updated.team_id is None
     assert updated.active is False
     assert updated.roster_status == STATUS_UNKNOWN
+
+
+def test_player_info_fetch_failure_preserves_prior_assignment(client):
+    with client.application.app_context():
+        pitcher = seed_pitcher('Fetch Failure Arm', 900007, team_id=143)
+        fake = FakeAssignmentClient(
+            teams=[],
+            player_info={
+                900007: MlbApiFetchError('people endpoint failed', endpoint='/people/900007'),
+            },
+        )
+
+        result = sync_team_assignments(client=fake)
+        updated = db.session.get(Pitcher, pitcher.id)
+
+    assert result['errors'] == 1
+    assert result['pitchers_refreshed'] == 0
+    assert updated.team_assignment_status is None
+    assert updated.team_id == 143
+    assert updated.active is True
