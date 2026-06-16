@@ -245,11 +245,13 @@ def short_reason_for(availability):
     inputs = availability.get('inputs') or {}
 
     if data_state == 'stale':
-        return 'Data freshness limits confidence'
+        return 'Outside active freshness window'
     if data_state == 'missing':
-        return 'Limited recent workload data'
+        return 'No workload record available'
     if data_state == 'incomplete':
         return 'Some recent workload data is incomplete'
+    if data_state == 'failed':
+        return 'Recent workload fetch failed'
 
     if status == STATUS_AVAILABLE:
         appearances = inputs.get('appearances_last_5_days')

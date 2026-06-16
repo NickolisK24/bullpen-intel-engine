@@ -537,7 +537,7 @@ function StaleToggle({ active, onToggle }) {
           )}
         </span>
         <span className="font-mono text-xs" style={{ color: labelColor }}>
-          Show pitchers with unclear recent workload
+          Show pitchers outside the freshness window
         </span>
       </div>
       <div className="font-mono text-[10px] mt-0.5 ml-5 text-chalk600">

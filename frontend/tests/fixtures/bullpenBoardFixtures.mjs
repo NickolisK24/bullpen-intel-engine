@@ -234,7 +234,7 @@ export const staleBoard = makeBoard({
       card(7, 'Stale Sam', 'Monitor', {
         confidence: 'low',
         data_state: 'stale',
-        short_reason: 'Data freshness limits confidence',
+        short_reason: 'Outside active freshness window',
         reasons: ['Latest workload data is outside the 14-day freshness window'],
         limitations: ['Stale workload data must not be treated as current availability'],
         eligibility: {

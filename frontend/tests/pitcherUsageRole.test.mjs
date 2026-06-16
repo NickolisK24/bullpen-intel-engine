@@ -184,7 +184,7 @@ test('pitcher label key renders both label layers', () => {
   assert.ok(htmlIncludes(html, 'Role:'))
   assert.ok(htmlIncludes(html, 'Read:'))
   assert.ok(htmlIncludes(html, 'What type of bullpen arm is this?'))
-  assert.ok(htmlIncludes(html, 'What shape is this pitcher in today?'))
+  assert.ok(htmlIncludes(html, 'What does the current read say about this pitcher?'))
   assert.ok(htmlIncludes(html, 'Trust Arm'))
   assert.ok(htmlIncludes(html, 'Rest-Restricted'))
   assert.ok(!htmlIncludes(html, 'Role</span>Trust Arm'))
@@ -195,8 +195,8 @@ test('pitcher label key uses the approved public terminology only', () => {
   const board = makeBoard({ cardsByStatus: { Available: [roleCard('Lou Long', 'Available', longRole)] } })
   const html = render(board)
   const keyStart = html.indexOf('Pitcher Label Key')
-  const boardStart = html.indexOf('Available', keyStart)
-  const keyHtml = html.slice(keyStart, boardStart)
+  const keyEnd = html.indexOf('</details>', keyStart)
+  const keyHtml = html.slice(keyStart, keyEnd)
 
   for (const label of APPROVED_ROLE_LABELS) {
     assert.ok(keyHtml.includes(label), `missing role label: ${label}`)

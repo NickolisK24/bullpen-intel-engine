@@ -69,13 +69,13 @@ export const PITCHER_READ_LABELS = Object.freeze({
   UNAVAILABLE: read(
     'unavailable',
     'Unavailable',
-    'Current status or roster context says this pitcher is not counted tonight.',
+    'Current status or roster context says this pitcher is not counted in the current availability read.',
     { borderColor: 'rgba(239,68,68,0.36)', backgroundColor: 'rgba(239,68,68,0.10)', color: '#fecaca' },
   ),
   LIMITED_READ: read(
     'limited_read',
     'Limited Read',
-    'The current payload does not support a clear today read.',
+    'The current payload does not support a clear availability read.',
     { borderColor: 'rgba(148,163,184,0.28)', backgroundColor: 'rgba(148,163,184,0.07)', color: '#cbd5e1' },
   ),
 })
@@ -93,9 +93,9 @@ export const PITCHER_LABEL_KEY_COPY = Object.freeze({
   roleLayer: 'Role:',
   readLayer: 'Read:',
   roleSummary: 'Role labels describe bullpen usage shape.',
-  readSummary: "Read labels describe today's workload and availability shape.",
+  readSummary: 'Read labels describe the current workload and availability shape.',
   roleQuestion: 'What type of bullpen arm is this?',
-  readQuestion: 'What shape is this pitcher in today?',
+  readQuestion: 'What does the current read say about this pitcher?',
 })
 
 const ROLE_KEY_TO_LABEL = Object.freeze({

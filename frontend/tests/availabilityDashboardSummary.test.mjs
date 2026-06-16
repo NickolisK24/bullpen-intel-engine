@@ -40,9 +40,10 @@ const staleDominantSummary = {
   },
   data_state: {
     fresh: 0,
-    stale: 640,
+    stale: 638,
     missing: 64,
     incomplete: 0,
+    failed: 2,
   },
   notes: [
     'Recent usage information is missing for most pitchers, so most availability reads are less certain.',
@@ -77,9 +78,10 @@ test('formats current-mode availability summary distributions', () => {
   assert.equal(view.dominantStatus.label, 'Monitor')
   assert.equal(view.operationalSummary, 'Current availability is concentrated in Monitor status.')
   assert.equal(view.confidenceRows.find(row => row.label === 'Unclear Read').count, 704)
-  assert.equal(view.dataStateRows.find(row => row.label === 'Recent Usage Unknown').count, 640)
-  assert.equal(view.dataStateRows.find(row => row.label === 'Missing').count, 64)
-  assert.equal(view.primaryTrustNote, 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.')
+  assert.equal(view.dataStateRows.find(row => row.label === 'Outside Freshness Window').count, 638)
+  assert.equal(view.dataStateRows.find(row => row.label === 'No Workload Record').count, 64)
+  assert.equal(view.dataStateRows.find(row => row.label === 'Fetch Failed').count, 2)
+  assert.equal(view.primaryTrustNote, 'Some pitchers have stale, missing, failed, or incomplete workload evidence, so availability reads are less certain.')
 })
 
 test('renders dashboard summary without claiming stale data is current', () => {
@@ -92,9 +94,11 @@ test('renders dashboard summary without claiming stale data is current', () => {
   assert.ok(htmlIncludes(html, '704 classified pitchers'))
   assert.ok(htmlIncludes(html, 'Monitor'))
   assert.ok(htmlIncludes(html, 'Unclear Read'))
-  assert.ok(htmlIncludes(html, 'Recent Usage Unknown'))
-  assert.ok(htmlIncludes(html, 'Recent usage information is incomplete for many pitchers, so availability reads are less certain.'))
-  assert.ok(htmlIncludes(html, 'Show pitchers with unclear recent workload or refresh sync data'))
+  assert.ok(htmlIncludes(html, 'Outside Freshness Window'))
+  assert.ok(htmlIncludes(html, 'No Workload Record'))
+  assert.ok(htmlIncludes(html, 'Fetch Failed'))
+  assert.ok(htmlIncludes(html, 'Some pitchers have stale, missing, failed, or incomplete workload evidence, so availability reads are less certain.'))
+  assert.ok(htmlIncludes(html, 'Show pitchers outside the freshness window, inspect no-record arms, or retry refreshes with failed workload fetches.'))
   assert.doesNotMatch(html, /latest_workload_snapshot/)
 })
 
@@ -149,7 +153,7 @@ test('renders scored pitcher inventory without current availability labeling', (
   assert.equal(view.title, 'Scored Pitcher Inventory')
   assert.equal(view.distributionTitle, 'Workload Status Distribution')
   assert.equal(view.totalLabel, 'scored pitchers')
-  assert.equal(view.primaryTrustNote, 'Recent usage information is incomplete for many scored pitchers, so inventory workload reads are less certain.')
+  assert.equal(view.primaryTrustNote, 'Some scored pitchers have stale, missing, failed, or incomplete workload evidence, so inventory workload reads are less certain.')
   assert.equal(view.operationalSummary, 'Scored pitcher inventory is concentrated in Monitor workload status.')
 
   assert.ok(htmlIncludes(html, 'Scored Pitcher Inventory'))

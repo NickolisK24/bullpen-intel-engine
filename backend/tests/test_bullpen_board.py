@@ -140,8 +140,9 @@ class TestShortReason:
         assert reason == '42 pitches yesterday'
 
     def test_stale_and_missing_read_as_data_caveats(self):
-        assert short_reason_for(availability('Monitor', data_state='stale')) == 'Data freshness limits confidence'
-        assert short_reason_for(availability('Monitor', data_state='missing')) == 'Limited recent workload data'
+        assert short_reason_for(availability('Monitor', data_state='stale')) == 'Outside active freshness window'
+        assert short_reason_for(availability('Monitor', data_state='missing')) == 'No workload record available'
+        assert short_reason_for(availability('Monitor', data_state='failed')) == 'Recent workload fetch failed'
 
 
 class TestPayload:

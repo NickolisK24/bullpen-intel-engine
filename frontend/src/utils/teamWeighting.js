@@ -24,7 +24,7 @@ export const ROLE_INFLUENCE = Object.freeze({
   limited_read: Object.freeze({ weight: 0, tier: 'none' }),
 })
 
-// Read multipliers translate today's workload read into how much of an arm's
+// Read multipliers translate the current workload read into how much of an arm's
 // role influence is actually usable tonight. A Watch Arm is half-usable: the
 // arm can pitch but the read says check the recent workload first.
 export const READ_USABILITY = Object.freeze({
