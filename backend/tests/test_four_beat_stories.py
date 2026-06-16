@@ -86,6 +86,53 @@ def _rule_eval(result, key):
     return next(item for item in result['evaluations'] if item['rule_key'] == key)
 
 
+def _story_text(story):
+    return ' '.join([
+        story['title'],
+        *(beat['text'] for beat in story['beats'] if beat['key'] != 'signal'),
+    ])
+
+
+def _split_pitch_total(total):
+    first = total // 3
+    second = total // 3
+    return [first, second, total - first - second]
+
+
+def _near_collision_stress_team(team_id, team_name, abbr, names, pitch_totals, available_count):
+    pitchers = [
+        _pitcher(team_id * 100 + idx, name, team_id=team_id, team_name=team_name, abbr=abbr)
+        for idx, name in enumerate(names, start=1)
+    ]
+    records = [
+        _record(
+            pitcher,
+            STATUS_AVAILABLE if idx < available_count else STATUS_MONITOR,
+        )
+        for idx, pitcher in enumerate(pitchers)
+    ]
+
+    logs_by_pitcher = {}
+    for idx, (pitcher, total) in enumerate(zip(pitchers, pitch_totals)):
+        if idx < 2:
+            logs_by_pitcher[pitcher.id] = [
+                _log(pitcher.id, days_ago + 1, pitches, leverage_index=1.8)
+                for days_ago, pitches in enumerate(_split_pitch_total(total))
+            ]
+        else:
+            logs_by_pitcher[pitcher.id] = [_log(pitcher.id, 1, total)]
+
+    return _team_inputs(
+        records,
+        logs_by_pitcher,
+        team={
+            'team_id': team_id,
+            'team_name': team_name,
+            'team_abbreviation': abbr,
+        },
+    )
+
+
 def test_stress_transfer_fires_only_when_concentrated_and_thin():
     pitchers = [_pitcher(idx, f'Arm {idx}') for idx in range(1, 6)]
     records = [
@@ -226,6 +273,84 @@ def test_description_only_teams_suppress_and_feed_count_is_variable_and_ranked()
     ]
     assert all(item['strength'] >= feed['items'][-1]['strength'] for item in feed['items'])
     assert 'Quiet Club' not in str(feed['items'])
+
+
+def test_near_collision_stress_transfer_pens_surface_concentration_specifics():
+    tampa_inputs = _near_collision_stress_team(
+        139,
+        'Tampa Bay Rays',
+        'TB',
+        [
+            'Rowan Tide',
+            'Cal Harbor',
+            'Evan Shore',
+            'Casey Break',
+            'Nico Channel',
+            'Drew Anchor',
+            'Miles Current',
+            'Theo Marker',
+        ],
+        [28, 22, 16, 8, 8, 7, 6, 5],
+        available_count=3,
+    )
+    mets_inputs = _near_collision_stress_team(
+        121,
+        'New York Mets',
+        'NYM',
+        [
+            'Marcus Slate',
+            'Jon Borough',
+            'Eli Queens',
+            'Victor Line',
+            'Sam Orchard',
+            'Noah Transit',
+            'Owen Crown',
+            'Cole Hudson',
+            'Reid Penn',
+            'Liam Union',
+            'Gabe Metro',
+        ],
+        [34, 28, 20, 3, 3, 3, 2, 2, 2, 2, 1],
+        available_count=3,
+    )
+
+    tampa_eval = _rule_eval(evaluate_team_rules(tampa_inputs), RULE_STRESS_TRANSFER)
+    mets_eval = _rule_eval(evaluate_team_rules(mets_inputs), RULE_STRESS_TRANSFER)
+
+    assert tampa_eval['can_fire'] is True
+    assert mets_eval['can_fire'] is True
+
+    tampa_story = tampa_eval['story']
+    mets_story = mets_eval['story']
+    tampa_text = _story_text(tampa_story)
+    mets_text = _story_text(mets_story)
+
+    assert tampa_story['rule_key'] == RULE_STRESS_TRANSFER
+    assert mets_story['rule_key'] == RULE_STRESS_TRANSFER
+    assert tampa_text != mets_text
+
+    assert 'Tampa Bay Rays' in tampa_text
+    assert 'New York Mets' in mets_text
+    assert '3 of 8' in tampa_text
+    assert '3 of 11' in mets_text
+    assert 'Rowan Tide and Cal Harbor' in tampa_text
+    assert 'Marcus Slate and Jon Borough' in mets_text
+    assert round(tampa_story['computed']['workload']['top_share'], 2) == 0.66
+    assert round(mets_story['computed']['workload']['top_share'], 2) == 0.82
+    assert tampa_story['computed']['availability']['total'] == 8
+    assert mets_story['computed']['availability']['total'] == 11
+
+    missing_concentration = []
+    if 'some concentration' not in tampa_text:
+        missing_concentration.append('Tampa Bay text missing "some concentration"')
+    if 'concentrated' not in mets_text:
+        missing_concentration.append('New York Mets text missing "concentrated"')
+    assert not missing_concentration, (
+        'Near-collision stress-transfer stories flattened concentration detail: '
+        f"{'; '.join(missing_concentration)}\n"
+        f'Tampa Bay: {tampa_text}\n'
+        f'New York Mets: {mets_text}'
+    )
 
 
 def test_feature_flag_defaults_off():
