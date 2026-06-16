@@ -81,6 +81,7 @@ from services.roster_status import (
     apply_roster_status_to_availability,
     classify_roster_status,
 )
+from services.season_era import build_season_era_payload
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
@@ -1849,6 +1850,10 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         availability_records=availability_records,
         reference_date=reference_date,
     )
+    season_era = build_season_era_payload(
+        availability_records,
+        reference_date=reference_date,
+    )
     latest_scores = [score for score, _pitcher in latest_rows]
     risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
     for score in latest_scores:
@@ -1884,6 +1889,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'injury_il_context': injury_il_context,
         'continuity': continuity,
         'story_context': context_support,
+        'season_era': season_era,
         'freshness': freshness,
         'availability_summary': summary,
         'scored_pitcher_inventory': inventory_summary,

@@ -47,7 +47,7 @@ def client(tmp_path, monkeypatch):
 
 def _seed_pitcher(
     name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1,
-    roster_status=STATUS_ACTIVE, games_started=None,
+    roster_status=STATUS_ACTIVE, games_started=None, earned_runs=0,
 ):
     pitcher = Pitcher(mlb_id=mlb_id, full_name=name, team_id=team_id,
                       team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True,
@@ -63,6 +63,10 @@ def _seed_pitcher(
         else [games_started] * len(innings_values) if games_started is not None
         else None
     )
+    earned_runs_values = (
+        earned_runs if isinstance(earned_runs, list)
+        else [earned_runs] * len(innings_values)
+    )
     for idx, innings_pitched in enumerate(innings_values):
         innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         start_flag = games_started_values[idx] if games_started_values is not None else (
@@ -73,6 +77,7 @@ def _seed_pitcher(
                                 pitches_thrown=12,
                                 innings_pitched=outs_to_decimal_innings(innings_outs),
                                 innings_pitched_outs=innings_outs,
+                                earned_runs=earned_runs_values[idx],
                                 games_started=start_flag,
                                 game_type='R'))
     db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=raw_score,
@@ -149,6 +154,52 @@ class TestDashboardEndpoint:
         assert body['four_beat_stories']['ranking_basis'] == 'story_strength'
         assert body['four_beat_stories']['selection_made'] is False
         assert body['four_beat_stories']['items']
+        assert 'season_era' not in body['four_beat_stories']
+        assert all(
+            'season_era' not in item.get('computed', {})
+            for item in body['four_beat_stories']['items']
+        )
+
+    def test_dashboard_surfaces_backend_authored_season_era(self, client):
+        with client.application.app_context():
+            starter_reliever = _seed_pitcher(
+                'Mixed Role Arm',
+                team_id=501,
+                mlb_id=50101,
+                innings=[1.0, 1.0],
+                days_ago=[1, 2],
+                games_started=[0, 1],
+                earned_runs=[1, 2],
+            )
+            starter_reliever_id = starter_reliever.id
+            _seed_pitcher(
+                'Pure Relief Arm',
+                team_id=501,
+                mlb_id=50102,
+                innings=1.0,
+                days_ago=1,
+                games_started=0,
+                earned_runs=0,
+            )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        season_era = body['season_era']
+        pitcher_line = next(
+            item for item in season_era['pitchers']
+            if item['pitcher_id'] == starter_reliever_id
+        )
+        bullpen_line = next(
+            item for item in season_era['bullpens']
+            if item['team_id'] == 501
+        )
+
+        assert season_era['capability'] == 'season_era_v1'
+        assert pitcher_line['earned_runs'] == 3
+        assert pitcher_line['innings_outs'] == 6
+        assert pitcher_line['era'] == 13.5
+        assert bullpen_line['earned_runs'] == 1
+        assert bullpen_line['innings_outs'] == 6
+        assert bullpen_line['era'] == 4.5
 
     def test_four_beat_story_and_board_share_clean_trust_authority(self, client):
         client.application.config['FOUR_BEAT_STORIES_ENABLED'] = True
