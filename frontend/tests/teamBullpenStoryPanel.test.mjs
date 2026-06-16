@@ -40,6 +40,149 @@ const ROLE_KEYS = {
   'Coverage Arm': 'long_multi_inning',
   'Depth Arm': 'depth',
 }
+const ROLE_LABEL_KEYS = {
+  'Trust Arm': 'trust_arm',
+  'Bridge Arm': 'bridge_arm',
+  'Coverage Arm': 'coverage_arm',
+  'Depth Arm': 'depth_arm',
+  'Limited Read': 'limited_read',
+}
+const READ_LABELS_BY_STATUS = {
+  Available: { key: 'clean_option', label: 'Clean Option' },
+  Monitor: { key: 'watch_arm', label: 'Watch Arm' },
+  Limited: { key: 'rest_restricted', label: 'Rest-Restricted' },
+  Avoid: { key: 'rest_restricted', label: 'Rest-Restricted' },
+  Unavailable: { key: 'unavailable', label: 'Unavailable' },
+}
+
+function authoredPitcherLabels(roleLabel, status) {
+  const roleKey = ROLE_LABEL_KEYS[roleLabel] || 'limited_read'
+  const read = READ_LABELS_BY_STATUS[status] || { key: 'limited_read', label: 'Limited Read' }
+  return {
+    role: { kind: 'role', key: roleKey, label: roleLabel, source: 'backend:test_fixture' },
+    read: { kind: 'read', key: read.key, label: read.label, source: 'backend:test_fixture' },
+  }
+}
+
+const readTemplate = (key, label, supportingCounts = {}) => ({
+  key,
+  label,
+  explanation: `${label}.`,
+  supportingCounts,
+  reasons: [`${label}.`],
+  source: 'backend:test_fixture',
+})
+
+function countBy(cards, predicate) {
+  return cards.filter(predicate).length
+}
+
+function buildTeamShape(groups, healthState) {
+  const cards = groups.flatMap(group => group.pitchers)
+  const role = key => cards.filter(card => card.pitcher_labels?.role?.key === key)
+  const read = key => cards.filter(card => card.pitcher_labels?.read?.key === key)
+  const trust = role('trust_arm')
+  const bridge = role('bridge_arm')
+  const coverage = role('coverage_arm')
+  const depth = role('depth_arm')
+  const clean = read('clean_option')
+  const watch = read('watch_arm')
+  const rest = read('rest_restricted')
+  const unavailable = read('unavailable')
+  const trustCounts = {
+    trustArms: trust.length,
+    availableTrustArms: countBy(trust, card => ['clean_option', 'watch_arm'].includes(card.pitcher_labels.read.key)),
+    cleanTrustArms: countBy(trust, card => card.pitcher_labels.read.key === 'clean_option'),
+    watchTrustArms: countBy(trust, card => card.pitcher_labels.read.key === 'watch_arm'),
+    restRestrictedTrustArms: countBy(trust, card => card.pitcher_labels.read.key === 'rest_restricted'),
+    unavailableTrustArms: countBy(trust, card => card.pitcher_labels.read.key === 'unavailable'),
+  }
+  const coverageCounts = {
+    coverageArms: coverage.length,
+    availableCoverageArms: countBy(coverage, card => ['clean_option', 'watch_arm'].includes(card.pitcher_labels.read.key)),
+    cleanCoverageArms: countBy(coverage, card => card.pitcher_labels.read.key === 'clean_option'),
+    watchCoverageArms: countBy(coverage, card => card.pitcher_labels.read.key === 'watch_arm'),
+    restRestrictedCoverageArms: countBy(coverage, card => card.pitcher_labels.read.key === 'rest_restricted'),
+    unavailableCoverageArms: countBy(coverage, card => card.pitcher_labels.read.key === 'unavailable'),
+    cleanBridgeArms: countBy(bridge, card => card.pitcher_labels.read.key === 'clean_option'),
+    watchBridgeArms: countBy(bridge, card => card.pitcher_labels.read.key === 'watch_arm'),
+    substituteCoverageApplied: coverage.length === 0 && countBy(bridge, card => card.pitcher_labels.read.key === 'clean_option') > 0,
+  }
+  const depthCounts = {
+    depthArms: depth.length,
+    availableDepthArms: countBy(depth, card => ['clean_option', 'watch_arm'].includes(card.pitcher_labels.read.key)),
+    cleanDepthArms: countBy(depth, card => card.pitcher_labels.read.key === 'clean_option'),
+    watchDepthArms: countBy(depth, card => card.pitcher_labels.read.key === 'watch_arm'),
+    restRestrictedDepthArms: countBy(depth, card => card.pitcher_labels.read.key === 'rest_restricted'),
+    unavailableDepthArms: countBy(depth, card => card.pitcher_labels.read.key === 'unavailable'),
+  }
+  const pressureCounts = {
+    watchArmCount: watch.length,
+    restRestrictedCount: rest.length,
+    unavailableCount: unavailable.length,
+    highFatigueArms: countBy(cards, card => card.fatigue_score >= 70),
+    restrictedTrustArms: trustCounts.restRestrictedTrustArms,
+    unavailableTrustArms: trustCounts.unavailableTrustArms,
+    cleanTrustArms: trustCounts.cleanTrustArms,
+    usableTrustArms: trustCounts.cleanTrustArms + trustCounts.watchTrustArms,
+    stressedBridgeArms: countBy(bridge, card => ['rest_restricted', 'unavailable'].includes(card.pitcher_labels.read.key)),
+    stressedCoverageArms: coverageCounts.restRestrictedCoverageArms + coverageCounts.unavailableCoverageArms,
+  }
+  const cleanCounts = {
+    cleanOptionCount: clean.length,
+    activeBullpenArms: cards.length - unavailable.length,
+    cleanTrustArms: trustCounts.cleanTrustArms,
+    cleanBridgeArms: coverageCounts.cleanBridgeArms,
+    cleanCoverageArms: coverageCounts.cleanCoverageArms,
+    cleanDepthArms: depthCounts.cleanDepthArms,
+  }
+  const trustLabel = trustCounts.availableTrustArms >= 2 && trustCounts.unavailableTrustArms === 0
+    ? 'Stable Trust Arm Availability'
+    : trustCounts.availableTrustArms >= 1
+      ? 'Thin Trust Arm Availability'
+      : 'Limited Trust Arm Availability'
+  const pressureLabel = healthState === 'constrained' || rest.length >= 3
+    ? 'High Bullpen Pressure'
+    : watch.length >= 3 || pressureCounts.stressedBridgeArms >= 2
+      ? 'Elevated Bullpen Pressure'
+      : 'Low Bullpen Pressure'
+  const cleanLabel = clean.length >= 6
+    ? 'Deep Clean Options'
+    : clean.length >= 4
+      ? 'Healthy Clean Options'
+      : clean.length >= 2
+        ? 'Thin Clean Options'
+        : 'Very Thin Clean Options'
+  const coverageLabel = coverageCounts.availableCoverageArms >= 2
+    ? 'Stable Coverage Safety'
+    : coverageCounts.availableCoverageArms >= 1 || coverageCounts.substituteCoverageApplied
+      ? 'Thin Coverage Safety'
+      : 'Limited Coverage Safety'
+  const depthLabel = cards.length >= 8 && depthCounts.availableDepthArms >= 2 && pressureCounts.usableTrustArms > 0
+    ? 'Strong Depth Safety'
+    : depthCounts.availableDepthArms >= 1
+      ? 'Stable Depth Safety'
+      : 'Limited Depth Safety'
+  const reads = [
+    readTemplate('trustAvailability', cards.length ? trustLabel : 'Limited Read', trustCounts),
+    readTemplate('cleanOptions', cards.length ? cleanLabel : 'Limited Read', cleanCounts),
+    readTemplate('bullpenPressure', cards.length ? pressureLabel : 'Limited Read', pressureCounts),
+    readTemplate('coverageSafety', cards.length ? coverageLabel : 'Limited Read', coverageCounts),
+    readTemplate('depthSafety', cards.length ? depthLabel : 'Limited Read', depthCounts),
+  ]
+  const byKey = Object.fromEntries(reads.map(read => [read.key, read]))
+  return {
+    source: 'backend:test_fixture',
+    reads,
+    byKey,
+    trustAvailability: byKey.trustAvailability,
+    cleanOptions: byKey.cleanOptions,
+    bullpenPressure: byKey.bullpenPressure,
+    coverageSafety: byKey.coverageSafety,
+    depthSafety: byKey.depthSafety,
+    supportingCounts: { totalBullpenArms: cards.length, activeBullpenArms: cards.length - unavailable.length },
+  }
+}
 
 // Board payloads shaped like /api/bullpen/teams/:id/board.
 function makeBoard({ teamName, abbr, state, confidence = 'high', metrics, cardsByStatus = {} }) {
@@ -66,6 +209,7 @@ function makeBoard({ teamName, abbr, state, confidence = 'high', metrics, cardsB
     roster_status: null,
     stress: null,
     total_pitchers: metrics.total_relievers,
+    team_shape: buildTeamShape(groups, state),
   }
 }
 
@@ -83,6 +227,7 @@ function storyPitcher(id, name, roleLabel, status, overrides = {}) {
       sample_size: 4,
       evidence: ['4 appearances in the recent window'],
     },
+    pitcher_labels: authoredPitcherLabels(roleLabel, status),
     reasons: [],
     limitations: [],
     ...overrides,

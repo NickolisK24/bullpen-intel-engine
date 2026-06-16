@@ -128,6 +128,19 @@ class TestCard:
         card = build_card('A', 7, None, availability('Monitor', data_state='missing'))
         assert card['fatigue_score'] is None
 
+    def test_card_carries_backend_authored_pitcher_labels(self):
+        card = build_card(
+            'A',
+            7,
+            12,
+            availability('Available'),
+            role={'role_key': 'late_high_leverage', 'confidence': 'high', 'sample_size': 4},
+        )
+        assert card['pitcher_labels']['role']['label'] == 'Trust Arm'
+        assert card['pitcher_labels']['role']['source'] == 'backend:role_key:late_high_leverage'
+        assert card['pitcher_labels']['read']['label'] == 'Clean Option'
+        assert card['pitcher_labels']['read']['source'] == 'backend:availability_status'
+
 
 class TestShortReason:
     def test_available_uses_positive_plain_language(self):
@@ -175,6 +188,14 @@ class TestPayload:
         assert payload['stress']['state'] == payload['context']['health']['state']
         assert payload['stress']['label'] == 'Monitoring'
         assert 'score' not in payload['stress']
+        assert payload['team_shape']['source'] == 'backend'
+        assert [read['key'] for read in payload['team_shape']['reads']] == [
+            'trustAvailability',
+            'cleanOptions',
+            'bullpenPressure',
+            'coverageSafety',
+            'depthSafety',
+        ]
         assert payload['visibility'] == {
             'active_count': 2,
             'default_visible_count': 2,

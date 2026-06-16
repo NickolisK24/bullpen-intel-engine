@@ -64,14 +64,6 @@ const READ_PRIORITY = {
   'Limited Read': 4,
 }
 
-const STATUS_TO_READ = {
-  Available: 'Clean Option',
-  Monitor: 'Watch Arm',
-  Limited: 'Rest-Restricted',
-  Avoid: 'Rest-Restricted',
-  Unavailable: 'Unavailable',
-}
-
 const NON_PLAYER_NAME_PHRASES = new Set([
   'active mlb',
   'avoid',
@@ -271,7 +263,7 @@ function roleLabel(entry) {
 }
 
 function readLabelForPitcher(entry) {
-  return entry?.labels?.read?.label || STATUS_TO_READ[entry?.status] || 'Limited Read'
+  return entry?.labels?.read?.label || 'Limited Read'
 }
 
 function roleRank(entry) {

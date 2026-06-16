@@ -2,10 +2,10 @@
 
 Logic-foundation branch. This document audits how the current team reads weight
 relievers, proposes a role-influence hierarchy, evaluates each team read against
-it, and walks several example bullpens. The accompanying module
-(`frontend/src/utils/teamWeighting.js`) is an **internal** foundation: it is not
-wired into any UI surface, exposes no public score, ranking, leaderboard, or
-grade, and changes no public label.
+it, and walks several example bullpens. The current implementation lives in
+`backend/services/team_bullpen_shape.py`; the frontend only consumes the
+backend-authored public reads. It exposes no public score, ranking, leaderboard,
+or grade, and changes no public label.
 
 The question this branch teaches the system to ask is the difference between
 "how many arms are available?" and "how many meaningful options are available?"
@@ -14,8 +14,8 @@ The question this branch teaches the system to ask is the difference between
 
 ## Deliverable #1 — Weighting Audit
 
-Source of truth: `frontend/src/utils/teamBullpenScoring.js` (team reads) and
-`frontend/src/utils/pitcherLabels.js` (role + read labels).
+Source of truth: `backend/services/team_bullpen_shape.py` (team reads) and
+`backend/services/pitcher_public_labels.py` (role + read labels).
 
 ### Trust Arm Availability (`trustAvailability`)
 - **Current weighting:** already role-scoped — only Trust Arms are counted.
