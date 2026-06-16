@@ -56,6 +56,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Open .env and set DATABASE_URL to match the database you created, e.g.:
 #   DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/baseballos
+# DATABASE_URL is required. Local development refuses non-local database hosts.
 
 # 4) Apply the existing database migrations
 #    (Do NOT run `flask db init` — the migrations/ folder already exists.)
@@ -191,8 +192,8 @@ The one optional frontend variable lives in `frontend/.env`
 
 | Variable | Where | Required? | Default | Purpose / Example |
 |----------|-------|-----------|---------|-------------------|
-| `APP_ENV` | backend | No | `development` | Selects the config: `development` (debug on, safe local defaults) or `production` (debug off, fails fast on unsafe config). |
-| `DATABASE_URL` | backend | **Yes** (required in production) | `postgresql://postgres:password@localhost/baseballos` | PostgreSQL connection string. A `postgres://` URL is auto-normalized to `postgresql://`. Example: `postgresql://postgres:pw@localhost:5432/baseballos` |
+| `APP_ENV` | backend | No | `development` | Selects the config: `development` (debug on, explicit local DB required), `test` (test DB only), or `production` (debug off, fails fast on unsafe config). |
+| `DATABASE_URL` | backend | **Yes** | (none) | PostgreSQL connection string. Local development must point at a local database, for example `postgresql://postgres:pw@localhost:5432/baseballos`. Hosted URLs are accepted only with `APP_ENV=production`. |
 | `FLASK_APP` | backend | Recommended | (none) | Entry point for the `flask` CLI. Set to `app.py`. |
 | `SECRET_KEY` | backend | Recommended (required in production) | `dev-secret-key` | Flask secret. Fine to leave default locally; with `APP_ENV=production` the app refuses to start on the dev default. |
 | `MLB_API_BASE` | backend | No | `https://statsapi.mlb.com/api/v1` | MLB Stats API base URL. The default is correct for everyone. |
@@ -235,8 +236,9 @@ curl -X POST http://localhost:5000/api/bullpen/sync \
 ```
 
 > Note: config is selected by `APP_ENV` (`development` by default, or `production`).
-> `development` enables debug and the safe local defaults; `production` disables
-> debug and fails fast if `SECRET_KEY` (non-default) and `DATABASE_URL` aren't set.
+> `development` enables debug but still requires an explicit local `DATABASE_URL`;
+> `production` disables debug and fails fast if `SECRET_KEY` (non-default),
+> `DATABASE_URL`, or `ADMIN_API_TOKEN` aren't set.
 > See "Deployment notes" below.
 
 ---

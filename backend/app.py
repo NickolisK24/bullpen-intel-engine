@@ -77,9 +77,8 @@ def _init_scheduler(app):
 
 
 def create_app(config_name=None):
-    # Select config from APP_ENV (development | production), defaulting to
-    # development so the local workflow needs no extra setup. Pass an explicit
-    # config_name to override (e.g. in scripts).
+    # Select config from APP_ENV (development | test | production), defaulting
+    # to development. Pass an explicit config_name to override (e.g. in scripts).
     if config_name is None:
         config_name = os.environ.get('APP_ENV', 'development')
     if config_name not in config:

@@ -14,6 +14,7 @@ POSITIVE_CATEGORY_CODES = {
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.delenv('AUTO_SYNC', raising=False)
+    monkeypatch.setenv('DATABASE_URL', 'sqlite:///:memory:')
     app = create_app('development')
     return app.test_client()
 

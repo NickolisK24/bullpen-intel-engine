@@ -11,6 +11,10 @@ backend/logs/
 # Environment
 .env
 .env.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
 
 # Editors
 .vscode/

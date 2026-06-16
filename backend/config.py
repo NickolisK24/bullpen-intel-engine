@@ -1,30 +1,78 @@
 import os
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
-load_dotenv()
+if os.environ.get('PYTHON_DOTENV_DISABLED', '').lower() not in {'1', 'true', 'yes', 'on'}:
+    load_dotenv()
 
-# Default local development database. Overridden by DATABASE_URL in any real
-# environment (see ProductionConfig, which refuses to fall back to this).
-_DEFAULT_DEV_DB = 'postgresql://postgres:password@localhost:5432/baseballos'
 _DEV_SECRET = 'dev-secret-key'
+_LOCAL_DB_HOSTS = {'localhost', '127.0.0.1', '::1', 'host.docker.internal'}
+_CI_DB_HOSTS = {'postgres'}
 
 
 def _normalize_db_url(url):
     """
     Some managed hosts (Render, Heroku, Supabase) hand out `postgres://` URLs,
     which SQLAlchemy 2.x no longer accepts. Normalize them to `postgresql://`
-    so the same DATABASE_URL works locally and in production unchanged.
+    so hosted production DATABASE_URL values work when APP_ENV=production.
     """
     if url and url.startswith('postgres://'):
         return url.replace('postgres://', 'postgresql://', 1)
     return url
 
 
+def _is_local_database_url(url):
+    parsed = urlparse(url or '')
+    scheme = parsed.scheme.lower()
+    if scheme == 'sqlite':
+        return True
+    if scheme not in {'postgres', 'postgresql'}:
+        return False
+
+    host = (parsed.hostname or '').lower()
+    if host in _LOCAL_DB_HOSTS:
+        return True
+
+    database = (parsed.path or '').lstrip('/').lower()
+    return (
+        os.environ.get('CI') in {'1', 'true', 'True'}
+        and host in _CI_DB_HOSTS
+        and 'test' in database
+    )
+
+
+def _database_url_for_env(app_env):
+    if app_env == 'test':
+        return (
+            os.environ.get('TEST_DATABASE_URL')
+            or os.environ.get('DATABASE_URL')
+        )
+    return os.environ.get('DATABASE_URL')
+
+
+def _configure_database(app, app_env):
+    database_url = _database_url_for_env(app_env)
+    if not database_url:
+        raise RuntimeError(
+            'DATABASE_URL is not set. Set it to a local database to run locally.'
+        )
+
+    database_url = _normalize_db_url(database_url)
+    if app_env != 'production' and not _is_local_database_url(database_url):
+        parsed = urlparse(database_url)
+        host = parsed.hostname or 'unknown'
+        raise RuntimeError(
+            'DATABASE_URL must point to a local database when APP_ENV is not '
+            f'production; refusing to start with non-local database host {host!r}.'
+        )
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', _DEV_SECRET)
-    SQLALCHEMY_DATABASE_URI = _normalize_db_url(
-        os.environ.get('DATABASE_URL', _DEFAULT_DEV_DB)
-    )
+    SQLALCHEMY_DATABASE_URI = None
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MLB_API_BASE = os.environ.get('MLB_API_BASE', 'https://statsapi.mlb.com/api/v1')
 
@@ -67,12 +115,16 @@ class Config:
 
     @staticmethod
     def init_app(app):
-        """Per-environment validation/setup hook. No-op by default."""
-        pass
+        """Per-environment validation/setup hook."""
+        _configure_database(app, app.config.get('APP_ENV', 'development'))
 
 
 class DevelopmentConfig(Config):
     DEBUG = True
+
+
+class TestingConfig(Config):
+    TESTING = True
 
 
 class ProductionConfig(Config):
@@ -90,11 +142,7 @@ class ProductionConfig(Config):
                 'SECRET_KEY must be set to a strong, unique value when '
                 'APP_ENV=production (the development default is not allowed).'
             )
-        if not os.environ.get('DATABASE_URL'):
-            raise RuntimeError(
-                'DATABASE_URL must be set when APP_ENV=production — refusing to '
-                'fall back to the localhost development database.'
-            )
+        _configure_database(app, 'production')
         if not app.config.get('ADMIN_API_TOKEN'):
             raise RuntimeError(
                 'ADMIN_API_TOKEN must be set when APP_ENV=production so that '
@@ -105,6 +153,7 @@ class ProductionConfig(Config):
 
 config = {
     'development': DevelopmentConfig,
+    'test': TestingConfig,
     'production': ProductionConfig,
     'default': DevelopmentConfig,
 }
