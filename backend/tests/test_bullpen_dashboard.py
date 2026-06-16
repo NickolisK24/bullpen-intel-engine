@@ -150,6 +150,66 @@ class TestDashboardEndpoint:
         assert body['four_beat_stories']['selection_made'] is False
         assert body['four_beat_stories']['items']
 
+    def test_four_beat_story_and_board_share_clean_trust_authority(self, client):
+        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = True
+        team_id = 116
+        with client.application.app_context():
+            jansen = _seed_pitcher(
+                'Kenley Jansen',
+                team_id=team_id,
+                mlb_id=11601,
+                raw_score=10,
+                innings=[1.0, 1.0, 1.0],
+                days_ago=[2, 20, 31],
+                roster_status=STATUS_ACTIVE,
+                games_started=[0, 0, 0],
+            )
+            older_log = (
+                GameLog.query
+                .filter_by(pitcher_id=jansen.id)
+                .order_by(GameLog.game_date.asc())
+                .first()
+            )
+            older_log.save = True
+            older_log.save_situation = True
+
+            for idx in range(5):
+                _seed_pitcher(
+                    f'Detroit Clean Arm {idx}',
+                    team_id=team_id,
+                    mlb_id=11610 + idx,
+                    raw_score=10,
+                    innings=1.0,
+                    days_ago=2,
+                    roster_status=STATUS_ACTIVE,
+                    games_started=0,
+                )
+            db.session.commit()
+
+        dashboard = client.get('/api/bullpen/dashboard').get_json()
+        story = next(
+            item for item in dashboard['four_beat_stories']['items']
+            if item['team_id'] == team_id
+        )
+        board = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
+        board_clean_trust_names = [
+            card['name']
+            for group in board['groups']
+            for card in group['pitchers']
+            if (card['pitcher_labels']['read']['key'] == 'clean_option'
+                and card['pitcher_labels']['role']['key'] == 'trust_arm')
+        ]
+        implication = next(
+            beat for beat in story['beats']
+            if beat['key'] == 'implication'
+        )
+
+        assert story['rule_key'] == 'pressure_distribution'
+        assert story['computed']['clean_trust_count'] == 1
+        assert board_clean_trust_names == ['Kenley Jansen']
+        assert implication['slots']['clean_trust_names'] == 'Kenley Jansen'
+        assert story['computed']['clean_trust_count'] == len(board_clean_trust_names)
+
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
             _seed_pitcher('Solo', team_id=1, mlb_id=1)

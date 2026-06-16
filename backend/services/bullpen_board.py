@@ -278,6 +278,7 @@ def build_card(
     eligibility=None,
     roster_status=None,
     visibility=None,
+    pitcher_labels=None,
 ):
     """Build a single display card from existing availability output."""
     availability = availability or {}
@@ -307,7 +308,7 @@ def build_card(
         'roster_status': roster_status,
         # Public role/read chips are authored on the backend so frontend
         # consumers render them without re-deriving classification.
-        'pitcher_labels': build_pitcher_labels(
+        'pitcher_labels': pitcher_labels or build_pitcher_labels(
             availability=availability,
             role=role,
             eligibility=eligibility,
@@ -385,6 +386,7 @@ def build_board_payload(
             eligibility=record.get('eligibility'),
             roster_status=record.get('roster_status'),
             visibility=record.get('visibility'),
+            pitcher_labels=record.get('pitcher_labels'),
         )
         for record in records
     ]
