@@ -48,6 +48,12 @@ function DistributionRows({ title, rows, total }) {
 
 function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel }) {
   const maxCount = rows.reduce((max, row) => Math.max(max, row.count), 0)
+  const rowSummary = rows
+    .map((row) => {
+      const pct = getPct(row.count, total)
+      return `${row.label}: ${row.count.toLocaleString()} (${pct}%)`
+    })
+    .join('; ')
 
   return (
     <section className="rounded border border-dirt bg-chalk/25 p-3" aria-label={ariaLabel}>
@@ -66,7 +72,7 @@ function AvailabilityDistributionBar({ rows, total, summary, title, ariaLabel })
       <div
         className="mt-3 flex h-3 overflow-hidden rounded-full border border-dirt bg-dirt"
         role="img"
-        aria-label={`${ariaLabel}. ${summary}`}
+        aria-label={`${ariaLabel}. ${summary}. ${rowSummary}`}
       >
         {rows.map((row) => {
           const pct = total > 0 ? (row.count / total) * 100 : 0

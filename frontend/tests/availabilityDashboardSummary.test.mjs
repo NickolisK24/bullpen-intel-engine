@@ -109,6 +109,8 @@ test('renders compact availability summary with secondary evidence collapsed', (
   assert.ok(htmlIncludes(collapsedHtml, 'Availability Summary'))
   assert.ok(htmlIncludes(collapsedHtml, 'Availability Distribution'))
   assert.ok(htmlIncludes(collapsedHtml, 'role="img"'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Availability distribution. Current availability is concentrated in Monitor status.'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Monitor: 704 (100%)'))
   assert.ok(htmlIncludes(collapsedHtml, 'Current availability is concentrated in Monitor status.'))
   assert.ok(htmlIncludes(collapsedHtml, 'Available: 0'))
   assert.ok(htmlIncludes(collapsedHtml, 'Monitor: 704'))
