@@ -11,8 +11,71 @@ const GROUP_META = {
   Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
 }
 
-function card(pitcherId, name, status, overrides = {}) {
+const ROLE_LABELS_BY_KEY = {
+  late_high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trust Arm', source: 'backend:test_fixture' },
+  high_leverage: { kind: 'role', key: 'trust_arm', label: 'Trust Arm', source: 'backend:test_fixture' },
+  setup_bridge: { kind: 'role', key: 'bridge_arm', label: 'Bridge Arm', source: 'backend:test_fixture' },
+  middle_relief: { kind: 'role', key: 'bridge_arm', label: 'Bridge Arm', source: 'backend:test_fixture' },
+  long_multi_inning: { kind: 'role', key: 'coverage_arm', label: 'Coverage Arm', source: 'backend:test_fixture' },
+  depth: { kind: 'role', key: 'depth_arm', label: 'Depth Arm', source: 'backend:test_fixture' },
+}
+
+const LIMITED_ROLE_LABEL = { kind: 'role', key: 'limited_read', label: 'Limited Read', source: 'backend:test_fixture' }
+
+const READ_LABELS_BY_STATUS = {
+  Available: { kind: 'read', key: 'clean_option', label: 'Clean Option', source: 'backend:test_fixture' },
+  Monitor: { kind: 'read', key: 'watch_arm', label: 'Watch Arm', source: 'backend:test_fixture' },
+  Limited: { kind: 'read', key: 'rest_restricted', label: 'Rest-Restricted', source: 'backend:test_fixture' },
+  Avoid: { kind: 'read', key: 'rest_restricted', label: 'Rest-Restricted', source: 'backend:test_fixture' },
+  Unavailable: { kind: 'read', key: 'unavailable', label: 'Unavailable', source: 'backend:test_fixture' },
+}
+
+const LIMITED_READ_LABEL = { kind: 'read', key: 'limited_read', label: 'Limited Read', source: 'backend:test_fixture' }
+const UNAVAILABLE_READ_LABEL = { kind: 'read', key: 'unavailable', label: 'Unavailable', source: 'backend:test_fixture' }
+
+const INACTIVE_ROSTER_STATUSES = new Set([
+  'IL_10',
+  'IL_15',
+  'IL_60',
+  'MINORS',
+  'OPTIONED',
+  'DFA',
+  'NON_ROSTER',
+  '40_MAN_ONLY',
+])
+
+function authoredPitcherLabels(card) {
+  if (card.pitcher_labels || card.pitcherLabels) return card.pitcher_labels || card.pitcherLabels
+
+  const roleKey = card.role?.role_key
+  const role = card.role?.confidence === 'none' || card.role?.confidence === 'low'
+    ? LIMITED_ROLE_LABEL
+    : ROLE_LABELS_BY_KEY[roleKey] || LIMITED_ROLE_LABEL
+  const rosterStatus = card.roster_status || {}
+  const rosterUnavailable = (
+    rosterStatus.is_active_mlb === false ||
+    rosterStatus.is_inactive_context === true ||
+    INACTIVE_ROSTER_STATUSES.has(rosterStatus.status)
+  )
+  const staleOrMissing = ['stale', 'missing', 'incomplete', 'failed'].includes(String(card.data_state || '').toLowerCase())
+  const read = rosterUnavailable
+    ? UNAVAILABLE_READ_LABEL
+    : staleOrMissing
+      ? LIMITED_READ_LABEL
+      : READ_LABELS_BY_STATUS[card.availability_status] || LIMITED_READ_LABEL
+
+  return { role, read }
+}
+
+function normalizeCardForBackendPayload(card) {
   return {
+    ...card,
+    pitcher_labels: authoredPitcherLabels(card),
+  }
+}
+
+function card(pitcherId, name, status, overrides = {}) {
+  return normalizeCardForBackendPayload({
     pitcher_id: pitcherId,
     name,
     availability_status: status,
@@ -23,12 +86,12 @@ function card(pitcherId, name, status, overrides = {}) {
     reasons: [],
     limitations: ['No injury information available'],
     ...overrides,
-  }
+  })
 }
 
 function buildGroups(cardsByStatus) {
   return BOARD_GROUP_ORDER.map(status => {
-    const pitchers = cardsByStatus[status] || []
+    const pitchers = (cardsByStatus[status] || []).map(normalizeCardForBackendPayload)
     return {
       status,
       label: GROUP_META[status].label,

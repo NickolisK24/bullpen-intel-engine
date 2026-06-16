@@ -24,6 +24,8 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.bullpen_stress import build_bullpen_stress
+from services.pitcher_public_labels import build_pitcher_labels
+from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
 
 
@@ -303,6 +305,14 @@ def build_card(
         'eligibility': eligibility,
         # Roster status is separate from workload freshness and role inference.
         'roster_status': roster_status,
+        # Public role/read chips are authored on the backend so frontend
+        # consumers render them without re-deriving classification.
+        'pitcher_labels': build_pitcher_labels(
+            availability=availability,
+            role=role,
+            eligibility=eligibility,
+            roster_status=roster_status,
+        ),
         # Visibility is the explicit board/story trust contract. Default board
         # payload tests pass already-visible records, so a safe visible default
         # preserves the pure grouping API.
@@ -383,6 +393,7 @@ def build_board_payload(
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
     stress = build_bullpen_stress(context)
+    team_shape = build_team_bullpen_shape(groups, context=context)
     visibility = summarize_visibility(cards)
 
     return {
@@ -395,6 +406,7 @@ def build_board_payload(
         'group_order': list(BOARD_GROUP_ORDER),
         'context': context,
         'stress': stress,
+        'team_shape': team_shape,
         'visibility': visibility,
         'groups': groups,
         'total_pitchers': grouped_total,

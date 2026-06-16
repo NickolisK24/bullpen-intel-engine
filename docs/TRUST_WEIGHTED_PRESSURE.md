@@ -10,7 +10,7 @@ label is derived.
 
 A Rest-Restricted Trust Arm does not create the same pressure as a Rest-Restricted
 Depth Arm. Pressure is now derived from role-weighted stress, consuming the
-internal influence hierarchy from `teamWeighting.js`:
+backend-authored influence hierarchy from `backend/services/team_bullpen_shape.py`:
 
 | Role | Influence weight | Pressure when restricted/unavailable |
 | --- | --- | --- |
@@ -91,8 +91,8 @@ is exposed.
 
 ## Scope and constraints
 
-- Changed only `bullpenPressure` (and added a Bridge crosstab in
-  `summarizePitchers`) in `frontend/src/utils/teamBullpenScoring.js`.
+- Changed only `bullpenPressure` (and added a Bridge crosstab in the team-shape
+  summary now owned by `backend/services/team_bullpen_shape.py`).
 - Trust Arm Availability, Clean Options, Coverage Safety, and Depth Safety are
   untouched.
 - No backend, schema, sync, availability/fatigue engine, or page-structure
