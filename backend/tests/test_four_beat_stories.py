@@ -337,6 +337,8 @@ def test_near_collision_stress_transfer_pens_surface_concentration_specifics():
     assert 'Marcus Slate and Jon Borough' in mets_text
     assert round(tampa_story['computed']['workload']['top_share'], 2) == 0.66
     assert round(mets_story['computed']['workload']['top_share'], 2) == 0.82
+    assert tampa_story['computed']['workload']['concentration_level'] == 'moderate'
+    assert mets_story['computed']['workload']['concentration_level'] == 'severe'
     assert tampa_story['computed']['availability']['total'] == 8
     assert mets_story['computed']['availability']['total'] == 11
 

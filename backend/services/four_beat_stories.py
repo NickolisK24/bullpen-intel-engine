@@ -45,6 +45,13 @@ BEAT_IMPLICATION = 'implication'
 RECENT_WORKLOAD_WINDOW_DAYS = BULLPEN_CONTEXT_WINDOW_DAYS
 CONCENTRATED_TOP_ARM_COUNT = 3
 CONCENTRATED_TOP_SHARE_MIN = 0.65
+CONCENTRATION_DESCRIPTOR_MODERATE_MIN = CONCENTRATED_TOP_SHARE_MIN
+CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN = 0.70
+CONCENTRATION_DESCRIPTOR_SEVERE_MIN = 0.80
+CONCENTRATION_DESCRIPTOR_MODERATE = 'some concentration'
+CONCENTRATION_DESCRIPTOR_CONCENTRATED = 'a concentrated workload'
+CONCENTRATION_DESCRIPTOR_SEVERE = 'a heavily concentrated workload'
+CONCENTRATION_DESCRIPTOR_NONE = 'no concentration'
 THIN_AVAILABLE_COUNT_MAX = 3
 THIN_AVAILABLE_SHARE_MAX = 0.30
 LIGHT_HIGH_RISK_LEVELS = {'HIGH', 'CRITICAL'}
@@ -58,6 +65,9 @@ THRESHOLDS = {
     'recent_workload_window_days': RECENT_WORKLOAD_WINDOW_DAYS,
     'concentrated_top_arm_count': CONCENTRATED_TOP_ARM_COUNT,
     'concentrated_top_share_min': CONCENTRATED_TOP_SHARE_MIN,
+    'concentration_descriptor_moderate_min': CONCENTRATION_DESCRIPTOR_MODERATE_MIN,
+    'concentration_descriptor_concentrated_min': CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN,
+    'concentration_descriptor_severe_min': CONCENTRATION_DESCRIPTOR_SEVERE_MIN,
     'thin_available_count_max': THIN_AVAILABLE_COUNT_MAX,
     'thin_available_share_max': THIN_AVAILABLE_SHARE_MAX,
     'light_high_risk_levels': sorted(LIGHT_HIGH_RISK_LEVELS),
@@ -104,7 +114,7 @@ RULES = {
 SKELETONS = {
     RULE_STRESS_TRANSFER: {
         BEAT_SIGNAL: 'The {team_name} are transferring bullpen pressure onto a smaller group tonight.',
-        BEAT_EVIDENCE: 'The top {top_arm_count} arms have carried {top_share_pct}% of recent relief pitches, while {available_count} of {total_bullpen_arms} bullpen arms are Available.',
+        BEAT_EVIDENCE: 'The top {top_arm_count} arms show {concentration_descriptor}, carrying {top_share_pct}% of recent relief pitches, while {available_count} of {total_bullpen_arms} bullpen arms are Available.',
         BEAT_MECHANISM: 'That combination usually means the next close innings lean harder on the remaining clean late-inning path.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} the clean Trust Arm path; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean options behind it.',
         'implication_without_clean_trust': 'Tonight, no Trust Arm is a clean option; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean options outside that lane.',
@@ -152,6 +162,29 @@ def _pct(value):
 def _format_decimal(value):
     number = round(float(value or 0), 1)
     return str(int(number)) if number.is_integer() else f'{number:.1f}'
+
+
+def _concentration_descriptor(top_share):
+    share = float(top_share or 0)
+    if share >= CONCENTRATION_DESCRIPTOR_SEVERE_MIN:
+        return {
+            'level': 'severe',
+            'descriptor': CONCENTRATION_DESCRIPTOR_SEVERE,
+        }
+    if share >= CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN:
+        return {
+            'level': 'concentrated',
+            'descriptor': CONCENTRATION_DESCRIPTOR_CONCENTRATED,
+        }
+    if share >= CONCENTRATION_DESCRIPTOR_MODERATE_MIN:
+        return {
+            'level': 'moderate',
+            'descriptor': CONCENTRATION_DESCRIPTOR_MODERATE,
+        }
+    return {
+        'level': 'none',
+        'descriptor': CONCENTRATION_DESCRIPTOR_NONE,
+    }
 
 
 def _plural(value, singular, plural=None):
@@ -252,6 +285,7 @@ def _workload_summary(team_inputs):
     top_share = top_total / total_pitches if total_pitches > 0 else 0
     top_one_share = totals[0] / total_pitches if total_pitches > 0 and totals else 0
     per_arm = total_pitches / participant_count if participant_count else 0
+    concentration = _concentration_descriptor(top_share)
 
     return {
         'pitch_by_pitcher': pitch_by_pitcher,
@@ -261,6 +295,8 @@ def _workload_summary(team_inputs):
         'top_pitch_total': top_total,
         'top_share': top_share,
         'top_one_share': top_one_share,
+        'concentration_level': concentration['level'],
+        'concentration_descriptor': concentration['descriptor'],
         'per_arm_pitches': per_arm,
     }
 
@@ -390,6 +426,7 @@ def _base_slots(inputs):
         'window_days': RECENT_WORKLOAD_WINDOW_DAYS,
         'top_arm_count': workload['top_arm_count'],
         'top_share_pct': _pct(workload['top_share']),
+        'concentration_descriptor': workload['concentration_descriptor'],
         'participant_count': workload['participant_count'],
         'per_arm_pitches': _format_decimal(workload['per_arm_pitches']),
         'available_count': availability['available'],
