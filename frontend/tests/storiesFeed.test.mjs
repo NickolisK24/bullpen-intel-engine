@@ -22,19 +22,17 @@ const {
   DEFAULT_STORY_FILTER,
   FEED_EMPTY_COPY,
   FEED_EMPTY_SUPPORT_COPY,
+  FOUR_BEAT_STORIES_FALLBACK,
   STORY_FILTERS,
   filterStoryFeed,
   getActiveStoryFilterLabel,
   getFourBeatStoryFeed,
   getFeedEmptyState,
   getFilterCounts,
-  getStoryFeed,
   getStoryFilterOption,
   normalizeStoryFilter,
 } =
   await server.ssrLoadModule('/src/components/stories/storiesFeedView.js')
-const { getHeroStory, getTodayWatchItems } =
-  await server.ssrLoadModule('/src/components/home/homeIntelligenceView.js')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -66,59 +64,6 @@ const dashboard = {
     notes: [],
   },
   freshness: { data_through: '2026-06-05', last_successful_sync: '2026-06-06T08:00:00Z', is_current: true, sync_status: 'success' },
-}
-
-const observations = {
-  contractState: 'available',
-  observations: [
-    {
-      family: 'workload_pressure',
-      severity: 'elevated',
-      title: 'x',
-      summary: 'y',
-      evidence: [
-        {
-          label: 'Elevated workload record count',
-          value: 3,
-          source: 'test_observation_feed',
-          source_type: 'trusted_platform_state',
-          freshness_status: 'current',
-        },
-      ],
-      freshness: { status: 'current' },
-      confidence: { status: 'medium' },
-    },
-    {
-      family: 'trust',
-      severity: 'significant',
-      title: 'x',
-      summary: 'y',
-      evidence: [
-        {
-          label: 'Trust limitation state',
-          value: 'represented',
-          source: 'test_observation_feed',
-          source_type: 'trusted_platform_state',
-          freshness_status: 'current',
-        },
-      ],
-      freshness: { status: 'current' },
-      confidence: { status: 'medium' },
-    },
-  ],
-}
-
-const failClosedObservations = {
-  contractState: 'fail_closed',
-  isFailClosed: true,
-  observations: observations.observations,
-  freshness: { status: 'unavailable', reason_code: 'live_observation_source_unavailable' },
-  limitations: [
-    {
-      limitation_type: 'live_observation_source_unavailable',
-      summary: 'Current bullpen observations are unavailable.',
-    },
-  ],
 }
 
 const fourBeatDashboard = {
@@ -165,74 +110,130 @@ const fourBeatDashboard = {
           },
         ],
       },
+      {
+        story_id: '120:pressure_distribution',
+        rule_key: 'pressure_distribution',
+        rule_label: 'Pressure Distribution',
+        team_id: 120,
+        team_name: 'Washington Nationals',
+        team_abbreviation: 'WSH',
+        kicker: 'Pressure Distribution',
+        tone: 'rest',
+        category: 'rested',
+        title: 'The Washington Nationals have a broader bullpen path tonight.',
+        body: 'Recent relief work has been spread across the group, leaving more clean ways through the late innings.',
+        href: '/bullpen?view=board&team=WSH&source=four-beat-stories',
+        cta: 'Open the team board',
+        strength: 86,
+        beats: [
+          {
+            key: 'signal',
+            label: 'Signal',
+            text: 'The Washington Nationals have a broader bullpen path tonight.',
+          },
+          {
+            key: 'evidence',
+            label: 'Evidence',
+            text: 'Six bullpen arms have participated recently without one arm carrying the whole share.',
+          },
+          {
+            key: 'mechanism',
+            label: 'Mechanism',
+            text: 'That shape gives the late innings more than one usable lane.',
+          },
+          {
+            key: 'implication',
+            label: 'Implication',
+            text: 'The read is about distribution, not a team ranking.',
+          },
+        ],
+      },
+      {
+        story_id: '137:workload_watch',
+        rule_key: 'workload_watch',
+        rule_label: 'Workload Watch',
+        team_id: 137,
+        team_name: 'San Francisco Giants',
+        team_abbreviation: 'SF',
+        kicker: 'Workload Watch',
+        tone: 'watch',
+        title: 'The San Francisco Giants are leaning on a familiar core.',
+        body: 'The same relievers have carried the recent late-inning work.',
+        href: '/bullpen?view=board&team=SF&source=four-beat-stories',
+        cta: 'Open the team board',
+        strength: 74,
+        beats: [
+          {
+            key: 'signal',
+            label: 'Signal',
+            text: 'The San Francisco Giants are leaning on a familiar core.',
+          },
+          {
+            key: 'evidence',
+            label: 'Evidence',
+            text: 'Three relievers account for most of the recent relief pitches.',
+          },
+          {
+            key: 'mechanism',
+            label: 'Mechanism',
+            text: 'A narrow workload share can make the board look calm while the same arms keep appearing.',
+          },
+          {
+            key: 'implication',
+            label: 'Implication',
+            text: 'The next useful read is whether clean support appears behind that group.',
+          },
+        ],
+      },
+      {
+        story_id: 'league:context',
+        rule_key: 'league_context',
+        rule_label: 'League Context',
+        team_id: null,
+        team_name: null,
+        team_abbreviation: null,
+        kicker: 'League Context',
+        tone: 'neutral',
+        category: 'league',
+        title: 'The league-wide bullpen picture is carrying mixed signals.',
+        body: 'Some clubs have stress, some have room, and the feed separates those reads by lane.',
+        href: '/dashboard',
+        cta: 'See the league view',
+        strength: 62,
+        beats: [
+          {
+            key: 'signal',
+            label: 'Signal',
+            text: 'The league-wide bullpen picture is carrying mixed signals.',
+          },
+          {
+            key: 'evidence',
+            label: 'Evidence',
+            text: 'Pressure, rest, and workload-watch stories all appear in the same feed.',
+          },
+          {
+            key: 'mechanism',
+            label: 'Mechanism',
+            text: 'The lanes keep team-specific reads separate from the league picture.',
+          },
+          {
+            key: 'implication',
+            label: 'Implication',
+            text: 'The full feed can stay browseable without returning to the old story path.',
+          },
+        ],
+      },
     ],
   },
 }
 
-const continuityNote = 'The same core relievers have carried most of the bullpen workload over the last 10 days.'
-const contextNote = 'Recent bullpen work has picked up: 4 appearances and 72 pitches over the last 7 days, up from 2 appearances and 24 pitches the week before.'
-
-function dashboardWithMonitoringContinuity(base = dashboard) {
-  return {
-    ...base,
-    landscape: {
-      ...base.landscape,
-      monitoring_concentration: base.landscape.monitoring_concentration.map((entry, index) => (index === 0
-        ? {
-            ...entry,
-            continuity_note: continuityNote,
-            continuity: {
-              type: 'workload_concentration',
-              window_days: 10,
-              data_through_date: '2026-06-05',
-              evidence: { bullpen_appearances: 10 },
-              limitations: [],
-            },
-          }
-        : entry)),
-    },
-  }
-}
-
-function dashboardWithMonitoringContext(base = dashboard) {
-  const entry = {
-    team_id: 141,
-    context_note: contextNote,
-    context: {
-      type: 'usage_demand',
-      window_days: 7,
-      data_through_date: '2026-06-05',
-      evidence: {
-        trend: 'increasing_demand',
-        bullpen_appearances_last_7: 4,
-        bullpen_appearances_prev_7: 2,
-        bullpen_pitches_last_7: 72,
-        bullpen_pitches_prev_7: 24,
-      },
-      limitations: [],
-    },
-  }
-  return {
-    ...base,
-    story_context: {
-      capability: 'bullpen_context_story_v1',
-      teams: {
-        141: {
-          ...entry,
-          by_type: {
-            usage_demand: entry,
-          },
-        },
-      },
-    },
-  }
-}
-
 // ── Feed view-model ─────────────────────────────────────────────────────────
 
-test('the feed derives deeper observations and adds browse categories', () => {
-  const feed = getStoryFeed(dashboard, observations)
-  assert.ok(feed.hasStories)
+test('four-beat feed normalizes backend-authored stories and browse categories', () => {
+  const feed = getFourBeatStoryFeed(fourBeatDashboard)
+
+  assert.equal(feed.hasStories, true)
+  assert.equal(feed.items.length, 4)
   const categories = new Set(feed.items.map(item => item.category))
   assert.ok(categories.has('stressed'))
   assert.ok(categories.has('rested'))
@@ -244,137 +245,27 @@ test('the feed derives deeper observations and adds browse categories', () => {
       assert.ok(item.teamName, `team story missing teamName: ${item.title}`)
     }
   }
+  assert.equal(feed.items[0].teamId, 141)
+  assert.equal(feed.items[0].category, 'stressed')
+  assert.equal(feed.items[0].beats.length, 4)
+  assert.equal(feed.items[2].category, 'watch')
 })
 
-test('four-beat feed normalizes backend-authored stories without touching current feed', () => {
-  const current = getStoryFeed(dashboard, observations)
-  const currentWithPayload = getStoryFeed(fourBeatDashboard, observations)
-  const fourBeat = getFourBeatStoryFeed(fourBeatDashboard)
+test('the live Stories path does not fetch observations or import the old story feed', () => {
+  const storiesSource = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
+  const feedSource = readFileSync(new URL('../src/components/stories/storiesFeedView.js', import.meta.url), 'utf8')
 
-  assert.deepEqual(
-    currentWithPayload.items.map(item => item.title),
-    current.items.map(item => item.title),
-  )
-  assert.equal(fourBeat.hasStories, true)
-  assert.equal(fourBeat.items.length, 1)
-  assert.equal(fourBeat.items[0].teamId, 141)
-  assert.equal(fourBeat.items[0].category, 'stressed')
-  assert.equal(fourBeat.items[0].beats.length, 4)
+  assert.equal(storiesSource.includes('getBullpenObservations'), false)
+  assert.equal(storiesSource.includes('observations.data'), false)
+  assert.equal(storiesSource.includes('VITE_FOUR_BEAT_STORIES_ENABLED'), false)
+  assert.equal(storiesSource.includes('getStoryFeed'), false)
+  assert.equal(storiesSource.includes('StoryPathSwitch'), false)
+  assert.equal(feedSource.includes('getBullpenStories'), false)
+  assert.equal(feedSource.includes('export function getStoryFeed'), false)
 })
 
-test('the live Stories component does not fetch the observations endpoint', () => {
-  const source = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
-
-  assert.equal(source.includes('getBullpenObservations'), false)
-  assert.equal(source.includes('observations.data'), false)
-})
-
-test('fail-closed observations do not add sample-derived story cards', () => {
-  const feed = getStoryFeed(dashboard, failClosedObservations)
-
-  assert.ok(feed.hasStories)
-  assert.equal(feed.items.some(item => item.sourceObservation), false)
-})
-
-test('the feed preserves story continuity without exposing internal memory language', () => {
-  const note = 'Core One and Core Two handled 8 of 10 bullpen appearances over the last 10 days.'
-  const feed = getStoryFeed({
-    ...dashboard,
-    continuity: {
-      capability: 'bullpen_continuity_v1',
-      teams: {
-        141: {
-          continuity_note: note,
-          continuity: {
-            type: 'workload_concentration',
-            window_days: 10,
-            data_through_date: '2026-06-05',
-            evidence: { bullpen_appearances: 10 },
-            limitations: [],
-          },
-          by_type: {
-            workload_concentration: {
-              continuity_note: note,
-              continuity: {
-                type: 'workload_concentration',
-                window_days: 10,
-                data_through_date: '2026-06-05',
-                evidence: { bullpen_appearances: 10 },
-                limitations: [],
-              },
-            },
-          },
-        },
-      },
-    },
-  }, observations)
-  const story = feed.items.find(item => item.teamId === 141)
-
-  assert.equal(story.continuity_note, note)
-  assert.equal(story.continuity.type, 'workload_concentration')
-  assert.ok(!JSON.stringify(feed).includes('Narrative Memory'))
-})
-
-test('the stories feed renders continuity when a story carries it', () => {
-  const html = render(React.createElement(StoriesView, {
-    dashboard: dashboardWithMonitoringContinuity(),
-    observations,
-  }))
-
-  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays box score looks calm. The bullpen does not.'))
-  assert.ok(htmlIncludes(html, continuityNote))
-  for (const phrase of [
-    'Narrative Memory',
-    'algorithm',
-    'model',
-    'confidence score',
-    'fatigue score',
-    'story has been developing',
-  ]) {
-    assert.ok(!htmlIncludes(html, phrase), `rendered forbidden phrase: ${phrase}`)
-  }
-})
-
-test('the stories feed renders context after continuity when a story carries both', () => {
-  const contextDashboard = dashboardWithMonitoringContext(dashboardWithMonitoringContinuity())
-  const feed = getStoryFeed(contextDashboard, observations)
-  const story = feed.items.find(item => item.teamId === 141)
-  const html = render(React.createElement(StoriesView, {
-    dashboard: contextDashboard,
-    observations,
-  }))
-  const observationIndex = html.indexOf('Observation')
-  const continuityIndex = html.indexOf(continuityNote)
-  const contextIndex = html.indexOf(contextNote)
-
-  assert.equal(story.continuity_note, continuityNote)
-  assert.equal(story.context_note, contextNote)
-  assert.equal(story.context.type, 'usage_demand')
-  assert.ok(observationIndex >= 0, 'observation section should render')
-  assert.ok(continuityIndex >= 0, 'continuity note should render')
-  assert.ok(contextIndex >= 0, 'context note should render')
-  assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
-  assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
-})
-
-test('the stories feed omits continuity when the field is missing', () => {
-  const html = render(React.createElement(StoriesView, { dashboard, observations }))
-
-  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays box score looks calm. The bullpen does not.'))
-  assert.ok(!htmlIncludes(html, continuityNote))
-})
-
-test('the feed is deeper than Today and does not repeat the flagship club', () => {
-  const hero = getHeroStory(dashboard)
-  const today = getTodayWatchItems(dashboard)
-  const feed = getStoryFeed(dashboard, observations)
-  assert.ok(feed.items.length > today.items.length)
-  assert.ok(!feed.items.some(item => item.teamId === hero.team.teamId))
-  assert.ok(!feed.items.some(item => /Milwaukee Brewers/.test(`${item.title} ${item.body}`)))
-})
-
-test('filters slice the feed by lane and the counts add up', () => {
-  const feed = getStoryFeed(dashboard, observations)
+test('filters slice the four-beat feed by lane and the counts add up', () => {
+  const feed = getFourBeatStoryFeed(fourBeatDashboard)
   const counts = getFilterCounts(feed.items)
   assert.equal(counts.all, feed.items.length)
   assert.equal(
@@ -402,7 +293,7 @@ test('filter metadata carries concise descriptions and active labels', () => {
 })
 
 test('missing and unknown categories degrade gracefully', () => {
-  const feed = getStoryFeed(dashboard, observations)
+  const feed = getFourBeatStoryFeed(fourBeatDashboard)
   const withUnknown = [
     ...feed.items,
     { title: 'Unlabeled bullpen note' },
@@ -417,8 +308,8 @@ test('missing and unknown categories degrade gracefully', () => {
   assert.equal(filterStoryFeed(withUnknown, 'mystery').length, withUnknown.length)
 })
 
-test('every feed story keeps a valid existing destination', () => {
-  const feed = getStoryFeed(dashboard, observations)
+test('every four-beat feed story keeps a valid existing destination', () => {
+  const feed = getFourBeatStoryFeed(fourBeatDashboard)
   for (const item of feed.items) {
     assert.ok(
       item.href.startsWith('/bullpen?') || item.href === '/dashboard' || item.href === '/trust',
@@ -429,39 +320,31 @@ test('every feed story keeps a valid existing destination', () => {
 
 // ── Page rendering ──────────────────────────────────────────────────────────
 
-test('the stories page renders as a feed-first surface beyond Today', () => {
-  const html = render(React.createElement(StoriesView, { dashboard, observations }))
+test('the stories page renders four-beat as the feed-first surface beyond Today', () => {
+  const html = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard }))
   assert.ok(htmlIncludes(html, 'STORIES'))
   assert.ok(htmlIncludes(html, 'What else BaseballOS is seeing today'))
   assert.ok(htmlIncludes(html, 'Descriptive bullpen notes.'))
   assert.ok(htmlIncludes(html, 'Beyond Today'))
   assert.ok(htmlIncludes(html, 'What Else BaseballOS Is Seeing'))
   assert.ok(htmlIncludes(html, 'bullpen storylines in play today'))
+  assert.ok(htmlIncludes(html, 'Signal'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Mechanism'))
+  assert.ok(htmlIncludes(html, 'Implication'))
   assert.ok(!htmlIncludes(html, 'Top Story'))
   assert.ok(!htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
 })
 
-test('four-beat story path defaults off even when backend payload is present', () => {
+test('four-beat stories render by default without a story-path switch', () => {
   const html = render(React.createElement(StoriesView, {
     dashboard: fourBeatDashboard,
-    observations,
   }))
 
+  assert.ok(!htmlIncludes(html, 'aria-label="Story path"'))
+  assert.ok(!htmlIncludes(html, 'Current'))
   assert.ok(!htmlIncludes(html, 'Four Beat'))
-  assert.ok(!htmlIncludes(html, 'Mechanism'))
-  assert.ok(!htmlIncludes(html, 'transferring bullpen pressure onto a smaller group'))
-})
-
-test('four-beat story path renders authored beats when enabled', () => {
-  const html = render(React.createElement(StoriesView, {
-    dashboard: fourBeatDashboard,
-    observations,
-    enableFourBeatStories: true,
-    initialStoryPath: 'fourBeat',
-  }))
-
-  assert.ok(htmlIncludes(html, 'Four Beat'))
   assert.ok(htmlIncludes(html, 'Signal'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Mechanism'))
@@ -473,7 +356,7 @@ test('four-beat story path renders authored beats when enabled', () => {
 })
 
 test('stories is the feed, not a second homepage', () => {
-  const html = render(React.createElement(StoriesView, { dashboard, observations }))
+  const html = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard }))
   // No giant Today hero: no Why It Matters box, no hero chips, no hero CTAs.
   assert.ok(!htmlIncludes(html, 'Why It Matters'))
   assert.ok(!htmlIncludes(html, 'Rested &amp; Ready'))
@@ -489,15 +372,15 @@ test('stories is the feed, not a second homepage', () => {
   // The scope row leads into filters and feed cards.
   const scopeIndex = html.indexOf('Beyond Today')
   const filterIndex = html.indexOf('Story filters')
-  const feedCardIndex = html.indexOf('box score looks calm')
+  const feedCardIndex = html.indexOf('transferring bullpen pressure')
   assert.ok(scopeIndex >= 0 && filterIndex >= 0 && feedCardIndex >= 0)
   assert.ok(scopeIndex < filterIndex, 'the feed scope should introduce the filters')
   assert.ok(filterIndex < feedCardIndex, 'filters should come before the feed cards')
 })
 
 test('the feed renders story cards with club identity and filter pills with counts', () => {
-  const html = render(React.createElement(StoriesView, { dashboard, observations }))
-  const counts = getFilterCounts(getStoryFeed(dashboard, observations).items)
+  const html = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard }))
+  const counts = getFilterCounts(getFourBeatStoryFeed(fourBeatDashboard).items)
   assert.ok(htmlIncludes(html, 'The Story Feed'))
   assert.ok(htmlIncludes(html, 'TOR · Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, 'Around the league'))
@@ -510,61 +393,40 @@ test('the feed renders story cards with club identity and filter pills with coun
 })
 
 test('each filter lane renders only its stories', () => {
-  const counts = getFilterCounts(getStoryFeed(dashboard, observations).items)
-  const stressed = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'stressed' }))
+  const counts = getFilterCounts(getFourBeatStoryFeed(fourBeatDashboard).items)
+  const stressed = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'stressed' }))
   assert.ok(htmlIncludes(stressed, getActiveStoryFilterLabel('stressed', counts.stressed)))
-  assert.ok(htmlIncludes(stressed, 'New York Mets'))
-  assert.ok(!htmlIncludes(stressed, 'TOR · Toronto Blue Jays'))
+  assert.ok(htmlIncludes(stressed, 'TOR · Toronto Blue Jays'))
+  assert.ok(!htmlIncludes(stressed, 'Washington Nationals'))
 
-  const rested = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'rested' }))
+  const rested = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'rested' }))
   assert.ok(htmlIncludes(rested, getActiveStoryFilterLabel('rested', counts.rested)))
   assert.ok(htmlIncludes(rested, 'Washington Nationals'))
-  assert.ok(!htmlIncludes(rested, 'New York Mets'))
+  assert.ok(!htmlIncludes(rested, 'Toronto Blue Jays'))
 
-  const watch = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'watch' }))
+  const watch = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'watch' }))
   assert.ok(htmlIncludes(watch, getActiveStoryFilterLabel('watch', counts.watch)))
-  assert.ok(htmlIncludes(watch, 'TOR · Toronto Blue Jays'))
+  assert.ok(htmlIncludes(watch, 'SF · San Francisco Giants'))
+  assert.ok(!htmlIncludes(watch, 'Washington Nationals'))
 
-  const league = render(React.createElement(StoriesView, { dashboard, observations, initialFilter: 'league' }))
+  const league = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'league' }))
   assert.ok(htmlIncludes(league, getActiveStoryFilterLabel('league', counts.league)))
-  assert.ok(htmlIncludes(league, 'league-wide workload picture is starting to tighten'))
-  assert.ok(!htmlIncludes(league, 'Workload is collecting below the headline'))
+  assert.ok(htmlIncludes(league, 'league-wide bullpen picture is carrying mixed signals'))
   assert.ok(!htmlIncludes(league, 'TOR · Toronto Blue Jays'))
 })
 
 test('empty filter lanes explain themselves and offer a reset', () => {
-  const sparseByFilter = {
-    stressed: {
-      ...dashboard,
-      landscape: { ...dashboard.landscape, constrained_bullpens: [] },
+  const stressedOnly = {
+    ...fourBeatDashboard,
+    four_beat_stories: {
+      ...fourBeatDashboard.four_beat_stories,
+      items: fourBeatDashboard.four_beat_stories.items.filter(item => item.category === 'stressed'),
     },
-    rested: {
-      ...dashboard,
-      landscape: { ...dashboard.landscape, available_bullpens: [] },
-    },
-    watch: {
-      ...dashboard,
-      landscape: { ...dashboard.landscape, monitoring_concentration: [] },
-    },
-    league: {
-      ...dashboard,
-      context: {
-        ...dashboard.context,
-        metrics: { total_relievers: 0, available: 0, monitor: 0, restricted: 0, pct_available: 0, pct_restricted: 0 },
-      },
-    },
-  }
-  const observationsByFilter = {
-    stressed: null,
-    rested: null,
-    watch: null,
-    league: null,
   }
 
-  for (const key of ['stressed', 'rested', 'watch', 'league']) {
+  for (const key of ['rested', 'watch', 'league']) {
     const html = render(React.createElement(StoriesView, {
-      dashboard: sparseByFilter[key],
-      observations: observationsByFilter[key],
+      dashboard: stressedOnly,
       initialFilter: key,
     }))
     assert.ok(htmlIncludes(html, FEED_EMPTY_COPY[key]), `missing empty copy for ${key}`)
@@ -574,25 +436,20 @@ test('empty filter lanes explain themselves and offer a reset', () => {
   }
 })
 
-test('all-feed empty state renders correctly when no stories are active', () => {
+test('all-feed empty state renders correctly when no four-beat stories are active', () => {
   const emptyDashboard = {
-    ...dashboard,
-    context: {
-      ...dashboard.context,
-      metrics: { total_relievers: 0, available: 0, monitor: 0, restricted: 0, pct_available: 0, pct_restricted: 0 },
-    },
-    landscape: {
-      ...dashboard.landscape,
-      constrained_bullpens: [],
-      available_bullpens: [],
-      monitoring_concentration: [],
+    ...fourBeatDashboard,
+    four_beat_stories: {
+      ...fourBeatDashboard.four_beat_stories,
+      items: [],
+      fallback: FOUR_BEAT_STORIES_FALLBACK,
     },
   }
   const html = render(React.createElement(StoriesView, {
     dashboard: emptyDashboard,
-    observations: null,
     initialFilter: 'all',
   }))
+  assert.ok(htmlIncludes(html, FOUR_BEAT_STORIES_FALLBACK))
   assert.ok(htmlIncludes(html, FEED_EMPTY_COPY.all))
   assert.ok(htmlIncludes(html, 'All Stories (0)'))
   assert.ok(htmlIncludes(html, 'Show All Stories'))
@@ -618,7 +475,7 @@ test('the sidebar carries Stories right after Today', () => {
 // ── Language guardrails ─────────────────────────────────────────────────────
 
 test('the stories page stays in baseball language', () => {
-  const html = render(React.createElement(StoriesView, { dashboard, observations })).toLowerCase()
+  const html = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard })).toLowerCase()
   for (const term of [
     'availability inventory', 'readiness limitations', 'limitations are present',
     'snapshot', 'governance', 'data_state', 'fail closed',

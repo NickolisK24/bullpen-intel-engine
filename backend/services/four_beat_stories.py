@@ -276,8 +276,8 @@ def _truthy(value):
 
 def four_beat_stories_enabled(config=None):
     if config is not None:
-        return _truthy(config.get(FEATURE_FLAG, False))
-    return _truthy(os.environ.get(FEATURE_FLAG))
+        return _truthy(config.get(FEATURE_FLAG, True))
+    return _truthy(os.environ.get(FEATURE_FLAG, 'true'))
 
 
 def _value(obj, name, default=None):

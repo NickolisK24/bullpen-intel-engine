@@ -1,8 +1,6 @@
-import { getBullpenStories } from '../home/homeIntelligenceView'
-
 // The BaseballOS story feed — the browseable surface behind Today's briefing.
-// The current path keeps its frontend derivation here; the comparison path
-// normalizes backend-authored four-beat stories when they are present.
+// The page normalizes backend-authored four-beat stories and keeps its
+// browse/filter behavior local to this surface.
 
 export const DEFAULT_STORY_FILTER = 'all'
 
@@ -49,6 +47,7 @@ const TONE_CATEGORY = {
   rest: 'rested',
   watch: 'watch',
 }
+const STORY_FILTER_KEYS = new Set(STORY_FILTERS.map(option => option.key))
 
 export const FEED_EMPTY_COPY = {
   all: 'No bullpen stories are active today.',
@@ -84,15 +83,12 @@ export function getFeedEmptyState(filter) {
   }
 }
 
-export function getStoryFeed(dashboard, observations = null) {
-  const stories = getBullpenStories(dashboard, observations)
-  const items = stories.items.map(story => ({
-    ...story,
-    category: story.teamId == null
-      ? 'league'
-      : (TONE_CATEGORY[story.tone] || 'watch'),
-  }))
-  return { hasStories: items.length > 0, items, fallback: stories.fallback }
+function normalizeStoryCategory(story, teamId) {
+  if (STORY_FILTER_KEYS.has(story?.category) && story.category !== DEFAULT_STORY_FILTER) {
+    return story.category
+  }
+  if (teamId == null) return 'league'
+  return TONE_CATEGORY[story?.tone] || 'watch'
 }
 
 function normalizeFourBeatStory(story) {
@@ -116,7 +112,7 @@ function normalizeFourBeatStory(story) {
     abbr,
     kicker: story.kicker || story.rule_label || 'Four Beat Story',
     tone: story.tone || 'watch',
-    category: story.category || (story.tone === 'stress' ? 'stressed' : 'rested'),
+    category: normalizeStoryCategory(story, teamId),
     title: story.title || story.signal || story.rule_label || 'Bullpen story',
     body: story.body || beats.map(beat => beat.text).join(' '),
     href: story.href || null,
