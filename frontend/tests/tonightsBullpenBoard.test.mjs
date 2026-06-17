@@ -59,13 +59,13 @@ const staleActivatedMinorAssignmentCard = {
   ...rosterContextBoard.groups[4].pitchers[2],
   pitcher_id: 11,
   name: 'Valente Bellozo',
-  short_reason: 'Roster status: Minors.',
-  reasons: ['Roster status: Minors.'],
+  short_reason: 'Roster status: Optioned / Minors.',
+  reasons: ['Roster status: Optioned / Minors.'],
   roster_status: {
     ...rosterContextBoard.groups[4].pitchers[2].roster_status,
     raw_status: 'fullRoster',
     source: 'mlb_stats_api:team_assignment_sync:fullRoster',
-    evidence: ['Current roster assignment: Minors.'],
+    evidence: ['Current roster assignment: Optioned / Minors.'],
   },
 }
 
@@ -179,11 +179,11 @@ test('unavailable roster pitchers render status labels without active availabili
   const html = render(rosterContextBoard)
   assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
   assert.ok(htmlIncludes(html, 'Graham Ashcraft'))
-  assert.ok(htmlIncludes(html, 'IL-60'))
+  assert.ok(htmlIncludes(html, '60-Day IL'))
   assert.ok(htmlIncludes(html, 'Jose Franco'))
-  assert.ok(htmlIncludes(html, '40-Man Only'))
+  assert.ok(htmlIncludes(html, '40-Man (not active)'))
   assert.ok(htmlIncludes(html, 'Connor Phillips'))
-  assert.ok(htmlIncludes(html, 'Minors'))
+  assert.ok(htmlIncludes(html, 'Optioned / Minors'))
   assert.ok(htmlIncludes(html, 'Availability status: Unavailable'))
   assert.ok(htmlIncludes(html, 'not available for bullpen planning'))
   assert.ok(!htmlIncludes(html, 'Availability status: Available'))
@@ -254,7 +254,7 @@ test('Unavailable Only does not show corrected current-minors assignment as acti
   assert.equal(view.isActiveRosterCard(staleActivatedMinorAssignmentCard), false)
 
   const html = render(unavailableOnly)
-  assert.ok(htmlIncludes(html, 'Minors'))
+  assert.ok(htmlIncludes(html, 'Optioned / Minors'))
   assert.ok(!htmlIncludes(html, 'Active MLB'))
 })
 
@@ -305,9 +305,9 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).eligibility.label, 'Outside Freshness Window')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).rosterStatus.label, 'Roster Unknown')
   assert.equal(view.getBoardCardView(staleBoard.groups[1].pitchers[0]).pitcherLabels.read.label, 'Limited Read')
-  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, 'IL-60')
+  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, '60-Day IL')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).pitcherLabels.read.label, 'Unavailable')
-  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man Only')
+  assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man (not active)')
   assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster status unavailable')
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).unavailablePitchersCount, 3)
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).coverageLabel, '100%')

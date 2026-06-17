@@ -23,6 +23,8 @@ class Pitcher(db.Model):
     active = db.Column(db.Boolean, default=True)
     roster_status = db.Column(db.String(30))
     roster_status_source = db.Column(db.String(100))
+    roster_status_raw_code = db.Column(db.String(30))
+    roster_status_raw_description = db.Column(db.String(100))
     roster_status_updated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=utc_now_naive)
     updated_at = db.Column(db.DateTime, default=utc_now_naive, onupdate=utc_now_naive)
@@ -52,6 +54,8 @@ class Pitcher(db.Model):
             'active': self.active,
             'roster_status': self.roster_status,
             'roster_status_source': self.roster_status_source,
+            'roster_status_raw_code': self.roster_status_raw_code,
+            'roster_status_raw_description': self.roster_status_raw_description,
             'roster_status_updated_at': (
                 self.roster_status_updated_at.isoformat()
                 if self.roster_status_updated_at else None

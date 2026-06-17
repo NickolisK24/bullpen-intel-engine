@@ -30,6 +30,7 @@ from services.availability_snapshot import latest_fatigue_rows as availability_l
 from services.roster_status import (
     ROSTER_STATUS_UNAVAILABLE_LIMITATION,
     STATUS_ACTIVE,
+    STATUS_BEREAVEMENT,
     STATUS_IL_15,
     STATUS_IL_60,
     STATUS_MINORS,
@@ -251,6 +252,8 @@ def _seed_pitcher(
     position='P',
     roster_status=STATUS_ACTIVE,
     roster_status_source='test_fixture',
+    roster_status_raw_code=None,
+    roster_status_raw_description=None,
     roster_status_updated_at=None,
     team_assignment_status=None,
     team_assignment_source=None,
@@ -268,6 +271,8 @@ def _seed_pitcher(
         active=active,
         roster_status=roster_status,
         roster_status_source=roster_status_source if roster_status else None,
+        roster_status_raw_code=roster_status_raw_code,
+        roster_status_raw_description=roster_status_raw_description,
         roster_status_updated_at=(
             roster_status_updated_at
             if roster_status_updated_at is not None
@@ -727,6 +732,44 @@ class TestBoardEndpoint:
         assert body['context']['metrics']['total_relievers'] == 1
         assert body['roster_status']['excluded_inactive_count'] == 3
 
+    def test_bereavement_status_keeps_pitcher_unavailable_without_collapsing_label(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Mason Miller',
+                team_id=135,
+                team_abbr='SD',
+                mlb_id=695243,
+                innings=[1.0],
+                days_ago=[3],
+                roster_status=STATUS_BEREAVEMENT,
+                roster_status_source='mlb_stats_api:roster_sync:40Man',
+                roster_status_raw_code='BRV',
+                roster_status_raw_description='Bereavement List',
+                roster_status_updated_at=datetime.utcnow(),
+            )
+
+        default_body = client.get('/api/bullpen/teams/135/board').get_json()
+        default_cards = [card for group in default_body['groups'] for card in group['pitchers']]
+
+        assert default_cards == []
+        assert default_body['total_pitchers'] == 0
+        assert default_body['roster_status']['excluded_inactive_count'] == 1
+
+        expanded_body = client.get('/api/bullpen/teams/135/board?include_stale=true').get_json()
+        cards = [card for group in expanded_body['groups'] for card in group['pitchers']]
+
+        assert [card['name'] for card in cards] == ['Mason Miller']
+        card = cards[0]
+        assert card['availability_status'] == 'Unavailable'
+        assert card['short_reason'] == 'Roster status: Bereavement List.'
+        assert card['roster_status']['status'] == STATUS_BEREAVEMENT
+        assert card['roster_status']['label'] == 'Bereavement List'
+        assert card['roster_status']['raw_status_code'] == 'BRV'
+        assert card['roster_status']['raw_status_description'] == 'Bereavement List'
+        assert card['roster_status']['recent_relief_audit']['classification'] == 'legitimate'
+        assert card['visibility']['is_active_roster_option'] is False
+        assert card['visibility']['is_unavailable_roster_status'] is True
+
     def test_current_minor_assignment_overrides_stale_activated_label_on_board(self, client):
         with client.application.app_context():
             _seed_pitcher(
@@ -765,7 +808,7 @@ class TestBoardEndpoint:
         card = expanded_cards[0]
         assert card['availability_status'] == 'Unavailable'
         assert card['roster_status']['status'] == STATUS_MINORS
-        assert card['roster_status']['label'] == 'Minors'
+        assert card['roster_status']['label'] == 'Optioned / Minors'
         assert card['roster_status']['source'] == 'mlb_stats_api:team_assignment_sync:fullRoster'
         assert card['roster_status']['is_active_mlb'] is False
         assert card['visibility']['is_unavailable_roster_status'] is True
@@ -852,7 +895,7 @@ class TestBoardEndpoint:
         card = expanded_cards[0]
         assert card['availability_status'] == 'Unavailable'
         assert card['roster_status']['status'] == STATUS_MINORS
-        assert card['roster_status']['label'] == 'Minors'
+        assert card['roster_status']['label'] == 'Optioned / Minors'
         assert card['roster_status']['source'] == 'mlb_stats_api:roster_sync:fullRoster'
         assert card['roster_status']['is_active_mlb'] is False
         assert card['visibility']['is_active_roster_option'] is False
@@ -896,9 +939,9 @@ class TestBoardEndpoint:
         assert set(by_name) == {'Graham Ashcraft', 'Jose Franco', 'Pierce Johnson'}
         assert by_name['Graham Ashcraft']['availability_status'] == 'Unavailable'
         assert by_name['Graham Ashcraft']['roster_status']['status'] == STATUS_IL_60
-        assert by_name['Graham Ashcraft']['roster_status']['label'] == 'IL-60'
-        assert by_name['Pierce Johnson']['roster_status']['label'] == 'IL-15'
-        assert by_name['Jose Franco']['roster_status']['label'] == 'Minors'
+        assert by_name['Graham Ashcraft']['roster_status']['label'] == '60-Day IL'
+        assert by_name['Pierce Johnson']['roster_status']['label'] == '15-Day IL'
+        assert by_name['Jose Franco']['roster_status']['label'] == 'Optioned / Minors'
         assert all(card['availability_status'] != 'Available' for card in cards)
         assert body['roster_status']['inactive_context_count'] == 3
         assert any('not counted as active bullpen options' in limitation for limitation in body['limitations'])

@@ -21,6 +21,10 @@ STATUS_OPTIONED = 'OPTIONED'
 STATUS_DFA = 'DFA'
 STATUS_NON_ROSTER = 'NON_ROSTER'
 STATUS_40_MAN_ONLY = '40_MAN_ONLY'
+STATUS_BEREAVEMENT = 'BEREAVEMENT'
+STATUS_PATERNITY = 'PATERNITY'
+STATUS_SUSPENDED = 'SUSPENDED'
+STATUS_RESTRICTED = 'RESTRICTED'
 STATUS_UNKNOWN = 'UNKNOWN'
 
 ROSTER_STATUS_UNAVAILABLE_LIMITATION = (
@@ -42,18 +46,38 @@ INACTIVE_STATUSES = {
     STATUS_DFA,
     STATUS_NON_ROSTER,
     STATUS_40_MAN_ONLY,
+    STATUS_BEREAVEMENT,
+    STATUS_PATERNITY,
+    STATUS_SUSPENDED,
+    STATUS_RESTRICTED,
+}
+
+SPECIFIC_INACTIVE_STATUSES = {
+    STATUS_IL_10,
+    STATUS_IL_15,
+    STATUS_IL_60,
+    STATUS_OPTIONED,
+    STATUS_DFA,
+    STATUS_BEREAVEMENT,
+    STATUS_PATERNITY,
+    STATUS_SUSPENDED,
+    STATUS_RESTRICTED,
 }
 
 STATUS_LABELS = {
     STATUS_ACTIVE: 'Active MLB',
-    STATUS_IL_10: 'IL-10',
-    STATUS_IL_15: 'IL-15',
-    STATUS_IL_60: 'IL-60',
-    STATUS_MINORS: 'Minors',
+    STATUS_IL_10: '10-Day IL',
+    STATUS_IL_15: '15-Day IL',
+    STATUS_IL_60: '60-Day IL',
+    STATUS_MINORS: 'Optioned / Minors',
     STATUS_OPTIONED: 'Optioned',
     STATUS_DFA: 'DFA',
     STATUS_NON_ROSTER: 'Non-roster',
-    STATUS_40_MAN_ONLY: '40-Man Only',
+    STATUS_40_MAN_ONLY: '40-Man (not active)',
+    STATUS_BEREAVEMENT: 'Bereavement List',
+    STATUS_PATERNITY: 'Paternity List',
+    STATUS_SUSPENDED: 'Suspended List',
+    STATUS_RESTRICTED: 'Restricted List',
     STATUS_UNKNOWN: 'Roster Unknown',
 }
 
@@ -64,6 +88,18 @@ _STATUS_ATTRS = (
     'current_status',
     'player_status',
     'status',
+)
+
+_STATUS_RAW_CODE_ATTRS = (
+    'roster_status_raw_code',
+    'roster_status_code',
+    'status_code',
+)
+
+_STATUS_RAW_DESCRIPTION_ATTRS = (
+    'roster_status_raw_description',
+    'roster_status_description',
+    'status_description',
 )
 
 _TEAM_ASSIGNMENT_ASSIGNED = 'ASSIGNED'
@@ -167,6 +203,35 @@ _FORTY_MAN_ONLY_VALUES = {
     'FORTY MAN ONLY',
 }
 
+_BEREAVEMENT_VALUES = {
+    'BRV',
+    'BEREAVEMENT',
+    'BEREAVEMENT LIST',
+}
+
+_PATERNITY_VALUES = {
+    'PAT',
+    'PATERNITY',
+    'PATERNITY LIST',
+    'PATERNITY LEAVE',
+    'PL',
+}
+
+_SUSPENDED_VALUES = {
+    'SUS',
+    'SUSP',
+    'SUSPENDED',
+    'SUSPENDED LIST',
+    'SUSPENSION',
+}
+
+_RESTRICTED_VALUES = {
+    'RST',
+    'RES',
+    'RESTRICTED',
+    'RESTRICTED LIST',
+}
+
 
 def _norm(value):
     if value is None:
@@ -213,6 +278,14 @@ def _status_from_raw(raw):
         return STATUS_NON_ROSTER
     if normalized in _FORTY_MAN_ONLY_VALUES:
         return STATUS_40_MAN_ONLY
+    if normalized in _BEREAVEMENT_VALUES or compact in {'BRV', 'BEREAVEMENT', 'BEREAVEMENTLIST'}:
+        return STATUS_BEREAVEMENT
+    if normalized in _PATERNITY_VALUES or compact in {'PAT', 'PATERNITY', 'PATERNITYLIST', 'PATERNITYLEAVE', 'PL'}:
+        return STATUS_PATERNITY
+    if normalized in _SUSPENDED_VALUES or compact in {'SUS', 'SUSP', 'SUSPENDED', 'SUSPENDEDLIST', 'SUSPENSION'}:
+        return STATUS_SUSPENDED
+    if normalized in _RESTRICTED_VALUES or compact in {'RST', 'RES', 'RESTRICTED', 'RESTRICTEDLIST'}:
+        return STATUS_RESTRICTED
     return STATUS_UNKNOWN
 
 
@@ -229,6 +302,32 @@ def _raw_status_from_pitcher(pitcher):
         if raw not in (None, ''):
             return raw
     return None
+
+
+def _first_non_empty_attr(pitcher, attrs):
+    if pitcher is None:
+        return None
+    for attr in attrs:
+        raw = getattr(pitcher, attr, None)
+        if raw not in (None, ''):
+            return raw
+    return None
+
+
+def _raw_status_code_from_pitcher(pitcher):
+    return _first_non_empty_attr(pitcher, _STATUS_RAW_CODE_ATTRS)
+
+
+def _raw_status_description_from_pitcher(pitcher):
+    return _first_non_empty_attr(pitcher, _STATUS_RAW_DESCRIPTION_ATTRS)
+
+
+def _status_from_values(*values):
+    for value in values:
+        status = _status_from_raw(value)
+        if status != STATUS_UNKNOWN:
+            return status
+    return STATUS_UNKNOWN
 
 
 def _iso_or_none(value):
@@ -295,11 +394,14 @@ def _updated_at_from(pitcher, attr):
     return getattr(pitcher, attr, None)
 
 
-def _candidate(status, *, raw_status, source, updated_at, evidence=None,
+def _candidate(status, *, raw_status, source, updated_at, raw_status_code=None,
+               raw_status_description=None, evidence=None,
                limitations=None, authoritative=True, current_assignment_unresolved=False):
     return {
         'status': status,
         'raw_status': raw_status,
+        'raw_status_code': raw_status_code,
+        'raw_status_description': raw_status_description,
         'source': source,
         'updated_at': updated_at,
         'evidence': list(evidence or []),
@@ -362,9 +464,15 @@ def _current_assignment_candidate(pitcher):
 
 def _stored_roster_candidate(pitcher):
     raw = _raw_status_from_pitcher(pitcher)
-    status = _status_from_raw(raw)
+    raw_code = _raw_status_code_from_pitcher(pitcher)
+    raw_description = _raw_status_description_from_pitcher(pitcher)
+    status = _status_from_values(raw_code, raw_description, raw)
     source = _source_for(pitcher, raw)
-    if raw in (None, '') or status == STATUS_UNKNOWN:
+    raw_status = next(
+        (value for value in (raw, raw_code, raw_description) if value not in (None, '')),
+        None,
+    )
+    if raw_status in (None, '') or status == STATUS_UNKNOWN:
         return None
     source_type = _roster_sync_source_type(source)
     if status == STATUS_ACTIVE and source_type and source_type != 'active':
@@ -372,7 +480,9 @@ def _stored_roster_candidate(pitcher):
         if status == STATUS_UNKNOWN:
             return _candidate(
                 STATUS_UNKNOWN,
-                raw_status=str(raw),
+                raw_status=str(raw_status),
+                raw_status_code=str(raw_code) if raw_code not in (None, '') else None,
+                raw_status_description=str(raw_description) if raw_description not in (None, '') else None,
                 source=source,
                 updated_at=_updated_at_from(pitcher, 'roster_status_updated_at'),
                 evidence=['Stored roster source does not verify active MLB roster membership.'],
@@ -386,7 +496,9 @@ def _stored_roster_candidate(pitcher):
 
     return _candidate(
         status,
-        raw_status=str(raw),
+        raw_status=str(raw_status),
+        raw_status_code=str(raw_code) if raw_code not in (None, '') else None,
+        raw_status_description=str(raw_description) if raw_description not in (None, '') else None,
         source=source,
         updated_at=_updated_at_from(pitcher, 'roster_status_updated_at'),
         evidence=[f'Stored roster status: {STATUS_LABELS[status]}.'],
@@ -409,10 +521,10 @@ def _select_status_candidate(pitcher):
         return stored
     if assignment and assignment['status'] == STATUS_ACTIVE:
         return assignment
+    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in SPECIFIC_INACTIVE_STATUSES:
+        return stored
     if assignment and assignment['status'] == STATUS_MINORS:
         return assignment
-    if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}:
-        return stored
     if stored and _is_current_roster_sync_candidate(stored) and stored['status'] in INACTIVE_STATUSES:
         return stored
     if assignment and assignment['status'] in INACTIVE_STATUSES:
@@ -460,6 +572,8 @@ def classify_roster_status(pitcher):
         'status': status,
         'label': STATUS_LABELS.get(status, STATUS_LABELS[STATUS_UNKNOWN]),
         'raw_status': selected['raw_status'],
+        'raw_status_code': selected.get('raw_status_code'),
+        'raw_status_description': selected.get('raw_status_description'),
         'source': selected['source'],
         'updated_at': _iso_or_none(selected['updated_at']),
         'is_authoritative': authoritative,
@@ -530,6 +644,11 @@ def roster_status_summary(statuses, included_records=None):
     included_inactive = [status for status in included_statuses if status.get('is_inactive_context')]
     included_unknown = [status for status in included_statuses if not status.get('is_authoritative')]
     included_active = [status for status in included_statuses if status.get('is_active_mlb') is True]
+    audits = [
+        status.get('recent_relief_audit')
+        for status in statuses
+        if status.get('recent_relief_audit')
+    ]
     excluded_inactive = [
         status for status in statuses
         if status.get('is_inactive_context') and status not in included_statuses
@@ -559,5 +678,12 @@ def roster_status_summary(statuses, included_records=None):
         'active_mlb_count': len(included_active),
         'inactive_context_count': len(included_inactive),
         'excluded_inactive_count': len(excluded_inactive),
+        'recent_relief_inactive_audit_count': len(audits),
+        'recent_relief_inactive_possible_stale_count': sum(
+            1 for audit in audits if audit.get('classification') == 'possible_stale'
+        ),
+        'recent_relief_inactive_legitimate_count': sum(
+            1 for audit in audits if audit.get('classification') == 'legitimate'
+        ),
         'limitations': limitations,
     }

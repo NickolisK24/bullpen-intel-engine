@@ -21,6 +21,7 @@ from services.roster_status import (
     classify_roster_status,
     roster_status_summary,
 )
+from services.roster_status_audit import with_recent_inactive_roster_audit
 
 
 def usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=False, reference_date=None):
@@ -108,12 +109,13 @@ def eligible_bullpen_pitcher_contexts(
     roster_statuses = []
     for pitcher in pitcher_list:
         roster_status = classify_roster_status(pitcher)
+        logs = logs_by_pitcher.get(pitcher.id, [])
+        roster_status = with_recent_inactive_roster_audit(roster_status, logs, ref)
         roster_statuses.append(roster_status)
         if not allows_default_board(roster_status):
             if not (include_inactive_context and allows_inactive_context(roster_status)):
                 continue
 
-        logs = logs_by_pitcher.get(pitcher.id, [])
         eligibility = _eligibility_for(
             pitcher, logs, roster_status, ref, use_role_authority,
         )

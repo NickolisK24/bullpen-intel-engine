@@ -55,25 +55,25 @@ function renderSummary(payload) {
   )
 }
 
-test('player detail summary keeps Graham Ashcraft IL-60 final availability unavailable', () => {
-  const html = renderSummary(finalAvailability('IL-60', 'IL_60', 'Available'))
+test('player detail summary keeps Graham Ashcraft 60-day IL final availability unavailable', () => {
+  const html = renderSummary(finalAvailability('60-Day IL', 'IL_60', 'Available'))
 
   assert.ok(htmlIncludes(html, 'Final availability: Unavailable'))
   assert.ok(htmlIncludes(html, 'Roster Status'))
-  assert.ok(htmlIncludes(html, 'IL-60'))
+  assert.ok(htmlIncludes(html, '60-Day IL'))
   assert.ok(htmlIncludes(html, 'Workload Signal'))
   assert.ok(htmlIncludes(html, 'Workload signal: Available'))
-  assert.ok(htmlIncludes(html, 'Roster status: IL-60.'))
+  assert.ok(htmlIncludes(html, 'Roster status: 60-Day IL.'))
   assert.equal(htmlIncludes(html, 'Final availability: Available'), false)
 })
 
-test('player detail summary keeps IL-15 final availability unavailable when workload is monitor', () => {
+test('player detail summary keeps 15-day IL final availability unavailable when workload is monitor', () => {
   for (const name of ['Emilio Pagan', 'Pierce Johnson']) {
-    const html = renderSummary(finalAvailability('IL-15', 'IL_15', 'Monitor'))
+    const html = renderSummary(finalAvailability('15-Day IL', 'IL_15', 'Monitor'))
 
     assert.ok(htmlIncludes(html, 'Final availability: Unavailable'), name)
     assert.ok(htmlIncludes(html, 'Roster Status'), name)
-    assert.ok(htmlIncludes(html, 'IL-15'), name)
+    assert.ok(htmlIncludes(html, '15-Day IL'), name)
     assert.ok(htmlIncludes(html, 'Workload Signal'), name)
     assert.ok(htmlIncludes(html, 'Workload signal: Monitor'), name)
     assert.equal(htmlIncludes(html, 'Final availability: Monitor'), false, name)

@@ -4,10 +4,14 @@ from services.injury_il_context import build_injury_il_context_from_contexts
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
+    STATUS_BEREAVEMENT,
     STATUS_IL_15,
     STATUS_IL_60,
     STATUS_MINORS,
     STATUS_OPTIONED,
+    STATUS_PATERNITY,
+    STATUS_RESTRICTED,
+    STATUS_SUSPENDED,
     STATUS_UNKNOWN,
 )
 
@@ -59,6 +63,18 @@ def test_optioned_minors_and_not_activated_count_as_inactive_roster():
 
     assert payload['league']['injured_list_count'] == 0
     assert payload['league']['inactive_count'] == 3
+
+
+def test_real_inactive_statuses_count_as_inactive_roster():
+    payload = build_injury_il_context_from_contexts([
+        _context('Bereavement Arm', 1, STATUS_BEREAVEMENT),
+        _context('Paternity Arm', 1, STATUS_PATERNITY),
+        _context('Suspended Arm', 2, STATUS_SUSPENDED),
+        _context('Restricted Arm', 2, STATUS_RESTRICTED),
+    ])
+
+    assert payload['league']['injured_list_count'] == 0
+    assert payload['league']['inactive_count'] == 4
 
 
 def test_active_and_unknown_statuses_do_not_inflate_unavailable_counts():

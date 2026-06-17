@@ -103,14 +103,18 @@ const DATA_STATE_COPY = {
 
 const ROSTER_STATUS_LABELS = {
   ACTIVE: 'Active MLB',
-  IL_10: 'IL-10',
-  IL_15: 'IL-15',
-  IL_60: 'IL-60',
-  MINORS: 'Minors',
+  IL_10: '10-Day IL',
+  IL_15: '15-Day IL',
+  IL_60: '60-Day IL',
+  MINORS: 'Optioned / Minors',
   OPTIONED: 'Optioned',
   DFA: 'DFA',
   NON_ROSTER: 'Non-Roster',
-  '40_MAN_ONLY': '40-Man Only',
+  '40_MAN_ONLY': '40-Man (not active)',
+  BEREAVEMENT: 'Bereavement List',
+  PATERNITY: 'Paternity List',
+  SUSPENDED: 'Suspended List',
+  RESTRICTED: 'Restricted List',
   UNKNOWN: 'Roster Unknown',
 }
 
