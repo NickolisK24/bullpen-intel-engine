@@ -3,6 +3,13 @@ from types import SimpleNamespace
 
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
 from services.four_beat_stories import (
+    LEAD_AVAILABILITY_DEEP,
+    LEAD_AVAILABILITY_THIN,
+    LEAD_CONCENTRATION_SHAPE,
+    LEAD_DEEP_INTACT,
+    LEAD_FATIGUE_LOAD,
+    LEAD_TRUST_LANE_ABSENCE,
+    LEAD_TRUST_LANE_DEPTH,
     RULE_HIDDEN_CAPACITY_LOSS,
     RULE_PRESSURE_DISTRIBUTION,
     RULE_SPECIAL_SITUATION,
@@ -54,7 +61,7 @@ def _record(pitcher, status=STATUS_AVAILABLE, risk='LOW', is_active_mlb=True):
     }
 
 
-def _log(pid, days_ago, pitches, *, leverage_index=None):
+def _log(pid, days_ago, pitches, *, leverage_index=None, save=False, hold=False, save_situation=False):
     return SimpleNamespace(
         pitcher_id=pid,
         game_date=REF - timedelta(days=days_ago),
@@ -63,9 +70,9 @@ def _log(pid, days_ago, pitches, *, leverage_index=None):
         innings_pitched=1.0,
         innings_pitched_outs=3,
         leverage_index=leverage_index,
-        save=False,
-        hold=False,
-        save_situation=False,
+        save=save,
+        hold=hold,
+        save_situation=save_situation,
     )
 
 
@@ -147,6 +154,53 @@ def _near_collision_stress_team(team_id, team_name, abbr, names, pitch_totals, a
             'team_abbreviation': abbr,
         },
     )
+
+
+def _fixture_team(team_id, team_name, abbr, pitch_totals, *, available_count=None, high_risk_indices=(), trust_indices=()):
+    pitchers = [
+        _pitcher(team_id * 100 + idx, f'{abbr} Arm {idx}', team_id=team_id, team_name=team_name, abbr=abbr)
+        for idx in range(1, len(pitch_totals) + 1)
+    ]
+    if available_count is None:
+        available_count = len(pitchers)
+    records = []
+    for idx, pitcher in enumerate(pitchers):
+        records.append(_record(
+            pitcher,
+            STATUS_AVAILABLE if idx < available_count else STATUS_MONITOR,
+            risk='HIGH' if idx in high_risk_indices else 'LOW',
+        ))
+
+    logs_by_pitcher = {}
+    for idx, (pitcher, total) in enumerate(zip(pitchers, pitch_totals)):
+        if idx in trust_indices:
+            first = total // 2
+            logs_by_pitcher[pitcher.id] = [
+                _log(pitcher.id, 1, first, leverage_index=1.8, save=True, save_situation=True),
+                _log(pitcher.id, 3, total - first, leverage_index=1.7),
+            ]
+        else:
+            logs_by_pitcher[pitcher.id] = [_log(pitcher.id, 1, total)]
+    return pitchers, records, logs_by_pitcher
+
+
+def _merge_logs(*groups):
+    merged = {}
+    for group in groups:
+        merged.update(group)
+    return merged
+
+
+def _bullpen_era(team_id, team_name, abbr, era, earned_runs=20):
+    innings_outs = max(1, round((earned_runs * 27) / era))
+    return {
+        'team_id': team_id,
+        'team_name': team_name,
+        'team_abbreviation': abbr,
+        'era': era,
+        'innings_outs': innings_outs,
+        'earned_runs': earned_runs,
+    }
 
 
 def test_stress_transfer_fires_only_when_concentrated_and_thin():
@@ -577,6 +631,176 @@ def test_near_collision_stress_transfer_pens_surface_concentration_specifics():
         f'Tampa Bay: {tampa_text}\n'
         f'New York Mets: {mets_text}'
     )
+
+
+def test_content_selective_leads_are_deterministic_and_surface_normalized_fields():
+    mia_pitchers, mia_records, mia_logs = _fixture_team(
+        146,
+        'Miami Marlins',
+        'MIA',
+        [42, 38, 36, 35, 35, 35, 35],
+        high_risk_indices=(0,),
+        trust_indices=(1, 2, 3, 4),
+    )
+    az_pitchers, az_records, az_logs = _fixture_team(
+        109,
+        'Arizona Diamondbacks',
+        'AZ',
+        [50, 42, 38, 26, 25, 25, 25],
+    )
+    lad_pitchers, lad_records, lad_logs = _fixture_team(
+        119,
+        'Los Angeles Dodgers',
+        'LAD',
+        [34, 32, 31, 30, 30, 29, 29, 29],
+        trust_indices=(0, 1, 2, 3),
+    )
+    records = [*mia_records, *az_records, *lad_records]
+    logs = _merge_logs(mia_logs, az_logs, lad_logs)
+    season_era = {
+        'bullpens': [
+            _bullpen_era(146, 'Miami Marlins', 'MIA', 3.35),
+            _bullpen_era(109, 'Arizona Diamondbacks', 'AZ', 2.72),
+            _bullpen_era(119, 'Los Angeles Dodgers', 'LAD', 3.28),
+        ],
+    }
+
+    first = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+    second = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+
+    first_leads = [(item['team_abbreviation'], item['lead_dimension'], item['title']) for item in first['items']]
+    second_leads = [(item['team_abbreviation'], item['lead_dimension'], item['title']) for item in second['items']]
+    assert first_leads == second_leads
+
+    stories = {item['team_abbreviation']: item for item in first['items']}
+    assert stories['MIA']['lead_dimension'] == LEAD_FATIGUE_LOAD
+    assert stories['AZ']['lead_dimension'] == LEAD_TRUST_LANE_ABSENCE
+    assert stories['LAD']['lead_dimension'] in {
+        LEAD_AVAILABILITY_DEEP,
+        LEAD_DEEP_INTACT,
+        LEAD_TRUST_LANE_DEPTH,
+    }
+    assert stories['MIA']['lead_fields']['high_risk_arm_count'] == 1
+    assert stories['MIA']['lead_fields']['high_risk_arm_names'] == [mia_pitchers[0].full_name]
+    assert stories['LAD']['lead_fields']['clean_trust_count'] >= 2
+    assert set(stories['LAD']['lead_fields']['clean_trust_names'])
+    assert len({stories['MIA']['title'], stories['AZ']['title'], stories['LAD']['title']}) == 3
+    assert 'HIGH or CRITICAL fatigue' in next(
+        beat['text'] for beat in stories['MIA']['beats'] if beat['key'] == 'evidence'
+    )
+
+
+def test_content_selective_leads_do_not_manufacture_difference_for_near_identical_pens():
+    first_pitchers, first_records, first_logs = _fixture_team(
+        701,
+        'First Similar Club',
+        'FSC',
+        [12, 12, 12, 12, 12, 12],
+    )
+    second_pitchers, second_records, second_logs = _fixture_team(
+        702,
+        'Second Similar Club',
+        'SSC',
+        [12, 12, 12, 12, 12, 12],
+    )
+    feed = build_four_beat_story_feed(
+        [*first_records, *second_records],
+        _merge_logs(first_logs, second_logs),
+        reference_date=REF,
+    )
+
+    stories = sorted(feed['items'], key=lambda item: item['team_abbreviation'])
+    assert [story['rule_key'] for story in stories] == [
+        RULE_PRESSURE_DISTRIBUTION,
+        RULE_PRESSURE_DISTRIBUTION,
+    ]
+    assert stories[0]['lead_dimension'] == stories[1]['lead_dimension']
+    assert stories[0]['beats'][0]['skeleton_key'] == stories[1]['beats'][0]['skeleton_key']
+    assert any(story['lead_dimension_detail'].get('honest_sameness') for story in stories)
+
+
+def test_same_rule_different_leads_produce_different_headlines_and_lead_beats():
+    no_trust_pitchers, no_trust_records, no_trust_logs = _fixture_team(
+        801,
+        'No Trust Club',
+        'NTC',
+        [36, 34, 32, 31, 31, 31],
+    )
+    deep_pitchers, deep_records, deep_logs = _fixture_team(
+        802,
+        'Deep Trust Club',
+        'DTC',
+        [31, 31, 31, 31, 31, 31, 31, 31],
+        trust_indices=(0, 1, 2),
+    )
+    feed = build_four_beat_story_feed(
+        [*no_trust_records, *deep_records],
+        _merge_logs(no_trust_logs, deep_logs),
+        reference_date=REF,
+        season_era={
+            'bullpens': [
+                _bullpen_era(801, 'No Trust Club', 'NTC', 2.90),
+                _bullpen_era(802, 'Deep Trust Club', 'DTC', 3.10),
+            ],
+        },
+    )
+
+    stories = {item['team_abbreviation']: item for item in feed['items']}
+    assert stories['NTC']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
+    assert stories['DTC']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
+    assert stories['NTC']['lead_dimension'] != stories['DTC']['lead_dimension']
+    assert stories['NTC']['title'] != stories['DTC']['title']
+    no_trust_evidence = next(beat for beat in stories['NTC']['beats'] if beat['key'] == 'evidence')
+    deep_evidence = next(beat for beat in stories['DTC']['beats'] if beat['key'] == 'evidence')
+    assert no_trust_evidence['skeleton_key'] != deep_evidence['skeleton_key']
+    for story in stories.values():
+        for beat in story['beats']:
+            assert '{' not in beat['text']
+            assert '}' not in beat['text']
+            for banned in ('slipping', 'starting to show', 'hasn\'t shown', 'haven\'t shown', 'yet'):
+                assert banned not in beat['text'].lower()
+
+
+def test_content_selective_leads_cover_stress_transfer_and_hidden_capacity_fixtures():
+    stress_pitchers, stress_records, stress_logs = _fixture_team(
+        901,
+        'Stress Fixture Club',
+        'SFC',
+        [40, 32, 25, 2, 1],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+    hidden_pitchers, hidden_records, hidden_logs = _fixture_team(
+        902,
+        'Hidden Fixture Club',
+        'HFC',
+        [30, 30, 30, 30, 30, 30, 30],
+        available_count=2,
+        trust_indices=(0,),
+    )
+    lower_era_bullpens = [
+        _bullpen_era(1000 + idx, f'Lower ERA Club {idx}', f'L{idx}', 2.50 + (idx * 0.03))
+        for idx in range(14)
+    ]
+    feed = build_four_beat_story_feed(
+        [*stress_records, *hidden_records],
+        _merge_logs(stress_logs, hidden_logs),
+        reference_date=REF,
+        season_era={
+            'bullpens': [
+                *lower_era_bullpens,
+                _bullpen_era(901, 'Stress Fixture Club', 'SFC', 4.50),
+                _bullpen_era(902, 'Hidden Fixture Club', 'HFC', 3.40),
+            ],
+        },
+    )
+
+    stories = {item['team_abbreviation']: item for item in feed['items']}
+    assert stories['SFC']['rule_key'] == RULE_STRESS_TRANSFER
+    assert stories['SFC']['lead_dimension'] in {LEAD_AVAILABILITY_THIN, LEAD_CONCENTRATION_SHAPE}
+    assert stories['HFC']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
+    assert stories['HFC']['lead_dimension'] is not None
+    assert all(story['beats'][0]['skeleton_key'].startswith('lead_signal:') for story in stories.values())
 
 
 def test_feature_flag_defaults_off():
