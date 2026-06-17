@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -23,6 +23,10 @@ const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
+const metaContent = (html, name) => {
+  const match = html.match(new RegExp(`<meta (?:property|name)="${escapeRegExp(name)}" content="([^"]+)" />`))
+  return match?.[1] || ''
+}
 
 function routeByPath(path) {
   return APP_ROUTES.find(route => route.path === path)
@@ -75,6 +79,34 @@ test('invalid team share fallback and generic OG card are static public assets',
 
   const fallback = readFileSync(fallbackUrl, 'utf8')
   assert.ok(fallback.includes('<meta property="og:title" content="BaseballOS | Team Story Preview" />'))
+  assert.ok(fallback.includes('<meta property="og:url" content="https://baseballos.vercel.app/team" />'))
+  assert.ok(fallback.includes('<meta name="twitter:title" content="BaseballOS | Team Story Preview" />'))
+  assert.ok(fallback.includes('<meta name="twitter:description" content="Open BaseballOS for current bullpen availability and trust reads." />'))
   assert.ok(fallback.includes('window.location.replace("/")'))
   assert.equal(fallback.includes('<div id="root"></div>'), false)
+})
+
+test('generated team share pages use absolute URLs and non-duplicated card text', () => {
+  const teamRoot = new URL('../public/team/', import.meta.url)
+  const teams = readdirSync(teamRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort()
+
+  assert.equal(teams.length, 30)
+
+  for (const team of teams) {
+    const html = readFileSync(new URL(`${team}/index.html`, teamRoot), 'utf8')
+    const title = metaContent(html, 'og:title')
+    const description = metaContent(html, 'og:description')
+    const ogUrl = metaContent(html, 'og:url')
+
+    assert.ok(title, `${team} is missing og:title`)
+    assert.ok(description, `${team} is missing og:description`)
+    assert.notEqual(title, description, `${team} title duplicates description`)
+    assert.equal(ogUrl, `https://baseballos.vercel.app/team/${team}`)
+    assert.equal(metaContent(html, 'twitter:title'), title)
+    assert.equal(metaContent(html, 'twitter:description'), description)
+    assert.equal(html.includes('<div id="root"></div>'), false)
+  }
 })

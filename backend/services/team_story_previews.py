@@ -141,6 +141,14 @@ def _signal_beat(story):
     return _clean_text((story or {}).get('title'))
 
 
+def _story_label(story):
+    for key in ('rule_label', 'kicker'):
+        text = _clean_text((story or {}).get(key))
+        if text:
+            return text
+    return ''
+
+
 def _story_supports_tension(story):
     signal = _signal_beat(story)
     if ' but ' not in signal.lower():
@@ -194,6 +202,7 @@ def build_team_story_preview(
 
     team_name = _team_name(team=team, story=story, board=board)
     team_page_path = f'{TEAM_PAGE_ROOT}/{quote(abbr)}'
+    team_page_url = _absolute_url(team_page_path, site_url=site_url)
     redirect_path = f'/bullpen?view=board&team={quote(abbr)}&source={TEAM_SHARE_SOURCE}'
     og_image = _absolute_url(og_image_path, site_url=site_url)
 
@@ -201,6 +210,9 @@ def build_team_story_preview(
         signal = _signal_beat(story)
         if not signal:
             raise ValueError(f'Team story for {abbr} is missing a Signal beat.')
+        label = _story_label(story)
+        if not label:
+            raise ValueError(f'Team story for {abbr} is missing a rule label.')
         framing = 'tension' if _story_supports_tension(story) else 'clean'
         return {
             'team_id': (team or {}).get('team_id') or story.get('team_id'),
@@ -211,16 +223,17 @@ def build_team_story_preview(
             'source': 'four_beat_story',
             'story_id': story.get('story_id'),
             'rule_key': story.get('rule_key'),
+            'rule_label': label,
             'lead_dimension': story.get('lead_dimension'),
-            'og_title': signal,
+            'og_title': f'{label} — {team_name}',
             'og_description': signal,
-            'og_url': team_page_path,
-            'canonical_url': _absolute_url(team_page_path, site_url=site_url),
+            'og_url': team_page_url,
+            'canonical_url': team_page_url,
             'og_image': og_image,
             'twitter_card': TWITTER_CARD,
             'redirect_path': redirect_path,
             'authority': {
-                'title': 'four_beat_story.signal',
+                'title': 'four_beat_story.rule_label',
                 'description': 'four_beat_story.signal',
                 'redirect': 'tonights_bullpen_board.deep_link',
             },
@@ -235,11 +248,12 @@ def build_team_story_preview(
         'source': 'team_shape',
         'story_id': None,
         'rule_key': None,
+        'rule_label': None,
         'lead_dimension': None,
         'og_title': f'The {team_name} bullpen tonight - current availability and trust read',
         'og_description': _neutral_shape_description(board),
-        'og_url': team_page_path,
-        'canonical_url': _absolute_url(team_page_path, site_url=site_url),
+        'og_url': team_page_url,
+        'canonical_url': team_page_url,
         'og_image': og_image,
         'twitter_card': TWITTER_CARD,
         'redirect_path': redirect_path,
@@ -328,7 +342,7 @@ def render_invalid_team_html(site_url=DEFAULT_SITE_URL, og_image_path=DEFAULT_OG
     preview = {
         'og_title': 'BaseballOS | Team Story Preview',
         'og_description': 'Open BaseballOS for current bullpen availability and trust reads.',
-        'og_url': TEAM_PAGE_ROOT,
+        'og_url': _absolute_url(TEAM_PAGE_ROOT, site_url=site_url),
         'canonical_url': _absolute_url('/', site_url=site_url),
         'og_image': _absolute_url(og_image_path, site_url=site_url),
         'twitter_card': TWITTER_CARD,
