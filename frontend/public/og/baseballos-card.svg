@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">BaseballOS Bullpen Intelligence</title>
+  <desc id="desc">A clean BaseballOS share card for bullpen story previews.</desc>
+  <rect width="1200" height="630" fill="#10130f"/>
+  <rect x="54" y="54" width="1092" height="522" rx="24" fill="#171b14" stroke="#3a3326" stroke-width="3"/>
+  <circle cx="1012" cy="158" r="66" fill="#d7a84f"/>
+  <path d="M960 160c24-19 78-21 104-1" fill="none" stroke="#10130f" stroke-width="10" stroke-linecap="round"/>
+  <path d="M976 122c12 25 15 50 7 77M1047 122c-12 25-15 50-7 77" fill="none" stroke="#10130f" stroke-width="8" stroke-linecap="round"/>
+  <text x="92" y="190" fill="#f6f0df" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="800" letter-spacing="2">BaseballOS</text>
+  <text x="96" y="262" fill="#d7a84f" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" letter-spacing="4">BULLPEN INTELLIGENCE</text>
+  <text x="96" y="382" fill="#f6f0df" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700">Daily team story previews</text>
+  <text x="96" y="448" fill="#b8b09e" font-family="Arial, Helvetica, sans-serif" font-size="30">Availability, workload, and trust-lane reads from the latest snapshot.</text>
+  <line x1="96" y1="504" x2="1104" y2="504" stroke="#3a3326" stroke-width="2"/>
+  <text x="96" y="548" fill="#8f8777" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="2">baseballos.vercel.app</text>
+</svg>

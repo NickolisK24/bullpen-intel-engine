@@ -115,6 +115,8 @@ team assignment sync
 -> game log and workload sync
 -> fatigue and availability calculation
 -> trust and freshness reporting
+-> dashboard snapshot build
+-> static team story preview export
 ```
 
 Team assignment resolves current ownership first so stale team rows do not
@@ -122,6 +124,11 @@ survive into team-scoped boards. Roster status then determines active MLB,
 injured list, minors, optioned, DFA, non-roster, 40-man-only, or unknown state.
 Game-log sync and fatigue calculation supply the workload signal. Availability
 surfaces combine roster status and workload signal into final availability.
+The snapshot path also exports crawler-facing team story preview pages under
+`frontend/public/team/ABBR/index.html`. The scheduled workflow commits changed
+preview pages on `main`, and the Vercel static build copies that public tree
+into the deployed frontend. Human visitors are redirected to the existing board
+deep-link for the team.
 
 ## Known Limitations
 
@@ -249,6 +256,9 @@ GitHub Actions scheduled sync:
 | --- | --- |
 | `BASEBALLOS_SYNC_URL` | Protected backend sync endpoint URL |
 | `BASEBALLOS_ADMIN_API_TOKEN` | Token matching backend `ADMIN_API_TOKEN` |
+| `DASHBOARD_SNAPSHOT_BUILD_TOKEN` | Token matching backend `DASHBOARD_SNAPSHOT_BUILD_TOKEN` |
+| `DATABASE_URL` | Production database connection used by the direct sync and preview export |
+| `SECRET_KEY` | Production Flask secret key |
 
 ## Testing
 

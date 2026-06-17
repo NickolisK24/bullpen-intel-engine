@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -49,4 +50,31 @@ test('Pipeline is demoted from primary nav while Today remains the first destina
   assert.ok(html.indexOf('Today') < html.indexOf('Stories'))
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
   assert.equal(htmlIncludes(html, 'Pipeline'), false)
+})
+
+test('Vercel keeps shareable team URLs out of the SPA catch-all', () => {
+  const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
+  const rewrites = config.rewrites || []
+
+  assert.deepEqual(rewrites[0], {
+    source: '/team/(.*)',
+    destination: '/team/index.html',
+  })
+  assert.deepEqual(rewrites[1], {
+    source: '/(.*)',
+    destination: '/index.html',
+  })
+})
+
+test('invalid team share fallback and generic OG card are static public assets', () => {
+  const fallbackUrl = new URL('../public/team/index.html', import.meta.url)
+  const cardUrl = new URL('../public/og/baseballos-card.svg', import.meta.url)
+
+  assert.equal(existsSync(fallbackUrl), true)
+  assert.equal(existsSync(cardUrl), true)
+
+  const fallback = readFileSync(fallbackUrl, 'utf8')
+  assert.ok(fallback.includes('<meta property="og:title" content="BaseballOS | Team Story Preview" />'))
+  assert.ok(fallback.includes('window.location.replace("/")'))
+  assert.equal(fallback.includes('<div id="root"></div>'), false)
 })
