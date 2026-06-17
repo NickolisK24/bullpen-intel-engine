@@ -27,6 +27,13 @@ const metaContent = (html, name) => {
   const match = html.match(new RegExp(`<meta (?:property|name)="${escapeRegExp(name)}" content="([^"]+)" />`))
   return match?.[1] || ''
 }
+const internalShareTitleLabels = [
+  'Sustainability Question',
+  'Pressure Distribution',
+  'Stress Transfer',
+  'Hidden Capacity Loss',
+  'Thinning Trust Lane',
+]
 
 function routeByPath(path) {
   return APP_ROUTES.find(route => route.path === path)
@@ -104,6 +111,14 @@ test('generated team share pages use absolute URLs and non-duplicated card text'
     assert.ok(title, `${team} is missing og:title`)
     assert.ok(description, `${team} is missing og:description`)
     assert.notEqual(title, description, `${team} title duplicates description`)
+    for (const internalLabel of internalShareTitleLabels) {
+      assert.equal(title.startsWith(`${internalLabel} —`), false, `${team} leaks ${internalLabel}`)
+    }
+    assert.equal(
+      /^The .+ bullpen tonight - current availability and trust read$/.test(title),
+      false,
+      `${team} uses the old neutral share title`,
+    )
     assert.equal(ogUrl, `https://baseballos.vercel.app/team/${team}`)
     assert.equal(metaContent(html, 'twitter:title'), title)
     assert.equal(metaContent(html, 'twitter:description'), description)
