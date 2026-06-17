@@ -107,7 +107,7 @@ class Config:
     # Unset in development = those endpoints are allowed locally (with a warning).
     ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN')
     FOUR_BEAT_STORIES_ENABLED = (
-        os.environ.get('FOUR_BEAT_STORIES_ENABLED', 'false').lower()
+        os.environ.get('FOUR_BEAT_STORIES_ENABLED', 'true').lower()
         in ('1', 'true', 'yes', 'on')
     )
     DEBUG = False

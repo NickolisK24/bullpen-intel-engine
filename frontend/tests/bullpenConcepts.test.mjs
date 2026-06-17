@@ -167,12 +167,39 @@ test('today stays light: exactly one concept chip, on the hero', () => {
   assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
 })
 
-test('stories feed cards carry compact concept tags', () => {
-  const html = render(React.createElement(StoriesView, { dashboard }))
-  // Toronto's hidden-workload story is tagged with its concentration read.
-  assert.ok(htmlIncludes(html, 'Concentrated Workload'))
-  // Washington's rested story is tagged with its recovery read.
-  assert.ok(htmlIncludes(html, 'Wide Recovery Window'))
+test('stories feed cards render four-beat sections instead of compact concept tags', () => {
+  const html = render(React.createElement(StoriesView, {
+    dashboard: {
+      ...dashboard,
+      four_beat_stories: {
+        items: [
+          {
+            story_id: '141:stress_transfer',
+            team_id: 141,
+            team_name: 'Toronto Blue Jays',
+            team_abbreviation: 'TOR',
+            kicker: 'Stress Transfer',
+            tone: 'stress',
+            category: 'stressed',
+            title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+            href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
+            beats: [
+              { key: 'signal', label: 'Signal', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
+              { key: 'evidence', label: 'Evidence', text: 'The top three arms have carried most of the recent relief work.' },
+              { key: 'mechanism', label: 'Mechanism', text: 'That shape leaves less room behind the clean late-inning path.' },
+              { key: 'implication', label: 'Implication', text: 'The next read is whether support appears behind that group.' },
+            ],
+          },
+        ],
+      },
+    },
+  }))
+  assert.ok(htmlIncludes(html, 'Signal'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Mechanism'))
+  assert.ok(htmlIncludes(html, 'Implication'))
+  assert.ok(!htmlIncludes(html, 'Concentrated Workload'))
+  assert.ok(!htmlIncludes(html, 'Wide Recovery Window'))
 })
 
 // ── Definition polish ───────────────────────────────────────────────────────

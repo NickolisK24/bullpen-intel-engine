@@ -938,7 +938,7 @@ def test_content_selective_leads_cover_stress_transfer_and_hidden_capacity_fixtu
     assert all(story['beats'][0]['skeleton_key'].startswith('lead_signal:') for story in stories.values())
 
 
-def test_feature_flag_defaults_off():
-    assert four_beat_stories_enabled({}) is False
+def test_feature_flag_defaults_on():
+    assert four_beat_stories_enabled({}) is True
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': False}) is False
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': True}) is True

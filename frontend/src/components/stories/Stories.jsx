@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
-import { SectionHeading, StoryPresentation } from '../home/BullpenStories'
+import { SectionHeading } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
@@ -17,15 +17,11 @@ import {
   getFeedEmptyState,
   getFilterCounts,
   getStoryFilterOption,
-  getStoryFeed,
   normalizeStoryFilter,
 } from './storiesFeedView'
 
-const FOUR_BEAT_STORIES_ENABLED = import.meta.env.VITE_FOUR_BEAT_STORIES_ENABLED === 'true'
-
-// BaseballOS Stories — the browseable bullpen intelligence feed. The default
-// path stays dashboard-derived; the optional comparison path renders backend-
-// authored four-beat stories when the payload and feature flag are present.
+// BaseballOS Stories — the browseable bullpen intelligence feed. This page
+// renders backend-authored four-beat stories as the product feed.
 export default function Stories() {
   const dash = useFetch(getBullpenDashboard)
 
@@ -42,23 +38,15 @@ export default function Stories() {
 
 export function StoriesView({
   dashboard,
-  observations = null,
   loading = false,
   error = null,
   staleWithError = false,
   onRetry,
   initialFilter = 'all',
-  initialStoryPath = 'current',
-  enableFourBeatStories = FOUR_BEAT_STORIES_ENABLED,
 }) {
   const [filter, setFilter] = useState(initialFilter)
-  const [storyPath, setStoryPath] = useState(initialStoryPath)
   const masthead = getMastheadView(dashboard)
-  const currentFeed = getStoryFeed(dashboard, observations)
-  const fourBeatFeed = getFourBeatStoryFeed(dashboard)
-  const canCompare = Boolean(enableFourBeatStories && fourBeatFeed.hasStories)
-  const activeStoryPath = canCompare && storyPath === 'fourBeat' ? 'fourBeat' : 'current'
-  const feed = activeStoryPath === 'fourBeat' ? fourBeatFeed : currentFeed
+  const feed = getFourBeatStoryFeed(dashboard)
   const counts = getFilterCounts(feed.items)
   const activeFilter = normalizeStoryFilter(filter)
   const activeOption = getStoryFilterOption(activeFilter)
@@ -106,9 +94,6 @@ export function StoriesView({
           <FeedScope
             feed={feed}
             counts={counts}
-            canCompare={canCompare}
-            activeStoryPath={activeStoryPath}
-            onStoryPathChange={setStoryPath}
           />
 
           <section className="mb-8" aria-label="Story feed">
@@ -162,7 +147,7 @@ export function StoriesView({
   )
 }
 
-function FeedScope({ feed, counts, canCompare = false, activeStoryPath = 'current', onStoryPathChange }) {
+function FeedScope({ feed, counts }) {
   const lanes = [
     { key: 'stressed', label: 'Pressure', tone: 'stress' },
     { key: 'watch', label: 'Watch', tone: 'watch' },
@@ -186,9 +171,6 @@ function FeedScope({ feed, counts, canCompare = false, activeStoryPath = 'curren
               : feed.fallback}
           </p>
         </div>
-        {canCompare && (
-          <StoryPathSwitch active={activeStoryPath} onChange={onStoryPathChange} />
-        )}
         <Link
           to="/"
           className="rounded border border-dirt bg-field/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
@@ -214,32 +196,6 @@ function FeedScope({ feed, counts, canCompare = false, activeStoryPath = 'curren
         })}
       </div>
     </section>
-  )
-}
-
-function StoryPathSwitch({ active, onChange }) {
-  const options = [
-    { key: 'current', label: 'Current' },
-    { key: 'fourBeat', label: 'Four Beat' },
-  ]
-  return (
-    <div className="flex rounded border border-dirt bg-field/50 p-0.5" role="group" aria-label="Story path">
-      {options.map(option => (
-        <button
-          key={option.key}
-          type="button"
-          onClick={() => onChange?.(option.key)}
-          aria-pressed={active === option.key}
-          className={`rounded px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest transition-colors ${
-            active === option.key
-              ? 'bg-amber/15 text-amber'
-              : 'text-chalk500 hover:text-chalk200'
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -299,7 +255,7 @@ function FeedStoryCard({ story }) {
       {Array.isArray(story.beats) && story.beats.length > 0 ? (
         <FourBeatPresentation beats={story.beats} />
       ) : (
-        <StoryPresentation story={story} compact className="mt-2 flex-1" />
+        <p className="mt-3 flex-1 text-xs leading-relaxed text-chalk400">{story.body}</p>
       )}
 
       {hasDestination && (
