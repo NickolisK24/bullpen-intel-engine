@@ -18,16 +18,24 @@ export const fmtDataDate = (ymd) => {
   return `${MONTHS_SHORT[Number(mm) - 1]} ${Number(dd)}, ${y}`
 }
 
+export const completedGamesDataLine = (ymd) => {
+  const formatted = fmtDataDate(ymd)
+  return formatted ? `Built from completed games through ${formatted}` : null
+}
+
 const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
 const staleStates = new Set(['stale', 'historical'])
 const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
 
-export function getSyncStatusView(data, { now = Date.now() } = {}) {
+export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
   const status = data?.status
   const latestAttempt = data?.last_sync
   const successfulSync = data?.last_successful_sync || (successfulStatuses.has(status) ? latestAttempt : null)
-  const dataThrough = fmtDataDate(data?.data?.latest_game_date)
+  const dataThroughSource = freshnessAuthority === undefined
+    ? data?.data?.latest_game_date
+    : freshnessAuthority?.data_through
+  const dataThrough = completedGamesDataLine(dataThroughSource)
   const logCount = data?.data?.game_logs
   const freshness = data?.freshness || {}
   const limitations = freshness.limitations || []
@@ -53,7 +61,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
         : { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
       syncLabel: 'Last sync failed',
       syncValue: fmtSyncDate(latestAttempt) || 'Latest attempt failed',
-      dataLabel: dataThrough ? 'Latest completed MLB data' : null,
+      dataLabel: dataThrough ? 'Data coverage' : null,
       dataValue: dataThrough,
       coverageValue,
       helper: stale
@@ -78,7 +86,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
         : { color: '#d1dce8' },
       syncLabel: 'Last synced',
       syncValue: fmtSyncDate(successfulSync),
-      dataLabel: dataThrough ? 'Latest completed MLB data' : null,
+      dataLabel: dataThrough ? 'Data coverage' : null,
       dataValue: dataThrough,
       coverageValue,
       refreshed: coverageValue,
@@ -99,7 +107,7 @@ export function getSyncStatusView(data, { now = Date.now() } = {}) {
       style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
       syncLabel: 'Sync metadata',
       syncValue: 'Unavailable',
-      dataLabel: 'Latest completed MLB data',
+      dataLabel: 'Data coverage',
       dataValue: dataThrough,
       coverageValue,
       helper: 'Sync metadata unavailable; data coverage is based on game logs.',

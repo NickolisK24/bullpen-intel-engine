@@ -15,9 +15,9 @@ function FreshnessChip({ label, freshness }) {
           {freshness.healthLabel}
         </span>
       </div>
-      {freshness.dataThrough && (
+      {freshness.completedGamesLine && (
         <div className="mt-1 font-mono text-[11px] text-chalk500" title={freshness.throughHint}>
-          Latest completed MLB data: {freshness.dataThrough}
+          {freshness.completedGamesLine}
         </div>
       )}
       {freshness.isStale && (

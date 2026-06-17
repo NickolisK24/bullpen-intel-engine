@@ -311,8 +311,8 @@ function Section({ title, subtitle, children }) {
 }
 
 function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
-  const dataLine = provenance.dataThrough
-    ? `Latest completed MLB data: ${provenance.dataThrough}`
+  const dataLine = provenance.completedGamesLine
+    ? provenance.completedGamesLine
     : 'No completed MLB data loaded'
   return (
     <div

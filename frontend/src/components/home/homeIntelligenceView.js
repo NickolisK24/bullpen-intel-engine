@@ -1,4 +1,4 @@
-import { fmtDataDate } from '../dashboard/syncStatusView'
+import { completedGamesDataLine } from '../dashboard/syncStatusView'
 import { getReadsForLandscapeEntry } from '../../utils/bullpenConcepts'
 import { SIGNAL_HEADLINES } from '../../utils/bullpenLanguage'
 import {
@@ -1165,15 +1165,15 @@ export function getBullpenStories(dashboard, observations = null) {
 // ── Masthead ───────────────────────────────────────────────────────────────
 export function getMastheadView(dashboard, now = new Date()) {
   const freshness = dashboard?.freshness || {}
-  const dataThrough = fmtDataDate(freshness.data_through)
+  const dataLine = completedGamesDataLine(freshness.data_through)
   const isLive = freshness.is_current !== false
     && (freshness.sync_status === 'success' || freshness.sync_status === 'ok')
   return {
     editionDate: now.toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     }),
-    dataLine: dataThrough
-      ? `Built from completed games through ${dataThrough}`
+    dataLine: dataLine
+      ? dataLine
       : 'Waiting on the first completed games',
     isLive,
   }

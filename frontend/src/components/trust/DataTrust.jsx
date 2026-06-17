@@ -1,6 +1,7 @@
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
+  getBullpenDashboard,
   getBullpenOverview,
   getRecommendationV2BullpenState,
   getSyncStatus,
@@ -20,10 +21,33 @@ import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 // depth lives here behind intentional navigation.
 export default function DataTrust() {
   const backtest = useFetch(getAvailabilityBacktest)
+  const dashboard = useFetch(getBullpenDashboard)
   const overview = useFetch(getBullpenOverview)
   const sync = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
+
+  return (
+    <DataTrustView
+      backtest={backtest}
+      dashboard={dashboard}
+      overview={overview}
+      sync={sync}
+      v2BullpenState={v2BullpenState}
+      teamOperationsReadiness={teamOperationsReadiness}
+    />
+  )
+}
+
+export function DataTrustView({
+  backtest,
+  dashboard,
+  overview,
+  sync,
+  v2BullpenState,
+  teamOperationsReadiness,
+}) {
+  const servedFreshness = dashboard?.data?.freshness || null
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -57,9 +81,13 @@ export default function DataTrust() {
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness &amp; Sync</h2>
         {(() => {
           const provenance = getDataProvenance({
-            data_through: sync.data?.data?.latest_game_date,
-            is_current: sync.data?.freshness?.is_current,
-            sync_status: sync.data?.status,
+            data_through: servedFreshness?.data_through,
+            is_current: servedFreshness?.is_current,
+            sync_status: servedFreshness?.sync_status,
+            is_stale: servedFreshness?.is_stale,
+            freshness_state: servedFreshness?.freshness_state,
+            served_consistency_state: servedFreshness?.served_consistency_state,
+            current_sync_status: servedFreshness?.current_sync_status,
           })
           return (
             <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -68,8 +96,8 @@ export default function DataTrust() {
                 style={{ borderColor: provenance.tone.borderColor, backgroundColor: provenance.tone.backgroundColor, color: provenance.tone.color }}
               >
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: provenance.tone.dot }} aria-hidden="true" />
-                {provenance.dataThrough
-                  ? `Latest completed MLB data: ${provenance.dataThrough}`
+                {provenance.completedGamesLine
+                  ? provenance.completedGamesLine
                   : 'No completed MLB data loaded'}
               </span>
               <span className="font-mono text-[11px] text-chalk500">{provenance.throughHint}</span>
@@ -82,7 +110,18 @@ export default function DataTrust() {
             onRetry={sync.refetch}
           />
         )}
-        <SyncStatusContent data={sync.data} loading={sync.loading} error={sync.staleWithError ? null : sync.error} />
+        {dashboard?.staleWithError && (
+          <StaleDataNotice
+            message="Data-through detail is from the last loaded dashboard snapshot because the latest refresh failed."
+            onRetry={dashboard.refetch}
+          />
+        )}
+        <SyncStatusContent
+          data={sync.data}
+          loading={sync.loading}
+          error={sync.staleWithError ? null : sync.error}
+          freshnessAuthority={servedFreshness}
+        />
       </section>
 
       {/* Scored pitcher inventory */}

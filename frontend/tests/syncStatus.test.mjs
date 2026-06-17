@@ -59,16 +59,16 @@ test('renders sync and data-through dates when both are available', () => {
 
   assert.equal(view.syncLabel, 'Last synced')
   assert.equal(view.syncValue, 'June 1, 2026')
-  assert.equal(view.dataLabel, 'Latest completed MLB data')
-  assert.equal(view.dataValue, 'May 31, 2026')
+  assert.equal(view.dataLabel, 'Data coverage')
+  assert.equal(view.dataValue, 'Built from completed games through May 31, 2026')
   assert.equal(view.healthLabel, 'Healthy')
   assert.equal(view.coverageValue, '428 Pitchers Refreshed')
   assert.ok(htmlIncludes(html, 'Data Status:'))
   assert.ok(htmlIncludes(html, 'Healthy'))
   assert.ok(htmlIncludes(html, 'Last synced:'))
   assert.ok(htmlIncludes(html, 'June 1, 2026'))
-  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
-  assert.ok(htmlIncludes(html, 'May 31, 2026'))
+  assert.ok(htmlIncludes(html, 'Data coverage:'))
+  assert.ok(htmlIncludes(html, 'Built from completed games through May 31, 2026'))
   assert.ok(htmlIncludes(html, 'Refresh Coverage:'))
   assert.ok(htmlIncludes(html, '428 Pitchers Refreshed'))
 })
@@ -100,8 +100,8 @@ test('renders sync metadata unavailable with data-through date', () => {
   assert.equal(view.healthLabel, 'Limited')
   assert.ok(htmlIncludes(html, 'Sync metadata:'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
-  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
-  assert.ok(htmlIncludes(html, 'May 31, 2026'))
+  assert.ok(htmlIncludes(html, 'Data coverage:'))
+  assert.ok(htmlIncludes(html, 'Built from completed games through May 31, 2026'))
 })
 
 test('does not mark current data stale from sync age alone', () => {
@@ -170,8 +170,8 @@ test('renders stale workload data from backend freshness reason codes', () => {
   assert.ok(htmlIncludes(html, 'Data Status:'))
   assert.ok(htmlIncludes(html, 'Not Current'))
   assert.ok(htmlIncludes(html, 'Stale baseball data through 2026-04-01.'))
-  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
-  assert.ok(htmlIncludes(html, 'Apr 1, 2026'))
+  assert.ok(htmlIncludes(html, 'Data coverage:'))
+  assert.ok(htmlIncludes(html, 'Built from completed games through Apr 1, 2026'))
 })
 
 test('renders successful sync without a data-through date', () => {
@@ -202,7 +202,7 @@ test('renders successful sync without a data-through date', () => {
 
   assert.ok(htmlIncludes(html, 'Last synced:'))
   assert.ok(htmlIncludes(html, 'June 1, 2026'))
-  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
+  assert.ok(htmlIncludes(html, 'Data coverage:'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
 })
 
@@ -232,8 +232,51 @@ test('renders failed sync while preserving data-through date', () => {
 
   assert.ok(htmlIncludes(html, 'Last sync failed:'))
   assert.ok(htmlIncludes(html, 'June 2, 2026'))
-  assert.ok(htmlIncludes(html, 'Latest completed MLB data:'))
-  assert.ok(htmlIncludes(html, 'May 31, 2026'))
+  assert.ok(htmlIncludes(html, 'Data coverage:'))
+  assert.ok(htmlIncludes(html, 'Built from completed games through May 31, 2026'))
+})
+
+test('served freshness authority wins when sync data is ahead of publish', () => {
+  const data = {
+    status: 'success',
+    last_sync: '2026-06-17T11:39:12',
+    last_successful_sync: '2026-06-17T11:39:56',
+    pitchers_updated: 428,
+    data: {
+      game_logs: 36000,
+      latest_game_date: '2026-06-17',
+      latest_workload_date: '2026-06-17',
+      latest_fatigue_calculated_at: '2026-06-17T11:39:55',
+    },
+    freshness: {
+      is_current: true,
+      is_stale: false,
+      freshness_state: 'current',
+      reason_codes: [],
+      label: 'Current baseball data through 2026-06-17.',
+      limitations: [],
+    },
+  }
+  const servedFreshness = {
+    data_through: '2026-06-16',
+    is_current: true,
+    sync_status: 'success',
+  }
+
+  const view = getSyncStatusView(data, { now, freshnessAuthority: servedFreshness })
+  const html = renderToStaticMarkup(
+    React.createElement(SyncStatusContent, {
+      data,
+      loading: false,
+      error: null,
+      now,
+      freshnessAuthority: servedFreshness,
+    }),
+  )
+
+  assert.equal(view.dataValue, 'Built from completed games through Jun 16, 2026')
+  assert.ok(htmlIncludes(html, 'Built from completed games through Jun 16, 2026'))
+  assert.equal(htmlIncludes(html, 'Jun 17, 2026'), false)
 })
 
 test('renders no data loaded when metadata and data are unavailable', () => {
@@ -267,5 +310,8 @@ test('Data & Trust page reuses its sync status request for the trust strip', () 
   // page; it still renders via the shared SyncStatusContent (no duplicate
   // self-fetching <SyncStatus /> instance).
   assert.ok(dataTrustSource.includes('SyncStatusContent'))
+  assert.ok(dataTrustSource.includes('getBullpenDashboard'))
+  assert.ok(dataTrustSource.includes('freshnessAuthority={servedFreshness}'))
+  assert.equal(dataTrustSource.includes('sync.data?.data?.latest_game_date'), false)
   assert.equal(dataTrustSource.includes('<SyncStatus />'), false)
 })
