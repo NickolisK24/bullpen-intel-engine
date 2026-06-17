@@ -39,6 +39,21 @@ BEAT_EVIDENCE = 'evidence'
 BEAT_MECHANISM = 'mechanism'
 BEAT_IMPLICATION = 'implication'
 
+LEAD_FATIGUE_LOAD = 'fatigue_load'
+LEAD_TRUST_LANE_ABSENCE = 'trust_lane_absence'
+LEAD_TRUST_LANE_SHALLOW = 'trust_lane_shallow'
+LEAD_WORKLOAD_HIGH = 'workload_high'
+LEAD_WORKLOAD_LIGHT = 'workload_light'
+LEAD_AVAILABILITY_THIN = 'availability_thin'
+LEAD_AVAILABILITY_DEEP = 'availability_deep'
+LEAD_DEEP_INTACT = 'deep_intact'
+LEAD_CONCENTRATION_SHAPE = 'concentration_shape'
+LEAD_PARTICIPATION_NARROW = 'participation_narrow'
+LEAD_PARTICIPATION_BROAD = 'participation_broad'
+LEAD_ERA_ELITE = 'era_elite'
+LEAD_ERA_ORDINARY = 'era_ordinary'
+LEAD_TRUST_LANE_DEPTH = 'trust_lane_depth'
+
 # Reasoned judgment defaults, not validated thresholds. They are intentionally
 # centralized so a future tuning pass can change them without hunting literals.
 RECENT_WORKLOAD_WINDOW_DAYS = BULLPEN_CONTEXT_WINDOW_DAYS
@@ -68,6 +83,26 @@ HEAVY_HIGH_RISK_ARM_MIN = 1
 DEPLETED_AVAILABLE_COUNT_MAX = THIN_AVAILABLE_COUNT_MAX
 DEPLETED_AVAILABLE_SHARE_MAX = THIN_AVAILABLE_SHARE_MAX
 DEPLETED_ROSTER_UNAVAILABLE_MIN = 1
+LEAD_WORKLOAD_SIMILAR_PITCHES = 2.0
+LEAD_AVAILABILITY_SIMILAR_SHARE = 0.10
+LEAD_CONCENTRATION_SIMILAR_SHARE = 0.05
+LEAD_ERA_SIMILAR_RANKS = 2
+LEAD_DIMENSION_TIE_BREAK_ORDER = (
+    LEAD_FATIGUE_LOAD,
+    LEAD_TRUST_LANE_ABSENCE,
+    LEAD_TRUST_LANE_SHALLOW,
+    LEAD_WORKLOAD_HIGH,
+    LEAD_WORKLOAD_LIGHT,
+    LEAD_AVAILABILITY_THIN,
+    LEAD_AVAILABILITY_DEEP,
+    LEAD_DEEP_INTACT,
+    LEAD_CONCENTRATION_SHAPE,
+    LEAD_PARTICIPATION_NARROW,
+    LEAD_PARTICIPATION_BROAD,
+    LEAD_ERA_ELITE,
+    LEAD_ERA_ORDINARY,
+    LEAD_TRUST_LANE_DEPTH,
+)
 
 THRESHOLDS = {
     'recent_workload_window_days': RECENT_WORKLOAD_WINDOW_DAYS,
@@ -89,6 +124,11 @@ THRESHOLDS = {
     'depleted_available_count_max': DEPLETED_AVAILABLE_COUNT_MAX,
     'depleted_available_share_max': DEPLETED_AVAILABLE_SHARE_MAX,
     'depleted_roster_unavailable_min': DEPLETED_ROSTER_UNAVAILABLE_MIN,
+    'lead_dimension_tie_break_order': list(LEAD_DIMENSION_TIE_BREAK_ORDER),
+    'lead_workload_similar_pitches': LEAD_WORKLOAD_SIMILAR_PITCHES,
+    'lead_availability_similar_share': LEAD_AVAILABILITY_SIMILAR_SHARE,
+    'lead_concentration_similar_share': LEAD_CONCENTRATION_SIMILAR_SHARE,
+    'lead_era_similar_ranks': LEAD_ERA_SIMILAR_RANKS,
 }
 
 RULES = {
@@ -158,6 +198,65 @@ SKELETONS = {
         BEAT_MECHANISM: 'That does not make the results false; it means there is less margin behind them if tonight turns into a bullpen game.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} the clean Trust Arm path, but the depth behind that lane is the watch point.',
         'implication_without_clean_trust': 'Tonight, the clean options are outside the Trust Arm lane; the depth behind those options is the watch point.',
+    },
+}
+
+LEAD_FRAGMENT_LIBRARY = {
+    LEAD_FATIGUE_LOAD: {
+        BEAT_SIGNAL: 'The {team_name} story starts with fatigue: {high_risk_arm_names} {high_risk_arm_verb} already running hot.',
+        BEAT_EVIDENCE: 'The current group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, while recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
+    },
+    LEAD_TRUST_LANE_ABSENCE: {
+        BEAT_SIGNAL: 'The {team_name} have clean options, but no clean Trust Arm lane tonight.',
+        BEAT_EVIDENCE: 'The current group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, with {clean_option_count} clean options and zero clean Trust Arms.',
+    },
+    LEAD_TRUST_LANE_SHALLOW: {
+        BEAT_SIGNAL: 'The {team_name} have room tonight, but the clean Trust Arm lane is narrow.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the only clean Trust Arm path, with {clean_option_count} clean options and a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_WORKLOAD_HIGH: {
+        BEAT_SIGNAL: 'The {team_name} have pitched well, but the recent workload is the loud part.',
+        BEAT_EVIDENCE: 'Recent workload sits at {per_arm_pitches} pitches per participating arm over the last {window_days} days, with a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_WORKLOAD_LIGHT: {
+        BEAT_SIGNAL: 'The {team_name} have room because the recent work stayed light and shared.',
+        BEAT_EVIDENCE: '{participant_count} arms shared the last {window_days} days of relief work at {per_arm_pitches} pitches per participating arm, while the current group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_AVAILABILITY_THIN: {
+        BEAT_SIGNAL: 'The {team_name} read thin first: the clean depth is short tonight.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available tonight, with {clean_option_count} clean options and a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_AVAILABILITY_DEEP: {
+        BEAT_SIGNAL: 'The {team_name} have actual room tonight: most of the pen is Available.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available, with {clean_option_count} clean options and a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_DEEP_INTACT: {
+        BEAT_SIGNAL: 'The {team_name} still have a clean lane behind the workload.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the clean Trust Arm path, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_CONCENTRATION_SHAPE: {
+        BEAT_SIGNAL: 'The {team_name} story starts with workload concentration at the top of the pen.',
+        BEAT_EVIDENCE: 'The top {top_arm_count} arms show {concentration_descriptor}, carrying {top_share_pct}% of recent relief pitches while the current group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_PARTICIPATION_NARROW: {
+        BEAT_SIGNAL: 'The {team_name} have a spread-out read, but it is the narrowest version of one.',
+        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work at {per_arm_pitches} pitches per participating arm, with a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_PARTICIPATION_BROAD: {
+        BEAT_SIGNAL: 'The {team_name} have used the full lane, not just one corner of the pen.',
+        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work, with {per_arm_pitches} pitches per participating arm and a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
+    },
+    LEAD_ERA_ELITE: {
+        BEAT_SIGNAL: 'The {team_name} have the run-prevention piece in place tonight.',
+        BEAT_EVIDENCE: 'Their current bullpen group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, with {available_count} of {total_bullpen_arms} arms Available.',
+    },
+    LEAD_ERA_ORDINARY: {
+        BEAT_SIGNAL: 'The {team_name} are rested, but this is more of a depth read than an elite run-prevention read.',
+        BEAT_EVIDENCE: 'Their current bullpen group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now, while {participant_count} arms shared recent work.',
+    },
+    LEAD_TRUST_LANE_DEPTH: {
+        BEAT_SIGNAL: 'The {team_name} still have multiple clean Trust Arm paths tonight.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} clean Trust Arm options, and the current group owns a {season_era} current-pen ERA, {era_rank_ordinal} among the bullpens teams are carrying right now.',
     },
 }
 
@@ -434,13 +533,21 @@ def _availability_summary(records):
     }
 
 
-def _high_risk_count(records):
-    count = 0
+def _high_risk_options(records):
+    arms = []
     for record in records:
         risk = str(_value(record.get('score'), 'risk_level') or '').upper()
         if risk in LIGHT_HIGH_RISK_LEVELS:
-            count += 1
-    return count
+            pitcher = record.get('pitcher')
+            pitcher_id = _value(pitcher, 'id')
+            name = _value(pitcher, 'full_name')
+            arms.append({
+                'pitcher_id': pitcher_id,
+                'name': name,
+                'risk_level': risk,
+            })
+    arms.sort(key=lambda item: (item.get('name') or '', item.get('pitcher_id') or 0))
+    return arms
 
 
 def _roster_unavailable_count(records):
@@ -491,7 +598,8 @@ def compute_team_story_inputs(team_inputs):
         team_inputs.logs_by_pitcher,
         team_inputs.reference_date,
     )
-    high_risk = _high_risk_count(team_inputs.records)
+    high_risk_options = _high_risk_options(team_inputs.records)
+    high_risk = len(high_risk_options)
     roster_unavailable = _roster_unavailable_count(team_inputs.records)
 
     concentration = (
@@ -539,6 +647,7 @@ def compute_team_story_inputs(team_inputs):
         'clean_options': clean,
         'clean_trust_options': clean_trust,
         'high_risk_arms': high_risk,
+        'high_risk_arm_options': high_risk_options,
         'roster_unavailable_arms': roster_unavailable,
         'conditions': {
             'workload_concentrated': concentration,
@@ -562,6 +671,8 @@ def _base_slots(inputs):
     clean_trust = inputs['clean_trust_options']
     clean_trust_names = _join_names([item['name'] for item in clean_trust])
     high_risk = inputs['high_risk_arms']
+    high_risk_options = inputs.get('high_risk_arm_options') or []
+    high_risk_names = _join_names([item['name'] for item in high_risk_options])
     roster_unavailable = inputs['roster_unavailable_arms']
     return {
         'team_name': team.get('team_name'),
@@ -570,6 +681,8 @@ def _base_slots(inputs):
         'window_days': RECENT_WORKLOAD_WINDOW_DAYS,
         'top_arm_count': workload['top_arm_count'],
         'top_share_pct': _pct(workload['top_share']),
+        'top_one_share_pct': _pct(workload['top_one_share']),
+        'total_recent_pitches': workload['total_pitches'],
         'concentration_descriptor': workload['concentration_descriptor'],
         'participant_count': workload['participant_count'],
         'per_arm_pitches': _format_decimal(workload['per_arm_pitches']),
@@ -582,6 +695,8 @@ def _base_slots(inputs):
         'era_rank_total': season_era.get('rank_total'),
         'high_risk_arm_count': high_risk,
         'high_risk_arm_word': _plural(high_risk, 'arm'),
+        'high_risk_arm_names': high_risk_names,
+        'high_risk_arm_verb': 'is' if high_risk == 1 else 'are',
         'roster_unavailable_count': roster_unavailable,
         'roster_unavailable_word': _plural(roster_unavailable, 'arm'),
         'clean_option_count': len(clean_options),
@@ -702,16 +817,350 @@ def _rule_conditions_hold(rule_key, inputs):
     return False
 
 
-def assemble_story(rule_key, inputs):
+def _lead_priority(dimension):
+    try:
+        return LEAD_DIMENSION_TIE_BREAK_ORDER.index(dimension)
+    except ValueError:
+        return len(LEAD_DIMENSION_TIE_BREAK_ORDER)
+
+
+def _number(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _rank(value, default=999):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _unique_sorted(values):
+    return sorted(set(values))
+
+
+def _max_gap(value, values):
+    unique = _unique_sorted(values)
+    if not unique or value != unique[-1]:
+        return 0
+    if len(unique) == 1:
+        return 0
+    return value - unique[-2]
+
+
+def _min_gap(value, values):
+    unique = _unique_sorted(values)
+    if not unique or value != unique[0]:
+        return 0
+    if len(unique) == 1:
+        return 0
+    return unique[1] - value
+
+
+def _lead_candidate(dimension, score, value, reason, direction=None):
+    return {
+        'dimension': dimension,
+        'score': round(float(score), 3),
+        'value': value,
+        'reason': reason,
+        'direction': direction,
+        'tie_break_order': _lead_priority(dimension),
+        'signal_skeleton_key': f'lead_signal:{dimension}',
+        'evidence_skeleton_key': f'lead_evidence:{dimension}',
+    }
+
+
+def _team_lead_candidates(record, cluster):
+    inputs = record['inputs']
+    rule_key = (record.get('story') or {}).get('rule_key')
+    workload = inputs['workload']
+    availability = inputs['availability']
+    season_era = inputs['season_era']
+    clean_trust_count = len(inputs['clean_trust_options'])
+    clean_option_count = len(inputs['clean_options'])
+    high_risk_count = inputs['high_risk_arms']
+    candidates = []
+
+    per_arm = _number(workload.get('per_arm_pitches'))
+    top_share = _number(workload.get('top_share'))
+    participant_count = int(workload.get('participant_count') or 0)
+    available_share = _number(availability.get('available_share'))
+    available_count = int(availability.get('available') or 0)
+    era_rank = _rank(season_era.get('rank'))
+
+    cluster_per_arm = [_number(item['inputs']['workload'].get('per_arm_pitches')) for item in cluster]
+    cluster_top_share = [_number(item['inputs']['workload'].get('top_share')) for item in cluster]
+    cluster_participants = [int(item['inputs']['workload'].get('participant_count') or 0) for item in cluster]
+    cluster_available_share = [_number(item['inputs']['availability'].get('available_share')) for item in cluster]
+    cluster_available_count = [int(item['inputs']['availability'].get('available') or 0) for item in cluster]
+    cluster_clean_trust = [len(item['inputs']['clean_trust_options']) for item in cluster]
+    cluster_era_ranks = [_rank(item['inputs']['season_era'].get('rank')) for item in cluster]
+    cluster_high_risk = [item['inputs']['high_risk_arms'] for item in cluster]
+
+    if high_risk_count > 0:
+        gap = _max_gap(high_risk_count, cluster_high_risk)
+        candidates.append(_lead_candidate(
+            LEAD_FATIGUE_LOAD,
+            1000 + high_risk_count * 20 + gap * 30,
+            high_risk_count,
+            'highest HIGH/CRITICAL fatigue count in the same-rule cluster',
+            'max',
+        ))
+
+    if clean_trust_count == 0 and (len(cluster) == 1 or max(cluster_clean_trust) > 0):
+        candidates.append(_lead_candidate(
+            LEAD_TRUST_LANE_ABSENCE,
+            900 + max(cluster_clean_trust) * 10,
+            clean_trust_count,
+            'no clean Trust Arm lane while same-rule peers have one',
+            'min',
+        ))
+
+    positive_trust = [value for value in cluster_clean_trust if value > 0]
+    if clean_trust_count == 1 and (len(positive_trust) == 1 or max(positive_trust) > 1):
+        candidates.append(_lead_candidate(
+            LEAD_TRUST_LANE_SHALLOW,
+            760 + max(positive_trust or [1]) * 5,
+            clean_trust_count,
+            'only one clean Trust Arm lane',
+            'min_positive',
+        ))
+
+    high_workload_gap = _max_gap(per_arm, cluster_per_arm)
+    if (
+        (len(cluster) == 1 and per_arm >= HEAVY_PER_ARM_PITCHES_MIN)
+        or high_workload_gap >= LEAD_WORKLOAD_SIMILAR_PITCHES
+    ):
+        candidates.append(_lead_candidate(
+            LEAD_WORKLOAD_HIGH,
+            720 + max(0, per_arm - HEAVY_PER_ARM_PITCHES_MIN) + high_workload_gap,
+            per_arm,
+            'highest or heavy recent workload in the same-rule cluster',
+            'max',
+        ))
+
+    low_workload_gap = _min_gap(per_arm, cluster_per_arm)
+    if (
+        rule_key == RULE_PRESSURE_DISTRIBUTION
+        and (len(cluster) == 1 or low_workload_gap >= LEAD_WORKLOAD_SIMILAR_PITCHES)
+    ):
+        candidates.append(_lead_candidate(
+            LEAD_WORKLOAD_LIGHT,
+            710 + max(0, LIGHT_PER_ARM_PITCHES_MAX - per_arm) + low_workload_gap,
+            per_arm,
+            'lightest recent workload in the same-rule cluster',
+            'min',
+        ))
+
+    low_availability_gap = _min_gap(available_share, cluster_available_share)
+    if (
+        availability['total'] > 0
+        and (
+            inputs['conditions'].get('availability_thin')
+            or low_availability_gap >= LEAD_AVAILABILITY_SIMILAR_SHARE
+            or _min_gap(available_count, cluster_available_count) >= 2
+        )
+    ):
+        candidates.append(_lead_candidate(
+            LEAD_AVAILABILITY_THIN,
+            680 + low_availability_gap * 100 + max(0, THIN_AVAILABLE_COUNT_MAX - available_count) * 10,
+            available_share,
+            'thinnest availability or a thin-availability gate',
+            'min',
+        ))
+
+    high_availability_gap = _max_gap(available_share, cluster_available_share)
+    if availability['total'] > 0 and (high_availability_gap >= LEAD_AVAILABILITY_SIMILAR_SHARE or available_share >= 0.85):
+        candidates.append(_lead_candidate(
+            LEAD_AVAILABILITY_DEEP,
+            660 + high_availability_gap * 100 + max(0, clean_option_count - available_count),
+            available_share,
+            'deepest availability in the same-rule cluster',
+            'max',
+        ))
+
+    if available_share >= 0.70 and clean_trust_count > 0 and clean_option_count >= max(1, available_count - 1):
+        candidates.append(_lead_candidate(
+            LEAD_DEEP_INTACT,
+            650 + available_share * 20 + clean_trust_count * 4,
+            (available_share, clean_trust_count),
+            'deep availability with a clean Trust Arm path',
+            'max',
+        ))
+
+    concentration_gap = _max_gap(top_share, cluster_top_share)
+    if workload.get('concentration_level') != 'none' or concentration_gap >= LEAD_CONCENTRATION_SIMILAR_SHARE:
+        candidates.append(_lead_candidate(
+            LEAD_CONCENTRATION_SHAPE,
+            620 + top_share * 100 + concentration_gap * 100,
+            top_share,
+            'most concentrated workload shape in the same-rule cluster',
+            'max',
+        ))
+
+    participant_low_gap = _min_gap(participant_count, cluster_participants)
+    if participant_low_gap >= 1:
+        candidates.append(_lead_candidate(
+            LEAD_PARTICIPATION_NARROW,
+            590 + participant_low_gap * 20,
+            participant_count,
+            'narrowest participation breadth in the same-rule cluster',
+            'min',
+        ))
+
+    participant_high_gap = _max_gap(participant_count, cluster_participants)
+    if participant_high_gap >= 1:
+        candidates.append(_lead_candidate(
+            LEAD_PARTICIPATION_BROAD,
+            580 + participant_high_gap * 20,
+            participant_count,
+            'broadest participation breadth in the same-rule cluster',
+            'max',
+        ))
+
+    best_rank_gap = _min_gap(era_rank, cluster_era_ranks)
+    if season_era.get('available') and (era_rank <= 3 or best_rank_gap >= LEAD_ERA_SIMILAR_RANKS):
+        candidates.append(_lead_candidate(
+            LEAD_ERA_ELITE,
+            560 + max(0, STRONG_SEASON_ERA_TOP_BULLPENS - era_rank + 1) + best_rank_gap,
+            era_rank,
+            'best or elite current-pen ERA rank in the same-rule cluster',
+            'min',
+        ))
+
+    worst_rank_gap = _max_gap(era_rank, cluster_era_ranks)
+    if season_era.get('available') and (era_rank > STRONG_SEASON_ERA_TOP_BULLPENS or worst_rank_gap >= LEAD_ERA_SIMILAR_RANKS):
+        candidates.append(_lead_candidate(
+            LEAD_ERA_ORDINARY,
+            540 + max(0, era_rank - STRONG_SEASON_ERA_TOP_BULLPENS) + worst_rank_gap,
+            era_rank,
+            'least elite current-pen ERA rank in the same-rule cluster',
+            'max',
+        ))
+
+    trust_depth_gap = _max_gap(clean_trust_count, cluster_clean_trust)
+    if clean_trust_count >= 2 and trust_depth_gap >= 1:
+        candidates.append(_lead_candidate(
+            LEAD_TRUST_LANE_DEPTH,
+            520 + clean_trust_count * 6 + trust_depth_gap * 10,
+            clean_trust_count,
+            'deepest clean Trust Arm lane in the same-rule cluster',
+            'max',
+        ))
+
+    return sorted(
+        candidates,
+        key=lambda candidate: (-candidate['score'], candidate['tie_break_order'], str(candidate['dimension'])),
+    )
+
+
+def _lead_values_similar(first, second):
+    if first['dimension'] != second['dimension']:
+        return False
+    dimension = first['dimension']
+    first_value = first.get('value')
+    second_value = second.get('value')
+    if dimension in {LEAD_FATIGUE_LOAD, LEAD_TRUST_LANE_ABSENCE, LEAD_TRUST_LANE_SHALLOW, LEAD_TRUST_LANE_DEPTH}:
+        return first_value == second_value
+    if dimension in {LEAD_WORKLOAD_HIGH, LEAD_WORKLOAD_LIGHT}:
+        return abs(_number(first_value) - _number(second_value)) <= LEAD_WORKLOAD_SIMILAR_PITCHES
+    if dimension in {LEAD_AVAILABILITY_THIN, LEAD_AVAILABILITY_DEEP}:
+        return abs(_number(first_value) - _number(second_value)) <= LEAD_AVAILABILITY_SIMILAR_SHARE
+    if dimension == LEAD_DEEP_INTACT:
+        first_share, first_trust = first_value
+        second_share, second_trust = second_value
+        return (
+            abs(_number(first_share) - _number(second_share)) <= LEAD_AVAILABILITY_SIMILAR_SHARE
+            and first_trust == second_trust
+        )
+    if dimension == LEAD_CONCENTRATION_SHAPE:
+        return abs(_number(first_value) - _number(second_value)) <= LEAD_CONCENTRATION_SIMILAR_SHARE
+    if dimension in {LEAD_PARTICIPATION_NARROW, LEAD_PARTICIPATION_BROAD}:
+        return abs(int(first_value or 0) - int(second_value or 0)) <= 1
+    if dimension in {LEAD_ERA_ELITE, LEAD_ERA_ORDINARY}:
+        return abs(_rank(first_value) - _rank(second_value)) <= LEAD_ERA_SIMILAR_RANKS
+    return first_value == second_value
+
+
+def select_lead_dimensions(story_records):
+    by_rule = {}
+    for record in story_records:
+        story = record.get('story') or {}
+        by_rule.setdefault(story.get('rule_key'), []).append(record)
+
+    selected = {}
+    for _rule_key, cluster in by_rule.items():
+        candidates_by_team = {
+            (record['story'].get('team_id'), record['story'].get('rule_key')): _team_lead_candidates(record, cluster)
+            for record in cluster
+        }
+        order = sorted(
+            cluster,
+            key=lambda record: (
+                -(candidates_by_team[(record['story'].get('team_id'), record['story'].get('rule_key'))][0]['score']
+                  if candidates_by_team[(record['story'].get('team_id'), record['story'].get('rule_key'))]
+                  else 0),
+                record['story'].get('team_name') or '',
+                record['story'].get('team_id') or 0,
+            ),
+        )
+        assigned = []
+        for record in order:
+            key = (record['story'].get('team_id'), record['story'].get('rule_key'))
+            candidates = candidates_by_team.get(key) or []
+            choice = None
+            for candidate in candidates:
+                if not any(_lead_values_similar(candidate, existing) for existing in assigned):
+                    choice = candidate
+                    break
+            if choice is None and candidates:
+                choice = {**candidates[0], 'honest_sameness': True}
+            if choice is not None:
+                selected[key] = choice
+                assigned.append(choice)
+    return selected
+
+
+def _lead_beat(rule_key, beat_key, lead, slots):
+    if not lead:
+        return None
+    skeleton = (LEAD_FRAGMENT_LIBRARY.get(lead.get('dimension')) or {}).get(beat_key)
+    if not skeleton:
+        return None
+    text = _fill_skeleton(skeleton, slots)
+    if not text:
+        return None
+    skeleton_key = lead['signal_skeleton_key'] if beat_key == BEAT_SIGNAL else lead['evidence_skeleton_key']
+    return {
+        'key': beat_key,
+        'label': beat_key.capitalize(),
+        'text': text,
+        'skeleton_key': skeleton_key,
+        'lead_dimension': lead.get('dimension'),
+        'slots': {
+            key: slots[key]
+            for key in sorted(slots)
+            if key in skeleton
+        },
+    }
+
+
+def assemble_story(rule_key, inputs, lead=None):
     rule = RULES[rule_key]
     slots = _base_slots(inputs)
     beats = []
     for beat_key in (BEAT_SIGNAL,):
-        beat = _beat(rule_key, beat_key, beat_key, slots)
+        beat = _lead_beat(rule_key, beat_key, lead, slots) or _beat(rule_key, beat_key, beat_key, slots)
         if beat:
             beats.append(beat)
     if _evidence_notable(rule_key, inputs):
-        beat = _beat(rule_key, BEAT_EVIDENCE, _evidence_skeleton_key(rule_key, inputs), slots)
+        beat = (
+            _lead_beat(rule_key, BEAT_EVIDENCE, lead, slots)
+            or _beat(rule_key, BEAT_EVIDENCE, _evidence_skeleton_key(rule_key, inputs), slots)
+        )
         if beat:
             beats.append(beat)
     if _rule_conditions_hold(rule_key, inputs):
@@ -753,11 +1202,26 @@ def assemble_story(rule_key, inputs):
         'href': _story_href(team),
         'cta': 'Open the team board',
         'source': 'backend',
+        'lead_dimension': lead.get('dimension') if lead else None,
+        'lead_dimension_detail': lead,
+        'lead_fields': {
+            'high_risk_arm_count': inputs['high_risk_arms'],
+            'high_risk_arm_names': [
+                item['name'] for item in inputs.get('high_risk_arm_options') or []
+                if item.get('name')
+            ],
+            'clean_trust_count': len(inputs['clean_trust_options']),
+            'clean_trust_names': [
+                item['name'] for item in inputs['clean_trust_options']
+                if item.get('name')
+            ],
+        },
         'slot_sources': {
             'workload': 'game_logs.relief_pitches',
             'availability': 'current_availability_records',
             'season_era': 'season_era.bullpens',
             'clean_options': 'governed_board_pitcher_labels',
+            'high_risk_arms': 'current_availability_records.fatigue_score',
         },
         'computed': {
             'conditions': inputs['conditions'],
@@ -780,8 +1244,17 @@ def assemble_story(rule_key, inputs):
                 'solid_results': inputs['season_era']['solid_results'],
             },
             'high_risk_arms': inputs['high_risk_arms'],
+            'high_risk_arm_count': inputs['high_risk_arms'],
+            'high_risk_arm_names': [
+                item['name'] for item in inputs.get('high_risk_arm_options') or []
+                if item.get('name')
+            ],
             'roster_unavailable_arms': inputs['roster_unavailable_arms'],
             'clean_trust_count': len(inputs['clean_trust_options']),
+            'clean_trust_names': [
+                item['name'] for item in inputs['clean_trust_options']
+                if item.get('name')
+            ],
             'clean_option_count': len(inputs['clean_options']),
         },
     }
@@ -891,17 +1364,31 @@ def build_four_beat_story_feed(
         season_era=season_era,
     )
     evaluations = [evaluate_team_rules(team) for team in team_inputs]
-    stories = []
+    story_records = []
     for team_eval in evaluations:
-        team_stories = [
-            evaluation['story']
+        team_story_records = [
+            {
+                'story': evaluation['story'],
+                'inputs': team_eval['inputs'],
+            }
             for evaluation in team_eval['evaluations']
             if evaluation.get('story') is not None
         ]
-        if not team_stories:
+        if not team_story_records:
             continue
-        team_stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
-        stories.append(team_stories[0])
+        team_story_records.sort(key=lambda item: (
+            -item['story']['strength'],
+            item['story']['team_name'] or '',
+            item['story']['rule_key'],
+        ))
+        story_records.append(team_story_records[0])
+
+    selected_leads = select_lead_dimensions(story_records)
+    stories = []
+    for record in story_records:
+        story = record['story']
+        lead = selected_leads.get((story.get('team_id'), story.get('rule_key')))
+        stories.append(assemble_story(story['rule_key'], record['inputs'], lead=lead))
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
 
     return {
@@ -960,4 +1447,5 @@ __all__ = [
     'compute_team_story_inputs',
     'evaluate_team_rules',
     'four_beat_stories_enabled',
+    'select_lead_dimensions',
 ]
