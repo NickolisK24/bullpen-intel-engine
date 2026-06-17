@@ -383,7 +383,10 @@ test('the feed renders story cards with club identity and filter pills with coun
   const counts = getFilterCounts(getFourBeatStoryFeed(fourBeatDashboard).items)
   assert.ok(htmlIncludes(html, 'The Story Feed'))
   assert.ok(htmlIncludes(html, 'TOR · Toronto Blue Jays'))
+  assert.ok(htmlIncludes(html, 'aria-label="Share Toronto Blue Jays bullpen"'))
+  assert.ok(htmlIncludes(html, 'data-share-url="https://baseballos.vercel.app/team/TOR"'))
   assert.ok(htmlIncludes(html, 'Around the league'))
+  assert.ok(!htmlIncludes(html, 'Share Around the league bullpen'))
   assert.ok(htmlIncludes(html, getActiveStoryFilterLabel('all', counts.all)))
   for (const { key, label, description } of STORY_FILTERS) {
     assert.ok(htmlIncludes(html, label), `missing filter: ${label}`)
@@ -407,6 +410,7 @@ test('each filter lane renders only its stories', () => {
   const watch = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'watch' }))
   assert.ok(htmlIncludes(watch, getActiveStoryFilterLabel('watch', counts.watch)))
   assert.ok(htmlIncludes(watch, 'SF · San Francisco Giants'))
+  assert.ok(htmlIncludes(watch, 'data-share-url="https://baseballos.vercel.app/team/SF"'))
   assert.ok(!htmlIncludes(watch, 'Washington Nationals'))
 
   const league = render(React.createElement(StoriesView, { dashboard: fourBeatDashboard, initialFilter: 'league' }))

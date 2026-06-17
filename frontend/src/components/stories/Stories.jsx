@@ -9,6 +9,7 @@ import {
   getMastheadView,
   homeTone,
 } from '../home/homeIntelligenceView'
+import TeamShareButton from '../share/TeamShareButton'
 import {
   DEFAULT_STORY_FILTER,
   STORY_FILTERS,
@@ -223,6 +224,12 @@ function StoryFeedEmptyState({ state, onReset }) {
 function FeedStoryCard({ story }) {
   const tone = homeTone(story.tone)
   const hasDestination = Boolean(story.href)
+  const hasTeam = story.teamId != null && Boolean(story.abbr)
+  const team = {
+    team_id: story.teamId,
+    team_name: story.teamName,
+    team_abbreviation: story.abbr,
+  }
 
   const inner = (
     <>
@@ -234,11 +241,19 @@ function FeedStoryCard({ story }) {
           <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
           {story.kicker}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
-          {story.teamId != null
-            ? formatTeamLabel({ team_abbreviation: story.abbr, team_name: story.teamName }, 'Around the league')
-            : 'Around the league'}
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
+            {story.teamId != null
+              ? formatTeamLabel({ team_abbreviation: story.abbr, team_name: story.teamName }, 'Around the league')
+              : 'Around the league'}
+          </span>
+          {hasTeam && (
+            <TeamShareButton
+              team={team}
+              className="pointer-events-auto"
+            />
+          )}
+        </div>
       </div>
 
       {story.read && (
@@ -274,12 +289,18 @@ function FeedStoryCard({ story }) {
   }
 
   return (
-    <Link
-      to={story.href}
-      className="card group flex flex-col p-5 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
+    <article
+      className="card group relative flex flex-col p-5 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
     >
-      {inner}
-    </Link>
+      <Link
+        to={story.href}
+        aria-label={story.cta || 'Open the full picture'}
+        className="absolute inset-0 z-10"
+      />
+      <div className="relative z-20 flex flex-1 flex-col pointer-events-none">
+        {inner}
+      </div>
+    </article>
   )
 }
 
