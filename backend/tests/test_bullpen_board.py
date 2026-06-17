@@ -193,6 +193,7 @@ class TestPayload:
             'trustAvailability',
             'cleanOptions',
             'bullpenPressure',
+            'workloadConcentration',
             'coverageSafety',
             'depthSafety',
         ]

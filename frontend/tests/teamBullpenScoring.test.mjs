@@ -36,6 +36,18 @@ const backendShape = Object.freeze({
       source: 'backend',
     },
     {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+      explanation: 'The top three arms carried 62% of recent relief pitches.',
+      supportingCounts: {
+        topArmCount: 3,
+        topSharePct: 62,
+        concentrationDescriptor: 'some concentration',
+      },
+      reasons: ['The top three arms carried 62% of recent relief pitches.'],
+      source: 'backend',
+    },
+    {
       key: 'coverageSafety',
       label: 'Thin Coverage Safety',
       explanation: 'One coverage arm remains usable.',
@@ -66,6 +78,7 @@ test('team bullpen shape consumes backend-authored reads', () => {
   assert.deepEqual(result.reads.map(read => read.key), getTeamBullpenReadKeys())
   assert.equal(result.source, 'backend')
   assert.equal(result.cleanOptions.label, 'Healthy Clean Options')
+  assert.equal(result.workloadConcentration.label, 'Some Workload Concentration')
   assert.equal(result.cleanOptions.supportingCounts.cleanOptionCount, 4)
   assert.equal(result.bullpenPressure.explanation, 'Trust and bridge stress are elevated.')
   assert.equal(result.byKey.coverageSafety, result.coverageSafety)

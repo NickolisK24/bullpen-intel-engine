@@ -2,7 +2,6 @@
 // the board payload already fetched for this bullpen: workload buckets, role
 // labels, read labels, shape reads, and the visible pitcher cards.
 
-import { getBullpenReads } from '../../../utils/bullpenConcepts'
 import { getPitcherLabels } from '../../../utils/pitcherLabels'
 import { getTeamBullpenShape } from '../../../utils/teamBullpenScoring'
 
@@ -18,7 +17,7 @@ export const TEAM_STORY_ARCHETYPES = Object.freeze({
   heavy_lifting: { key: 'heavy_lifting', label: 'Heavy Lifting', family: 'watch', tone: 'watch' },
   concentrated_workload: { key: 'concentrated_workload', label: 'Concentrated Workload', family: 'watch', tone: 'watch' },
   thin_margin: { key: 'thin_margin', label: 'Thin Margin', family: 'constrained', tone: 'stress' },
-  recovery_window: { key: 'recovery_window', label: 'Recovery Window', family: 'rested', tone: 'rest' },
+  clean_options_layer: { key: 'clean_options_layer', label: 'Clean Options', family: 'rested', tone: 'rest' },
   depth_advantage: { key: 'depth_advantage', label: 'Depth Advantage', family: 'rested', tone: 'rest' },
   coverage_concern: { key: 'coverage_concern', label: 'Coverage Concern', family: 'constrained', tone: 'stress' },
   trust_dependency: { key: 'trust_dependency', label: 'Trust Dependency', family: 'constrained', tone: 'stress' },
@@ -37,6 +36,7 @@ const SHAPE_READ_ORDER = [
   { key: 'trustAvailability', concept: 'Trust Arm Availability' },
   { key: 'cleanOptions', concept: 'Clean Options' },
   { key: 'bullpenPressure', concept: 'Bullpen Pressure' },
+  { key: 'workloadConcentration', concept: 'Workload Concentration' },
   { key: 'coverageSafety', concept: 'Coverage Safety' },
   { key: 'depthSafety', concept: 'Depth Safety' },
 ]
@@ -322,7 +322,7 @@ function roleEntries(entries, roles, reads = null) {
 function evidencePitchers(archetypeKey, entries) {
   switch (archetypeKey) {
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return [
         ...roleEntries(entries, ['Trust Arm', 'Bridge Arm', 'Coverage Arm'], ['Clean Option']),
@@ -398,6 +398,14 @@ function shortShapeExplanation(read) {
         { count: counts.restRestrictedCount, label: 'Rest-Restricted' },
         { count: counts.unavailableCount, label: 'Unavailable' },
       ], 'no Watch Arms, Rest-Restricted, or Unavailable arms.')}`
+    case 'workloadConcentration': {
+      const topShare = number(counts.topSharePct)
+      const topArms = number(counts.topArmCount)
+      const participants = number(counts.participantCount)
+      const totalPitches = number(counts.totalRecentPitches)
+      if (totalPitches <= 0 || participants <= 0) return read.explanation
+      return `Top ${topArms} arms: ${topShare}% of recent relief pitches across ${participants} participating arms.`
+    }
     case 'coverageSafety': {
       const base = `Coverage Arms: ${compactReadCounts([
         { count: counts.cleanCoverageArms, label: 'Clean Option' },
@@ -424,9 +432,9 @@ function shortShapeExplanation(read) {
 
 function shapeTone(label) {
   if (!label || label === 'Limited Read') return 'neutral'
-  if (/^(Strong|Stable|Deep|Healthy|Low)\b/.test(label)) return 'rest'
-  if (/^(Thin|Elevated|Manageable)\b/.test(label)) return 'watch'
-  if (/^(Very Thin|Limited|High)\b/.test(label)) return 'stress'
+  if (/^(Strong|Stable|Deep|Healthy|Low|No Workload)\b/.test(label)) return 'rest'
+  if (/^(Thin|Elevated|Manageable|Some|Concentrated)\b/.test(label)) return 'watch'
+  if (/^(Very Thin|Limited|High|Heavily)\b/.test(label)) return 'stress'
   return 'neutral'
 }
 
@@ -498,7 +506,7 @@ export function deriveTeamStoryArchetype(board) {
     }
     return counts.watch <= 1 && counts.needRest <= 1
       ? TEAM_STORY_ARCHETYPES.rested_flexibility.key
-      : TEAM_STORY_ARCHETYPES.recovery_window.key
+      : TEAM_STORY_ARCHETYPES.clean_options_layer.key
   }
   if (healthState === 'monitoring' || healthState === 'elevated' || counts.watch + counts.needRest >= 3) {
     return TEAM_STORY_ARCHETYPES.pressure_building.key
@@ -520,7 +528,7 @@ function headlineFor(archetypeKey, teamName) {
       return `The ${teamName} are carrying bullpen work through a small group.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return `The ${teamName} enter today with a thin late-inning margin.`
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       return `The ${teamName} have more room to maneuver than earlier in the window.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return `The ${teamName} have multiple routes through the late innings.`
@@ -557,7 +565,7 @@ function observationFor(archetypeKey, counts, shape) {
       return `${relievers(counts.watch)} are carrying enough recent work to change how clean the bullpen looks beneath the overall count.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return `${relievers(counts.needRest)} of ${counts.total} ${one(counts.needRest, 'needs', 'need')} rest after recent work, leaving fewer clean paths through the late innings.`
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       return `${relievers(counts.ready)} of ${counts.total} come in rested, giving this bullpen more room than it had during heavier stretches.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return `The clean group runs beyond one or two primary arms, with ${depth.availableDepthArms || 0} depth arms still usable behind the main late-inning layer.`
@@ -589,9 +597,9 @@ function whyItMattersFor(archetypeKey, counts) {
       return 'When the same part of the bullpen keeps absorbing work, late-game flexibility can become less balanced.'
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return 'Additional workload could quickly narrow the clean late-game options available to this bullpen.'
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-      return 'Recovery has created more paths through the late innings than this bullpen had during the heavier part of the window.'
+      return 'Clean options have created more paths through the late innings than this bullpen had during the heavier part of the window.'
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return 'Depth gives the club more ways to cover the middle and late innings without forcing one narrow sequence.'
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
@@ -619,7 +627,7 @@ function pitcherEvidenceSentence(archetypeKey, selected) {
   const nameList = formatNameList(names)
   switch (archetypeKey) {
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return `${nameList} are part of the clean rested layer supporting today's flexibility.`
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
@@ -663,7 +671,7 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options are available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       evidence.push(`${counts.ready} of ${counts.total} relievers are clean options.`)
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
@@ -719,7 +727,7 @@ function watchItemsFor(archetypeKey, counts) {
         'Whether clean options remain available behind the trusted group.',
         'Whether another busy game narrows the late-inning paths.',
       ]
-    case TEAM_STORY_ARCHETYPES.recovery_window.key:
+    case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
       return [
         'Whether the rested layer is used broadly or held in reserve.',
@@ -779,7 +787,6 @@ export function getTeamBullpenStoryView(board) {
   const archetype = TEAM_STORY_ARCHETYPES[archetypeKey] || TEAM_STORY_ARCHETYPES.stable_bullpen
   const shape = getTeamBullpenShape(board)
   const entries = flattenPitchers(board)
-  const { reads } = getBullpenReads({ ...counts, limitedRead: archetypeKey === TEAM_STORY_ARCHETYPES.data_limited.key })
 
   return {
     hasStory: true,
@@ -794,7 +801,6 @@ export function getTeamBullpenStoryView(board) {
     evidence: evidenceFor(archetype.key, counts, shape, entries),
     whyItMatters: whyItMattersFor(archetype.key, counts),
     watchItems: watchItemsFor(archetype.key, counts).slice(0, 4),
-    reads,
     shapeReads: teamShapeReads(board),
     framing: STORY_FRAMING_LINE,
   }

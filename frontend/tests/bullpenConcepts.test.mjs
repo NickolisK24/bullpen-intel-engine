@@ -18,8 +18,6 @@ after(async () => {
 
 const { getBullpenReads, getReadsForLandscapeEntry, CONCEPT_DEFINITIONS, LIMITED_READ_LABEL } =
   await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
-const { default: TeamBullpenStoryPanel } =
-  await server.ssrLoadModule('/src/components/bullpen/board/TeamBullpenStoryPanel.jsx')
 const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 
@@ -89,49 +87,6 @@ test('the landscape adapter maps entry counts onto the reads', () => {
 })
 
 // ── Surfaces ────────────────────────────────────────────────────────────────
-
-function makeBoard(metrics, state = 'constrained') {
-  return {
-    team: { team_id: 1, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL' },
-    context: { health: { state, label: 'label', reasons: [] }, metrics, confidence: 'high', limitations: [] },
-    groups: [],
-    freshness: {},
-    total_pitchers: metrics.total_relievers,
-  }
-}
-
-const constrainedBoard = makeBoard({
-  total_relievers: 8, available: 2, monitor: 2, limited: 0, avoid: 3, unavailable: 1,
-  pct_available: 25, pct_restricted: 50,
-})
-
-test('the team story panel renders the BaseballOS Reads strip with definitions', () => {
-  const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
-  assert.ok(htmlIncludes(html, 'BaseballOS Reads'))
-  // Milwaukee's counts: 3 needing rest, 2 on watch, 2 ready of 8.
-  assert.ok(htmlIncludes(html, 'Bullpen Pressure'))
-  assert.ok(htmlIncludes(html, 'High'))
-  assert.ok(htmlIncludes(html, 'Recovery Window'))
-  assert.ok(htmlIncludes(html, 'Narrow'))
-  assert.ok(htmlIncludes(html, 'Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Concentrated'))
-  assert.ok(htmlIncludes(html, 'Clean Options'))
-  assert.ok(htmlIncludes(html, 'Thin'))
-  // The definitions are one disclosure away.
-  assert.ok(htmlIncludes(html, 'What these mean'))
-  assert.ok(htmlIncludes(html, CONCEPT_DEFINITIONS.pressure.definition))
-  assert.ok(htmlIncludes(html, CONCEPT_DEFINITIONS.recovery.definition))
-})
-
-test('a thin dataset reads as Limited across the strip', () => {
-  const emptyBoard = makeBoard({
-    total_relievers: 0, available: 0, monitor: 0, limited: 0, avoid: 0, unavailable: 0,
-    pct_available: 0, pct_restricted: 0,
-  }, 'no_data')
-  const html = render(React.createElement(TeamBullpenStoryPanel, { board: emptyBoard }))
-  const limitedCount = (html.match(new RegExp(escapeRegExp(LIMITED_READ_LABEL), 'g')) || []).length
-  assert.ok(limitedCount >= 4, `expected all four reads limited, saw ${limitedCount}`)
-})
 
 const dashboard = {
   context: {

@@ -29,9 +29,6 @@ const {
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
-const detailsTagFor = (html, ariaLabel) => (
-  html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
-)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const BOARD_GROUP_ORDER = ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']
 const ROLE_KEYS = {
@@ -163,10 +160,20 @@ function buildTeamShape(groups, healthState) {
     : depthCounts.availableDepthArms >= 1
       ? 'Stable Depth Safety'
       : 'Limited Depth Safety'
+  const concentrationCounts = cards.length
+    ? {
+        topArmCount: Math.min(3, cards.length),
+        topSharePct: 65,
+        participantCount: cards.length,
+        totalRecentPitches: 100,
+        concentrationDescriptor: 'some concentration',
+      }
+    : { totalRecentPitches: 0, participantCount: 0 }
   const reads = [
     readTemplate('trustAvailability', cards.length ? trustLabel : 'Limited Read', trustCounts),
     readTemplate('cleanOptions', cards.length ? cleanLabel : 'Limited Read', cleanCounts),
     readTemplate('bullpenPressure', cards.length ? pressureLabel : 'Limited Read', pressureCounts),
+    readTemplate('workloadConcentration', cards.length ? 'Some Workload Concentration' : 'Limited Read', concentrationCounts),
     readTemplate('coverageSafety', cards.length ? coverageLabel : 'Limited Read', coverageCounts),
     readTemplate('depthSafety', cards.length ? depthLabel : 'Limited Read', depthCounts),
   ]
@@ -178,6 +185,7 @@ function buildTeamShape(groups, healthState) {
     trustAvailability: byKey.trustAvailability,
     cleanOptions: byKey.cleanOptions,
     bullpenPressure: byKey.bullpenPressure,
+    workloadConcentration: byKey.workloadConcentration,
     coverageSafety: byKey.coverageSafety,
     depthSafety: byKey.depthSafety,
     supportingCounts: { totalBullpenArms: cards.length, activeBullpenArms: cards.length - unavailable.length },
@@ -476,16 +484,17 @@ test('the panel renders headline, both bullet sections, and the framing line', (
 
 test('the panel renders Today’s Bullpen Shape in the required order with explanations', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
-  const shapeTag = detailsTagFor(html, 'Today’s bullpen shape')
   const orderedLabels = [
     'Trust Arm Availability',
     'Clean Options',
     'Bullpen Pressure',
+    'Workload Concentration',
     'Coverage Safety',
     'Depth Safety',
   ]
 
   assert.ok(htmlIncludes(html, 'Today’s Bullpen Shape'))
+  assert.ok(htmlIncludes(html, '6 reads'))
   let cursor = html.indexOf('Today’s Bullpen Shape')
   for (const label of orderedLabels) {
     const index = html.indexOf(label, cursor)
@@ -495,14 +504,17 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
   assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
   assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
+  assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Thin Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Limited Depth Safety'))
   assert.ok(htmlIncludes(html, 'Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted.'))
   assert.ok(htmlIncludes(html, '2 Clean Options from 7 active arms.'))
   assert.ok(htmlIncludes(html, 'Pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
+  assert.ok(htmlIncludes(html, 'Top 3 arms: 65% of recent relief pitches across 8 participating arms.'))
   assert.ok(htmlIncludes(html, 'aria-label="Stable Trust Arm Availability. Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
-  assert.ok(shapeTag)
-  assert.ok(!shapeTag.includes('open'))
+  assert.ok(!htmlIncludes(html, 'BaseballOS Reads'))
+  assert.ok(!htmlIncludes(html, 'What these mean'))
+  assert.ok(!htmlIncludes(html, 'Recovery Window'))
 })
 
 test('the shape section stays label-led and avoids score ranking or grade language', () => {

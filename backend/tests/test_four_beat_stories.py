@@ -23,6 +23,7 @@ from services.four_beat_stories import (
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
+from services.team_bullpen_shape import build_team_bullpen_shape
 
 
 REF = date(2026, 6, 16)
@@ -552,6 +553,35 @@ def test_description_only_teams_suppress_and_feed_count_is_variable_and_ordered(
     ]
     assert all(item['strength'] >= feed['items'][-1]['strength'] for item in feed['items'])
     assert 'Quiet Club' not in str(feed['items'])
+
+
+def test_team_shape_workload_concentration_matches_four_beat_descriptor():
+    pitchers = [_pitcher(idx, f'Concentration Arm {idx}') for idx in range(1, 6)]
+    records = [
+        _record(pitchers[0], STATUS_AVAILABLE),
+        _record(pitchers[1], STATUS_AVAILABLE),
+        _record(pitchers[2], STATUS_MONITOR),
+        _record(pitchers[3], STATUS_MONITOR),
+        _record(pitchers[4], STATUS_MONITOR),
+    ]
+    logs_by_pitcher = {
+        pitchers[0].id: [_log(pitchers[0].id, 1, 45)],
+        pitchers[1].id: [_log(pitchers[1].id, 1, 25)],
+        pitchers[2].id: [_log(pitchers[2].id, 1, 20)],
+        pitchers[3].id: [_log(pitchers[3].id, 1, 5)],
+        pitchers[4].id: [_log(pitchers[4].id, 1, 5)],
+    }
+
+    story_inputs = compute_team_story_inputs(_team_inputs(records, logs_by_pitcher))
+    shape = build_team_bullpen_shape([], workload_concentration=story_inputs['workload'])
+    concentration = shape['workloadConcentration']
+
+    assert story_inputs['workload']['concentration_descriptor'] == 'a heavily concentrated workload'
+    assert concentration['label'] == 'Heavily Concentrated Workload'
+    assert concentration['supportingCounts']['concentrationDescriptor'] == (
+        story_inputs['workload']['concentration_descriptor']
+    )
+    assert concentration['supportingCounts']['topShare'] == story_inputs['workload']['top_share']
 
 
 def test_near_collision_stress_transfer_pens_surface_concentration_specifics():

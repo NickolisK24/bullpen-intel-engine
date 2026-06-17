@@ -255,6 +255,7 @@ class TestDashboardEndpoint:
             if (card['pitcher_labels']['read']['key'] == 'clean_option'
                 and card['pitcher_labels']['role']['key'] == 'trust_arm')
         ]
+        board_concentration = board['team_shape']['workloadConcentration']
         implication = next(
             beat for beat in story['beats']
             if beat['key'] == 'implication'
@@ -265,6 +266,10 @@ class TestDashboardEndpoint:
         assert board_clean_trust_names == ['Kenley Jansen']
         assert implication['slots']['clean_trust_names'] == 'Kenley Jansen'
         assert story['computed']['clean_trust_count'] == len(board_clean_trust_names)
+        assert board_concentration['supportingCounts']['concentrationDescriptor'] == (
+            story['computed']['workload']['concentration_descriptor']
+        )
+        assert board_concentration['supportingCounts']['topShare'] == story['computed']['workload']['top_share']
 
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
