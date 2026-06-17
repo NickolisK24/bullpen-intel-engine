@@ -42,6 +42,7 @@ function freshnessRow(freshness) {
     isStale: !isCurrent,
     label: f.label || null,
     dataThrough: fmtDataDate(f.data_through) || null,
+    completedGamesLine: provenance.completedGamesLine,
     lastSync: fmtSyncDate(f.last_successful_sync) || null,
     healthLabel: provenance.label,         // "Current stored data" / "Sample data"
     provenanceDetail: provenance.detail,

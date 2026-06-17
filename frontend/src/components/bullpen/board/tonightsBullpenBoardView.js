@@ -3,7 +3,7 @@ import {
   getAvailabilityBadgeView,
   getDataStateView,
 } from '../availabilityView'
-import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import { getPitcherLabels } from '../../../utils/pitcherLabels'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
@@ -375,6 +375,7 @@ export function getBoardCardView(card) {
 export function getDataProvenance(freshness) {
   const f = freshness || {}
   const dataThrough = fmtDataDate(f.data_through)
+  const completedGamesLine = completedGamesDataLine(f.data_through)
   const servedPreviousView = f.served_consistency_state === 'previous_published_view'
   const isLive = f.is_current === true && (f.sync_status === 'success' || f.sync_status === 'ok')
   const isStale = f.is_stale === true || f.freshness_state === 'stale'
@@ -385,6 +386,7 @@ export function getDataProvenance(freshness) {
       label: 'No data loaded',
       detail: null,
       dataThrough: null,
+      completedGamesLine: null,
       throughHint: 'No completed MLB games are loaded yet.',
       isLive: false,
       tone: { borderColor: 'rgba(148,163,184,0.30)', backgroundColor: 'rgba(148,163,184,0.08)', color: '#cbd5e1', dot: '#94a3b8' },
@@ -397,6 +399,7 @@ export function getDataProvenance(freshness) {
       label: failed ? 'Last published view' : 'Sync in progress',
       detail: `through ${dataThrough}`,
       dataThrough,
+      completedGamesLine,
       throughHint: failed
         ? 'Latest sync failed before publish; serving the last fully published view.'
         : 'Sync is in progress; serving the last fully published view.',
@@ -410,7 +413,8 @@ export function getDataProvenance(freshness) {
       label: 'Outdated data',
       detail: `through ${dataThrough}`,
       dataThrough,
-      throughHint: f.label || 'Latest completed MLB data is outside the active freshness window.',
+      completedGamesLine,
+      throughHint: f.label || 'Completed-game coverage is outside the active freshness window.',
       isLive: false,
       tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
     }
@@ -421,7 +425,8 @@ export function getDataProvenance(freshness) {
       label: 'Current stored data',
       detail: `through ${dataThrough}`,
       dataThrough,
-      throughHint: 'Latest completed MLB data = most recent completed game in the dataset, not necessarily today.',
+      completedGamesLine,
+      throughHint: 'Data coverage uses the most recent completed game in the dataset, not necessarily today.',
       isLive: true,
       tone: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
     }
@@ -431,7 +436,8 @@ export function getDataProvenance(freshness) {
     label: 'Sample data',
     detail: `through ${dataThrough}`,
     dataThrough,
-    throughHint: 'Latest completed MLB data = most recent completed game in the dataset (historical snapshot, not live).',
+    completedGamesLine,
+    throughHint: 'Data coverage uses the most recent completed game in the dataset (historical snapshot, not live).',
     isLive: false,
     tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
   }

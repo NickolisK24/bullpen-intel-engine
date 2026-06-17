@@ -20,8 +20,8 @@ function FreshnessBanner({ freshness }) {
   const view = getBoardFreshnessView(freshness)
   const provenance = getDataProvenance(freshness)
   const isProminent = view.isStale || view.limitations.length > 0 || !view.dataThrough
-  const summaryLabel = provenance.dataThrough
-    ? `Latest completed MLB data: ${provenance.dataThrough}`
+  const summaryLabel = provenance.completedGamesLine
+    ? provenance.completedGamesLine
     : 'No completed MLB data loaded'
 
   if (!isProminent) {

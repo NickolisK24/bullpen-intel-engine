@@ -49,7 +49,7 @@ const TrustStrip = ({ dot, style = {}, title, status, metrics, helper }) => {
   )
 }
 
-export function SyncStatusContent({ data, loading, error, now }) {
+export function SyncStatusContent({ data, loading, error, now, freshnessAuthority }) {
   if (loading) {
     return (
       <TrustStrip
@@ -57,7 +57,7 @@ export function SyncStatusContent({ data, loading, error, now }) {
         status="Checking"
         metrics={[
           { label: 'Last synced', value: 'Checking sync status', muted: true },
-          { label: 'Latest completed MLB data', value: 'Checking data coverage', muted: true },
+          { label: 'Data coverage', value: 'Checking data coverage', muted: true },
           { label: 'Refresh Coverage', value: 'Checking refresh count', muted: true },
         ]}
       />
@@ -71,14 +71,14 @@ export function SyncStatusContent({ data, loading, error, now }) {
         helper="Sync status unavailable."
         metrics={[
           { label: 'Last synced', value: 'Unavailable', muted: true },
-          { label: 'Latest completed MLB data', value: 'Unavailable', muted: true },
+          { label: 'Data coverage', value: 'Unavailable', muted: true },
           { label: 'Refresh Coverage', value: 'Unavailable', muted: true },
         ]}
       />
     )
   }
 
-  const view = getSyncStatusView(data, now ? { now } : undefined)
+  const view = getSyncStatusView(data, { now, freshnessAuthority })
   const title = [view.helper, ...view.limitations].filter(Boolean).join(' ')
   const syncValue = view.syncValue || (view.syncLabel === 'No data loaded' ? 'No data loaded' : 'Unavailable')
   const dataValue = view.dataValue || 'Unavailable'
@@ -93,7 +93,7 @@ export function SyncStatusContent({ data, loading, error, now }) {
       helper={view.helper}
       metrics={[
         { label: view.syncLabel === 'No data loaded' ? 'Last synced' : view.syncLabel, value: syncValue, muted: !view.syncValue },
-        { label: view.dataLabel || 'Latest completed MLB data', value: dataValue, muted: !view.dataValue },
+        { label: view.dataLabel || 'Data coverage', value: dataValue, muted: !view.dataValue },
         { label: 'Refresh Coverage', value: coverageValue, muted: !view.coverageValue },
       ]}
     />
