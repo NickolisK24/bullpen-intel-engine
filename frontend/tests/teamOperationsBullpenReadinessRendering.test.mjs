@@ -31,6 +31,8 @@ const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const sanitizedGovernanceText = html => visibleText(html)
+  .replace(/Context only - no team ranking or pitcher selection\./g, '')
+  .replace(/Team ranking Not applied Pitcher selection Not made Trust ranking Not applied Trust selection Not made/g, '')
   .replace(/ranking_applied/g, '')
   .replace(/selection_made/g, '')
 
@@ -286,8 +288,7 @@ test('renders compact Team Operations summary with evidence collapsed and govern
 
   assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
   assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  assert.ok(htmlIncludes(html, 'Context only - no team ranking or pitcher selection.'))
   assert.ok(htmlIncludes(html, 'View Context Details'))
   assert.ok(htmlIncludes(html, 'View Evidence'))
   assert.ok(htmlIncludes(html, 'View Metadata'))
@@ -299,9 +300,10 @@ test('renders governance flags and metadata', () => {
   const html = renderPanel(baseState, { initialExpandedSections: ['metadata'] })
 
   assert.ok(htmlIncludes(html, 'Governance Metadata'))
-  assert.ok(htmlIncludes(html, 'ranking_applied'))
-  assert.ok(htmlIncludes(html, 'selection_made'))
-  assert.ok(htmlIncludes(html, 'false'))
+  assert.ok(htmlIncludes(html, 'Team ranking'))
+  assert.ok(htmlIncludes(html, 'Pitcher selection'))
+  assert.ok(htmlIncludes(html, 'Not applied'))
+  assert.ok(htmlIncludes(html, 'Not made'))
   assert.ok(htmlIncludes(html, 'Trust Metadata'))
   assert.ok(htmlIncludes(html, 'Freshness Metadata'))
 })
@@ -340,8 +342,7 @@ test('humanizes readiness evidence keys while preserving technical keys', () => 
   assert.ok(htmlIncludes(html, 'Source key: trust_metadata_limited'))
   assert.ok(htmlIncludes(html, 'Affected Area: Trust Metadata'))
   assert.ok(htmlIncludes(html, 'Technical details'))
-  assert.ok(htmlIncludes(html, 'ranking_applied === false'))
-  assert.ok(htmlIncludes(html, 'selection_made === false'))
+  assert.ok(htmlIncludes(html, 'Context only - no team ranking or pitcher selection.'))
 })
 
 test('renders freshness metadata when expanded', () => {

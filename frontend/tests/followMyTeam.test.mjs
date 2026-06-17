@@ -88,8 +88,8 @@ test('first-time card lets the user choose a followed team', () => {
   const html = inRouter(React.createElement(FollowMyTeamCard, { teams }))
 
   assert.ok(htmlIncludes(html, 'Choose followed team'))
-  assert.ok(htmlIncludes(html, 'ACE - Aces'))
-  assert.ok(htmlIncludes(html, 'BEA - Bears'))
+  assert.ok(htmlIncludes(html, 'ACE · Aces'))
+  assert.ok(htmlIncludes(html, 'BEA · Bears'))
   assert.ok(!htmlIncludes(html, 'Clear followed team'))
 })
 
@@ -170,8 +170,8 @@ test('returning card includes change and clear controls', () => {
 
   assert.ok(htmlIncludes(html, 'Change team'))
   assert.ok(htmlIncludes(html, 'Clear followed team'))
-  assert.ok(htmlIncludes(html, 'ACE - Aces'))
-  assert.ok(htmlIncludes(html, 'BEA - Bears'))
+  assert.ok(htmlIncludes(html, 'ACE · Aces'))
+  assert.ok(htmlIncludes(html, 'BEA · Bears'))
 })
 
 test('followed team preference can be cleared', () => {

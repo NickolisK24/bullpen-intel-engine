@@ -522,7 +522,7 @@ def test_beats_fill_slots_or_omit_and_mechanism_stays_associative():
     assert not any(beat['key'] == 'evidence' for beat in story_without_evidence['beats'])
 
 
-def test_description_only_teams_suppress_and_feed_count_is_variable_and_ranked():
+def test_description_only_teams_suppress_and_feed_count_is_variable_and_ordered():
     stress_pitchers = [_pitcher(idx, f'Stress Arm {idx}', team_id=10, team_name='Stress Club', abbr='STR') for idx in range(1, 6)]
     pressure_pitchers = [_pitcher(idx, f'Pressure Arm {idx}', team_id=20, team_name='Pressure Club', abbr='PRS') for idx in range(11, 17)]
     quiet_pitchers = [_pitcher(idx, f'Quiet Arm {idx}', team_id=30, team_name='Quiet Club', abbr='QUT') for idx in range(21, 26)]

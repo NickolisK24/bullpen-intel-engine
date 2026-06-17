@@ -276,7 +276,7 @@ test('role surface contains no advisory or recommendation language', () => {
 test('getRoleView maps key, labels, confidence, and neutral tone', () => {
   const v = view.getRoleView(longRole)
   assert.equal(v.key, 'long_multi_inning')
-  assert.equal(v.shortLabel, 'Long / Multi-Inning')
+  assert.equal(v.shortLabel, 'Coverage Arm')
   assert.equal(v.confidenceLabel, 'Strong Read')
   assert.equal(v.evidence.length, 3)
   assert.equal(view.getRoleView(null), null)

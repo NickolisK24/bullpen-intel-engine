@@ -60,9 +60,9 @@ test('snapshot is scoped to the governed bullpen-eligible set', () => {
   assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the governed availability set'))
 })
 
-test('bullpen health is clearly league-wide, not a single team', () => {
+test('bullpen state is clearly league-wide, not a single team', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Bullpen Health'))
+  assert.ok(htmlIncludes(html, 'League-Wide Bullpen State'))
   assert.ok(htmlIncludes(html, 'not a single team'))
   // The aggregate statement itself carries a league-wide qualifier inline.
   assert.ok(htmlIncludes(html, 'League-Wide · Workload Read:'))
@@ -83,7 +83,7 @@ test('quick actions reinforce the league -> team / matchup / pitcher hierarchy',
 
 test('existing realignment headings remain (substrings preserved for stability)', () => {
   const html = renderDashboard()
-  for (const heading of ['Bullpen Overview', 'Bullpen Snapshot', 'Bullpen Health', 'Usage Roles', 'Quick Actions']) {
+  for (const heading of ['Bullpen Overview', 'Bullpen Snapshot', 'Bullpen State', 'Usage Roles', 'Quick Actions']) {
     assert.ok(htmlIncludes(html, heading), `missing heading substring: ${heading}`)
   }
 })

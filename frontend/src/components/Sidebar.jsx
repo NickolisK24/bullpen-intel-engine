@@ -25,7 +25,7 @@ export default function Sidebar() {
           <span className="text-2xl">⚾</span>
           <div className="min-w-0">
             <div className="font-display text-2xl tracking-widest text-chalk100 leading-none truncate">BaseballOS</div>
-            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-widest mt-0.5">Analytics Platform</div>
+            <div className="text-chalk600 text-[10px] font-mono uppercase tracking-widest mt-0.5">Bullpen Intelligence</div>
           </div>
         </div>
 

@@ -219,9 +219,11 @@ test('RecommendationPanel renders trust, freshness, availability, and metadata f
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'No Bullpen Ranking Applied'))
   assert.ok(htmlIncludes(html, 'No Final Pitcher Selection Made'))
-  assert.ok(htmlIncludes(html, 'ranking_applied'))
-  assert.ok(htmlIncludes(html, 'selection_made'))
-  assert.ok(htmlIncludes(html, 'false'))
+  assert.ok(htmlIncludes(html, 'Governed Output'))
+  assert.ok(htmlIncludes(html, 'Bullpen ordering'))
+  assert.ok(htmlIncludes(html, 'Pitcher choice'))
+  assert.ok(htmlIncludes(html, 'Not applied'))
+  assert.ok(htmlIncludes(html, 'Not made'))
 })
 
 test('RecommendationPanel renders assigned and blocked categories', () => {

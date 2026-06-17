@@ -13,26 +13,26 @@ export const STORY_FILTERS = [
   },
   {
     key: 'stressed',
-    label: 'Stressed',
-    activeLabel: 'Stressed Stories',
+    label: 'Pressure',
+    activeLabel: 'Pressure Stories',
     description: 'Pens that have been worked hard and are short on rest.',
   },
   {
     key: 'rested',
-    label: 'Rested',
-    activeLabel: 'Rested Stories',
+    label: 'Rest',
+    activeLabel: 'Rest Stories',
     description: 'Pens with rested options and room to maneuver.',
   },
   {
     key: 'watch',
-    label: 'Watch List',
-    activeLabel: 'Watch List Stories',
+    label: 'Watch',
+    activeLabel: 'Watch Stories',
     description: 'Pens quietly leaning on the same arms.',
   },
   {
     key: 'league',
-    label: 'League Notes',
-    activeLabel: 'League Notes',
+    label: 'League',
+    activeLabel: 'League Stories',
     description: 'League-wide observations not tied to a single bullpen.',
   },
 ]
@@ -50,15 +50,15 @@ const TONE_CATEGORY = {
 const STORY_FILTER_KEYS = new Set(STORY_FILTERS.map(option => option.key))
 
 export const FEED_EMPTY_COPY = {
-  all: 'No bullpen stories are active today.',
-  stressed: 'No bullpen stories currently match the stressed filter.',
-  rested: 'No rested bullpen stories are active today.',
-  watch: 'No watch-list bullpen stories are active today.',
-  league: 'No league-wide notes are active today.',
+  all: 'No bullpen stories today.',
+  stressed: 'No pressure stories today.',
+  rested: 'No rest stories today.',
+  watch: 'No watch stories today.',
+  league: 'No league stories today.',
 }
 
 export const FEED_EMPTY_SUPPORT_COPY = 'Try another category or return to the full feed.'
-export const FOUR_BEAT_STORIES_FALLBACK = 'No four-beat bullpen stories are active today.'
+export const FOUR_BEAT_STORIES_FALLBACK = 'No bullpen stories today.'
 
 export function normalizeStoryFilter(filter) {
   return STORY_FILTER_BY_KEY[filter] ? filter : DEFAULT_STORY_FILTER
@@ -110,7 +110,7 @@ function normalizeFourBeatStory(story) {
     teamId,
     teamName,
     abbr,
-    kicker: story.kicker || story.rule_label || 'Four Beat Story',
+    kicker: story.kicker || story.rule_label || 'Bullpen Story',
     tone: story.tone || 'watch',
     category: normalizeStoryCategory(story, teamId),
     title: story.title || story.signal || story.rule_label || 'Bullpen story',

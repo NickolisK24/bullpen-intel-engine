@@ -47,9 +47,9 @@ test('storylines are derived dynamically from the landscape counts', () => {
   const view = getStorylines(landscape)
   assert.ok(view.hasStorylines)
   assert.ok(view.items.length >= 3 && view.items.length <= 4)
-  assert.ok(view.items.some(item => /Chicago Cubs appears to have the most constrained bullpen in the current read\./.test(item)))
-  assert.ok(view.items.some(item => /Washington Nationals currently has the largest group of available relievers\./.test(item)))
-  assert.ok(view.items.some(item => /Toronto Blue Jays shows the highest concentration of Monitor arms\./.test(item)))
+  assert.ok(view.items.some(item => /Chicago Cubs is carrying a constrained bullpen read today\./.test(item)))
+  assert.ok(view.items.some(item => /Washington Nationals currently has a deep available-reliever group\./.test(item)))
+  assert.ok(view.items.some(item => /Toronto Blue Jays shows a concentrated Monitor-arm read\./.test(item)))
 })
 
 test('an elevated-stress count storyline appears when multiple clubs are constrained', () => {
@@ -84,8 +84,8 @@ test('zero-count entries do not produce empty or misleading storylines', () => {
 test('the storylines card renders with its title and bullet observations', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Storylines'))
-  assert.ok(htmlIncludes(html, 'Chicago Cubs appears to have the most constrained bullpen in the current read.'))
-  assert.ok(htmlIncludes(html, 'Washington Nationals currently has the largest group of available relievers.'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs is carrying a constrained bullpen read today.'))
+  assert.ok(htmlIncludes(html, 'Washington Nationals currently has a deep available-reliever group.'))
 })
 
 test('the storylines card sits above the individual situation columns', () => {

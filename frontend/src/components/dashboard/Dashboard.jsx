@@ -124,10 +124,10 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             </div>
           </Section>
 
-          {/* Section 3 — Bullpen Health */}
+          {/* Section 3 — Bullpen State */}
           <Section
-            title="League-Wide Bullpen Health"
-            subtitle="Aggregated across the governed bullpen-eligible set — not a single team. Open Bullpen for one team's health."
+            title="League-Wide Bullpen State"
+            subtitle="Aggregated across the governed bullpen-eligible set — not a single team. Open Bullpen for one team's current state."
           >
             <div className="card p-4" style={context.tone} role="status" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2">

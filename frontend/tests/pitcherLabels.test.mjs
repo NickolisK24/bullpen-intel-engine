@@ -19,7 +19,7 @@ const authoredCard = {
   data_state: 'fresh',
   role: {
     role_key: 'late_high_leverage',
-    role: 'Late / High-Leverage',
+    role: 'Trust Arm',
   },
   pitcher_labels: {
     role: {

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { useFollowedTeamPreference } from '../../hooks/useFollowedTeamPreference'
 import { getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
+import { formatTeamLabel } from '../../utils/formatters'
 import {
   buildFollowedTeamHref,
   resolveFollowedTeam,
@@ -45,7 +46,7 @@ function TeamSelect({ teams, value, onSelectTeam, label = 'Choose followed team'
         <option value="">Choose team</option>
         {(Array.isArray(teams) ? teams : []).map(team => (
           <option key={team.team_id} value={team.team_id}>
-            {team.team_abbreviation ? `${team.team_abbreviation} - ${team.team_name}` : team.team_name}
+            {formatTeamLabel(team, team.team_name || 'Team')}
           </option>
         ))}
       </select>

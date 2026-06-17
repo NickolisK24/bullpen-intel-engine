@@ -78,6 +78,14 @@ function DetailSection({ title, children, initiallyOpen = false }) {
 
 function GovernanceStrip({ governance }) {
   const data = asObject(governance)
+  const rows = [
+    ['Ranking', data.rankingApplied === false ? 'Not applied' : displayValue(data.rankingApplied)],
+    ['Selection', data.selectionMade === false ? 'Not made' : displayValue(data.selectionMade)],
+    ['Recommendation', data.recommendationMade === false ? 'Not made' : displayValue(data.recommendationMade)],
+    ['Prediction', data.predictionMade === false ? 'Not made' : displayValue(data.predictionMade)],
+    ['Decision scope', data.decisionScope === 'explanation_only' ? 'Explanation only' : displayValue(data.decisionScope)],
+    ['Advice scope', data.adviceScope === 'none' ? 'No advice' : displayValue(data.adviceScope)],
+  ]
 
   return (
     <div className="rounded border border-amber/35 bg-amber/10 p-3">
@@ -86,17 +94,10 @@ function GovernanceStrip({ governance }) {
         No ranking, selection, recommendation, or prediction applied.
       </p>
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-        {[
-          ['ranking_applied', data.rankingApplied],
-          ['selection_made', data.selectionMade],
-          ['recommendation_made', data.recommendationMade],
-          ['prediction_made', data.predictionMade],
-          ['decision_scope', data.decisionScope],
-          ['advice_scope', data.adviceScope],
-        ].map(([label, value]) => (
+        {rows.map(([label, value]) => (
           <div key={label} className="rounded border border-dirt bg-field/50 px-2 py-1">
             <dt className="font-mono text-[10px] uppercase tracking-wider text-chalk600">{label}</dt>
-            <dd className="mt-0.5 break-words font-mono text-xs text-chalk200">{displayValue(value)}</dd>
+            <dd className="mt-0.5 break-words font-mono text-xs text-chalk200">{value}</dd>
           </div>
         ))}
       </dl>
