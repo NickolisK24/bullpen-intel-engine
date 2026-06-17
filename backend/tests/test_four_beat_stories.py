@@ -10,6 +10,7 @@ from services.four_beat_stories import (
     LEAD_FATIGUE_LOAD,
     LEAD_TRUST_LANE_ABSENCE,
     LEAD_TRUST_LANE_DEPTH,
+    LEAD_WORKLOAD_LIGHT,
     RULE_HIDDEN_CAPACITY_LOSS,
     RULE_PRESSURE_DISTRIBUTION,
     RULE_SPECIAL_SITUATION,
@@ -690,6 +691,93 @@ def test_content_selective_leads_are_deterministic_and_surface_normalized_fields
     )
 
 
+def test_feed_wide_lead_collisions_resolve_on_grounded_secondary_dimensions():
+    az_pitchers, az_records, az_logs = _fixture_team(
+        109,
+        'Arizona Diamondbacks',
+        'AZ',
+        [50, 42, 38, 26, 25, 25, 25],
+    )
+    lad_pitchers, lad_records, lad_logs = _fixture_team(
+        119,
+        'Los Angeles Dodgers',
+        'LAD',
+        [34, 32, 31, 30, 30, 29, 29, 29],
+        trust_indices=(0, 1, 2, 3),
+    )
+    sd_pitchers, sd_records, sd_logs = _fixture_team(
+        135,
+        'San Diego Padres',
+        'SD',
+        [25, 25, 25, 25, 25, 25, 25, 25],
+    )
+    bos_pitchers, bos_records, bos_logs = _fixture_team(
+        111,
+        'Boston Red Sox',
+        'BOS',
+        [25, 25, 25, 25, 25, 25, 25, 25],
+        trust_indices=(0, 1),
+    )
+    season_era = {
+        'bullpens': [
+            _bullpen_era(109, 'Arizona Diamondbacks', 'AZ', 2.72),
+            _bullpen_era(135, 'San Diego Padres', 'SD', 3.11),
+            _bullpen_era(119, 'Los Angeles Dodgers', 'LAD', 3.28),
+            _bullpen_era(111, 'Boston Red Sox', 'BOS', 3.87),
+        ],
+    }
+
+    def build(records):
+        return build_four_beat_story_feed(
+            records,
+            _merge_logs(az_logs, lad_logs, sd_logs, bos_logs),
+            reference_date=REF,
+            season_era=season_era,
+        )
+
+    ordered_records = [*az_records, *lad_records, *sd_records, *bos_records]
+    first = build(ordered_records)
+    second = build(list(reversed(ordered_records)))
+    first_leads = {
+        item['team_abbreviation']: (
+            item['lead_dimension'],
+            item['title'],
+            item['lead_dimension_detail'].get('feed_wide_replacement_for'),
+        )
+        for item in first['items']
+    }
+    second_leads = {
+        item['team_abbreviation']: (
+            item['lead_dimension'],
+            item['title'],
+            item['lead_dimension_detail'].get('feed_wide_replacement_for'),
+        )
+        for item in second['items']
+    }
+
+    assert first_leads == second_leads
+    stories = {item['team_abbreviation']: item for item in first['items']}
+    assert stories['AZ']['lead_dimension'] == LEAD_TRUST_LANE_ABSENCE
+    assert stories['SD']['lead_dimension'] != LEAD_TRUST_LANE_ABSENCE
+    assert stories['SD']['lead_dimension_detail']['feed_wide_replacement_for'] == LEAD_TRUST_LANE_ABSENCE
+    assert stories['LAD']['lead_dimension'] == LEAD_DEEP_INTACT
+    assert stories['BOS']['lead_dimension'] != LEAD_DEEP_INTACT
+    assert stories['BOS']['lead_dimension_detail']['feed_wide_replacement_for'] == LEAD_DEEP_INTACT
+    assert stories['SD']['lead_fields']['clean_trust_count'] == 0
+    assert stories['SD']['computed']['season_era']['rank'] < stories['BOS']['computed']['season_era']['rank']
+    assert stories['BOS']['computed']['season_era']['rank'] > stories['LAD']['computed']['season_era']['rank']
+    assert stories['BOS']['computed']['availability']['available'] == stories['BOS']['computed']['availability']['total']
+
+    normalized_titles = {}
+    for story in first['items']:
+        normalized = story['title'].replace(story['team_name'], '{team_name}')
+        assert normalized not in normalized_titles, (
+            f"{story['team_abbreviation']} collided with "
+            f"{normalized_titles.get(normalized)} on {normalized!r}"
+        )
+        normalized_titles[normalized] = story['team_abbreviation']
+
+
 def test_content_selective_leads_do_not_manufacture_difference_for_near_identical_pens():
     first_pitchers, first_records, first_logs = _fixture_team(
         701,
@@ -716,7 +804,54 @@ def test_content_selective_leads_do_not_manufacture_difference_for_near_identica
     ]
     assert stories[0]['lead_dimension'] == stories[1]['lead_dimension']
     assert stories[0]['beats'][0]['skeleton_key'] == stories[1]['beats'][0]['skeleton_key']
+    assert stories[0]['title'].replace(stories[0]['team_name'], '{team_name}') == (
+        stories[1]['title'].replace(stories[1]['team_name'], '{team_name}')
+    )
     assert any(story['lead_dimension_detail'].get('honest_sameness') for story in stories)
+    assert any(story['lead_dimension_detail'].get('feed_wide_honest_sameness') for story in stories)
+
+
+def test_feed_wide_distinct_prose_guard_allows_only_honest_sameness():
+    no_trust_pitchers, no_trust_records, no_trust_logs = _fixture_team(
+        811,
+        'No Trust Fixture',
+        'NTF',
+        [36, 34, 32, 31, 31, 31],
+    )
+    pressure_pitchers, pressure_records, pressure_logs = _fixture_team(
+        812,
+        'Pressure Fixture',
+        'PFX',
+        [24, 24, 24, 24, 24, 24, 24, 24],
+    )
+    twin_pitchers, twin_records, twin_logs = _fixture_team(
+        813,
+        'Twin Fixture',
+        'TFX',
+        [24, 24, 24, 24, 24, 24, 24, 24],
+    )
+    feed = build_four_beat_story_feed(
+        [*no_trust_records, *pressure_records, *twin_records],
+        _merge_logs(no_trust_logs, pressure_logs, twin_logs),
+        reference_date=REF,
+        season_era={
+            'bullpens': [
+                _bullpen_era(811, 'No Trust Fixture', 'NTF', 2.80),
+                _bullpen_era(812, 'Pressure Fixture', 'PFX', 3.25),
+                _bullpen_era(813, 'Twin Fixture', 'TFX', 3.25),
+            ],
+        },
+    )
+
+    seen = {}
+    for story in feed['items']:
+        normalized = story['title'].replace(story['team_name'], '{team_name}')
+        if normalized in seen:
+            assert story['lead_dimension_detail'].get('honest_sameness'), (
+                f"{story['team_abbreviation']} collided with {seen[normalized]} without honest sameness"
+            )
+        else:
+            seen[normalized] = story['team_abbreviation']
 
 
 def test_same_rule_different_leads_produce_different_headlines_and_lead_beats():
