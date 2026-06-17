@@ -82,6 +82,7 @@ from services.roster_status import (
     classify_roster_status,
 )
 from services.season_era import build_season_era_payload
+from services.workload_concentration import summarize_recent_relief_workload
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
@@ -1197,7 +1198,7 @@ def _board_records_from_authority_records(authority_records, reference_date=None
             'visibility': record.get('visibility'),
             'pitcher': pitcher,
         })
-    return board_records
+    return board_records, logs_by_pitcher
 
 
 def _inactive_context_records(records, authority_pitcher_ids):
@@ -1240,7 +1241,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         scored_rows,
         reference_date=ref,
     )
-    records = _board_records_from_authority_records(
+    records, logs_by_pitcher = _board_records_from_authority_records(
         authority_records,
         reference_date=ref,
     )
@@ -1294,12 +1295,18 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         freshness.get('limitations'),
         roster_summary.get('limitations'),
     )
+    workload_concentration = summarize_recent_relief_workload(
+        logs_by_pitcher,
+        ref,
+        pitcher_ids=authority_pitcher_ids,
+    )
     return build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
         limitations=limitations,
         roster_status=roster_summary,
+        workload_concentration=workload_concentration,
     )
 
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import string
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
 from services.availability import (
@@ -19,9 +18,16 @@ from services.availability import (
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
-from services.bullpen_context import BULLPEN_CONTEXT_WINDOW_DAYS
 from services.pitcher_role_authority import author_role_read_labels
-from utils.games_started import is_relief
+from services.workload_concentration import (
+    CONCENTRATED_TOP_ARM_COUNT,
+    CONCENTRATED_TOP_SHARE_MIN,
+    CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN,
+    CONCENTRATION_DESCRIPTOR_MODERATE_MIN,
+    CONCENTRATION_DESCRIPTOR_SEVERE_MIN,
+    RECENT_WORKLOAD_WINDOW_DAYS,
+    summarize_recent_relief_workload,
+)
 
 
 CAPABILITY = 'four_beat_story_template_v1'
@@ -56,16 +62,6 @@ LEAD_TRUST_LANE_DEPTH = 'trust_lane_depth'
 
 # Reasoned judgment defaults, not validated thresholds. They are intentionally
 # centralized so a future tuning pass can change them without hunting literals.
-RECENT_WORKLOAD_WINDOW_DAYS = BULLPEN_CONTEXT_WINDOW_DAYS
-CONCENTRATED_TOP_ARM_COUNT = 3
-CONCENTRATED_TOP_SHARE_MIN = 0.62
-CONCENTRATION_DESCRIPTOR_MODERATE_MIN = CONCENTRATED_TOP_SHARE_MIN
-CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN = 0.70
-CONCENTRATION_DESCRIPTOR_SEVERE_MIN = 0.80
-CONCENTRATION_DESCRIPTOR_MODERATE = 'some concentration'
-CONCENTRATION_DESCRIPTOR_CONCENTRATED = 'a concentrated workload'
-CONCENTRATION_DESCRIPTOR_SEVERE = 'a heavily concentrated workload'
-CONCENTRATION_DESCRIPTOR_NONE = 'no concentration'
 THIN_AVAILABLE_COUNT_MAX = 3
 THIN_AVAILABLE_SHARE_MAX = 0.30
 LIGHT_HIGH_RISK_LEVELS = {'HIGH', 'CRITICAL'}
@@ -319,29 +315,6 @@ def _ordinal(value):
     return f'{number}{suffix}'
 
 
-def _concentration_descriptor(top_share):
-    share = float(top_share or 0)
-    if share >= CONCENTRATION_DESCRIPTOR_SEVERE_MIN:
-        return {
-            'level': 'severe',
-            'descriptor': CONCENTRATION_DESCRIPTOR_SEVERE,
-        }
-    if share >= CONCENTRATION_DESCRIPTOR_CONCENTRATED_MIN:
-        return {
-            'level': 'concentrated',
-            'descriptor': CONCENTRATION_DESCRIPTOR_CONCENTRATED,
-        }
-    if share >= CONCENTRATION_DESCRIPTOR_MODERATE_MIN:
-        return {
-            'level': 'moderate',
-            'descriptor': CONCENTRATION_DESCRIPTOR_MODERATE,
-        }
-    return {
-        'level': 'none',
-        'descriptor': CONCENTRATION_DESCRIPTOR_NONE,
-    }
-
-
 def _plural(value, singular, plural=None):
     return singular if int(value or 0) == 1 else (plural or f'{singular}s')
 
@@ -468,56 +441,17 @@ def _status_counts(records):
     return counts
 
 
-def _recent_relief_logs(team_inputs):
-    ref = team_inputs.reference_date
-    if ref is None:
-        return []
-    start = ref - timedelta(days=RECENT_WORKLOAD_WINDOW_DAYS - 1)
-    logs = []
+def _workload_summary(team_inputs):
     pitcher_ids = {
         _value(record.get('pitcher'), 'id')
         for record in team_inputs.records
         if _value(record.get('pitcher'), 'id') is not None
     }
-    for pitcher_id in pitcher_ids:
-        for log in team_inputs.logs_by_pitcher.get(pitcher_id, []) or []:
-            game_date = _value(log, 'game_date')
-            if game_date is None or game_date < start or game_date > ref:
-                continue
-            if is_relief(log):
-                logs.append(log)
-    return logs
-
-
-def _workload_summary(team_inputs):
-    pitch_by_pitcher = {}
-    for log in _recent_relief_logs(team_inputs):
-        pitcher_id = _value(log, 'pitcher_id')
-        if pitcher_id is None:
-            continue
-        pitch_by_pitcher[pitcher_id] = pitch_by_pitcher.get(pitcher_id, 0) + int(_value(log, 'pitches_thrown', 0) or 0)
-
-    totals = sorted(pitch_by_pitcher.values(), reverse=True)
-    total_pitches = sum(totals)
-    participant_count = len([value for value in totals if value > 0])
-    top_total = sum(totals[:CONCENTRATED_TOP_ARM_COUNT])
-    top_share = top_total / total_pitches if total_pitches > 0 else 0
-    top_one_share = totals[0] / total_pitches if total_pitches > 0 and totals else 0
-    per_arm = total_pitches / participant_count if participant_count else 0
-    concentration = _concentration_descriptor(top_share)
-
-    return {
-        'pitch_by_pitcher': pitch_by_pitcher,
-        'total_pitches': total_pitches,
-        'participant_count': participant_count,
-        'top_arm_count': min(CONCENTRATED_TOP_ARM_COUNT, participant_count),
-        'top_pitch_total': top_total,
-        'top_share': top_share,
-        'top_one_share': top_one_share,
-        'concentration_level': concentration['level'],
-        'concentration_descriptor': concentration['descriptor'],
-        'per_arm_pitches': per_arm,
-    }
+    return summarize_recent_relief_workload(
+        team_inputs.logs_by_pitcher,
+        team_inputs.reference_date,
+        pitcher_ids=pitcher_ids,
+    )
 
 
 def _availability_summary(records):

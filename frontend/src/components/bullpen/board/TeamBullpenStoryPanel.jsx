@@ -1,5 +1,4 @@
 import { getTeamBullpenStoryView } from './teamBullpenStoryView'
-import { CONCEPT_DEFINITIONS } from '../../../utils/bullpenConcepts'
 import { homeTone } from '../../home/homeIntelligenceView'
 
 // Team Story Surface V1 — a compact analyst note that sits between the
@@ -69,8 +68,6 @@ export default function TeamBullpenStoryPanel({ board }) {
         </div>
       </div>
 
-      <BaseballOSReads reads={story.reads} />
-
       <TeamBullpenShape reads={story.shapeReads} />
 
       <p className="mt-3 border-t border-dirt/60 pt-2 text-[11px] text-chalk600">{story.framing}</p>
@@ -82,12 +79,12 @@ function TeamBullpenShape({ reads }) {
   if (!Array.isArray(reads) || reads.length === 0) return null
 
   return (
-    <details className="mt-4 border-t border-dirt/60 pt-3" aria-label="Today’s bullpen shape">
-      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-amber/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+    <section className="mt-4 border-t border-dirt/60 pt-3" aria-label="Today’s bullpen shape">
+      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-amber/70">
         <span>Today’s Bullpen Shape</span>
         <span className="text-chalk600">{reads.length} reads</span>
-      </summary>
-      <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-5">
+      </div>
+      <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {reads.map(read => {
           const tone = homeTone(read.tone)
           return (
@@ -114,52 +111,6 @@ function TeamBullpenShape({ reads }) {
           )
         })}
       </dl>
-    </details>
-  )
-}
-
-// The BaseballOS Reads strip — the four named reads in one tight row. Each
-// chip pairs a muted concept name with its tone-colored value and explains
-// itself on hover/focus; the collapsed disclosure carries the plain-English
-// definitions so the chips themselves stay light.
-function BaseballOSReads({ reads }) {
-  if (!Array.isArray(reads) || reads.length === 0) return null
-
-  return (
-    <div className="mt-4">
-      <dl className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
-        <dt className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-          BaseballOS Reads
-        </dt>
-        {reads.map(read => {
-          const tone = homeTone(read.tone)
-          return (
-            <dd
-              key={read.key}
-              className="inline-flex items-center gap-1.5 rounded border border-dirt/70 bg-field/40 px-2 py-0.5"
-              title={`${read.display}: ${read.detail}`}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
-              <span className="font-mono text-[10px] uppercase tracking-wide text-chalk400">{read.concept}</span>
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-wide" style={{ color: tone.color }}>
-                {read.label}
-              </span>
-            </dd>
-          )
-        })}
-      </dl>
-      <details className="mt-1.5">
-        <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-          What these mean
-        </summary>
-        <ul className="mt-1.5 space-y-1">
-          {Object.values(CONCEPT_DEFINITIONS).map(concept => (
-            <li key={concept.name} className="text-xs leading-relaxed text-chalk400">
-              <span className="text-chalk200">{concept.name}</span> — {concept.definition}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </div>
+    </section>
   )
 }

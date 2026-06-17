@@ -1,4 +1,5 @@
 from services.team_bullpen_shape import TEAM_BULLPEN_PUBLIC_LABELS, build_team_bullpen_shape
+from services.workload_concentration import summarize_workload_concentration
 
 
 ROLE_LABELS = {
@@ -40,10 +41,11 @@ def card(role_key, read_key, fatigue_score=20):
     }
 
 
-def shape(cards, state='manageable'):
+def shape(cards, state='manageable', workload_concentration=None):
     return build_team_bullpen_shape(
         [{'status': 'Available', 'pitchers': cards, 'count': len(cards)}],
         context={'health': {'state': state}},
+        workload_concentration=workload_concentration,
     )
 
 
@@ -62,6 +64,7 @@ def test_team_shape_produces_approved_backend_public_reads():
         'trustAvailability',
         'cleanOptions',
         'bullpenPressure',
+        'workloadConcentration',
         'coverageSafety',
         'depthSafety',
     ]
@@ -123,6 +126,38 @@ def test_bullpen_pressure_weights_trust_and_bridge_stress_on_backend():
     assert result['bullpenPressure']['label'] == 'High Bullpen Pressure'
     assert result['bullpenPressure']['supportingCounts']['highFatigueArms'] == 1
     assert result['bullpenPressure']['supportingCounts']['unavailableTrustArms'] == 1
+
+
+def test_workload_concentration_uses_shared_pitch_share_bands():
+    workload = summarize_workload_concentration({
+        1: 42,
+        2: 28,
+        3: 14,
+        4: 10,
+        5: 6,
+    })
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('bridge_arm', 'clean_option'),
+        card('coverage_arm', 'watch_arm'),
+        card('depth_arm', 'watch_arm'),
+        card('depth_arm', 'clean_option'),
+    ], workload_concentration=workload)
+
+    assert workload['concentration_descriptor'] == 'a heavily concentrated workload'
+    assert result['workloadConcentration']['label'] == 'Heavily Concentrated Workload'
+    assert result['workloadConcentration']['supportingCounts']['topSharePct'] == 84
+    assert result['workloadConcentration']['supportingCounts']['topArmCount'] == 3
+
+
+def test_workload_concentration_fails_closed_without_recent_relief_workload():
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('bridge_arm', 'clean_option'),
+    ])
+
+    assert result['workloadConcentration']['label'] == 'Limited Read'
+    assert result['workloadConcentration']['supportingCounts']['totalRecentPitches'] == 0
 
 
 def test_coverage_safety_substitute_capacity_lifts_limited_to_thin_only():

@@ -361,6 +361,7 @@ def build_board_payload(
     limitations=None,
     roster_status=None,
     generated_at=None,
+    workload_concentration=None,
 ):
     """
     Assemble the full Tonight's Bullpen Board payload.
@@ -395,7 +396,11 @@ def build_board_payload(
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     context = build_team_context(groups, freshness=freshness)
     stress = build_bullpen_stress(context)
-    team_shape = build_team_bullpen_shape(groups, context=context)
+    team_shape = build_team_bullpen_shape(
+        groups,
+        context=context,
+        workload_concentration=workload_concentration,
+    )
     visibility = summarize_visibility(cards)
 
     return {

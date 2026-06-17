@@ -2,6 +2,7 @@ const READ_KEYS = Object.freeze([
   'trustAvailability',
   'cleanOptions',
   'bullpenPressure',
+  'workloadConcentration',
   'coverageSafety',
   'depthSafety',
 ])
@@ -26,6 +27,13 @@ export const TEAM_BULLPEN_PUBLIC_LABELS = Object.freeze({
     'Elevated Bullpen Pressure',
     'Manageable Bullpen Pressure',
     'Low Bullpen Pressure',
+    'Limited Read',
+  ]),
+  workloadConcentration: Object.freeze([
+    'Heavily Concentrated Workload',
+    'Concentrated Workload',
+    'Some Workload Concentration',
+    'No Workload Concentration',
     'Limited Read',
   ]),
   coverageSafety: Object.freeze([
@@ -109,6 +117,7 @@ export function getTeamBullpenShape(input) {
     trustAvailability: byKey.trustAvailability,
     cleanOptions: byKey.cleanOptions,
     bullpenPressure: byKey.bullpenPressure,
+    workloadConcentration: byKey.workloadConcentration,
     coverageSafety: byKey.coverageSafety,
     depthSafety: byKey.depthSafety,
     supportingCounts,

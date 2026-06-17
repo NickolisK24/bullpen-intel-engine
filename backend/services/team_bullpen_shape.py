@@ -1,10 +1,14 @@
 """Backend-authored team bullpen shape reads for board consumers."""
 
 
+from services.workload_concentration import RECENT_WORKLOAD_WINDOW_DAYS
+
+
 READ_KEYS = [
     'trustAvailability',
     'cleanOptions',
     'bullpenPressure',
+    'workloadConcentration',
     'coverageSafety',
     'depthSafety',
 ]
@@ -29,6 +33,13 @@ TEAM_BULLPEN_PUBLIC_LABELS = {
         'Elevated Bullpen Pressure',
         'Manageable Bullpen Pressure',
         'Low Bullpen Pressure',
+        'Limited Read',
+    ],
+    'workloadConcentration': [
+        'Heavily Concentrated Workload',
+        'Concentrated Workload',
+        'Some Workload Concentration',
+        'No Workload Concentration',
         'Limited Read',
     ],
     'coverageSafety': [
@@ -393,6 +404,57 @@ def _bullpen_pressure(summary):
     return _read('bullpenPressure', 'Manageable Bullpen Pressure', explanation, counts)
 
 
+def _pct(value):
+    return round(float(value or 0) * 100)
+
+
+def _workload_concentration(workload):
+    workload = workload or {}
+    total_pitches = int(workload.get('total_pitches') or 0)
+    participant_count = int(workload.get('participant_count') or 0)
+    top_arm_count = int(workload.get('top_arm_count') or 0)
+    top_pitch_total = int(workload.get('top_pitch_total') or 0)
+    top_share = float(workload.get('top_share') or 0)
+    top_one_share = float(workload.get('top_one_share') or 0)
+    level = workload.get('concentration_level') or 'none'
+    descriptor = workload.get('concentration_descriptor') or 'no concentration'
+    per_arm = float(workload.get('per_arm_pitches') or 0)
+    window_days = int(workload.get('window_days') or RECENT_WORKLOAD_WINDOW_DAYS)
+    label_by_level = {
+        'severe': 'Heavily Concentrated Workload',
+        'concentrated': 'Concentrated Workload',
+        'moderate': 'Some Workload Concentration',
+        'none': 'No Workload Concentration',
+    }
+    counts = {
+        'totalRecentPitches': total_pitches,
+        'participantCount': participant_count,
+        'topArmCount': top_arm_count,
+        'topPitchTotal': top_pitch_total,
+        'topShare': top_share,
+        'topSharePct': _pct(top_share),
+        'topOneShare': top_one_share,
+        'perArmPitches': per_arm,
+        'windowDays': window_days,
+        'concentrationLevel': level,
+        'concentrationDescriptor': descriptor,
+    }
+
+    if total_pitches <= 0 or participant_count <= 0:
+        return _limited_read(
+            'workloadConcentration',
+            'No recent relief workload was available in the current window, so Workload Concentration is a Limited Read.',
+            counts,
+        )
+
+    label = label_by_level.get(level, 'Limited Read')
+    explanation = (
+        f'The top {top_arm_count} relief arms carried {counts["topSharePct"]}% of recent relief pitches '
+        f'({top_pitch_total} of {total_pitches}) across {participant_count} participating arms.'
+    )
+    return _read('workloadConcentration', label, explanation, counts)
+
+
 def _coverage_safety(summary):
     coverage_reads = summary['roleReadCounts']['coverage']
     bridge_reads = summary['roleReadCounts']['bridge']
@@ -508,13 +570,14 @@ def _depth_safety(summary):
     return _read('depthSafety', 'Limited Depth Safety', explanation, counts)
 
 
-def build_team_bullpen_shape(groups, context=None):
+def build_team_bullpen_shape(groups, context=None, workload_concentration=None):
     """Return backend-authored public team reads for a board payload."""
     summary = _summarize_cards(groups, context=context)
     reads = [
         _trust_availability(summary),
         _clean_options(summary),
         _bullpen_pressure(summary),
+        _workload_concentration(workload_concentration),
         _coverage_safety(summary),
         _depth_safety(summary),
     ]
@@ -525,6 +588,7 @@ def build_team_bullpen_shape(groups, context=None):
         'trustAvailability': by_key['trustAvailability'],
         'cleanOptions': by_key['cleanOptions'],
         'bullpenPressure': by_key['bullpenPressure'],
+        'workloadConcentration': by_key['workloadConcentration'],
         'coverageSafety': by_key['coverageSafety'],
         'depthSafety': by_key['depthSafety'],
         'supportingCounts': {
