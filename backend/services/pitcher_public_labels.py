@@ -110,6 +110,10 @@ INACTIVE_ROSTER_STATUSES = {
     'DFA',
     'NON_ROSTER',
     '40_MAN_ONLY',
+    'BEREAVEMENT',
+    'PATERNITY',
+    'SUSPENDED',
+    'RESTRICTED',
 }
 
 FRESH_DATA_STATES = {'fresh', 'current', 'ok'}

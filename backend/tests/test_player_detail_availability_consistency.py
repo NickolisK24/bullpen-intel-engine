@@ -90,9 +90,9 @@ def test_player_detail_il_60_final_availability_matches_board_override(client):
     detail = client.get(f'/api/bullpen/fatigue/{pitcher_id}').get_json()
 
     assert detail['availability']['availability_status'] == 'Unavailable'
-    assert detail['availability']['roster_status']['label'] == 'IL-60'
+    assert detail['availability']['roster_status']['label'] == '60-Day IL'
     assert detail['workload_signal']['availability_status'] == 'Available'
-    assert any('Roster status: IL-60.' in reason for reason in detail['availability']['reasons'])
+    assert any('Roster status: 60-Day IL.' in reason for reason in detail['availability']['reasons'])
     assert any('not available for bullpen planning' in limitation for limitation in detail['availability']['limitations'])
 
 
@@ -107,10 +107,10 @@ def test_player_detail_il_15_final_availability_is_unavailable_not_workload_only
     johnson_detail = client.get(f'/api/bullpen/fatigue/{johnson_id}').get_json()
 
     assert pagan_detail['availability']['availability_status'] == 'Unavailable'
-    assert pagan_detail['availability']['roster_status']['label'] == 'IL-15'
+    assert pagan_detail['availability']['roster_status']['label'] == '15-Day IL'
     assert pagan_detail['workload_signal']['availability_status'] == 'Monitor'
     assert johnson_detail['availability']['availability_status'] == 'Unavailable'
-    assert johnson_detail['availability']['roster_status']['label'] == 'IL-15'
+    assert johnson_detail['availability']['roster_status']['label'] == '15-Day IL'
     assert johnson_detail['workload_signal']['availability_status'] == 'Available'
 
 

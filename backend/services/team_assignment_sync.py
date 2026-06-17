@@ -328,6 +328,8 @@ def _apply_assignment(pitcher, classification, timestamp):
         pitcher.active = False
         pitcher.roster_status = STATUS_UNKNOWN
         pitcher.roster_status_source = source
+        pitcher.roster_status_raw_code = None
+        pitcher.roster_status_raw_description = None
         pitcher.roster_status_updated_at = timestamp
 
     pitcher.team_assignment_status = status

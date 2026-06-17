@@ -12,12 +12,16 @@ from services.roster_status import (
     ROSTER_STATUS_UNAVAILABLE_LIMITATION,
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
+    STATUS_BEREAVEMENT,
     STATUS_DFA,
     STATUS_IL_15,
     STATUS_IL_60,
     STATUS_MINORS,
     STATUS_NON_ROSTER,
     STATUS_OPTIONED,
+    STATUS_PATERNITY,
+    STATUS_RESTRICTED,
+    STATUS_SUSPENDED,
     STATUS_UNKNOWN,
     allows_default_board,
     classify_roster_status,
@@ -37,6 +41,11 @@ def test_normalizes_authoritative_active_and_inactive_statuses():
     assert normalize_roster_status_value('MIN') == STATUS_MINORS
     assert normalize_roster_status_value('Injured List') == STATUS_IL_15
     assert normalize_roster_status_value('Optioned to minor league') == STATUS_OPTIONED
+    assert normalize_roster_status_value('BRV') == STATUS_BEREAVEMENT
+    assert normalize_roster_status_value('Bereavement List') == STATUS_BEREAVEMENT
+    assert normalize_roster_status_value('Paternity List') == STATUS_PATERNITY
+    assert normalize_roster_status_value('Suspended List') == STATUS_SUSPENDED
+    assert normalize_roster_status_value('Restricted List') == STATUS_RESTRICTED
 
 
 def test_unknown_status_degrades_with_limitation_not_active_claim():
@@ -59,7 +68,7 @@ def test_stored_il_status_is_authoritative_inactive_context():
     )
 
     assert result['status'] == STATUS_IL_15
-    assert result['label'] == 'IL-15'
+    assert result['label'] == '15-Day IL'
     assert result['is_authoritative'] is True
     assert result['is_active_mlb'] is False
     assert result['is_inactive_context'] is True
@@ -75,7 +84,7 @@ def test_stored_40_man_only_status_uses_baseball_facing_label():
     )
 
     assert result['status'] == STATUS_40_MAN_ONLY
-    assert result['label'] == '40-Man Only'
+    assert result['label'] == '40-Man (not active)'
     assert result['is_authoritative'] is True
     assert result['is_active_mlb'] is False
     assert result['is_inactive_context'] is True
@@ -115,7 +124,7 @@ def test_current_minor_assignment_overrides_stale_activated_label():
     )
 
     assert result['status'] == STATUS_MINORS
-    assert result['label'] == 'Minors'
+    assert result['label'] == 'Optioned / Minors'
     assert result['source'] == 'mlb_stats_api:team_assignment_sync:fullRoster'
     assert result['updated_at'] == '2026-04-13T12:00:00'
     assert result['raw_status'] == 'fullRoster'
@@ -135,7 +144,7 @@ def test_full_roster_sync_active_label_does_not_prove_active_mlb():
     )
 
     assert result['status'] == STATUS_MINORS
-    assert result['label'] == 'Minors'
+    assert result['label'] == 'Optioned / Minors'
     assert result['source'] == 'mlb_stats_api:roster_sync:fullRoster'
     assert result['raw_status'] == STATUS_ACTIVE
     assert result['is_active_mlb'] is False
@@ -198,8 +207,29 @@ def test_current_roster_sync_il_status_is_preserved():
     )
 
     assert result['status'] == STATUS_IL_15
-    assert result['label'] == 'IL-15'
+    assert result['label'] == '15-Day IL'
     assert result['source'] == 'mlb_stats_api:roster_sync:40Man'
+    assert result['is_active_mlb'] is False
+    assert result['is_inactive_context'] is True
+
+
+def test_raw_bereavement_status_overrides_generic_40_man_label():
+    result = classify_roster_status(
+        SimpleNamespace(
+            active=True,
+            roster_status=STATUS_40_MAN_ONLY,
+            roster_status_source='mlb_stats_api:roster_sync:40Man',
+            roster_status_raw_code='BRV',
+            roster_status_raw_description='Bereavement List',
+            roster_status_updated_at=datetime(2026, 6, 17, 21, 17, 16),
+        )
+    )
+
+    assert result['status'] == STATUS_BEREAVEMENT
+    assert result['label'] == 'Bereavement List'
+    assert result['raw_status_code'] == 'BRV'
+    assert result['raw_status_description'] == 'Bereavement List'
+    assert result['is_authoritative'] is True
     assert result['is_active_mlb'] is False
     assert result['is_inactive_context'] is True
 

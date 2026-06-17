@@ -77,11 +77,11 @@ test('AvailabilitySummary separates roster-adjusted final availability from work
     availability_status: 'Unavailable',
     confidence: 'high',
     data_state: 'fresh',
-    reasons: ['Roster status: IL-60.'],
+    reasons: ['Roster status: 60-Day IL.'],
     limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
     roster_status: {
       status: 'IL_60',
-      label: 'IL-60',
+      label: '60-Day IL',
       confidence: 'high',
       is_authoritative: true,
       is_inactive_context: true,
@@ -105,7 +105,7 @@ test('AvailabilitySummary separates roster-adjusted final availability from work
   assert.ok(htmlIncludes(html, 'Final Availability'))
   assert.ok(htmlIncludes(html, 'Final availability: Unavailable'))
   assert.ok(htmlIncludes(html, 'Roster Status'))
-  assert.ok(htmlIncludes(html, 'IL-60'))
+  assert.ok(htmlIncludes(html, '60-Day IL'))
   assert.ok(htmlIncludes(html, 'Workload Signal'))
   assert.ok(htmlIncludes(html, 'Workload signal: Available'))
   assert.ok(htmlIncludes(html, 'not available for bullpen planning'))

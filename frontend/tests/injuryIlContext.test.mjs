@@ -72,7 +72,7 @@ const injuryIlContext = {
     injured_list_count: 1,
     inactive_count: 1,
     unavailable_pitchers: [
-      { player_id: 1001, name: 'Padres IL Arm', status: 'IL_15', status_label: 'IL-15', status_group: 'injured_list' },
+      { player_id: 1001, name: 'Padres IL Arm', status: 'IL_15', status_label: '15-Day IL', status_group: 'injured_list' },
       { player_id: 1002, name: 'Padres Optioned Arm', status: 'OPTIONED', status_label: 'Optioned', status_group: 'inactive_roster' },
     ],
   },

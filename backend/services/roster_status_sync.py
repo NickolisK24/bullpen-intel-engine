@@ -49,6 +49,46 @@ def _status_from_dict(status):
     )
 
 
+def _status_details_from_value(status):
+    if isinstance(status, dict):
+        raw = _status_from_dict(status)
+        return {
+            'raw_status': raw,
+            'raw_status_code': status.get('code'),
+            'raw_status_description': (
+                status.get('description')
+                or status.get('name')
+                or status.get('type')
+            ),
+        }
+    if status not in (None, ''):
+        return {
+            'raw_status': status,
+            'raw_status_code': None,
+            'raw_status_description': str(status),
+        }
+    return {
+        'raw_status': None,
+        'raw_status_code': None,
+        'raw_status_description': None,
+    }
+
+
+def _status_details_from_fields(code=None, description=None):
+    raw = code or description
+    if raw in (None, ''):
+        return {
+            'raw_status': None,
+            'raw_status_code': None,
+            'raw_status_description': None,
+        }
+    return {
+        'raw_status': raw,
+        'raw_status_code': str(code) if code not in (None, '') else None,
+        'raw_status_description': str(description) if description not in (None, '') else None,
+    }
+
+
 def roster_entry_player_id(entry):
     person = entry.get('person') or {}
     return person.get('id') or entry.get('personId') or entry.get('playerId')
@@ -68,22 +108,31 @@ def roster_entry_position(entry):
 
 def roster_entry_raw_status(entry):
     """Extract the first roster-status hint from a Stats API roster entry."""
+    return roster_entry_status_details(entry)['raw_status']
+
+
+def roster_entry_status_details(entry):
+    """Extract raw roster-status code and description from a Stats API entry."""
     person = entry.get('person') or {}
     candidates = (
         entry.get('status'),
         entry.get('rosterStatus'),
         entry.get('roster_status'),
-        entry.get('statusCode'),
-        entry.get('statusDescription'),
+        _status_details_from_fields(entry.get('statusCode'), entry.get('statusDescription')),
         person.get('status'),
         person.get('rosterStatus'),
         person.get('roster_status'),
+        _status_details_from_fields(person.get('statusCode'), person.get('statusDescription')),
     )
     for candidate in candidates:
-        raw = _status_from_dict(candidate)
-        if raw not in (None, ''):
-            return raw
-    return None
+        details = candidate if isinstance(candidate, dict) and 'raw_status' in candidate else _status_details_from_value(candidate)
+        if details['raw_status'] not in (None, ''):
+            return details
+    return {
+        'raw_status': None,
+        'raw_status_code': None,
+        'raw_status_description': None,
+    }
 
 
 def _record_evidence(index, roster_type, entry):
@@ -96,13 +145,44 @@ def _record_evidence(index, roster_type, entry):
     evidence['roster_types'].add(roster_type)
     evidence['entries'][roster_type] = entry
 
-    raw_status = roster_entry_raw_status(entry)
-    if raw_status not in (None, ''):
+    raw_status = roster_entry_status_details(entry)
+    if raw_status['raw_status'] not in (None, ''):
         evidence['raw_statuses'].append((roster_type, raw_status))
 
 
 def _source_for(roster_type):
     return f'{SOURCE_PREFIX}:{roster_type}'
+
+
+def _raw_status_payload(raw_status):
+    if isinstance(raw_status, dict):
+        return {
+            'raw_status': raw_status.get('raw_status'),
+            'raw_status_code': raw_status.get('raw_status_code'),
+            'raw_status_description': raw_status.get('raw_status_description'),
+        }
+    return {
+        'raw_status': raw_status,
+        'raw_status_code': None,
+        'raw_status_description': None,
+    }
+
+
+def _classification(status, raw_status, source):
+    payload = _raw_status_payload(raw_status)
+    return {
+        'status': status,
+        'raw_status': str(payload['raw_status']) if payload['raw_status'] not in (None, '') else None,
+        'raw_status_code': (
+            str(payload['raw_status_code'])
+            if payload['raw_status_code'] not in (None, '') else None
+        ),
+        'raw_status_description': (
+            str(payload['raw_status_description'])
+            if payload['raw_status_description'] not in (None, '') else None
+        ),
+        'source': source,
+    }
 
 
 def classify_roster_evidence(evidence):
@@ -123,49 +203,30 @@ def classify_roster_evidence(evidence):
 
     if ROSTER_TYPE_ACTIVE in roster_types:
         raw = next((raw for source, raw in raw_statuses if source == ROSTER_TYPE_ACTIVE), 'active roster')
-        return {
-            'status': STATUS_ACTIVE,
-            'raw_status': str(raw),
-            'source': _source_for(ROSTER_TYPE_ACTIVE),
-        }
+        return _classification(STATUS_ACTIVE, raw, _source_for(ROSTER_TYPE_ACTIVE))
 
     for roster_type, raw in raw_statuses:
-        status = normalize_roster_status_value(raw)
+        payload = _raw_status_payload(raw)
+        status = normalize_roster_status_value(payload['raw_status_code'])
+        if status == STATUS_UNKNOWN:
+            status = normalize_roster_status_value(payload['raw_status_description'])
+        if status == STATUS_UNKNOWN:
+            status = normalize_roster_status_value(payload['raw_status'])
         if status == STATUS_ACTIVE and roster_type != ROSTER_TYPE_ACTIVE:
             continue
         if status != STATUS_UNKNOWN:
-            return {
-                'status': status,
-                'raw_status': str(raw),
-                'source': _source_for(roster_type),
-            }
+            return _classification(status, raw, _source_for(roster_type))
 
     if ROSTER_TYPE_NON_ROSTER in roster_types:
-        return {
-            'status': STATUS_NON_ROSTER,
-            'raw_status': ROSTER_TYPE_NON_ROSTER,
-            'source': _source_for(ROSTER_TYPE_NON_ROSTER),
-        }
+        return _classification(STATUS_NON_ROSTER, ROSTER_TYPE_NON_ROSTER, _source_for(ROSTER_TYPE_NON_ROSTER))
 
     if ROSTER_TYPE_FULL in roster_types and ROSTER_TYPE_40_MAN not in roster_types:
-        return {
-            'status': STATUS_MINORS,
-            'raw_status': ROSTER_TYPE_FULL,
-            'source': _source_for(ROSTER_TYPE_FULL),
-        }
+        return _classification(STATUS_MINORS, ROSTER_TYPE_FULL, _source_for(ROSTER_TYPE_FULL))
 
     if ROSTER_TYPE_40_MAN in roster_types:
-        return {
-            'status': STATUS_40_MAN_ONLY,
-            'raw_status': ROSTER_TYPE_40_MAN,
-            'source': _source_for(ROSTER_TYPE_40_MAN),
-        }
+        return _classification(STATUS_40_MAN_ONLY, ROSTER_TYPE_40_MAN, _source_for(ROSTER_TYPE_40_MAN))
 
-    return {
-        'status': STATUS_UNKNOWN,
-        'raw_status': None,
-        'source': f'{SOURCE_PREFIX}:unavailable',
-    }
+    return _classification(STATUS_UNKNOWN, None, f'{SOURCE_PREFIX}:unavailable')
 
 
 def build_team_roster_status_index(team_id, client=None, roster_types=ROSTER_TYPES):
@@ -244,13 +305,22 @@ def sync_roster_statuses(team_ids=None, client=None, timestamp=None, commit=True
             classification = classify_roster_evidence(evidence)
             status = classification['status']
             source = classification['source']
+            raw_code = classification.get('raw_status_code')
+            raw_description = classification.get('raw_status_description')
             by_status[status] += 1
 
-            if pitcher.roster_status != status or pitcher.roster_status_source != source:
+            if (
+                pitcher.roster_status != status
+                or pitcher.roster_status_source != source
+                or pitcher.roster_status_raw_code != raw_code
+                or pitcher.roster_status_raw_description != raw_description
+            ):
                 changed += 1
 
             pitcher.roster_status = status
             pitcher.roster_status_source = source
+            pitcher.roster_status_raw_code = raw_code
+            pitcher.roster_status_raw_description = raw_description
             pitcher.roster_status_updated_at = timestamp
             refreshed += 1
 

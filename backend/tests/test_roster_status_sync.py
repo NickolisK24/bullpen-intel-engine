@@ -19,6 +19,7 @@ from models.pitcher import Pitcher
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
+    STATUS_BEREAVEMENT,
     STATUS_DFA,
     STATUS_IL_15,
     STATUS_IL_60,
@@ -176,6 +177,20 @@ def test_classifies_merged_roster_evidence_by_precedence():
         'roster_types': {ROSTER_TYPE_40_MAN},
         'raw_statuses': [],
     })['status'] == STATUS_40_MAN_ONLY
+    bereavement = classify_roster_evidence({
+        'roster_types': {ROSTER_TYPE_40_MAN},
+        'raw_statuses': [(
+            ROSTER_TYPE_40_MAN,
+            {
+                'raw_status': 'BRV',
+                'raw_status_code': 'BRV',
+                'raw_status_description': 'Bereavement List',
+            },
+        )],
+    })
+    assert bereavement['status'] == STATUS_BEREAVEMENT
+    assert bereavement['raw_status_code'] == 'BRV'
+    assert bereavement['raw_status_description'] == 'Bereavement List'
 
 
 def test_sync_persists_authoritative_roster_statuses(client):
@@ -222,6 +237,8 @@ def test_sync_persists_authoritative_roster_statuses(client):
     assert by_name['Nick Lodolo'].roster_status == STATUS_ACTIVE
     assert by_name['Brady Singer'].roster_status == STATUS_ACTIVE
     assert by_name['Graham Ashcraft'].roster_status == STATUS_IL_60
+    assert by_name['Graham Ashcraft'].roster_status_raw_code == 'D60'
+    assert by_name['Graham Ashcraft'].roster_status_raw_description == '60-day IL'
     assert by_name['Pierce Johnson'].roster_status == STATUS_IL_15
     assert by_name['Emilio Pagan'].roster_status == STATUS_IL_15
     assert by_name['Connor Phillips'].roster_status == STATUS_MINORS
@@ -235,6 +252,31 @@ def test_sync_persists_authoritative_roster_statuses(client):
     assert by_name['Graham Ashcraft'].roster_status_source == 'mlb_stats_api:roster_sync:40Man'
     assert by_name['Missing Roster Arm'].roster_status_source == 'mlb_stats_api:roster_sync:unavailable'
     assert by_name['Graham Ashcraft'].roster_status_updated_at == datetime(2026, 6, 7, 12, 0, 0)
+
+
+def test_sync_preserves_bereavement_status_instead_of_collapsing_to_40_man(client):
+    with client.application.app_context():
+        pitcher = seed_pitcher('Mason Miller', 695243, team_id=135)
+        result = sync_roster_statuses(
+            team_ids=[135],
+            client=FakeRosterClient({
+                (135, ROSTER_TYPE_40_MAN): [
+                    roster_entry(
+                        695243,
+                        'Mason Miller',
+                        status={'code': 'BRV', 'description': 'Bereavement List'},
+                    ),
+                ],
+            }),
+            timestamp=datetime(2026, 6, 17, 21, 17, 16),
+        )
+        updated = db.session.get(Pitcher, pitcher.id)
+
+    assert result['by_status'][STATUS_BEREAVEMENT] == 1
+    assert updated.roster_status == STATUS_BEREAVEMENT
+    assert updated.roster_status_source == 'mlb_stats_api:roster_sync:40Man'
+    assert updated.roster_status_raw_code == 'BRV'
+    assert updated.roster_status_raw_description == 'Bereavement List'
 
 
 def test_roster_fetch_failure_preserves_prior_status(client):
@@ -277,8 +319,8 @@ def test_roster_sync_feeds_default_board_filtering_and_context_labels(client):
     context_cards = [card for group in context_body['groups'] for card in group['pitchers']]
     by_name = {card['name']: card for card in context_cards}
 
-    assert by_name['Graham Ashcraft']['roster_status']['label'] == 'IL-60'
-    assert by_name['Pierce Johnson']['roster_status']['label'] == 'IL-15'
-    assert by_name['Connor Phillips']['roster_status']['label'] == 'Minors'
-    assert by_name['Jose Franco']['roster_status']['label'] == 'Minors'
+    assert by_name['Graham Ashcraft']['roster_status']['label'] == '60-Day IL'
+    assert by_name['Pierce Johnson']['roster_status']['label'] == '15-Day IL'
+    assert by_name['Connor Phillips']['roster_status']['label'] == 'Optioned / Minors'
+    assert by_name['Jose Franco']['roster_status']['label'] == 'Optioned / Minors'
     assert all(card['availability_status'] != 'Available' for name, card in by_name.items() if name != 'Reds Active Relief Context')

@@ -6,6 +6,7 @@ from services.bullpen_population import eligible_bullpen_pitcher_contexts
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
+    STATUS_BEREAVEMENT,
     STATUS_DFA,
     STATUS_IL_10,
     STATUS_IL_15,
@@ -14,6 +15,9 @@ from services.roster_status import (
     STATUS_MINORS,
     STATUS_NON_ROSTER,
     STATUS_OPTIONED,
+    STATUS_PATERNITY,
+    STATUS_RESTRICTED,
+    STATUS_SUSPENDED,
     STATUS_UNKNOWN,
     classify_roster_status,
 )
@@ -38,6 +42,10 @@ INACTIVE_ROSTER_STATUSES = {
     STATUS_DFA,
     STATUS_NON_ROSTER,
     STATUS_40_MAN_ONLY,
+    STATUS_BEREAVEMENT,
+    STATUS_PATERNITY,
+    STATUS_SUSPENDED,
+    STATUS_RESTRICTED,
 }
 
 EXPLANATORY_LIMITATION = (

@@ -81,6 +81,7 @@ from services.roster_status import (
     apply_roster_status_to_availability,
     classify_roster_status,
 )
+from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.season_era import build_season_era_payload
 from services.workload_concentration import summarize_recent_relief_workload
 from services.mlb_api import MlbApiFetchError, mlb_client
@@ -463,6 +464,7 @@ def get_pitcher_fatigue(pitcher_id):
 
     workload_signal = _availability_for(pitcher_id, latest, reference_date=reference_date)
     roster_status = classify_roster_status(pitcher)
+    roster_status = with_recent_inactive_roster_audit(roster_status, logs, reference_date)
     availability = apply_roster_status_to_availability(workload_signal, roster_status)
 
     return jsonify({
