@@ -21,11 +21,20 @@ def _team(team_id=1, name='Toronto Blue Jays', abbr='TOR'):
     }
 
 
-def _story(team=None, *, signal, lead_dimension, computed=None, lead_fields=None):
+def _story(
+    team=None,
+    *,
+    signal,
+    lead_dimension,
+    rule_label='Stress Transfer',
+    computed=None,
+    lead_fields=None,
+):
     team = team or _team()
     return {
         'story_id': f"{team['team_id']}:fixture",
         'rule_key': 'fixture_rule',
+        'rule_label': rule_label,
         'team_id': team['team_id'],
         'team_name': team['team_name'],
         'team_abbreviation': team['team_abbreviation'],
@@ -79,6 +88,7 @@ def test_tension_story_uses_signal_as_honest_contrast_preview():
         team,
         signal=signal,
         lead_dimension=LEAD_TRUST_LANE_SHALLOW,
+        rule_label='Stress Transfer',
         computed={'clean_option_count': 4},
         lead_fields={'clean_trust_count': 1},
     )
@@ -86,8 +96,12 @@ def test_tension_story_uses_signal_as_honest_contrast_preview():
     preview = build_team_story_preview(team, story=story, board=_board(team))
 
     assert preview['framing'] == 'tension'
-    assert preview['og_title'] == signal
+    assert preview['og_title'] == 'Stress Transfer — Toronto Blue Jays'
     assert preview['og_description'] == signal
+    assert preview['og_title'] != preview['og_description']
+    assert preview['og_url'] == 'https://baseballos.vercel.app/team/TOR'
+    assert preview['rule_label'] == 'Stress Transfer'
+    assert preview['authority']['title'] == 'four_beat_story.rule_label'
     assert preview['authority']['description'] == 'four_beat_story.signal'
     assert preview['redirect_path'] == '/bullpen?view=board&team=TOR&source=share'
 
@@ -99,6 +113,7 @@ def test_no_tension_story_stays_clean_and_does_not_manufacture_contrast():
         team,
         signal=signal,
         lead_dimension=LEAD_AVAILABILITY_DEEP,
+        rule_label='Pressure Distribution',
         computed={'clean_option_count': 6},
         lead_fields={'clean_trust_count': 2},
     )
@@ -107,8 +122,9 @@ def test_no_tension_story_stays_clean_and_does_not_manufacture_contrast():
 
     assert preview['framing'] == 'clean'
     assert ' but ' not in preview['og_title'].lower()
-    assert preview['og_title'] == signal
+    assert preview['og_title'] == 'Pressure Distribution — Los Angeles Dodgers'
     assert preview['og_description'] == signal
+    assert preview['og_title'] != preview['og_description']
 
 
 def test_no_story_team_uses_neutral_shape_preview_only():
@@ -124,6 +140,8 @@ def test_no_story_team_uses_neutral_shape_preview_only():
         'Manageable Trust-Lane Pressure.'
     )
     assert 'story' not in preview['og_title'].lower()
+    assert preview['og_title'] != preview['og_description']
+    assert preview['og_url'] == 'https://baseballos.vercel.app/team/QUT'
 
 
 def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
@@ -137,6 +155,7 @@ def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
                     tor,
                     signal=signal,
                     lead_dimension=LEAD_TRUST_LANE_SHALLOW,
+                    rule_label='Stress Transfer',
                     computed={'clean_option_count': 3},
                     lead_fields={'clean_trust_count': 1},
                 )
@@ -152,6 +171,7 @@ def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
     by_abbr = {preview['team_abbreviation']: preview for preview in previews}
 
     assert by_abbr['TOR']['og_description'] == signal
+    assert by_abbr['TOR']['og_title'] == 'Stress Transfer — Toronto Blue Jays'
     assert by_abbr['TOR']['has_story'] is True
     assert by_abbr['LAD']['has_story'] is False
     assert by_abbr['LAD']['source'] == 'team_shape'
@@ -162,15 +182,22 @@ def test_static_html_contains_og_tags_and_human_redirect():
     signal = 'The Toronto Blue Jays have actual room tonight: most of the pen is Available.'
     preview = build_team_story_preview(
         team,
-        story=_story(team, signal=signal, lead_dimension=LEAD_AVAILABILITY_DEEP),
+        story=_story(
+            team,
+            signal=signal,
+            lead_dimension=LEAD_AVAILABILITY_DEEP,
+            rule_label='Pressure Distribution',
+        ),
         board=_board(team),
     )
 
     html = render_team_story_html(preview)
 
-    assert '<meta property="og:title" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
+    assert '<meta property="og:title" content="Pressure Distribution — Toronto Blue Jays" />' in html
     assert '<meta property="og:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
-    assert '<meta property="og:url" content="/team/TOR" />' in html
+    assert '<meta property="og:url" content="https://baseballos.vercel.app/team/TOR" />' in html
+    assert '<meta name="twitter:title" content="Pressure Distribution — Toronto Blue Jays" />' in html
+    assert '<meta name="twitter:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
     assert 'window.location.replace("/bullpen?view=board&amp;team=TOR&amp;source=share")' not in html
     assert 'window.location.replace("/bullpen?view=board&team=TOR&source=share")' in html
     assert '<div id="root"></div>' not in html
@@ -196,4 +223,6 @@ def test_writer_emits_one_static_page_per_team_and_invalid_team_fallback(tmp_pat
 
     fallback = Path(result['fallback'])
     assert fallback.exists()
-    assert 'window.location.replace("/")' in fallback.read_text(encoding='utf-8')
+    fallback_html = fallback.read_text(encoding='utf-8')
+    assert '<meta property="og:url" content="https://baseballos.vercel.app/team" />' in fallback_html
+    assert 'window.location.replace("/")' in fallback_html
