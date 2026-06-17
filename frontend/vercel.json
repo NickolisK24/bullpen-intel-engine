@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/team/(.*)",
+      "destination": "/team/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

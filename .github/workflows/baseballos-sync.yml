@@ -28,6 +28,9 @@ concurrency:
   group: baseballos-sync
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -105,3 +108,37 @@ jobs:
           fi
 
           echo "Dashboard snapshot build succeeded."
+
+      - name: Export static team story preview pages
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+          FOUR_BEAT_STORIES_ENABLED: 'true'
+          BASEBALLOS_SITE_URL: https://baseballos.vercel.app
+        run: |
+          set -euo pipefail
+          python backend/scripts/export_team_story_pages.py --output frontend/public --site-url "$BASEBALLOS_SITE_URL"
+
+      - name: Upload team story preview pages
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-story-preview-pages
+          path: frontend/public/team
+
+      - name: Commit team story preview pages
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- frontend/public/team frontend/public/og/baseballos-card.svg; then
+            echo "No team story preview page changes to commit."
+            exit 0
+          fi
+
+          git config user.name "Nickolis Kacludis"
+          git config user.email "nickoliskacludis@gmail.com"
+          git add frontend/public/team frontend/public/og/baseballos-card.svg
+          git commit -m "docs: update team story preview pages"
+          git push
