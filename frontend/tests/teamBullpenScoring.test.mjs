@@ -29,7 +29,7 @@ const backendShape = Object.freeze({
     },
     {
       key: 'bullpenPressure',
-      label: 'Elevated Bullpen Pressure',
+      label: 'Elevated Trust-Lane Pressure',
       explanation: 'Trust and bridge stress are elevated.',
       supportingCounts: { watchArmCount: 2, restRestrictedCount: 1 },
       reasons: ['Trust and bridge stress are elevated.'],

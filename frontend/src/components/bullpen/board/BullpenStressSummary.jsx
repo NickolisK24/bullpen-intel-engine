@@ -11,7 +11,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
     <section
       className={compact ? 'rounded border p-3' : 'mb-5 rounded-lg border p-4'}
       style={view.tone}
-      aria-label="Bullpen Stress"
+      aria-label={view.conceptLabel}
       role="status"
       aria-live="polite"
     >
@@ -19,7 +19,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: view.tone.dot }} aria-hidden="true" />
           <span className="font-mono text-[10px] uppercase tracking-widest">
-            Bullpen Stress: {view.label}
+            {view.conceptLabel}: {view.label}
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-widest">
@@ -38,7 +38,7 @@ export default function BullpenStressSummary({ stress, compact = false }) {
       {compact && hasDetails ? (
         <details className="mt-2 rounded border border-dirt/60 bg-dugout/45 p-2">
           <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
-            Stress details
+            Availability details
           </summary>
           {visibleReasons.length > 0 && (
             <ul className="mt-2 list-disc space-y-1 pl-4">

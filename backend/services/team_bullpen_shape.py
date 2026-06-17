@@ -29,10 +29,10 @@ TEAM_BULLPEN_PUBLIC_LABELS = {
         'Limited Read',
     ],
     'bullpenPressure': [
-        'High Bullpen Pressure',
-        'Elevated Bullpen Pressure',
-        'Manageable Bullpen Pressure',
-        'Low Bullpen Pressure',
+        'High Trust-Lane Pressure',
+        'Elevated Trust-Lane Pressure',
+        'Manageable Trust-Lane Pressure',
+        'Low Trust-Lane Pressure',
         'Limited Read',
     ],
     'workloadConcentration': [
@@ -366,7 +366,7 @@ def _bullpen_pressure(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'bullpenPressure',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear current reads, so Bullpen Pressure is a Limited Read.",
+            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear current reads, so Trust-Lane Pressure is a Limited Read.",
             counts,
         )
 
@@ -381,7 +381,7 @@ def _bullpen_pressure(summary):
         or pressure_share >= PRESSURE_SHARE_HIGH
         or summary['stressState'] == 'constrained'
     ):
-        return _read('bullpenPressure', 'High Bullpen Pressure', explanation, counts)
+        return _read('bullpenPressure', 'High Trust-Lane Pressure', explanation, counts)
     if (
         trust_pressure >= TRUST_PRESSURE_ELEVATED
         or bridge_pressure >= ROLE_STRESS_ELEVATED
@@ -392,7 +392,7 @@ def _bullpen_pressure(summary):
         or summary['highFatigueArms'] >= 2
         or summary['stressState'] in {'elevated', 'monitoring'}
     ):
-        return _read('bullpenPressure', 'Elevated Bullpen Pressure', explanation, counts)
+        return _read('bullpenPressure', 'Elevated Trust-Lane Pressure', explanation, counts)
     if (
         counts['restRestrictedCount'] == 0
         and counts['unavailableCount'] == 0
@@ -400,8 +400,8 @@ def _bullpen_pressure(summary):
         and summary['highFatigueArms'] == 0
         and usable_trust > 0
     ):
-        return _read('bullpenPressure', 'Low Bullpen Pressure', explanation, counts)
-    return _read('bullpenPressure', 'Manageable Bullpen Pressure', explanation, counts)
+        return _read('bullpenPressure', 'Low Trust-Lane Pressure', explanation, counts)
+    return _read('bullpenPressure', 'Manageable Trust-Lane Pressure', explanation, counts)
 
 
 def _pct(value):

@@ -23,10 +23,10 @@ export const TEAM_BULLPEN_PUBLIC_LABELS = Object.freeze({
     'Limited Read',
   ]),
   bullpenPressure: Object.freeze([
-    'High Bullpen Pressure',
-    'Elevated Bullpen Pressure',
-    'Manageable Bullpen Pressure',
-    'Low Bullpen Pressure',
+    'High Trust-Lane Pressure',
+    'Elevated Trust-Lane Pressure',
+    'Manageable Trust-Lane Pressure',
+    'Low Trust-Lane Pressure',
     'Limited Read',
   ]),
   workloadConcentration: Object.freeze([

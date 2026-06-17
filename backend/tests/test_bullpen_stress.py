@@ -41,7 +41,7 @@ class TestBullpenStressMapping:
 
         assert stress['state'] == 'manageable'
         assert stress['label'] == 'Manageable'
-        assert stress['summary'] == 'Bullpen workload is in manageable shape.'
+        assert stress['summary'] == 'Overall bullpen availability is manageable.'
         assert 'bullpen_shape_manageable' in stress['reason_codes']
 
     def test_monitoring_maps_to_user_copy(self):
@@ -49,7 +49,7 @@ class TestBullpenStressMapping:
 
         assert stress['state'] == 'monitoring'
         assert stress['label'] == 'Monitoring'
-        assert stress['summary'] == 'Several arms require monitoring.'
+        assert stress['summary'] == 'Overall bullpen availability needs monitoring.'
         assert 'monitor_group_pressure' in stress['reason_codes']
 
     def test_elevated_maps_to_user_copy(self):
@@ -57,7 +57,7 @@ class TestBullpenStressMapping:
 
         assert stress['state'] == 'elevated'
         assert stress['label'] == 'Elevated'
-        assert stress['summary'] == 'Bullpen workload pressure is elevated.'
+        assert stress['summary'] == 'Overall bullpen availability is tighter than usual.'
         assert 'workload_pressure_elevated' in stress['reason_codes']
 
     def test_constrained_maps_to_user_copy(self):
@@ -65,7 +65,7 @@ class TestBullpenStressMapping:
 
         assert stress['state'] == 'constrained'
         assert stress['label'] == 'Constrained'
-        assert stress['summary'] == 'Bullpen options are constrained.'
+        assert stress['summary'] == 'Overall bullpen availability is constrained.'
         assert 'bullpen_options_constrained' in stress['reason_codes']
 
     def test_no_data_maps_to_no_read(self):
@@ -73,7 +73,7 @@ class TestBullpenStressMapping:
 
         assert stress['state'] == 'no_data'
         assert stress['label'] == 'No Read'
-        assert stress['summary'] == 'Not enough current bullpen data to assess stress.'
+        assert stress['summary'] == 'Not enough current bullpen data to assess overall availability.'
         assert 'no_current_bullpen_data' in stress['reason_codes']
 
     def test_no_numeric_stress_score_is_present(self):
@@ -98,7 +98,7 @@ class TestBullpenStressMapping:
         assert context['health']['state'] == 'manageable'
         assert stress['state'] == 'manageable'
         assert stress['label'] == 'No Read'
-        assert stress['summary'] == 'Bullpen stress read is limited by data freshness.'
+        assert stress['summary'] == 'Overall availability read is limited by data freshness.'
         assert stress['is_stale'] is True
         assert 'freshness_limited' in stress['reason_codes']
         assert 'Manageable' not in stress['label']

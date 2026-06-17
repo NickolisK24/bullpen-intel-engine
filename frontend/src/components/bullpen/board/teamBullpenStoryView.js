@@ -17,6 +17,7 @@ export const TEAM_STORY_ARCHETYPES = Object.freeze({
   heavy_lifting: { key: 'heavy_lifting', label: 'Heavy Lifting', family: 'watch', tone: 'watch' },
   concentrated_workload: { key: 'concentrated_workload', label: 'Concentrated Workload', family: 'watch', tone: 'watch' },
   thin_margin: { key: 'thin_margin', label: 'Thin Margin', family: 'constrained', tone: 'stress' },
+  thinning_trust_lane: { key: 'thinning_trust_lane', label: 'Thinning Trust Lane', family: 'watch', tone: 'watch' },
   clean_options_layer: { key: 'clean_options_layer', label: 'Clean Options', family: 'rested', tone: 'rest' },
   depth_advantage: { key: 'depth_advantage', label: 'Depth Advantage', family: 'rested', tone: 'rest' },
   coverage_concern: { key: 'coverage_concern', label: 'Coverage Concern', family: 'constrained', tone: 'stress' },
@@ -35,7 +36,7 @@ export const STORY_FRAMING_LINE =
 const SHAPE_READ_ORDER = [
   { key: 'trustAvailability', concept: 'Trust Arm Availability' },
   { key: 'cleanOptions', concept: 'Clean Options' },
-  { key: 'bullpenPressure', concept: 'Bullpen Pressure' },
+  { key: 'bullpenPressure', concept: 'Trust-Lane Pressure' },
   { key: 'workloadConcentration', concept: 'Workload Concentration' },
   { key: 'coverageSafety', concept: 'Coverage Safety' },
   { key: 'depthSafety', concept: 'Depth Safety' },
@@ -97,6 +98,8 @@ const NON_PLAYER_NAME_PHRASES = new Set([
   'trust arm',
   'trust arm availability',
   'trust dependency',
+  'trust lane pressure',
+  'thinning trust lane',
   'unavailable',
   'usage shift',
   'watch arm',
@@ -226,6 +229,31 @@ function hasStrongOrStable(label) {
   return /^(Strong|Stable|Deep|Healthy|Low)\b/.test(label)
 }
 
+function isHighTrustLanePressure(shape) {
+  return readLabel(shape, 'bullpenPressure') === 'High Trust-Lane Pressure'
+}
+
+function hasDeepOverallOptions(counts, shape) {
+  return counts.ready >= 6 || readLabel(shape, 'cleanOptions') === 'Deep Clean Options'
+}
+
+function hasStableTrustLane(shape) {
+  return /^(Strong|Stable)\b/.test(readLabel(shape, 'trustAvailability'))
+}
+
+function trustLaneSummary(trust) {
+  const clean = number(trust?.cleanTrustArms)
+  const watch = number(trust?.watchTrustArms)
+  const rest = number(trust?.restRestrictedTrustArms)
+  const unavailable = number(trust?.unavailableTrustArms)
+  const parts = []
+  if (clean > 0) parts.push(`${clean} clean Trust ${one(clean, 'Arm', 'Arms')}`)
+  if (watch > 0) parts.push(`${watch} on watch`)
+  if (rest > 0) parts.push(`${rest} ${one(rest, 'needs', 'need')} rest`)
+  if (unavailable > 0) parts.push(`${unavailable} unavailable`)
+  return parts.length ? parts.join('; ') : 'the trusted late-inning group has a limited current read'
+}
+
 function hasCoverageSpecificStress(coverage) {
   const coverageArms = number(coverage?.coverageArms)
   if (coverageArms <= 0) return false
@@ -333,6 +361,7 @@ function evidencePitchers(archetypeKey, entries) {
         ...roleEntries(entries, ['Coverage Arm'], ['Watch Arm', 'Rest-Restricted', 'Unavailable']),
         ...roleEntries(entries, ['Bridge Arm'], ['Watch Arm', 'Rest-Restricted', 'Unavailable']),
       ].slice(0, 4)
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
       return roleEntries(entries, ['Trust Arm'], ['Watch Arm', 'Rest-Restricted', 'Unavailable']).slice(0, 4)
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
@@ -393,7 +422,7 @@ function shortShapeExplanation(read) {
       }
       break
     case 'bullpenPressure':
-      return `Pressure: ${compactReadCounts([
+      return `Trust-lane pressure: ${compactReadCounts([
         { count: counts.watchArmCount, label: 'Watch Arm' },
         { count: counts.restRestrictedCount, label: 'Rest-Restricted' },
         { count: counts.unavailableCount, label: 'Unavailable' },
@@ -473,6 +502,7 @@ export function deriveTeamStoryArchetype(board) {
   const pressure = readCounts(shape, 'bullpenPressure')
   const coverage = readCounts(shape, 'coverageSafety')
   const depth = readCounts(shape, 'depthSafety')
+  const highTrustLanePressure = isHighTrustLanePressure(shape)
 
   if (counts.total === 0 || healthState === 'no_data') return TEAM_STORY_ARCHETYPES.data_limited.key
   if (hasUsageShiftSignal(board)) return TEAM_STORY_ARCHETYPES.usage_shift.key
@@ -481,7 +511,7 @@ export function deriveTeamStoryArchetype(board) {
   }
   if (
     hasThinOrLimited(readLabel(shape, 'coverageSafety'))
-    && (healthState === 'constrained' || counts.ready <= 3 || readLabel(shape, 'bullpenPressure') === 'High Bullpen Pressure')
+    && (healthState === 'constrained' || counts.ready <= 3 || highTrustLanePressure)
     && hasCoverageSpecificStress(coverage)
   ) {
     return TEAM_STORY_ARCHETYPES.coverage_concern.key
@@ -494,7 +524,10 @@ export function deriveTeamStoryArchetype(board) {
     return TEAM_STORY_ARCHETYPES.bridge_dependency.key
   }
   if (counts.watch >= 4 && counts.watch > counts.needRest) return TEAM_STORY_ARCHETYPES.heavy_lifting.key
-  if (counts.needRest >= 3 || readLabel(shape, 'bullpenPressure') === 'High Bullpen Pressure') {
+  if (highTrustLanePressure && hasDeepOverallOptions(counts, shape) && hasStableTrustLane(shape)) {
+    return TEAM_STORY_ARCHETYPES.thinning_trust_lane.key
+  }
+  if (counts.needRest >= 3 || highTrustLanePressure) {
     return TEAM_STORY_ARCHETYPES.thin_margin.key
   }
   if ((pressure.stressedBridgeArms || 0) >= 2) return TEAM_STORY_ARCHETYPES.bridge_dependency.key
@@ -528,6 +561,8 @@ function headlineFor(archetypeKey, teamName) {
       return `The ${teamName} are carrying bullpen work through a small group.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return `The ${teamName} enter today with a thin late-inning margin.`
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      return `The ${teamName} have arms available, but the trust lane is thinning.`
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       return `The ${teamName} have more room to maneuver than earlier in the window.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
@@ -565,6 +600,8 @@ function observationFor(archetypeKey, counts, shape) {
       return `${relievers(counts.watch)} are carrying enough recent work to change how clean the bullpen looks beneath the overall count.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return `${relievers(counts.needRest)} of ${counts.total} ${one(counts.needRest, 'needs', 'need')} rest after recent work, leaving fewer clean paths through the late innings.`
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      return `${relievers(counts.ready)} are clean options, but the trusted late-inning lane is thinner: ${trustLaneSummary(trust)}.`
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       return `${relievers(counts.ready)} of ${counts.total} come in rested, giving this bullpen more room than it had during heavier stretches.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
@@ -597,6 +634,8 @@ function whyItMattersFor(archetypeKey, counts) {
       return 'When the same part of the bullpen keeps absorbing work, late-game flexibility can become less balanced.'
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       return 'Additional workload could quickly narrow the clean late-game options available to this bullpen.'
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      return 'The overall bullpen still has clean options; the watch is whether trusted late-inning work has to keep flowing through the stretched part of the lane.'
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
       return 'Clean options have created more paths through the late innings than this bullpen had during the heavier part of the window.'
@@ -632,6 +671,8 @@ function pitcherEvidenceSentence(archetypeKey, selected) {
       return `${nameList} are part of the clean rested layer supporting today's flexibility.`
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
       return `${nameList} are the Coverage or Bridge Arms most directly shaping the coverage read.`
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      return `${nameList} are the Trust Arms most directly shaping the trust-lane read.`
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
       return `${nameList} are the Trust Arms most directly shaping the trust-layer read.`
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
@@ -665,6 +706,10 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
         evidence.push(`${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or on watch.`)
       }
       if (coverage.substituteCoverageApplied) evidence.push('Bridge Arms are helping cover emergency innings behind the coverage layer.')
+      break
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      evidence.push(`${trustLaneSummary(trust)} in the trust lane.`)
+      evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options remain available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       evidence.push(`${depth.availableDepthArms || 0} Depth Arms are clean options or watch arms behind the primary layer.`)
@@ -726,6 +771,12 @@ function watchItemsFor(archetypeKey, counts) {
         'Whether the bullpen gets a lower-workload night.',
         'Whether clean options remain available behind the trusted group.',
         'Whether another busy game narrows the late-inning paths.',
+      ]
+    case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
+      return [
+        'Whether trusted late-inning arms get a lower-workload night.',
+        'Whether clean bridge and coverage options protect the trust lane.',
+        'Whether the trust lane returns to a cleaner shape after the next completed game.',
       ]
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
