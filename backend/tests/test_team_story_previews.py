@@ -4,11 +4,18 @@ from services.four_beat_stories import (
     BEAT_SIGNAL,
     LEAD_AVAILABILITY_DEEP,
     LEAD_TRUST_LANE_SHALLOW,
+    RULE_HIDDEN_CAPACITY_LOSS,
+    RULE_PRESSURE_DISTRIBUTION,
+    RULE_STRESS_TRANSFER,
+    RULE_SUSTAINABILITY_QUESTION,
+    RULES,
 )
 from services.team_story_previews import (
+    PLAIN_SHARE_TITLE_LABELS,
     build_team_story_preview,
     build_team_story_previews,
     render_team_story_html,
+    unmapped_live_story_rule_keys,
     write_team_story_pages,
 )
 
@@ -26,6 +33,7 @@ def _story(
     *,
     signal,
     lead_dimension,
+    rule_key=RULE_STRESS_TRANSFER,
     rule_label='Stress Transfer',
     computed=None,
     lead_fields=None,
@@ -33,7 +41,7 @@ def _story(
     team = team or _team()
     return {
         'story_id': f"{team['team_id']}:fixture",
-        'rule_key': 'fixture_rule',
+        'rule_key': rule_key,
         'rule_label': rule_label,
         'team_id': team['team_id'],
         'team_name': team['team_name'],
@@ -81,6 +89,22 @@ def _board(team=None, labels=None):
     }
 
 
+def test_all_live_story_rules_have_plain_share_title_labels():
+    live_rule_keys = {
+        key
+        for key, rule in RULES.items()
+        if rule.get('status') == 'live'
+    }
+
+    assert unmapped_live_story_rule_keys() == []
+    assert live_rule_keys <= set(PLAIN_SHARE_TITLE_LABELS)
+    assert PLAIN_SHARE_TITLE_LABELS[RULE_SUSTAINABILITY_QUESTION] == 'Riding the Bullpen Hard'
+    assert PLAIN_SHARE_TITLE_LABELS[RULE_PRESSURE_DISTRIBUTION] == 'Bullpen in Good Shape'
+    assert PLAIN_SHARE_TITLE_LABELS[RULE_STRESS_TRANSFER] == 'Short on Fresh Arms'
+    assert PLAIN_SHARE_TITLE_LABELS[RULE_HIDDEN_CAPACITY_LOSS] == 'Not as Deep as It Looks'
+    assert PLAIN_SHARE_TITLE_LABELS['thinning_trust_lane'] == 'Thin Where It Counts Late'
+
+
 def test_tension_story_uses_signal_as_honest_contrast_preview():
     team = _team()
     signal = 'The Toronto Blue Jays have room tonight, but the clean Trust Arm lane is narrow.'
@@ -88,6 +112,7 @@ def test_tension_story_uses_signal_as_honest_contrast_preview():
         team,
         signal=signal,
         lead_dimension=LEAD_TRUST_LANE_SHALLOW,
+        rule_key=RULE_STRESS_TRANSFER,
         rule_label='Stress Transfer',
         computed={'clean_option_count': 4},
         lead_fields={'clean_trust_count': 1},
@@ -96,12 +121,13 @@ def test_tension_story_uses_signal_as_honest_contrast_preview():
     preview = build_team_story_preview(team, story=story, board=_board(team))
 
     assert preview['framing'] == 'tension'
-    assert preview['og_title'] == 'Stress Transfer — Toronto Blue Jays'
+    assert preview['og_title'] == 'Short on Fresh Arms — Toronto Blue Jays'
     assert preview['og_description'] == signal
     assert preview['og_title'] != preview['og_description']
     assert preview['og_url'] == 'https://baseballos.vercel.app/team/TOR'
     assert preview['rule_label'] == 'Stress Transfer'
-    assert preview['authority']['title'] == 'four_beat_story.rule_label'
+    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_STRESS_TRANSFER]
+    assert preview['authority']['title'] == 'four_beat_story.rule_key.plain_share_title_label'
     assert preview['authority']['description'] == 'four_beat_story.signal'
     assert preview['redirect_path'] == '/bullpen?view=board&team=TOR&source=share'
 
@@ -113,6 +139,7 @@ def test_no_tension_story_stays_clean_and_does_not_manufacture_contrast():
         team,
         signal=signal,
         lead_dimension=LEAD_AVAILABILITY_DEEP,
+        rule_key=RULE_PRESSURE_DISTRIBUTION,
         rule_label='Pressure Distribution',
         computed={'clean_option_count': 6},
         lead_fields={'clean_trust_count': 2},
@@ -122,9 +149,49 @@ def test_no_tension_story_stays_clean_and_does_not_manufacture_contrast():
 
     assert preview['framing'] == 'clean'
     assert ' but ' not in preview['og_title'].lower()
-    assert preview['og_title'] == 'Pressure Distribution — Los Angeles Dodgers'
+    assert preview['og_title'] == 'Bullpen in Good Shape — Los Angeles Dodgers'
     assert preview['og_description'] == signal
     assert preview['og_title'] != preview['og_description']
+    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_PRESSURE_DISTRIBUTION]
+
+
+def test_hidden_capacity_loss_uses_plain_share_label_and_preserves_internal_label():
+    team = _team(4, 'Chicago Cubs', 'CHC')
+    signal = 'The Chicago Cubs have a solid season read, but tonight the usable depth is thin.'
+    story = _story(
+        team,
+        signal=signal,
+        lead_dimension=LEAD_TRUST_LANE_SHALLOW,
+        rule_key=RULE_HIDDEN_CAPACITY_LOSS,
+        rule_label='Hidden Capacity Loss',
+        computed={'clean_option_count': 3},
+        lead_fields={'clean_trust_count': 1},
+    )
+
+    preview = build_team_story_preview(team, story=story, board=_board(team))
+
+    assert preview['og_title'] == 'Not as Deep as It Looks — Chicago Cubs'
+    assert preview['og_description'] == signal
+    assert preview['rule_label'] == 'Hidden Capacity Loss'
+    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_HIDDEN_CAPACITY_LOSS]
+
+
+def test_unmapped_story_rule_fails_before_emitting_public_title():
+    team = _team(5, 'Fixture Club', 'FIX')
+    story = _story(
+        team,
+        signal='The Fixture Club have a fixture Signal beat.',
+        lead_dimension=LEAD_AVAILABILITY_DEEP,
+        rule_key='fixture_rule',
+        rule_label='Fixture Rule',
+    )
+
+    try:
+        build_team_story_preview(team, story=story, board=_board(team))
+    except ValueError as error:
+        assert 'missing a plain share title label' in str(error)
+    else:
+        raise AssertionError('Expected unmapped story rule to fail.')
 
 
 def test_no_story_team_uses_neutral_shape_preview_only():
@@ -134,7 +201,7 @@ def test_no_story_team_uses_neutral_shape_preview_only():
     assert preview['has_story'] is False
     assert preview['framing'] == 'neutral'
     assert preview['source'] == 'team_shape'
-    assert preview['og_title'] == 'The Quiet Club bullpen tonight - current availability and trust read'
+    assert preview['og_title'] == 'Where the Quiet Club Bullpen Stands Tonight'
     assert preview['og_description'] == (
         'Current read: Stable Trust Arm Availability; Healthy Clean Options; '
         'Manageable Trust-Lane Pressure.'
@@ -155,6 +222,7 @@ def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
                     tor,
                     signal=signal,
                     lead_dimension=LEAD_TRUST_LANE_SHALLOW,
+                    rule_key=RULE_STRESS_TRANSFER,
                     rule_label='Stress Transfer',
                     computed={'clean_option_count': 3},
                     lead_fields={'clean_trust_count': 1},
@@ -171,7 +239,7 @@ def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
     by_abbr = {preview['team_abbreviation']: preview for preview in previews}
 
     assert by_abbr['TOR']['og_description'] == signal
-    assert by_abbr['TOR']['og_title'] == 'Stress Transfer — Toronto Blue Jays'
+    assert by_abbr['TOR']['og_title'] == 'Short on Fresh Arms — Toronto Blue Jays'
     assert by_abbr['TOR']['has_story'] is True
     assert by_abbr['LAD']['has_story'] is False
     assert by_abbr['LAD']['source'] == 'team_shape'
@@ -186,6 +254,7 @@ def test_static_html_contains_og_tags_and_human_redirect():
             team,
             signal=signal,
             lead_dimension=LEAD_AVAILABILITY_DEEP,
+            rule_key=RULE_PRESSURE_DISTRIBUTION,
             rule_label='Pressure Distribution',
         ),
         board=_board(team),
@@ -193,10 +262,10 @@ def test_static_html_contains_og_tags_and_human_redirect():
 
     html = render_team_story_html(preview)
 
-    assert '<meta property="og:title" content="Pressure Distribution — Toronto Blue Jays" />' in html
+    assert '<meta property="og:title" content="Bullpen in Good Shape — Toronto Blue Jays" />' in html
     assert '<meta property="og:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
     assert '<meta property="og:url" content="https://baseballos.vercel.app/team/TOR" />' in html
-    assert '<meta name="twitter:title" content="Pressure Distribution — Toronto Blue Jays" />' in html
+    assert '<meta name="twitter:title" content="Bullpen in Good Shape — Toronto Blue Jays" />' in html
     assert '<meta name="twitter:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
     assert 'window.location.replace("/bullpen?view=board&amp;team=TOR&amp;source=share")' not in html
     assert 'window.location.replace("/bullpen?view=board&team=TOR&source=share")' in html

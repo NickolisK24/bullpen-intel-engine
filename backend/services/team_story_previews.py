@@ -15,6 +15,11 @@ from services.four_beat_stories import (
     LEAD_TRUST_LANE_ABSENCE,
     LEAD_TRUST_LANE_SHALLOW,
     LEAD_WORKLOAD_HIGH,
+    RULE_HIDDEN_CAPACITY_LOSS,
+    RULE_PRESSURE_DISTRIBUTION,
+    RULE_STRESS_TRANSFER,
+    RULE_SUSTAINABILITY_QUESTION,
+    RULES,
 )
 
 
@@ -23,6 +28,14 @@ DEFAULT_OG_IMAGE_PATH = '/og/baseballos-card.svg'
 TEAM_PAGE_ROOT = '/team'
 TEAM_SHARE_SOURCE = 'share'
 TWITTER_CARD = 'summary'
+
+PLAIN_SHARE_TITLE_LABELS = {
+    RULE_SUSTAINABILITY_QUESTION: 'Riding the Bullpen Hard',
+    RULE_PRESSURE_DISTRIBUTION: 'Bullpen in Good Shape',
+    RULE_STRESS_TRANSFER: 'Short on Fresh Arms',
+    RULE_HIDDEN_CAPACITY_LOSS: 'Not as Deep as It Looks',
+    'thinning_trust_lane': 'Thin Where It Counts Late',
+}
 
 TENSION_LEAD_DIMENSIONS = {
     LEAD_TRUST_LANE_ABSENCE,
@@ -130,6 +143,28 @@ def _neutral_shape_description(board):
     return 'Current availability and trust read from the team board.'
 
 
+def _live_story_rule_keys():
+    return {
+        key
+        for key, rule in RULES.items()
+        if (rule or {}).get('status') == 'live'
+    }
+
+
+def unmapped_live_story_rule_keys():
+    return sorted(_live_story_rule_keys() - set(PLAIN_SHARE_TITLE_LABELS))
+
+
+def _plain_share_title_label(story, abbr):
+    rule_key = _clean_text((story or {}).get('rule_key'))
+    if not rule_key:
+        raise ValueError(f'Team story for {abbr} is missing a rule key.')
+    label = PLAIN_SHARE_TITLE_LABELS.get(rule_key)
+    if not label:
+        raise ValueError(f'Team story rule {rule_key} is missing a plain share title label.')
+    return label
+
+
 def _signal_beat(story):
     beats = story.get('beats') if isinstance(story, dict) else None
     if isinstance(beats, list):
@@ -210,9 +245,10 @@ def build_team_story_preview(
         signal = _signal_beat(story)
         if not signal:
             raise ValueError(f'Team story for {abbr} is missing a Signal beat.')
-        label = _story_label(story)
-        if not label:
+        internal_label = _story_label(story)
+        if not internal_label:
             raise ValueError(f'Team story for {abbr} is missing a rule label.')
+        share_label = _plain_share_title_label(story, abbr)
         framing = 'tension' if _story_supports_tension(story) else 'clean'
         return {
             'team_id': (team or {}).get('team_id') or story.get('team_id'),
@@ -223,9 +259,10 @@ def build_team_story_preview(
             'source': 'four_beat_story',
             'story_id': story.get('story_id'),
             'rule_key': story.get('rule_key'),
-            'rule_label': label,
+            'rule_label': internal_label,
+            'share_title_label': share_label,
             'lead_dimension': story.get('lead_dimension'),
-            'og_title': f'{label} — {team_name}',
+            'og_title': f'{share_label} — {team_name}',
             'og_description': signal,
             'og_url': team_page_url,
             'canonical_url': team_page_url,
@@ -233,7 +270,7 @@ def build_team_story_preview(
             'twitter_card': TWITTER_CARD,
             'redirect_path': redirect_path,
             'authority': {
-                'title': 'four_beat_story.rule_label',
+                'title': 'four_beat_story.rule_key.plain_share_title_label',
                 'description': 'four_beat_story.signal',
                 'redirect': 'tonights_bullpen_board.deep_link',
             },
@@ -249,8 +286,9 @@ def build_team_story_preview(
         'story_id': None,
         'rule_key': None,
         'rule_label': None,
+        'share_title_label': None,
         'lead_dimension': None,
-        'og_title': f'The {team_name} bullpen tonight - current availability and trust read',
+        'og_title': f'Where the {team_name} Bullpen Stands Tonight',
         'og_description': _neutral_shape_description(board),
         'og_url': team_page_url,
         'canonical_url': team_page_url,
