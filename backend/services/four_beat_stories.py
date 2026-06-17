@@ -873,6 +873,22 @@ def _lead_candidate(dimension, score, value, reason, direction=None):
     }
 
 
+def _team_story_key(record):
+    story = record.get('story') or {}
+    return (story.get('team_id'), story.get('rule_key'))
+
+
+def _story_feed_order_key(record):
+    story = record.get('story') or {}
+    return (
+        -_number(story.get('strength')),
+        story.get('team_abbreviation') or '',
+        story.get('team_name') or '',
+        story.get('team_id') or 0,
+        story.get('rule_key') or '',
+    )
+
+
 def _team_lead_candidates(record, cluster):
     inputs = record['inputs']
     rule_key = (record.get('story') or {}).get('rule_key')
@@ -1085,23 +1101,59 @@ def _lead_values_similar(first, second):
     return first_value == second_value
 
 
-def select_lead_dimensions(story_records):
+def _lead_signal_text(record, lead):
+    if not lead:
+        return None
+    skeleton = (LEAD_FRAGMENT_LIBRARY.get(lead.get('dimension')) or {}).get(BEAT_SIGNAL)
+    if not skeleton:
+        return None
+    return _fill_skeleton(skeleton, _base_slots(record['inputs']))
+
+
+def _lead_fragment_signature(record, lead):
+    text = _lead_signal_text(record, lead)
+    if not text:
+        return None
+    team = (record.get('story') or {}).get('team_name') or ''
+    normalized = text
+    if team:
+        normalized = normalized.replace(team, '{team_name}')
+    return (
+        lead.get('dimension'),
+        ' '.join(normalized.split()).lower(),
+    )
+
+
+def _lead_collides(record, lead, assigned_records):
+    signature = _lead_fragment_signature(record, lead)
+    if signature is None:
+        return False
+    return any(
+        signature == _lead_fragment_signature(existing_record, existing_lead)
+        for existing_record, existing_lead in assigned_records
+    )
+
+
+def _cluster_lead_dimensions(story_records):
     by_rule = {}
     for record in story_records:
         story = record.get('story') or {}
         by_rule.setdefault(story.get('rule_key'), []).append(record)
 
     selected = {}
+    candidates_by_team = {}
     for _rule_key, cluster in by_rule.items():
-        candidates_by_team = {
-            (record['story'].get('team_id'), record['story'].get('rule_key')): _team_lead_candidates(record, cluster)
-            for record in cluster
-        }
+        cluster_candidates = {}
+        for record in cluster:
+            key = _team_story_key(record)
+            candidates = _team_lead_candidates(record, cluster)
+            cluster_candidates[key] = candidates
+            candidates_by_team[key] = candidates
         order = sorted(
             cluster,
             key=lambda record: (
-                -(candidates_by_team[(record['story'].get('team_id'), record['story'].get('rule_key'))][0]['score']
-                  if candidates_by_team[(record['story'].get('team_id'), record['story'].get('rule_key'))]
+                -(cluster_candidates[_team_story_key(record)][0]['score']
+                  if cluster_candidates[_team_story_key(record)]
                   else 0),
                 record['story'].get('team_name') or '',
                 record['story'].get('team_id') or 0,
@@ -1109,8 +1161,8 @@ def select_lead_dimensions(story_records):
         )
         assigned = []
         for record in order:
-            key = (record['story'].get('team_id'), record['story'].get('rule_key'))
-            candidates = candidates_by_team.get(key) or []
+            key = _team_story_key(record)
+            candidates = cluster_candidates.get(key) or []
             choice = None
             for candidate in candidates:
                 if not any(_lead_values_similar(candidate, existing) for existing in assigned):
@@ -1121,7 +1173,64 @@ def select_lead_dimensions(story_records):
             if choice is not None:
                 selected[key] = choice
                 assigned.append(choice)
-    return selected
+    return selected, candidates_by_team
+
+
+def _resolve_feed_wide_lead_collisions(story_records, selected, candidates_by_team):
+    resolved = {}
+    assigned = []
+    for record in sorted(story_records, key=_story_feed_order_key):
+        key = _team_story_key(record)
+        candidates = candidates_by_team.get(key) or []
+        cluster_choice = selected.get(key)
+        if cluster_choice is None:
+            continue
+
+        if not _lead_collides(record, cluster_choice, assigned):
+            resolved[key] = cluster_choice
+            assigned.append((record, cluster_choice))
+            continue
+
+        if cluster_choice.get('honest_sameness'):
+            honest_choice = {
+                **cluster_choice,
+                'feed_wide_honest_sameness': True,
+                'feed_wide_collision_unresolved': True,
+            }
+            resolved[key] = honest_choice
+            assigned.append((record, honest_choice))
+            continue
+
+        replacement = None
+        for candidate in candidates:
+            if candidate.get('dimension') == cluster_choice.get('dimension'):
+                continue
+            if not _lead_collides(record, candidate, assigned):
+                replacement = {
+                    **candidate,
+                    'feed_wide_replacement_for': cluster_choice.get('dimension'),
+                    'feed_wide_replacement_reason': (
+                        'resolved a feed-wide lead-fragment collision on a grounded secondary dimension'
+                    ),
+                }
+                break
+
+        if replacement is None:
+            replacement = {
+                **cluster_choice,
+                'honest_sameness': True,
+                'feed_wide_honest_sameness': True,
+                'feed_wide_collision_unresolved': True,
+            }
+
+        resolved[key] = replacement
+        assigned.append((record, replacement))
+    return resolved
+
+
+def select_lead_dimensions(story_records):
+    selected, candidates_by_team = _cluster_lead_dimensions(story_records)
+    return _resolve_feed_wide_lead_collisions(story_records, selected, candidates_by_team)
 
 
 def _lead_beat(rule_key, beat_key, lead, slots):
