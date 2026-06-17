@@ -123,9 +123,29 @@ def test_bullpen_pressure_weights_trust_and_bridge_stress_on_backend():
         card('depth_arm', 'clean_option'),
     ])
 
-    assert result['bullpenPressure']['label'] == 'High Bullpen Pressure'
+    assert result['bullpenPressure']['label'] == 'High Trust-Lane Pressure'
     assert result['bullpenPressure']['supportingCounts']['highFatigueArms'] == 1
     assert result['bullpenPressure']['supportingCounts']['unavailableTrustArms'] == 1
+
+
+def test_trust_lane_pressure_keeps_high_threshold_for_thinning_trust_lane():
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('trust_arm', 'clean_option'),
+        card('trust_arm', 'watch_arm'),
+        card('trust_arm', 'rest_restricted'),
+        card('bridge_arm', 'clean_option'),
+        card('bridge_arm', 'clean_option'),
+        card('bridge_arm', 'clean_option'),
+        card('coverage_arm', 'clean_option'),
+    ])
+
+    assert result['trustAvailability']['label'] == 'Stable Trust Arm Availability'
+    assert result['cleanOptions']['label'] == 'Deep Clean Options'
+    assert result['bullpenPressure']['label'] == 'High Trust-Lane Pressure'
+    assert result['bullpenPressure']['supportingCounts']['watchArmCount'] == 1
+    assert result['bullpenPressure']['supportingCounts']['restRestrictedCount'] == 1
+    assert result['bullpenPressure']['supportingCounts']['cleanTrustArms'] == 2
 
 
 def test_workload_concentration_uses_shared_pitch_share_bands():

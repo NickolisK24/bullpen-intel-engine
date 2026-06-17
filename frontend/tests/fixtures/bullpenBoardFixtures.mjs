@@ -168,27 +168,27 @@ function stressFromContext(context) {
   const meta = {
     manageable: {
       label: 'Manageable',
-      summary: 'Bullpen workload is in manageable shape.',
+      summary: 'Overall bullpen availability is manageable.',
       tone: 'manageable',
     },
     monitoring: {
       label: 'Monitoring',
-      summary: 'Several arms require monitoring.',
+      summary: 'Overall bullpen availability needs monitoring.',
       tone: 'monitoring',
     },
     elevated: {
       label: 'Elevated',
-      summary: 'Bullpen workload pressure is elevated.',
+      summary: 'Overall bullpen availability is tighter than usual.',
       tone: 'elevated',
     },
     constrained: {
       label: 'Constrained',
-      summary: 'Bullpen options are constrained.',
+      summary: 'Overall bullpen availability is constrained.',
       tone: 'constrained',
     },
     no_data: {
       label: 'No Read',
-      summary: 'Not enough current bullpen data to assess stress.',
+      summary: 'Not enough current bullpen data to assess overall availability.',
       tone: 'muted',
     },
   }
@@ -197,7 +197,7 @@ function stressFromContext(context) {
     state,
     label: isStale && state !== 'no_data' ? 'No Read' : base.label,
     summary: isStale && state !== 'no_data'
-      ? 'Bullpen stress read is limited by data freshness.'
+      ? 'Overall availability read is limited by data freshness.'
       : base.summary,
     reasons: context?.health?.reasons || [],
     reason_codes: [state === 'no_data' ? 'no_current_bullpen_data' : `fixture_${state}`],

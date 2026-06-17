@@ -138,11 +138,12 @@ function buildTeamShape(groups, healthState) {
     : trustCounts.availableTrustArms >= 1
       ? 'Thin Trust Arm Availability'
       : 'Limited Trust Arm Availability'
-  const pressureLabel = healthState === 'constrained' || rest.length >= 3
-    ? 'High Bullpen Pressure'
-    : watch.length >= 3 || pressureCounts.stressedBridgeArms >= 2
-      ? 'Elevated Bullpen Pressure'
-      : 'Low Bullpen Pressure'
+  const trustPressure = (trustCounts.watchTrustArms * 1.5) + (trustCounts.restRestrictedTrustArms * 3) + (trustCounts.unavailableTrustArms * 3)
+  const pressureLabel = healthState === 'constrained' || rest.length >= 3 || trustPressure >= 4.5
+    ? 'High Trust-Lane Pressure'
+    : trustPressure >= 2.5 || watch.length >= 3 || pressureCounts.stressedBridgeArms >= 2
+      ? 'Elevated Trust-Lane Pressure'
+      : 'Low Trust-Lane Pressure'
   const cleanLabel = clean.length >= 6
     ? 'Deep Clean Options'
     : clean.length >= 4
@@ -265,6 +266,25 @@ const constrainedBoard = makeBoard({
   },
 })
 
+const genuineThinMarginBoard = makeBoard({
+  teamName: 'Oakland Athletics', abbr: 'ATH', state: 'elevated',
+  metrics: { total_relievers: 8, available: 2, monitor: 0, limited: 3, avoid: 1, unavailable: 0, pct_available: 25, pct_restricted: 12 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(91, 'Mason Miller', 'Trust Arm', 'Available'),
+      storyPitcher(92, 'T.J. McFarland', 'Coverage Arm', 'Available'),
+    ],
+    Limited: [
+      storyPitcher(93, 'Tyler Ferguson', 'Trust Arm', 'Limited'),
+      storyPitcher(94, 'Austin Adams', 'Bridge Arm', 'Limited'),
+      storyPitcher(95, 'Michel Otanez', 'Depth Arm', 'Limited'),
+    ],
+    Avoid: [
+      storyPitcher(96, 'Sean Newcomb', 'Depth Arm', 'Avoid'),
+    ],
+  },
+})
+
 const watchBoard = makeBoard({
   teamName: 'Toronto Blue Jays', abbr: 'TOR', state: 'manageable',
   metrics: { total_relievers: 8, available: 4, monitor: 4, limited: 0, avoid: 0, unavailable: 0, pct_available: 50, pct_restricted: 0 },
@@ -342,6 +362,27 @@ const restedBoard = makeBoard({
   },
 })
 
+const thinningTrustLaneBoard = makeBoard({
+  teamName: 'New York Yankees', abbr: 'NYY', state: 'manageable',
+  metrics: { total_relievers: 8, available: 6, monitor: 1, limited: 1, avoid: 0, unavailable: 0, pct_available: 75, pct_restricted: 0 },
+  cardsByStatus: {
+    Available: [
+      storyPitcher(61, 'Luke Weaver', 'Trust Arm', 'Available', { fatigue_score: 18 }),
+      storyPitcher(62, 'Devin Williams', 'Trust Arm', 'Available', { fatigue_score: 20 }),
+      storyPitcher(63, 'Fernando Cruz', 'Bridge Arm', 'Available', { fatigue_score: 22 }),
+      storyPitcher(64, 'Tim Hill', 'Bridge Arm', 'Available', { fatigue_score: 24 }),
+      storyPitcher(65, 'Mark Leiter Jr.', 'Bridge Arm', 'Available', { fatigue_score: 26 }),
+      storyPitcher(66, 'Ian Hamilton', 'Coverage Arm', 'Available', { fatigue_score: 28 }),
+    ],
+    Monitor: [
+      storyPitcher(67, 'David Bednar', 'Trust Arm', 'Monitor', { fatigue_score: 54 }),
+    ],
+    Limited: [
+      storyPitcher(68, 'Ryan Yarbrough', 'Trust Arm', 'Limited', { fatigue_score: 64 }),
+    ],
+  },
+})
+
 const balancedBoard = makeBoard({
   teamName: 'Chicago Cubs', abbr: 'CHC', state: 'manageable',
   metrics: { total_relievers: 8, available: 4, monitor: 1, limited: 1, avoid: 0, unavailable: 2, pct_available: 50, pct_restricted: 37 },
@@ -380,6 +421,31 @@ test('each board shape lands in its story family', () => {
   assert.equal(deriveStoryFamily(dataLimitedBoard), 'data_limited')
   assert.equal(deriveTeamStoryArchetype(watchBoard), 'heavy_lifting')
   assert.equal(deriveTeamStoryArchetype(restedBoard), 'depth_advantage')
+  assert.equal(deriveTeamStoryArchetype(thinningTrustLaneBoard), 'thinning_trust_lane')
+})
+
+test('high trust-lane pressure with deep clean options does not read as thin margin', () => {
+  const story = getTeamBullpenStoryView(thinningTrustLaneBoard)
+  const html = render(React.createElement(TeamBullpenStoryPanel, { board: thinningTrustLaneBoard }))
+
+  assert.equal(story.label, 'Thinning Trust Lane')
+  assert.match(story.headline, /trust lane is thinning/)
+  assert.match(story.observation, /6 relievers are clean options/)
+  assert.match(story.observation, /2 clean Trust Arms; 1 on watch; 1 needs rest/)
+  assert.ok(story.evidence.some(item => /6 Clean Options remain available from 8 active bullpen arms/.test(item)))
+  assert.ok(htmlIncludes(html, 'Deep Clean Options'))
+  assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
+  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
+  assert.ok(!htmlIncludes(html, 'Thin Margin'))
+  assert.ok(!htmlIncludes(html, 'fewer clean paths'))
+})
+
+test('genuine low-availability pressure still reads as thin margin with count copy', () => {
+  const story = getTeamBullpenStoryView(genuineThinMarginBoard)
+
+  assert.equal(story.label, 'Thin Margin')
+  assert.match(story.observation, /4 relievers of 8 need rest/)
+  assert.match(story.whyItMatters, /narrow the clean late-game options/)
 })
 
 test('a constrained club gets a specific story with real counts', () => {
@@ -487,7 +553,7 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
   const orderedLabels = [
     'Trust Arm Availability',
     'Clean Options',
-    'Bullpen Pressure',
+    'Trust-Lane Pressure',
     'Workload Concentration',
     'Coverage Safety',
     'Depth Safety',
@@ -503,13 +569,13 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
   }
   assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
+  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Thin Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Limited Depth Safety'))
   assert.ok(htmlIncludes(html, 'Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted.'))
   assert.ok(htmlIncludes(html, '2 Clean Options from 7 active arms.'))
-  assert.ok(htmlIncludes(html, 'Pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
+  assert.ok(htmlIncludes(html, 'Trust-lane pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
   assert.ok(htmlIncludes(html, 'Top 3 arms: 65% of recent relief pitches across 8 participating arms.'))
   assert.ok(htmlIncludes(html, 'aria-label="Stable Trust Arm Availability. Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
   assert.ok(!htmlIncludes(html, 'BaseballOS Reads'))
@@ -542,6 +608,28 @@ test('the board view mounts the story panel above the board only when asked', ()
   // Embedded uses (e.g. the side-by-side comparison) stay unchanged.
   const withoutPanel = render(React.createElement(BullpenBoardView, { board: constrainedBoard }))
   assert.ok(!htmlIncludes(withoutPanel, 'What BaseballOS Sees About This Bullpen'))
+})
+
+test('the mounted panel labels trust-lane pressure separately from overall availability', () => {
+  const board = {
+    ...thinningTrustLaneBoard,
+    stress: {
+      label: 'Manageable',
+      summary: 'Overall bullpen availability is manageable.',
+      reasons: ['6 of 8 relievers are classified Available.'],
+      limitations: [],
+      confidence: 'high',
+      is_stale: false,
+      tone: 'manageable',
+    },
+  }
+  const html = render(React.createElement(BullpenBoardView, { board, showStoryPanel: true }))
+
+  assert.ok(htmlIncludes(html, 'Trust-Lane Pressure'))
+  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
+  assert.ok(htmlIncludes(html, 'Overall Availability: Manageable'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Stress: Manageable'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Pressure'))
 })
 
 test('different bullpen shapes create different narratives', () => {

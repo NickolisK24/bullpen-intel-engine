@@ -104,8 +104,8 @@ test('board view mode control defaults to Active and replaces show-unavailable c
 test('renders bullpen stress from the backend payload', () => {
   const html = render(populatedBoard)
 
-  assert.ok(htmlIncludes(html, 'Bullpen Stress: Elevated'))
-  assert.ok(htmlIncludes(html, 'Bullpen workload pressure is elevated.'))
+  assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
+  assert.ok(htmlIncludes(html, 'Overall bullpen availability is tighter than usual.'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
   assert.ok(!htmlIncludes(html, 'Stress Score'))
@@ -162,8 +162,8 @@ test('groups with no pitchers render their own empty copy', () => {
 test('stale data surfaces existing trust messaging', () => {
   const html = render(staleBoard)
   assert.ok(htmlIncludes(html, 'Outside Freshness Window'))
-  assert.ok(htmlIncludes(html, 'Bullpen Stress: No Read'))
-  assert.ok(htmlIncludes(html, 'Bullpen stress read is limited by data freshness.'))
+  assert.ok(htmlIncludes(html, 'Overall Availability: No Read'))
+  assert.ok(htmlIncludes(html, 'Overall availability read is limited by data freshness.'))
   assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
   assert.ok(htmlIncludes(html, 'Roster Unknown'))
   assert.ok(htmlIncludes(html, 'Roster status unavailable'))

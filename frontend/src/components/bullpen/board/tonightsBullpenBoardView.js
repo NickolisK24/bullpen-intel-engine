@@ -483,6 +483,7 @@ export function getBullpenStressView(stress) {
   if (!stress) {
     return {
       hasStress: false,
+      conceptLabel: 'Overall Availability',
       label: null,
       summary: null,
       reasons: [],
@@ -498,6 +499,7 @@ export function getBullpenStressView(stress) {
   const limitations = Array.isArray(stress.limitations) ? stress.limitations : []
   return {
     hasStress: true,
+    conceptLabel: 'Overall Availability',
     state: stress.state || 'no_data',
     label: stress.label || 'No Read',
     summary: stress.summary || 'Not enough current bullpen data to assess stress.',

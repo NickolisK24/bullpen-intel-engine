@@ -97,7 +97,7 @@ test('context summary appears above the availability groups on the full board', 
 
 test('full board uses stress read instead of a duplicate health statement', () => {
   const html = renderBoard(populatedBoard)
-  assert.ok(htmlIncludes(html, 'Bullpen Stress: Elevated'))
+  assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are classified Available.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
