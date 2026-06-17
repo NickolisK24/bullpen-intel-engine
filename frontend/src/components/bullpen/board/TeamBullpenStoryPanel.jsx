@@ -1,5 +1,6 @@
 import { getTeamBullpenStoryView } from './teamBullpenStoryView'
 import { homeTone } from '../../home/homeIntelligenceView'
+import TeamShareButton from '../../share/TeamShareButton'
 
 // Team Story Surface V1 — a compact analyst note that sits between the
 // context strips and the availability board. It explains what BaseballOS sees
@@ -17,13 +18,16 @@ export default function TeamBullpenStoryPanel({ board }) {
         <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
           What BaseballOS Sees About This Bullpen
         </div>
-        <span
-          className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-          style={story.tone}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: story.tone.dot }} aria-hidden="true" />
-          {story.label}
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <TeamShareButton team={board?.team} />
+          <span
+            className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
+            style={story.tone}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: story.tone.dot }} aria-hidden="true" />
+            {story.label}
+          </span>
+        </div>
       </div>
 
       <h3 className="mt-2 font-display text-2xl leading-tight tracking-wide text-chalk100">

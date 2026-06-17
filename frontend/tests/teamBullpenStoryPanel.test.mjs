@@ -541,6 +541,8 @@ test('no board means no story', () => {
 test('the panel renders headline, both bullet sections, and the framing line', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   assert.ok(htmlIncludes(html, 'What BaseballOS Sees About This Bullpen'))
+  assert.ok(htmlIncludes(html, 'aria-label="Share Milwaukee Brewers bullpen"'))
+  assert.ok(htmlIncludes(html, 'data-share-url="https://baseballos.vercel.app/team/MIL"'))
   assert.ok(htmlIncludes(html, 'Observation'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Why It Matters'))

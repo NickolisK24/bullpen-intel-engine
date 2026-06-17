@@ -3,6 +3,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
+import TeamShareButton from '../share/TeamShareButton'
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import {
   getHeroStory,
@@ -220,6 +221,7 @@ function HeroStory({ hero }) {
               Step inside the {hero.team.abbr || hero.team.teamName} pen →
             </Link>
           )}
+          {hero.team && <TeamShareButton team={hero.team} />}
           <Link
             to="/bullpen"
             className="rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"

@@ -1032,6 +1032,8 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
+  assert.ok(htmlIncludes(html, 'aria-label="Share Milwaukee Brewers bullpen"'))
+  assert.ok(htmlIncludes(html, 'data-share-url="https://baseballos.vercel.app/team/MIL"'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
@@ -1053,6 +1055,7 @@ test('the hero primary CTA deep-links into the featured club’s bullpen board',
   assert.equal(hero.team.href, '/bullpen?view=board&team=MIL&source=home-hero')
   const html = render(React.createElement(HomeView, { dashboard, observations }))
   assert.ok(htmlIncludes(html, 'view=board') && htmlIncludes(html, 'team=MIL'))
+  assert.ok(!htmlIncludes(html, 'data-share-url="/bullpen?view=board'))
 })
 
 test('league intelligence cards link to team boards, and the trend to the league view', () => {
