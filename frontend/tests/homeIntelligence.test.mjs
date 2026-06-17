@@ -22,13 +22,11 @@ const {
   StoryPresentation,
   shouldRenderStoryContext,
 } = await server.ssrLoadModule('/src/components/home/BullpenStories.jsx')
-const { default: RankingsPreview } = await server.ssrLoadModule('/src/components/home/RankingsPreview.jsx')
 const {
   getHeroStory,
   getLeagueCards,
   getLeagueContext,
   getBullpenStories,
-  getRankingsPreview,
   getTodayWatchItems,
   getWhatChangedSinceYesterday,
   getFlagshipStoryStatus,
@@ -968,30 +966,6 @@ test('story title guidelines prefer observations over conclusions', () => {
   assert.ok(titles.includes('rested options behind the late innings today'))
 })
 
-// ── Rankings preview ────────────────────────────────────────────────────────
-
-test('rankings preview is placeholder-only and does not order teams', () => {
-  const rankings = getRankingsPreview(dashboard)
-  const byKey = Object.fromEntries(rankings.boards.map(board => [board.key, board]))
-  assert.equal(rankings.boards.length, 4)
-  assert.ok(byKey.shape.placeholder)
-  assert.ok(byKey.recovery.placeholder)
-  assert.ok(byKey.pressure.placeholder)
-  assert.ok(byKey.movement.placeholder)
-  for (const board of rankings.boards) {
-    assert.equal(board.entries.length, 0)
-    assert.ok(board.placeholderCopy.length > 0)
-  }
-})
-
-test('rankings carry explicit not-ready framing', () => {
-  const rankings = getRankingsPreview(dashboard)
-  assert.match(rankings.framing, /Preview only/)
-  assert.match(rankings.framing, /Not yet validated/)
-  assert.match(rankings.framing, /Coming later/)
-  assert.match(rankings.updateNote, /No rankings are active/)
-})
-
 // ── Masthead ────────────────────────────────────────────────────────────────
 
 test('the masthead reports the data window in plain language', () => {
@@ -1058,12 +1032,6 @@ test('the hero renders the flagship observation with Why It Matters', () => {
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
-})
-
-test('the rankings preview is not part of the short Today briefing', () => {
-  const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(!htmlIncludes(html, 'Rankings Preview'))
-  assert.ok(!htmlIncludes(html, 'No rankings are active on this page.'))
 })
 
 test('the homepage keeps a path to the original dashboard', () => {
@@ -1166,17 +1134,6 @@ test('a story without a destination renders as plain copy, not a pretend link', 
   assert.ok(htmlIncludes(html, 'href="/stories"'))
   assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
   assert.ok(!htmlIncludes(html, 'Open the full picture'), 'no card CTA should render without a destination')
-})
-
-test('rankings preview renders no live rows or team links', () => {
-  const rankings = getRankingsPreview(dashboard)
-  assert.ok(rankings.boards.every(board => board.placeholder))
-  assert.ok(rankings.boards.every(board => board.entries.length === 0))
-  const html = render(React.createElement(RankingsPreview, { rankings }))
-  const anchorCount = (html.match(/<a /g) || []).length
-  assert.equal(anchorCount, 0)
-  assert.ok(!htmlIncludes(html, 'WSH'))
-  assert.ok(!htmlIncludes(html, 'MIL'))
 })
 
 test('CTA language is specific, never vague', () => {

@@ -1162,50 +1162,6 @@ export function getBullpenStories(dashboard, observations = null) {
   }
 }
 
-// ── Rankings Preview ───────────────────────────────────────────────────────
-// A placeholder for where bullpen rankings may land later. This section does
-// not order teams or link ranking rows; Today remains descriptive intelligence.
-export function getRankingsPreview(dashboard) {
-  return {
-    framing: 'Preview only. Not yet validated. Coming later. Today remains descriptive intelligence, not a team ranking.',
-    updateNote: 'No rankings are active on this page.',
-    boards: [
-      {
-        key: 'shape',
-        title: 'Bullpen Shape Preview',
-        note: 'How each pen comes in, not a ranking',
-        placeholder: true,
-        placeholderCopy: 'Coming later after the preview is validated.',
-        entries: [],
-      },
-      {
-        key: 'recovery',
-        title: 'Recovery Window Preview',
-        note: 'Who has room to maneuver, not a ranking',
-        placeholder: true,
-        placeholderCopy: 'Not yet validated for team ordering.',
-        entries: [],
-      },
-      {
-        key: 'pressure',
-        title: 'Bullpen Pressure Preview',
-        note: 'Who is carrying the load, not a ranking',
-        placeholder: true,
-        placeholderCopy: 'Preview only until the full release is ready.',
-        entries: [],
-      },
-      {
-        key: 'movement',
-        title: 'Movement Preview',
-        note: 'Day-over-day story movement',
-        placeholder: true,
-        placeholderCopy: 'Coming later with validated movement tracking.',
-        entries: [],
-      },
-    ],
-  }
-}
-
 // ── Masthead ───────────────────────────────────────────────────────────────
 export function getMastheadView(dashboard, now = new Date()) {
   const freshness = dashboard?.freshness || {}
