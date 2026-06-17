@@ -372,13 +372,17 @@ export function getRecommendationV2BullpenStateView(state = null) {
     diagnosticCount: getDiagnosticCount(state) + (unsafeVisibleLanguage ? 1 : 0),
     governanceRows: [
       {
-        label: 'ranking_applied',
-        value: displayValue(state.governance?.rankingApplied, 'missing'),
+        label: 'Ordering',
+        value: state.governance?.rankingApplied === false
+          ? 'Not applied'
+          : displayValue(state.governance?.rankingApplied, 'missing'),
         safe: state.governance?.rankingApplied === false,
       },
       {
-        label: 'selection_made',
-        value: displayValue(state.governance?.selectionMade, 'missing'),
+        label: 'Choice',
+        value: state.governance?.selectionMade === false
+          ? 'Not made'
+          : displayValue(state.governance?.selectionMade, 'missing'),
         safe: state.governance?.selectionMade === false,
       },
     ],
@@ -1205,7 +1209,7 @@ export default function RecommendationV2BullpenStatePanel({
 
       <div className={`${compact ? 'space-y-4 p-4' : 'space-y-5 p-4 sm:p-5 lg:p-6'}`}>
         <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {`Bullpen intelligence ${view.statusLabel}. ranking_applied ${displayValue(state?.governance?.rankingApplied, 'missing')}. selection_made ${displayValue(state?.governance?.selectionMade, 'missing')}.`}
+          {`Bullpen intelligence ${view.statusLabel}. No pitcher is ranked or selected.`}
         </div>
 
         {view.isUnavailable && (

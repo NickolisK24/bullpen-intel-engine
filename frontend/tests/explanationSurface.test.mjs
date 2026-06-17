@@ -39,10 +39,7 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const withoutGovernanceSentence = html => visibleText(html)
   .replace(/No ranking, selection, recommendation, or prediction applied\./g, '')
-  .replace(/recommendation_made/g, '')
-  .replace(/prediction_made/g, '')
-  .replace(/ranking_applied/g, '')
-  .replace(/selection_made/g, '')
+  .replace(/Ranking Not applied Selection Not made Recommendation Not made Prediction Not made Decision scope Explanation only Advice scope No advice/g, '')
 
 const governance = {
   ranking_applied: false,
@@ -301,12 +298,12 @@ test('keeps governance-safe messaging visible in explanation details', () => {
   })
 
   assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
-  assert.ok(htmlIncludes(html, 'ranking_applied'))
-  assert.ok(htmlIncludes(html, 'selection_made'))
-  assert.ok(htmlIncludes(html, 'recommendation_made'))
-  assert.ok(htmlIncludes(html, 'prediction_made'))
-  assert.ok(htmlIncludes(html, 'explanation_only'))
-  assert.ok(htmlIncludes(html, 'none'))
+  assert.ok(htmlIncludes(html, 'Ranking'))
+  assert.ok(htmlIncludes(html, 'Selection'))
+  assert.ok(htmlIncludes(html, 'Recommendation'))
+  assert.ok(htmlIncludes(html, 'Prediction'))
+  assert.ok(htmlIncludes(html, 'Explanation only'))
+  assert.ok(htmlIncludes(html, 'No advice'))
 })
 
 test('does not render prohibited explanation surface language', () => {

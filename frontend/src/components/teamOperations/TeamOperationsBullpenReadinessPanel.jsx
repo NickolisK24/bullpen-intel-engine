@@ -239,7 +239,7 @@ function CompactSnapshot({ view }) {
       />
       <CompactMetric
         label="Governance"
-        value={`ranking_applied === ${displayValue(governance.rankingApplied)} / selection_made === ${displayValue(governance.selectionMade)}`}
+        value="Context only - no team ranking or pitcher selection."
         subtext="Team-level context only"
       />
     </div>
@@ -462,10 +462,10 @@ function buildFailClosedRows(view) {
 function buildGovernanceRows(view) {
   const governance = asObject(view.governance)
   return [
-    { label: 'ranking_applied', value: governance.rankingApplied },
-    { label: 'selection_made', value: governance.selectionMade },
-    { label: 'trust ranking_applied', value: governance.trustRankingApplied },
-    { label: 'trust selection_made', value: governance.trustSelectionMade },
+    { label: 'Team ranking', value: governance.rankingApplied === false ? 'Not applied' : displayValue(governance.rankingApplied) },
+    { label: 'Pitcher selection', value: governance.selectionMade === false ? 'Not made' : displayValue(governance.selectionMade) },
+    { label: 'Trust ranking', value: governance.trustRankingApplied === false ? 'Not applied' : displayValue(governance.trustRankingApplied) },
+    { label: 'Trust selection', value: governance.trustSelectionMade === false ? 'Not made' : displayValue(governance.trustSelectionMade) },
   ]
 }
 

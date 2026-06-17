@@ -20,7 +20,13 @@ const { default: Bullpen } = await server.ssrLoadModule('/src/components/bullpen
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
-const html = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(Bullpen)))
+function renderBullpen(initialEntries = ['/bullpen']) {
+  return renderToStaticMarkup(
+    React.createElement(MemoryRouter, { initialEntries }, React.createElement(Bullpen)),
+  )
+}
+
+const html = renderBullpen()
 
 // The four Bullpen view tabs read as a clear hierarchy: the two new flagship
 // surfaces first, then the full reference tables (renamed from "Pitchers" /
@@ -35,4 +41,10 @@ test('bullpen tabs use the clarified labels', () => {
 
 test('bullpen section is framed as team-specific', () => {
   assert.ok(htmlIncludes(html, 'Team-specific bullpen analysis'))
+})
+
+test('all-pitchers view no longer exposes the public recalculate control', () => {
+  const pitchersHtml = renderBullpen(['/bullpen?view=pitchers'])
+  assert.ok(htmlIncludes(pitchersHtml, 'Show pitchers outside the freshness window'))
+  assert.equal(htmlIncludes(pitchersHtml, 'Recalculate'), false)
 })

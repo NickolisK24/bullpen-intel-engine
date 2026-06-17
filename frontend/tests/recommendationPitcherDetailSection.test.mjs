@@ -295,9 +295,11 @@ test('RecommendationPitcherDetailSection keeps trust, freshness, availability, a
   assert.ok(htmlIncludes(html, 'Fresh · Data Through 2026-06-01'))
   assert.ok(htmlIncludes(html, 'Availability'))
   assert.ok(htmlIncludes(html, 'Available'))
-  assert.ok(htmlIncludes(html, 'ranking_applied'))
-  assert.ok(htmlIncludes(html, 'selection_made'))
-  assert.ok(htmlIncludes(html, 'false'))
+  assert.ok(htmlIncludes(html, 'Governed Output'))
+  assert.ok(htmlIncludes(html, 'Bullpen ordering'))
+  assert.ok(htmlIncludes(html, 'Pitcher choice'))
+  assert.ok(htmlIncludes(html, 'Not applied'))
+  assert.ok(htmlIncludes(html, 'Not made'))
 })
 
 test('RecommendationPitcherDetailSection preserves mobile-safe layout structure', () => {

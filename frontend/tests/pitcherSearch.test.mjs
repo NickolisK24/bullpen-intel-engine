@@ -54,7 +54,7 @@ test('Pitcher Search input renders on the Bullpen Board surface', () => {
   assert.ok(htmlIncludes(html, 'Pitcher Search'))
   assert.ok(htmlIncludes(html, 'type="search"'))
   assert.ok(htmlIncludes(html, 'aria-label="Search pitcher"'))
-  assert.ok(htmlIncludes(html, 'placeholder="Kimbrel"'))
+  assert.ok(htmlIncludes(html, 'placeholder="Search pitchers..."'))
 })
 
 test('Pitcher Search displays returned pitcher results with team status and availability', () => {

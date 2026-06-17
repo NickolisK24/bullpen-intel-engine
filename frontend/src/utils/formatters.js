@@ -13,6 +13,13 @@ export const fmtIP = (innings, outs = null) => {
 }
 export const fmtNum = (n) => n != null ? n : '---'
 
+export function formatTeamLabel(team = {}, fallback = 'Team unavailable') {
+  const abbr = team?.team_abbreviation ?? team?.teamAbbreviation ?? team?.abbr
+  const name = team?.team_name ?? team?.teamName ?? team?.name
+  const parts = [abbr, name].filter(Boolean)
+  return parts.length ? parts.join(' · ') : fallback
+}
+
 // ── Fatigue ──────────────────────────────────────────────────
 export const riskColor = (level) => ({
   LOW:      'text-emerald-400',

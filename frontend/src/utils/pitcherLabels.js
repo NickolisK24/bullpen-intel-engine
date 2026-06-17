@@ -18,13 +18,13 @@ export const PITCHER_ROLE_LABELS = Object.freeze({
   TRUST_ARM: role(
     'trust_arm',
     'Trust Arm',
-    'Existing usage read points to late or high-leverage relief work.',
+    'Existing usage read points to the primary late-inning trust lane.',
     { borderColor: 'rgba(125,211,252,0.36)', backgroundColor: 'rgba(125,211,252,0.09)', color: '#bae6fd' },
   ),
   BRIDGE_ARM: role(
     'bridge_arm',
     'Bridge Arm',
-    'Existing usage read points to setup, bridge, or middle relief work.',
+    'Existing usage read points to the bridge or handoff layer.',
     { borderColor: 'rgba(196,181,253,0.34)', backgroundColor: 'rgba(196,181,253,0.08)', color: '#ddd6fe' },
   ),
   COVERAGE_ARM: role(

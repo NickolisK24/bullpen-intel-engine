@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { searchPitchers } from '../../utils/api'
+import { formatTeamLabel } from '../../utils/formatters'
 import AvailabilityBadge from './AvailabilityBadge'
 import { getRosterStatusSummary } from './availabilityView'
 
@@ -12,16 +13,11 @@ export function getPitcherSearchResultView(result = {}) {
     confidence: result.availability_confidence,
     is_inactive_context: result.availability === 'Unavailable',
   })
-  const teamParts = [
-    result.team_abbreviation,
-    result.team_name,
-  ].filter(Boolean)
-
   return {
     id: result.player_id,
     name: result.player_name || 'Unknown pitcher',
     position: result.position || 'P',
-    teamLabel: teamParts.length > 0 ? teamParts.join(' - ') : 'Team unavailable',
+    teamLabel: formatTeamLabel(result),
     rosterLabel: rosterStatus?.label || result.roster_status || 'Roster Unknown',
     availability: result.availability || 'Monitor',
     availabilityPayload: {
@@ -59,7 +55,7 @@ export function PitcherSearchPanel({
             value={query}
             onChange={event => onQueryChange(event.target.value)}
             aria-label="Search pitcher"
-            placeholder="Kimbrel"
+            placeholder="Search pitchers..."
             className="w-full rounded border border-dirt bg-field/70 px-3 py-2 text-sm text-chalk200 outline-none transition-colors placeholder:text-chalk600 focus:border-amber/50"
           />
         </label>

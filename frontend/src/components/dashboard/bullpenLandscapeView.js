@@ -79,7 +79,7 @@ export function getLandscapeView(landscape) {
   }
 }
 
-// Tonight's Storylines — a compact, descriptive recap of the most notable bullpen
+// Tonight's Storylines — a compact, descriptive recap of current bullpen
 // situations already present in the landscape data. This is storytelling, not a new
 // analytics layer: every observation is derived from the same availability/workload
 // counts that power the constrained/available/monitoring columns. No rankings,
@@ -117,17 +117,17 @@ export function getStorylines(landscape) {
   // the storyline matches what a user would see when scanning that section.
   const topConstrained = constrained[0]
   if (topConstrained && topConstrained.restricted > 0 && storyTeamName(topConstrained)) {
-    items.push(`${storyTeamName(topConstrained)} appears to have the most constrained bullpen in the current read.`)
+    items.push(`${storyTeamName(topConstrained)} is carrying a constrained bullpen read today.`)
   }
 
   const topAvailable = available[0]
   if (topAvailable && topAvailable.available > 0 && storyTeamName(topAvailable)) {
-    items.push(`${storyTeamName(topAvailable)} currently has the largest group of available relievers.`)
+    items.push(`${storyTeamName(topAvailable)} currently has a deep available-reliever group.`)
   }
 
   const topMonitor = monitoring[0]
   if (topMonitor && topMonitor.monitor > 0 && storyTeamName(topMonitor)) {
-    items.push(`${storyTeamName(topMonitor)} shows the highest concentration of Monitor arms.`)
+    items.push(`${storyTeamName(topMonitor)} shows a concentrated Monitor-arm read.`)
   }
 
   const stressedCount = constrained.filter(entry => entry.restricted > 0).length

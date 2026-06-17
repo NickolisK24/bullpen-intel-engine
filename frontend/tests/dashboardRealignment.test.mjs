@@ -63,7 +63,7 @@ test('dashboard leads with bullpen language, not operations/governance language'
 test('dashboard renders the five bullpen sections', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
-  assert.ok(htmlIncludes(html, 'Bullpen Health'))
+  assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'Usage Roles'))
   assert.ok(htmlIncludes(html, 'Quick Actions'))
 })
@@ -75,7 +75,7 @@ test('snapshot cards show the five availability counts', () => {
   }
 })
 
-test('bullpen health reuses the Team Context Layer statement and confidence', () => {
+test('bullpen state reuses the Team Context Layer statement and confidence', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Workload Read:'))
@@ -84,9 +84,8 @@ test('bullpen health reuses the Team Context Layer statement and confidence', ()
 
 test('usage-roles summary shows role composition counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Setup / Bridge'))
-  assert.ok(htmlIncludes(html, 'Middle Relief'))
-  assert.ok(htmlIncludes(html, 'Long / Multi-Inning'))
+  assert.ok(htmlIncludes(html, 'Bridge Arm'))
+  assert.ok(htmlIncludes(html, 'Coverage Arm'))
 })
 
 test('quick actions deep-link into the bullpen workflow and methodology', () => {

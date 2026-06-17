@@ -40,7 +40,7 @@ export default function Methodology() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-10">
       <SectionHeader
         title="Methodology"
-        subtitle="How every fatigue and availability number is computed"
+        subtitle="How availability, workload, trust, and readiness reads are computed"
       />
 
       <AvailabilityBacktestCard

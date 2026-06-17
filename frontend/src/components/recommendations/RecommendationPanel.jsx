@@ -103,6 +103,12 @@ function availabilityLabel(availability = {}) {
   )
 }
 
+function booleanStatus(value, falseLabel, trueLabel) {
+  if (value === false) return falseLabel
+  if (value === true) return trueLabel
+  return 'Not provided'
+}
+
 function candidateNameFrom(candidate = {}, data = {}) {
   return firstPresent(
     candidate.pitcher_name,
@@ -454,15 +460,19 @@ export default function RecommendationPanel({
             </div>
           </SectionCard>
 
-          <SectionCard title="Metadata">
+          <SectionCard title="Governed Output">
             <dl className="grid min-w-0 gap-3">
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
-                <dt className="font-mono text-xs text-chalk500">ranking_applied</dt>
-                <dd className="font-mono text-sm font-semibold text-chalk100">{String(view.metadata.rankingApplied)}</dd>
+                <dt className="font-mono text-xs text-chalk500">Bullpen ordering</dt>
+                <dd className="font-mono text-sm font-semibold text-chalk100">
+                  {booleanStatus(view.metadata.rankingApplied, 'Not applied', 'Applied')}
+                </dd>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
-                <dt className="font-mono text-xs text-chalk500">selection_made</dt>
-                <dd className="font-mono text-sm font-semibold text-chalk100">{String(view.metadata.selectionMade)}</dd>
+                <dt className="font-mono text-xs text-chalk500">Pitcher choice</dt>
+                <dd className="font-mono text-sm font-semibold text-chalk100">
+                  {booleanStatus(view.metadata.selectionMade, 'Not made', 'Made')}
+                </dd>
               </div>
             </dl>
           </SectionCard>

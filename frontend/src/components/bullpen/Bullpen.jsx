@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getFatigueScores, getTeams, recalculateFatigue } from '../../utils/api'
+import { getFatigueScores, getTeams } from '../../utils/api'
 import { LoadingPane, ErrorState, EmptyState, FatigueBar, RiskBadge, SectionHeader } from '../UI'
 import { riskColor } from '../../utils/formatters'
 import PitcherDetail from './PitcherDetail'
@@ -45,7 +45,6 @@ export default function Bullpen() {
   const [selectedTeam, setSelectedTeam]   = useState(null)
   const [riskFilter, setRiskFilter]       = useState('ALL')
   const [selectedPitcher, setSelected]    = useState(null)
-  const [recalcing, setRecalcing]         = useState(false)
   const [sortBy, setSortBy]               = useState('score')
   const [includeStale, setIncludeStale]   = useState(false)
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL')
@@ -61,16 +60,6 @@ export default function Bullpen() {
     },
     [selectedTeam, includeStale]
   )
-
-  const handleRecalculate = async () => {
-    setRecalcing(true)
-    try {
-      await recalculateFatigue()
-      await allScores.refetch()
-    } finally {
-      setRecalcing(false)
-    }
-  }
 
   useEffect(() => {
     if (
@@ -139,15 +128,6 @@ export default function Bullpen() {
                 active={includeStale}
                 onToggle={() => setIncludeStale(v => !v)}
               />
-            )}
-            {viewMode === 'pitchers' && (
-              <button
-                onClick={handleRecalculate}
-                disabled={recalcing}
-                className="px-4 py-2 bg-amber/10 border border-amber/30 rounded text-amber text-xs font-mono hover:bg-amber/20 transition-colors disabled:opacity-40"
-              >
-                {recalcing ? '⟳ Recalculating...' : '⟳ Recalculate'}
-              </button>
             )}
           </div>
         }

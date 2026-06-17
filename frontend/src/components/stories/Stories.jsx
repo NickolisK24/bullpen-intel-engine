@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
+import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { SectionHeading } from '../home/BullpenStories'
 import {
@@ -234,7 +235,9 @@ function FeedStoryCard({ story }) {
           {story.kicker}
         </span>
         <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
-          {story.teamId != null && story.abbr ? `${story.abbr} · ${story.teamName}` : 'Around the league'}
+          {story.teamId != null
+            ? formatTeamLabel({ team_abbreviation: story.abbr, team_name: story.teamName }, 'Around the league')
+            : 'Around the league'}
         </span>
       </div>
 
