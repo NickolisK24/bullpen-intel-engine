@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
 import Home from './components/home/Home'
@@ -9,21 +9,39 @@ import Prospects from './components/prospects/Prospects'
 import Methodology from './components/methodology/Methodology'
 import DataTrust from './components/trust/DataTrust'
 
+export const APP_ROUTES = [
+  { path: '/', Component: Home },
+  { path: '/today', redirectTo: '/' },
+  { path: '/stories', Component: Stories },
+  { path: '/dashboard', Component: Dashboard },
+  { path: '/bullpen', Component: Bullpen },
+  { path: '/prospects', Component: Prospects },
+  { path: '/methodology', Component: Methodology },
+  { path: '/trust', Component: DataTrust },
+  { path: '*', redirectTo: '/' },
+]
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      {APP_ROUTES.map(({ path, Component, redirectTo }) => (
+        <Route
+          key={path}
+          path={path}
+          element={redirectTo ? <Navigate to={redirectTo} replace /> : <Component />}
+        />
+      ))}
+    </Routes>
+  )
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <div className="app-shell bg-noise flex-col lg:flex-row">
         <Sidebar />
         <main className="flex-1 min-w-0">
-          <Routes>
-            <Route path="/"            element={<Home />} />
-            <Route path="/stories"     element={<Stories />} />
-            <Route path="/dashboard"   element={<Dashboard />} />
-            <Route path="/bullpen"     element={<Bullpen />} />
-            <Route path="/prospects"   element={<Prospects />} />
-            <Route path="/methodology" element={<Methodology />} />
-            <Route path="/trust"       element={<DataTrust />} />
-          </Routes>
+          <AppRoutes />
         </main>
       </div>
       <Analytics />

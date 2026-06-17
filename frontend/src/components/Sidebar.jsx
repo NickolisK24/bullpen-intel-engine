@@ -7,7 +7,6 @@ const NAV = [
   { to: '/stories',     icon: '📰', label: 'Stories'     },
   { to: '/dashboard',   icon: '⬡',  label: 'Dashboard'   },
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
-  { to: '/prospects',   icon: '📈', label: 'Pipeline', tag: 'Preview' },
   { to: '/methodology', icon: '📐', label: 'Methodology' },
   { to: '/trust',       icon: '🛡', label: 'Data & Trust' },
 ]
