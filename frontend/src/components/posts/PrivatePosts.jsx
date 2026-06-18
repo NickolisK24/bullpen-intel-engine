@@ -7,6 +7,7 @@ import {
   PRIVATE_POSTS_ROBOTS,
   flattenTakeDrafts,
   getPrivatePostTakes,
+  resolveGeneratedDraftPackage,
 } from './privatePostsView'
 
 export default function PrivatePosts() {
@@ -47,6 +48,56 @@ function usePrivateRobotsMeta() {
   }, [])
 }
 
+function getDraftGenerationEndpoint() {
+  return typeof import.meta !== 'undefined'
+    ? (import.meta.env?.VITE_POST_DRAFT_GENERATION_URL || '').trim()
+    : ''
+}
+
+async function requestDraftsFromEndpoint(payload) {
+  const endpoint = getDraftGenerationEndpoint()
+  if (!endpoint) return null
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) {
+    throw new Error(`Draft generation request failed with ${response.status}`)
+  }
+  return response.json()
+}
+
+function useEndpointDraftPackages(takes) {
+  const [packagesByStoryId, setPackagesByStoryId] = useState({})
+
+  useEffect(() => {
+    const endpoint = getDraftGenerationEndpoint()
+    if (!endpoint || takes.length === 0) {
+      setPackagesByStoryId({})
+      return undefined
+    }
+
+    let cancelled = false
+    Promise.all(
+      takes.map(async take => {
+        const draftPackage = await resolveGeneratedDraftPackage(take, {
+          requestDrafts: requestDraftsFromEndpoint,
+        })
+        return [take.storyId || take.abbr, draftPackage]
+      }),
+    ).then(entries => {
+      if (!cancelled) setPackagesByStoryId(Object.fromEntries(entries))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [takes])
+
+  return packagesByStoryId
+}
+
 export function PrivatePostsView({
   dashboard,
   loading = false,
@@ -55,6 +106,7 @@ export function PrivatePostsView({
   onRetry,
 }) {
   const takes = useMemo(() => getPrivatePostTakes(dashboard), [dashboard])
+  const endpointDraftPackages = useEndpointDraftPackages(takes)
   const generatedAt = dashboard?.freshness?.data_through
     || dashboard?.freshness?.latest_workload_date
     || dashboard?.freshness?.generated_at
@@ -117,7 +169,12 @@ export function PrivatePostsView({
           ) : (
             <section className="space-y-5" aria-label="Postable takes">
               {takes.map((take, index) => (
-                <PostableTakeCard key={take.storyId || `${take.abbr}-${index}`} take={take} rank={index + 1} />
+                <PostableTakeCard
+                  key={take.storyId || `${take.abbr}-${index}`}
+                  take={take}
+                  rank={index + 1}
+                  draftPackage={endpointDraftPackages[take.storyId || take.abbr] || take.draftPackage}
+                />
               ))}
             </section>
           )}
@@ -136,7 +193,12 @@ function MetricTile({ label, value }) {
   )
 }
 
-function PostableTakeCard({ take, rank }) {
+function PostableTakeCard({ take, rank, draftPackage }) {
+  const activeDraftPackage = draftPackage || take.draftPackage
+  const activeTake = activeDraftPackage?.drafts ? { ...take, drafts: activeDraftPackage.drafts } : take
+  const reviewFlagCount = flattenTakeDrafts(activeTake)
+    .reduce((total, draft) => total + (draft.reviewFlags?.length || 0), 0)
+
   return (
     <article className="card p-4 sm:p-5" data-team={take.abbr} data-postability-score={take.postability.score}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -151,6 +213,14 @@ function PostableTakeCard({ take, rank }) {
             <span className="rounded border border-dirt bg-field/70 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
               Score {take.postability.score}
             </span>
+            <span className="rounded border border-dirt bg-field/70 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              {activeDraftPackage?.sourceLabel || 'Generated draft'}
+            </span>
+            {reviewFlagCount > 0 && (
+              <span className="rounded border border-red-400/40 bg-red-400/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-red-200">
+                {reviewFlagCount} fact flag{reviewFlagCount === 1 ? '' : 's'}
+              </span>
+            )}
           </div>
           <h2 className="mt-3 font-display text-3xl leading-tight tracking-wide text-chalk100">
             {take.signal}
@@ -161,7 +231,7 @@ function PostableTakeCard({ take, rank }) {
 
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
         <TakeInternals take={take} />
-        <DraftPanel take={take} />
+        <DraftPanel take={activeTake} draftPackage={activeDraftPackage} />
       </div>
     </article>
   )
@@ -196,6 +266,11 @@ function TakeInternals({ take }) {
           </div>
         ))}
       </div>
+
+      <div className="mt-4 font-mono text-[10px] uppercase tracking-widest text-chalk600">Verified Facts Object</div>
+      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words border border-dirt bg-dugout p-2 font-mono text-[10px] leading-relaxed text-chalk400">
+        {JSON.stringify(take.verifiedFacts, null, 2)}
+      </pre>
     </section>
   )
 }
@@ -209,9 +284,14 @@ function KeyValue({ label, value }) {
   )
 }
 
-function DraftPanel({ take }) {
+function DraftPanel({ take, draftPackage }) {
   return (
     <section className="grid grid-cols-1 gap-3" aria-label={`${take.abbr} post drafts`}>
+      {draftPackage?.fallbackReason && (
+        <div className="border border-amber/30 bg-amber/5 px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-amber/80">
+          {draftPackage.fallbackReason}
+        </div>
+      )}
       {flattenTakeDrafts(take).map(draft => (
         <DraftCard key={draft.label} draft={draft} />
       ))}
@@ -235,6 +315,18 @@ function DraftCard({ draft }) {
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">{draft.label}</div>
           <div className="mt-0.5 text-xs text-chalk500">{draft.audience}</div>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {draft.sourceLabel && (
+              <span className="rounded border border-dirt bg-field/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                {draft.sourceLabel}
+              </span>
+            )}
+            {draft.factCheck?.checked && draft.reviewFlags?.length === 0 && (
+              <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald-200">
+                Fact check clear
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -251,6 +343,16 @@ function DraftCard({ draft }) {
             Lead {draft.characterCount}/{280}
           </div>
           <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-chalk200">{draft.lead}</p>
+        </div>
+      )}
+      {draft.reviewFlags?.length > 0 && (
+        <div className="mt-3 border border-red-400/40 bg-red-400/10 p-2">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-red-200">
+            Fact Guard
+          </div>
+          <ul className="mt-1 space-y-1 text-xs text-red-100">
+            {draft.reviewFlags.map(flag => <li key={flag}>{flag}</li>)}
+          </ul>
         </div>
       )}
       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-chalk300">{text}</p>

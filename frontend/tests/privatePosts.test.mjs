@@ -21,11 +21,20 @@ const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const { PrivatePostsView } = await server.ssrLoadModule('/src/components/posts/PrivatePosts.jsx')
 const {
+  DRAFT_SOURCE_GENERATED,
+  DRAFT_SOURCE_TEMPLATE_FALLBACK,
   PRIVATE_POSTS_PATH,
   PRIVATE_POSTS_ROBOTS,
+  POST_DRAFT_PLATFORMS,
   X_LEAD_CHARACTER_LIMIT,
+  buildDraftGenerationPayload,
+  buildGeneratedPlatformDrafts,
+  buildVerifiedFactSet,
+  findUnverifiedNumbers,
   flattenTakeDrafts,
   getPrivatePostTakes,
+  resolveDraftPackage,
+  resolveGeneratedDraftPackage,
 } = await server.ssrLoadModule('/src/components/posts/privatePostsView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -348,6 +357,71 @@ test('drafts use real four-beat values and avoid fabricated stats', () => {
   assert.equal(draftText.includes('No. 1 of 30'), false)
 })
 
+test('verified fact object is structured from the same four-beat story payload', () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const facts = buildVerifiedFactSet(take.story, take.facts)
+
+  assert.deepEqual(facts.team, {
+    id: 158,
+    abbr: 'MIL',
+    name: 'Milwaukee Brewers',
+  })
+  assert.equal(facts.signal, take.signal)
+  assert.equal(facts.evidence, take.evidence)
+  assert.equal(facts.availability.text, '6/8 arms available')
+  assert.equal(facts.clean_trust.text, '1 clean Trust Arm')
+  assert.deepEqual(facts.clean_trust.names, ['Trevor Megill'])
+  assert.equal(facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
+  assert.equal(facts.high_risk.text, '2 HIGH/CRITICAL arms (Abner Uribe and Elvis Peguero)')
+  for (const expected of ['6/8', '3.12', '2', '30', '34.2']) {
+    assert.ok(facts.numeric_tokens.includes(expected), `missing verified token: ${expected}`)
+  }
+})
+
+test('generation payload contains the verified fact object and platform constraints', () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const payload = buildDraftGenerationPayload(take)
+
+  assert.deepEqual(payload.platforms, POST_DRAFT_PLATFORMS)
+  assert.equal(payload.constraints.use_only_verified_facts, true)
+  assert.equal(payload.constraints.x_lead_character_limit, X_LEAD_CHARACTER_LIMIT)
+  assert.equal(payload.verified_facts.signal, take.signal)
+  assert.equal(payload.verified_facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
+  assert.equal(JSON.stringify(payload).includes('9/9'), false)
+})
+
+test('generated drafts clear the absent-number guard while fabricated numbers are flagged', () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const generatedPackage = resolveDraftPackage(take, buildGeneratedPlatformDrafts(take))
+
+  assert.equal(generatedPackage.source, DRAFT_SOURCE_GENERATED)
+  for (const draft of flattenTakeDrafts({ drafts: generatedPackage.drafts })) {
+    assert.deepEqual(draft.factCheck.unverifiedNumbers, [])
+    assert.deepEqual(draft.reviewFlags, [])
+  }
+
+  const rogueText = 'MIL bullpen tonight: 9/9 arms available and No. 99 of 30.'
+  assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99'])
+})
+
+test('request failure and empty generated output fall back to the WP39 template drafts', async () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const failedPackage = await resolveGeneratedDraftPackage(take, {
+    requestDrafts: async () => {
+      throw new Error('unavailable')
+    },
+  })
+  const emptyPackage = resolveDraftPackage(take, {
+    reddit: { league: { text: '' } },
+  })
+
+  assert.equal(failedPackage.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+  assert.equal(emptyPackage.source, DRAFT_SOURCE_TEMPLATE_FALLBACK)
+  assert.match(failedPackage.fallbackReason, /failed/i)
+  assert.ok(flattenTakeDrafts({ drafts: failedPackage.drafts }).every(draft => draft.source === DRAFT_SOURCE_TEMPLATE_FALLBACK))
+  assert.ok(flattenTakeDrafts({ drafts: failedPackage.drafts }).every(draft => draft.text || draft.lead))
+})
+
 test('each selected take has distinct Reddit, LinkedIn, and X drafts with team-sub and league Reddit versions', () => {
   for (const take of getPrivatePostTakes(dashboard)) {
     assert.ok(take.drafts.reddit.league.text)
@@ -403,6 +477,22 @@ test('private posts route is obscure, noindexed, robots-excluded, and not in nav
   })
 })
 
+test('draft generation stays isolated from public story and bullpen surfaces', () => {
+  const publicFiles = [
+    '../src/components/stories/Stories.jsx',
+    '../src/components/stories/storiesFeedView.js',
+    '../src/components/home/Home.jsx',
+    '../src/components/bullpen/Bullpen.jsx',
+  ]
+
+  for (const path of publicFiles) {
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8')
+    assert.equal(source.includes('VITE_POST_DRAFT_GENERATION_URL'), false, path)
+    assert.equal(source.includes('resolveGeneratedDraftPackage'), false, path)
+    assert.equal(source.includes('buildDraftGenerationPayload'), false, path)
+  }
+})
+
 test('private posts surface renders selected takes, internals, and copy affordances', () => {
   const html = render(React.createElement(PrivatePostsView, { dashboard }))
 
@@ -411,6 +501,9 @@ test('private posts surface renders selected takes, internals, and copy affordan
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers bullpen has pitched well'))
   assert.ok(htmlIncludes(html, 'Story Authority'))
   assert.ok(htmlIncludes(html, 'Raw Numbers'))
+  assert.ok(htmlIncludes(html, 'Verified Facts Object'))
+  assert.ok(htmlIncludes(html, 'Generated draft'))
+  assert.ok(htmlIncludes(html, 'Fact check clear'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="Reddit - league-wide"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="Reddit - team subreddit"'))
   assert.ok(htmlIncludes(html, 'data-copy-draft="LinkedIn"'))
