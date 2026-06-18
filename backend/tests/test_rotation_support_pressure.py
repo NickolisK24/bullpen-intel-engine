@@ -1,9 +1,11 @@
 from datetime import date, timedelta
 
 from services.rotation_support_pressure import (
+    CURRENT_ASSIGNMENT_LIMITATION,
     INCOMPLETE_GAME_DATA_LIMITATION,
     LIMITED_SAMPLE_LIMITATION,
     MATERIAL_EXCLUSION_LIMITATION,
+    OPENER_BULK_LIMITATION,
     STATUS_HEAVY,
     STATUS_LIMITED,
     STATUS_MODERATE,
@@ -62,6 +64,8 @@ def test_strong_starter_support_reads_supportive_with_low_bullpen_burden():
     assert result['short_start_count'] == 0
     assert result['short_start_rate'] == 0.0
     assert result['limitations'] == []
+    assert CURRENT_ASSIGNMENT_LIMITATION in result['source_limitations']
+    assert OPENER_BULK_LIMITATION in result['source_limitations']
 
 
 def test_short_starts_create_heavy_rotation_pressure():
@@ -101,6 +105,53 @@ def test_limited_read_when_complete_game_sample_is_too_small():
     assert result['status'] == STATUS_LIMITED
     assert result['games_analyzed'] == 2
     assert LIMITED_SAMPLE_LIMITATION in result['limitations']
+
+
+def test_same_date_multiple_games_are_grouped_by_game_pk():
+    result = pressure([
+        *game(101, 1, 18, 9),
+        *game(102, 1, 18, 9),
+        *game(103, 2, 18, 9),
+    ])
+
+    assert result['status'] == STATUS_SUPPORTIVE
+    assert result['games_in_window'] == 3
+    assert result['games_analyzed'] == 3
+    assert result['games_excluded'] == 0
+    assert result['starter_outs'] == 54
+    assert result['bullpen_outs_required'] == 27
+
+
+def test_missing_starter_game_is_excluded_with_clear_semantics():
+    result = pressure([
+        *game(1, 1, 18, 9),
+        *game(2, 2, 18, 9),
+        *game(3, 3, 18, 9),
+        log(4, 4, 27, 0),
+    ])
+
+    assert result['games_in_window'] == 4
+    assert result['games_analyzed'] == 3
+    assert result['games_excluded'] == 1
+    assert result['excluded_game_reasons'] == {'no_starter': 1}
+    assert INCOMPLETE_GAME_DATA_LIMITATION in result['limitations']
+    assert result['definitions']['games_analyzed'] == (
+        'Games with usable starter/bullpen split data. Excluded games are not counted here.'
+    )
+
+
+def test_opener_bulk_style_games_keep_source_caveat_visible():
+    result = pressure([
+        *game(1, 1, 3, 24),
+        *game(2, 2, 3, 24),
+        *game(3, 3, 3, 24),
+    ])
+
+    assert result['status'] == STATUS_HEAVY
+    assert result['games_analyzed'] == 3
+    assert result['starter_avg_innings'] == 1.0
+    assert result['bullpen_innings_required'] == 24.0
+    assert OPENER_BULK_LIMITATION in result['source_limitations']
 
 
 def test_ambiguous_or_incomplete_split_excludes_games_with_limitations():

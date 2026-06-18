@@ -57,8 +57,27 @@ UNKNOWN_SPLIT_LIMITATION = (
 MATERIAL_EXCLUSION_LIMITATION = (
     'Rotation Support Pressure is a Limited Read because a material share of recent games has incomplete starter/relief workload data.'
 )
+CURRENT_ASSIGNMENT_LIMITATION = (
+    'Rotation support uses currently assigned pitchers because game logs do not yet store team-at-appearance.'
+)
+OPENER_BULK_LIMITATION = (
+    'Credited starters are used as recorded; opener/bulk-reliever roles are not separately inferred.'
+)
+SOURCE_LIMITATIONS = [
+    CURRENT_ASSIGNMENT_LIMITATION,
+    OPENER_BULK_LIMITATION,
+]
 
 DEFINITIONS = {
+    'games_in_window': (
+        'Distinct games represented by currently assigned pitchers in the analysis window.'
+    ),
+    'games_analyzed': (
+        'Games with usable starter/bullpen split data. Excluded games are not counted here.'
+    ),
+    'games_excluded': (
+        'Games in the window excluded because starter/relief workload data is incomplete or ambiguous.'
+    ),
     'starter_outs': (
         'Outs recorded by the pitcher with games_started == 1 in analyzed team games.'
     ),
@@ -76,6 +95,7 @@ DEFINITIONS = {
 METHODOLOGY_NOTES = [
     'Status thresholds are reasoned defaults for explanation, not validated predictive thresholds.',
     'Game logs do not store team-at-appearance, so this read groups logs by current pitcher team assignment.',
+    'Opener and bulk-reliever roles are not separately inferred from the credited starter flag.',
 ]
 
 
@@ -354,6 +374,7 @@ def build_team_rotation_support_pressure(
             'material_excluded_game_share': MATERIAL_EXCLUDED_GAME_SHARE,
         },
         'methodology_notes': list(METHODOLOGY_NOTES),
+        'source_limitations': list(SOURCE_LIMITATIONS),
         'summary': _summary(
             status,
             games_analyzed,
@@ -384,6 +405,7 @@ def build_league_rotation_support_payload(team_items):
 
 __all__ = [
     'CAPABILITY',
+    'CURRENT_ASSIGNMENT_LIMITATION',
     'DEFAULT_WINDOW_DAYS',
     'HEAVY_AVG_INNINGS_MAX',
     'HEAVY_SHORT_START_RATE_MIN',
@@ -392,6 +414,8 @@ __all__ = [
     'LIMITED_SAMPLE_LIMITATION',
     'MATERIAL_EXCLUSION_LIMITATION',
     'NO_RECENT_GAMES_LIMITATION',
+    'OPENER_BULK_LIMITATION',
+    'SOURCE_LIMITATIONS',
     'STATUS_HEAVY',
     'STATUS_LIMITED',
     'STATUS_MODERATE',
