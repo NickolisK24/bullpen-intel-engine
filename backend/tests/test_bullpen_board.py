@@ -27,7 +27,9 @@ from services.bullpen_board import (
 )
 from services.bullpen_stability import (
     CAPABILITY as STABILITY_CAPABILITY,
+    CURRENT_ASSIGNMENT_LIMITATION as STABILITY_CURRENT_ASSIGNMENT_LIMITATION,
     LIMITED_SAMPLE_LIMITATION as STABILITY_LIMITED_SAMPLE_LIMITATION,
+    SMALL_DENOMINATOR_CHURN_LIMITATION as STABILITY_SMALL_DENOMINATOR_CHURN_LIMITATION,
 )
 from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTATION_LIMITED_SAMPLE_LIMITATION
 from services.availability_population import current_availability_records
@@ -806,8 +808,10 @@ class TestBoardEndpoint:
         assert stability['recently_used_bullpen_count'] == 3
         assert stability['stable_core_count'] == 2
         assert stability['new_or_reintroduced_arm_count'] == 1
-        assert stability['status'] in ('moderate_churn', 'heavy_churn')
+        assert stability['status'] == 'stable'
+        assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in stability['source_limitations']
         assert STABILITY_LIMITED_SAMPLE_LIMITATION not in stability['limitations']
+        assert STABILITY_SMALL_DENOMINATOR_CHURN_LIMITATION in stability['limitations']
 
     def test_bereavement_status_keeps_pitcher_unavailable_without_collapsing_label(self, client):
         with client.application.app_context():

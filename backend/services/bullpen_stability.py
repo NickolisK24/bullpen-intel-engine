@@ -51,8 +51,17 @@ UNKNOWN_SPLIT_LIMITATION = (
 USAGE_PATTERN_LIMITATION = (
     'Bullpen stability uses usage patterns and roster status only; roster-move data is not used.'
 )
+CURRENT_ASSIGNMENT_LIMITATION = (
+    'Bullpen stability uses currently assigned pitchers because game logs do '
+    'not yet store team-at-appearance.'
+)
+SMALL_DENOMINATOR_CHURN_LIMITATION = (
+    'Bullpen Stability keeps status conservative because one new/reintroduced '
+    'arm in a small recent-used sample is a limited churn signal.'
+)
 SOURCE_LIMITATIONS = [
     USAGE_PATTERN_LIMITATION,
+    CURRENT_ASSIGNMENT_LIMITATION,
 ]
 
 DEFINITIONS = {
@@ -326,6 +335,8 @@ def _status(
 ):
     if total_bullpen_count <= 0 or recently_used_bullpen_count < MIN_RECENTLY_USED_BULLPEN_ARMS:
         return STATUS_LIMITED_READ
+    if new_or_reintroduced_arm_count < MODERATE_NEW_ARM_COUNT:
+        return STATUS_STABLE
     if (
         new_or_reintroduced_arm_count >= HEAVY_NEW_ARM_COUNT
         or churn_share >= HEAVY_CHURN_SHARE
@@ -413,6 +424,11 @@ def build_team_bullpen_stability(
         limitations.append(NO_BULLPEN_LIMITATION)
     if recently_used_bullpen_count < MIN_RECENTLY_USED_BULLPEN_ARMS:
         limitations.append(LIMITED_SAMPLE_LIMITATION)
+    if (
+        new_or_reintroduced_arm_count == 1
+        and recently_used_bullpen_count <= MIN_RECENTLY_USED_BULLPEN_ARMS
+    ):
+        limitations.append(SMALL_DENOMINATOR_CHURN_LIMITATION)
     if unknown_split_rows > 0:
         limitations.append(UNKNOWN_SPLIT_LIMITATION)
 
@@ -478,10 +494,12 @@ def build_league_bullpen_stability_payload(team_items):
 
 __all__ = [
     'CAPABILITY',
+    'CURRENT_ASSIGNMENT_LIMITATION',
     'DEFAULT_WINDOW_DAYS',
     'LEAGUE_CAPABILITY',
     'LIMITED_SAMPLE_LIMITATION',
     'NO_BULLPEN_LIMITATION',
+    'SMALL_DENOMINATOR_CHURN_LIMITATION',
     'SOURCE_LIMITATIONS',
     'STATUS_HEAVY_CHURN',
     'STATUS_LIMITED_READ',

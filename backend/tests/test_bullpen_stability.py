@@ -2,7 +2,9 @@ from datetime import date, timedelta
 
 from services.availability import STATUS_AVAILABLE, STATUS_LIMITED, STATUS_MONITOR, STATUS_UNAVAILABLE
 from services.bullpen_stability import (
+    CURRENT_ASSIGNMENT_LIMITATION,
     LIMITED_SAMPLE_LIMITATION,
+    SMALL_DENOMINATOR_CHURN_LIMITATION,
     STATUS_HEAVY_CHURN,
     STATUS_LIMITED_READ,
     STATUS_MODERATE_CHURN,
@@ -81,6 +83,7 @@ def test_stable_bullpen_group_uses_recent_relief_core():
     assert result['churn_share'] == 0.0
     assert result['limitations'] == []
     assert USAGE_PATTERN_LIMITATION in result['source_limitations']
+    assert CURRENT_ASSIGNMENT_LIMITATION in result['source_limitations']
 
 
 def test_moderate_churn_from_two_new_or_reintroduced_arms():
@@ -148,6 +151,25 @@ def test_new_or_reintroduced_detection_uses_late_first_relief_appearance():
     assert result['new_or_reintroduced_arm_count'] == 1
     assert result['new_or_reintroduced_arms'][0]['pitcher_id'] == 3
     assert result['new_or_reintroduced_arms'][0]['first_relief_date'] == '2026-06-17'
+    assert result['status'] == STATUS_STABLE
+    assert SMALL_DENOMINATOR_CHURN_LIMITATION in result['limitations']
+
+
+def test_one_new_arm_in_three_used_arms_does_not_automatically_create_churn_status():
+    records = [record(pid) for pid in range(1, 4)]
+    logs = {
+        1: [log(1, 8, 3), log(1, 2, 3)],
+        2: [log(2, 8, 3), log(2, 1, 3)],
+        3: [log(3, 1, 3)],
+    }
+
+    result = stability(records, logs)
+
+    assert result['recently_used_bullpen_count'] == 3
+    assert result['new_or_reintroduced_arm_count'] == 1
+    assert result['churn_share'] == 0.33
+    assert result['status'] == STATUS_STABLE
+    assert SMALL_DENOMINATOR_CHURN_LIMITATION in result['limitations']
 
 
 def test_inactive_and_unavailable_arms_are_counted_separately_from_usage_churn():
@@ -171,6 +193,29 @@ def test_inactive_and_unavailable_arms_are_counted_separately_from_usage_churn()
     assert result['inactive_or_unavailable_count'] == 2
     assert result['active_bullpen_count'] == 3
     assert result['recently_used_bullpen_count'] == 5
+
+
+def test_inactive_or_unavailable_arms_alone_do_not_drive_churn_status():
+    records = [
+        record(1),
+        record(2),
+        record(3),
+        record(4, status=STATUS_UNAVAILABLE),
+        record(5, status=STATUS_UNAVAILABLE),
+        record(6, is_active_mlb=False),
+    ]
+    logs = {
+        1: [log(1, 8, 3), log(1, 2, 3)],
+        2: [log(2, 8, 3), log(2, 1, 3)],
+        3: [log(3, 6, 3), log(3, 2, 3)],
+    }
+
+    result = stability(records, logs)
+
+    assert result['inactive_or_unavailable_count'] == 3
+    assert result['active_bullpen_count'] == 3
+    assert result['new_or_reintroduced_arm_count'] == 0
+    assert result['status'] == STATUS_STABLE
 
 
 def test_monitor_limited_and_avoid_reads_are_not_fully_unavailable():
@@ -247,3 +292,4 @@ def test_percentage_and_window_math_are_stable():
     assert result['recently_used_bullpen_count'] == 5
     assert result['new_or_reintroduced_arm_count'] == 3
     assert result['churn_share'] == 0.6
+    assert result['status'] == STATUS_HEAVY_CHURN

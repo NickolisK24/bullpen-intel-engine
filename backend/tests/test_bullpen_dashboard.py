@@ -18,7 +18,11 @@ from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.availability_summary import summarize_availability_records
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
-from services.bullpen_stability import CAPABILITY as STABILITY_CAPABILITY
+from services.bullpen_stability import (
+    CAPABILITY as STABILITY_CAPABILITY,
+    CURRENT_ASSIGNMENT_LIMITATION as STABILITY_CURRENT_ASSIGNMENT_LIMITATION,
+    SMALL_DENOMINATOR_CHURN_LIMITATION as STABILITY_SMALL_DENOMINATOR_CHURN_LIMITATION,
+)
 from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTATION_LIMITED_SAMPLE_LIMITATION
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
@@ -474,6 +478,9 @@ class TestDashboardEndpoint:
         assert stability['recently_used_bullpen_count'] == 3
         assert stability['stable_core_count'] == 2
         assert stability['new_or_reintroduced_arm_count'] == 1
+        assert stability['status'] == 'stable'
+        assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in stability['source_limitations']
+        assert STABILITY_SMALL_DENOMINATOR_CHURN_LIMITATION in stability['limitations']
         assert stability['source'] == 'backend'
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
