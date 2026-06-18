@@ -31,7 +31,7 @@ from services.workload_concentration import (
 
 
 CAPABILITY = 'four_beat_story_template_v1'
-VERSION = '2026-06-16.live_rules'
+VERSION = '2026-06-18.why_context'
 FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
@@ -42,6 +42,7 @@ RULE_SPECIAL_SITUATION = 'special_situation'
 
 BEAT_SIGNAL = 'signal'
 BEAT_EVIDENCE = 'evidence'
+BEAT_CONTEXT = 'context'
 BEAT_MECHANISM = 'mechanism'
 BEAT_IMPLICATION = 'implication'
 
@@ -65,6 +66,15 @@ LEAD_TRUST_LANE_DEPTH = 'trust_lane_depth'
 THIN_AVAILABLE_COUNT_MAX = 3
 THIN_AVAILABLE_SHARE_MAX = 0.30
 LIGHT_HIGH_RISK_LEVELS = {'HIGH', 'CRITICAL'}
+WHY_CONTEXT_PRESSURE_RULES = {
+    RULE_STRESS_TRANSFER,
+    RULE_SUSTAINABILITY_QUESTION,
+    RULE_HIDDEN_CAPACITY_LOSS,
+}
+LIMITED_CONTEXT_STATUSES = {'limited_read', 'no_data', 'unknown'}
+CAPACITY_PRESSURE_STATUSES = {'elevated', 'constrained', 'severe'}
+ROTATION_PRESSURE_STATUSES = {'moderate_pressure', 'heavy_pressure'}
+STABILITY_CONTEXT_STATUSES = {'moderate_churn', 'heavy_churn'}
 LIGHT_PER_ARM_PITCHES_MAX = 26.0
 BROAD_PARTICIPATION_MIN_ARMS = 6
 BROAD_SINGLE_ARM_SHARE_MAX = 0.30
@@ -764,6 +774,202 @@ def _rule_conditions_hold(rule_key, inputs):
     return False
 
 
+def _limited_status(status):
+    return str(status or '').strip().lower() in LIMITED_CONTEXT_STATUSES
+
+
+def _has_blocking_limitations(layer):
+    return bool((layer or {}).get('limitations'))
+
+
+def _has_source_limitations(layer):
+    return bool((layer or {}).get('source_limitations'))
+
+
+def _has_pressure_story_conditions(inputs):
+    conditions = inputs.get('conditions') or {}
+    return any(
+        conditions.get(key)
+        for key in (
+            'workload_concentrated',
+            'availability_thin',
+            'depleted_depth',
+            'heavy_recent_workload',
+        )
+    )
+
+
+def _number_or_none(value):
+    if value in (None, ''):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _truthy_count(value):
+    try:
+        return int(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _why_context_item(source, text, layer=None, flags=None):
+    return {
+        'source': source,
+        'text': text,
+        'context_flags': list(flags or []),
+        'source_limitations_present': _has_source_limitations(layer),
+    }
+
+
+def _context_list_text(labels):
+    clean = [label for label in labels if label]
+    if len(clean) == 2:
+        text = f'{clean[0]} and {clean[1]} are both part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
+    if len(clean) > 2:
+        text = f'{", ".join(clean[:-1])}, and {clean[-1]} are all part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
+    if clean:
+        text = f'{clean[0]} is part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
+    return ''
+
+
+def _environment_context_item(inputs):
+    environment = inputs.get('bullpen_environment') or {}
+    if not environment:
+        return None
+    status = str(environment.get('status') or '').strip().lower()
+    sources = [
+        str(source or '').strip()
+        for source in environment.get('primary_pressure_sources') or []
+        if str(source or '').strip()
+    ]
+    if (
+        status != 'multi_source_pressure'
+        or len(sources) < 2
+        or _limited_status(status)
+        or _has_blocking_limitations(environment)
+    ):
+        return None
+
+    label_by_source = {
+        'capacity_loss': 'fewer available arms',
+        'rotation_support_pressure': 'extra outs finding their way to the bullpen',
+        'bullpen_stability': 'a bullpen group that has not looked the same lately',
+    }
+    labels = [label_by_source.get(source) for source in sources]
+    detail = _context_list_text(labels)
+    if not detail:
+        return None
+    return _why_context_item(
+        'bullpen_environment',
+        f'This is not one clean issue. {detail}',
+        environment,
+        flags=environment.get('context_flags') or [],
+    )
+
+
+def _capacity_context_item(inputs):
+    capacity_intelligence = inputs.get('capacity_intelligence') or {}
+    capacity_loss = capacity_intelligence.get('capacity_loss') or {}
+    status = str(capacity_loss.get('status') or '').strip().lower()
+    unavailable_pct = _number_or_none(capacity_loss.get('unavailable_capacity_pct'))
+    if (
+        not capacity_loss
+        or _limited_status(status)
+        or _has_blocking_limitations(capacity_loss)
+        or unavailable_pct is None
+        or (status not in CAPACITY_PRESSURE_STATUSES and unavailable_pct < 20)
+    ):
+        return None
+    return _why_context_item(
+        'capacity_loss',
+        'The work is landing on the same arms while the bullpen is already short on usable arms.',
+        capacity_loss,
+    )
+
+
+def _rotation_context_item(inputs):
+    rotation = inputs.get('rotation_support_pressure') or {}
+    status = str(rotation.get('status') or '').strip().lower()
+    if (
+        not rotation
+        or status not in ROTATION_PRESSURE_STATUSES
+        or _limited_status(status)
+        or _has_blocking_limitations(rotation)
+        or not _truthy_count(rotation.get('games_analyzed'))
+    ):
+        return None
+    return _why_context_item(
+        'rotation_support_pressure',
+        'The bullpen has been carrying more of the workload lately, which makes every clean inning a little harder to replace.',
+        rotation,
+    )
+
+
+def _stability_context_item(inputs):
+    stability = inputs.get('bullpen_stability') or {}
+    status = str(stability.get('status') or '').strip().lower()
+    if (
+        not stability
+        or status not in STABILITY_CONTEXT_STATUSES
+        or _limited_status(status)
+        or _has_blocking_limitations(stability)
+        or not _truthy_count(stability.get('recently_used_bullpen_count'))
+    ):
+        return None
+    return _why_context_item(
+        'bullpen_stability',
+        'A few different relievers have been moving in and out of the picture lately.',
+        stability,
+        flags=[status],
+    )
+
+
+def _why_context_items(rule_key, inputs):
+    if rule_key not in WHY_CONTEXT_PRESSURE_RULES or not _has_pressure_story_conditions(inputs):
+        return []
+
+    environment = _environment_context_item(inputs)
+    if environment:
+        return [environment]
+
+    items = [
+        item
+        for item in (
+            _capacity_context_item(inputs),
+            _rotation_context_item(inputs),
+            _stability_context_item(inputs),
+        )
+        if item
+    ]
+    return items[:2]
+
+
+def _why_context_beat(rule_key, inputs):
+    items = _why_context_items(rule_key, inputs)
+    if not items:
+        return None
+    sources = [item['source'] for item in items]
+    flags = []
+    for item in items:
+        flags.extend(item.get('context_flags') or [])
+    return {
+        'key': BEAT_CONTEXT,
+        'label': 'Context',
+        'text': ' '.join(item['text'] for item in items),
+        'skeleton_key': f"why_context:{'+'.join(sources)}",
+        'sources': sources,
+        'context_flags': sorted(set(flags)),
+        'source_limitations_present': any(item.get('source_limitations_present') for item in items),
+        'slots': {},
+    }
+
+
 def _lead_priority(dimension):
     try:
         return LEAD_DIMENSION_TIE_BREAK_ORDER.index(dimension)
@@ -1220,6 +1426,9 @@ def assemble_story(rule_key, inputs, lead=None):
         if beat:
             beats.append(beat)
     if _rule_conditions_hold(rule_key, inputs):
+        beat = _why_context_beat(rule_key, inputs)
+        if beat:
+            beats.append(beat)
         beat = _beat(rule_key, BEAT_MECHANISM, BEAT_MECHANISM, slots)
         if beat:
             beats.append(beat)
@@ -1238,9 +1447,16 @@ def assemble_story(rule_key, inputs, lead=None):
     signal = next((beat for beat in beats if beat['key'] == BEAT_SIGNAL), None)
     body = ' '.join(
         beat['text'] for beat in beats
-        if beat['key'] in {BEAT_EVIDENCE, BEAT_MECHANISM, BEAT_IMPLICATION}
+        if beat['key'] in {BEAT_EVIDENCE, BEAT_CONTEXT, BEAT_MECHANISM, BEAT_IMPLICATION}
     )
     team = inputs['team']
+    why_context = next((beat for beat in beats if beat['key'] == BEAT_CONTEXT), None)
+    why_context_meta = {
+        'applied': bool(why_context),
+        'sources': (why_context or {}).get('sources') or [],
+        'context_flags': (why_context or {}).get('context_flags') or [],
+        'source_limitations_present': bool((why_context or {}).get('source_limitations_present')),
+    }
     return {
         'story_id': f"{team.get('team_id')}:{rule_key}",
         'rule_key': rule_key,
@@ -1280,11 +1496,13 @@ def assemble_story(rule_key, inputs, lead=None):
             'rotation_support_pressure': 'rotation_support_pressure_v1',
             'bullpen_stability': 'bullpen_stability_v1',
             'bullpen_environment': 'bullpen_environment_v1',
+            'why_context': 'backend_bullpen_intelligence_context',
             'clean_options': 'governed_board_pitcher_labels',
             'high_risk_arms': 'current_availability_records.fatigue_score',
         },
         'computed': {
             'conditions': inputs['conditions'],
+            'why_context': why_context_meta,
             'workload': {
                 key: value
                 for key, value in inputs['workload'].items()
@@ -1520,6 +1738,7 @@ def build_four_beat_story_feed(
 
 __all__ = [
     'CAPABILITY',
+    'BEAT_CONTEXT',
     'FEATURE_FLAG',
     'RULE_HIDDEN_CAPACITY_LOSS',
     'RULE_PRESSURE_DISTRIBUTION',
