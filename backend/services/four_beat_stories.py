@@ -112,6 +112,81 @@ LEAD_DIMENSION_TIE_BREAK_ORDER = (
     LEAD_TRUST_LANE_DEPTH,
 )
 
+PHRASE_VARIANTS = {
+    'capacity_context_fallback': (
+        "They're working with fewer usable arms than a normal night.",
+        "There isn't as much bullpen room as there usually is.",
+        'The bullpen looks thinner than it normally does.',
+        'The available group is smaller than usual.',
+        'There are fewer places to turn tonight than there normally would be.',
+        'The bullpen is carrying less usable depth than usual.',
+    ),
+    'capacity_context_standard': (
+        'The work is landing on the same arms while the bullpen is already short on usable arms.',
+        'The same relievers are taking the ball while the available group is already thin.',
+        'A smaller bullpen makes those repeat innings harder to spread around.',
+        'The bullpen is already thin, and the heavy innings keep finding the same arms.',
+    ),
+    'rotation_context': (
+        'The bullpen has been carrying more of the workload lately, which makes every clean inning a little harder to replace.',
+        'Extra outs have been finding their way to the bullpen lately.',
+        'The bullpen has been covering more of the game than usual.',
+        'More of the game has been landing on the pen lately.',
+    ),
+    'stability_context': (
+        'A few different relievers have been moving in and out of the picture lately.',
+        'The bullpen group has not looked exactly the same from week to week.',
+        'The innings have been moving around lately.',
+        'The bullpen mix has been shifting lately.',
+    ),
+    'environment_intro': (
+        'This is not one clean issue.',
+        'There is more than one thing tightening the picture.',
+        'It is not just one part of the pen.',
+    ),
+    'environment_capacity_label': (
+        'the bullpen is short on usable arms',
+        'there are fewer places to turn than usual',
+        'the available group is smaller than normal',
+    ),
+    'environment_rotation_label': (
+        'the recent workload picture is adding pressure',
+        'extra outs have been finding their way to the pen',
+        'the bullpen has been covering more of the game lately',
+    ),
+    'environment_stability_label': (
+        'the group has not looked the same lately',
+        'a few different relievers have been moving through the picture',
+        'the bullpen mix has been shifting lately',
+    ),
+    'sustainability_mechanism': (
+        "The results are not the issue; the cost of every clean inning is a little higher tonight.",
+        "The challenge isn't getting outs. It's replacing them.",
+        'The results have held up. The margin has gotten thinner.',
+        "They're still getting outs, but the path through the game is tighter.",
+        'Every clean inning carries a little more weight tonight.',
+        'The bullpen is still effective, but there is less room for mistakes.',
+    ),
+    'clean_trust_late_route_clause': (
+        '{clean_trust_names} {clean_trust_verb} still where the late innings point',
+        'the late innings still run through {clean_trust_names}',
+        'if the game gets tight late, it still points back toward {clean_trust_names}',
+        '{clean_trust_names} {clean_trust_verb} still at the center of the late-inning picture',
+    ),
+    'clean_trust_late_sentence': (
+        'The late innings still run through {clean_trust_names}.',
+        'If the game gets tight late, it still points back toward {clean_trust_names}.',
+        '{clean_trust_names} {clean_trust_verb} still at the center of the late-inning picture.',
+        'Those late outs still point back toward {clean_trust_names}.',
+    ),
+    'workload_concentration_signal': (
+        'The same few relievers keep getting the ball for the {team_name}.',
+        'A small group has been carrying most of the {team_name} bullpen work.',
+        'The workload keeps circling back to the same {team_name} relievers.',
+        'The heavy innings have been landing on the same {team_name} arms.',
+    ),
+}
+
 THRESHOLDS = {
     'recent_workload_window_days': RECENT_WORKLOAD_WINDOW_DAYS,
     'concentrated_top_arm_count': CONCENTRATED_TOP_ARM_COUNT,
@@ -181,7 +256,7 @@ SKELETONS = {
         BEAT_SIGNAL: "The {team_name} are running tonight's bullpen through a smaller group.",
         BEAT_EVIDENCE: 'The top {top_arm_count} arms have taken {top_share_pct}% of recent relief pitches ({concentration_descriptor}), and {available_count} of {total_bullpen_arms} bullpen arms are Available.',
         BEAT_MECHANISM: 'That usually leaves the next close innings pointed back toward the same usable arms.',
-        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} still where the trusted late innings point; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean behind them.',
+        'implication_with_clean_trust': 'Tonight, {clean_trust_late_route_clause}; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean behind them.',
         'implication_without_clean_trust': 'Tonight, none of the usual trusted late arms are fully clean; {clean_option_count} of {total_bullpen_arms} usable arms sit outside that group.',
     },
     RULE_PRESSURE_DISTRIBUTION: {
@@ -195,8 +270,8 @@ SKELETONS = {
         BEAT_SIGNAL: 'The {team_name} bullpen has pitched well this year, but they are leaning on it hard tonight.',
         'evidence_with_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
         'evidence_without_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
-        BEAT_MECHANISM: "The results are not the issue; the cost of every clean inning is a little higher tonight.",
-        'implication_with_clean_trust': "Tonight, {clean_trust_names} {clean_trust_verb} still the trusted late-inning answer. I'm watching whether they have to go there before the eighth.",
+        BEAT_MECHANISM: '{sustainability_mechanism_text}',
+        'implication_with_clean_trust': '{clean_trust_late_sentence} The question is whether they have to go there before the eighth.',
         'implication_without_clean_trust': 'Tonight, there is no fully clean trusted late-inning arm; the question is whether {clean_option_count} usable arms can handle leverage without dragging the same group back in.',
     },
     RULE_HIDDEN_CAPACITY_LOSS: {
@@ -204,7 +279,7 @@ SKELETONS = {
         'evidence_with_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available and {roster_unavailable_count} {roster_unavailable_word} off the active roster.',
         'evidence_without_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available tonight.',
         BEAT_MECHANISM: 'That does not make the results fake; it means there is less margin if tonight turns into a bullpen game.',
-        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} the trusted late-inning answer, but the question is what happens if the game needs one more clean inning before then.',
+        'implication_with_clean_trust': '{clean_trust_late_sentence} The question is what happens if the game needs one more clean inning before then.',
         'implication_without_clean_trust': 'Tonight, the usable arms sit outside the usual trusted late-inning group; the question is what happens if the game needs one more clean inning.',
     },
 }
@@ -243,7 +318,7 @@ LEAD_FRAGMENT_LIBRARY = {
         BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} fully clean trusted late-inning options, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_CONCENTRATION_SHAPE: {
-        BEAT_SIGNAL: 'The same few relievers keep getting the ball for the {team_name}.',
+        BEAT_SIGNAL: '{workload_concentration_signal}',
         BEAT_EVIDENCE: 'The top {top_arm_count} arms have taken {top_share_pct}% of recent relief pitches ({concentration_descriptor}), and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_PARTICIPATION_NARROW: {
@@ -629,6 +704,7 @@ def _base_slots(inputs):
     clean_options = inputs['clean_options']
     clean_trust = inputs['clean_trust_options']
     clean_trust_names = _join_names([item['name'] for item in clean_trust])
+    clean_trust_verb = 'is' if len(clean_trust) == 1 else 'are'
     high_risk = inputs['high_risk_arms']
     high_risk_options = inputs.get('high_risk_arm_options') or []
     high_risk_names = _join_names([item['name'] for item in high_risk_options])
@@ -661,7 +737,32 @@ def _base_slots(inputs):
         'clean_option_count': len(clean_options),
         'clean_trust_count': len(clean_trust),
         'clean_trust_names': clean_trust_names,
-        'clean_trust_verb': 'is' if len(clean_trust) == 1 else 'are',
+        'clean_trust_verb': clean_trust_verb,
+        'clean_trust_late_route_clause': _story_phrase(
+            'clean_trust_late_route_clause',
+            inputs,
+            clean_trust_names,
+            clean_trust_verb,
+            clean_trust_names=clean_trust_names,
+            clean_trust_verb=clean_trust_verb,
+        ),
+        'clean_trust_late_sentence': _story_phrase(
+            'clean_trust_late_sentence',
+            inputs,
+            clean_trust_names,
+            clean_trust_verb,
+            clean_trust_names=clean_trust_names,
+            clean_trust_verb=clean_trust_verb,
+        ),
+        'sustainability_mechanism_text': _story_phrase(
+            'sustainability_mechanism',
+            inputs,
+        ),
+        'workload_concentration_signal': _story_phrase(
+            'workload_concentration_signal',
+            inputs,
+            team_name=team.get('team_name'),
+        ),
     }
 
 
@@ -922,6 +1023,28 @@ def _truthy_count(value):
         return False
 
 
+def _phrase_index(parts, count):
+    if count <= 1:
+        return 0
+    key = '|'.join(str(part or '') for part in parts)
+    return sum((idx + 1) * ord(char) for idx, char in enumerate(key)) % count
+
+
+def _story_phrase(pool_key, inputs, *extra_parts, **values):
+    variants = PHRASE_VARIANTS.get(pool_key) or ()
+    if not variants:
+        return ''
+    team = (inputs or {}).get('team') or {}
+    parts = (
+        pool_key,
+        team.get('team_abbreviation') or '',
+        team.get('team_id') or '',
+        *extra_parts,
+    )
+    template = variants[_phrase_index(parts, len(variants))]
+    return template.format(**values)
+
+
 def _why_context_item(source, text, layer=None, flags=None, disclosure_limitations=False):
     return {
         'source': source,
@@ -973,21 +1096,34 @@ def _environment_context_item(inputs, eligible_items_by_source):
         return None
 
     label_by_source = {
-        'capacity_loss': 'the bullpen is short on usable arms',
-        'rotation_support_pressure': 'the recent workload picture is adding pressure',
-        'bullpen_stability': 'the group has not looked the same lately',
+        'capacity_loss': _story_phrase(
+            'environment_capacity_label',
+            inputs,
+            'capacity_loss',
+        ),
+        'rotation_support_pressure': _story_phrase(
+            'environment_rotation_label',
+            inputs,
+            'rotation_support_pressure',
+        ),
+        'bullpen_stability': _story_phrase(
+            'environment_stability_label',
+            inputs,
+            'bullpen_stability',
+        ),
     }
     labels = [label_by_source.get(source) for source in eligible_sources]
     detail = _context_list_text(labels)
     if not detail:
         return None
+    intro = _story_phrase('environment_intro', inputs, '+'.join(eligible_sources))
     disclosure_limitations = any(
         (eligible_items_by_source[source] or {}).get('source_limitations_present')
         for source in eligible_sources
     )
     return _why_context_item(
         'bullpen_environment',
-        f'This is not one clean issue. {detail}',
+        f'{intro} {detail}',
         environment,
         flags=environment.get('context_flags') or [],
         disclosure_limitations=disclosure_limitations,
@@ -1008,10 +1144,10 @@ def _capacity_context_item(inputs):
     ):
         return None
     has_count_based_disclosure = _capacity_has_count_based_disclosure(capacity_loss)
-    text = (
-        'The current board still shows fewer usable arms than a normal night.'
-        if has_count_based_disclosure
-        else 'The work is landing on the same arms while the bullpen is already short on usable arms.'
+    text = _story_phrase(
+        'capacity_context_fallback' if has_count_based_disclosure else 'capacity_context_standard',
+        inputs,
+        'fallback' if has_count_based_disclosure else 'standard',
     )
     return _why_context_item(
         'capacity_loss',
@@ -1034,7 +1170,7 @@ def _rotation_context_item(inputs):
         return None
     return _why_context_item(
         'rotation_support_pressure',
-        'The bullpen has been carrying more of the workload lately, which makes every clean inning a little harder to replace.',
+        _story_phrase('rotation_context', inputs),
         rotation,
     )
 
@@ -1053,7 +1189,7 @@ def _stability_context_item(inputs):
         return None
     return _why_context_item(
         'bullpen_stability',
-        'A few different relievers have been moving in and out of the picture lately.',
+        _story_phrase('stability_context', inputs),
         stability,
         flags=[status],
     )
