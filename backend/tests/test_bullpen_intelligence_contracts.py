@@ -14,6 +14,7 @@ from services.bullpen_capacity import (
     CAPABILITY as CAPACITY_CAPABILITY,
     UNAVAILABLE_ZERO_OUTS_LIMITATION,
 )
+from services.bullpen_environment import CAPABILITY as ENVIRONMENT_CAPABILITY
 from services.bullpen_stability import (
     CAPABILITY as STABILITY_CAPABILITY,
     CURRENT_ASSIGNMENT_LIMITATION as STABILITY_CURRENT_ASSIGNMENT_LIMITATION,
@@ -234,6 +235,21 @@ def _assert_stability_contract(stability):
     }
 
 
+def _assert_environment_contract(environment):
+    assert environment['capability'] == ENVIRONMENT_CAPABILITY
+    assert environment['source'] == 'backend'
+    assert set(environment) >= {
+        'status',
+        'primary_pressure_sources',
+        'context_flags',
+        'supporting_reads',
+        'definitions',
+        'limitations',
+        'source_limitations',
+        'summary',
+    }
+
+
 def _story_pitcher(pid):
     return SimpleNamespace(
         id=pid,
@@ -286,16 +302,22 @@ def _story_text(story):
     )
 
 
-def test_team_board_payload_exposes_all_three_backend_layers_with_contract_fields(client):
+def test_team_board_payload_exposes_all_intelligence_layers_with_contract_fields(client):
     with client.application.app_context():
         team_id = _seed_supportive_rotation_with_elevated_capacity()
 
     body = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
 
-    assert set(body) >= {'capacity_intelligence', 'rotation_support_pressure', 'bullpen_stability'}
+    assert set(body) >= {
+        'capacity_intelligence',
+        'rotation_support_pressure',
+        'bullpen_stability',
+        'bullpen_environment',
+    }
     _assert_capacity_contract(body['capacity_intelligence'])
     _assert_rotation_contract(body['rotation_support_pressure'])
     _assert_stability_contract(body['bullpen_stability'])
+    _assert_environment_contract(body['bullpen_environment'])
 
 
 def test_team_board_contract_keeps_concepts_and_statuses_independent(client):
@@ -306,6 +328,7 @@ def test_team_board_contract_keeps_concepts_and_statuses_independent(client):
     capacity_loss = body['capacity_intelligence']['capacity_loss']
     rotation = body['rotation_support_pressure']
     stability = body['bullpen_stability']
+    environment = body['bullpen_environment']
 
     assert capacity_loss['status'] == 'elevated'
     assert capacity_loss['unavailable_capacity_pct'] == 25
@@ -319,11 +342,19 @@ def test_team_board_contract_keeps_concepts_and_statuses_independent(client):
     assert stability['stable_core_count'] == 3
     assert stability['new_or_reintroduced_arm_count'] == 0
 
+    assert environment['status'] == 'pressure_with_context'
+    assert environment['primary_pressure_sources'] == ['capacity_loss']
+    assert environment['supporting_reads']['capacity_loss_status'] == 'elevated'
+    assert environment['supporting_reads']['rotation_support_status'] == 'supportive'
+    assert environment['supporting_reads']['bullpen_stability_status'] == 'stable'
+
     assert 'capacity_loss' not in rotation
     assert 'unavailable_capacity_pct' not in rotation
     assert 'starter_avg_innings' not in capacity_loss
     assert 'short_start_count' not in stability
     assert 'new_or_reintroduced_arm_count' not in body['capacity_intelligence']
+    assert 'starter_avg_innings' not in environment
+    assert 'unavailable_capacity_pct' not in environment
 
 
 def test_rotation_pressure_can_be_heavy_without_capacity_or_churn_escalation(client):
@@ -334,6 +365,7 @@ def test_rotation_pressure_can_be_heavy_without_capacity_or_churn_escalation(cli
     capacity_loss = body['capacity_intelligence']['capacity_loss']
     rotation = body['rotation_support_pressure']
     stability = body['bullpen_stability']
+    environment = body['bullpen_environment']
 
     assert capacity_loss['status'] == 'clear'
     assert capacity_loss['unavailable_capacity_pct'] == 0
@@ -344,6 +376,8 @@ def test_rotation_pressure_can_be_heavy_without_capacity_or_churn_escalation(cli
 
     assert stability['status'] == 'stable'
     assert stability['new_or_reintroduced_arm_count'] == 0
+    assert environment['status'] == 'pressure_with_context'
+    assert environment['primary_pressure_sources'] == ['rotation_support_pressure']
 
 
 def test_source_limitations_and_definitions_survive_in_final_board_payload(client):
@@ -354,6 +388,7 @@ def test_source_limitations_and_definitions_survive_in_final_board_payload(clien
     capacity_loss = body['capacity_intelligence']['capacity_loss']
     rotation = body['rotation_support_pressure']
     stability = body['bullpen_stability']
+    environment = body['bullpen_environment']
 
     available_definition = capacity_loss['definitions']['available_capacity_pct']
     assert 'not classified as fully unavailable' in available_definition
@@ -363,9 +398,13 @@ def test_source_limitations_and_definitions_survive_in_final_board_payload(clien
     assert OPENER_BULK_LIMITATION in rotation['source_limitations']
     assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in stability['source_limitations']
     assert STABILITY_USAGE_PATTERN_LIMITATION in stability['source_limitations']
+    assert ROTATION_CURRENT_ASSIGNMENT_LIMITATION in environment['source_limitations']
+    assert OPENER_BULK_LIMITATION in environment['source_limitations']
+    assert STABILITY_CURRENT_ASSIGNMENT_LIMITATION in environment['source_limitations']
+    assert STABILITY_USAGE_PATTERN_LIMITATION in environment['source_limitations']
 
 
-def test_dashboard_payload_exposes_league_contracts_for_all_three_layers(client):
+def test_dashboard_payload_exposes_league_contracts_for_all_intelligence_layers(client):
     with client.application.app_context():
         elevated_team = _seed_supportive_rotation_with_elevated_capacity()
         heavy_team = _seed_heavy_rotation_with_clear_capacity()
@@ -375,7 +414,13 @@ def test_dashboard_payload_exposes_league_contracts_for_all_three_layers(client)
     assert body['capacity_intelligence']['capability'] == 'league_bullpen_capacity_intelligence_v1'
     assert body['rotation_support_pressure']['capability'] == 'league_rotation_support_pressure_v1'
     assert body['bullpen_stability']['capability'] == 'league_bullpen_stability_v1'
-    for layer in ('capacity_intelligence', 'rotation_support_pressure', 'bullpen_stability'):
+    assert body['bullpen_environment']['capability'] == 'league_bullpen_environment_v1'
+    for layer in (
+        'capacity_intelligence',
+        'rotation_support_pressure',
+        'bullpen_stability',
+        'bullpen_environment',
+    ):
         assert body[layer]['source'] == 'backend'
         assert str(elevated_team) in body[layer]['by_team_id']
         assert str(heavy_team) in body[layer]['by_team_id']
@@ -383,6 +428,12 @@ def test_dashboard_payload_exposes_league_contracts_for_all_three_layers(client)
     assert body['capacity_intelligence']['by_team_id'][str(elevated_team)]['capacity_loss']['status'] == 'elevated'
     assert body['rotation_support_pressure']['by_team_id'][str(heavy_team)]['status'] == 'heavy_pressure'
     assert body['bullpen_stability']['by_team_id'][str(heavy_team)]['status'] == 'stable'
+    assert body['bullpen_environment']['by_team_id'][str(elevated_team)]['primary_pressure_sources'] == [
+        'capacity_loss'
+    ]
+    assert body['bullpen_environment']['by_team_id'][str(heavy_team)]['primary_pressure_sources'] == [
+        'rotation_support_pressure'
+    ]
 
 
 def test_four_beat_story_keeps_intelligence_layers_computed_only():
@@ -407,6 +458,11 @@ def test_four_beat_story_keeps_intelligence_layers_computed_only():
         'status': 'moderate_churn',
         'summary': 'stability sentinel',
     }
+    environment = {
+        'capability': ENVIRONMENT_CAPABILITY,
+        'status': 'multi_source_pressure',
+        'summary': 'environment sentinel',
+    }
     base_team_inputs = TeamInputs(
         team={'team_id': 1, 'team_name': 'Story Team', 'team_abbreviation': 'STY'},
         records=records,
@@ -421,6 +477,7 @@ def test_four_beat_story_keeps_intelligence_layers_computed_only():
         capacity_by_team={1: capacity},
         rotation_support_by_team={1: rotation},
         bullpen_stability_by_team={1: stability},
+        bullpen_environment_by_team={1: environment},
     )
 
     base_eval = evaluate_team_rules(base_team_inputs)
@@ -449,15 +506,19 @@ def test_four_beat_story_keeps_intelligence_layers_computed_only():
     assert story['computed']['capacity_intelligence'] == capacity
     assert story['computed']['rotation_support_pressure'] == rotation
     assert story['computed']['bullpen_stability'] == stability
+    assert story['computed']['bullpen_environment'] == environment
     assert story['slot_sources']['capacity_intelligence'] == CAPACITY_CAPABILITY
     assert story['slot_sources']['rotation_support_pressure'] == ROTATION_CAPABILITY
     assert story['slot_sources']['bullpen_stability'] == STABILITY_CAPABILITY
+    assert story['slot_sources']['bullpen_environment'] == ENVIRONMENT_CAPABILITY
     text = _story_text(story).lower()
     for unsupported_claim in (
         'capacity sentinel',
         'rotation sentinel',
         'stability sentinel',
+        'environment sentinel',
         'heavy_pressure',
         'moderate_churn',
+        'multi_source_pressure',
     ):
         assert unsupported_claim not in text

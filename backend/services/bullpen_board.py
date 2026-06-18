@@ -365,6 +365,7 @@ def build_board_payload(
     capacity_intelligence=None,
     rotation_support_pressure=None,
     bullpen_stability=None,
+    bullpen_environment=None,
 ):
     """
     Assemble the full Tonight's Bullpen Board payload.
@@ -420,6 +421,7 @@ def build_board_payload(
         'capacity_intelligence': capacity_intelligence or {},
         'rotation_support_pressure': rotation_support_pressure or {},
         'bullpen_stability': bullpen_stability or {},
+        'bullpen_environment': bullpen_environment or {},
         'visibility': visibility,
         'groups': groups,
         'total_pitchers': grouped_total,

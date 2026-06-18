@@ -47,6 +47,10 @@ from services.bullpen_capacity import (
     build_team_bullpen_capacity,
     season_relief_outs_by_pitcher,
 )
+from services.bullpen_environment import (
+    build_league_bullpen_environment_payload,
+    build_team_bullpen_environment,
+)
 from services.bullpen_stability import (
     build_league_bullpen_stability_payload,
     build_team_bullpen_stability,
@@ -1146,6 +1150,20 @@ def _bullpen_stability_for_records(team_info, records, reference_date):
     )
 
 
+def _bullpen_environment_for_reads(
+    team_info,
+    capacity_intelligence,
+    rotation_support_pressure,
+    bullpen_stability,
+):
+    return build_team_bullpen_environment(
+        team=team_info,
+        capacity_intelligence=capacity_intelligence,
+        rotation_support_pressure=rotation_support_pressure,
+        bullpen_stability=bullpen_stability,
+    )
+
+
 def _dashboard_capacity_payload(reference_date):
     team_ids = [
         row[0]
@@ -1236,6 +1254,31 @@ def _dashboard_bullpen_stability_payload(reference_date):
             reference_date,
         ))
     return build_league_bullpen_stability_payload(team_items)
+
+
+def _dashboard_bullpen_environment_payload(
+    capacity_intelligence,
+    rotation_support_pressure,
+    bullpen_stability,
+):
+    team_ids = sorted({
+        *(int(team_id) for team_id in (capacity_intelligence.get('by_team_id') or {})),
+        *(int(team_id) for team_id in (rotation_support_pressure.get('by_team_id') or {})),
+        *(int(team_id) for team_id in (bullpen_stability.get('by_team_id') or {})),
+    })
+    team_items = []
+    for team_id in team_ids:
+        capacity = (capacity_intelligence.get('by_team_id') or {}).get(str(team_id)) or {}
+        rotation = (rotation_support_pressure.get('by_team_id') or {}).get(str(team_id)) or {}
+        stability = (bullpen_stability.get('by_team_id') or {}).get(str(team_id)) or {}
+        team_info = _team_info_lookup(team_id)
+        team_items.append(_bullpen_environment_for_reads(
+            team_info,
+            capacity,
+            rotation,
+            stability,
+        ))
+    return build_league_bullpen_environment_payload(team_items)
 
 
 def _merge_limitations(*groups):
@@ -1474,6 +1517,12 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         capacity_records,
         ref,
     )
+    bullpen_environment = _bullpen_environment_for_reads(
+        team_info,
+        capacity_intelligence,
+        rotation_support_pressure,
+        bullpen_stability,
+    )
     return build_board_payload(
         team=team_info,
         records=records,
@@ -1484,6 +1533,7 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         capacity_intelligence=capacity_intelligence,
         rotation_support_pressure=rotation_support_pressure,
         bullpen_stability=bullpen_stability,
+        bullpen_environment=bullpen_environment,
     )
 
 
@@ -2053,6 +2103,15 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         int(team_id): item
         for team_id, item in (bullpen_stability.get('by_team_id') or {}).items()
     }
+    bullpen_environment = _dashboard_bullpen_environment_payload(
+        capacity_intelligence,
+        rotation_support_pressure,
+        bullpen_stability,
+    )
+    bullpen_environment_by_team = {
+        int(team_id): item
+        for team_id, item in (bullpen_environment.get('by_team_id') or {}).items()
+    }
     latest_scores = [score for score, _pitcher in latest_rows]
     risk_breakdown = {'LOW': 0, 'MODERATE': 0, 'HIGH': 0, 'CRITICAL': 0}
     for score in latest_scores:
@@ -2089,6 +2148,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'capacity_intelligence': capacity_intelligence,
         'rotation_support_pressure': rotation_support_pressure,
         'bullpen_stability': bullpen_stability,
+        'bullpen_environment': bullpen_environment,
         'continuity': continuity,
         'story_context': context_support,
         'season_era': season_era,
@@ -2107,6 +2167,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             capacity_by_team=capacity_by_team,
             rotation_support_by_team=rotation_support_by_team,
             bullpen_stability_by_team=bullpen_stability_by_team,
+            bullpen_environment_by_team=bullpen_environment_by_team,
         )
     data_through = parse_reference_date(
         freshness.get('data_through')
