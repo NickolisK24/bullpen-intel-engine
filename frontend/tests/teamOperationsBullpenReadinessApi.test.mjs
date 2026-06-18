@@ -32,7 +32,7 @@ const baseReadinessResponse = {
   readiness: {
     status: 'Operationally Stable',
     status_code: 'operationally_stable',
-    summary: 'Team-level bullpen readiness is operationally stable.',
+    summary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
     basis: [
       'availability_distribution',
       'workload_pressure',

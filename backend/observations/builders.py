@@ -72,9 +72,9 @@ class InventoryObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.INVENTORY
     family = ObservationFamily.INVENTORY
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'Availability inventory is constrained.'
+    default_title = 'The current bullpen board shows fewer usable arms.'
     default_summary = (
-        'Availability inventory is constrained by the supplied trusted snapshot.'
+        'Tonight\'s board shows fewer usable arms than a normal night.'
     )
     default_explanation_reference = 'v4:availability:inventory'
 
@@ -83,9 +83,9 @@ class ReadinessObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.READINESS
     family = ObservationFamily.READINESS
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'Readiness limitations are present.'
+    default_title = 'The bullpen board has readiness caveats.'
     default_summary = (
-        'Readiness limitations are present in the supplied trusted snapshot.'
+        'The available information only supports a limited readiness note.'
     )
     default_explanation_reference = 'v4:team_operations_readiness:summary'
 
@@ -94,9 +94,9 @@ class WorkloadPressureObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.WORKLOAD_PRESSURE
     family = ObservationFamily.WORKLOAD_PRESSURE
     default_severity = ObservationSeverity.ELEVATED
-    default_title = 'Bullpen workload pressure is elevated.'
+    default_title = 'Recent bullpen workload is running hot.'
     default_summary = (
-        'Bullpen workload pressure is elevated in the supplied trusted snapshot.'
+        'Recent bullpen workload is running hot.'
     )
     default_explanation_reference = 'v4:team_operations_readiness:workload'
 
@@ -107,8 +107,8 @@ class FreshnessObservationBuilder(DeterministicObservationBuilder):
     default_severity = ObservationSeverity.MONITOR
     default_title = 'Freshness protection is affecting bullpen records.'
     default_summary = (
-        'Freshness protection is affecting bullpen records in the supplied '
-        'trusted snapshot.'
+        'Freshness protection is limiting a few bullpen records in the current '
+        'snapshot.'
     )
     default_explanation_reference = 'v4:availability:freshness'
 
@@ -117,9 +117,9 @@ class TrustObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.TRUST
     family = ObservationFamily.TRUST
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'Trust limitations are present in the current snapshot.'
+    default_title = 'The bullpen board has trusted-arm caveats.'
     default_summary = (
-        'Trust limitations are present in the supplied trusted snapshot.'
+        'The trusted late-inning picture has caveats that should stay visible.'
     )
     default_explanation_reference = 'v4:availability:trust'
 

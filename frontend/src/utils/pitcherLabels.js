@@ -95,7 +95,7 @@ export const PITCHER_LABEL_KEY_COPY = Object.freeze({
   roleSummary: 'Role labels describe bullpen usage shape.',
   readSummary: 'Read labels describe the current workload and availability shape.',
   roleQuestion: 'What type of bullpen arm is this?',
-  readQuestion: 'What does the current read say about this pitcher?',
+  readQuestion: 'What do workload and availability say about this pitcher tonight?',
 })
 
 const ROLE_BY_KEY = Object.freeze(Object.fromEntries(

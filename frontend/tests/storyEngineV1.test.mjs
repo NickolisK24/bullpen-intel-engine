@@ -104,8 +104,8 @@ const dataObservationStory = {
   storyKind: 'data_observation',
   kicker: 'Data Note',
   tone: 'neutral',
-  title: 'BaseballOS is staying quiet where the data is thin',
-  body: 'When the inputs are not solid enough to stand behind, the page says less rather than guessing.',
+  title: 'There is not enough recent activity for a stronger bullpen note',
+  body: 'The available information only supports a limited read today. That is better than forcing a conclusion.',
   href: '/trust',
 }
 

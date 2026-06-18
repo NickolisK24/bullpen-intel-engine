@@ -223,9 +223,9 @@ function usageShiftTitle(teamName, context = {}) {
 function usageShiftBody(teamName, context = {}) {
   const trend = cleanStoryText(context?.evidence?.trend)
   if (trend === 'decreasing_demand' || trend === 'longer_outings') {
-    return `Recent usage has eased around the ${teamName}, giving the bullpen a different shape than it had in the prior window.`
+    return `Recent usage has eased around the ${teamName}, and the bullpen does not look as pressed as it did in the prior window.`
   }
-  return `Recent usage has picked up around the ${teamName}, giving the bullpen a different shape than it had in the prior window.`
+  return `Recent usage has picked up around the ${teamName}, and this does not look like the same bullpen pattern from the prior window.`
 }
 
 function storyContextShiftCandidates(dashboard, source = 'home-stories') {
@@ -299,9 +299,9 @@ function continuityWindowNote(story) {
   const days = Number(story?.continuity?.window_days)
   if (!Number.isFinite(days) || days <= 1) return ''
   if (story?.storyKind === 'team_recovery') {
-    return `This flexibility has been visible across the last ${days} days.`
+    return `This flexibility has been there for ${days} days, not just one quiet night.`
   }
-  return `This pattern has been visible across the last ${days} days.`
+  return `This has been going on for ${days} days, not just one weird night.`
 }
 
 function flagshipContinuityNote(story) {
@@ -312,15 +312,15 @@ function flagshipContinuityNote(story) {
   if (windowNote) return windowNote
 
   if (story?.storyKind === 'team_pressure') {
-    return 'At this point, this reads as a current-day pressure point rather than a confirmed weeklong trend.'
+    return 'For now, this is a pressure point for today more than a confirmed weeklong trend.'
   }
   if (story?.storyKind === 'team_workload_continuity') {
-    return 'This reads as an ongoing recent-use pattern rather than a one-night availability issue.'
+    return 'This looks like a recent-use pattern, not just a one-night availability issue.'
   }
   if (story?.storyKind === 'team_recovery') {
-    return 'At this point, this reads as a current-day flexibility window rather than a confirmed long reset.'
+    return 'For now, this is a current-day flexibility window more than a confirmed long reset.'
   }
-  return 'At this point, the league read is quiet today rather than an ongoing stress pattern.'
+  return 'The league board is quiet today rather than showing an ongoing stress pattern.'
 }
 
 function flagshipContextNote(story) {
@@ -336,7 +336,7 @@ function flagshipContextNote(story) {
   if (story?.storyKind === 'team_recovery') {
     return 'The room comes from recent workload staying spread out enough that more relievers remain usable.'
   }
-  return 'No club is separating for stress, watch-list volume, or unusually deep rest on the current bullpen board.'
+  return 'No club is pulling away from the pack for stress, watch-list volume, or unusually deep rest today.'
 }
 
 function withFlagshipBriefingSupport(story, dashboard = null) {
@@ -555,7 +555,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       read: getReadsForLandscapeEntry(stressed).byKey.pressure,
       headline: SIGNAL_HEADLINES.stretchedPen.hero(stressed.teamName),
       observation: `${stressed.restricted} of the pen's ${stressed.total} relievers come in needing rest after the work they've carried lately. That leaves less room to breathe late than any club in baseball today.`,
-      whyItMatters: 'If the pattern continues, late-game flexibility could become increasingly concentrated. For fans, the key is whether the club still has more than one clean path through a close game.',
+      whyItMatters: 'The practical question is whether the club still has more than one clean path through a close game.',
       chips: heroChips(stressed),
     })
   }
@@ -572,7 +572,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
       read: getReadsForLandscapeEntry(watched).byKey.concentration,
       headline: SIGNAL_HEADLINES.sameArms.hero(watched.teamName),
       observation: `${watched.monitor} of the pen's ${watched.total} relievers are carrying enough recent work to sit on the watch list — the longest list in baseball today, even with nobody down outright.`,
-      whyItMatters: 'If the pattern continues, late-game flexibility could become increasingly concentrated. The bullpen still has options, but the current workload distribution is becoming less balanced.',
+      whyItMatters: 'The bullpen still has options, but it gets harder to mix and match late when the same arms keep taking the ball.',
       chips: heroChips(watched),
       ...storyContinuityProps(watched, 'team_workload_continuity'),
     })
@@ -615,7 +615,7 @@ export function getHeroStory(dashboard, source = 'home-hero') {
     headline: 'A quiet morning across baseball’s bullpens',
     observation: dashboard?.context?.health?.label
       || 'No club stands out for bullpen stress or heavy workload today. Around the league, the pens are in reasonable shape.',
-    whyItMatters: 'Quiet days give bullpens a reset point. For fans, a balanced baseline makes the next real pressure point easier to spot.',
+    whyItMatters: 'Quiet days give bullpens a reset point and make the next real pressure point easier to spot.',
     chips: [],
   }, dashboard)
 }
@@ -938,14 +938,14 @@ const OBSERVATION_STORY_COPY = {
   freshness: {
     kicker: 'Data Note',
     title: 'Today’s picture is waiting on completed games',
-    body: 'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
+    body: 'Part of the bullpen picture comes from earlier in the week. The story sharpens as new completed games arrive.',
     href: '/trust',
     cta: 'Open the full picture',
   },
   trust: {
     kicker: 'Data Note',
-    title: 'BaseballOS is staying quiet where the data is thin',
-    body: 'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
+    title: 'There is not enough recent activity for a stronger bullpen note',
+    body: 'The available information only supports a limited read today. That is better than forcing a conclusion.',
     href: '/trust',
     cta: 'Open the full picture',
   },

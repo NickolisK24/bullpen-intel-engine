@@ -45,15 +45,15 @@ const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id)
 const GROUP_FALLBACK_META = {
   Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
-  Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
+  Limited: { label: 'Limited', description: 'Recent workload suggests limited use right now.' },
   Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
+  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen picture." },
 }
 
 const EMPTY_GROUP_COPY = {
   Available: 'No arms are clear of recent workload right now.',
-  Monitor: 'No arms need a workload check in the current read.',
-  Limited: 'No arms are limited by workload in the current read.',
+  Monitor: 'No arms need a workload check right now.',
+  Limited: 'No arms are limited by workload right now.',
   Avoid: 'No arms are carrying heavy recent use.',
   Unavailable: 'No unavailable pitchers are shown right now.',
 }

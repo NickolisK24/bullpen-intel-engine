@@ -87,10 +87,10 @@ const readinessState = {
     certificationStatus: 'uncertified',
   },
   readinessStatus: 'operationally_stable',
-  readinessSummary: 'Team-level bullpen readiness is operationally stable.',
+  readinessSummary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
   readiness: {
     status: 'Operationally Stable',
-    summary: 'Team-level bullpen readiness is operationally stable.',
+    summary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
   },
   team: {
     team_abbreviation: 'SEA',

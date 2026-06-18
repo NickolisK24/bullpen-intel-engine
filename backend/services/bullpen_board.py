@@ -88,9 +88,9 @@ HEALTH_NO_DATA = 'no_data'
 
 HEALTH_LABELS = {
     HEALTH_MANAGEABLE: 'Bullpen workload appears manageable.',
-    HEALTH_MONITORING: 'Several relievers require monitoring.',
+    HEALTH_MONITORING: 'Several relievers need a workload check.',
     HEALTH_ELEVATED: 'Bullpen workload is elevated.',
-    HEALTH_CONSTRAINED: 'Availability is constrained in the current read.',
+    HEALTH_CONSTRAINED: 'The bullpen is short on clean options right now.',
     HEALTH_NO_DATA: 'No bullpen availability to summarize from the latest completed data.',
 }
 
@@ -362,6 +362,10 @@ def build_board_payload(
     roster_status=None,
     generated_at=None,
     workload_concentration=None,
+    capacity_intelligence=None,
+    rotation_support_pressure=None,
+    bullpen_stability=None,
+    bullpen_environment=None,
 ):
     """
     Assemble the full Tonight's Bullpen Board payload.
@@ -414,6 +418,10 @@ def build_board_payload(
         'context': context,
         'stress': stress,
         'team_shape': team_shape,
+        'capacity_intelligence': capacity_intelligence or {},
+        'rotation_support_pressure': rotation_support_pressure or {},
+        'bullpen_stability': bullpen_stability or {},
+        'bullpen_environment': bullpen_environment or {},
         'visibility': visibility,
         'groups': groups,
         'total_pitchers': grouped_total,

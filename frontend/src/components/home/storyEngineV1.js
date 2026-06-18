@@ -248,7 +248,7 @@ export const STORY_NARRATIVE_TEMPLATES = Object.freeze({
     narrativeTemplate(
       'The {team} keep asking the same relievers for the heavy lifting',
       '{monitor} {monitorArms} in the {team} pen are carrying the heavier recent work. That is the kind of quiet strain a box score can miss.',
-      'When the same group keeps absorbing the work, late-game flexibility can become less balanced.',
+      'It gets harder to mix and match late when the same arms keep taking the ball.',
     ),
     narrativeTemplate(
       'The {team} bullpen work is flowing through a small core',
@@ -364,17 +364,17 @@ export const STORY_NARRATIVE_TEMPLATES = Object.freeze({
   usage_shift: Object.freeze([
     narrativeTemplate(
       'The {team} bullpen workload has shifted recently',
-      'Recent usage has picked up around the {team}, giving the bullpen a different shape than it had in the prior window.',
+      'Recent usage has picked up around the {team}, and this does not look like the same bullpen pattern from the prior window.',
       'A usage shift matters because the same bullpen can look different once the work starts landing in new places.',
     ),
     narrativeTemplate(
       'Recent {team} usage looks different than it did a week ago',
-      'The current window is not matching the earlier workload pattern, so this bullpen is entering a different phase of the cycle.',
+      'The latest workload pattern is not matching the earlier one, so this bullpen is in a different part of the cycle.',
       'For fans, changing usage can alter which arms are cleanest for the next close game.',
     ),
     narrativeTemplate(
       'The {team} bullpen is entering a different workload phase',
-      'The recent shape has changed around the group, with the current window telling a different story than the one before it.',
+      'The work has moved around the group, and the last few games do not look like the stretch before it.',
       'When the usage phase changes, the bullpen\'s flexibility changes with it.',
     ),
     narrativeTemplate(
@@ -478,24 +478,24 @@ export const STORY_NARRATIVE_TEMPLATES = Object.freeze({
     ),
     narrativeTemplate(
       'No bullpen story is separating from the pack today',
-      'The current league read is balanced enough that no single club is forcing the headline.',
+      'The league picture is balanced enough that no single club is forcing the headline.',
       'A quiet baseline matters because it gives the next shift more context.',
     ),
   ]),
   data_context: Object.freeze([
     narrativeTemplate(
-      'BaseballOS is staying quiet where the data is thin',
-      'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
-      'Thin data changes how much BaseballOS can say out loud.',
+      'There is not enough recent activity for a stronger bullpen note',
+      'The available information only supports a limited read today. That is better than forcing a conclusion.',
+      'Limited inputs are useful when they stop short of a bigger claim.',
     ),
     narrativeTemplate(
       'Today\'s picture is waiting on completed games',
-      'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
-      'Data context matters because the page separates a true bullpen read from an incomplete window.',
+      'Part of the bullpen picture comes from earlier in the week. The story sharpens as new completed games arrive.',
+      'A data note helps separate a true bullpen read from an incomplete window.',
     ),
     narrativeTemplate(
       'The data note is part of the bullpen story today',
-      'The current read includes a trust limitation, so the page keeps the language narrower rather than stretching beyond the inputs.',
+      'The trusted late-inning picture has a caveat, so the note stays inside what the inputs support.',
       'That restraint matters because a clear limitation is more useful than a forced conclusion.',
     ),
   ]),
@@ -1027,7 +1027,7 @@ function teamImpactFactor(candidate, context) {
     reason = 'Pitcher-level notes need broader team context before they lead.'
   } else if (tier.key === STORY_TIERS.data.key) {
     points = sourceObservation(candidate)?.severity === 'significant' ? 6 : 3
-    reason = 'Data notes explain whether BaseballOS should speak or stay quiet.'
+    reason = 'Data notes explain why the available information only supports a limited read.'
   }
 
   return factor('team_level_impact', 'Team-level impact', points, reason)
@@ -1203,7 +1203,7 @@ function defaultWhyItMatters(candidate, tier) {
     return 'Rested options give a club more room to handle the late innings.'
   }
   if (tier.key === STORY_TIERS.data.key) {
-    return 'Thin or limited data changes how much BaseballOS can say out loud.'
+    return 'The available information only supports a limited read.'
   }
   return 'The wider league picture helps explain whether one club is an outlier or part of the day\'s broader bullpen shape.'
 }
