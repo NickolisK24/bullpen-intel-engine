@@ -1,17 +1,17 @@
 name: Daily Bullpen Sync
 
 # Reliable production sync. GitHub Actions runs the daily sync as a direct
-# Python process against the production database, then calls the protected
-# dashboard snapshot endpoint. The protected backend sync endpoint remains
-# available for manual emergency use, but scheduled automation does not run the
-# large sync job inside a Render/Gunicorn web request.
+# Python process against the production database. That sync publishes the
+# dashboard snapshot directly, then this workflow verifies the public dashboard
+# is serving the published cache. The protected backend sync and snapshot
+# endpoints remain available for manual emergency use, but scheduled automation
+# does not run large jobs inside Render/Gunicorn web requests.
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
 #   DATABASE_URL                production Postgres connection URL
 #   SECRET_KEY                  production Flask secret key
 #   BASEBALLOS_ADMIN_API_TOKEN  must match the backend's ADMIN_API_TOKEN
 #   BASEBALLOS_SYNC_URL         e.g. https://baseballos-api.onrender.com/api/bullpen/sync
-#   DASHBOARD_SNAPSHOT_BUILD_TOKEN must match the backend's DASHBOARD_SNAPSHOT_BUILD_TOKEN
 #
 # To disable: comment out the `schedule:` block below (manual runs still work
 # via the "Run workflow" button), or disable this workflow in the Actions tab.
@@ -64,78 +64,112 @@ jobs:
           fi
           python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions
 
-      - name: Build dashboard snapshot cache
+      - name: Verify dashboard snapshot cache
         env:
           SYNC_URL: ${{ secrets.BASEBALLOS_SYNC_URL }}
-          SNAPSHOT_TOKEN: ${{ secrets.DASHBOARD_SNAPSHOT_BUILD_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${SYNC_URL:-}" ] || [ -z "${SNAPSHOT_TOKEN:-}" ]; then
-            echo "::error::Missing BASEBALLOS_SYNC_URL or DASHBOARD_SNAPSHOT_BUILD_TOKEN repository secret."
+          if [ -z "${SYNC_URL:-}" ]; then
+            echo "::error::Missing BASEBALLOS_SYNC_URL repository secret."
             exit 1
           fi
 
           normalized_sync_url="${SYNC_URL%/}"
           backend_base_url="${normalized_sync_url%/api/bullpen/sync}"
           if [ "$backend_base_url" = "$normalized_sync_url" ]; then
-            echo "::error::BASEBALLOS_SYNC_URL must end with /api/bullpen/sync so the dashboard snapshot URL can be derived safely."
+            echo "::error::BASEBALLOS_SYNC_URL must end with /api/bullpen/sync so the dashboard URL can be derived safely."
             exit 1
           fi
-          snapshot_url="$backend_base_url/api/bullpen/dashboard/snapshot/build"
+          dashboard_url="$backend_base_url/api/bullpen/dashboard"
 
-          snapshot_response="$(mktemp)"
-          trap 'rm -f "$snapshot_response"' EXIT
+          dashboard_response="$(mktemp)"
+          trap 'rm -f "$dashboard_response"' EXIT
 
           max_attempts=4
-          snapshot_max_time=180
+          dashboard_max_time=60
           transient_statuses=" 502 503 504 "
           http_code="000"
           curl_exit=0
 
           for attempt in $(seq 1 "$max_attempts"); do
-            : > "$snapshot_response"
-            echo "Snapshot build attempt $attempt/$max_attempts"
+            : > "$dashboard_response"
+            echo "Dashboard snapshot verification attempt $attempt/$max_attempts"
 
             set +e
-            http_code=$(curl -sS -o "$snapshot_response" -w '%{http_code}' \
-              --connect-timeout 20 --max-time "$snapshot_max_time" \
-              -X POST "$snapshot_url" \
-              -H "Authorization: Bearer $SNAPSHOT_TOKEN")
+            http_code=$(curl -sS -o "$dashboard_response" -w '%{http_code}' \
+              --connect-timeout 20 --max-time "$dashboard_max_time" \
+              "$dashboard_url")
             curl_exit=$?
             set -e
 
             if [ "$curl_exit" -ne 0 ]; then
               http_code="000"
-              echo "::warning::Snapshot build attempt $attempt failed before an HTTP response was returned (curl exit $curl_exit)."
+              echo "::warning::Dashboard snapshot verification attempt $attempt failed before an HTTP response was returned (curl exit $curl_exit)."
             else
-              echo "Snapshot build attempt $attempt HTTP status: $http_code"
-              echo "Snapshot build attempt $attempt response body:"
-              cat "$snapshot_response" || true
-              echo
+              echo "Dashboard snapshot verification attempt $attempt HTTP status: $http_code"
 
               if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-                echo "Dashboard snapshot build succeeded."
+                python - "$dashboard_response" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding='utf-8') as handle:
+        payload = json.load(handle)
+except json.JSONDecodeError as exc:
+    print(f'::error::Dashboard snapshot verification failed: response was not valid JSON ({exc}).')
+    raise SystemExit(1)
+
+snapshot = payload.get('snapshot') or {}
+errors = []
+if snapshot.get('served_from') != 'cache':
+    errors.append(f"snapshot.served_from={snapshot.get('served_from')!r}")
+if snapshot.get('is_published') is not True:
+    errors.append(f"snapshot.is_published={snapshot.get('is_published')!r}")
+if not snapshot.get('snapshot_id'):
+    errors.append('snapshot.snapshot_id missing')
+if not snapshot.get('data_through'):
+    errors.append('snapshot.data_through missing')
+if not snapshot.get('snapshot_generated_at'):
+    errors.append('snapshot.snapshot_generated_at missing')
+
+if errors:
+    print('::error::Dashboard snapshot verification failed: ' + '; '.join(errors))
+    raise SystemExit(1)
+
+print(
+    'Dashboard snapshot verification passed: '
+    f"id={snapshot.get('snapshot_id')} "
+    f"data_through={snapshot.get('data_through')} "
+    f"generated_at={snapshot.get('snapshot_generated_at')}"
+)
+PY
+                echo "Dashboard snapshot cache verification succeeded."
                 exit 0
               fi
 
               if [[ "$transient_statuses" != *" $http_code "* ]]; then
-                echo "::error::Snapshot build failed with HTTP $http_code"
+                echo "::error::Dashboard snapshot verification failed with HTTP $http_code"
+                echo "Response body:"
+                cat "$dashboard_response" || true
+                echo
                 exit 1
               fi
 
-              echo "::warning::Snapshot build attempt $attempt hit transient HTTP $http_code."
+              echo "::warning::Dashboard snapshot verification attempt $attempt hit transient HTTP $http_code."
             fi
 
             if [ "$attempt" -lt "$max_attempts" ]; then
               delay_seconds=$((15 * attempt))
-              echo "Retrying dashboard snapshot build in ${delay_seconds}s..."
+              echo "Retrying dashboard snapshot verification in ${delay_seconds}s..."
               sleep "$delay_seconds"
             fi
           done
 
-          echo "::error::Snapshot build failed after $max_attempts attempts. Final HTTP status: $http_code"
+          echo "::error::Dashboard snapshot verification failed after $max_attempts attempts. Final HTTP status: $http_code"
           echo "Final response body:"
-          cat "$snapshot_response" || true
+          cat "$dashboard_response" || true
           echo
           exit 1
 
