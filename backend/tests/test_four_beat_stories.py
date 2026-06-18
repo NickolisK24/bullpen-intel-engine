@@ -684,7 +684,7 @@ def test_supported_environment_adds_single_backend_why_context():
         'source_limitations_present': True,
     }
     assert 'this is not one clean issue' in text
-    assert 'fewer available arms and extra outs from the rotation are both part of the picture' in text
+    assert 'fewer available arms and extra outs finding their way to the bullpen are both part of the picture' in text
     for unsupported in (
         'because',
         'caused',
@@ -712,7 +712,7 @@ def test_capacity_and_rotation_context_are_blocked_when_limited():
     assert limited_capacity_story['computed']['why_context']['applied'] is False
     assert limited_rotation_story['computed']['why_context']['applied'] is False
     assert 'short on usable arms' not in _story_text(limited_capacity_story).lower()
-    assert 'extra outs from the rotation' not in _story_text(limited_rotation_story).lower()
+    assert 'carrying more of the workload' not in _story_text(limited_rotation_story).lower()
 
 
 def test_capacity_and_rotation_context_can_appear_without_environment_synthesis():
@@ -726,7 +726,8 @@ def test_capacity_and_rotation_context_can_appear_without_environment_synthesis(
     assert context['sources'] == ['capacity_loss', 'rotation_support_pressure']
     assert story['computed']['why_context']['sources'] == ['capacity_loss', 'rotation_support_pressure']
     assert 'short on usable arms' in text
-    assert 'extra outs from the rotation' in text
+    assert 'carrying more of the workload' in text
+    assert 'harder to replace' in text
     for unsupported in ('because', 'caused', 'due to', 'recommend', 'prediction', 'betting'):
         assert unsupported not in text
 
@@ -739,7 +740,9 @@ def test_stability_context_stays_usage_based_without_transaction_claims():
     text = context['text'].lower()
 
     assert context['sources'] == ['bullpen_stability']
-    assert 'bullpen mix has been changing' in text
+    assert 'moving in and out of the picture' in text
+    assert 'usage pattern' not in text
+    assert 'read cleanly' not in text
     for unsupported in ('transaction', 'recall', 'called up', 'optioned', 'dfa'):
         assert unsupported not in text
 

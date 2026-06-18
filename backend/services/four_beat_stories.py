@@ -827,11 +827,14 @@ def _why_context_item(source, text, layer=None, flags=None):
 def _context_list_text(labels):
     clean = [label for label in labels if label]
     if len(clean) == 2:
-        return f'{clean[0]} and {clean[1]} are both part of the picture.'
+        text = f'{clean[0]} and {clean[1]} are both part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
     if len(clean) > 2:
-        return f'{", ".join(clean[:-1])}, and {clean[-1]} are all part of the picture.'
+        text = f'{", ".join(clean[:-1])}, and {clean[-1]} are all part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
     if clean:
-        return f'{clean[0]} is part of the picture.'
+        text = f'{clean[0]} is part of the picture.'
+        return f'{text[:1].upper()}{text[1:]}'
     return ''
 
 
@@ -855,8 +858,8 @@ def _environment_context_item(inputs):
 
     label_by_source = {
         'capacity_loss': 'fewer available arms',
-        'rotation_support_pressure': 'extra outs from the rotation',
-        'bullpen_stability': 'a changing bullpen mix',
+        'rotation_support_pressure': 'extra outs finding their way to the bullpen',
+        'bullpen_stability': 'a bullpen group that has not looked the same lately',
     }
     labels = [label_by_source.get(source) for source in sources]
     detail = _context_list_text(labels)
@@ -903,7 +906,7 @@ def _rotation_context_item(inputs):
         return None
     return _why_context_item(
         'rotation_support_pressure',
-        'The rotation has not given them many easy nights lately; extra outs from the rotation keep landing on the bullpen.',
+        'The bullpen has been carrying more of the workload lately, which makes every clean inning a little harder to replace.',
         rotation,
     )
 
@@ -921,7 +924,7 @@ def _stability_context_item(inputs):
         return None
     return _why_context_item(
         'bullpen_stability',
-        'The bullpen mix has been changing, so the usage pattern is harder to read cleanly.',
+        'A few different relievers have been moving in and out of the picture lately.',
         stability,
         flags=[status],
     )
