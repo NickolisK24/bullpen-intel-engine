@@ -25,7 +25,11 @@ from services.bullpen_board import (
     group_cards,
     short_reason_for,
 )
-from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION
+from services.bullpen_stability import (
+    CAPABILITY as STABILITY_CAPABILITY,
+    LIMITED_SAMPLE_LIMITATION as STABILITY_LIMITED_SAMPLE_LIMITATION,
+)
+from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTATION_LIMITED_SAMPLE_LIMITATION
 from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.roster_status import (
@@ -761,7 +765,49 @@ class TestBoardEndpoint:
         assert pressure['starter_outs'] == 24
         assert pressure['bullpen_outs_required'] == 0
         assert pressure['status'] == 'limited_read'
-        assert LIMITED_SAMPLE_LIMITATION in pressure['limitations']
+        assert ROTATION_LIMITED_SAMPLE_LIMITATION in pressure['limitations']
+
+    def test_team_board_exposes_bullpen_stability(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Stable Board Arm One',
+                team_id=178,
+                team_abbr='BST',
+                mlb_id=17801,
+                innings=[1.0, 1.0],
+                days_ago=[8, 2],
+                games_started=[0, 0],
+            )
+            _seed_pitcher(
+                'Stable Board Arm Two',
+                team_id=178,
+                team_abbr='BST',
+                mlb_id=17802,
+                innings=[1.0, 1.0],
+                days_ago=[7, 1],
+                games_started=[0, 0],
+            )
+            _seed_pitcher(
+                'New Board Arm',
+                team_id=178,
+                team_abbr='BST',
+                mlb_id=17803,
+                innings=[1.0],
+                days_ago=[1],
+                games_started=[0],
+            )
+
+        body = client.get('/api/bullpen/teams/178/board').get_json()
+        stability = body['bullpen_stability']
+
+        assert stability['capability'] == STABILITY_CAPABILITY
+        assert stability['team_id'] == 178
+        assert stability['window_days'] == 14
+        assert stability['recently_used_bullpen_count'] == 3
+        assert stability['stable_core_count'] == 2
+        assert stability['new_or_reintroduced_arm_count'] == 1
+        assert stability['status'] in ('moderate_churn', 'heavy_churn')
+        assert STABILITY_LIMITED_SAMPLE_LIMITATION not in stability['limitations']
 
     def test_bereavement_status_keeps_pitcher_unavailable_without_collapsing_label(self, client):
         with client.application.app_context():

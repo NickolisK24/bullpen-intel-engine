@@ -18,7 +18,8 @@ from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.availability_summary import summarize_availability_records
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
-from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION
+from services.bullpen_stability import CAPABILITY as STABILITY_CAPABILITY
+from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTATION_LIMITED_SAMPLE_LIMITATION
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
@@ -277,6 +278,9 @@ class TestDashboardEndpoint:
         assert story['computed']['rotation_support_pressure'] == (
             board['rotation_support_pressure']
         )
+        assert story['computed']['bullpen_stability'] == (
+            board['bullpen_stability']
+        )
 
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
@@ -429,7 +433,48 @@ class TestDashboardEndpoint:
         assert pressure['starter_outs'] == 24
         assert pressure['bullpen_outs_required'] == 0
         assert pressure['status'] == 'limited_read'
-        assert LIMITED_SAMPLE_LIMITATION in pressure['limitations']
+        assert ROTATION_LIMITED_SAMPLE_LIMITATION in pressure['limitations']
+
+    def test_dashboard_exposes_bullpen_stability_payload(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Dashboard Stable Arm One',
+                team_id=178,
+                mlb_id=17801,
+                innings=[1.0, 1.0],
+                days_ago=[8, 2],
+                roster_status=STATUS_ACTIVE,
+                games_started=[0, 0],
+            )
+            _seed_pitcher(
+                'Dashboard Stable Arm Two',
+                team_id=178,
+                mlb_id=17802,
+                innings=[1.0, 1.0],
+                days_ago=[7, 1],
+                roster_status=STATUS_ACTIVE,
+                games_started=[0, 0],
+            )
+            _seed_pitcher(
+                'Dashboard New Arm',
+                team_id=178,
+                mlb_id=17803,
+                innings=[1.0],
+                days_ago=[1],
+                roster_status=STATUS_ACTIVE,
+                games_started=[0],
+            )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        stability = body['bullpen_stability']['by_team_id']['178']
+
+        assert body['bullpen_stability']['capability'] == 'league_bullpen_stability_v1'
+        assert stability['capability'] == STABILITY_CAPABILITY
+        assert stability['team_id'] == 178
+        assert stability['recently_used_bullpen_count'] == 3
+        assert stability['stable_core_count'] == 2
+        assert stability['new_or_reintroduced_arm_count'] == 1
+        assert stability['source'] == 'backend'
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
         with client.application.app_context():

@@ -78,7 +78,7 @@ def _log(pid, days_ago, pitches, *, leverage_index=None, save=False, hold=False,
     )
 
 
-def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None):
+def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None, bullpen_stability_by_team=None):
     return TeamInputs(
         team=team or {
             'team_id': 1,
@@ -89,6 +89,7 @@ def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None):
         logs_by_pitcher=logs_by_pitcher,
         reference_date=REF,
         season_era_by_team=season_era_by_team,
+        bullpen_stability_by_team=bullpen_stability_by_team,
     )
 
 
@@ -521,6 +522,27 @@ def test_beats_fill_slots_or_omit_and_mechanism_stays_associative():
     story_without_evidence = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
     assert story_without_evidence is not None
     assert not any(beat['key'] == 'evidence' for beat in story_without_evidence['beats'])
+
+
+def test_bullpen_stability_passes_through_computed_data_without_new_claims():
+    pitchers = [_pitcher(idx, f'Arm {idx}') for idx in range(1, 7)]
+    stability = {
+        'capability': 'bullpen_stability_v1',
+        'team_id': 1,
+        'status': 'moderate_churn',
+        'new_or_reintroduced_arm_count': 2,
+    }
+    inputs = compute_team_story_inputs(_team_inputs(
+        [_record(pitcher, STATUS_AVAILABLE) for pitcher in pitchers],
+        {pitcher.id: [_log(pitcher.id, 1, 10)] for pitcher in pitchers},
+        bullpen_stability_by_team={1: stability},
+    ))
+    story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+
+    assert inputs['bullpen_stability'] == stability
+    assert story['computed']['bullpen_stability'] == stability
+    assert story['slot_sources']['bullpen_stability'] == 'bullpen_stability_v1'
+    assert 'churn' not in _story_text(story).lower()
 
 
 def test_description_only_teams_suppress_and_feed_count_is_variable_and_ordered():

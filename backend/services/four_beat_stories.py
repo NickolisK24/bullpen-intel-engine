@@ -266,6 +266,7 @@ class TeamInputs:
     season_era_by_team: dict[int, dict[str, Any]] | None = None
     capacity_by_team: dict[int, dict[str, Any]] | None = None
     rotation_support_by_team: dict[int, dict[str, Any]] | None = None
+    bullpen_stability_by_team: dict[int, dict[str, Any]] | None = None
 
 
 def _truthy(value):
@@ -532,6 +533,7 @@ def compute_team_story_inputs(team_inputs):
     team_id = team_inputs.team.get('team_id')
     capacity_intelligence = (team_inputs.capacity_by_team or {}).get(team_id) or {}
     rotation_support_pressure = (team_inputs.rotation_support_by_team or {}).get(team_id) or {}
+    bullpen_stability = (team_inputs.bullpen_stability_by_team or {}).get(team_id) or {}
     clean, clean_trust = _clean_options(
         team_inputs.records,
         team_inputs.logs_by_pitcher,
@@ -584,6 +586,7 @@ def compute_team_story_inputs(team_inputs):
         'availability': availability,
         'capacity_intelligence': capacity_intelligence,
         'rotation_support_pressure': rotation_support_pressure,
+        'bullpen_stability': bullpen_stability,
         'season_era': season_era,
         'clean_options': clean,
         'clean_trust_options': clean_trust,
@@ -1272,6 +1275,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'season_era': 'season_era.bullpens',
             'capacity_intelligence': 'bullpen_capacity_intelligence_v1',
             'rotation_support_pressure': 'rotation_support_pressure_v1',
+            'bullpen_stability': 'bullpen_stability_v1',
             'clean_options': 'governed_board_pitcher_labels',
             'high_risk_arms': 'current_availability_records.fatigue_score',
         },
@@ -1297,6 +1301,7 @@ def assemble_story(rule_key, inputs, lead=None):
             },
             'capacity_intelligence': inputs.get('capacity_intelligence') or {},
             'rotation_support_pressure': inputs.get('rotation_support_pressure') or {},
+            'bullpen_stability': inputs.get('bullpen_stability') or {},
             'high_risk_arms': inputs['high_risk_arms'],
             'high_risk_arm_count': inputs['high_risk_arms'],
             'high_risk_arm_names': [
@@ -1386,6 +1391,7 @@ def _team_inputs_from_records(
     season_era=None,
     capacity_by_team=None,
     rotation_support_by_team=None,
+    bullpen_stability_by_team=None,
 ):
     season_era_by_team = _ranked_era_by_team(season_era)
     by_team = {}
@@ -1408,6 +1414,7 @@ def _team_inputs_from_records(
             season_era_by_team=season_era_by_team,
             capacity_by_team=capacity_by_team or {},
             rotation_support_by_team=rotation_support_by_team or {},
+            bullpen_stability_by_team=bullpen_stability_by_team or {},
         )
         for bucket in by_team.values()
     ]
@@ -1421,6 +1428,7 @@ def build_four_beat_story_feed(
     season_era=None,
     capacity_by_team=None,
     rotation_support_by_team=None,
+    bullpen_stability_by_team=None,
 ):
     team_inputs = _team_inputs_from_records(
         availability_records,
@@ -1429,6 +1437,7 @@ def build_four_beat_story_feed(
         season_era=season_era,
         capacity_by_team=capacity_by_team,
         rotation_support_by_team=rotation_support_by_team,
+        bullpen_stability_by_team=bullpen_stability_by_team,
     )
     evaluations = [evaluate_team_rules(team) for team in team_inputs]
     story_records = []
