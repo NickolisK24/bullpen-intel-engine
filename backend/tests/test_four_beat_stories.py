@@ -349,7 +349,7 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
 
     assert hidden['can_fire'] is True
     assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
-    assert 'usable depth underneath them is thin tonight' in hidden['story']['title']
+    assert "tonight's usable depth is thin" in hidden['story']['title']
     assert '2 of 7 arms Available' in _story_text(hidden['story'])
 
     not_solid = evaluate_team_rules(_team_inputs(
@@ -422,8 +422,8 @@ def test_season_era_rank_uses_raw_components_not_display_rounded_era():
     assert stories['CLE']['computed']['season_era']['rank'] == 2
     assert stories['TOR']['computed']['season_era']['era'] == 3.14
     assert stories['CLE']['computed']['season_era']['era'] == 3.14
-    assert '1st among the bullpens teams are carrying right now' in tor_text
-    assert '2nd among the bullpens teams are carrying right now' in cle_text
+    assert '1st among current pens' in tor_text
+    assert '2nd among current pens' in cle_text
 
 
 def test_pressure_distribution_wins_when_hidden_capacity_also_qualifies():
@@ -487,7 +487,7 @@ def test_era_rule_mechanisms_stay_static_and_honest():
         assert story is not None
         story_text = _story_text(story)
         assert 'among 30 bullpens' not in story_text
-        assert 'among the bullpens teams are carrying right now' in story_text
+        assert 'among current pens' in story_text
         for beat in story['beats']:
             assert '{' not in beat['text']
             assert '}' not in beat['text']
@@ -510,7 +510,7 @@ def test_beats_fill_slots_or_omit_and_mechanism_stays_associative():
         assert beat['skeleton_key']
 
     mechanism = next(beat['text'] for beat in story['beats'] if beat['key'] == 'mechanism')
-    assert 'tends to' in mechanism or 'usually means' in mechanism
+    assert 'more ways through the late innings' in mechanism or 'usually leaves' in mechanism
     for causal in ('causes', 'proves', 'guarantees', 'will force'):
         assert causal not in mechanism.lower()
 
@@ -522,6 +522,28 @@ def test_beats_fill_slots_or_omit_and_mechanism_stays_associative():
     story_without_evidence = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
     assert story_without_evidence is not None
     assert not any(beat['key'] == 'evidence' for beat in story_without_evidence['beats'])
+
+
+def test_public_four_beat_copy_avoids_robotic_voice_residue():
+    pitchers = [_pitcher(idx, f'Voice Arm {idx}') for idx in range(1, 7)]
+    records = [_record(pitcher, STATUS_AVAILABLE, risk='HIGH' if idx == 0 else 'LOW') for idx, pitcher in enumerate(pitchers)]
+    logs = {pitcher.id: [_log(pitcher.id, 1, 35)] for pitcher in pitchers}
+    story = _rule_eval(evaluate_team_rules(_team_inputs(
+        records,
+        logs,
+        season_era_by_team=_ranked_era(rank=3, strong=True, solid=True),
+    )), RULE_SUSTAINABILITY_QUESTION)['story']
+
+    text = _story_text(story).lower()
+    for phrase in (
+        'story starts with',
+        'the watch is',
+        'watch point',
+        'current bullpen group owns',
+        'current group owns',
+        'among the bullpens teams are carrying right now',
+    ):
+        assert phrase not in text
 
 
 def test_bullpen_stability_passes_through_computed_data_without_new_claims():

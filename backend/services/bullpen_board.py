@@ -88,9 +88,9 @@ HEALTH_NO_DATA = 'no_data'
 
 HEALTH_LABELS = {
     HEALTH_MANAGEABLE: 'Bullpen workload appears manageable.',
-    HEALTH_MONITORING: 'Several relievers require monitoring.',
+    HEALTH_MONITORING: 'Several relievers need a workload check.',
     HEALTH_ELEVATED: 'Bullpen workload is elevated.',
-    HEALTH_CONSTRAINED: 'Availability is constrained in the current read.',
+    HEALTH_CONSTRAINED: 'The bullpen is short on clean options right now.',
     HEALTH_NO_DATA: 'No bullpen availability to summarize from the latest completed data.',
 }
 

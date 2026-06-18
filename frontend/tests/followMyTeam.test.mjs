@@ -119,9 +119,9 @@ test('returning card emphasizes the followed team and links to its board', () =>
   }))
 
   assert.ok(htmlIncludes(html, 'Aces'))
-  assert.ok(htmlIncludes(html, 'What shape is my bullpen in the current read?'))
+  assert.ok(htmlIncludes(html, 'What does my bullpen look like right now?'))
   assert.ok(htmlIncludes(html, 'Overall Availability: Manageable'))
-  assert.ok(htmlIncludes(html, 'Overall bullpen availability is manageable.'))
+  assert.ok(htmlIncludes(html, 'This pen has ordinary usable room right now.'))
   assert.ok(htmlIncludes(html, '4 of 6 relievers are classified Available.'))
   assert.ok(htmlIncludes(html, 'No relievers are marked Avoid or Unavailable.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload appears manageable.'))
@@ -157,7 +157,7 @@ test('followed team stress renders no-read copy when board data is stale', () =>
   }))
 
   assert.ok(htmlIncludes(html, 'Overall Availability: No Read'))
-  assert.ok(htmlIncludes(html, 'Overall availability read is limited by data freshness.'))
+  assert.ok(htmlIncludes(html, 'Availability note is limited by data freshness.'))
   assert.ok(!htmlIncludes(html, 'Overall Availability: Manageable'))
 })
 

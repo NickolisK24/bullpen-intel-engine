@@ -9,37 +9,37 @@ codes for rendering.
 STATE_META = {
     'manageable': {
         'label': 'Manageable',
-        'summary': 'Overall bullpen availability is manageable.',
+        'summary': 'This pen has ordinary usable room right now.',
         'reason_code': 'bullpen_shape_manageable',
         'tone': 'manageable',
     },
     'monitoring': {
         'label': 'Monitoring',
-        'summary': 'Overall bullpen availability needs monitoring.',
+        'summary': 'This pen is usable, but a few arms are already in the yellow.',
         'reason_code': 'monitor_group_pressure',
         'tone': 'monitoring',
     },
     'elevated': {
         'label': 'Elevated',
-        'summary': 'Overall bullpen availability is tighter than usual.',
+        'summary': 'This pen has less room than usual.',
         'reason_code': 'workload_pressure_elevated',
         'tone': 'elevated',
     },
     'constrained': {
         'label': 'Constrained',
-        'summary': 'Overall bullpen availability is constrained.',
+        'summary': 'This pen is short on clean options.',
         'reason_code': 'bullpen_options_constrained',
         'tone': 'constrained',
     },
     'no_data': {
         'label': 'No Read',
-        'summary': 'Not enough current bullpen data to assess overall availability.',
+        'summary': 'Not enough bullpen data to give a clean availability note.',
         'reason_code': 'no_current_bullpen_data',
         'tone': 'muted',
     },
 }
 
-FRESHNESS_LIMITED_SUMMARY = 'Overall availability read is limited by data freshness.'
+FRESHNESS_LIMITED_SUMMARY = 'Availability note is limited by data freshness.'
 METHODOLOGY_CODE = 'workload_based_availability_context'
 FRESHNESS_LIMITED_CODE = 'freshness_limited'
 

@@ -788,7 +788,7 @@ def _readiness_explanation(status_code: str) -> str:
     if status_code == 'operationally_stable':
         return 'Readiness is operationally stable because freshness is current and workload pressure is low.'
     if status_code == 'operationally_constrained':
-        return 'Readiness is operationally constrained because moderate workload or coverage constraints are present.'
+        return 'Readiness has less room because moderate workload or coverage constraints are present.'
     if status_code == 'operationally_stressed':
         return 'Readiness is operationally stressed because elevated workload or unavailable inventory is present.'
     if status_code == 'data_limited':

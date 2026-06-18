@@ -128,7 +128,7 @@ const tensionStory = story({
   tone: 'stress',
   category: 'stressed',
   title: 'The Milwaukee Brewers bullpen has pitched well this year, but they are leaning on it hard tonight.',
-  body: 'Their current bullpen group owns a strong season ERA while recent workload sits high.',
+  body: 'This bullpen has still run a strong season ERA, but recent workload is high.',
   strength: 118,
   lead_dimension: 'workload_high',
   lead_dimension_detail: {
@@ -145,17 +145,17 @@ const tensionStory = story({
     {
       key: 'evidence',
       label: 'Evidence',
-      text: 'Their current bullpen group owns a 3.12 season ERA, 2nd among current pens, while recent workload sits at 34.2 pitches per participating arm with 2 arms at HIGH or CRITICAL fatigue.',
+      text: 'This bullpen has still run a 3.12 season ERA, 2nd among current pens, but recent workload is 34.2 pitches per participating arm with 2 arms at HIGH or CRITICAL fatigue.',
     },
     {
       key: 'mechanism',
       label: 'Mechanism',
-      text: "That does not say the results are changing; it does make tonight's clean innings feel more expensive to spend.",
+      text: 'The results are not the issue; the cost of every clean inning is a little higher tonight.',
     },
     {
       key: 'implication',
       label: 'Implication',
-      text: 'Tonight, Trevor Megill is still the clean Trust Arm path, so the watch is how early that lane has to open.',
+      text: "Tonight, Trevor Megill is still the trusted late-inning answer. I'm watching whether they have to go there before the eighth.",
     },
   ],
   computed: {
@@ -301,7 +301,7 @@ const neutralStory = story({
     {
       key: 'mechanism',
       label: 'Mechanism',
-      text: 'Nothing in the current read creates a sharp public argument.',
+      text: 'Nothing on the board creates a sharp public argument.',
     },
     {
       key: 'implication',

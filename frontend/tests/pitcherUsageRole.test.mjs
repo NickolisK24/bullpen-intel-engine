@@ -184,7 +184,7 @@ test('pitcher label key renders both label layers', () => {
   assert.ok(htmlIncludes(html, 'Role:'))
   assert.ok(htmlIncludes(html, 'Read:'))
   assert.ok(htmlIncludes(html, 'What type of bullpen arm is this?'))
-  assert.ok(htmlIncludes(html, 'What does the current read say about this pitcher?'))
+  assert.ok(htmlIncludes(html, 'What do workload and availability say about this pitcher tonight?'))
   assert.ok(htmlIncludes(html, 'Trust Arm'))
   assert.ok(htmlIncludes(html, 'Rest-Restricted'))
   assert.ok(!htmlIncludes(html, 'Role</span>Trust Arm'))

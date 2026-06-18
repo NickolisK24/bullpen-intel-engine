@@ -128,7 +128,7 @@ function contextFromGroups(groups, freshness) {
     manageable: 'Bullpen workload appears manageable.',
     monitoring: 'Several relievers require monitoring.',
     elevated: 'Bullpen workload is elevated.',
-    constrained: 'Availability is constrained in the current read.',
+    constrained: 'The bullpen is short on clean options right now.',
     no_data: 'No bullpen availability to summarize from the latest completed data.',
   }
   const pct = (part) => (total ? Math.round((part / total) * 100) : 0)
@@ -172,27 +172,27 @@ function stressFromContext(context) {
   const meta = {
     manageable: {
       label: 'Manageable',
-      summary: 'Overall bullpen availability is manageable.',
+      summary: 'This pen has ordinary usable room right now.',
       tone: 'manageable',
     },
     monitoring: {
       label: 'Monitoring',
-      summary: 'Overall bullpen availability needs monitoring.',
+      summary: 'This pen is usable, but a few arms are already in the yellow.',
       tone: 'monitoring',
     },
     elevated: {
       label: 'Elevated',
-      summary: 'Overall bullpen availability is tighter than usual.',
+      summary: 'This pen has less room than usual.',
       tone: 'elevated',
     },
     constrained: {
       label: 'Constrained',
-      summary: 'Overall bullpen availability is constrained.',
+      summary: 'This pen is short on clean options.',
       tone: 'constrained',
     },
     no_data: {
       label: 'No Read',
-      summary: 'Not enough current bullpen data to assess overall availability.',
+      summary: 'Not enough bullpen data to give a clean availability note.',
       tone: 'muted',
     },
   }
@@ -201,7 +201,7 @@ function stressFromContext(context) {
     state,
     label: isStale && state !== 'no_data' ? 'No Read' : base.label,
     summary: isStale && state !== 'no_data'
-      ? 'Overall availability read is limited by data freshness.'
+      ? 'Availability note is limited by data freshness.'
       : base.summary,
     reasons: context?.health?.reasons || [],
     reason_codes: [state === 'no_data' ? 'no_current_bullpen_data' : `fixture_${state}`],
