@@ -21,7 +21,8 @@ on:
     # Cron is always UTC and does NOT observe DST. 10:00 UTC is ~6 AM ET during
     # daylight time (most of the MLB season) and ~5 AM ET during standard time.
     - cron: '0 10 * * *'
-  workflow_dispatch: {}   # allow manual runs from the Actions tab
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
 
 # Never let scheduled + manual runs pile up on top of each other.
 concurrency:
