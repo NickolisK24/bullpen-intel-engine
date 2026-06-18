@@ -8,6 +8,8 @@ import Bullpen from './components/bullpen/Bullpen'
 import Prospects from './components/prospects/Prospects'
 import Methodology from './components/methodology/Methodology'
 import DataTrust from './components/trust/DataTrust'
+import PrivatePosts from './components/posts/PrivatePosts'
+import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -18,6 +20,7 @@ export const APP_ROUTES = [
   { path: '/prospects', Component: Prospects },
   { path: '/methodology', Component: Methodology },
   { path: '/trust', Component: DataTrust },
+  { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]
 
