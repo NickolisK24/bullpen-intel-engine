@@ -75,6 +75,8 @@ LIMITED_CONTEXT_STATUSES = {'limited_read', 'no_data', 'unknown'}
 CAPACITY_PRESSURE_STATUSES = {'elevated', 'constrained', 'severe'}
 ROTATION_PRESSURE_STATUSES = {'moderate_pressure', 'heavy_pressure'}
 STABILITY_CONTEXT_STATUSES = {'moderate_churn', 'heavy_churn'}
+STABILITY_CONTEXT_MIN_RECENT_USED = 4
+CAPACITY_UNKNOWN_LIMITED_READ_BLOCK_PCT_MIN = 10
 LIGHT_PER_ARM_PITCHES_MAX = 26.0
 BROAD_PARTICIPATION_MIN_ARMS = 6
 BROAD_SINGLE_ARM_SHARE_MAX = 0.30
@@ -786,6 +788,111 @@ def _has_source_limitations(layer):
     return bool((layer or {}).get('source_limitations'))
 
 
+def _limitation_texts(layer):
+    return [
+        str(limitation or '').strip().lower()
+        for limitation in (layer or {}).get('limitations') or []
+        if str(limitation or '').strip()
+    ]
+
+
+def _limitation_matches(layer, fragments):
+    texts = _limitation_texts(layer)
+    return any(
+        fragment in text
+        for text in texts
+        for fragment in fragments
+    )
+
+
+def _text_matches(text, fragments):
+    return any(fragment in text for fragment in fragments)
+
+
+def _capacity_has_count_based_disclosure(capacity_loss):
+    return _limitation_matches(capacity_loss, (
+        'capacity uses count-based weighting',
+        'relief workload sample is limited',
+        'limited relief workload history',
+    ))
+
+
+def _capacity_unknown_limited_read_blocks(capacity_loss):
+    unknown_pct = _number_or_none(
+        capacity_loss.get('unknown_limited_read_capacity_pct')
+    )
+    has_unknown_limitation = _limitation_matches(capacity_loss, (
+        'limited-read or unknown availability inputs',
+        'unknown availability inputs',
+        'unknown capacity',
+    ))
+    if not has_unknown_limitation and not unknown_pct:
+        return False
+    if unknown_pct is None:
+        return True
+    return unknown_pct >= CAPACITY_UNKNOWN_LIMITED_READ_BLOCK_PCT_MIN
+
+
+def _capacity_limitation_is_disclosure(text, capacity_loss):
+    if _text_matches(text, (
+        'capacity uses count-based weighting',
+        'relief workload sample is limited',
+        'limited relief workload history',
+    )):
+        return True
+    if _text_matches(text, (
+        'limited-read or unknown availability inputs',
+        'unknown availability inputs',
+        'unknown capacity',
+    )):
+        unknown_pct = _number_or_none(
+            capacity_loss.get('unknown_limited_read_capacity_pct')
+        )
+        return (
+            unknown_pct is not None
+            and unknown_pct < CAPACITY_UNKNOWN_LIMITED_READ_BLOCK_PCT_MIN
+        )
+    return False
+
+
+def _capacity_limitations_block(capacity_loss):
+    texts = _limitation_texts(capacity_loss)
+    if not texts:
+        return False
+    if _capacity_unknown_limited_read_blocks(capacity_loss):
+        return True
+    return any(
+        not _capacity_limitation_is_disclosure(text, capacity_loss)
+        for text in texts
+    )
+
+
+def _stability_limitations_block(stability):
+    texts = _limitation_texts(stability)
+    if not texts:
+        return False
+    return any(
+        not _text_matches(text, (
+            'usage patterns',
+            'does not imply transaction',
+            'roster-move data is not used',
+            'roster move data is not used',
+        ))
+        for text in texts
+    )
+
+
+def _environment_limitations_block(environment):
+    if not (environment or {}).get('limitations'):
+        return False
+    return _limitation_matches(environment, (
+        'limited read',
+        'limited or uncertain',
+        'incomplete starter/relief workload data',
+        'unknown availability inputs',
+    ))
+
+
 def _has_pressure_story_conditions(inputs):
     conditions = inputs.get('conditions') or {}
     return any(
@@ -815,30 +922,32 @@ def _truthy_count(value):
         return False
 
 
-def _why_context_item(source, text, layer=None, flags=None):
+def _why_context_item(source, text, layer=None, flags=None, disclosure_limitations=False):
     return {
         'source': source,
         'text': text,
         'context_flags': list(flags or []),
-        'source_limitations_present': _has_source_limitations(layer),
+        'source_limitations_present': (
+            _has_source_limitations(layer) or bool(disclosure_limitations)
+        ),
     }
 
 
 def _context_list_text(labels):
     clean = [label for label in labels if label]
     if len(clean) == 2:
-        text = f'{clean[0]} and {clean[1]} are both part of the picture.'
+        text = f'{clean[0]}, and {clean[1]}.'
         return f'{text[:1].upper()}{text[1:]}'
     if len(clean) > 2:
-        text = f'{", ".join(clean[:-1])}, and {clean[-1]} are all part of the picture.'
+        text = f'{", ".join(clean[:-1])}, and {clean[-1]}.'
         return f'{text[:1].upper()}{text[1:]}'
     if clean:
-        text = f'{clean[0]} is part of the picture.'
+        text = f'{clean[0]}.'
         return f'{text[:1].upper()}{text[1:]}'
     return ''
 
 
-def _environment_context_item(inputs):
+def _environment_context_item(inputs, eligible_items_by_source):
     environment = inputs.get('bullpen_environment') or {}
     if not environment:
         return None
@@ -852,24 +961,36 @@ def _environment_context_item(inputs):
         status != 'multi_source_pressure'
         or len(sources) < 2
         or _limited_status(status)
-        or _has_blocking_limitations(environment)
+        or _environment_limitations_block(environment)
     ):
         return None
 
+    eligible_sources = [
+        source for source in sources
+        if source in eligible_items_by_source
+    ]
+    if len(eligible_sources) < 2:
+        return None
+
     label_by_source = {
-        'capacity_loss': 'fewer available arms',
-        'rotation_support_pressure': 'extra outs finding their way to the bullpen',
-        'bullpen_stability': 'a bullpen group that has not looked the same lately',
+        'capacity_loss': 'the bullpen is short on usable arms',
+        'rotation_support_pressure': 'the recent workload picture is adding pressure',
+        'bullpen_stability': 'the group has not looked the same lately',
     }
-    labels = [label_by_source.get(source) for source in sources]
+    labels = [label_by_source.get(source) for source in eligible_sources]
     detail = _context_list_text(labels)
     if not detail:
         return None
+    disclosure_limitations = any(
+        (eligible_items_by_source[source] or {}).get('source_limitations_present')
+        for source in eligible_sources
+    )
     return _why_context_item(
         'bullpen_environment',
         f'This is not one clean issue. {detail}',
         environment,
         flags=environment.get('context_flags') or [],
+        disclosure_limitations=disclosure_limitations,
     )
 
 
@@ -881,15 +1002,22 @@ def _capacity_context_item(inputs):
     if (
         not capacity_loss
         or _limited_status(status)
-        or _has_blocking_limitations(capacity_loss)
+        or _capacity_limitations_block(capacity_loss)
         or unavailable_pct is None
         or (status not in CAPACITY_PRESSURE_STATUSES and unavailable_pct < 20)
     ):
         return None
+    has_count_based_disclosure = _capacity_has_count_based_disclosure(capacity_loss)
+    text = (
+        'The current board still shows fewer usable arms than a normal night.'
+        if has_count_based_disclosure
+        else 'The work is landing on the same arms while the bullpen is already short on usable arms.'
+    )
     return _why_context_item(
         'capacity_loss',
-        'The work is landing on the same arms while the bullpen is already short on usable arms.',
+        text,
         capacity_loss,
+        disclosure_limitations=has_count_based_disclosure,
     )
 
 
@@ -918,8 +1046,9 @@ def _stability_context_item(inputs):
         not stability
         or status not in STABILITY_CONTEXT_STATUSES
         or _limited_status(status)
-        or _has_blocking_limitations(stability)
+        or _stability_limitations_block(stability)
         or not _truthy_count(stability.get('recently_used_bullpen_count'))
+        or int(stability.get('recently_used_bullpen_count') or 0) < STABILITY_CONTEXT_MIN_RECENT_USED
     ):
         return None
     return _why_context_item(
@@ -934,11 +1063,7 @@ def _why_context_items(rule_key, inputs):
     if rule_key not in WHY_CONTEXT_PRESSURE_RULES or not _has_pressure_story_conditions(inputs):
         return []
 
-    environment = _environment_context_item(inputs)
-    if environment:
-        return [environment]
-
-    items = [
+    source_items = [
         item
         for item in (
             _capacity_context_item(inputs),
@@ -947,7 +1072,16 @@ def _why_context_items(rule_key, inputs):
         )
         if item
     ]
-    return items[:2]
+    items_by_source = {
+        item['source']: item
+        for item in source_items
+    }
+
+    environment = _environment_context_item(inputs, items_by_source)
+    if environment:
+        return [environment]
+
+    return source_items[:2]
 
 
 def _why_context_beat(rule_key, inputs):

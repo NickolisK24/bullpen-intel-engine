@@ -151,13 +151,14 @@ def _thin_concentrated_team_inputs(**kwargs):
     return _team_inputs(records, logs, **kwargs)
 
 
-def _capacity_context(status='elevated', *, unavailable_pct=32, limitations=None):
+def _capacity_context(status='elevated', *, unavailable_pct=32, limitations=None, unknown_pct=0):
     return {
         1: {
             'capability': 'bullpen_capacity_intelligence_v1',
             'capacity_loss': {
                 'status': status,
                 'unavailable_capacity_pct': unavailable_pct,
+                'unknown_limited_read_capacity_pct': unknown_pct,
                 'limitations': list(limitations or []),
                 'definitions': {
                     'available_capacity_pct': (
@@ -684,7 +685,7 @@ def test_supported_environment_adds_single_backend_why_context():
         'source_limitations_present': True,
     }
     assert 'this is not one clean issue' in text
-    assert 'fewer available arms and extra outs finding their way to the bullpen are both part of the picture' in text
+    assert 'the bullpen is short on usable arms, and the recent workload picture is adding pressure' in text
     for unsupported in (
         'because',
         'caused',
@@ -699,20 +700,62 @@ def test_supported_environment_adds_single_backend_why_context():
         assert unsupported not in text
 
 
-def test_capacity_and_rotation_context_are_blocked_when_limited():
+def test_capacity_unknown_limited_read_and_rotation_excluded_games_block_context():
     limited_capacity_story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
-        capacity_by_team=_capacity_context(limitations=['Capacity sample is limited.']),
+        capacity_by_team=_capacity_context(
+            limitations=['Some bullpen capacity is based on limited-read or unknown availability inputs.'],
+            unknown_pct=33,
+        ),
     )), RULE_STRESS_TRANSFER)['story']
     limited_rotation_story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
-        rotation_support_by_team=_rotation_context(limitations=['Starter split is incomplete.']),
+        rotation_support_by_team=_rotation_context(
+            limitations=['Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'],
+        ),
     )), RULE_STRESS_TRANSFER)['story']
 
     assert not any(beat['key'] == BEAT_CONTEXT for beat in limited_capacity_story['beats'])
     assert not any(beat['key'] == BEAT_CONTEXT for beat in limited_rotation_story['beats'])
     assert limited_capacity_story['computed']['why_context']['applied'] is False
     assert limited_rotation_story['computed']['why_context']['applied'] is False
-    assert 'short on usable arms' not in _story_text(limited_capacity_story).lower()
+    assert 'fewer usable arms' not in _story_text(limited_capacity_story).lower()
     assert 'carrying more of the workload' not in _story_text(limited_rotation_story).lower()
+
+
+def test_capacity_count_based_fallback_adds_soft_context_without_precision():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            unavailable_pct=44,
+            limitations=[
+                'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.',
+            ],
+        ),
+    )), RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+    text = context['text'].lower()
+
+    assert context['sources'] == ['capacity_loss']
+    assert story['computed']['why_context']['source_limitations_present'] is True
+    assert 'current board still shows fewer usable arms than a normal night' in text
+    assert '44' not in text
+    assert '%' not in text
+    for unsupported in ('because', 'caused', 'due to', 'recommend', 'prediction', 'betting'):
+        assert unsupported not in text
+
+
+def test_unclassified_capacity_limitation_still_blocks_context():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            limitations=[
+                'Capacity uses count-based weighting because relief workload sample is limited.',
+                'Capacity source quality requires manual review.',
+            ],
+        ),
+    )), RULE_STRESS_TRANSFER)['story']
+
+    assert not any(beat['key'] == BEAT_CONTEXT for beat in story['beats'])
+    assert story['computed']['why_context']['applied'] is False
 
 
 def test_capacity_and_rotation_context_can_appear_without_environment_synthesis():
@@ -732,9 +775,13 @@ def test_capacity_and_rotation_context_can_appear_without_environment_synthesis(
         assert unsupported not in text
 
 
-def test_stability_context_stays_usage_based_without_transaction_claims():
+def test_stability_usage_only_disclosure_stays_usage_based_without_transaction_claims():
     story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
-        bullpen_stability_by_team=_stability_context(),
+        bullpen_stability_by_team=_stability_context(
+            limitations=[
+                'Bullpen stability uses usage patterns and does not imply transaction activity.',
+            ],
+        ),
     )), RULE_STRESS_TRANSFER)['story']
     context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
     text = context['text'].lower()
@@ -744,6 +791,64 @@ def test_stability_context_stays_usage_based_without_transaction_claims():
     assert 'usage pattern' not in text
     assert 'read cleanly' not in text
     for unsupported in ('transaction', 'recall', 'called up', 'optioned', 'dfa'):
+        assert unsupported not in text
+
+
+def test_stability_context_blocks_small_sample_denominator():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        bullpen_stability_by_team=_stability_context(recently_used=3),
+    )), RULE_STRESS_TRANSFER)['story']
+
+    assert not any(beat['key'] == BEAT_CONTEXT for beat in story['beats'])
+    assert story['computed']['why_context']['applied'] is False
+
+
+def test_environment_context_requires_two_eligible_source_contexts():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            limitations=[
+                'Capacity uses count-based weighting because relief workload sample is limited.',
+            ],
+        ),
+        rotation_support_by_team=_rotation_context(
+            limitations=['Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'],
+        ),
+        bullpen_environment_by_team=_environment_context(),
+    )), RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+
+    assert context['sources'] == ['capacity_loss']
+    assert story['computed']['why_context']['sources'] == ['capacity_loss']
+    assert 'this is not one clean issue' not in context['text'].lower()
+
+
+def test_environment_context_can_use_disclosure_limited_capacity_and_stability():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            limitations=[
+                'Capacity uses count-based weighting because relief workload sample is limited.',
+            ],
+        ),
+        bullpen_stability_by_team=_stability_context(
+            limitations=[
+                'Bullpen stability uses usage patterns and does not imply transaction activity.',
+            ],
+        ),
+        bullpen_environment_by_team=_environment_context(
+            sources=['capacity_loss', 'bullpen_stability'],
+        ),
+    )), RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+    text = context['text'].lower()
+
+    assert context['sources'] == ['bullpen_environment']
+    assert story['computed']['why_context']['source_limitations_present'] is True
+    assert 'this is not one clean issue' in text
+    assert 'short on usable arms' in text
+    assert 'the group has not looked the same lately' in text
+    for unsupported in ('because', 'caused', 'due to', 'transaction', 'recall', 'called up', 'optioned', 'dfa'):
         assert unsupported not in text
 
 
