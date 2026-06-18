@@ -86,28 +86,58 @@ jobs:
           snapshot_response="$(mktemp)"
           trap 'rm -f "$snapshot_response"' EXIT
 
-          if ! http_code=$(curl -sS -o "$snapshot_response" -w '%{http_code}' \
-            --retry 1 --max-time 700 \
-            -X POST "$snapshot_url" \
-            -H "Authorization: Bearer $SNAPSHOT_TOKEN"); then
-            echo "::error::Snapshot build request failed before an HTTP response was returned."
-            echo "Response body:"
-            cat "$snapshot_response" || true
-            echo
-            exit 1
-          fi
+          max_attempts=4
+          snapshot_max_time=180
+          transient_statuses=" 502 503 504 "
+          http_code="000"
+          curl_exit=0
 
-          echo "Snapshot build HTTP status: $http_code"
-          echo "Snapshot build response body:"
+          for attempt in $(seq 1 "$max_attempts"); do
+            : > "$snapshot_response"
+            echo "Snapshot build attempt $attempt/$max_attempts"
+
+            set +e
+            http_code=$(curl -sS -o "$snapshot_response" -w '%{http_code}' \
+              --connect-timeout 20 --max-time "$snapshot_max_time" \
+              -X POST "$snapshot_url" \
+              -H "Authorization: Bearer $SNAPSHOT_TOKEN")
+            curl_exit=$?
+            set -e
+
+            if [ "$curl_exit" -ne 0 ]; then
+              http_code="000"
+              echo "::warning::Snapshot build attempt $attempt failed before an HTTP response was returned (curl exit $curl_exit)."
+            else
+              echo "Snapshot build attempt $attempt HTTP status: $http_code"
+              echo "Snapshot build attempt $attempt response body:"
+              cat "$snapshot_response" || true
+              echo
+
+              if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+                echo "Dashboard snapshot build succeeded."
+                exit 0
+              fi
+
+              if [[ "$transient_statuses" != *" $http_code "* ]]; then
+                echo "::error::Snapshot build failed with HTTP $http_code"
+                exit 1
+              fi
+
+              echo "::warning::Snapshot build attempt $attempt hit transient HTTP $http_code."
+            fi
+
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              delay_seconds=$((15 * attempt))
+              echo "Retrying dashboard snapshot build in ${delay_seconds}s..."
+              sleep "$delay_seconds"
+            fi
+          done
+
+          echo "::error::Snapshot build failed after $max_attempts attempts. Final HTTP status: $http_code"
+          echo "Final response body:"
           cat "$snapshot_response" || true
           echo
-
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "::error::Snapshot build failed with HTTP $http_code"
-            exit 1
-          fi
-
-          echo "Dashboard snapshot build succeeded."
+          exit 1
 
       - name: Export static team story preview pages
         env:

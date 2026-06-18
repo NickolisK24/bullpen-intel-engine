@@ -5,6 +5,7 @@ import os
 from flask import Blueprint, abort, current_app, jsonify, request
 from sqlalchemy import desc
 from datetime import date, datetime, timedelta, timezone
+from time import perf_counter
 
 from api.query_params import (
     QueryParamError,
@@ -2393,8 +2394,20 @@ def _dashboard_snapshot_build_response(result):
 
 @bullpen_bp.route('/dashboard/snapshot/build', methods=['POST'])
 def build_dashboard_snapshot_endpoint():
+    endpoint_started = perf_counter()
+    current_app.logger.info('Dashboard snapshot build endpoint received request.')
     token_error = _dashboard_snapshot_build_token_error()
     if token_error is not None:
+        status_code = (
+            token_error[1]
+            if isinstance(token_error, tuple) and len(token_error) > 1
+            else None
+        )
+        current_app.logger.info(
+            'Dashboard snapshot build endpoint rejected before build status_code=%s duration_ms=%.2f.',
+            status_code,
+            round((perf_counter() - endpoint_started) * 1000, 2),
+        )
         return token_error
 
     try:
@@ -2403,7 +2416,10 @@ def build_dashboard_snapshot_endpoint():
         )
     except Exception as exc:
         db.session.rollback()
-        current_app.logger.exception('Dashboard snapshot build endpoint crashed.')
+        current_app.logger.exception(
+            'Dashboard snapshot build endpoint crashed after %.2f ms.',
+            round((perf_counter() - endpoint_started) * 1000, 2),
+        )
         return jsonify({
             'status': 'error',
             'reason': 'dashboard_snapshot_build_failed',
@@ -2421,6 +2437,13 @@ def build_dashboard_snapshot_endpoint():
         }), 500
 
     status_code = 200 if result.get('snapshot_served_by_dashboard') else 202
+    current_app.logger.info(
+        'Dashboard snapshot build endpoint completed status=%s snapshot_id=%s http_status=%s duration_ms=%.2f.',
+        result.get('status'),
+        result.get('snapshot_id'),
+        status_code,
+        round((perf_counter() - endpoint_started) * 1000, 2),
+    )
     return jsonify(_dashboard_snapshot_build_response(result)), status_code
 
 

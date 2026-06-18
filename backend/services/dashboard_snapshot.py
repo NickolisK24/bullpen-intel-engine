@@ -27,6 +27,10 @@ DASHBOARD_PAYLOAD_VERSION = 1
 SNAPSHOT_SOURCE_BUILDER_V2 = 'snapshot_builder_v2'
 
 
+def _elapsed_ms(started):
+    return round((perf_counter() - started) * 1000, 2)
+
+
 def _json_payload(payload):
     return json.loads(json.dumps(payload))
 
@@ -117,7 +121,28 @@ def store_dashboard_snapshot(
     publish=True,
     commit=True,
 ):
+    serialize_started = perf_counter()
+    logger.info(
+        'Dashboard snapshot JSON serialization starting source=%s publish=%s sync_run_id=%s.',
+        source,
+        publish,
+        sync_run_id,
+    )
     stored_payload = _json_payload(payload)
+    logger.info(
+        'Dashboard snapshot JSON serialization completed in %.2f ms source=%s.',
+        _elapsed_ms(serialize_started),
+        source,
+    )
+
+    write_started = perf_counter()
+    logger.info(
+        'Dashboard snapshot DB write starting source=%s publish=%s sync_run_id=%s payload_keys=%s.',
+        source,
+        publish,
+        sync_run_id,
+        len(stored_payload) if isinstance(stored_payload, Mapping) else None,
+    )
     snapshot = DashboardSnapshot(
         snapshot_type=snapshot_type,
         sync_run_id=sync_run_id,
@@ -136,6 +161,13 @@ def store_dashboard_snapshot(
         publish_dashboard_snapshot(snapshot, commit=commit)
     elif commit:
         db.session.commit()
+    logger.info(
+        'Dashboard snapshot DB write completed snapshot_id=%s status=%s published=%s in %.2f ms.',
+        snapshot.id,
+        snapshot.status,
+        bool(snapshot.is_published),
+        _elapsed_ms(write_started),
+    )
     return snapshot
 
 
@@ -240,7 +272,20 @@ def build_dashboard_snapshot(
     raise_errors=False,
 ):
     try:
+        payload_started = perf_counter()
+        logger.info(
+            'Dashboard snapshot payload assembly starting source=%s publish=%s sync_run_id=%s.',
+            source,
+            publish,
+            sync_run_id,
+        )
         payload = payload_builder()
+        logger.info(
+            'Dashboard snapshot payload assembly completed in %.2f ms source=%s payload_keys=%s.',
+            _elapsed_ms(payload_started),
+            source,
+            len(payload) if isinstance(payload, Mapping) else None,
+        )
         return store_dashboard_snapshot(
             payload,
             sync_run_id=sync_run_id,
@@ -351,13 +396,18 @@ def build_bullpen_dashboard_snapshot_v2(
     sync_run_id=None,
 ):
     started = perf_counter()
-    logger.info('Dashboard snapshot builder v2 starting.')
+    logger.info(
+        'Dashboard snapshot builder v2 starting source=%s publish=%s sync_run_id=%s.',
+        source,
+        publish,
+        sync_run_id,
+    )
     snapshot = build_bullpen_dashboard_snapshot(
         source=source,
         publish=publish,
         sync_run_id=sync_run_id,
     )
-    duration_ms = round((perf_counter() - started) * 1000, 2)
+    duration_ms = _elapsed_ms(started)
     result = _snapshot_build_result(
         snapshot,
         duration_ms=duration_ms,
