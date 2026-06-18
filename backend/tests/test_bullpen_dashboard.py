@@ -18,6 +18,7 @@ from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.availability_summary import summarize_availability_records
 from services.pitcher_role import ROLE_KEYS, ROLE_WINDOW_DAYS
+from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION
 from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_MINORS
 from utils.db import db
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
@@ -273,6 +274,9 @@ class TestDashboardEndpoint:
         assert story['computed']['capacity_intelligence']['capacity_loss'] == (
             board['capacity_intelligence']['capacity_loss']
         )
+        assert story['computed']['rotation_support_pressure'] == (
+            board['rotation_support_pressure']
+        )
 
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
@@ -402,6 +406,30 @@ class TestDashboardEndpoint:
         assert capacity['unavailable_pitcher_count'] == 3
         assert capacity['inactive_roster_unavailable_pitcher_count'] == 3
         assert capacity['unavailable_capacity_pct'] == 75
+
+    def test_dashboard_exposes_rotation_support_pressure_payload(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Dashboard Rotation Starter',
+                team_id=177,
+                mlb_id=17701,
+                innings=[8.0],
+                days_ago=[1],
+                roster_status=STATUS_ACTIVE,
+                games_started=[1],
+            )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        pressure = body['rotation_support_pressure']['by_team_id']['177']
+
+        assert body['rotation_support_pressure']['capability'] == 'league_rotation_support_pressure_v1'
+        assert pressure['capability'] == 'rotation_support_pressure_v1'
+        assert pressure['team_id'] == 177
+        assert pressure['games_analyzed'] == 1
+        assert pressure['starter_outs'] == 24
+        assert pressure['bullpen_outs_required'] == 0
+        assert pressure['status'] == 'limited_read'
+        assert LIMITED_SAMPLE_LIMITATION in pressure['limitations']
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
         with client.application.app_context():

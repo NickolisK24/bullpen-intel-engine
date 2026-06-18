@@ -25,6 +25,7 @@ from services.bullpen_board import (
     group_cards,
     short_reason_for,
 )
+from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION
 from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.roster_status import (
@@ -737,6 +738,30 @@ class TestBoardEndpoint:
         assert capacity['available_capacity_pct'] == 25
         assert capacity['unavailable_capacity_pct'] == 75
         assert capacity['inactive_roster_unavailable_pitcher_count'] == 3
+
+    def test_team_board_exposes_rotation_support_pressure(self, client):
+        with client.application.app_context():
+            _seed_pitcher(
+                'Rotation Support Starter',
+                team_id=177,
+                team_abbr='RSP',
+                mlb_id=17701,
+                innings=[8.0],
+                days_ago=[1],
+                games_started=[1],
+            )
+
+        body = client.get('/api/bullpen/teams/177/board').get_json()
+        pressure = body['rotation_support_pressure']
+
+        assert pressure['capability'] == 'rotation_support_pressure_v1'
+        assert pressure['team_id'] == 177
+        assert pressure['window_days'] == 7
+        assert pressure['games_analyzed'] == 1
+        assert pressure['starter_outs'] == 24
+        assert pressure['bullpen_outs_required'] == 0
+        assert pressure['status'] == 'limited_read'
+        assert LIMITED_SAMPLE_LIMITATION in pressure['limitations']
 
     def test_bereavement_status_keeps_pitcher_unavailable_without_collapsing_label(self, client):
         with client.application.app_context():
