@@ -1,9 +1,10 @@
 # Local Development Guide
 
-This guide is the safe local setup for visually reviewing BaseballOS team
-stories and the narrative renderer. It is intentionally local-only: do not use
-production Supabase, do not paste a Supabase `DATABASE_URL`, and do not run
-migrations, seed, sync, or destructive commands against a remote database.
+This guide is the safe, reusable local setup for visually reviewing BaseballOS
+team stories and the narrative renderer. It is intentionally local-only: do not
+use production Supabase, do not paste a Supabase `DATABASE_URL`, and do not run
+migrations, seed, sync, reset, or destructive commands against a remote
+database.
 
 ## What This Repo Provides
 
@@ -12,6 +13,8 @@ migrations, seed, sync, or destructive commands against a remote database.
 - Database: PostgreSQL expected for app runtime.
 - Migrations: existing Flask-Migrate/Alembic migrations in
   `backend/migrations/`.
+- Backend env template: `backend/.env.example`.
+- Local-only backend env template: `backend/.env.local.example`.
 - Seed command: `python seed.py` from `backend/`.
 - Recent sync command: `python scripts\run_daily_sync.py --days-back 14 --source local_story_review`
   from `backend/`.
@@ -19,20 +22,29 @@ migrations, seed, sync, or destructive commands against a remote database.
 - No repository `docker-compose.yml` or `docker-compose.yaml` exists today.
 
 The broad setup guide is `docs/current/SETUP.md`. This file narrows that setup
-to safe local narrative review.
+to permanent local story review.
 
 ## Safety Rules
 
-Use a local, disposable database only. The safest local database URL is a
-PostgreSQL database on `localhost` or `127.0.0.1`, for example:
+Use a local, disposable development database only. The recommended permanent
+local database is:
+
+```text
+database: baseballos_local
+role:     baseballos_local
+host:     localhost
+port:     5432
+```
+
+Recommended connection string format:
 
 ```powershell
-postgresql://postgres:password@localhost:5432/baseballos_story_review
+postgresql://baseballos_local:YOUR_LOCAL_PASSWORD@localhost:5432/baseballos_local
 ```
 
 Do not use:
 
-```powershell
+```text
 supabase.co
 pooler.supabase.com
 render.com
@@ -44,7 +56,7 @@ The backend has safety guards:
 
 - `backend/config.py` refuses to start in non-production environments unless
   `DATABASE_URL` is local. Local hosts are `localhost`, `127.0.0.1`, `::1`, and
-  `host.docker.internal`; SQLite is accepted by the guard but the app runtime
+  `host.docker.internal`; SQLite is accepted by the guard, but the app runtime
   is documented for PostgreSQL.
 - `APP_ENV=production` is the only mode that accepts a remote database URL, and
   production mode also requires a non-default `SECRET_KEY` and
@@ -53,35 +65,85 @@ The backend has safety guards:
   operations unless the target is disposable, such as in-memory SQLite, temp
   SQLite, or a local Postgres database with `test` in the database name.
 
-For local story review, set `PYTHON_DOTENV_DISABLED=1` and
-`FLASK_SKIP_DOTENV=1` before backend commands. That keeps any ignored
-`backend/.env` on your machine from silently changing the database or
-environment.
+For local story review, prefer loading `backend/.env.local` explicitly in the
+terminal instead of relying on any ignored `backend/.env` that may exist on your
+machine. The local template sets `PYTHON_DOTENV_DISABLED=1` and
+`FLASK_SKIP_DOTENV=1` for that reason.
 
-## Terminal 1: Local Database
+## One-Time Setup
 
-Start PostgreSQL locally. If PostgreSQL is already running as a Windows service,
-this may not need a terminal.
-
-Create a disposable review database:
+### 1. Verify PostgreSQL Is Installed And Running
 
 ```powershell
-psql -U postgres -h localhost -p 5432
+Get-Command psql
+Get-Service | Where-Object { $_.Name -match 'postgres|pgsql' -or $_.DisplayName -match 'PostgreSQL|postgres' }
+pg_isready -h localhost -p 5432
 ```
 
-Then inside `psql`:
+If PostgreSQL is not installed, install PostgreSQL for Windows and include the
+command line tools. On this machine the installed service is PostgreSQL 18, so
+the service command is:
+
+```powershell
+Start-Service postgresql-x64-18
+```
+
+If `psql` is not on `PATH`, add the PostgreSQL `bin` folder for your installed
+version, for example:
+
+```powershell
+$env:Path = "C:\Program Files\PostgreSQL\18\bin;$env:Path"
+```
+
+### 2. Create The Permanent Local Role And Database
+
+Open a local Postgres admin shell. This requires the local `postgres` password
+chosen when PostgreSQL was installed:
+
+```powershell
+psql -h localhost -p 5432 -U postgres -d postgres
+```
+
+Inside `psql`, run:
 
 ```sql
-CREATE DATABASE baseballos_story_review;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'baseballos_local') THEN
+    CREATE ROLE baseballos_local LOGIN PASSWORD 'REPLACE_WITH_A_LOCAL_PASSWORD';
+  END IF;
+END
+$$;
+
+SELECT 'CREATE DATABASE baseballos_local OWNER baseballos_local'
+WHERE NOT EXISTS (
+  SELECT FROM pg_database WHERE datname = 'baseballos_local'
+)\gexec
+
 \q
 ```
 
-Use your local username, password, host, and port in `DATABASE_URL`. The
-database name can be different, but it should be clearly local and disposable.
+Keep the password local. Do not commit it.
 
-## Terminal 2: Backend Setup
+### 3. Create A Local Backend Env File
 
-Run backend commands from `backend/`:
+From the repo root:
+
+```powershell
+Copy-Item backend\.env.local.example backend\.env.local
+notepad backend\.env.local
+```
+
+Edit only the local password placeholder:
+
+```text
+DATABASE_URL=postgresql://baseballos_local:YOUR_LOCAL_PASSWORD@localhost:5432/baseballos_local
+```
+
+`backend/.env.local` is ignored by git. It is meant to persist on this machine
+across sessions without committing secrets.
+
+### 4. Create The Backend Virtualenv
 
 ```powershell
 cd D:\Programming\baseballos\backend
@@ -90,33 +152,31 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-Set explicit local environment variables in the same terminal:
+### 5. Load The Local Env In The Backend Terminal
+
+Run this from `D:\Programming\baseballos\backend` before migrations, seed, sync,
+or backend startup:
 
 ```powershell
-$env:PYTHON_DOTENV_DISABLED = '1'
-$env:FLASK_SKIP_DOTENV = '1'
-$env:APP_ENV = 'development'
-$env:FLASK_APP = 'app.py'
-$env:DATABASE_URL = 'postgresql://postgres:password@localhost:5432/baseballos_story_review'
-$env:SECRET_KEY = 'local-story-review'
-$env:AUTO_SYNC = 'false'
-$env:FOUR_BEAT_STORIES_ENABLED = 'true'
+Get-Content .env.local | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#')) {
+    $name, $value = $line -split '=', 2
+    Set-Item -Path "Env:$($name.Trim())" -Value $value.Trim()
+  }
+}
 ```
 
-Leave `ADMIN_API_TOKEN` unset for local development unless you specifically want
-to test token-protected operator calls. With `APP_ENV=development` and no admin
-token, protected write endpoints are allowed locally with a warning.
-
-Confirm the URL is local before any migration, seed, or sync command:
+Confirm the target is local before any command that touches the database:
 
 ```powershell
-$env:DATABASE_URL
+python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['DATABASE_URL']); assert u.hostname in ('localhost','127.0.0.1','::1','host.docker.internal'), u.hostname; print(f'DATABASE_URL local host: {u.hostname}; database: {u.path.lstrip(\"/\")}')"
 ```
 
-It must show `localhost`, `127.0.0.1`, `::1`, or `host.docker.internal`. Stop if
-it contains Supabase or any hosted database domain.
+It must print `localhost` and `baseballos_local`. Stop if it contains Supabase
+or any hosted database domain.
 
-Apply existing migrations:
+### 6. Apply Migrations
 
 ```powershell
 flask db upgrade
@@ -126,7 +186,7 @@ Do not run `flask db init`. The migrations folder already exists. Do not run
 `flask db migrate` for local startup; that command is for generating new schema
 changes after model edits.
 
-Populate a new local database:
+### 7. Seed Local Data
 
 ```powershell
 python seed.py
@@ -136,6 +196,8 @@ python seed.py
 initial pitcher, game log, fatigue, roster, and sample prospect data needed for
 the app to show meaningful bullpen surfaces.
 
+### 8. Refresh Recent Local Data
+
 After seeding, run a recent local sync to refresh current workload and publish a
 local dashboard snapshot:
 
@@ -144,12 +206,35 @@ python scripts\run_daily_sync.py --days-back 14 --source local_story_review
 ```
 
 This also calls the MLB Stats API. It writes only to the local database named in
-`DATABASE_URL`. If the network is unavailable, the app can still start, but the
-story feed may be empty or stale until seed/sync data exists.
+`DATABASE_URL`.
 
-Start the backend:
+### 9. Verify Backend DB Connectivity
 
 ```powershell
+python -c "from sqlalchemy import text; from app import app; from utils.db import db; ctx=app.app_context(); ctx.push(); print(db.session.execute(text('select current_database()')).scalar()); ctx.pop()"
+```
+
+Expected output:
+
+```text
+baseballos_local
+```
+
+## Daily Startup
+
+### Backend Terminal
+
+```powershell
+cd D:\Programming\baseballos\backend
+.\venv\Scripts\Activate.ps1
+Get-Content .env.local | ForEach-Object {
+  $line = $_.Trim()
+  if ($line -and -not $line.StartsWith('#')) {
+    $name, $value = $line -split '=', 2
+    Set-Item -Path "Env:$($name.Trim())" -Value $value.Trim()
+  }
+}
+python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['DATABASE_URL']); assert u.hostname in ('localhost','127.0.0.1','::1','host.docker.internal'), u.hostname; print(f'DATABASE_URL local host: {u.hostname}; database: {u.path.lstrip(\"/\")}')"
 flask run --host 127.0.0.1 --port 5000
 ```
 
@@ -170,9 +255,7 @@ For local development, `/api/bullpen/dashboard` serves a published local
 snapshot if one exists. If no valid snapshot exists, non-production mode allows
 a live fallback assembled from the local database.
 
-## Terminal 3: Frontend Setup
-
-Run frontend commands from `frontend/`:
+### Frontend Terminal
 
 ```powershell
 cd D:\Programming\baseballos\frontend
@@ -214,7 +297,7 @@ Verify:
 - Team story links open the bullpen board, for example
   `/bullpen?view=board&team=TOR&source=four-beat-stories`.
 
-The raw API check is:
+Raw API check:
 
 ```text
 http://127.0.0.1:5000/api/bullpen/dashboard
@@ -226,6 +309,38 @@ In that JSON, confirm:
 - Each visible story item has a `narrative` string.
 - Old contract fields such as `body` and `beats` may still exist for backward
   compatibility, but the public story card should render `narrative`.
+
+## Clean Local Reset And Reseed
+
+This is destructive, but only for the local `baseballos_local` database. Do not
+run this against any remote host.
+
+Stop the backend first, then open a local Postgres admin shell:
+
+```powershell
+psql -h localhost -p 5432 -U postgres -d postgres
+```
+
+Inside `psql`:
+
+```sql
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'baseballos_local';
+
+DROP DATABASE IF EXISTS baseballos_local;
+CREATE DATABASE baseballos_local OWNER baseballos_local;
+\q
+```
+
+Then run the normal local setup commands again from `backend/` with
+`.env.local` loaded:
+
+```powershell
+flask db upgrade
+python seed.py
+python scripts\run_daily_sync.py --days-back 14 --source local_story_review
+```
 
 ## Validation Commands
 
@@ -239,14 +354,6 @@ $env:TEST_DATABASE_URL = 'sqlite:///:memory:'
 python -m pytest backend/tests/test_config_database.py backend/tests/test_test_database_safety.py
 ```
 
-Frontend script inventory:
-
-```powershell
-cd D:\Programming\baseballos\frontend
-npm test
-npm run build
-```
-
-For a docs-only change, the targeted backend safety tests are usually enough.
+For docs-only changes, the targeted backend safety tests are usually enough.
 Run the full frontend tests or build when frontend code changes or when you need
 extra confidence before visual review.
