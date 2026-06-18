@@ -436,7 +436,7 @@ def test_dashboard_payload_exposes_league_contracts_for_all_intelligence_layers(
     ]
 
 
-def test_four_beat_story_keeps_intelligence_layers_computed_only():
+def test_four_beat_story_keeps_intelligence_layers_independent_from_rule_selection():
     pitchers = [_story_pitcher(idx) for idx in range(1, 7)]
     records = [_story_record(pitcher) for pitcher in pitchers]
     logs_by_pitcher = {
@@ -511,6 +511,7 @@ def test_four_beat_story_keeps_intelligence_layers_computed_only():
     assert story['slot_sources']['rotation_support_pressure'] == ROTATION_CAPABILITY
     assert story['slot_sources']['bullpen_stability'] == STABILITY_CAPABILITY
     assert story['slot_sources']['bullpen_environment'] == ENVIRONMENT_CAPABILITY
+    assert story['computed']['why_context']['applied'] is False
     text = _story_text(story).lower()
     for unsupported_claim in (
         'capacity sentinel',

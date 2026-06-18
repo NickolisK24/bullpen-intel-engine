@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
 from services.four_beat_stories import (
+    BEAT_CONTEXT,
     LEAD_AVAILABILITY_DEEP,
     LEAD_AVAILABILITY_THIN,
     LEAD_CONCENTRATION_SHAPE,
@@ -78,7 +79,16 @@ def _log(pid, days_ago, pitches, *, leverage_index=None, save=False, hold=False,
     )
 
 
-def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None, bullpen_stability_by_team=None):
+def _team_inputs(
+    records,
+    logs_by_pitcher,
+    team=None,
+    season_era_by_team=None,
+    capacity_by_team=None,
+    rotation_support_by_team=None,
+    bullpen_stability_by_team=None,
+    bullpen_environment_by_team=None,
+):
     return TeamInputs(
         team=team or {
             'team_id': 1,
@@ -89,7 +99,10 @@ def _team_inputs(records, logs_by_pitcher, team=None, season_era_by_team=None, b
         logs_by_pitcher=logs_by_pitcher,
         reference_date=REF,
         season_era_by_team=season_era_by_team,
+        capacity_by_team=capacity_by_team,
+        rotation_support_by_team=rotation_support_by_team,
         bullpen_stability_by_team=bullpen_stability_by_team,
+        bullpen_environment_by_team=bullpen_environment_by_team,
     )
 
 
@@ -115,6 +128,92 @@ def _ranked_era(team_id=1, *, era=2.75, rank=5, total=30, strong=True, solid=Tru
             'rank_total': total,
             'strong_results': strong,
             'solid_results': solid,
+        }
+    }
+
+
+def _thin_concentrated_team_inputs(**kwargs):
+    pitchers = [_pitcher(idx, f'Context Arm {idx}') for idx in range(1, 6)]
+    records = [
+        _record(pitchers[0], STATUS_AVAILABLE),
+        _record(pitchers[1], STATUS_AVAILABLE),
+        _record(pitchers[2], STATUS_MONITOR),
+        _record(pitchers[3], STATUS_AVOID),
+        _record(pitchers[4], STATUS_MONITOR),
+    ]
+    logs = {
+        pitchers[0].id: [_log(pitchers[0].id, 1, 40)],
+        pitchers[1].id: [_log(pitchers[1].id, 1, 30)],
+        pitchers[2].id: [_log(pitchers[2].id, 1, 20)],
+        pitchers[3].id: [_log(pitchers[3].id, 1, 5)],
+        pitchers[4].id: [_log(pitchers[4].id, 1, 5)],
+    }
+    return _team_inputs(records, logs, **kwargs)
+
+
+def _capacity_context(status='elevated', *, unavailable_pct=32, limitations=None):
+    return {
+        1: {
+            'capability': 'bullpen_capacity_intelligence_v1',
+            'capacity_loss': {
+                'status': status,
+                'unavailable_capacity_pct': unavailable_pct,
+                'limitations': list(limitations or []),
+                'definitions': {
+                    'available_capacity_pct': (
+                        'Capacity not classified as fully unavailable; this is not the same as fully clean availability.'
+                    ),
+                },
+            },
+            'trust_capacity_loss': {
+                'trust_arms_available': 2,
+                'trust_arms_total': 3,
+                'limitations': [],
+            },
+        }
+    }
+
+
+def _rotation_context(status='heavy_pressure', *, limitations=None, games_analyzed=5):
+    return {
+        1: {
+            'capability': 'rotation_support_pressure_v1',
+            'status': status,
+            'games_analyzed': games_analyzed,
+            'limitations': list(limitations or []),
+            'source_limitations': [
+                'Credited starters are used as recorded; opener/bulk-reliever roles are not separately inferred.',
+            ],
+        }
+    }
+
+
+def _stability_context(status='moderate_churn', *, limitations=None, recently_used=7):
+    return {
+        1: {
+            'capability': 'bullpen_stability_v1',
+            'status': status,
+            'recently_used_bullpen_count': recently_used,
+            'new_or_reintroduced_arm_count': 2,
+            'limitations': list(limitations or []),
+            'source_limitations': [
+                'Bullpen stability is based on usage patterns and does not imply transaction activity.',
+            ],
+        }
+    }
+
+
+def _environment_context(status='multi_source_pressure', *, sources=None, limitations=None):
+    return {
+        1: {
+            'capability': 'bullpen_environment_v1',
+            'status': status,
+            'primary_pressure_sources': sources or ['capacity_loss', 'rotation_support_pressure'],
+            'context_flags': ['source_limitations_present'],
+            'limitations': list(limitations or []),
+            'source_limitations': [
+                'Underlying source caveats remain attached to the source layers.',
+            ],
         }
     }
 
@@ -565,6 +664,84 @@ def test_bullpen_stability_passes_through_computed_data_without_new_claims():
     assert story['computed']['bullpen_stability'] == stability
     assert story['slot_sources']['bullpen_stability'] == 'bullpen_stability_v1'
     assert 'churn' not in _story_text(story).lower()
+
+
+def test_supported_environment_adds_single_backend_why_context():
+    result = evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(),
+        rotation_support_by_team=_rotation_context(),
+        bullpen_environment_by_team=_environment_context(),
+    ))
+    story = _rule_eval(result, RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+    text = context['text'].lower()
+
+    assert context['sources'] == ['bullpen_environment']
+    assert story['computed']['why_context'] == {
+        'applied': True,
+        'sources': ['bullpen_environment'],
+        'context_flags': ['source_limitations_present'],
+        'source_limitations_present': True,
+    }
+    assert 'this is not one clean issue' in text
+    assert 'fewer available arms and extra outs from the rotation are both part of the picture' in text
+    for unsupported in (
+        'because',
+        'caused',
+        'due to',
+        'recommend',
+        'prediction',
+        'betting',
+        'multi_source_pressure',
+        'heavy_pressure',
+        'capacity_loss',
+    ):
+        assert unsupported not in text
+
+
+def test_capacity_and_rotation_context_are_blocked_when_limited():
+    limited_capacity_story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(limitations=['Capacity sample is limited.']),
+    )), RULE_STRESS_TRANSFER)['story']
+    limited_rotation_story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        rotation_support_by_team=_rotation_context(limitations=['Starter split is incomplete.']),
+    )), RULE_STRESS_TRANSFER)['story']
+
+    assert not any(beat['key'] == BEAT_CONTEXT for beat in limited_capacity_story['beats'])
+    assert not any(beat['key'] == BEAT_CONTEXT for beat in limited_rotation_story['beats'])
+    assert limited_capacity_story['computed']['why_context']['applied'] is False
+    assert limited_rotation_story['computed']['why_context']['applied'] is False
+    assert 'short on usable arms' not in _story_text(limited_capacity_story).lower()
+    assert 'extra outs from the rotation' not in _story_text(limited_rotation_story).lower()
+
+
+def test_capacity_and_rotation_context_can_appear_without_environment_synthesis():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(),
+        rotation_support_by_team=_rotation_context(),
+    )), RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+    text = context['text'].lower()
+
+    assert context['sources'] == ['capacity_loss', 'rotation_support_pressure']
+    assert story['computed']['why_context']['sources'] == ['capacity_loss', 'rotation_support_pressure']
+    assert 'short on usable arms' in text
+    assert 'extra outs from the rotation' in text
+    for unsupported in ('because', 'caused', 'due to', 'recommend', 'prediction', 'betting'):
+        assert unsupported not in text
+
+
+def test_stability_context_stays_usage_based_without_transaction_claims():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        bullpen_stability_by_team=_stability_context(),
+    )), RULE_STRESS_TRANSFER)['story']
+    context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+    text = context['text'].lower()
+
+    assert context['sources'] == ['bullpen_stability']
+    assert 'bullpen mix has been changing' in text
+    for unsupported in ('transaction', 'recall', 'called up', 'optioned', 'dfa'):
+        assert unsupported not in text
 
 
 def test_description_only_teams_suppress_and_feed_count_is_variable_and_ordered():
