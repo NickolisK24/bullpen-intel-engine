@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
-import { SectionHeading } from '../home/BullpenStories'
+import { SectionHeading, StoryDisclosureNote } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
@@ -234,13 +234,7 @@ function FeedStoryCard({ story }) {
   const inner = (
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span
-          className="inline-flex w-fit items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-          style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
-        >
-          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
-          {story.kicker}
-        </span>
+        <span className="h-1 w-8 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
             {story.teamId != null
@@ -270,11 +264,8 @@ function FeedStoryCard({ story }) {
         {story.title}
       </h3>
 
-      {Array.isArray(story.beats) && story.beats.length > 0 ? (
-        <FourBeatPresentation beats={story.beats} />
-      ) : (
-        <p className="mt-3 flex-1 text-xs leading-relaxed text-chalk400">{story.body}</p>
-      )}
+      <StoryNarrativeBody text={story.narrative || story.body} />
+      <StoryDisclosureNote note={story.disclosureNote || story.disclosure_note} />
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
@@ -304,16 +295,16 @@ function FeedStoryCard({ story }) {
   )
 }
 
-function FourBeatPresentation({ beats }) {
+function StoryNarrativeBody({ text }) {
+  const paragraphs = typeof text === 'string'
+    ? text.split(/\n{2,}/).map(paragraph => paragraph.trim()).filter(Boolean)
+    : []
+  if (paragraphs.length === 0) return null
+
   return (
     <div className="mt-3 flex-1 space-y-2">
-      {beats.map(beat => (
-        <section key={beat.key} aria-label={beat.label || beat.key} className="border-l border-dirt/60 pl-2">
-          <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-chalk600/70">
-            {beat.label || beat.key}
-          </div>
-          <p className="mt-0.5 text-xs leading-relaxed text-chalk400">{beat.text}</p>
-        </section>
+      {paragraphs.map((paragraph, index) => (
+        <p key={index} className="text-xs leading-relaxed text-chalk400">{paragraph}</p>
       ))}
     </div>
   )

@@ -34,48 +34,27 @@ export default function TeamBullpenStoryPanel({ board }) {
         {story.headline}
       </h3>
 
-      <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            Observation
-          </div>
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-chalk200">{story.observation}</p>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            Why It Matters
-          </div>
-          <p className="mt-1 text-sm leading-relaxed text-chalk200">{story.whyItMatters}</p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            Evidence
-          </div>
-          <ul className="mt-2 space-y-1.5">
-            {story.evidence.map((bullet, index) => (
-              <li key={index} className="text-xs leading-relaxed text-chalk200">• {bullet}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk400">
-            What BaseballOS Is Watching
-          </div>
-          <ul className="mt-2 space-y-1.5">
-            {story.watchItems.map((bullet, index) => (
-              <li key={index} className="text-xs leading-relaxed text-chalk200">• {bullet}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      <StoryNarrative text={story.narrative || story.observation} />
 
       <TeamBullpenShape reads={story.shapeReads} />
 
       <p className="mt-3 border-t border-dirt/60 pt-2 text-[11px] text-chalk600">{story.framing}</p>
     </section>
+  )
+}
+
+function StoryNarrative({ text }) {
+  const paragraphs = typeof text === 'string'
+    ? text.split(/\n{2,}/).map(paragraph => paragraph.trim()).filter(Boolean)
+    : []
+  if (paragraphs.length === 0) return null
+
+  return (
+    <div className="mt-3 max-w-3xl space-y-2">
+      {paragraphs.map((paragraph, index) => (
+        <p key={index} className="text-sm leading-relaxed text-chalk200">{paragraph}</p>
+      ))}
+    </div>
   )
 }
 

@@ -96,6 +96,12 @@ function normalizeFourBeatStory(story) {
   const teamId = story.team_id ?? story.teamId ?? null
   const teamName = story.team_name || story.teamName || null
   const abbr = story.team_abbreviation || story.abbr || null
+  const narrative = typeof story.narrative === 'string'
+    ? story.narrative.trim()
+    : (typeof story.story_body === 'string' ? story.story_body.trim() : '')
+  const disclosureNote = typeof story.disclosure_note === 'string'
+    ? story.disclosure_note.trim()
+    : (typeof story.disclosureNote === 'string' ? story.disclosureNote.trim() : '')
   const beats = Array.isArray(story.beats)
     ? story.beats
         .map(beat => ({
@@ -114,7 +120,9 @@ function normalizeFourBeatStory(story) {
     tone: story.tone || 'watch',
     category: normalizeStoryCategory(story, teamId),
     title: story.title || story.signal || story.rule_label || 'Bullpen story',
-    body: story.body || beats.map(beat => beat.text).join(' '),
+    narrative,
+    body: narrative || story.body || beats.map(beat => beat.text).join(' '),
+    disclosureNote,
     href: story.href || null,
     cta: story.cta || 'Open the team board',
     beats,

@@ -829,6 +829,13 @@ function watchItemsFor(archetypeKey, counts) {
   }
 }
 
+function narrativeFor(archetypeKey, counts, shape) {
+  const observation = observationFor(archetypeKey, counts, shape)
+  const whyItMatters = whyItMattersFor(archetypeKey, counts)
+  const watch = watchItemsFor(archetypeKey, counts)[0]
+  return [observation, whyItMatters, watch].filter(Boolean).join('\n\n')
+}
+
 export function getTeamBullpenStoryView(board) {
   if (!board) return { hasStory: false }
 
@@ -849,6 +856,7 @@ export function getTeamBullpenStoryView(board) {
     teamName,
     headline: headlineFor(archetype.key, teamName),
     observation: observationFor(archetype.key, counts, shape),
+    narrative: narrativeFor(archetype.key, counts, shape),
     evidence: evidenceFor(archetype.key, counts, shape, entries),
     whyItMatters: whyItMattersFor(archetype.key, counts),
     watchItems: watchItemsFor(archetype.key, counts).slice(0, 4),

@@ -191,8 +191,7 @@ function HeroStory({ hero }) {
         />
 
         <div className="mt-4 max-w-3xl rounded border-l-4 border-amber/70 bg-field/60 p-3 sm:p-4">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">Why It Matters</div>
-          <p className="mt-1 text-sm leading-relaxed text-chalk200">{hero.whyItMatters}</p>
+          <p className="text-sm leading-relaxed text-chalk200">{hero.whyItMatters}</p>
         </div>
 
         <FlagshipEvidence facts={hero.whatBaseballOSSaw} />

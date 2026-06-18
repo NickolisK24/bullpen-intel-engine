@@ -567,15 +567,19 @@ test('no board means no story', () => {
 
 // ── Panel rendering & placement ────────────────────────────────────────────
 
-test('the panel renders headline, both bullet sections, and the framing line', () => {
+test('the panel renders headline, unlabeled narrative, and the framing line', () => {
+  const story = getTeamBullpenStoryView(constrainedBoard)
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   assert.ok(htmlIncludes(html, 'What BaseballOS Sees About This Bullpen'))
   assert.ok(htmlIncludes(html, 'aria-label="Share Milwaukee Brewers bullpen"'))
   assert.ok(htmlIncludes(html, 'data-share-url="https://baseballos.vercel.app/team/MIL"'))
-  assert.ok(htmlIncludes(html, 'Observation'))
-  assert.ok(htmlIncludes(html, 'Evidence'))
-  assert.ok(htmlIncludes(html, 'Why It Matters'))
-  assert.ok(htmlIncludes(html, 'What BaseballOS Is Watching'))
+  assert.ok(htmlIncludes(html, story.observation))
+  assert.ok(htmlIncludes(html, story.whyItMatters))
+  assert.ok(htmlIncludes(html, story.watchItems[0]))
+  assert.ok(!htmlIncludes(html, 'Observation'))
+  assert.ok(!htmlIncludes(html, 'Evidence'))
+  assert.ok(!htmlIncludes(html, 'Why It Matters'))
+  assert.ok(!htmlIncludes(html, 'What BaseballOS Is Watching'))
   assert.ok(htmlIncludes(html, STORY_FRAMING_LINE))
 })
 
@@ -738,6 +742,7 @@ test('pitcher names stay out of headline, observation, why, and watch items', ()
   const story = getTeamBullpenStoryView(watchBoard)
   const nonEvidenceText = [
     story.headline,
+    story.narrative,
     story.observation,
     story.whyItMatters,
     ...story.watchItems,

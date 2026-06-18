@@ -24,6 +24,12 @@ from services.four_beat_stories import (
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
+from services.team_story_facts import CAPABILITY as STORY_FACT_LAYER_CAPABILITY
+from services.team_story_narrative import (
+    FORBIDDEN_PUBLIC_LABELS,
+    INTERNAL_TAXONOMY_TERMS,
+    narrative_contains_forbidden_language,
+)
 from services.team_bullpen_shape import build_team_bullpen_shape
 
 
@@ -689,6 +695,88 @@ def test_public_four_beat_copy_avoids_robotic_voice_residue():
         'among the bullpens teams are carrying right now',
     ):
         assert phrase not in text
+
+
+def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            unavailable_pct=44,
+            limitations=[
+                'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.',
+            ],
+        ),
+    )), RULE_STRESS_TRANSFER)['story']
+
+    facts = story['story_facts']
+    narrative = story['narrative']
+
+    assert story['body']
+    assert story['beats']
+    assert story['rule_key'] == RULE_STRESS_TRANSFER
+    assert facts['capability'] == STORY_FACT_LAYER_CAPABILITY
+    assert facts['primary_observation'] == story['title']
+    assert facts['supporting_context']
+    assert facts['pressure_source']
+    assert facts['workload_pattern']
+    assert facts['capacity_context']
+    assert facts['watch_question']
+    assert facts['confidence'] == 'limited'
+    assert facts['disclosure'] == story['disclosure_note']
+    assert narrative.count('\n\n') == 2
+    assert facts['primary_observation'] in narrative
+    assert facts['watch_question'] in narrative
+
+
+def test_public_narrative_avoids_forbidden_labels_and_internal_taxonomy():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        season_era_by_team=_ranked_era(rank=3, strong=True, solid=True),
+    )), RULE_STRESS_TRANSFER)['story']
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert narrative_contains_forbidden_language(narrative) is False
+    for label in FORBIDDEN_PUBLIC_LABELS:
+        assert label not in narrative
+    for term in INTERNAL_TAXONOMY_TERMS:
+        assert term.lower() not in lower
+    for forbidden in (
+        'betting',
+        'prediction',
+        'recommendation',
+        'should use',
+        'manager should',
+        'fatigue score',
+        'confidence score',
+        'HIGH or CRITICAL',
+    ):
+        assert forbidden.lower() not in lower
+
+
+def test_story_narrative_output_is_deterministic():
+    pitchers, records, logs = _fixture_team(
+        141,
+        'Toronto Blue Jays',
+        'TOR',
+        [38, 34, 29, 11, 9, 8, 6],
+    )
+    season_era = {
+        'bullpens': [
+            _bullpen_era(141, 'Toronto Blue Jays', 'TOR', 3.15),
+        ],
+    }
+
+    first = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+    second = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+
+    assert [
+        (item['team_abbreviation'], item['story_facts'], item['narrative'])
+        for item in first['items']
+    ] == [
+        (item['team_abbreviation'], item['story_facts'], item['narrative'])
+        for item in second['items']
+    ]
+    assert pitchers
 
 
 def test_bullpen_stability_passes_through_computed_data_without_new_claims():

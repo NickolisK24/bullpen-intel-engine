@@ -122,7 +122,7 @@ test('today stays light: exactly one concept chip, on the hero', () => {
   assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
 })
 
-test('stories feed cards render four-beat sections instead of compact concept tags', () => {
+test('stories feed cards render unlabeled narrative instead of compact concept tags', () => {
   const html = render(React.createElement(StoriesView, {
     dashboard: {
       ...dashboard,
@@ -137,6 +137,7 @@ test('stories feed cards render four-beat sections instead of compact concept ta
             tone: 'stress',
             category: 'stressed',
             title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+            narrative: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.\n\nThe recent workload has clustered around the same late-inning group.\n\nThe next useful read is whether support appears behind that group.',
             href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
             beats: [
               { key: 'signal', label: 'Signal', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
@@ -149,10 +150,11 @@ test('stories feed cards render four-beat sections instead of compact concept ta
       },
     },
   }))
-  assert.ok(htmlIncludes(html, 'Signal'))
-  assert.ok(htmlIncludes(html, 'Evidence'))
-  assert.ok(htmlIncludes(html, 'Mechanism'))
-  assert.ok(htmlIncludes(html, 'Implication'))
+  assert.ok(htmlIncludes(html, 'The next useful read is whether support appears behind that group.'))
+  assert.ok(!htmlIncludes(html, 'Signal'))
+  assert.ok(!htmlIncludes(html, 'Evidence'))
+  assert.ok(!htmlIncludes(html, 'Mechanism'))
+  assert.ok(!htmlIncludes(html, 'Implication'))
   assert.ok(!htmlIncludes(html, 'Concentrated Workload'))
   assert.ok(!htmlIncludes(html, 'Wide Recovery Window'))
 })

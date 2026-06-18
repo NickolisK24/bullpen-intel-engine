@@ -19,6 +19,8 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.pitcher_role_authority import author_role_read_labels
+from services.team_story_facts import build_story_facts
+from services.team_story_narrative import render_story_narrative
 from services.workload_concentration import (
     CONCENTRATED_TOP_ARM_COUNT,
     CONCENTRATED_TOP_SHARE_MIN,
@@ -31,7 +33,7 @@ from services.workload_concentration import (
 
 
 CAPABILITY = 'four_beat_story_template_v1'
-VERSION = '2026-06-18.why_context'
+VERSION = '2026-06-18.narrative_renderer_v1'
 FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
@@ -1236,6 +1238,16 @@ def _why_context_beat(rule_key, inputs):
         'sources': sources,
         'context_flags': sorted(set(flags)),
         'source_limitations_present': any(item.get('source_limitations_present') for item in items),
+        'items': [
+            {
+                'source': item.get('source'),
+                'text': item.get('text'),
+                'source_limitations_present': bool(item.get('source_limitations_present')),
+                'disclosure_limitations': bool(item.get('disclosure_limitations')),
+                'context_flags': item.get('context_flags') or [],
+            }
+            for item in items
+        ],
         'slots': {},
     }
 
@@ -1727,7 +1739,9 @@ def assemble_story(rule_key, inputs, lead=None):
         'context_flags': (why_context or {}).get('context_flags') or [],
         'source_limitations_present': bool((why_context or {}).get('source_limitations_present')),
     }
-    return {
+    story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
+    narrative = render_story_narrative(story_facts)
+    story = {
         'story_id': f"{team.get('team_id')}:{rule_key}",
         'rule_key': rule_key,
         'rule_label': rule['label'],
@@ -1739,6 +1753,8 @@ def assemble_story(rule_key, inputs, lead=None):
         'category': rule['category'],
         'title': signal['text'] if signal else rule['label'],
         'body': body,
+        'narrative': narrative,
+        'story_facts': story_facts,
         'beats': beats,
         'strength': _strength(rule_key, inputs),
         'href': _story_href(team),
@@ -1810,6 +1826,9 @@ def assemble_story(rule_key, inputs, lead=None):
             'clean_option_count': len(inputs['clean_options']),
         },
     }
+    if story_facts.get('disclosure'):
+        story['disclosure_note'] = story_facts['disclosure']
+    return story
 
 
 def evaluate_team_rules(team_inputs):

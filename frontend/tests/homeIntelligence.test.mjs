@@ -490,17 +490,19 @@ test('the flagship story renders context after continuity when evidence fits the
   assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
 })
 
-test('the flagship story renders observation, continuity, context, and why in order', () => {
+test('the flagship story renders narrative, continuity, context, and support copy in order', () => {
+  const hero = getHeroStory(dashboard)
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  const observationIndex = html.indexOf('Observation')
-  const continuityIndex = html.indexOf('Continuity')
-  const contextIndex = html.indexOf('Context')
-  const whyIndex = html.indexOf('Why It Matters')
+  const openingIndex = html.indexOf('4 of the pen')
+  const continuityIndex = html.indexOf(hero.continuity_note)
+  const contextIndex = html.indexOf(hero.context_note)
+  const supportIndex = html.indexOf(hero.whyItMatters)
 
-  assert.ok(observationIndex >= 0, 'observation section should render')
-  assert.ok(continuityIndex > observationIndex, 'continuity should render after observation')
-  assert.ok(contextIndex > continuityIndex, 'context should render after continuity')
-  assert.ok(whyIndex > contextIndex, 'why it matters should render after context')
+  assert.ok(openingIndex >= 0, 'opening story paragraph should render')
+  assert.ok(continuityIndex > openingIndex, 'continuity should render after the opening paragraph')
+  assert.ok(contextIndex > continuityIndex, 'context copy should render after continuity')
+  assert.ok(supportIndex > contextIndex, 'support copy should render after context copy')
+  assert.ok(!htmlIncludes(html, 'Why It Matters'))
 })
 
 test('flagship story status normalizes the matching team and theme payload', () => {
@@ -520,13 +522,13 @@ test('the homepage renders New Story status when supplied', () => {
     observations,
   }))
   const statusIndex = html.indexOf('Story Status')
-  const observationIndex = html.indexOf('Observation')
+  const openingIndex = html.indexOf('4 of the pen')
 
   assert.ok(htmlIncludes(html, 'Story Status'))
   assert.ok(htmlIncludes(html, 'New Story'))
   assert.ok(htmlIncludes(html, 'First appearance in the morning briefing.'))
   assert.ok(statusIndex > html.indexOf('Milwaukee Brewers'))
-  assert.ok(statusIndex < observationIndex)
+  assert.ok(statusIndex < openingIndex)
 })
 
 test('the homepage renders Ongoing Story status when supplied', () => {
@@ -591,7 +593,7 @@ test('flagship evidence does not repeat continuity or context', () => {
   assert.ok(!htmlIncludes(html, 'What BaseballOS Saw'))
 })
 
-test('story presentation renders a labeled observation without empty support sections', () => {
+test('story presentation renders an unlabeled narrative without empty support sections', () => {
   const html = render(React.createElement(BullpenStories, {
     showCta: false,
     stories: {
@@ -607,8 +609,8 @@ test('story presentation renders a labeled observation without empty support sec
     },
   }))
 
-  assert.ok(htmlIncludes(html, 'Observation'))
   assert.ok(htmlIncludes(html, 'The late-inning bench is thinner here too.'))
+  assert.ok(!htmlIncludes(html, 'Observation'))
   assert.ok(!htmlIncludes(html, 'Continuity'))
   assert.ok(!htmlIncludes(html, 'Context'))
 })
@@ -625,7 +627,8 @@ test('context does not render automatically just because a note exists', () => {
   const html = render(React.createElement(StoryPresentation, { story, compact: true }))
 
   assert.equal(shouldRenderStoryContext(story), false)
-  assert.ok(htmlIncludes(html, 'Observation'))
+  assert.ok(htmlIncludes(html, 'Heavy recent work is showing up in more than one place.'))
+  assert.ok(!htmlIncludes(html, 'Observation'))
   assert.ok(!htmlIncludes(html, contextNote))
   assert.ok(!htmlIncludes(html, 'Context'))
 })
@@ -651,8 +654,8 @@ test('context renders for flagship team stories but stays off compact normal car
   assert.equal(shouldRenderStoryContext(allowedFlagship), true)
   assert.equal(shouldRenderStoryContext(allowedFlagship, { compact: true }), false)
   assert.equal(shouldRenderStoryContext(generic), false)
-  assert.ok(htmlIncludes(flagshipHtml, 'Context'))
   assert.ok(htmlIncludes(flagshipHtml, contextNote))
+  assert.ok(!htmlIncludes(flagshipHtml, 'Context'))
   assert.ok(!htmlIncludes(compactHtml, contextNote))
 })
 
@@ -680,8 +683,8 @@ test('compact cards render context only for major workload continuity stories', 
 
   assert.equal(shouldRenderStoryContext(major, { compact: true }), true)
   assert.equal(shouldRenderStoryContext(weak, { compact: true }), false)
-  assert.ok(htmlIncludes(html, 'Context'))
   assert.ok(htmlIncludes(html, contextNote))
+  assert.ok(!htmlIncludes(html, 'Context'))
 })
 
 // ── League intelligence cards ───────────────────────────────────────────────
@@ -1026,9 +1029,11 @@ test('today ends with short league context and a Stories handoff', () => {
   assert.ok(htmlIncludes(html, 'Open Stories for more observations'))
 })
 
-test('the hero renders the flagship observation with Why It Matters', () => {
+test('the hero renders the flagship observation with supporting copy', () => {
+  const hero = getHeroStory(dashboard)
   const html = render(React.createElement(HomeView, { dashboard, observations }))
-  assert.ok(htmlIncludes(html, 'Why It Matters'))
+  assert.ok(!htmlIncludes(html, 'Why It Matters'))
+  assert.ok(htmlIncludes(html, hero.whyItMatters))
   assert.ok(htmlIncludes(html, 'Milwaukee Brewers'))
   assert.ok(htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(htmlIncludes(html, 'Step inside the MIL pen'))
