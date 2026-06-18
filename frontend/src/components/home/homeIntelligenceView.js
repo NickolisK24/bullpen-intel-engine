@@ -938,14 +938,14 @@ const OBSERVATION_STORY_COPY = {
   freshness: {
     kicker: 'Data Note',
     title: 'Today’s picture is waiting on completed games',
-    body: 'Part of what BaseballOS sees comes from earlier in the week. The story sharpens as new completed games arrive.',
+    body: 'Part of the bullpen picture comes from earlier in the week. The story sharpens as new completed games arrive.',
     href: '/trust',
     cta: 'Open the full picture',
   },
   trust: {
     kicker: 'Data Note',
-    title: 'BaseballOS is staying quiet where the data is thin',
-    body: 'When the inputs are not solid enough to stand behind, the page says less rather than guessing. A few reads are limited today.',
+    title: 'There is not enough recent activity for a stronger bullpen note',
+    body: 'The available information only supports a limited read today. That is better than forcing a conclusion.',
     href: '/trust',
     cta: 'Open the full picture',
   },

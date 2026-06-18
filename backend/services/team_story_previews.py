@@ -139,8 +139,8 @@ def _neutral_shape_description(board):
     ]
     labels = [label for label in labels if label and label != 'Limited Read']
     if labels:
-        return f"Current read: {'; '.join(labels)}."
-    return 'Current availability and trust read from the team board.'
+        return f"Tonight's board: {'; '.join(labels)}."
+    return 'Availability and trust details come from the team board.'
 
 
 def _live_story_rule_keys():

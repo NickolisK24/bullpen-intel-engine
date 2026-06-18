@@ -72,9 +72,9 @@ class InventoryObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.INVENTORY
     family = ObservationFamily.INVENTORY
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'The current bullpen snapshot shows fewer usable arms.'
+    default_title = 'The current bullpen board shows fewer usable arms.'
     default_summary = (
-        'The current snapshot shows fewer usable arms than a normal night.'
+        'Tonight\'s board shows fewer usable arms than a normal night.'
     )
     default_explanation_reference = 'v4:availability:inventory'
 
@@ -83,9 +83,9 @@ class ReadinessObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.READINESS
     family = ObservationFamily.READINESS
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'The current snapshot has readiness caveats.'
+    default_title = 'The bullpen board has readiness caveats.'
     default_summary = (
-        'The current snapshot has enough readiness caveats to keep the language narrow.'
+        'The available information only supports a limited readiness note.'
     )
     default_explanation_reference = 'v4:team_operations_readiness:summary'
 
@@ -96,7 +96,7 @@ class WorkloadPressureObservationBuilder(DeterministicObservationBuilder):
     default_severity = ObservationSeverity.ELEVATED
     default_title = 'Recent bullpen workload is running hot.'
     default_summary = (
-        'Recent bullpen workload is running hot in the current snapshot.'
+        'Recent bullpen workload is running hot.'
     )
     default_explanation_reference = 'v4:team_operations_readiness:workload'
 
@@ -117,9 +117,9 @@ class TrustObservationBuilder(DeterministicObservationBuilder):
     observation_type = ObservationType.TRUST
     family = ObservationFamily.TRUST
     default_severity = ObservationSeverity.MONITOR
-    default_title = 'The current snapshot has trust-arm caveats.'
+    default_title = 'The bullpen board has trusted-arm caveats.'
     default_summary = (
-        'The current snapshot has trust-arm caveats that should stay visible.'
+        'The trusted late-inning picture has caveats that should stay visible.'
     )
     default_explanation_reference = 'v4:availability:trust'
 

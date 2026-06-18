@@ -31,7 +31,7 @@ export const TEAM_STORY_ARCHETYPES = Object.freeze({
 })
 
 export const STORY_FRAMING_LINE =
-  'Built from current workload, roster status, and usage-role reads already shown on this board.'
+  'This note comes from the workload, roster status, and bullpen-role info already shown here.'
 
 const SHAPE_READ_ORDER = [
   { key: 'trustAvailability', concept: 'Trust Arm Availability' },
@@ -599,31 +599,31 @@ function observationFor(archetypeKey, counts, shape) {
     case TEAM_STORY_ARCHETYPES.concentrated_workload.key:
       return `${relievers(counts.watch)} have carried enough recent work that the surface arm count is a little misleading.`
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
-      return `${relievers(counts.needRest)} of ${counts.total} ${one(counts.needRest, 'needs', 'need')} rest after recent work, leaving fewer clean paths through the late innings.`
+      return `${relievers(counts.needRest)} of ${counts.total} ${one(counts.needRest, 'needs', 'need')} rest after recent work, leaving fewer usable paths through the late innings.`
     case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
-      return `${relievers(counts.ready)} are clean options, but fewer of them are the arms the club usually leans on late: ${trustLaneSummary(trust)}.`
+      return `${relievers(counts.ready)} are usable, but fewer of them are the arms the club usually leans on late: ${trustLaneSummary(trust)}.`
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
       return `${relievers(counts.ready)} of ${counts.total} come in rested, giving this bullpen more room than it had during heavier stretches.`
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return `The usable group goes beyond one or two names, with ${depth.availableDepthArms || 0} depth arms still available behind the late-inning group.`
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
       return number(coverage.coverageArms) > 0
-        ? `Middle-inning coverage is thin: ${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or only lightly flagged.`
-        : 'Middle-inning coverage is thin because the board has no designated Coverage Arm support today.'
+        ? `Middle-inning coverage is thin: ${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} middle-inning options are clean or only lightly flagged.`
+        : 'Middle-inning coverage is thin because the board has no designated middle-inning support today.'
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
-      return `This bullpen is leaning on its trusted late-inning group: ${trust.cleanTrustArms || 0} clean Trust Arms, with ${((trust.watchTrustArms || 0) + (trust.restRestrictedTrustArms || 0) + (trust.unavailableTrustArms || 0))} other trust arms already in a tougher spot.`
+      return `This bullpen is leaning on its trusted late-inning group: ${trust.cleanTrustArms || 0} fully clean trusted arms, with ${((trust.watchTrustArms || 0) + (trust.restRestrictedTrustArms || 0) + (trust.unavailableTrustArms || 0))} others already in a tougher spot.`
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      return `${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'Bridge Arm is', 'Bridge Arms are')} already in a tougher spot, tightening the handoff before the late innings.`
+      return `${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'bridge reliever is', 'bridge relievers are')} already in a tougher spot, tightening the handoff before the late innings.`
     case TEAM_STORY_ARCHETYPES.usage_shift.key:
       return `This does not look like the same usage pattern from a few days ago; the work is landing in different places.`
     case TEAM_STORY_ARCHETYPES.pressure_building.key:
       return `This pen is usable, but ${relievers(counts.watch + counts.needRest)} are already in the yellow or need rest.`
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-      return `${relievers(counts.ready)} of ${counts.total} are clean options, giving the bullpen more usable routes than a busier group would have.`
+      return `${relievers(counts.ready)} of ${counts.total} are usable, giving the bullpen more routes than a busier group would have.`
     case TEAM_STORY_ARCHETYPES.data_limited.key:
-      return `The board does not have enough workload signal for a stronger team story, so the public note stays narrow.`
+      return `There is not enough recent bullpen activity here for a bigger takeaway.`
     default:
-      return `The bullpen has ${counts.ready} clean ${one(counts.ready, 'option', 'options')}, ${counts.watch} watch-list ${one(counts.watch, 'arm', 'arms')}, and ${counts.needRest} needing rest out of ${active} active arms.`
+      return `The bullpen has ${counts.ready} usable ${one(counts.ready, 'arm', 'arms')}, ${counts.watch} watch-list ${one(counts.watch, 'arm', 'arms')}, and ${counts.needRest} needing rest out of ${active} active arms.`
   }
 }
 
@@ -638,7 +638,7 @@ function whyItMattersFor(archetypeKey, counts) {
       return 'The bullpen still has usable arms; the question is whether trusted late work has to keep going through the stretched group.'
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
-      return 'Clean options have created more paths through the late innings than this bullpen had during the heavier part of the window.'
+      return 'Rested arms have created more paths through the late innings than this bullpen had during the heavier part of the window.'
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return 'Depth gives the club more ways to cover the middle and late innings without forcing one narrow sequence.'
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
@@ -650,9 +650,9 @@ function whyItMattersFor(archetypeKey, counts) {
     case TEAM_STORY_ARCHETYPES.usage_shift.key:
       return 'A changed usage pattern helps explain why this pen does not look like the same group it was earlier in the window.'
     case TEAM_STORY_ARCHETYPES.pressure_building.key:
-      return 'The bullpen remains usable, but the margin is gathering around fewer clean arms.'
+      return 'The bullpen remains usable, but the margin is gathering around fewer rested arms.'
     case TEAM_STORY_ARCHETYPES.data_limited.key:
-      return 'Limited data keeps the note honest by separating visible bullpen facts from unsupported conclusions.'
+      return 'The available information only supports a limited read.'
     default:
       return counts.ready >= counts.watch + counts.needRest
         ? 'A stable bullpen gives the manager multiple ordinary paths through the game.'
@@ -668,15 +668,15 @@ function pitcherEvidenceSentence(archetypeKey, selected) {
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
-      return `${nameList} are part of the clean rested layer supporting today's flexibility.`
+      return `${nameList} are part of the rested group supporting today's flexibility.`
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
-      return `${nameList} are the Coverage or Bridge Arms at the center of this middle-inning question.`
+      return `${nameList} are the middle-inning options at the center of this question.`
     case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
-      return `${nameList} are the Trust Arms at the center of the late-inning question.`
+      return `${nameList} are the trusted relievers at the center of the late-inning question.`
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
-      return `${nameList} are the Trust Arms carrying the late-inning picture.`
+      return `${nameList} are the trusted relievers carrying the late-inning picture.`
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      return `${nameList} are the Bridge Arms in the middle-inning handoff.`
+      return `${nameList} are the bridge relievers in the middle-inning handoff.`
     case TEAM_STORY_ARCHETYPES.data_limited.key:
       return `${nameList} are visible in the board, but their workload and availability detail is limited.`
     default:
@@ -698,26 +698,26 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
 
   switch (archetypeKey) {
     case TEAM_STORY_ARCHETYPES.trust_dependency.key:
-      evidence.push(`${trust.cleanTrustArms || 0} clean Trust Arms; ${(trust.watchTrustArms || 0) + (trust.restRestrictedTrustArms || 0) + (trust.unavailableTrustArms || 0)} other Trust Arms are already in a tougher spot.`)
-      evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options across ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
+      evidence.push(`${trust.cleanTrustArms || 0} fully clean trusted late-inning arms; ${(trust.watchTrustArms || 0) + (trust.restRestrictedTrustArms || 0) + (trust.unavailableTrustArms || 0)} other trusted arms are already in a tougher spot.`)
+      evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms across ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.coverage_concern.key:
       if (number(coverage.coverageArms) > 0) {
-        evidence.push(`${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} Coverage Arms are clean or only lightly flagged.`)
+        evidence.push(`${coverage.availableCoverageArms || 0} of ${coverage.coverageArms || 0} middle-inning options are clean or only lightly flagged.`)
       }
-      if (coverage.substituteCoverageApplied) evidence.push('Bridge Arms are helping cover emergency innings behind the coverage layer.')
+      if (coverage.substituteCoverageApplied) evidence.push('Bridge relievers are helping cover emergency innings behind the middle-inning group.')
       break
     case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
       evidence.push(`${trustLaneSummary(trust)} in the trusted late-inning group.`)
-      evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options remain available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
+      evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms remain available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       evidence.push(`${depth.availableDepthArms || 0} Depth Arms remain usable or only lightly flagged behind the primary group.`)
-      evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options are available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
+      evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms are available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
-      evidence.push(`${counts.ready} of ${counts.total} relievers are clean options.`)
+      evidence.push(`${counts.ready} of ${counts.total} relievers are usable today.`)
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
@@ -725,20 +725,20 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       evidence.push(`${readCount(pressure.watchArmCount || counts.watch, 'Watch Arm')} and ${pressure.restRestrictedCount || counts.needRest} ${one(pressure.restRestrictedCount || counts.needRest, 'Rest-Restricted arm', 'Rest-Restricted arms')} are part of the bullpen pressure picture.`)
       break
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      evidence.push(`${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'Bridge Arm is', 'Bridge Arms are')} stressed in the bullpen pressure picture.`)
+      evidence.push(`${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'bridge reliever is', 'bridge relievers are')} stressed in the bullpen pressure picture.`)
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
     case TEAM_STORY_ARCHETYPES.data_limited.key:
-      evidence.push(`${counts.total} current bullpen arms are available for the team-level story read.`)
-      evidence.push('The recent workload picture is thinner than the board needs for a stronger briefing.')
+      evidence.push(`${counts.total} current bullpen arms are available for the team-level story.`)
+      evidence.push('There is not enough recent workload detail for a stronger briefing.')
       break
     case TEAM_STORY_ARCHETYPES.stable_bullpen.key:
-      evidence.push(`${counts.ready} clean options, ${counts.watch} watch-list arms, and ${counts.needRest} needing rest.`)
-      evidence.push(`${clean.cleanOptionCount || counts.ready} Clean Options from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
+      evidence.push(`${counts.ready} usable arms, ${counts.watch} watch-list arms, and ${counts.needRest} needing rest.`)
+      evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     default:
       evidence.push(`${counts.watch} of ${counts.total} relievers are on the watch list.`)
-      evidence.push(`${counts.ready} clean options remain available.`)
+      evidence.push(`${counts.ready} usable arms remain available.`)
       break
   }
 
@@ -762,7 +762,7 @@ function watchItemsFor(archetypeKey, counts) {
     case TEAM_STORY_ARCHETYPES.heavy_lifting.key:
     case TEAM_STORY_ARCHETYPES.concentrated_workload.key:
       return [
-        'I am watching whether the same relievers keep getting the ball.',
+        'The question is whether the same relievers keep getting the ball.',
         'The next test is whether rested options move into higher-trust innings.',
         'The question is whether the watch-list group gets a recovery day.',
       ]
@@ -774,8 +774,8 @@ function watchItemsFor(archetypeKey, counts) {
       ]
     case TEAM_STORY_ARCHETYPES.thinning_trust_lane.key:
       return [
-        'I am watching whether trusted late-inning arms get a lower-workload night.',
-        'Bridge and coverage arms may need to protect the trusted group.',
+        'The question is whether trusted late-inning arms get a lower-workload night.',
+        'Middle-inning arms may need to protect the trusted group.',
         'The next completed game will show whether the trusted group cleans up.',
       ]
     case TEAM_STORY_ARCHETYPES.clean_options_layer.key:
@@ -783,7 +783,7 @@ function watchItemsFor(archetypeKey, counts) {
       return [
         'Do the rested arms get used broadly, or held in reserve?',
         'Can the workload stay spread across the group?',
-        'The next game will show whether the clean options hold.',
+        'The next game will show whether the rested options hold.',
       ]
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
       return [
@@ -813,7 +813,7 @@ function watchItemsFor(archetypeKey, counts) {
       return [
         'Does the changed workload pattern hold?',
         'Do the same roles keep absorbing the new work?',
-        'Can the clean options stay spread across the group?',
+        'Can the rested options stay spread across the group?',
       ]
     case TEAM_STORY_ARCHETYPES.data_limited.key:
       return [

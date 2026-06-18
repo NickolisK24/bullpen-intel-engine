@@ -107,7 +107,7 @@ def test_all_live_story_rules_have_plain_share_title_labels():
 
 def test_tension_story_uses_signal_as_honest_contrast_preview():
     team = _team()
-    signal = 'The Toronto Blue Jays have room tonight, but the clean Trust Arm lane is narrow.'
+    signal = 'The Toronto Blue Jays have room tonight, but the trusted late-inning path is narrow.'
     story = _story(
         team,
         signal=signal,
@@ -203,7 +203,7 @@ def test_no_story_team_uses_neutral_shape_preview_only():
     assert preview['source'] == 'team_shape'
     assert preview['og_title'] == 'Where the Quiet Club Bullpen Stands Tonight'
     assert preview['og_description'] == (
-        'Current read: Stable Trust Arm Availability; Healthy Clean Options; '
+        'Tonight\'s board: Stable Trust Arm Availability; Healthy Clean Options; '
         'Manageable Trust-Lane Pressure.'
     )
     assert 'story' not in preview['og_title'].lower()
@@ -214,7 +214,7 @@ def test_no_story_team_uses_neutral_shape_preview_only():
 def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
     tor = _team(141, 'Toronto Blue Jays', 'TOR')
     lad = _team(119, 'Los Angeles Dodgers', 'LAD')
-    signal = 'The Toronto Blue Jays have room tonight, but the clean Trust Arm lane is narrow.'
+    signal = 'The Toronto Blue Jays have room tonight, but the trusted late-inning path is narrow.'
     payload = {
         'four_beat_stories': {
             'items': [

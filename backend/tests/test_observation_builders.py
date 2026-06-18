@@ -59,7 +59,7 @@ def test_valid_builder_output_creates_governed_observation():
     assert payload['observation_type'] == 'inventory'
     assert payload['family'] == 'inventory'
     assert payload['severity'] == 'monitor'
-    assert payload['title'] == 'The current bullpen snapshot shows fewer usable arms.'
+    assert payload['title'] == 'The current bullpen board shows fewer usable arms.'
     assert payload['evidence'][0]['evidence_id'] == 'sample-inventory-count'
     assert payload['freshness']['status'] == 'current'
     assert payload['confidence']['status'] == 'medium'

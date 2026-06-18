@@ -168,16 +168,16 @@ SKELETONS = {
     RULE_STRESS_TRANSFER: {
         BEAT_SIGNAL: "The {team_name} are running tonight's bullpen through a smaller group.",
         BEAT_EVIDENCE: 'The top {top_arm_count} arms have taken {top_share_pct}% of recent relief pitches ({concentration_descriptor}), and {available_count} of {total_bullpen_arms} bullpen arms are Available.',
-        BEAT_MECHANISM: 'That usually leaves the next close innings pointed back toward the same clean options.',
+        BEAT_MECHANISM: 'That usually leaves the next close innings pointed back toward the same usable arms.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} still where the trusted late innings point; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean behind them.',
-        'implication_without_clean_trust': 'Tonight, no Trust Arm is fully clean; {clean_option_count} of {total_bullpen_arms} clean options sit outside the usual late-inning group.',
+        'implication_without_clean_trust': 'Tonight, none of the usual trusted late arms are fully clean; {clean_option_count} of {total_bullpen_arms} usable arms sit outside that group.',
     },
     RULE_PRESSURE_DISTRIBUTION: {
         BEAT_SIGNAL: 'The {team_name} bullpen work is spread out tonight.',
         BEAT_EVIDENCE: '{participant_count} arms shared the last {window_days} days of relief work, averaging {per_arm_pitches} pitches each.',
         BEAT_MECHANISM: 'When recent work is light and spread out, the manager has more ways through the late innings.',
-        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} fully clean, and {clean_option_count} of {total_bullpen_arms} bullpen arms are clean options.',
-        'implication_without_clean_trust': 'Tonight, the clean options are outside the usual Trust Arm group; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean options.',
+        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} fully clean, with {clean_option_count} of {total_bullpen_arms} bullpen arms clean behind them.',
+        'implication_without_clean_trust': 'Tonight, the usable arms are outside the usual trusted late-inning group; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean.',
     },
     RULE_SUSTAINABILITY_QUESTION: {
         BEAT_SIGNAL: 'The {team_name} bullpen has pitched well this year, but they are leaning on it hard tonight.',
@@ -185,7 +185,7 @@ SKELETONS = {
         'evidence_without_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
         BEAT_MECHANISM: "The results are not the issue; the cost of every clean inning is a little higher tonight.",
         'implication_with_clean_trust': "Tonight, {clean_trust_names} {clean_trust_verb} still the trusted late-inning answer. I'm watching whether they have to go there before the eighth.",
-        'implication_without_clean_trust': 'Tonight, there is no fully clean Trust Arm; the question is whether {clean_option_count} clean options can handle leverage without dragging the same group back in.',
+        'implication_without_clean_trust': 'Tonight, there is no fully clean trusted late-inning arm; the question is whether {clean_option_count} usable arms can handle leverage without dragging the same group back in.',
     },
     RULE_HIDDEN_CAPACITY_LOSS: {
         BEAT_SIGNAL: "The {team_name} results are solid, but tonight's usable depth is thin.",
@@ -193,7 +193,7 @@ SKELETONS = {
         'evidence_without_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available tonight.',
         BEAT_MECHANISM: 'That does not make the results fake; it means there is less margin if tonight turns into a bullpen game.',
         'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} the trusted late-inning answer, but the question is what happens if the game needs one more clean inning before then.',
-        'implication_without_clean_trust': 'Tonight, the clean options sit outside the usual Trust Arm group; the question is what happens if the game needs one more clean inning.',
+        'implication_without_clean_trust': 'Tonight, the usable arms sit outside the usual trusted late-inning group; the question is what happens if the game needs one more clean inning.',
     },
 }
 
@@ -204,11 +204,11 @@ LEAD_FRAGMENT_LIBRARY = {
     },
     LEAD_TRUST_LANE_ABSENCE: {
         BEAT_SIGNAL: 'The {team_name} have clean arms available, but not their usual trusted late-inning group.',
-        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {clean_option_count} clean options and zero clean Trust Arms.',
+        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {clean_option_count} usable arms and zero clean trusted late-inning arms.',
     },
     LEAD_TRUST_LANE_SHALLOW: {
         BEAT_SIGNAL: 'The {team_name} have room tonight, but the trusted late-inning group is thin.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the only fully clean Trust Arm option, with {clean_option_count} clean options and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the only fully clean trusted late-inning option, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_WORKLOAD_HIGH: {
         BEAT_SIGNAL: 'The {team_name} have pitched well, but the recent workload is the loud part.',
@@ -220,15 +220,15 @@ LEAD_FRAGMENT_LIBRARY = {
     },
     LEAD_AVAILABILITY_THIN: {
         BEAT_SIGNAL: 'The {team_name} are short on clean depth tonight.',
-        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available tonight, with {clean_option_count} clean options and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available tonight, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_AVAILABILITY_DEEP: {
         BEAT_SIGNAL: 'The {team_name} have real bullpen room tonight.',
-        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available, with {clean_option_count} clean options and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_DEEP_INTACT: {
         BEAT_SIGNAL: 'The {team_name} still have trusted late-inning options behind the workload.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} fully clean Trust Arm options, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} fully clean trusted late-inning options, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_CONCENTRATION_SHAPE: {
         BEAT_SIGNAL: 'The same few relievers keep getting the ball for the {team_name}.',
@@ -252,7 +252,7 @@ LEAD_FRAGMENT_LIBRARY = {
     },
     LEAD_TRUST_LANE_DEPTH: {
         BEAT_SIGNAL: 'The {team_name} still have multiple trusted late-inning options tonight.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} clean Trust Arm options, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} clean trusted late-inning options, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
 }
 
@@ -878,7 +878,7 @@ def _team_lead_candidates(record, cluster):
             LEAD_TRUST_LANE_ABSENCE,
             900 + max(cluster_clean_trust) * 10,
             clean_trust_count,
-            'no clean Trust Arm lane while same-rule peers have one',
+            'no clean trusted late-inning path while same-rule peers have one',
             'min',
         ))
 
@@ -888,7 +888,7 @@ def _team_lead_candidates(record, cluster):
             LEAD_TRUST_LANE_SHALLOW,
             760 + max(positive_trust or [1]) * 5,
             clean_trust_count,
-            'only one clean Trust Arm lane',
+            'only one clean trusted late-inning path',
             'min_positive',
         ))
 
@@ -950,7 +950,7 @@ def _team_lead_candidates(record, cluster):
             LEAD_DEEP_INTACT,
             650 + available_share * 20 + clean_trust_count * 4,
             (available_share, clean_trust_count),
-            'deep availability with a clean Trust Arm path',
+            'deep availability with a clean trusted late-inning path',
             'max',
         ))
 
@@ -1010,7 +1010,7 @@ def _team_lead_candidates(record, cluster):
             LEAD_TRUST_LANE_DEPTH,
             520 + clean_trust_count * 6 + trust_depth_gap * 10,
             clean_trust_count,
-            'deepest clean Trust Arm lane in the same-rule cluster',
+            'deepest clean trusted late-inning path in the same-rule cluster',
             'max',
         ))
 

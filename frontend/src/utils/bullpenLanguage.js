@@ -41,7 +41,7 @@ export const SIGNAL_HEADLINES = {
     hero: (team) => `The ${team} keep asking the same relievers for the heavy lifting`,
     feed: (team) => `The ${team} are leaning on the same names again`,
     hidden: (team) => `The ${team} box score looks calm. The bullpen does not.`,
-    team: (team) => `The ${team} look calm on the surface — the workload underneath is worth watching`,
+    team: (team) => `The ${team} look calm on the surface, but the heavier work is still landing on the same arms`,
   },
 
   // ── Wide Recovery Window / deep Clean Options ─────────────────────────────

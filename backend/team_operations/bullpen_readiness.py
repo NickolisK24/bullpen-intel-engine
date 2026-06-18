@@ -33,7 +33,7 @@ READINESS_BASIS = (
 BASELINE_LIMITATIONS = (
     {
         'limitation_id': 'public_workload_data_only',
-        'message': 'Readiness is based on public workload data tracked by BaseballOS.',
+        'message': 'Readiness is based on public workload data, not private team information.',
         'severity': 'informational',
         'applies_to': 'readiness',
     },
@@ -774,7 +774,7 @@ def _workload_summary(pressure_state: str) -> str:
 
 def _readiness_summary(status_code: str) -> str:
     if status_code == 'operationally_stable':
-        return 'Team-level bullpen readiness is operationally stable from current public workload evidence.'
+        return 'Team-level bullpen readiness looks steady from current public workload evidence.'
     if status_code == 'operationally_constrained':
         return 'Team-level bullpen readiness is constrained by workload or coverage context.'
     if status_code == 'operationally_stressed':
@@ -786,11 +786,11 @@ def _readiness_summary(status_code: str) -> str:
 
 def _readiness_explanation(status_code: str) -> str:
     if status_code == 'operationally_stable':
-        return 'Readiness is operationally stable because freshness is current and workload pressure is low.'
+        return 'Readiness looks steady because freshness is current and workload pressure is low.'
     if status_code == 'operationally_constrained':
         return 'Readiness has less room because moderate workload or coverage constraints are present.'
     if status_code == 'operationally_stressed':
-        return 'Readiness is operationally stressed because elevated workload or unavailable inventory is present.'
+        return 'Readiness looks stressed because elevated workload or unavailable arms are present.'
     if status_code == 'data_limited':
         return 'Readiness visibility is limited because current evidence is incomplete, not fully current, or based on an unclear read.'
     return 'Readiness output was refused before team-level assembly.'

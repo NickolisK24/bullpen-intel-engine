@@ -73,11 +73,11 @@ const baseState = {
   contract: 'team_operations_bullpen_readiness_api_contract',
   contractVersion: 'v3_phase_4',
   readinessStatus: 'operationally_stable',
-  readinessSummary: 'Team-level bullpen readiness is operationally stable.',
+  readinessSummary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
   readiness: {
     status: 'Operationally Stable',
     status_code: 'operationally_stable',
-    summary: 'Team-level bullpen readiness is operationally stable.',
+    summary: 'Team-level bullpen readiness looks steady from current public workload evidence.',
     basis: ['availability_distribution', 'workload_pressure', 'freshness', 'trust_metadata'],
   },
   team: {
@@ -201,7 +201,7 @@ test('renders successful Team Operations readiness payloads', () => {
   assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Operationally Stable'))
-  assert.ok(htmlIncludes(html, 'Team-level bullpen readiness is operationally stable.'))
+  assert.ok(htmlIncludes(html, 'Team-level bullpen readiness looks steady from current public workload evidence.'))
   assert.ok(htmlIncludes(html, 'Workload Pressure'))
   assert.ok(htmlIncludes(html, 'Availability Distribution'))
   assert.ok(htmlIncludes(html, 'Coverage Inventory'))

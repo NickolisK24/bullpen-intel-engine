@@ -430,9 +430,9 @@ test('high trust-lane pressure with deep clean options does not read as thin mar
 
   assert.equal(story.label, 'Thinning Trust Lane')
   assert.match(story.headline, /fewer trusted late-inning options/)
-  assert.match(story.observation, /6 relievers are clean options/)
+  assert.match(story.observation, /6 relievers are usable/)
   assert.match(story.observation, /2 clean Trust Arms; 1 on watch; 1 needs rest/)
-  assert.ok(story.evidence.some(item => /6 Clean Options remain available from 8 active bullpen arms/.test(item)))
+  assert.ok(story.evidence.some(item => /6 usable arms remain available from 8 active bullpen arms/.test(item)))
   assert.ok(htmlIncludes(html, 'Deep Clean Options'))
   assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
   assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
@@ -455,7 +455,7 @@ test('a constrained club gets a specific story with real counts', () => {
   assert.equal(story.label, 'Coverage Concern')
   assert.match(story.headline, /Milwaukee Brewers have a shorter bridge/)
   assert.match(story.observation, /Middle-inning coverage is thin/)
-  assert.ok(story.evidence.some(item => /1 of 2 Coverage Arms are clean or only lightly flagged/.test(item)))
+  assert.ok(story.evidence.some(item => /1 of 2 middle-inning options are clean or only lightly flagged/.test(item)))
   assert.ok(!/Cal Coverage|Cooper Coverage|Drew Depth/.test(story.evidence.join(' ')))
   assert.ok(!story.evidence.some(item => /most directly shaping the coverage read/.test(item)))
   assert.ok(story.watchItems.length >= 2 && story.watchItems.length <= 4)
@@ -472,7 +472,7 @@ test('Coverage Concern requires actual Coverage Arms under stress', () => {
 
   assert.equal(deriveTeamStoryArchetype(constrainedBoard), 'coverage_concern')
   assert.equal(story.label, 'Coverage Concern')
-  assert.match(story.observation, /1 of 2 Coverage Arms are clean or only lightly flagged/)
+  assert.match(story.observation, /1 of 2 middle-inning options are clean or only lightly flagged/)
   assert.ok(!storyText.includes('0 of 0 Coverage Arms'))
 })
 
@@ -550,7 +550,7 @@ test('a neutral club gets balanced story copy', () => {
   const story = getTeamBullpenStoryView(balancedBoard)
   assert.equal(story.label, 'Stable Bullpen')
   assert.match(story.headline, /holding steady today/)
-  assert.match(story.observation, /4 clean options, 1 watch-list arm, and 1 needing rest/)
+  assert.match(story.observation, /4 usable arms, 1 watch-list arm, and 1 needing rest/)
 })
 
 test('a thin dataset gets an honest limited read', () => {
@@ -731,7 +731,7 @@ test('pitcher-name evidence falls back to counts when fewer than two valid names
   assert.ok(!/Josh Sborz/.test(evidenceText), 'single valid name should not produce a name sentence')
   assert.ok(!/Trust Arm|Bridge Arm|Cal Coverage/.test(evidenceText))
   assert.ok(story.evidence.some(item => /4 of 8 relievers are on the watch list/.test(item)))
-  assert.ok(story.evidence.some(item => /4 clean options remain available/.test(item)))
+  assert.ok(story.evidence.some(item => /4 usable arms remain available/.test(item)))
 })
 
 test('pitcher names stay out of headline, observation, why, and watch items', () => {
