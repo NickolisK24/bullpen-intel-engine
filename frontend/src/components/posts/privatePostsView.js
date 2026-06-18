@@ -704,7 +704,7 @@ function humanTensionClaim(take) {
 
   if (fatigue) {
     return {
-      hook: `${facts.market}'s bullpen story starts with fatigue: ${fatigue}.`,
+      hook: `${facts.market} bullpen fatigue jumps out first: ${fatigue}.`,
       meaning: facts.available !== null
         ? `There may still be a late path, but ${availability} leaves very little cushion behind it.`
         : `There may still be a late path, but the cushion behind it looks thin.`,
@@ -718,7 +718,7 @@ function humanTensionClaim(take) {
       hook: `${facts.market} has ${result} and ${availability}.`,
       meaning: `That is a tightrope: the results may be fine, but tonight's usable room is small.`,
       team: `${facts.market} fans, this is the uncomfortable version of a usable bullpen: the options are thin even if the surface read is not panic.`,
-      linkedin: `The interesting product read is that run prevention and usable depth can tell very different stories on the same night.`,
+      linkedin: `The interesting baseball read is that run prevention and usable depth can tell very different stories on the same night.`,
     }
   }
 
@@ -736,15 +736,15 @@ function humanTensionClaim(take) {
       hook: `${facts.market} has ${result}, and the board is not flashing a big warning tonight.`,
       meaning: `Sometimes the post is simply that the bullpen has room to breathe.`,
       team: `${facts.market} fans, this is the calmer kind of bullpen post: strong results and enough room to manage the game normally.`,
-      linkedin: `The product read is that not every shareable note needs tension; sometimes a clean board is the point.`,
+      linkedin: `The baseball read is that not every shareable note needs tension; sometimes a clean board is the point.`,
     }
   }
 
   return {
     hook: `${facts.market}'s bullpen has a specific read tonight.`,
-    meaning: `It is worth discussing because the board gives a shape, not because it proves what happens next.`,
-    team: `${facts.market} fans, this is a board-shape question more than a prediction.`,
-    linkedin: `The product read is simple: translate the board into one honest baseball question, then stop before inventing a bigger story.`,
+    meaning: `It is worth discussing because the board frames a real question, not because it proves what happens next.`,
+    team: `${facts.market} fans, this is a bullpen-management question more than a prediction.`,
+    linkedin: `The baseball read is simple: turn the board into one honest question, then stop before inventing a bigger story.`,
   }
 }
 
@@ -882,25 +882,25 @@ export function buildPlatformDrafts(take) {
         label: 'Reddit - league-wide',
         audience: 'r/baseball or r/Sabermetrics',
         text: [
-          `The ${teamName} bullpen is one of the more interesting watches tonight.`,
+          `The ${teamName} bullpen is one I would bring up in a pregame conversation tonight.`,
           take.postability.hasTension
             ? `${signal}. The tension is not "bad bullpen"; it is ${angle}.`
             : `${signal}. The interesting part is ${angle}.`,
           `The numbers behind it: ${evidence}.`,
-          'The question I would put to the room: if the starter exits early, does that shape change how you would manage the late innings?',
+          'The question I would put to the room: if the starter exits early, does that change how you handle the late innings?',
         ].join('\n\n'),
       },
       team: {
         label: 'Reddit - team subreddit',
         audience: `${abbr} team subreddit`,
         text: [
-          `${abbr} fans, tonight's bullpen read feels more specific than just "who is available."`,
+          `${abbr} fans, tonight's bullpen question is more specific than just "who is available."`,
           `${signal}.`,
           `The board underneath it: ${evidence}.`,
           take.postability.hasTension
             ? `That is the argument for the game thread: the pen has a usable path, but ${angle}.`
             : `That is the game-thread angle: ${angle}, without turning it into a prediction.`,
-          'Would you try to steal outs earlier, or hold the cleaner lane for leverage?',
+          'Would you try to steal outs earlier, or hold the cleaner arms for leverage?',
         ].join('\n\n'),
       },
     },

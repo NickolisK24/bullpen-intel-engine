@@ -31,7 +31,7 @@ TWITTER_CARD = 'summary'
 
 PLAIN_SHARE_TITLE_LABELS = {
     RULE_SUSTAINABILITY_QUESTION: 'Riding the Bullpen Hard',
-    RULE_PRESSURE_DISTRIBUTION: 'Bullpen in Good Shape',
+    RULE_PRESSURE_DISTRIBUTION: 'Room to Maneuver',
     RULE_STRESS_TRANSFER: 'Short on Fresh Arms',
     RULE_HIDDEN_CAPACITY_LOSS: 'Not as Deep as It Looks',
     'thinning_trust_lane': 'Thin Where It Counts Late',

@@ -59,9 +59,9 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               BASEBALL<span className="text-gradient-amber">OS</span>
             </h1>
             <p className="text-chalk400 text-sm max-w-2xl font-mono leading-relaxed">
-              Governed availability and workload across bullpen-eligible MLB arms from
-              the latest completed data - which arms are classified available, how stressed
-              the governed set is, and what usage each arm appears suited for.
+              A league-wide bullpen board from the latest completed data - who looks
+              usable, which pens are stretched, and what kind of role each arm appears
+              to fill.
               Open <span className="text-chalk200">Bullpen</span> for a single team's pen.
             </p>
 
@@ -127,7 +127,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           {/* Section 3 — Bullpen State */}
           <Section
             title="League-Wide Bullpen State"
-            subtitle="Aggregated across the governed bullpen-eligible set — not a single team. Open Bullpen for one team's current state."
+            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open Bullpen for one team's current state."
           >
             <div className="card p-4" style={context.tone} role="status" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2">

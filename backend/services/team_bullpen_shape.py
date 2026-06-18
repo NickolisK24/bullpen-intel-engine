@@ -284,7 +284,7 @@ def _clean_options(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'cleanOptions',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear current reads, so Clean Options is a Limited Read.",
+            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so Clean Options is a Limited Read.",
             counts,
         )
 
@@ -366,7 +366,7 @@ def _bullpen_pressure(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'bullpenPressure',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear current reads, so Trust-Lane Pressure is a Limited Read.",
+            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so Trust-Lane Pressure is a Limited Read.",
             counts,
         )
 
@@ -443,7 +443,7 @@ def _workload_concentration(workload):
     if total_pitches <= 0 or participant_count <= 0:
         return _limited_read(
             'workloadConcentration',
-            'No recent relief workload was available in the current window, so Workload Concentration is a Limited Read.',
+            'No recent relief workload was available in the workload window, so Workload Concentration is a Limited Read.',
             counts,
         )
 

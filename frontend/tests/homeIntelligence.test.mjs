@@ -439,7 +439,7 @@ test('story candidates attach matching continuity from the dashboard payload', (
 
 test('flagship support copy does not invent continuity objects', () => {
   const hero = getHeroStory(dashboard)
-  assert.match(hero.continuity_note, /current-day pressure point/)
+  assert.match(hero.continuity_note, /pressure point for today/)
   assert.match(hero.context_note, /workload-driven/)
   assert.equal(hero.continuity, undefined)
 })

@@ -429,7 +429,7 @@ test('high trust-lane pressure with deep clean options does not read as thin mar
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: thinningTrustLaneBoard }))
 
   assert.equal(story.label, 'Thinning Trust Lane')
-  assert.match(story.headline, /trust lane is thinning/)
+  assert.match(story.headline, /fewer trusted late-inning options/)
   assert.match(story.observation, /6 relievers are clean options/)
   assert.match(story.observation, /2 clean Trust Arms; 1 on watch; 1 needs rest/)
   assert.ok(story.evidence.some(item => /6 Clean Options remain available from 8 active bullpen arms/.test(item)))
@@ -445,7 +445,7 @@ test('genuine low-availability pressure still reads as thin margin with count co
 
   assert.equal(story.label, 'Thin Margin')
   assert.match(story.observation, /4 relievers of 8 need rest/)
-  assert.match(story.whyItMatters, /narrow the clean late-game options/)
+  assert.match(story.whyItMatters, /short on clean late-game options/)
 })
 
 test('a constrained club gets a specific story with real counts', () => {
@@ -453,9 +453,9 @@ test('a constrained club gets a specific story with real counts', () => {
   assert.equal(story.family, 'constrained')
   assert.equal(story.archetypeKey, 'coverage_concern')
   assert.equal(story.label, 'Coverage Concern')
-  assert.match(story.headline, /Milwaukee Brewers have a tighter coverage picture/)
-  assert.match(story.observation, /coverage layer is tighter/)
-  assert.ok(story.evidence.some(item => /1 of 2 Coverage Arms are clean or on watch/.test(item)))
+  assert.match(story.headline, /Milwaukee Brewers have a shorter bridge/)
+  assert.match(story.observation, /Middle-inning coverage is thin/)
+  assert.ok(story.evidence.some(item => /1 of 2 Coverage Arms are clean or only lightly flagged/.test(item)))
   assert.ok(!/Cal Coverage|Cooper Coverage|Drew Depth/.test(story.evidence.join(' ')))
   assert.ok(!story.evidence.some(item => /most directly shaping the coverage read/.test(item)))
   assert.ok(story.watchItems.length >= 2 && story.watchItems.length <= 4)
@@ -472,7 +472,7 @@ test('Coverage Concern requires actual Coverage Arms under stress', () => {
 
   assert.equal(deriveTeamStoryArchetype(constrainedBoard), 'coverage_concern')
   assert.equal(story.label, 'Coverage Concern')
-  assert.match(story.observation, /1 of 2 Coverage Arms are clean or on watch/)
+  assert.match(story.observation, /1 of 2 Coverage Arms are clean or only lightly flagged/)
   assert.ok(!storyText.includes('0 of 0 Coverage Arms'))
 })
 
@@ -506,7 +506,7 @@ test('a rested club reads as a deeper bullpen with room to maneuver', () => {
   const story = getTeamBullpenStoryView(restedBoard)
   assert.equal(story.label, 'Depth Advantage')
   assert.match(story.headline, /multiple routes through the late innings/)
-  assert.match(story.observation, /clean group runs beyond one or two primary arms/)
+  assert.match(story.observation, /usable group goes beyond one or two names/)
   assert.ok(story.evidence.some(item => /Kyle Finnegan, Hunter Harvey, and Derek Law/.test(item)))
 })
 
@@ -517,17 +517,46 @@ test('story generation is deterministic for the same board', () => {
   )
 })
 
+test('public team story fields avoid robotic voice residue', () => {
+  const stories = [
+    constrainedBoard,
+    watchBoard,
+    restedBoard,
+    thinningTrustLaneBoard,
+    substituteBridgeBoard,
+  ].map(board => getTeamBullpenStoryView(board))
+  const text = stories.map(story => [
+    story.headline,
+    story.observation,
+    story.whyItMatters,
+    ...story.evidence,
+    ...story.watchItems,
+  ].join(' ')).join(' ').toLowerCase()
+
+  for (const phrase of [
+    'story starts with',
+    'the watch is',
+    'watch point',
+    'current read',
+    'current window',
+    'reads differently from the prior bullpen shape',
+    'late-game flexibility can become less balanced',
+  ]) {
+    assert.equal(text.includes(phrase), false, phrase)
+  }
+})
+
 test('a neutral club gets balanced story copy', () => {
   const story = getTeamBullpenStoryView(balancedBoard)
   assert.equal(story.label, 'Stable Bullpen')
-  assert.match(story.headline, /holding a steady shape today/)
+  assert.match(story.headline, /holding steady today/)
   assert.match(story.observation, /4 clean options, 1 watch-list arm, and 1 needing rest/)
 })
 
 test('a thin dataset gets an honest limited read', () => {
   const story = getTeamBullpenStoryView(dataLimitedBoard)
   assert.equal(story.label, 'Limited Read')
-  assert.match(story.headline, /limited bullpen read/)
+  assert.match(story.headline, /not enough bullpen data/)
   assert.ok(story.evidence.length >= 1)
 })
 

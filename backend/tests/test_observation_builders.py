@@ -59,7 +59,7 @@ def test_valid_builder_output_creates_governed_observation():
     assert payload['observation_type'] == 'inventory'
     assert payload['family'] == 'inventory'
     assert payload['severity'] == 'monitor'
-    assert payload['title'] == 'Availability inventory is constrained.'
+    assert payload['title'] == 'The current bullpen snapshot shows fewer usable arms.'
     assert payload['evidence'][0]['evidence_id'] == 'sample-inventory-count'
     assert payload['freshness']['status'] == 'current'
     assert payload['confidence']['status'] == 'medium'
@@ -161,7 +161,7 @@ def test_builder_output_serializes_safely():
     payload = serialize_observation(observation)
 
     assert payload['observation_type'] == 'workload_pressure'
-    assert payload['title'] == 'Bullpen workload pressure is elevated.'
+    assert payload['title'] == 'Recent bullpen workload is running hot.'
     assert observation_governance_errors(payload) == []
 
 
