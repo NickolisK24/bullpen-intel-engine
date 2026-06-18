@@ -30,6 +30,12 @@ MIN_WEIGHTED_COVERAGE_SHARE = 0.75
 COUNT_BASED_LIMITATION = (
     'Capacity uses count-based weighting because relief workload sample is limited.'
 )
+UNAVAILABLE_ZERO_OUTS_LIMITATION = (
+    'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.'
+)
+UNKNOWN_CAPACITY_LIMITATION = (
+    'Some bullpen capacity is based on limited-read or unknown availability inputs.'
+)
 NO_CAPACITY_LIMITATION = (
     'No bullpen-eligible pitchers were available to measure capacity loss.'
 )
@@ -39,6 +45,23 @@ NO_TRUST_ARM_LIMITATION = (
 
 LIMITED_DATA_STATES = {'stale', 'missing', 'incomplete', 'failed', 'historical', 'unknown'}
 UNKNOWN_CONFIDENCE = {'none', 'unknown'}
+
+CAPACITY_DEFINITIONS = {
+    'available_capacity_pct': (
+        'Share of measured bullpen capacity not classified as fully unavailable; '
+        'this can include Monitor, Limited, or Avoid arms and should not be read '
+        'as clean or fully available capacity. Limited-read or unknown capacity '
+        'is reported separately.'
+    ),
+    'unavailable_capacity_pct': (
+        'Share of measured bullpen capacity classified as fully unavailable by '
+        'roster status or current availability read.'
+    ),
+    'unknown_limited_read_capacity_pct': (
+        'Share of measured bullpen capacity with limited-read or unknown '
+        'availability inputs.'
+    ),
+}
 
 
 def _value(obj: Any, name: str, default=None):
@@ -184,6 +207,14 @@ def _weighting(records, relief_outs_by_pitcher):
     total = len(records)
     relief_outs_by_pitcher = relief_outs_by_pitcher or {}
     total_outs = sum(int(relief_outs_by_pitcher.get(record['pitcher_id'], 0) or 0) for record in records)
+    unavailable_zero_outs = sum(
+        1
+        for record in records
+        if (
+            record['state'] == 'unavailable'
+            and int(relief_outs_by_pitcher.get(record['pitcher_id'], 0) or 0) <= 0
+        )
+    )
     covered = sum(
         1
         for record in records
@@ -193,16 +224,18 @@ def _weighting(records, relief_outs_by_pitcher):
     sample = {
         'total_relief_outs': total_outs,
         'pitchers_with_relief_outs': covered,
+        'unavailable_pitchers_without_relief_outs': unavailable_zero_outs,
         'total_bullpen_pitcher_count': total,
         'min_weighted_total_relief_outs': MIN_WEIGHTED_TOTAL_RELIEF_OUTS,
         'min_weighted_coverage_share': MIN_WEIGHTED_COVERAGE_SHARE,
     }
 
-    if (
+    strong_weighted_sample = (
         total > 0
         and total_outs >= MIN_WEIGHTED_TOTAL_RELIEF_OUTS
         and coverage_share >= MIN_WEIGHTED_COVERAGE_SHARE
-    ):
+    )
+    if strong_weighted_sample and unavailable_zero_outs == 0:
         return {
             'method': WEIGHTING_SEASON_RELIEF_OUTS,
             'basis': 'season relief outs',
@@ -214,12 +247,18 @@ def _weighting(records, relief_outs_by_pitcher):
             'limitations': [],
         }
 
+    limitations = []
+    if unavailable_zero_outs > 0:
+        limitations.append(UNAVAILABLE_ZERO_OUTS_LIMITATION)
+    if total > 0 and not strong_weighted_sample:
+        limitations.append(COUNT_BASED_LIMITATION)
+
     return {
         'method': WEIGHTING_COUNT_BASED,
         'basis': 'equal bullpen pitcher count',
         'sample': sample,
         'weights': {record['pitcher_id']: 1 for record in records},
-        'limitations': [COUNT_BASED_LIMITATION] if total else [],
+        'limitations': limitations,
     }
 
 
@@ -336,6 +375,8 @@ def build_team_bullpen_capacity(
     limitations = list(weighting['limitations'])
     if not normalized and NO_CAPACITY_LIMITATION not in limitations:
         limitations.append(NO_CAPACITY_LIMITATION)
+    if unknown_weight > 0 and UNKNOWN_CAPACITY_LIMITATION not in limitations:
+        limitations.append(UNKNOWN_CAPACITY_LIMITATION)
 
     trust_records = [record for record in normalized if record['role_key'] == 'trust_arm']
     trust_weight = sum(weights.get(record['pitcher_id'], 0) for record in trust_records)
@@ -346,6 +387,8 @@ def build_team_bullpen_capacity(
     trust_limitations = list(weighting['limitations'])
     if not trust_records:
         trust_limitations.append(NO_TRUST_ARM_LIMITATION)
+    if trust_unknown_weight > 0 and UNKNOWN_CAPACITY_LIMITATION not in trust_limitations:
+        trust_limitations.append(UNKNOWN_CAPACITY_LIMITATION)
 
     capacity_loss = {
         'status': _capacity_status(unavailable_pct, known_weight, total_weight),
@@ -368,6 +411,7 @@ def build_team_bullpen_capacity(
         'unknown_limited_read_pitcher_count': sum(1 for record in normalized if record['state'] == 'unknown'),
         'total_bullpen_pitcher_count': len(normalized),
         'summary': _capacity_summary(unavailable_pct, len(normalized)),
+        'definitions': dict(CAPACITY_DEFINITIONS),
         'weighting': _serialize_weighting(weighting),
         'limitations': limitations,
     }
@@ -392,6 +436,16 @@ def build_team_bullpen_capacity(
             sum(1 for record in trust_records if record['state'] == 'available'),
             len(trust_records),
         ),
+        'definitions': {
+            'trust_capacity_unavailable_pct': (
+                'Share of measured Trust Arm capacity classified as fully unavailable; '
+                'Trust Arms come from existing backend-authored public role labels.'
+            ),
+            'unknown_limited_read_trust_capacity_pct': (
+                'Share of measured Trust Arm capacity with limited-read or unknown '
+                'availability inputs.'
+            ),
+        },
         'weighting': _serialize_weighting(weighting),
         'limitations': trust_limitations,
     }
@@ -426,6 +480,8 @@ def build_league_capacity_payload(team_capacity_items):
 __all__ = [
     'CAPABILITY',
     'COUNT_BASED_LIMITATION',
+    'UNAVAILABLE_ZERO_OUTS_LIMITATION',
+    'UNKNOWN_CAPACITY_LIMITATION',
     'NO_TRUST_ARM_LIMITATION',
     'VERSION',
     'WEIGHTING_COUNT_BASED',

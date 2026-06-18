@@ -1,6 +1,8 @@
 from services.bullpen_capacity import (
     COUNT_BASED_LIMITATION,
     NO_TRUST_ARM_LIMITATION,
+    UNAVAILABLE_ZERO_OUTS_LIMITATION,
+    UNKNOWN_CAPACITY_LIMITATION,
     WEIGHTING_COUNT_BASED,
     WEIGHTING_SEASON_RELIEF_OUTS,
     build_team_bullpen_capacity,
@@ -119,6 +121,26 @@ def test_limited_workload_sample_falls_back_to_count_based_weighting():
     assert COUNT_BASED_LIMITATION in loss['limitations']
 
 
+def test_unavailable_zero_out_arm_forces_count_based_weighting():
+    result = capacity(
+        [
+            record(1),
+            record(2),
+            record(3),
+            record(4, read_key='unavailable', availability_status='Unavailable'),
+        ],
+        relief_outs={1: 12, 2: 12, 3: 12},
+    )
+
+    loss = result['capacity_loss']
+    assert loss['weighting']['method'] == WEIGHTING_COUNT_BASED
+    assert loss['weighting']['sample']['pitchers_with_relief_outs'] == 3
+    assert loss['weighting']['sample']['unavailable_pitchers_without_relief_outs'] == 1
+    assert loss['available_capacity_pct'] == 75
+    assert loss['unavailable_capacity_pct'] == 25
+    assert UNAVAILABLE_ZERO_OUTS_LIMITATION in loss['limitations']
+
+
 def test_non_bullpen_records_are_excluded_and_ambiguous_roles_do_not_become_trust():
     result = capacity(
         [
@@ -169,3 +191,34 @@ def test_limited_read_capacity_is_separate_from_unavailable_capacity():
     assert loss['unknown_limited_read_capacity_pct'] == 33
     assert loss['unavailable_capacity_pct'] == 33
     assert loss['unknown_limited_read_pitcher_count'] == 1
+    assert UNKNOWN_CAPACITY_LIMITATION in loss['limitations']
+
+
+def test_monitor_limited_and_avoid_arms_are_not_fully_unavailable_capacity():
+    result = capacity(
+        [
+            record(1, read_key='watch_arm', availability_status='Monitor'),
+            record(2, read_key='rest_restricted', availability_status='Limited'),
+            record(3, read_key='rest_restricted', availability_status='Avoid'),
+            record(4, read_key='unavailable', availability_status='Unavailable'),
+        ],
+        relief_outs={1: 12, 2: 12, 3: 12, 4: 12},
+    )
+
+    loss = result['capacity_loss']
+    assert loss['available_pitcher_count'] == 3
+    assert loss['unavailable_pitcher_count'] == 1
+    assert loss['available_capacity_pct'] == 75
+    assert loss['unavailable_capacity_pct'] == 25
+
+
+def test_capacity_payload_defines_available_as_not_fully_unavailable():
+    result = capacity([
+        record(1),
+        record(2, read_key='watch_arm', availability_status='Monitor'),
+    ])
+
+    definition = result['capacity_loss']['definitions']['available_capacity_pct']
+    assert 'not classified as fully unavailable' in definition
+    assert 'not be read as clean or fully available capacity' in definition
+    assert 'Limited-read or unknown capacity is reported separately' in definition
