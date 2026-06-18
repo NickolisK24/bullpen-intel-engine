@@ -29,6 +29,51 @@ from services.team_bullpen_shape import build_team_bullpen_shape
 
 REF = date(2026, 6, 16)
 
+CAPACITY_CONTEXT_MARKERS = (
+    'fewer usable arms',
+    'bullpen room',
+    'bullpen looks thinner',
+    'available group is smaller',
+    'fewer places to turn',
+    'less usable depth',
+    'short on usable arms',
+    'already short on usable arms',
+    'available group is already thin',
+    'repeat innings',
+    'heavy innings keep finding',
+)
+
+CAPACITY_FALLBACK_MARKERS = (
+    'fewer usable arms',
+    'bullpen room',
+    'bullpen looks thinner',
+    'available group is smaller',
+    'fewer places to turn',
+    'less usable depth',
+)
+
+ROTATION_CONTEXT_MARKERS = (
+    'recent workload picture is adding pressure',
+    'carrying more of the workload',
+    'extra outs have been finding',
+    'covering more of the game',
+    'landing on the pen',
+)
+
+STABILITY_CONTEXT_MARKERS = (
+    'group has not looked the same',
+    'moving in and out of the picture',
+    'not looked exactly the same',
+    'innings have been moving around',
+    'bullpen mix has been shifting',
+)
+
+ENVIRONMENT_INTRO_MARKERS = (
+    'this is not one clean issue',
+    'more than one thing tightening the picture',
+    'not just one part of the pen',
+)
+
 
 def _pitcher(pid, name, team_id=1, team_name='Test Club', abbr='TST'):
     return SimpleNamespace(
@@ -684,8 +729,9 @@ def test_supported_environment_adds_single_backend_why_context():
         'context_flags': ['source_limitations_present'],
         'source_limitations_present': True,
     }
-    assert 'this is not one clean issue' in text
-    assert 'the bullpen is short on usable arms, and the recent workload picture is adding pressure' in text
+    assert any(marker in text for marker in ENVIRONMENT_INTRO_MARKERS)
+    assert any(marker in text for marker in CAPACITY_CONTEXT_MARKERS)
+    assert any(marker in text for marker in ROTATION_CONTEXT_MARKERS)
     for unsupported in (
         'because',
         'caused',
@@ -736,11 +782,41 @@ def test_capacity_count_based_fallback_adds_soft_context_without_precision():
 
     assert context['sources'] == ['capacity_loss']
     assert story['computed']['why_context']['source_limitations_present'] is True
-    assert 'current board still shows fewer usable arms than a normal night' in text
+    assert any(marker in text for marker in CAPACITY_FALLBACK_MARKERS)
     assert '44' not in text
     assert '%' not in text
     for unsupported in ('because', 'caused', 'due to', 'recommend', 'prediction', 'betting'):
         assert unsupported not in text
+
+
+def test_capacity_fallback_context_has_deterministic_phrase_variety_without_precision():
+    capacity_payload = _capacity_context(
+        status='constrained',
+        unavailable_pct=44,
+        limitations=[
+            'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.',
+        ],
+    )[1]
+    texts = []
+
+    for team_id in range(1, 8):
+        story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+            team={
+                'team_id': team_id,
+                'team_name': f'Test Club {team_id}',
+                'team_abbreviation': f'T{team_id}',
+            },
+            capacity_by_team={team_id: capacity_payload},
+        )), RULE_STRESS_TRANSFER)['story']
+        context = next(beat for beat in story['beats'] if beat['key'] == BEAT_CONTEXT)
+        text = context['text'].lower()
+
+        texts.append(text)
+        assert any(marker in text for marker in CAPACITY_FALLBACK_MARKERS)
+        assert '44' not in text
+        assert '%' not in text
+
+    assert len(set(texts)) >= 2
 
 
 def test_unclassified_capacity_limitation_still_blocks_context():
@@ -768,9 +844,8 @@ def test_capacity_and_rotation_context_can_appear_without_environment_synthesis(
 
     assert context['sources'] == ['capacity_loss', 'rotation_support_pressure']
     assert story['computed']['why_context']['sources'] == ['capacity_loss', 'rotation_support_pressure']
-    assert 'short on usable arms' in text
-    assert 'carrying more of the workload' in text
-    assert 'harder to replace' in text
+    assert any(marker in text for marker in CAPACITY_CONTEXT_MARKERS)
+    assert any(marker in text for marker in ROTATION_CONTEXT_MARKERS)
     for unsupported in ('because', 'caused', 'due to', 'recommend', 'prediction', 'betting'):
         assert unsupported not in text
 
@@ -787,7 +862,7 @@ def test_stability_usage_only_disclosure_stays_usage_based_without_transaction_c
     text = context['text'].lower()
 
     assert context['sources'] == ['bullpen_stability']
-    assert 'moving in and out of the picture' in text
+    assert any(marker in text for marker in STABILITY_CONTEXT_MARKERS)
     assert 'usage pattern' not in text
     assert 'read cleanly' not in text
     for unsupported in ('transaction', 'recall', 'called up', 'optioned', 'dfa'):
@@ -820,7 +895,7 @@ def test_environment_context_requires_two_eligible_source_contexts():
 
     assert context['sources'] == ['capacity_loss']
     assert story['computed']['why_context']['sources'] == ['capacity_loss']
-    assert 'this is not one clean issue' not in context['text'].lower()
+    assert not any(marker in context['text'].lower() for marker in ENVIRONMENT_INTRO_MARKERS)
 
 
 def test_environment_context_can_use_disclosure_limited_capacity_and_stability():
@@ -845,9 +920,9 @@ def test_environment_context_can_use_disclosure_limited_capacity_and_stability()
 
     assert context['sources'] == ['bullpen_environment']
     assert story['computed']['why_context']['source_limitations_present'] is True
-    assert 'this is not one clean issue' in text
-    assert 'short on usable arms' in text
-    assert 'the group has not looked the same lately' in text
+    assert any(marker in text for marker in ENVIRONMENT_INTRO_MARKERS)
+    assert any(marker in text for marker in CAPACITY_CONTEXT_MARKERS)
+    assert any(marker in text for marker in STABILITY_CONTEXT_MARKERS)
     for unsupported in ('because', 'caused', 'due to', 'transaction', 'recall', 'called up', 'optioned', 'dfa'):
         assert unsupported not in text
 
