@@ -383,8 +383,14 @@ test('generation payload contains the verified fact object and platform constrai
   const payload = buildDraftGenerationPayload(take)
 
   assert.deepEqual(payload.platforms, POST_DRAFT_PLATFORMS)
+  assert.equal('signal' in payload, false)
+  assert.equal('evidence' in payload, false)
+  assert.equal('postability' in payload, false)
   assert.equal(payload.constraints.use_only_verified_facts, true)
   assert.equal(payload.constraints.x_lead_character_limit, X_LEAD_CHARACTER_LIMIT)
+  assert.equal(payload.writing_instructions.interpretive_license, 'medium')
+  assert.match(payload.writing_instructions.lead, /human claim/)
+  assert.ok(payload.constraints.forbidden_residue.includes('The catch:'))
   assert.equal(payload.verified_facts.signal, take.signal)
   assert.equal(payload.verified_facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
   assert.equal(JSON.stringify(payload).includes('9/9'), false)
@@ -402,6 +408,38 @@ test('generated drafts clear the absent-number guard while fabricated numbers ar
 
   const rogueText = 'MIL bullpen tonight: 9/9 arms available and No. 99 of 30.'
   assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99'])
+})
+
+test('generated drafts lead with human interpretation instead of template residue or stat lists', () => {
+  const [take] = getPrivatePostTakes(dashboard)
+  const generatedText = flattenTakeDrafts(take).map(draft => draft.text || draft.lead).join('\n\n')
+  const xLead = take.drafts.x.lead
+
+  for (const residue of [
+    'The catch:',
+    'The useful angle',
+    'The useful framing',
+    'The useful read',
+    'the argument is',
+    'Verified facts:',
+    'clean Trust Arm',
+    'current-pen',
+    'top 3 carried',
+  ]) {
+    assert.equal(generatedText.includes(residue), false, residue)
+  }
+  assert.match(xLead, /^Milwaukee/)
+  assert.equal(xLead.startsWith('MIL bullpen tonight:'), false)
+  assert.ok(xLead.includes('running hot') || xLead.includes('late') || xLead.includes('tightrope'))
+  assert.ok(generatedText.includes('running hot') || generatedText.includes('trusted late'))
+})
+
+test('generated drafts avoid future certainty and unsupported causal language', () => {
+  const banned = /\b(will|guarantee|guaranteed|certainly|definitely|caused|causes|because of|proves|locks in)\b/i
+  for (const take of getPrivatePostTakes(dashboard)) {
+    const generatedText = flattenTakeDrafts(take).map(draft => draft.text || draft.lead).join('\n\n')
+    assert.doesNotMatch(generatedText, banned, take.abbr)
+  }
 })
 
 test('request failure and empty generated output fall back to the WP39 template drafts', async () => {

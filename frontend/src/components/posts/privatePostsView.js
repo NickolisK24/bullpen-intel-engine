@@ -45,6 +45,40 @@ const SUPERLATIVE_LEAD_DIMENSIONS = new Set([
   'trust_lane_depth',
 ])
 
+const TEAM_MARKET_NAMES = {
+  ARI: 'Arizona',
+  AZ: 'Arizona',
+  ATL: 'Atlanta',
+  BAL: 'Baltimore',
+  BOS: 'Boston',
+  CHC: 'Chicago',
+  CWS: 'Chicago',
+  CIN: 'Cincinnati',
+  CLE: 'Cleveland',
+  COL: 'Colorado',
+  DET: 'Detroit',
+  HOU: 'Houston',
+  KC: 'Kansas City',
+  LAA: 'Los Angeles',
+  LAD: 'Los Angeles',
+  MIA: 'Miami',
+  MIL: 'Milwaukee',
+  MIN: 'Minnesota',
+  NYM: 'New York',
+  NYY: 'New York',
+  OAK: 'Oakland',
+  PHI: 'Philadelphia',
+  PIT: 'Pittsburgh',
+  SD: 'San Diego',
+  SEA: 'Seattle',
+  SF: 'San Francisco',
+  STL: 'St. Louis',
+  TB: 'Tampa Bay',
+  TEX: 'Texas',
+  TOR: 'Toronto',
+  WSH: 'Washington',
+}
+
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -548,99 +582,235 @@ function verifiedValue(take, path, fallback = '') {
   return path.split('.').reduce((value, key) => value?.[key], facts) ?? fallback
 }
 
-function availableFactLines(take) {
-  const facts = take.verifiedFacts || buildVerifiedFactSet(take.story, take.facts)
-  return [
-    facts.availability?.text,
-    facts.clean_trust?.text,
-    facts.clean_options?.text,
-    facts.season_era?.text,
-    facts.high_risk?.text,
-    facts.workload?.top_share_story_text,
-    facts.workload?.participation_story_text,
-    facts.roster_unavailable?.text,
-  ].map(cleanText).filter(Boolean)
+function verifiedNumber(take, path, fallback = null) {
+  return finiteNumber(verifiedValue(take, path), fallback)
 }
 
-function compactFactLine(take, limit = 5) {
-  return joinReadable(availableFactLines(take).slice(0, limit), trimSentence(take.signal))
+function marketName(take) {
+  return TEAM_MARKET_NAMES[take.abbr] || teamLabel(take.story).replace(/^the\s+/i, '').split(/\s+/)[0] || take.abbr
 }
 
-function articleForStat(value) {
-  const text = cleanText(value)
-  if (!text) return ''
-  return /^\d/.test(text) ? `a ${text}` : text
+function ordinal(value) {
+  const number = finiteNumber(value)
+  if (number === null) return ''
+  const mod100 = number % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${number}th`
+  const mod10 = number % 10
+  if (mod10 === 1) return `${number}st`
+  if (mod10 === 2) return `${number}nd`
+  if (mod10 === 3) return `${number}rd`
+  return `${number}th`
 }
 
-function generatedOpening(take) {
-  const teamName = take.teamName
-  const era = cleanText(verifiedValue(take, 'season_era.text'))
-  const availability = cleanText(verifiedValue(take, 'availability.text'))
-  if (era && availability) {
-    return `The ${teamName} bullpen owns ${articleForStat(era)} with ${availability} tonight`
+function trustedLatePhrase(count) {
+  if (count === 0) return 'no obvious late-inning anchor'
+  if (count === 1) return 'one trusted late option'
+  if (count > 1) return `${count} trusted late options`
+  return ''
+}
+
+function humanFacts(take) {
+  const available = verifiedNumber(take, 'availability.available')
+  const total = verifiedNumber(take, 'availability.total')
+  const availableShare = verifiedNumber(take, 'availability.available_share')
+  const cleanTrustCount = verifiedNumber(take, 'clean_trust.count')
+  const cleanOptionCount = verifiedNumber(take, 'clean_options.count')
+  const eraRank = verifiedNumber(take, 'season_era.rank')
+  const eraRankTotal = verifiedNumber(take, 'season_era.rank_total')
+  const era = verifiedNumber(take, 'season_era.era')
+  const highRiskCount = verifiedNumber(take, 'high_risk.count', 0)
+  const highRiskNames = Array.isArray(verifiedValue(take, 'high_risk.names', []))
+    ? verifiedValue(take, 'high_risk.names', [])
+    : []
+  const topShare = verifiedNumber(take, 'workload.top_share')
+  const perArmPitches = verifiedNumber(take, 'workload.per_arm_pitches')
+
+  return {
+    market: marketName(take),
+    teamName: take.teamName,
+    available,
+    total,
+    availableShare,
+    cleanTrustCount,
+    cleanOptionCount,
+    eraRank,
+    eraRankTotal,
+    era,
+    highRiskCount,
+    highRiskNames,
+    topShare,
+    perArmPitches,
+    trustedLate: trustedLatePhrase(cleanTrustCount),
   }
-  if (availability) {
-    return `The ${teamName} bullpen has ${availability} tonight`
-  }
-  return trimSentence(take.signal)
 }
 
-function generatedAngleSentence(take) {
-  const angle = angleLine(take)
-  if (take.postability.hasTension) {
-    return `The useful angle is the contrast: ${angle}.`
+function resultPhrase(facts) {
+  if (facts.eraRank !== null && facts.eraRank <= 3) {
+    return `the ${ordinal(facts.eraRank)}-best current bullpen ERA in baseball`
   }
-  if (take.postability.hasSuperlative) {
-    return `The useful angle is the clean strength: ${angle}.`
+  if (facts.eraRank !== null && facts.eraRank <= 10) {
+    return `a top-${facts.eraRank} current bullpen ERA`
   }
-  return `The useful angle is a specific bullpen read without forcing extra drama.`
+  if (facts.era !== null && facts.eraRank !== null && facts.eraRankTotal !== null) {
+    return `a ${facts.era.toFixed(2)} ERA sitting ${ordinal(facts.eraRank)} of ${facts.eraRankTotal}`
+  }
+  return ''
 }
 
-function xFactSentence(take) {
-  const abbr = take.abbr
-  const era = cleanText(verifiedValue(take, 'season_era.text'))
-  const availability = cleanText(verifiedValue(take, 'availability.text'))
-  const cleanTrust = cleanText(verifiedValue(take, 'clean_trust.text'))
-  const highRisk = cleanText(verifiedValue(take, 'high_risk.text'))
-  const cleanOptions = cleanText(verifiedValue(take, 'clean_options.text'))
-  const tension = take.postability.hasTension ? angleLine(take) : ''
-  const strength = take.postability.hasSuperlative ? angleLine(take) : ''
-  const eraPhrase = articleForStat(era)
+function availabilityPhrase(facts) {
+  if (facts.available === null) return ''
+  if (facts.availableShare !== null && facts.availableShare <= 0.35) {
+    return `only ${facts.available} arms available`
+  }
+  if (facts.available !== null && facts.total !== null) {
+    return `${facts.available}/${facts.total} arms available`
+  }
+  return `${facts.available} arms available`
+}
+
+function fatiguePhrase(facts) {
+  if (!facts.highRiskCount) return ''
+  const names = joinReadable(facts.highRiskNames)
+  return names
+    ? `${facts.highRiskCount} arms already running hot (${names})`
+    : `${facts.highRiskCount} arms already running hot`
+}
+
+function workloadPhrase(facts) {
+  if (facts.topShare !== null && facts.topShare >= 0.58) {
+    return `a few arms have carried ${formatPercent(facts.topShare)} of the recent work`
+  }
+  if (facts.perArmPitches !== null && facts.perArmPitches >= 32) {
+    return `the recent workload is already heavy`
+  }
+  return ''
+}
+
+function humanTensionClaim(take) {
+  const facts = humanFacts(take)
+  const result = resultPhrase(facts)
+  const availability = availabilityPhrase(facts)
+  const fatigue = fatiguePhrase(facts)
+  const workload = workloadPhrase(facts)
+
+  if (result && facts.cleanTrustCount === 0) {
+    return {
+      hook: `${facts.market} has ${result}. They also have ${facts.trustedLate} tonight.`,
+      meaning: `That is not a bad-bullpen take. It is a weird leverage map: great results, no obvious late-game answer.`,
+      team: `${facts.market} fans, this is the part that feels worth arguing about: the results look excellent, but the late lane is not clean.`,
+      linkedin: `The shareable part is the contradiction: strong run prevention can still leave a team without an obvious late-inning answer on a given night.`,
+    }
+  }
+
+  if (fatigue) {
+    return {
+      hook: `${facts.market}'s bullpen story starts with fatigue: ${fatigue}.`,
+      meaning: facts.available !== null
+        ? `There may still be a late path, but ${availability} leaves very little cushion behind it.`
+        : `There may still be a late path, but the cushion behind it looks thin.`,
+      team: `${facts.market} fans, this does not read like panic. It reads like a margin problem behind the arms you trust most.`,
+      linkedin: `The point is not that the bullpen is broken; fatigue can turn a normal late-game plan into a thinner operating window.`,
+    }
+  }
+
+  if (result && availability && facts.availableShare !== null && facts.availableShare <= 0.35) {
+    return {
+      hook: `${facts.market} has ${result} and ${availability}.`,
+      meaning: `That is a tightrope: the results may be fine, but tonight's usable room is small.`,
+      team: `${facts.market} fans, this is the uncomfortable version of a usable bullpen: the options are thin even if the surface read is not panic.`,
+      linkedin: `The interesting product read is that run prevention and usable depth can tell very different stories on the same night.`,
+    }
+  }
+
+  if (workload) {
+    return {
+      hook: `${facts.market}'s bullpen looks usable, but ${workload}.`,
+      meaning: `That is the kind of shape that can feel fine until the game asks for extra outs.`,
+      team: `${facts.market} fans, the question is not just who is up. It is how quickly the same names have to get involved again.`,
+      linkedin: `The workload translation matters: availability means more when it also shows how concentrated the recent work has been.`,
+    }
+  }
+
+  if (result) {
+    return {
+      hook: `${facts.market} has ${result}, and the board is not flashing a big warning tonight.`,
+      meaning: `Sometimes the post is simply that the bullpen has room to breathe.`,
+      team: `${facts.market} fans, this is the calmer kind of bullpen post: strong results and enough room to manage the game normally.`,
+      linkedin: `The product read is that not every shareable note needs tension; sometimes a clean board is the point.`,
+    }
+  }
+
+  return {
+    hook: `${facts.market}'s bullpen has a specific read tonight.`,
+    meaning: `It is worth discussing because the board gives a shape, not because it proves what happens next.`,
+    team: `${facts.market} fans, this is a board-shape question more than a prediction.`,
+    linkedin: `The product read is simple: translate the board into one honest baseball question, then stop before inventing a bigger story.`,
+  }
+}
+
+function contextLine(take, facts) {
+  const fatigue = fatiguePhrase(facts)
+  const pieces = fatigue
+    ? [
+      fatigue,
+      availabilityPhrase(facts),
+      resultPhrase(facts),
+      workloadPhrase(facts),
+    ].filter(Boolean)
+    : [
+      resultPhrase(facts),
+      availabilityPhrase(facts),
+      workloadPhrase(facts),
+    ].filter(Boolean)
+  const limited = pieces.slice(0, 2)
+  if (limited.length > 0) return `The shape: ${joinReadable(limited)}.`
+  return trimSentence(take.evidence || take.signal)
+}
+
+function discussionQuestion(facts) {
+  if (facts.cleanTrustCount === 0 && facts.cleanOptionCount !== null) {
+    return `How much do ${facts.cleanOptionCount} clean options matter when none of them read like the obvious late arm?`
+  }
+  if (facts.highRiskCount > 0) {
+    return `How much room is there behind the trusted names before fatigue starts steering the choices?`
+  }
+  if (facts.availableShare !== null && facts.availableShare <= 0.35) {
+    return `Would you spend the cleaner lane early, or save it and accept the thinner middle?`
+  }
+  return `What would make you change the plan before the late innings?`
+}
+
+function xHumanLead(take) {
+  const facts = humanFacts(take)
+  const claim = humanTensionClaim(take)
+  const result = resultPhrase(facts)
+  const availability = availabilityPhrase(facts)
+  const fatigue = fatiguePhrase(facts)
 
   return underLimit([
-    eraPhrase
-      ? `${abbr} has ${eraPhrase}${availability ? `, with ${availability}` : ''} tonight. ${cleanTrust ? `${cleanTrust}. ` : ''}${highRisk ? `${highRisk}. ` : ''}${tension ? `The catch: ${tension}.` : strength ? `The shape: ${strength}.` : trimSentence(take.signal)}`
-      : `${abbr} bullpen tonight: ${availability || compactFactLine(take, 3)}. ${cleanTrust ? `${cleanTrust}. ` : ''}${highRisk ? `${highRisk}. ` : ''}${tension || strength || trimSentence(take.signal)}.`,
-    `${abbr} bullpen tonight: ${compactFactLine(take, 4)}. ${tension || strength || trimSentence(take.signal)}.`,
-    `${abbr} bullpen tonight: ${compactFactLine(take, 3)}.`,
+    `${claim.hook} ${claim.meaning}`,
+    result && facts.cleanTrustCount === 0
+      ? `${facts.market} has ${result}. No obvious late-inning anchor tonight. Great results, weird leverage map.`
+      : '',
+    result && availability
+      ? `${facts.market} has ${result} and ${availability}. Strong pen, tight room to maneuver.`
+      : '',
+    fatigue && availability
+      ? `${facts.market} has ${fatigue} and ${availability}. There is a path, but not much cushion.`
+      : '',
+    `${facts.market} bullpen tonight: ${trimSentence(take.signal)}`,
   ], X_LEAD_CHARACTER_LIMIT)
-}
-
-function cleanLaneQuestion(cleanTrust, cleanOptions) {
-  if (cleanTrust.startsWith('0 ')) {
-    return cleanOptions
-      ? `If the starter exits early, the thread question is whether ${cleanOptions} can cover leverage without a clean Trust Arm lane.`
-      : `If the starter exits early, the thread question is how much room the current board really leaves without a clean Trust Arm lane.`
-  }
-  if (cleanTrust || cleanOptions) {
-    return `If the starter exits early, the thread question is where the clean lane comes from: ${joinReadable([cleanTrust, cleanOptions].filter(Boolean))}.`
-  }
-  return `If the starter exits early, the thread question is how much room the current board really leaves.`
 }
 
 export function buildGeneratedPlatformDrafts(take) {
   const teamName = take.teamName
   const teamPhrase = definiteTeamName(teamName)
   const abbr = take.abbr
-  const signal = trimSentence(take.signal)
-  const opening = generatedOpening(take)
-  const angleSentence = generatedAngleSentence(take)
-  const factLine = compactFactLine(take, 6)
-  const teamFactLine = compactFactLine(take, 5)
-  const cleanTrust = cleanText(verifiedValue(take, 'clean_trust.text'))
-  const cleanOptions = cleanText(verifiedValue(take, 'clean_options.text'))
-  const highRisk = cleanText(verifiedValue(take, 'high_risk.text'))
-  const xLead = xFactSentence(take)
+  const facts = humanFacts(take)
+  const claim = humanTensionClaim(take)
+  const context = contextLine(take, facts)
+  const question = discussionQuestion(facts)
+  const xLead = xHumanLead(take)
 
   return {
     reddit: {
@@ -649,24 +819,19 @@ export function buildGeneratedPlatformDrafts(take) {
         label: 'Reddit - league-wide',
         audience: 'r/baseball or r/Sabermetrics',
         text: [
-          `${opening}.`,
-          `${angleSentence} This is more useful as a bullpen-management question than a prediction.`,
-          `Verified facts in the story: ${factLine}.`,
-          cleanLaneQuestion(cleanTrust, cleanOptions),
+          claim.hook,
+          `${claim.meaning} ${context}`,
+          question,
+          'I do not read it as a prediction. I read it as the kind of bullpen shape that makes the middle innings more interesting.',
         ].join('\n\n'),
       },
       team: {
         label: 'Reddit - team subreddit',
         audience: `${abbr} team subreddit`,
         text: [
-          `${abbr} fans, tonight's bullpen board has a specific shape: ${teamFactLine}.`,
-          `${signal}.`,
-          take.postability.hasTension
-            ? `That makes the game-thread angle less about raw availability and more about ${angleLine(take)}.`
-            : `That makes the game-thread angle a clean board read, not a forced warning.`,
-          highRisk
-            ? `The watch-list piece is hard to ignore: ${highRisk}.`
-            : `How would you sequence the trust lane if this turns into a close game?`,
+          claim.team,
+          context,
+          `${question} I am not sure there is a perfect answer; that is what makes it a postable read.`,
         ].join('\n\n'),
       },
     },
@@ -675,9 +840,9 @@ export function buildGeneratedPlatformDrafts(take) {
       label: 'LinkedIn',
       audience: 'Baseball ops, builders, and professional network',
       text: [
-        `${opening}.`,
-        `That was the most useful private BaseballOS post draft for ${teamPhrase} today because the copy stays anchored to the story's verified facts: ${factLine}.`,
-        `${angleSentence} The product lesson is that shareable baseball copy gets sharper when the claim stays inside the evidence, not when it adds a louder opinion.`,
+        `${claim.hook}`,
+        `${claim.linkedin} ${context}`,
+        `That is the voice I want BaseballOS to get better at: not louder than the evidence, but willing to say what the evidence feels like in baseball language for ${teamPhrase}.`,
       ].join('\n\n'),
     },
     x: {
@@ -687,10 +852,10 @@ export function buildGeneratedPlatformDrafts(take) {
       lead: xLead,
       characterCount: xLead.length,
       support: underLimit([
-        `Verified facts: ${factLine}. ${signal}.`,
-        `Verified facts: ${factLine}.`,
+        `${context} ${question}`,
+        context,
       ], X_LEAD_CHARACTER_LIMIT),
-      text: `${xLead}\n\nVerified facts: ${underLimit([factLine], X_LEAD_CHARACTER_LIMIT - 18)}`,
+      text: xLead,
     },
   }
 }
@@ -819,20 +984,38 @@ export function buildDraftGenerationPayload(take) {
   const verifiedFacts = take.verifiedFacts || buildVerifiedFactSet(take.story, take.facts)
   return {
     platforms: POST_DRAFT_PLATFORMS,
-    team: verifiedFacts.team,
-    story: verifiedFacts.story,
-    signal: verifiedFacts.signal,
-    evidence: verifiedFacts.evidence,
-    postability: {
-      has_tension: take.postability.hasTension,
-      has_superlative: take.postability.hasSuperlative,
-      angle: angleLine(take),
-    },
     verified_facts: verifiedFacts,
+    writing_instructions: {
+      interpretive_license: 'medium',
+      lead: 'Open with the most surprising or arguable tension as a human claim, not a stat list.',
+      interpretation: [
+        'Explain what the verified facts mean in plain baseball language.',
+        'Use light point of view when it follows from the facts.',
+        'Do not predict outcomes as certain, assign causes, or add facts outside verified_facts.',
+      ],
+      style: [
+        'Use fan language instead of internal labels.',
+        'Use only the one or two numbers that make the take.',
+        'Vary sentence length and avoid fixed skeleton phrases.',
+      ],
+    },
     constraints: {
       use_only_verified_facts: true,
       x_lead_character_limit: X_LEAD_CHARACTER_LIMIT,
       no_public_product_centering_for: ['reddit_league', 'reddit_team', 'x'],
+      forbidden_residue: [
+        'The catch:',
+        'the argument is',
+        'The useful angle',
+        'The useful framing',
+        'The useful read',
+        'Verified facts:',
+      ],
+      honest_register: [
+        'Interpret, do not invent.',
+        'Avoid future-tense certainty.',
+        'Avoid causal claims the facts do not prove.',
+      ],
     },
   }
 }
