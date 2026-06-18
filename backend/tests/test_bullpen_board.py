@@ -731,6 +731,12 @@ class TestBoardEndpoint:
         assert body['total_pitchers'] == 1
         assert body['context']['metrics']['total_relievers'] == 1
         assert body['roster_status']['excluded_inactive_count'] == 3
+        capacity = body['capacity_intelligence']['capacity_loss']
+        assert body['capacity_intelligence']['capability'] == 'bullpen_capacity_intelligence_v1'
+        assert capacity['total_bullpen_pitcher_count'] == 4
+        assert capacity['available_capacity_pct'] == 25
+        assert capacity['unavailable_capacity_pct'] == 75
+        assert capacity['inactive_roster_unavailable_pitcher_count'] == 3
 
     def test_bereavement_status_keeps_pitcher_unavailable_without_collapsing_label(self, client):
         with client.application.app_context():

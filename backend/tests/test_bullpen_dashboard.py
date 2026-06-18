@@ -270,6 +270,9 @@ class TestDashboardEndpoint:
             story['computed']['workload']['concentration_descriptor']
         )
         assert board_concentration['supportingCounts']['topShare'] == story['computed']['workload']['top_share']
+        assert story['computed']['capacity_intelligence']['capacity_loss'] == (
+            board['capacity_intelligence']['capacity_loss']
+        )
 
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
@@ -393,6 +396,12 @@ class TestDashboardEndpoint:
         assert body['injury_il_context']['league']['population_scope'] == 'dashboard_bullpen_population'
         assert body['injury_il_context']['league']['tracked_pitchers_count'] == body['availability_summary']['total_pitchers']
         assert body['injury_il_context']['league']['bullpen_population_count'] == body['availability_summary']['total_pitchers']
+        capacity = body['capacity_intelligence']['by_team_id']['1']['capacity_loss']
+        assert body['capacity_intelligence']['capability'] == 'league_bullpen_capacity_intelligence_v1'
+        assert capacity['total_bullpen_pitcher_count'] == 4
+        assert capacity['unavailable_pitcher_count'] == 3
+        assert capacity['inactive_roster_unavailable_pitcher_count'] == 3
+        assert capacity['unavailable_capacity_pct'] == 75
 
     def test_dashboard_counts_match_default_board_visible_population_for_rays_regression(self, client):
         with client.application.app_context():

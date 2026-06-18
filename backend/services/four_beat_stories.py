@@ -264,6 +264,7 @@ class TeamInputs:
     logs_by_pitcher: dict[int, list[Any]]
     reference_date: Any
     season_era_by_team: dict[int, dict[str, Any]] | None = None
+    capacity_by_team: dict[int, dict[str, Any]] | None = None
 
 
 def _truthy(value):
@@ -527,6 +528,8 @@ def compute_team_story_inputs(team_inputs):
     workload = _workload_summary(team_inputs)
     availability = _availability_summary(team_inputs.records)
     season_era = _season_era_summary(team_inputs)
+    team_id = team_inputs.team.get('team_id')
+    capacity_intelligence = (team_inputs.capacity_by_team or {}).get(team_id) or {}
     clean, clean_trust = _clean_options(
         team_inputs.records,
         team_inputs.logs_by_pitcher,
@@ -577,6 +580,7 @@ def compute_team_story_inputs(team_inputs):
         'team': team_inputs.team,
         'workload': workload,
         'availability': availability,
+        'capacity_intelligence': capacity_intelligence,
         'season_era': season_era,
         'clean_options': clean,
         'clean_trust_options': clean_trust,
@@ -1263,6 +1267,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'workload': 'game_logs.relief_pitches',
             'availability': 'current_availability_records',
             'season_era': 'season_era.bullpens',
+            'capacity_intelligence': 'bullpen_capacity_intelligence_v1',
             'clean_options': 'governed_board_pitcher_labels',
             'high_risk_arms': 'current_availability_records.fatigue_score',
         },
@@ -1286,6 +1291,7 @@ def assemble_story(rule_key, inputs, lead=None):
                 'strong_results': inputs['season_era']['strong_results'],
                 'solid_results': inputs['season_era']['solid_results'],
             },
+            'capacity_intelligence': inputs.get('capacity_intelligence') or {},
             'high_risk_arms': inputs['high_risk_arms'],
             'high_risk_arm_count': inputs['high_risk_arms'],
             'high_risk_arm_names': [
@@ -1368,7 +1374,13 @@ def evaluate_team_rules(team_inputs):
     }
 
 
-def _team_inputs_from_records(availability_records, logs_by_pitcher, reference_date, season_era=None):
+def _team_inputs_from_records(
+    availability_records,
+    logs_by_pitcher,
+    reference_date,
+    season_era=None,
+    capacity_by_team=None,
+):
     season_era_by_team = _ranked_era_by_team(season_era)
     by_team = {}
     for record in availability_records or []:
@@ -1388,6 +1400,7 @@ def _team_inputs_from_records(availability_records, logs_by_pitcher, reference_d
             logs_by_pitcher=logs_by_pitcher or {},
             reference_date=reference_date,
             season_era_by_team=season_era_by_team,
+            capacity_by_team=capacity_by_team or {},
         )
         for bucket in by_team.values()
     ]
@@ -1399,12 +1412,14 @@ def build_four_beat_story_feed(
     reference_date=None,
     freshness=None,
     season_era=None,
+    capacity_by_team=None,
 ):
     team_inputs = _team_inputs_from_records(
         availability_records,
         logs_by_pitcher,
         reference_date,
         season_era=season_era,
+        capacity_by_team=capacity_by_team,
     )
     evaluations = [evaluate_team_rules(team) for team in team_inputs]
     story_records = []
