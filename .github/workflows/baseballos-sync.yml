@@ -111,41 +111,41 @@ jobs:
 
               if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
                 python - "$dashboard_response" <<'PY'
-import json
-import sys
+          import json
+          import sys
 
-path = sys.argv[1]
-try:
-    with open(path, encoding='utf-8') as handle:
-        payload = json.load(handle)
-except json.JSONDecodeError as exc:
-    print(f'::error::Dashboard snapshot verification failed: response was not valid JSON ({exc}).')
-    raise SystemExit(1)
+          path = sys.argv[1]
+          try:
+              with open(path, encoding='utf-8') as handle:
+                  payload = json.load(handle)
+          except json.JSONDecodeError as exc:
+              print(f'::error::Dashboard snapshot verification failed: response was not valid JSON ({exc}).')
+              raise SystemExit(1)
 
-snapshot = payload.get('snapshot') or {}
-errors = []
-if snapshot.get('served_from') != 'cache':
-    errors.append(f"snapshot.served_from={snapshot.get('served_from')!r}")
-if snapshot.get('is_published') is not True:
-    errors.append(f"snapshot.is_published={snapshot.get('is_published')!r}")
-if not snapshot.get('snapshot_id'):
-    errors.append('snapshot.snapshot_id missing')
-if not snapshot.get('data_through'):
-    errors.append('snapshot.data_through missing')
-if not snapshot.get('snapshot_generated_at'):
-    errors.append('snapshot.snapshot_generated_at missing')
+          snapshot = payload.get('snapshot') or {}
+          errors = []
+          if snapshot.get('served_from') != 'cache':
+              errors.append(f"snapshot.served_from={snapshot.get('served_from')!r}")
+          if snapshot.get('is_published') is not True:
+              errors.append(f"snapshot.is_published={snapshot.get('is_published')!r}")
+          if not snapshot.get('snapshot_id'):
+              errors.append('snapshot.snapshot_id missing')
+          if not snapshot.get('data_through'):
+              errors.append('snapshot.data_through missing')
+          if not snapshot.get('snapshot_generated_at'):
+              errors.append('snapshot.snapshot_generated_at missing')
 
-if errors:
-    print('::error::Dashboard snapshot verification failed: ' + '; '.join(errors))
-    raise SystemExit(1)
+          if errors:
+              print('::error::Dashboard snapshot verification failed: ' + '; '.join(errors))
+              raise SystemExit(1)
 
-print(
-    'Dashboard snapshot verification passed: '
-    f"id={snapshot.get('snapshot_id')} "
-    f"data_through={snapshot.get('data_through')} "
-    f"generated_at={snapshot.get('snapshot_generated_at')}"
-)
-PY
+          print(
+              'Dashboard snapshot verification passed: '
+              f"id={snapshot.get('snapshot_id')} "
+              f"data_through={snapshot.get('data_through')} "
+              f"generated_at={snapshot.get('snapshot_generated_at')}"
+          )
+          PY
                 echo "Dashboard snapshot cache verification succeeded."
                 exit 0
               fi
