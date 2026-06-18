@@ -1,4 +1,15 @@
 {
+  "headers": [
+    {
+      "source": "/posts-bpen-7f3d9c",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/team/(.*)",

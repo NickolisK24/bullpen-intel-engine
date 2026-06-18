@@ -1,0 +1,2 @@
+User-agent: *
+Disallow: /posts-bpen-7f3d9c
