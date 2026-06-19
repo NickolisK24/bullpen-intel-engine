@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.story_identity_integration import build_story_identity_integration
 from services.story_context_integration import build_story_context_integration
 
 
@@ -260,6 +261,12 @@ def build_story_facts(
     context_items = _context_items(beats)
     disclosure = _disclosure(inputs, context_items)
     bullpen_context = build_story_context_integration(rule_key, inputs, lead=lead)
+    capacity_intelligence = inputs.get('capacity_intelligence') or {}
+    bullpen_identity = (
+        capacity_intelligence.get('bullpen_identity')
+        if isinstance(capacity_intelligence, dict)
+        else None
+    ) or {}
     facts = {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -274,10 +281,15 @@ def build_story_facts(
         'environment_context': _context_text(context_items, 'bullpen_environment'),
         'bullpen_context': bullpen_context.get('text'),
         'bullpen_context_integration': bullpen_context,
+        'bullpen_identity': bullpen_identity,
+        'identity_context': bullpen_identity.get('identity_summary') if bullpen_identity else None,
         'watch_question': _watch_question(rule_key, lead),
         'confidence': 'limited' if disclosure else 'supported',
         'disclosure': disclosure,
     }
+    story_identity = build_story_identity_integration(facts)
+    facts['identity_story_context'] = story_identity.get('text')
+    facts['story_identity_integration'] = story_identity
     return facts
 
 

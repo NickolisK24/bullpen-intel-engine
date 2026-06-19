@@ -14,6 +14,7 @@ from services.bullpen_capacity import (
     CAPABILITY as CAPACITY_CAPABILITY,
     UNAVAILABLE_ZERO_OUTS_LIMITATION,
 )
+from services.bullpen_identity import CAPABILITY as IDENTITY_CAPABILITY
 from services.bullpen_environment import CAPABILITY as ENVIRONMENT_CAPABILITY
 from services.bullpen_stability import (
     CAPABILITY as STABILITY_CAPABILITY,
@@ -192,13 +193,23 @@ def _seed_heavy_rotation_with_clear_capacity():
 def _assert_capacity_contract(capacity):
     assert capacity['capability'] == CAPACITY_CAPABILITY
     assert capacity['source'] == 'backend'
-    assert set(capacity) >= {'capacity_loss', 'trust_capacity_loss'}
+    assert set(capacity) >= {'capacity_loss', 'trust_capacity_loss', 'bullpen_identity'}
     for key in ('capacity_loss', 'trust_capacity_loss'):
         section = capacity[key]
         assert 'status' in section
         assert 'summary' in section
         assert 'definitions' in section
         assert 'limitations' in section
+    identity = capacity['bullpen_identity']
+    assert identity['capability'] == IDENTITY_CAPABILITY
+    assert set(identity) >= {
+        'identity_key',
+        'identity_label',
+        'identity_summary',
+        'supporting_traits',
+        'caveats',
+        'confidence',
+    }
 
 
 def _assert_rotation_contract(pressure):
@@ -504,10 +515,12 @@ def test_four_beat_story_keeps_intelligence_layers_independent_from_rule_selecti
     story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
 
     assert story['computed']['capacity_intelligence'] == capacity
+    assert story['computed']['bullpen_identity'] == capacity.get('bullpen_identity', {})
     assert story['computed']['rotation_support_pressure'] == rotation
     assert story['computed']['bullpen_stability'] == stability
     assert story['computed']['bullpen_environment'] == environment
     assert story['slot_sources']['capacity_intelligence'] == CAPACITY_CAPABILITY
+    assert story['slot_sources']['bullpen_identity'] == IDENTITY_CAPABILITY
     assert story['slot_sources']['rotation_support_pressure'] == ROTATION_CAPABILITY
     assert story['slot_sources']['bullpen_stability'] == STABILITY_CAPABILITY
     assert story['slot_sources']['bullpen_environment'] == ENVIRONMENT_CAPABILITY

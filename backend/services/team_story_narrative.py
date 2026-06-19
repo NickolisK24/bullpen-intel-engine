@@ -74,6 +74,20 @@ INTERNAL_TAXONOMY_TERMS = (
     'resource health',
     'coverage safety',
     'trust hierarchy',
+    'trust-concentrated bullpen',
+    'depth-driven bullpen',
+    'flexible distribution bullpen',
+    'leverage-heavy bullpen',
+    'fragile coverage bullpen',
+    'resource-strained bullpen',
+    'unknown / insufficient context',
+    'trust_concentrated',
+    'depth_driven',
+    'flexible_distribution',
+    'leverage_heavy',
+    'fragile_coverage',
+    'resource_strained',
+    'unknown_insufficient_context',
     'role_change_detection',
     'ranking_applied',
     'selection_made',
@@ -1057,6 +1071,13 @@ def _situation_middle_observation(
     return _choose(facts, f'{archetype}:middle-situation:{situation}', options)
 
 
+def _identity_texture_sentence(facts: dict[str, Any]) -> str | None:
+    integration = facts.get('story_identity_integration') or {}
+    if not isinstance(integration, dict) or not integration.get('applied'):
+        return None
+    return _sentence(integration.get('text'))
+
+
 def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]:
     metric = _metric_sentence(facts, archetype)
     bullpen_context = facts.get('bullpen_context')
@@ -1117,6 +1138,7 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
     return [
         metric,
         middle_observation,
+        _identity_texture_sentence(facts),
     ]
 
 

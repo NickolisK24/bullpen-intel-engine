@@ -5,6 +5,12 @@ from types import SimpleNamespace
 
 import services.team_story_narrative as team_story_narrative
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
+from services.bullpen_identity import (
+    IDENTITY_LABELS,
+    IDENTITY_LEVERAGE_HEAVY,
+    IDENTITY_UNKNOWN,
+    build_bullpen_identity,
+)
 from services.four_beat_stories import (
     BEAT_CONTEXT,
     LEAD_AVAILABILITY_DEEP,
@@ -28,6 +34,7 @@ from services.four_beat_stories import (
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
+from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
     DISCLOSURE_LIMITED_BULLPEN_PICTURE,
@@ -330,6 +337,7 @@ def _foundation_capacity_context(
     anchor=1,
     leverage=2,
     trusted=2,
+    depth=2,
     trusted_group=5,
     top_available=1,
     hierarchy_confidence='high',
@@ -357,7 +365,7 @@ def _foundation_capacity_context(
                 'anchor_count': anchor,
                 'leverage_count': leverage,
                 'trusted_count': trusted,
-                'depth_count': 2,
+                'depth_count': depth,
                 'unknown_count': 0,
                 'trusted_group_size': trusted_group,
                 'top_trust_bucket_available_count': top_available,
@@ -379,6 +387,18 @@ def _foundation_capacity_context(
             },
         }
     }
+
+
+def _with_bullpen_identity(capacity_by_team, *, team_id=1, identity_updates=None):
+    capacity = capacity_by_team[team_id]
+    identity = build_bullpen_identity(capacity)
+    if identity_updates:
+        identity = {
+            **identity,
+            **identity_updates,
+        }
+    capacity['bullpen_identity'] = identity
+    return capacity_by_team
 
 
 def _broad_light_team_inputs(**kwargs):
@@ -1107,6 +1127,194 @@ def test_story_context_replaces_generic_middle_instead_of_appending_explanation(
     assert 'there is room to maneuver because' not in middle
     assert 'flexibility shows up when' not in middle
     assert middle.count('.') <= 3
+
+
+def test_identity_story_texture_adds_public_phrase_without_exposing_label():
+    team_inputs = _broad_light_team_inputs(
+        capacity_by_team=_with_bullpen_identity(_foundation_capacity_context()),
+    )
+    story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        compute_team_story_inputs(team_inputs),
+    )
+    integration = story['computed']['story_identity_integration']
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert integration['capability'] == STORY_IDENTITY_CAPABILITY
+    assert integration['applied'] is True
+    assert integration['text'] in narrative
+    assert story['story_facts']['identity_story_context'] == integration['text']
+    assert story['story_facts']['story_identity_integration'] == integration
+    assert story['slot_sources']['story_identity_integration'] == 'bullpen_identity_v1'
+    for label in IDENTITY_LABELS.values():
+        assert label not in narrative
+    for forbidden in (
+        'recommend',
+        'prediction',
+        'betting',
+        'ranking',
+        'should use',
+        'manager should',
+        'confidence score',
+    ):
+        assert forbidden not in lower
+    assert narrative_contains_forbidden_language(narrative) is False
+
+
+def test_identity_story_texture_does_not_change_rule_selection():
+    base_team_inputs = _broad_light_team_inputs()
+    identity_team_inputs = _broad_light_team_inputs(
+        capacity_by_team=_with_bullpen_identity(_foundation_capacity_context()),
+    )
+
+    base_eval = evaluate_team_rules(base_team_inputs)
+    identity_eval = evaluate_team_rules(identity_team_inputs)
+    base_rules = [
+        (item['rule_key'], item['status'], item['can_fire'], item.get('conditions'))
+        for item in base_eval['evaluations']
+    ]
+    identity_rules = [
+        (item['rule_key'], item['status'], item['can_fire'], item.get('conditions'))
+        for item in identity_eval['evaluations']
+    ]
+
+    assert identity_rules == base_rules
+
+    base_story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        compute_team_story_inputs(base_team_inputs),
+    )
+    identity_story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        compute_team_story_inputs(identity_team_inputs),
+    )
+
+    assert identity_story['story_id'] == base_story['story_id']
+    assert identity_story['rule_key'] == base_story['rule_key']
+    assert identity_story['strength'] == base_story['strength']
+    assert identity_story['lead_fields'] == base_story['lead_fields']
+    assert identity_story['computed']['story_identity_integration']['applied'] is True
+
+
+def test_unknown_or_low_confidence_identity_does_not_force_identity_language():
+    capacity_by_team = _with_bullpen_identity(
+        _foundation_capacity_context(),
+        identity_updates={
+            'identity_key': IDENTITY_UNKNOWN,
+            'identity_label': IDENTITY_LABELS[IDENTITY_UNKNOWN],
+            'identity_summary': 'Existing bullpen intelligence is too incomplete to assign a stable structural identity.',
+            'confidence': 'low',
+        },
+    )
+    story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        compute_team_story_inputs(_broad_light_team_inputs(capacity_by_team=capacity_by_team)),
+    )
+    integration = story['computed']['story_identity_integration']
+    narrative = story['narrative']
+
+    assert integration['applied'] is False
+    assert story['story_facts']['identity_story_context'] is None
+    assert integration['text'] is None
+    for phrase in (
+        'usually survives by spreading innings',
+        'recognizable backbone',
+        'the challenge is not just tonight',
+        'coverage comes less from one obvious answer',
+    ):
+        assert phrase not in narrative.lower()
+    assert narrative_contains_forbidden_language(narrative) is False
+
+
+def test_identity_story_texture_varies_deterministically_across_teams():
+    teams = [
+        (108, 'Los Angeles Angels', 'LAA'),
+        (109, 'Arizona Diamondbacks', 'AZ'),
+        (110, 'Baltimore Orioles', 'BAL'),
+        (111, 'Boston Red Sox', 'BOS'),
+        (112, 'Chicago Cubs', 'CHC'),
+    ]
+    first_pass = []
+    second_pass = []
+
+    for team_id, team_name, abbr in teams:
+        capacity_by_team = _foundation_capacity_context()
+        capacity_by_team[team_id] = capacity_by_team.pop(1)
+        capacity_by_team = _with_bullpen_identity(capacity_by_team, team_id=team_id)
+        team = {'team_id': team_id, 'team_name': team_name, 'team_abbreviation': abbr}
+        inputs = compute_team_story_inputs(
+            _broad_light_team_inputs(team=team, capacity_by_team=capacity_by_team)
+        )
+        first_pass.append(
+            assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)['computed'][
+                'story_identity_integration'
+            ]['text']
+        )
+        second_pass.append(
+            assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)['computed'][
+                'story_identity_integration'
+            ]['text']
+        )
+
+    assert first_pass == second_pass
+    assert len(set(first_pass)) >= 2
+
+
+def test_leverage_identity_story_texture_has_safe_deterministic_variation():
+    teams = [
+        (109, 'Arizona Diamondbacks', 'AZ'),
+        (114, 'Cleveland Guardians', 'CLE'),
+        (119, 'Los Angeles Dodgers', 'LAD'),
+        (121, 'New York Mets', 'NYM'),
+        (137, 'San Francisco Giants', 'SF'),
+        (138, 'St. Louis Cardinals', 'STL'),
+        (142, 'Minnesota Twins', 'MIN'),
+    ]
+    first_pass = []
+    second_pass = []
+
+    for team_id, team_name, abbr in teams:
+        capacity_by_team = _foundation_capacity_context(
+            anchor=1,
+            leverage=5,
+            trusted=1,
+            depth=1,
+            trusted_group=7,
+        )
+        capacity_by_team[team_id] = capacity_by_team.pop(1)
+        capacity_by_team = _with_bullpen_identity(capacity_by_team, team_id=team_id)
+        team = {'team_id': team_id, 'team_name': team_name, 'team_abbreviation': abbr}
+        inputs = compute_team_story_inputs(
+            _broad_light_team_inputs(team=team, capacity_by_team=capacity_by_team)
+        )
+        story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+        first_pass.append(story['computed']['story_identity_integration']['text'])
+        second_pass.append(
+            assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)['computed'][
+                'story_identity_integration'
+            ]['text']
+        )
+        assert story['computed']['bullpen_identity']['identity_key'] == IDENTITY_LEVERAGE_HEAVY
+
+    assert first_pass == second_pass
+    assert len(set(first_pass)) >= 4
+    blocked = (
+        'best reliever',
+        'should use',
+        'must use',
+        'projected',
+        'expected',
+        'ranked',
+        'bet',
+        'lock',
+    )
+    for phrase in first_pass:
+        lower = phrase.lower()
+        for blocked_phrase in blocked:
+            assert blocked_phrase not in lower
+        for label in IDENTITY_LABELS.values():
+            assert label.lower() not in lower
 
 
 def _sample_story_facts(

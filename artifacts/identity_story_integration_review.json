@@ -1,0 +1,946 @@
+{
+  "capability": "identity_story_integration_review_v1",
+  "complete_team_count": true,
+  "distribution_summary": {
+    "applied_count_by_identity_key": {
+      "depth_driven": 2,
+      "flexible_distribution": 3,
+      "leverage_heavy": 7,
+      "resource_strained": 6
+    },
+    "applied_count_by_identity_label": {
+      "Depth-Driven Bullpen": 2,
+      "Flexible Distribution Bullpen": 3,
+      "Leverage-Heavy Bullpen": 7,
+      "Resource-Strained Bullpen": 6
+    },
+    "identity_sentence_counts": {
+      "Even when the night gets uneven, the back of the bullpen gives the story a spine.": 1,
+      "The back of the game still gives this bullpen a clear starting point.": 1,
+      "The challenge is not just tonight's workload; it is how much flexibility remains around the edges.": 1,
+      "The coverage comes less from one obvious answer and more from having enough usable pieces.": 1,
+      "The first move may be manageable, but the later innings can get narrower if the game stretches.": 3,
+      "The late-inning structure is still the clearest part of the picture.": 1,
+      "The leverage group still gives this bullpen a recognizable backbone.": 2,
+      "The most defined part of this group remains the late-game structure.": 2,
+      "The shape is less about one arm and more about how many paths are still open.": 1,
+      "The stress shows up around the margins, where one extra inning can start shrinking the choices.": 2,
+      "This bullpen can absorb a normal night because the options do not fall off immediately.": 1,
+      "This group usually survives by spreading innings across several usable options.": 2
+    },
+    "identity_text_applied_count": 18,
+    "identity_text_skipped_count": 12,
+    "repeated_identity_sentence_threshold": 3,
+    "review_flag_counts": {
+      "no_selected_story": 12
+    },
+    "teams_for_human_review": [
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "ATH",
+        "team_id": 133,
+        "team_name": "Athletics"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "BAL",
+        "team_id": 110,
+        "team_name": "Baltimore Orioles"
+      },
+      {
+        "identity_label": "Leverage-Heavy Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "BOS",
+        "team_id": 111,
+        "team_name": "Boston Red Sox"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "CHC",
+        "team_id": 112,
+        "team_name": "Chicago Cubs"
+      },
+      {
+        "identity_label": "Depth-Driven Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "CWS",
+        "team_id": 145,
+        "team_name": "Chicago White Sox"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "DET",
+        "team_id": 116,
+        "team_name": "Detroit Tigers"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "LAA",
+        "team_id": 108,
+        "team_name": "Los Angeles Angels"
+      },
+      {
+        "identity_label": "Leverage-Heavy Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "NYM",
+        "team_id": 121,
+        "team_name": "New York Mets"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "PHI",
+        "team_id": 143,
+        "team_name": "Philadelphia Phillies"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "SEA",
+        "team_id": 136,
+        "team_name": "Seattle Mariners"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "TB",
+        "team_id": 139,
+        "team_name": "Tampa Bay Rays"
+      },
+      {
+        "identity_label": "Flexible Distribution Bullpen",
+        "review_flags": [
+          "no_selected_story"
+        ],
+        "selected_story_key": null,
+        "team_abbreviation": "WSH",
+        "team_id": 120,
+        "team_name": "Washington Nationals"
+      }
+    ]
+  },
+  "expected_team_count": 30,
+  "generated_at": "2026-06-19T21:42:24.313557+00:00",
+  "ordering_basis": "team_name_then_team_id",
+  "payload_source": "live_dashboard_build",
+  "prediction_applied": false,
+  "ranking_applied": false,
+  "review_thresholds": {
+    "repeated_identity_sentence_threshold": 3,
+    "story_too_long_paragraph_max": 3,
+    "story_too_long_sentence_max": 7,
+    "too_many_non_boundary_caveats_max": 2
+  },
+  "selection_made": false,
+  "source": "backend",
+  "story_count": 18,
+  "team_count": 30,
+  "teams": [
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "run_prevention_mask",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Arizona Diamondbacks, the scoreboard still reads clean while the bullpen handoffs get a little more delicate.\n\nThe scoreboard does not tell the whole story; recent usage can make good results feel a little thinner. That is the tension: the line still looks fine, while the bullpen has less cushion underneath it. The leverage group still gives this bullpen a recognizable backbone.\n\nGood run prevention helps, but it does not erase how tight the margin has become.",
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The stress shows up around the margins, where one extra inning can start shrinking the choices.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "run_prevention_mask",
+      "selected_story_key": "sustainability_question",
+      "selected_story_label": "Sustainability Question",
+      "sentence_count": 6,
+      "story_present": true,
+      "story_text": "Atlanta Braves' run prevention is still doing its job, but the bullpen has had to work harder underneath.\n\nThe scoreboard does not tell the whole story; recent usage can make good results feel a little thinner. That is the tension: the line still looks fine, while the bullpen has less cushion underneath it. The stress shows up around the margins, where one extra inning can start shrinking the choices.\n\nFor the Atlanta Braves, the recent innings tell the clearest part. The results help, but they do not make the bullpen beneath them feel deeper.",
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "CHC",
+      "team_id": 112,
+      "team_name": "Chicago Cubs"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The challenge is not just tonight's workload; it is how much flexibility remains around the edges.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Cincinnati Reds, the list is longer than the list of choices you would feel good about in a tight spot.\n\nThe staff has had to involve a wider slice of the bullpen lately. That is where a normal-looking list can turn into a tougher in-game problem after the first few choices. The challenge is not just tonight's workload; it is how much flexibility remains around the edges.\n\nThat gap between bodies and comfort can matter quickly if the night gets messy.",
+      "team_abbreviation": "CIN",
+      "team_id": 113,
+      "team_name": "Cincinnati Reds"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The most defined part of this group remains the late-game structure.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Cleveland Guardians, the list is longer than the list of choices you would feel good about in a tight spot.\n\nMore of the bullpen has had to be part of the recent innings. There are bodies for the night; the comfort starts dropping after the first few names. The most defined part of this group remains the late-game structure.\n\nThe gap between available arms and comfortable innings is where the pressure sits.",
+      "team_abbreviation": "CLE",
+      "team_id": 114,
+      "team_name": "Cleveland Guardians"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "usable_width",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": "This group usually survives by spreading innings across several usable options.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 6,
+      "story_present": true,
+      "story_text": "For the Colorado Rockies, the finish still looks familiar; the bigger test is how much has to happen before that point.\n\nRecent relief work has moved through a lot of different hands. The late innings are not the uncomfortable part. The bridge into them is working harder than the finish. This group usually survives by spreading innings across several usable options.\n\nCan the comfortable part of the bridge widen before the game gets tight?",
+      "team_abbreviation": "COL",
+      "team_id": 115,
+      "team_name": "Colorado Rockies"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The first move may be manageable, but the later innings can get narrower if the game stretches.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 6,
+      "story_present": true,
+      "story_text": "Houston Astros' late innings still have shape, which gives the staff somewhere to land while the middle of the game does more work.\n\nThe same few names keep showing up in the heaviest spots. The late innings are not the uncomfortable part. The bridge into them is working harder than the finish. The first move may be manageable, but the later innings can get narrower if the game stretches.\n\nCan the comfortable part of the bridge widen before the game gets tight?",
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "depth_width",
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_sentence": "This bullpen can absorb a normal night because the options do not fall off immediately.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "flexible_bullpen",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Kansas City Royals, the recent usage gives the staff a few different answers instead of forcing everything through one lane.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. The value is practical: a messy inning does not immediately collapse the whole night onto one small group. This bullpen can absorb a normal night because the options do not fall off immediately.\n\nThat is the useful part of the flexibility, a game that does not have to keep returning to one answer.",
+      "team_abbreviation": "KC",
+      "team_id": 118,
+      "team_name": "Kansas City Royals"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "LAA",
+      "team_id": 108,
+      "team_name": "Los Angeles Angels"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The late-inning structure is still the clearest part of the picture.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Los Angeles Dodgers, the list is longer than the list of choices you would feel good about in a tight spot.\n\nMore of the bullpen has had to be part of the recent innings. The staff can find a pitcher, but the game gets harder once it moves past the first few choices. The late-inning structure is still the clearest part of the picture.\n\nThat leaves little margin once the first few choices are gone.",
+      "team_abbreviation": "LAD",
+      "team_id": 119,
+      "team_name": "Los Angeles Dodgers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "depth_width",
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_sentence": "The coverage comes less from one obvious answer and more from having enough usable pieces.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "The Miami Marlins have bullpen bodies for the night, but the comfort starts dropping after the first few names.\n\nRecent relief work has moved through a lot of different hands. That is where a normal-looking list can turn into a tougher in-game problem after the first few choices. The coverage comes less from one obvious answer and more from having enough usable pieces.\n\nThat leaves less margin once the game moves past the first comfortable choices.",
+      "team_abbreviation": "MIA",
+      "team_id": 146,
+      "team_name": "Miami Marlins"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "usable_width",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": "This group usually survives by spreading innings across several usable options.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "run_prevention_mask",
+      "selected_story_key": "sustainability_question",
+      "selected_story_label": "Sustainability Question",
+      "sentence_count": 6,
+      "story_present": true,
+      "story_text": "For the Milwaukee Brewers, the scoreboard still reads clean while the bullpen handoffs get a little more delicate.\n\nThe results still look good on the surface, but recent usage keeps the read from being that simple. The line still matters, but it is not the whole bullpen read. This group usually survives by spreading innings across several usable options.\n\nRecent innings give the clearest clue here. The results help, but they do not make the bullpen beneath them feel deeper.",
+      "team_abbreviation": "MIL",
+      "team_id": 158,
+      "team_name": "Milwaukee Brewers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The back of the game still gives this bullpen a clear starting point.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "flexible_bullpen",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Minnesota Twins, the recent usage gives the staff a few different answers instead of forcing everything through one lane.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. Because the work has moved around, the staff is not forced back to one answer every time the game changes. The back of the game still gives this bullpen a clear starting point.\n\nThat gives the staff more than one way to get through a game.",
+      "team_abbreviation": "MIN",
+      "team_id": 142,
+      "team_name": "Minnesota Twins"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "Even when the night gets uneven, the back of the bullpen gives the story a spine.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "run_prevention_mask",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the New York Yankees, the scoreboard still reads clean while the bullpen handoffs get a little more delicate.\n\nThe results still matter, but recent usage tells a different story underneath them. The line still matters, but it is not the whole bullpen read. Even when the night gets uneven, the back of the bullpen gives the story a spine.\n\nThat shape keeps the strong results from being the whole story.",
+      "team_abbreviation": "NYY",
+      "team_id": 147,
+      "team_name": "New York Yankees"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "PHI",
+      "team_id": 143,
+      "team_name": "Philadelphia Phillies"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The stress shows up around the margins, where one extra inning can start shrinking the choices.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "For the Pittsburgh Pirates, the list is longer than the list of choices you would feel good about in a tight spot.\n\nThe same few names keep showing up in the heaviest spots. That is where a normal-looking list can turn into a tougher in-game problem after the first few choices. The stress shows up around the margins, where one extra inning can start shrinking the choices.\n\nThe gap between available arms and comfortable innings is where the pressure sits.",
+      "team_abbreviation": "PIT",
+      "team_id": 134,
+      "team_name": "Pittsburgh Pirates"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The first move may be manageable, but the later innings can get narrower if the game stretches.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "The San Diego Padres have bullpen bodies for the night, but the comfort starts dropping after the first few names.\n\nThe same few names keep showing up in the heaviest spots. The staff can find a pitcher, but the game gets harder once it moves past the first few choices. The first move may be manageable, but the later innings can get narrower if the game stretches.\n\nThe gap between available arms and comfortable innings is where the pressure sits.",
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The most defined part of this group remains the late-game structure.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "flexible_bullpen",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "San Francisco Giants' back end still gives the night structure, even while the bridge into it asks for more.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. The staff still has somewhere to point the late innings; the bridge into that part is carrying more of the night. The most defined part of this group remains the late-game structure.\n\nThat gives the staff more than one way to get through a game.",
+      "team_abbreviation": "SF",
+      "team_id": 137,
+      "team_name": "San Francisco Giants"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "SEA",
+      "team_id": 136,
+      "team_name": "Seattle Mariners"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "leverage_backbone",
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "flexible_bullpen",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 6,
+      "story_present": true,
+      "story_text": "St. Louis Cardinals' bullpen has more than one way through the game because the work has been moving around.\n\nThe workload has been moving through a lot of different hands. That kind of width gives the staff a way to adjust without treating every inning like the same inning. The leverage group still gives this bullpen a recognizable backbone.\n\nThat gives the staff more than one way to get through a game.",
+      "team_abbreviation": "STL",
+      "team_id": 138,
+      "team_name": "St. Louis Cardinals"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "TB",
+      "team_id": 139,
+      "team_name": "Tampa Bay Rays"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "usable_width",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": "The shape is less about one arm and more about how many paths are still open.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "thin_trusted_group",
+      "selected_story_key": "pressure_distribution",
+      "selected_story_label": "Pressure Distribution",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "Texas Rangers' bullpen is not empty; it just gets uncomfortable quickly once the game moves past the first few names.\n\nThe staff has had to involve a wider slice of the bullpen lately. There are bodies for the night; the comfort starts dropping after the first few names. The shape is less about one arm and more about how many paths are still open.\n\nCan the comfortable part of the bullpen widen before the game gets tight?",
+      "team_abbreviation": "TEX",
+      "team_id": 140,
+      "team_name": "Texas Rangers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": "resource_edges",
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_sentence": "The first move may be manageable, but the later innings can get narrower if the game stretches.",
+      "identity_text_applied": true,
+      "paragraph_count": 3,
+      "review_flags": [],
+      "selected_story_archetype": "run_prevention_mask",
+      "selected_story_key": "hidden_capacity_loss",
+      "selected_story_label": "Hidden Capacity Loss",
+      "sentence_count": 5,
+      "story_present": true,
+      "story_text": "Toronto Blue Jays' run prevention is still doing its job, but the bullpen has had to work harder underneath.\n\nThe results still matter, but recent usage tells a different story underneath them. The line still matters, but it is not the whole bullpen read. The first move may be manageable, but the later innings can get narrower if the game stretches.\n\nThe results help, but they do not make the bullpen beneath them feel deeper.",
+      "team_abbreviation": "TOR",
+      "team_id": 141,
+      "team_name": "Toronto Blue Jays"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "identity_confidence": "medium",
+      "identity_integration_reason": null,
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_sentence": null,
+      "identity_text_applied": false,
+      "paragraph_count": 0,
+      "review_flags": [
+        "no_selected_story"
+      ],
+      "selected_story_archetype": null,
+      "selected_story_key": null,
+      "selected_story_label": null,
+      "sentence_count": 0,
+      "story_present": false,
+      "story_text": "",
+      "team_abbreviation": "WSH",
+      "team_id": 120,
+      "team_name": "Washington Nationals"
+    }
+  ],
+  "version": "2026-06-19.v1"
+}

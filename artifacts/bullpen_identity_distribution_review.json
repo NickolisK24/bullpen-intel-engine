@@ -1,0 +1,1881 @@
+{
+  "capability": "bullpen_identity_distribution_review_v1",
+  "complete_team_count": true,
+  "expected_team_count": 30,
+  "generated_at": "2026-06-19T20:16:06.347874+00:00",
+  "identity_distribution": {
+    "Depth-Driven Bullpen": 3,
+    "Flexible Distribution Bullpen": 10,
+    "Leverage-Heavy Bullpen": 9,
+    "Resource-Strained Bullpen": 8
+  },
+  "non_boundary_caveat_distribution": {
+    "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.": 23,
+    "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.": 30
+  },
+  "ordering_basis": "team_name_then_team_id",
+  "payload_source": "live_dashboard_build",
+  "prediction_applied": false,
+  "ranking_applied": false,
+  "review_findings": {
+    "high_confidence_with_incomplete_context_teams": [],
+    "overrepresented_identity_labels": [],
+    "overrepresented_identity_threshold": 0.45,
+    "repeated_non_boundary_caveat_threshold": 0.5,
+    "repeated_non_boundary_caveats": [
+      "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+      "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data."
+    ],
+    "teams_for_human_review": [
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "ATL",
+        "team_id": 144,
+        "team_name": "Atlanta Braves"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "CHC",
+        "team_id": 112,
+        "team_name": "Chicago Cubs"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "CIN",
+        "team_id": 113,
+        "team_name": "Cincinnati Reds"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "HOU",
+        "team_id": 117,
+        "team_name": "Houston Astros"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "PIT",
+        "team_id": 134,
+        "team_name": "Pittsburgh Pirates"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "SD",
+        "team_id": 135,
+        "team_name": "San Diego Padres"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "SEA",
+        "team_id": 136,
+        "team_name": "Seattle Mariners"
+      },
+      {
+        "identity_label": "Resource-Strained Bullpen",
+        "review_flags": [
+          "thin_or_resource_strained_identity",
+          "coverage_needs_review"
+        ],
+        "team_abbreviation": "TOR",
+        "team_id": 141,
+        "team_name": "Toronto Blue Jays"
+      }
+    ],
+    "thin_or_resource_strained_count": 8,
+    "thin_or_resource_strained_over_threshold": false,
+    "thin_or_resource_strained_review_threshold": 0.4,
+    "unknown_identity_count": 0,
+    "unknown_identity_over_threshold": false,
+    "unknown_identity_review_threshold": 0.2
+  },
+  "selection_made": false,
+  "source": "backend",
+  "team_count": 30,
+  "teams": [
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 1 trusted arms, 1 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 7,
+          "unknown_count": 11
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 7 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strong",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 9,
+          "summary": "0 anchors, 9 leverage arms, 0 trusted arms, 0 depth arms, 9 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 9,
+          "trusted_count": 0,
+          "trusted_group_size": 9,
+          "unknown_count": 3
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 6 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strong."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 9 leverage arms, 9 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "1 anchors, 4 leverage arms, 1 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 6,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 4 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 2,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "1 anchors, 4 leverage arms, 1 trusted arms, 2 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 6,
+          "unknown_count": 9
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 4 leverage arms, 6 trusted-group arms, and 2 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "1 anchors, 6 leverage arms, 1 trusted arms, 0 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 8,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 6 leverage arms, 8 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "0 anchors, 4 leverage arms, 4 trusted arms, 1 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 4,
+          "trusted_count": 4,
+          "trusted_group_size": 8,
+          "unknown_count": 12
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 4 leverage arms, 8 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "CHC",
+      "team_id": 112,
+      "team_name": "Chicago Cubs"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 3,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "1 anchors, 4 leverage arms, 2 trusted arms, 3 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 2,
+          "trusted_group_size": 7,
+          "unknown_count": 9
+        }
+      },
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_summary": "Depth-Driven Bullpen: this bullpen has meaningful depth behind the trusted group, giving the structure more ways to absorb innings.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 10 active relievers and 10 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 4 leverage arms, 7 trusted-group arms, and 3 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Depth volume is a material part of the bullpen structure."
+        }
+      ],
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 0 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 6,
+          "unknown_count": 7
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "CIN",
+      "team_id": 113,
+      "team_name": "Cincinnati Reds"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 0 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 6,
+          "unknown_count": 5
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 6 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "CLE",
+      "team_id": 114,
+      "team_name": "Cleveland Guardians"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 2,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "0 anchors, 5 leverage arms, 1 trusted arms, 2 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 5,
+          "trusted_count": 1,
+          "trusted_group_size": 6,
+          "unknown_count": 9
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 5 leverage arms, 6 trusted-group arms, and 2 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "COL",
+      "team_id": 115,
+      "team_name": "Colorado Rockies"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 7,
+          "summary": "0 anchors, 7 leverage arms, 1 trusted arms, 1 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 7,
+          "trusted_count": 1,
+          "trusted_group_size": 8,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 7 leverage arms, 8 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 2,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "2 anchors, 5 leverage arms, 0 trusted arms, 0 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 2,
+          "trusted_count": 0,
+          "trusted_group_size": 7,
+          "unknown_count": 5
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 5 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 2 anchors, 5 leverage arms, 7 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 3,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "1 anchors, 6 leverage arms, 0 trusted arms, 3 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 7,
+          "unknown_count": 5
+        }
+      },
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_summary": "Depth-Driven Bullpen: this bullpen has meaningful depth behind the trusted group, giving the structure more ways to absorb innings.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 10 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 6 leverage arms, 7 trusted-group arms, and 3 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Depth volume is a material part of the bullpen structure."
+        }
+      ],
+      "team_abbreviation": "KC",
+      "team_id": 118,
+      "team_name": "Kansas City Royals"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strong",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 2,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 8,
+          "summary": "0 anchors, 8 leverage arms, 0 trusted arms, 2 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 8,
+          "trusted_count": 0,
+          "trusted_group_size": 8,
+          "unknown_count": 3
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 10 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strong."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 8 leverage arms, 8 trusted-group arms, and 2 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "LAA",
+      "team_id": 108,
+      "team_name": "Los Angeles Angels"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "1 anchors, 6 leverage arms, 0 trusted arms, 1 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 7,
+          "unknown_count": 11
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 6 leverage arms, 7 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "LAD",
+      "team_id": 119,
+      "team_name": "Los Angeles Dodgers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 3,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 1 trusted arms, 3 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 7,
+          "unknown_count": 6
+        }
+      },
+      "identity_key": "depth_driven",
+      "identity_label": "Depth-Driven Bullpen",
+      "identity_summary": "Depth-Driven Bullpen: this bullpen has meaningful depth behind the trusted group, giving the structure more ways to absorb innings.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 10 active relievers and 9 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 7 trusted-group arms, and 3 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Depth volume is a material part of the bullpen structure."
+        }
+      ],
+      "team_abbreviation": "MIA",
+      "team_id": 146,
+      "team_name": "Miami Marlins"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 2,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "2 anchors, 4 leverage arms, 2 trusted arms, 1 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 2,
+          "trusted_count": 2,
+          "trusted_group_size": 8,
+          "unknown_count": 7
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 5 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 2 anchors, 4 leverage arms, 8 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "MIL",
+      "team_id": 158,
+      "team_name": "Milwaukee Brewers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "1 anchors, 6 leverage arms, 1 trusted arms, 1 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 8,
+          "unknown_count": 6
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 6 leverage arms, 8 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "MIN",
+      "team_id": 142,
+      "team_name": "Minnesota Twins"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 7,
+          "summary": "1 anchors, 7 leverage arms, 0 trusted arms, 1 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 8,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 9 active relievers and 6 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 7 leverage arms, 8 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "1 anchors, 6 leverage arms, 0 trusted arms, 1 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 7,
+          "unknown_count": 5
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 6 leverage arms, 7 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "NYY",
+      "team_id": 147,
+      "team_name": "New York Yankees"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 3,
+          "summary": "1 anchors, 3 leverage arms, 2 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 2,
+          "trusted_group_size": 6,
+          "unknown_count": 7
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 3 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "PHI",
+      "team_id": 143,
+      "team_name": "Philadelphia Phillies"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 1 trusted arms, 0 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 7,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 6 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 7 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "PIT",
+      "team_id": 134,
+      "team_name": "Pittsburgh Pirates"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "0 anchors, 5 leverage arms, 1 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 5,
+          "trusted_count": 1,
+          "trusted_group_size": 6,
+          "unknown_count": 6
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 5 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 7,
+          "summary": "1 anchors, 7 leverage arms, 0 trusted arms, 0 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 8,
+          "unknown_count": 11
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 7 leverage arms, 8 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "SF",
+      "team_id": 137,
+      "team_name": "San Francisco Giants"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "0 anchors, 6 leverage arms, 1 trusted arms, 0 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 6,
+          "trusted_count": 1,
+          "trusted_group_size": 7,
+          "unknown_count": 6
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 5 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 6 leverage arms, 7 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "SEA",
+      "team_id": 136,
+      "team_name": "Seattle Mariners"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "reduced",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strong",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 1 trusted arms, 0 depth arms, 7 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 7,
+          "unknown_count": 3
+        }
+      },
+      "identity_key": "leverage_heavy",
+      "identity_label": "Leverage-Heavy Bullpen",
+      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is reduced with 7 active relievers and 6 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strong."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 7 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Leverage arms carry much of the bullpen shape."
+        }
+      ],
+      "team_abbreviation": "STL",
+      "team_id": 138,
+      "team_name": "St. Louis Cardinals"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 0,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 5,
+          "summary": "1 anchors, 5 leverage arms, 2 trusted arms, 0 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 2,
+          "trusted_group_size": 8,
+          "unknown_count": 10
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 8 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 5 leverage arms, 8 trusted-group arms, and 0 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "TB",
+      "team_id": 139,
+      "team_name": "Tampa Bay Rays"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Stable Coverage Safety",
+          "limitations": [],
+          "state": "stable_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 2,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 4,
+          "summary": "1 anchors, 4 leverage arms, 1 trusted arms, 2 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 1,
+          "trusted_group_size": 6,
+          "unknown_count": 7
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 8 active relievers and 7 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 4 leverage arms, 6 trusted-group arms, and 2 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Stable Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "TEX",
+      "team_id": 140,
+      "team_name": "Texas Rangers"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "thin",
+        "coverage_safety": {
+          "label": "Thin Coverage Safety",
+          "limitations": [],
+          "state": "thin_coverage_safety"
+        },
+        "resource_health_state": "strained",
+        "trust_structure": {
+          "anchor_count": 0,
+          "depth_count": 1,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 6,
+          "summary": "0 anchors, 6 leverage arms, 0 trusted arms, 1 depth arms, 6 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 6,
+          "trusted_count": 0,
+          "trusted_group_size": 6,
+          "unknown_count": 8
+        }
+      },
+      "identity_key": "resource_strained",
+      "identity_label": "Resource-Strained Bullpen",
+      "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
+      "review_flags": [
+        "thin_or_resource_strained_identity",
+        "coverage_needs_review"
+      ],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is thin with 8 active relievers and 2 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is strained."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 0 anchors, 6 leverage arms, 6 trusted-group arms, and 1 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Thin Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "The broader resource pool is strained even if the active layer has usable arms."
+        }
+      ],
+      "team_abbreviation": "TOR",
+      "team_id": 141,
+      "team_name": "Toronto Blue Jays"
+    },
+    {
+      "caveats": [
+        "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
+        "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
+        "This read is descriptive context only, not tactical advice."
+      ],
+      "confidence": "medium",
+      "context": {
+        "capacity_state": "healthy",
+        "coverage_safety": {
+          "label": "Strong Coverage Safety",
+          "limitations": [],
+          "state": "strong_coverage_safety"
+        },
+        "resource_health_state": "moderate",
+        "trust_structure": {
+          "anchor_count": 1,
+          "depth_count": 2,
+          "hierarchy_confidence": "medium",
+          "leverage_count": 7,
+          "summary": "1 anchors, 7 leverage arms, 0 trusted arms, 2 depth arms, 8 trusted-group arms; hierarchy confidence medium.",
+          "top_trust_bucket_available_count": 1,
+          "trusted_count": 0,
+          "trusted_group_size": 8,
+          "unknown_count": 6
+        }
+      },
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
+      "review_flags": [],
+      "supporting_traits": [
+        {
+          "key": "capacity_shape",
+          "text": "Active capacity is healthy with 10 active relievers and 9 clean active options."
+        },
+        {
+          "key": "resource_health",
+          "text": "Resource health is moderate."
+        },
+        {
+          "key": "trust_structure",
+          "text": "Trust structure has 1 anchors, 7 leverage arms, 8 trusted-group arms, and 2 depth arms."
+        },
+        {
+          "key": "coverage_safety",
+          "text": "Coverage Safety reads Strong Coverage Safety."
+        },
+        {
+          "key": "identity_reason",
+          "text": "Usable capacity is spread across several structural lanes."
+        }
+      ],
+      "team_abbreviation": "WSH",
+      "team_id": 120,
+      "team_name": "Washington Nationals"
+    }
+  ],
+  "version": "2026-06-19.v1"
+}

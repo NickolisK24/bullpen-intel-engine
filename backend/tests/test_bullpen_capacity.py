@@ -7,6 +7,7 @@ from services.bullpen_capacity import (
     WEIGHTING_SEASON_RELIEF_OUTS,
     build_team_bullpen_capacity,
 )
+from services.bullpen_identity import CAPABILITY as IDENTITY_CAPABILITY
 
 
 def record(
@@ -222,3 +223,30 @@ def test_capacity_payload_defines_available_as_not_fully_unavailable():
     assert 'not classified as fully unavailable' in definition
     assert 'not be read as clean or fully available capacity' in definition
     assert 'Limited-read or unknown capacity is reported separately' in definition
+
+
+def test_capacity_payload_carries_bullpen_identity_layer():
+    result = capacity([
+        record(1, role_key='trust_arm'),
+        record(2, role_key='trust_arm'),
+        record(3),
+        record(4),
+        record(5),
+        record(6),
+        record(7),
+        record(8),
+    ])
+
+    identity = result['bullpen_identity']
+    assert identity['capability'] == IDENTITY_CAPABILITY
+    assert set(identity) >= {
+        'identity_key',
+        'identity_label',
+        'identity_summary',
+        'supporting_traits',
+        'caveats',
+        'confidence',
+    }
+    assert identity['ranking_applied'] is False
+    assert identity['selection_made'] is False
+    assert identity['prediction_applied'] is False
