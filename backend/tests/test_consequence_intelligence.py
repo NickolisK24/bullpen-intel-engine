@@ -99,7 +99,8 @@ def test_flexibility_improvement_from_more_rested_options():
     assert result['capability'] == CAPABILITY
     assert result['state'] == STATE_CONSEQUENCES_DETECTED
     assert item['significance'] == 'meaningful'
-    assert item['consequence_summary'] == 'The bullpen has more flexibility than yesterday.'
+    assert 'Test Team' in item['consequence_summary']
+    assert item['consequence_context']
     assert item['supporting_facts'][0]['previous_value'] == 2
     assert item['supporting_facts'][0]['current_value'] == 5
 
@@ -125,8 +126,8 @@ def test_coverage_improvement_describes_more_margin():
     item = consequence(result, CONSEQUENCE_MORE_COVERAGE_MARGIN)
 
     assert item['significance'] == 'structural'
-    assert item['consequence_summary'] == 'Coverage has more margin than yesterday.'
-    assert 'more room if the game asks for several relief innings' in item['consequence_context']
+    assert 'Test Team' in item['consequence_summary']
+    assert item['consequence_context']
 
 
 def test_coverage_decline_describes_less_margin():
@@ -149,8 +150,8 @@ def test_trust_expansion_describes_wider_support():
 
     item = consequence(result, CONSEQUENCE_WIDER_TRUST_SUPPORT)
 
-    assert item['consequence_summary'] == 'The trusted group is wider than yesterday.'
-    assert 'middle innings to the late innings' in item['consequence_context']
+    assert 'Test Team' in item['consequence_summary']
+    assert item['consequence_context']
 
 
 def test_trust_contraction_describes_narrower_support():
@@ -234,6 +235,56 @@ def test_league_payload_uses_deterministic_team_order_without_ranking():
     assert result['ordering_basis'] == 'team_abbreviation_then_team_id'
     assert [team['team_abbreviation'] for team in result['teams']] == ['AAA', 'BBB']
     assert result['teams_with_consequences'] == 2
+
+
+def test_phrase_variation_is_deterministic_without_changing_consequence_types():
+    current = {
+        'freshness': {'data_through': '2026-06-19'},
+        'capacity_intelligence': {
+            'teams': [
+                snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=5),
+                snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=5),
+                snapshot(team_id=3, team_name='Gamma Club', team_abbreviation='CCC', clean=5),
+                snapshot(team_id=4, team_name='Delta Club', team_abbreviation='DDD', clean=5),
+            ],
+        },
+    }
+    prior = {
+        'freshness': {'data_through': '2026-06-18'},
+        'capacity_intelligence': {
+            'teams': [
+                snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=2),
+                snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=2),
+                snapshot(team_id=3, team_name='Gamma Club', team_abbreviation='CCC', clean=2),
+                snapshot(team_id=4, team_name='Delta Club', team_abbreviation='DDD', clean=2),
+            ],
+        },
+    }
+
+    result = build_consequence_intelligence_payload(current, prior)
+    repeated = build_consequence_intelligence_payload(current, prior)
+
+    summaries = [
+        team['consequences'][0]['consequence_summary']
+        for team in result['teams']
+    ]
+    contexts = [
+        team['consequences'][0]['consequence_context']
+        for team in result['teams']
+    ]
+    repeated_summaries = [
+        team['consequences'][0]['consequence_summary']
+        for team in repeated['teams']
+    ]
+
+    assert summaries == repeated_summaries
+    assert len(set(summaries)) > 1
+    assert len(set(contexts)) > 1
+    assert {
+        team['consequences'][0]['consequence_type']
+        for team in result['teams']
+    } == {CONSEQUENCE_MORE_FLEXIBILITY}
+    assert result['consequence_count'] == repeated['consequence_count'] == 4
 
 
 def test_governance_safety_no_prediction_recommendation_ranking_probability_or_score_leakage():

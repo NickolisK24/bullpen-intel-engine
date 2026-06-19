@@ -142,8 +142,46 @@ def test_review_repeated_summary_and_context_flags_work():
         snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=2),
         snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=2),
     ]
+    duplicate_consequence = {
+        'consequence_type': 'manual_test_consequence',
+        'consequence_summary': 'The bullpen has more flexibility than yesterday.',
+        'consequence_context': 'More rested options add clean paths before the game reaches the tightest lanes.',
+        'significance': 'meaningful',
+        'confidence': 'medium',
+        'supporting_facts': [
+            {
+                'fact_key': 'rested_options',
+                'previous_value': 2,
+                'current_value': 5,
+            }
+        ],
+    }
+    consequence_payload = {
+        'teams': [
+            {
+                'team_id': 1,
+                'team_name': 'Alpha Club',
+                'team_abbreviation': 'AAA',
+                'status': 'available',
+                'state': 'consequences_detected',
+                'consequence_count': 1,
+                'limitations': [],
+                'consequences': [duplicate_consequence],
+            },
+            {
+                'team_id': 2,
+                'team_name': 'Beta Club',
+                'team_abbreviation': 'BBB',
+                'status': 'available',
+                'state': 'consequences_detected',
+                'consequence_count': 1,
+                'limitations': [],
+                'consequences': [duplicate_consequence],
+            },
+        ],
+    }
 
-    report = build_review(current, prior)
+    report = build_review(current, prior, consequence_payload=consequence_payload)
     summary = report['distribution_summary']
 
     assert list(summary['repeated_summary_counts'].values()) == [2]
@@ -156,6 +194,32 @@ def test_review_repeated_summary_and_context_flags_work():
         {'repeated_summary', 'repeated_context'} <= set(team['review_flags'])
         for team in report['teams']
     )
+
+
+def test_generated_variation_reduces_repeated_summary_and_context_flags():
+    current = [
+        snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=5),
+        snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=5),
+        snapshot(team_id=3, team_name='Gamma Club', team_abbreviation='CCC', clean=5),
+        snapshot(team_id=4, team_name='Delta Club', team_abbreviation='DDD', clean=5),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Alpha Club', team_abbreviation='AAA', clean=2),
+        snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=2),
+        snapshot(team_id=3, team_name='Gamma Club', team_abbreviation='CCC', clean=2),
+        snapshot(team_id=4, team_name='Delta Club', team_abbreviation='DDD', clean=2),
+    ]
+
+    report = build_review(current, prior)
+    summary = report['distribution_summary']
+
+    assert summary['repeated_summary_counts'] == {}
+    assert summary['repeated_context_counts'] == {}
+    assert summary['review_flag_counts'] == {}
+    assert {
+        team['consequence_type']
+        for team in report['teams']
+    } == {'more_flexibility'}
 
 
 def test_review_flags_governance_language_in_consequence_text():

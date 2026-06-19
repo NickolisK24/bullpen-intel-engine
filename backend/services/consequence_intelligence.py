@@ -240,6 +240,9 @@ def _metrics(capacity_item: dict[str, Any]) -> dict[str, Any]:
     )
 
     return {
+        'team_id': _team_id(capacity_item),
+        'team_name': _team_name(capacity_item),
+        'team_abbreviation': _team_abbreviation(capacity_item),
         'capacity_state': (
             bullpen_capacity.get('capacity_state')
             or bullpen_capacity.get('state')
@@ -326,15 +329,106 @@ def _consequence(
     }
 
 
-def _capacity_flexibility(change: dict[str, Any]) -> list[dict[str, Any]]:
+def _seed_value(metrics: dict[str, Any], change: dict[str, Any], consequence_type: str, salt: str) -> str:
+    return '|'.join([
+        str(metrics.get('team_abbreviation') or ''),
+        str(metrics.get('team_name') or ''),
+        str(metrics.get('team_id') or ''),
+        str(change.get('change_type') or ''),
+        str(change.get('change_direction') or ''),
+        consequence_type,
+        salt,
+    ])
+
+
+def _variant_index(
+    metrics: dict[str, Any],
+    change: dict[str, Any],
+    consequence_type: str,
+    size: int,
+    *,
+    salt: str,
+) -> int:
+    if size <= 1:
+        return 0
+    seed = _seed_value(metrics, change, consequence_type, salt)
+    return sum((index + 1) * ord(char) for index, char in enumerate(seed)) % size
+
+
+def _team_label(metrics: dict[str, Any]) -> str | None:
+    value = metrics.get('team_name') or metrics.get('team_abbreviation')
+    return str(value).strip() if value else None
+
+
+def _team_bullpen(metrics: dict[str, Any]) -> str:
+    team = _team_label(metrics)
+    return f'The {team} bullpen' if team else 'The bullpen'
+
+
+def _team_staff(metrics: dict[str, Any]) -> str:
+    team = _team_label(metrics)
+    return f'The {team} staff' if team else 'The staff'
+
+
+def _team_relief_group(metrics: dict[str, Any]) -> str:
+    team = _team_label(metrics)
+    return f'The {team} relief group' if team else 'The relief group'
+
+
+def _team_trusted_group(metrics: dict[str, Any]) -> str:
+    team = _team_label(metrics)
+    return f'The {team} trusted group' if team else 'The trusted group'
+
+
+def _lower_initial(value: str) -> str:
+    return value[:1].lower() + value[1:] if value else value
+
+
+def _choose_phrase(
+    metrics: dict[str, Any],
+    change: dict[str, Any],
+    consequence_type: str,
+    options: list[str],
+    *,
+    salt: str,
+) -> str:
+    return options[_variant_index(metrics, change, consequence_type, len(options), salt=salt)]
+
+
+def _capacity_flexibility(change: dict[str, Any], metrics: dict[str, Any]) -> list[dict[str, Any]]:
     direction = change.get('change_direction')
     confidence = str(change.get('confidence') or 'medium')
     if direction == 'increased':
+        summary = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_MORE_FLEXIBILITY,
+            [
+                f'{_team_bullpen(metrics)} has more flexibility than yesterday.',
+                f'{_team_staff(metrics)} has more ways to cover the game than yesterday.',
+                f'{_team_relief_group(metrics)} has more usable paths available today.',
+                f'{_team_bullpen(metrics)} has a little more room to maneuver.',
+                f'There are more clean paths available around {_lower_initial(_team_bullpen(metrics))}.',
+            ],
+            salt='summary',
+        )
+        context = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_MORE_FLEXIBILITY,
+            [
+                f'More rested options add clean paths before {_lower_initial(_team_bullpen(metrics))} reaches its tightest lanes.',
+                f'That gives {_lower_initial(_team_staff(metrics))} more ways to spread the relief work.',
+                f'{_team_bullpen(metrics)} is less boxed into one narrow route than it was yesterday.',
+                f'That creates more room for {_lower_initial(_team_bullpen(metrics))} if the game asks for multiple relief innings.',
+            ],
+            salt='context',
+        )
         return [
             _consequence(
                 CONSEQUENCE_MORE_FLEXIBILITY,
-                'The bullpen has more flexibility than yesterday.',
-                'More rested options add clean paths before the game reaches the tightest lanes.',
+                summary,
+                context,
                 significance=SIGNIFICANCE_MEANINGFUL,
                 confidence=confidence,
                 supporting_facts=_change_facts(change, 'Rested options increased.'),
@@ -410,15 +504,39 @@ def _resource_flexibility(change: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def _coverage_margin(change: dict[str, Any]) -> list[dict[str, Any]]:
+def _coverage_margin(change: dict[str, Any], metrics: dict[str, Any]) -> list[dict[str, Any]]:
     direction = change.get('change_direction')
     confidence = str(change.get('confidence') or 'medium')
     if direction == 'improved':
+        summary = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_MORE_COVERAGE_MARGIN,
+            [
+                f'{_team_bullpen(metrics)} has more coverage margin than yesterday.',
+                f'The coverage picture has more room for {_lower_initial(_team_bullpen(metrics))} today.',
+                f'{_team_bullpen(metrics)} has a wider coverage cushion.',
+                f'Coverage has more margin for {_lower_initial(_team_bullpen(metrics))}.',
+            ],
+            salt='summary',
+        )
+        context = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_MORE_COVERAGE_MARGIN,
+            [
+                f'{_team_bullpen(metrics)} has more room if the game asks for several relief innings.',
+                f'That gives {_lower_initial(_team_staff(metrics))} a little more space if the night stretches.',
+                f'The coverage read gives {_lower_initial(_team_bullpen(metrics))} more room around the middle innings.',
+                f'There is more margin for {_lower_initial(_team_relief_group(metrics))} to absorb extra outs.',
+            ],
+            salt='context',
+        )
         return [
             _consequence(
                 CONSEQUENCE_MORE_COVERAGE_MARGIN,
-                'Coverage has more margin than yesterday.',
-                'The bullpen has more room if the game asks for several relief innings.',
+                summary,
+                context,
                 significance=SIGNIFICANCE_STRUCTURAL,
                 confidence=confidence,
                 supporting_facts=_change_facts(change, 'Coverage safety improved.'),
@@ -449,11 +567,33 @@ def _trust_support(
         fallback='medium',
     )
     if direction == 'expanded':
+        summary = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_WIDER_TRUST_SUPPORT,
+            [
+                f'{_team_trusted_group(metrics)} is wider than yesterday.',
+                f'More of {_lower_initial(_team_bullpen(metrics))} sits in the trusted support layer.',
+                f'{_team_bullpen(metrics)} has broader trusted support than yesterday.',
+            ],
+            salt='summary',
+        )
+        context = _choose_phrase(
+            metrics,
+            change,
+            CONSEQUENCE_WIDER_TRUST_SUPPORT,
+            [
+                f'More of {_lower_initial(_team_bullpen(metrics))} can support the bridge from middle innings to the late innings.',
+                f'The structure has more trusted support around the highest-leverage lanes for {_lower_initial(_team_bullpen(metrics))}.',
+                f'That gives {_lower_initial(_team_staff(metrics))} a broader support layer before the late innings narrow.',
+            ],
+            salt='context',
+        )
         return [
             _consequence(
                 CONSEQUENCE_WIDER_TRUST_SUPPORT,
-                'The trusted group is wider than yesterday.',
-                'More of the bullpen can support the bridge from middle innings to the late innings.',
+                summary,
+                context,
                 significance=SIGNIFICANCE_STRUCTURAL,
                 confidence=confidence,
                 supporting_facts=_change_facts(change, 'Trusted group expanded.'),
@@ -554,13 +694,13 @@ def _consequences_from_change(
 ) -> list[dict[str, Any]]:
     change_type = change.get('change_type')
     if change_type == CHANGE_RESTED_OPTIONS:
-        return _capacity_flexibility(change)
+        return _capacity_flexibility(change, metrics)
     if change_type == CHANGE_USABLE_DEPTH:
         return _depth_workload(change)
     if change_type == CHANGE_RESOURCE_HEALTH:
         return _resource_flexibility(change)
     if change_type == CHANGE_COVERAGE_SAFETY:
-        return _coverage_margin(change)
+        return _coverage_margin(change, metrics)
     if change_type == CHANGE_TRUST_STRUCTURE:
         return _trust_support(change, metrics)
     if change_type == CHANGE_IDENTITY:

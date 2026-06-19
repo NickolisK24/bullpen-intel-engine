@@ -183,7 +183,14 @@ def _word_count(value: str | None) -> int:
 
 def _contains_any(texts: list[str], patterns: tuple[str, ...]) -> bool:
     combined = '\n'.join(texts).lower()
-    return any(pattern in combined for pattern in patterns)
+    for pattern in patterns:
+        if re.fullmatch(r'[a-z]+', pattern):
+            if re.search(rf'\b{re.escape(pattern)}\b', combined):
+                return True
+            continue
+        if pattern in combined:
+            return True
+    return False
 
 
 def _identity_label_leaked(texts: list[str]) -> bool:
