@@ -234,7 +234,7 @@ Get-Content .env.local | ForEach-Object {
     Set-Item -Path "Env:$($name.Trim())" -Value $value.Trim()
   }
 }
-python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['DATABASE_URL']); assert u.hostname in ('localhost','127.0.0.1','::1','host.docker.internal'), u.hostname; print(f'DATABASE_URL local host: {u.hostname}; database: {u.path.lstrip(\"/\")}')"
+python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ['DATABASE_URL']); db=u.path.lstrip('/'); assert u.hostname in ('localhost','127.0.0.1','::1','host.docker.internal'), u.hostname; print('DATABASE_URL local host: ' + str(u.hostname) + '; database: ' + db)"
 flask run --host 127.0.0.1 --port 5000
 ```
 
