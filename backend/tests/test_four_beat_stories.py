@@ -1,6 +1,9 @@
+import inspect
+import re
 from datetime import date, timedelta
 from types import SimpleNamespace
 
+import services.team_story_narrative as team_story_narrative
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
 from services.four_beat_stories import (
     BEAT_CONTEXT,
@@ -29,11 +32,21 @@ from services.team_story_facts import (
     DISCLOSURE_LIMITED_BULLPEN_PICTURE,
 )
 from services.team_story_narrative import (
+    ARCHETYPE_CAPACITY_CONSTRAINT,
+    ARCHETYPE_FLEXIBLE_BULLPEN,
+    ARCHETYPE_MULTI_SOURCE_PRESSURE,
+    ARCHETYPE_ROTATION_SPILLOVER,
+    ARCHETYPE_RUN_PREVENTION_MASK,
+    ARCHETYPE_STABILITY_EROSION,
+    ARCHETYPE_STABILITY_RECOVERY,
+    ARCHETYPE_THIN_TRUSTED_GROUP,
+    ARCHETYPE_WORKLOAD_CONCENTRATION,
     FORBIDDEN_PUBLIC_LABELS,
     INTERNAL_TAXONOMY_TERMS,
     narrative_contains_forbidden_language,
     render_story_disclosure_note,
     render_story_narrative,
+    select_story_archetype,
 )
 from services.team_bullpen_shape import build_team_bullpen_shape
 
@@ -79,11 +92,84 @@ STABILITY_CONTEXT_MARKERS = (
     'bullpen mix has been shifting',
 )
 
+AWKWARD_RENDERER_PHRASES = (
+    'one-lane bullpen story',
+    'one-lane bullpen read',
+    'run-prevention line',
+    'workload trail',
+    'usage trail',
+    'surface result',
+    'surface line',
+    'carrying the read',
+    'the same part of the bullpen keeps carrying the read',
+    'this read starts with',
+    'the first glance',
+    'because the full bullpen picture is not completely settled',
+    'the workload trail explains',
+    'the usage trail explains',
+    'the run-prevention line gives',
+)
+
+BANNED_CAVEAT_PHRASES = (
+    'usage is the anchor',
+    'usage drives this',
+    'roster picture incomplete',
+    'roster detail is limited',
+    'the caveat is simple',
+    'this stays tied to usage',
+)
+
 ENVIRONMENT_INTRO_MARKERS = (
     'this is not one clean issue',
     'more than one thing tightening the picture',
     'not just one part of the pen',
 )
+
+DISCLOSURE_BODY_MARKERS = (
+    'full roster picture',
+    'roster context',
+    'usage pattern',
+    'work has been distributed',
+    'on the mound',
+    'roster variable',
+)
+
+
+def _narrative_has_disclosure_caveat(narrative: str) -> bool:
+    lower = narrative.lower()
+    return any(marker in lower for marker in DISCLOSURE_BODY_MARKERS)
+
+
+def _ending_sentence_from_narrative(narrative: str) -> str:
+    closing = narrative.split('\n\n')[-1].strip()
+    sentences = re.findall(r'[^.!?]+[.!?]', closing)
+    return sentences[-1].strip() if sentences else closing
+
+
+def _ending_family_from_sentence(sentence: str) -> str:
+    lower = sentence.lower()
+    if sentence.endswith('?'):
+        return 'question'
+    if lower.startswith('the next ') or 'next few games' in lower or 'next turn through the rotation' in lower:
+        return 'watch_statement'
+    if lower.startswith((
+        'the main takeaway',
+        'the useful takeaway',
+        'that gives the staff',
+        'that is the useful part',
+    )):
+        return 'takeaway'
+    if any(marker in lower for marker in (
+        'little margin',
+        'less margin',
+        'every clean inning',
+        'gap between',
+        'pressure is not only',
+        'does not erase',
+        'keeps the strong results',
+    )):
+        return 'implication'
+    return 'observation'
 
 
 def _pitcher(pid, name, team_id=1, team_name='Test Club', abbr='TST'):
@@ -728,7 +814,13 @@ def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract
     assert facts['watch_question']
     assert facts['confidence'] == 'limited'
     assert facts['disclosure'] == DISCLOSURE_LIMITED_BULLPEN_PICTURE
-    assert story['disclosure_note'] == render_story_disclosure_note(facts)
+    disclosure_note = render_story_disclosure_note(facts)
+    if disclosure_note:
+        assert story['disclosure_note'] == disclosure_note
+    else:
+        assert 'disclosure_note' not in story
+    assert _narrative_has_disclosure_caveat(narrative) or disclosure_note
+    assert not (_narrative_has_disclosure_caveat(narrative) and disclosure_note)
     assert narrative.count('\n\n') == 2
     assert story['team_name'] in narrative
     assert facts['primary_observation'] not in narrative
@@ -774,6 +866,14 @@ def _sample_story_facts(
     *,
     disclosure: bool = True,
     watch_question: str | None = None,
+    primary_observation: str | None = None,
+    supporting_context: str | None = None,
+    pressure_source: str | None = None,
+    workload_pattern: str | None = None,
+    capacity_context: str | None = None,
+    rotation_context: str | None = None,
+    stability_context: str | None = None,
+    environment_context: str | None = None,
 ) -> dict:
     return {
         'capability': STORY_FACT_LAYER_CAPABILITY,
@@ -783,18 +883,18 @@ def _sample_story_facts(
             'team_name': team_name,
             'team_abbreviation': abbr,
         },
-        'primary_observation': f'The {team_name} have a narrower bullpen path tonight.',
-        'supporting_context': (
+        'primary_observation': primary_observation or f'The {team_name} have a narrower bullpen path tonight.',
+        'supporting_context': supporting_context or (
             'The recent workload has clustered around the top 3 relievers, '
             'who have handled 72% of relief pitches in the window, while 3 '
             'of 8 bullpen arms are available.'
         ),
-        'pressure_source': 'The pressure source is recent work being concentrated around a smaller set of relievers.',
-        'workload_pattern': 'The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
-        'capacity_context': None,
-        'rotation_context': None,
-        'stability_context': None,
-        'environment_context': None,
+        'pressure_source': pressure_source or 'The pressure source is recent work being concentrated around a smaller set of relievers.',
+        'workload_pattern': workload_pattern or 'The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
+        'capacity_context': capacity_context,
+        'rotation_context': rotation_context,
+        'stability_context': stability_context,
+        'environment_context': environment_context,
         'watch_question': (
             watch_question
             or 'The thing to watch next is whether the same relievers remain at the center of the workload.'
@@ -819,19 +919,59 @@ def test_renderer_varies_repeated_disclosure_language_deterministically():
 
     first = [render_story_narrative(item) for item in facts]
     second = [render_story_narrative(item) for item in facts]
-    disclosure_sentences = [narrative.split('\n\n')[-1].split('. ')[0] for narrative in first]
+    disclosure_sentences = [
+        narrative.split('\n\n')[-1].split('. ')[0]
+        for narrative in first
+        if _narrative_has_disclosure_caveat(narrative)
+    ]
     notes = [render_story_disclosure_note(item) for item in facts]
+    present_notes = [note for note in notes if note]
 
     assert first == second
     assert notes == [render_story_disclosure_note(item) for item in facts]
-    assert len(set(disclosure_sentences)) >= 3
-    assert len(set(notes)) >= 3
-    for narrative in first:
+    assert len(set(disclosure_sentences)) >= 2
+    assert len(set(present_notes)) >= 2
+    assert any(note is None for note in notes)
+    for narrative, note in zip(first, notes):
         assert DISCLOSURE_LIMITED_BULLPEN_PICTURE not in narrative
         assert narrative_contains_forbidden_language(narrative) is False
+        assert _narrative_has_disclosure_caveat(narrative) or note
+        assert not (_narrative_has_disclosure_caveat(narrative) and note)
 
 
-def test_renderer_varies_watch_question_openings_across_sample_set():
+def test_renderer_disclosure_stays_present_without_repeating_footer_language():
+    facts = [
+        _sample_story_facts(team_id, team_name, abbr)
+        for team_id, team_name, abbr in [
+            (125, 'Miami Marlins', 'MIA'),
+            (126, 'Milwaukee Brewers', 'MIL'),
+            (127, 'New York Yankees', 'NYY'),
+            (128, 'Baltimore Orioles', 'BAL'),
+            (129, 'Chicago White Sox', 'CWS'),
+        ]
+    ]
+
+    for item in facts:
+        narrative = render_story_narrative(item)
+        note = render_story_disclosure_note(item)
+        closing = narrative.split('\n\n')[-1]
+        combined = f'{narrative} {note}'.lower()
+        has_body_caveat = _narrative_has_disclosure_caveat(narrative)
+
+        assert has_body_caveat or note
+        assert not (has_body_caveat and note)
+        if note:
+            assert note not in narrative
+            assert len(note) <= 32
+        else:
+            assert any(marker in closing.lower() for marker in DISCLOSURE_BODY_MARKERS)
+        for phrase in AWKWARD_RENDERER_PHRASES:
+            assert phrase not in combined
+        for phrase in BANNED_CAVEAT_PHRASES:
+            assert phrase not in combined
+
+
+def test_renderer_uses_mixed_ending_families_across_sample_set():
     teams = [
         (117, 'Houston Astros', 'HOU'),
         (118, 'Kansas City Royals', 'KC'),
@@ -850,13 +990,18 @@ def test_renderer_varies_watch_question_openings_across_sample_set():
     ]
 
     narratives = [render_story_narrative(item) for item in facts]
-    watch_leads = [narrative.split('\n\n')[-1].split(' whether ')[0] for narrative in narratives]
+    endings = [_ending_sentence_from_narrative(narrative) for narrative in narratives]
+    families = [_ending_family_from_sentence(ending) for ending in endings]
 
     assert narratives == [render_story_narrative(item) for item in facts]
-    assert len(set(watch_leads)) >= 3
-    for closing in [narrative.split('\n\n')[-1] for narrative in narratives]:
-        assert not closing.startswith('The thing to watch next is whether')
-        assert 'whether' in closing
+    assert len(set(endings)) >= 3
+    assert len(set(families)) >= 2
+    assert families.count('question') < len(families)
+    for ending in endings:
+        lower = ending.lower()
+        assert not lower.startswith('the next question is')
+        assert not lower.startswith('from here, the question is')
+        assert 'worth watching to see whether' not in lower
 
 
 def test_renderer_varies_openings_without_repeating_team_have_pattern():
@@ -879,6 +1024,233 @@ def test_renderer_varies_openings_without_repeating_team_have_pattern():
     assert not all(opener.startswith('The ') for opener in openers)
     for (_, team_name, _), opener in zip(teams, openers):
         assert not opener.startswith(f'The {team_name} have')
+
+
+def _archetype_story_fact_samples() -> dict[str, dict]:
+    return {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: _sample_story_facts(
+            201,
+            'Workload Club',
+            'WLD',
+            disclosure=False,
+        ),
+        ARCHETYPE_THIN_TRUSTED_GROUP: _sample_story_facts(
+            202,
+            'Trust Club',
+            'TRU',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 6 relievers, '
+                'averaging 18 pitches per participating arm.'
+            ),
+            pressure_source=(
+                'The pressure source is the trusted late-inning layer, where '
+                'the usable group and the preferred group do not fully line up.'
+            ),
+            workload_pattern=(
+                'The workload pattern is broad: 6 relievers have shared the work '
+                'at 18 pitches per participating arm.'
+            ),
+            watch_question=(
+                'The thing to watch next is whether the late-inning work can move '
+                'through more than the same trusted lane.'
+            ),
+        ),
+        ARCHETYPE_CAPACITY_CONSTRAINT: _sample_story_facts(
+            203,
+            'Capacity Club',
+            'CAP',
+            disclosure=False,
+            supporting_context='The current read is built around recent relief usage and the available bullpen layer.',
+            pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 88 recent relief pitches.',
+            capacity_context='The available group is already thin, leaving fewer usable arms than a normal night.',
+            watch_question='The next useful read is whether one more bullpen-heavy game exposes the thin usable layer.',
+        ),
+        ARCHETYPE_ROTATION_SPILLOVER: _sample_story_facts(
+            204,
+            'Rotation Club',
+            'ROT',
+            disclosure=False,
+            supporting_context='Recent relief usage has not centered on one narrow group.',
+            pressure_source='The shape comes from workload distribution rather than one narrow lane.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 92 recent relief pitches.',
+            rotation_context='The bullpen has been covering more of the game than usual.',
+            watch_question='The next useful read is whether starters cover more innings before the bullpen takes over.',
+        ),
+        ARCHETYPE_STABILITY_EROSION: _sample_story_facts(
+            205,
+            'Churn Club',
+            'CHN',
+            disclosure=False,
+            supporting_context='Recent relief usage has not centered on one narrow group.',
+            pressure_source='The shape comes from workload distribution rather than one narrow lane.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 82 recent relief pitches.',
+            stability_context='The bullpen group has not looked exactly the same from week to week.',
+            watch_question='The thing to watch next is whether the recent usage pattern changes after the next completed game.',
+        ),
+        ARCHETYPE_STABILITY_RECOVERY: _sample_story_facts(
+            206,
+            'Recovery Club',
+            'REC',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 6 relievers, '
+                'averaging 16 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+            workload_pattern=(
+                'The workload pattern is broad: 6 relievers have shared the work '
+                'at 16 pitches per participating arm.'
+            ),
+            stability_context='The bullpen group has looked more settled, with the same group carrying recent innings.',
+            watch_question='The next useful read is whether the work stays spread across the group.',
+        ),
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: _sample_story_facts(
+            207,
+            'Layered Club',
+            'LAY',
+            disclosure=False,
+            supporting_context='The recent workload has clustered around the top 3 relievers, who have handled 68% of relief pitches in the window, while 4 of 8 bullpen arms are available.',
+            pressure_source='The pressure source is workload concentration meeting a smaller usable group.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 68% of the recent relief work.',
+            capacity_context='The available group is already thin.',
+            rotation_context='Extra outs have been finding their way to the bullpen lately.',
+            watch_question='The thing to watch next is whether the recent usage pattern changes after the next completed game.',
+        ),
+        ARCHETYPE_FLEXIBLE_BULLPEN: _sample_story_facts(
+            208,
+            'Flexible Club',
+            'FLX',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 7 relievers, '
+                'averaging 14 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from a deeper usable layer behind the late-inning plan.',
+            workload_pattern=(
+                'The workload pattern is broad: 7 relievers have shared the work '
+                'at 14 pitches per participating arm.'
+            ),
+            watch_question='The next useful read is whether that broad, usable shape still holds after the next completed game.',
+        ),
+        ARCHETYPE_RUN_PREVENTION_MASK: _sample_story_facts(
+            209,
+            'Results Club',
+            'RES',
+            disclosure=False,
+            primary_observation='The Results Club bullpen has pitched well this year, but they are leaning on it hard tonight.',
+            supporting_context='The season run prevention has been strong at a 2.75 ERA, but recent usage is averaging 34 pitches per participating reliever.',
+            pressure_source='The season run-prevention line is part of the read, but it is not the whole bullpen picture.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 64% of the recent relief work.',
+            watch_question='The thing to watch next is whether the same relievers remain at the center of the workload.',
+        ),
+    }
+
+
+def test_story_archetype_selection_is_deterministic():
+    samples = _archetype_story_fact_samples()
+
+    for expected, facts in samples.items():
+        assert select_story_archetype(facts) == expected
+        assert select_story_archetype(dict(facts)) == expected
+
+
+def test_archetype_narratives_are_deterministic_and_structurally_distinct():
+    samples = _archetype_story_fact_samples()
+    narratives = {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in samples.items()
+    }
+
+    assert narratives == {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in samples.items()
+    }
+    assert len(set(narratives.values())) == len(samples)
+    assert len({text.split('\n\n')[0] for text in narratives.values()}) >= 8
+    assert len({text.split('\n\n')[1] for text in narratives.values()}) >= 8
+    assert narratives[ARCHETYPE_WORKLOAD_CONCENTRATION].split('\n\n')[0] != narratives[ARCHETYPE_FLEXIBLE_BULLPEN].split('\n\n')[0]
+    assert narratives[ARCHETYPE_CAPACITY_CONSTRAINT].split('\n\n')[1] != narratives[ARCHETYPE_ROTATION_SPILLOVER].split('\n\n')[1]
+
+
+def test_archetype_endings_use_distinct_family_mix():
+    narratives = {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in _archetype_story_fact_samples().items()
+    }
+    endings = {
+        archetype: _ending_sentence_from_narrative(narrative)
+        for archetype, narrative in narratives.items()
+    }
+    families = {
+        archetype: _ending_family_from_sentence(ending)
+        for archetype, ending in endings.items()
+    }
+
+    assert families == {
+        archetype: _ending_family_from_sentence(_ending_sentence_from_narrative(render_story_narrative(facts)))
+        for archetype, facts in _archetype_story_fact_samples().items()
+    }
+    assert len(set(families.values())) >= 4
+    assert sum(ending.endswith('?') for ending in endings.values()) <= 4
+    assert families[ARCHETYPE_WORKLOAD_CONCENTRATION] in {'question', 'implication'}
+    assert families[ARCHETYPE_THIN_TRUSTED_GROUP] in {'question', 'implication'}
+    assert families[ARCHETYPE_CAPACITY_CONSTRAINT] in {'observation', 'implication'}
+    assert families[ARCHETYPE_ROTATION_SPILLOVER] in {'question', 'watch_statement'}
+    assert families[ARCHETYPE_STABILITY_EROSION] in {'observation', 'question'}
+    assert families[ARCHETYPE_STABILITY_RECOVERY] in {'observation', 'takeaway'}
+    assert families[ARCHETYPE_MULTI_SOURCE_PRESSURE] in {'observation', 'implication'}
+    assert families[ARCHETYPE_FLEXIBLE_BULLPEN] in {'takeaway', 'observation'}
+    assert families[ARCHETYPE_RUN_PREVENTION_MASK] in {'question', 'implication'}
+
+
+def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
+    for narrative in [
+        render_story_narrative(facts)
+        for facts in _archetype_story_fact_samples().values()
+    ]:
+        lower = narrative.lower()
+
+        assert narrative_contains_forbidden_language(narrative) is False
+        for label in FORBIDDEN_PUBLIC_LABELS:
+            assert label not in narrative
+        for term in INTERNAL_TAXONOMY_TERMS:
+            assert term.lower() not in lower
+        for phrase in AWKWARD_RENDERER_PHRASES:
+            assert phrase not in lower
+        for phrase in BANNED_CAVEAT_PHRASES:
+            assert phrase not in lower
+        for forbidden in (
+            'betting',
+            'prediction',
+            'recommendation',
+            'preferred',
+            'should use',
+            'manager should',
+            'fatigue score',
+            'confidence score',
+            'HIGH or CRITICAL',
+            'pressure source',
+            'workload pattern is',
+            'the thing to watch next is whether',
+            'the next question is',
+            'from here, the question is',
+            'worth watching to see whether',
+            'injury',
+            'transaction',
+            'called up',
+            'optioned',
+            'dfa',
+        ):
+            assert forbidden.lower() not in lower
+
+
+def test_renderer_phrase_pools_do_not_keep_banned_awkward_templates():
+    source = inspect.getsource(team_story_narrative).lower()
+
+    for phrase in AWKWARD_RENDERER_PHRASES + BANNED_CAVEAT_PHRASES:
+        assert phrase not in source
 
 
 def test_story_narrative_output_is_deterministic():
