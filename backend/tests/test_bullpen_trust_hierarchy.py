@@ -62,11 +62,23 @@ def bucket(item):
     return item['bucket']
 
 
+ANCHOR_EVIDENCE = [
+    '12 appearances in the recent window',
+    '4 save situation finish(es) recorded',
+]
+
+BORDERLINE_LATE_EVIDENCE = [
+    '12 appearances in the recent window',
+    '2 save situation finish(es) recorded',
+    '3 hold(s) recorded',
+]
+
+
 def test_bucket_assignment_uses_existing_role_and_availability_signals():
     relief_outs = {1: 60, 2: 36, 3: 30, 4: 12, 5: 0}
 
     assert bucket(classify_trust_bucket(
-        record(1, public_role='trust_arm', observed_role='late_high_leverage'),
+        record(1, public_role='trust_arm', observed_role='late_high_leverage', role_confidence='medium', evidence=ANCHOR_EVIDENCE),
         relief_outs_by_pitcher=relief_outs,
     )) == BUCKET_ANCHOR
     assert bucket(classify_trust_bucket(
@@ -85,6 +97,21 @@ def test_bucket_assignment_uses_existing_role_and_availability_signals():
         record(5, public_role='limited_read', observed_role='insufficient_data', data_state='missing'),
         relief_outs_by_pitcher=relief_outs,
     )) == BUCKET_UNKNOWN
+
+
+def test_borderline_late_usage_moves_to_leverage_not_anchor():
+    result = classify_trust_bucket(
+        record(
+            6,
+            public_role='trust_arm',
+            observed_role='late_high_leverage',
+            role_confidence='medium',
+            evidence=BORDERLINE_LATE_EVIDENCE,
+        ),
+        relief_outs_by_pitcher={6: 80},
+    )
+
+    assert result['bucket'] == BUCKET_LEVERAGE
 
 
 def test_insufficient_data_stays_unknown_unless_workload_supports_trusted_bucket():
@@ -127,8 +154,8 @@ def test_unavailable_and_injured_pitchers_do_not_receive_active_trust_buckets():
 
 def test_non_bullpen_records_are_excluded_from_hierarchy():
     payload = build_bullpen_trust_hierarchy([
-        record(30, public_role='trust_arm', observed_role='late_high_leverage'),
-        record(31, public_role='trust_arm', observed_role='late_high_leverage', eligibility=False),
+        record(30, public_role='trust_arm', observed_role='late_high_leverage', evidence=ANCHOR_EVIDENCE),
+        record(31, public_role='trust_arm', observed_role='late_high_leverage', evidence=ANCHOR_EVIDENCE, eligibility=False),
     ], relief_outs_by_pitcher={30: 60, 31: 60})
 
     assert payload['anchor_count'] == 1
@@ -138,9 +165,9 @@ def test_non_bullpen_records_are_excluded_from_hierarchy():
 def test_team_summary_counts_and_top_bucket_available_count_are_deterministic():
     records = [
         record(42, name='Trusted C', public_role='bridge_arm', observed_role='middle_relief'),
-        record(41, name='Anchor B', public_role='trust_arm', observed_role='late_high_leverage'),
+        record(41, name='Anchor B', public_role='trust_arm', observed_role='late_high_leverage', evidence=ANCHOR_EVIDENCE),
         record(43, name='Depth D', public_role='depth_arm', observed_role='low_unclear'),
-        record(40, name='Anchor A', public_role='trust_arm', observed_role='late_high_leverage'),
+        record(40, name='Anchor A', public_role='trust_arm', observed_role='late_high_leverage', evidence=ANCHOR_EVIDENCE),
     ]
     relief_outs = {40: 60, 41: 55, 42: 30, 43: 0}
 
@@ -175,7 +202,7 @@ def test_payload_does_not_expose_recommendation_or_score_fields():
 def test_capacity_payload_exposes_summary_without_player_buckets():
     result = build_team_bullpen_capacity(
         [
-            record(60, public_role='trust_arm', observed_role='late_high_leverage'),
+            record(60, public_role='trust_arm', observed_role='late_high_leverage', evidence=ANCHOR_EVIDENCE),
             record(61, public_role='bridge_arm', observed_role='middle_relief'),
         ],
         team={'team_id': 1, 'team_name': 'Test Team', 'team_abbreviation': 'TST'},

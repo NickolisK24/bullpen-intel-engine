@@ -64,6 +64,8 @@ WEAK_CONFIDENCE = {'none', 'unknown', 'low'}
 
 SEASON_RELIEF_OUTS_TRUSTED_FLOOR = 30
 RECENT_APPEARANCES_TRUSTED_FLOOR = 3
+ANCHOR_MIN_RECENT_APPEARANCES = 10
+ANCHOR_MIN_SAVE_FINISHES = 3
 
 NO_HIERARCHY_LIMITATION = (
     'Trust Hierarchy is unknown because no active bullpen resources were available to classify.'
@@ -74,7 +76,7 @@ LIMITED_HIERARCHY_LIMITATION = (
 
 BUCKET_DEFINITIONS = {
     BUCKET_ANCHOR: (
-        'Active clean bullpen resource with strong late-inning or high-leverage trust signals.'
+        'Active clean bullpen resource with repeated late-inning or high-leverage pillar signals.'
     ),
     BUCKET_LEVERAGE: (
         'Active bullpen resource with late/setup usage or Trust Arm signals, but short of the anchor threshold.'
@@ -239,6 +241,31 @@ def _role_sample_size(record: dict[str, Any]) -> int | None:
     return None
 
 
+def _role_evidence_text(record: dict[str, Any]) -> str:
+    role = _role(record)
+    evidence = role.get('evidence') or []
+    if isinstance(evidence, str):
+        return evidence.lower()
+    return ' '.join(str(item or '') for item in evidence).lower()
+
+
+def _role_evidence_count(record: dict[str, Any], pattern: str) -> int:
+    match = re.search(pattern, _role_evidence_text(record))
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _save_finish_count(record: dict[str, Any]) -> int:
+    return _role_evidence_count(
+        record,
+        r'\b(\d+)\s+save situation finish(?:\(es\)|es)? recorded\b',
+    )
+
+
 def _relief_outs(relief_outs_by_pitcher: dict[int, int] | None, pitcher_id: int) -> int:
     try:
         return int((relief_outs_by_pitcher or {}).get(int(pitcher_id), 0) or 0)
@@ -266,6 +293,18 @@ def _has_trusted_workload(record: dict[str, Any], season_relief_outs: int) -> bo
     )
 
 
+def _has_anchor_evidence(record: dict[str, Any]) -> bool:
+    appearances = _role_sample_size(record) or 0
+    confidence = _role_confidence(record)
+    return (
+        appearances >= ANCHOR_MIN_RECENT_APPEARANCES
+        and (
+            confidence == 'high'
+            or _save_finish_count(record) >= ANCHOR_MIN_SAVE_FINISHES
+        )
+    )
+
+
 def _bucket_for(record: dict[str, Any], season_relief_outs: int) -> tuple[str, str]:
     role_key = _role_label_key(record)
     read_key = _read_key(record)
@@ -290,8 +329,9 @@ def _bucket_for(record: dict[str, Any], season_relief_outs: int) -> tuple[str, s
         and role_key == ROLE_TRUST_ARM
         and observed_key in LATE_USAGE_KEYS
         and strong_confidence
+        and _has_anchor_evidence(record)
     ):
-        return BUCKET_ANCHOR, 'Clean Trust Arm with late-inning or high-leverage usage signals.'
+        return BUCKET_ANCHOR, 'Clean Trust Arm with repeated late-inning or high-leverage pillar signals.'
 
     if (
         role_key == ROLE_TRUST_ARM
@@ -452,6 +492,8 @@ __all__ = [
     'BUCKET_TRUSTED',
     'BUCKET_UNKNOWN',
     'CAPABILITY',
+    'ANCHOR_MIN_RECENT_APPEARANCES',
+    'ANCHOR_MIN_SAVE_FINISHES',
     'NO_HIERARCHY_LIMITATION',
     'LIMITED_HIERARCHY_LIMITATION',
     'VERSION',
