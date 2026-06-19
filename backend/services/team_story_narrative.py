@@ -21,6 +21,20 @@ ARCHETYPE_MULTI_SOURCE_PRESSURE = 'multi_source_pressure'
 ARCHETYPE_FLEXIBLE_BULLPEN = 'flexible_bullpen'
 ARCHETYPE_RUN_PREVENTION_MASK = 'run_prevention_mask'
 
+SITUATION_FIRST_MOVE_OK_THEN_THIN = 'first_move_ok_then_thin'
+SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED = 'late_innings_stable_middle_getting_tested'
+SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS = 'full_board_but_close_game_questions'
+SITUATION_RESULTS_GOOD_PATH_NARROWING = 'results_good_path_narrowing'
+SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS = 'same_few_names_carrying_tight_spots'
+SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT = 'enough_bodies_not_enough_comfort'
+SITUATION_FLEXIBILITY_WORK_SPREAD_OUT = 'flexibility_real_because_work_spread_out'
+SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END = 'depth_strain_hidden_by_top_end_structure'
+SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN = 'workload_spread_but_trust_not_equal'
+SITUATION_ROTATION_HANDOFF_STRETCHING_PEN = 'rotation_handoff_stretching_pen'
+SITUATION_ROOM_FOR_ERROR_NARROWING = 'room_for_error_narrowing'
+SITUATION_ROOM_FOR_ERROR_RETURNING = 'room_for_error_returning'
+SITUATION_PRESSURES_STACKING_IN_GAME_PATH = 'pressures_stacking_in_game_path'
+
 FORBIDDEN_PUBLIC_LABELS = (
     'Signal',
     'Evidence',
@@ -240,6 +254,12 @@ def _possessive_team(facts: dict[str, Any]) -> str:
     return f"{team}'" if team.endswith('s') else f"{team}'s"
 
 
+def _sentence_start(text: str) -> str:
+    if not text:
+        return text
+    return f'{text[0].upper()}{text[1:]}'
+
+
 def _all_fact_text(facts: dict[str, Any]) -> str:
     values = [
         facts.get('primary_observation'),
@@ -414,6 +434,62 @@ def _story_angle(facts: dict[str, Any], archetype: str) -> str:
     return 'standard'
 
 
+def _story_situation(facts: dict[str, Any], archetype: str) -> str:
+    angle = _story_angle(facts, archetype)
+    reason = _context_reason(facts)
+    availability = _availability_parts(facts)
+    available = _int_text(availability[0]) if availability else None
+
+    if archetype == ARCHETYPE_WORKLOAD_CONCENTRATION:
+        if angle == 'comfort_drop' or (available is not None and available <= 3):
+            return SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT
+        return SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS
+
+    if archetype == ARCHETYPE_THIN_TRUSTED_GROUP:
+        if angle == 'late_middle_split':
+            return SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED
+        if angle == 'bodies_not_comfort':
+            return SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN
+        return SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT
+
+    if archetype == ARCHETYPE_CAPACITY_CONSTRAINT:
+        if angle in {'obvious_choices_then_gap', 'short_comfort_board'}:
+            return SITUATION_FIRST_MOVE_OK_THEN_THIN
+        if angle == 'full_board_comfort_question':
+            return SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS
+        return SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT
+
+    if archetype == ARCHETYPE_ROTATION_SPILLOVER:
+        return SITUATION_ROTATION_HANDOFF_STRETCHING_PEN
+
+    if archetype == ARCHETYPE_STABILITY_EROSION:
+        return SITUATION_ROOM_FOR_ERROR_NARROWING
+
+    if archetype == ARCHETYPE_STABILITY_RECOVERY:
+        return SITUATION_ROOM_FOR_ERROR_RETURNING
+
+    if archetype == ARCHETYPE_MULTI_SOURCE_PRESSURE:
+        if angle == 'full_board_comfort_question':
+            return SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS
+        if angle == 'late_structure_cover':
+            return SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END
+        if angle == 'comfort_drop':
+            return SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT
+        if angle == 'stacked_on_same_arms':
+            return SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS
+        return SITUATION_PRESSURES_STACKING_IN_GAME_PATH
+
+    if archetype == ARCHETYPE_FLEXIBLE_BULLPEN:
+        if angle == 'late_structure_cover' or reason == 'top_structure_with_resource_strain':
+            return SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED
+        return SITUATION_FLEXIBILITY_WORK_SPREAD_OUT
+
+    if archetype == ARCHETYPE_RUN_PREVENTION_MASK:
+        return SITUATION_RESULTS_GOOD_PATH_NARROWING
+
+    return 'standard'
+
+
 def select_story_archetype(facts: dict[str, Any]) -> str:
     """Select the internal narrative family from already-normalized story facts."""
 
@@ -530,7 +606,7 @@ def _metric_sentence(facts: dict[str, Any], archetype: str) -> str | None:
             options = [
                 lambda f: "The choices get thin quickly once the game starts stretching.",
                 lambda f: "There are not many comfortable pivots left if the night gets long.",
-                lambda f: "The bullpen can still make the first move; the harder part is what comes after it.",
+                lambda f: "A clean first answer does not settle the rest of the game.",
             ]
         else:
             options = [
@@ -569,6 +645,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
     article = _article_team(facts)
     possessive = _possessive_team(facts)
     angle = _story_angle(facts, archetype)
+    situation = _story_situation(facts, archetype)
 
     pools: dict[str, list[_SentenceBuilder]] = {
         ARCHETYPE_WORKLOAD_CONCENTRATION: [
@@ -738,8 +815,79 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
             ],
         },
     }
-    options = angle_pools.get(archetype, {}).get(angle, pools[archetype])
-    return _sentence(_choose(facts, f'{archetype}:opening:{angle}', options)) or ''
+    situation_pools: dict[str, list[_SentenceBuilder]] = {
+        SITUATION_FIRST_MOVE_OK_THEN_THIN: [
+            lambda f: f"{_sentence_start(article)} can probably get through the first bullpen decision; the night gets harder if it asks for another answer right away.",
+            lambda f: f"{_sentence_start(possessive)} first bullpen move can still be clean, but the game becomes trickier if it needs a second or third answer.",
+            lambda f: f"For {article}, the first relief move is not the whole issue; the harder part is what happens if the night keeps stretching.",
+        ],
+        SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED: [
+            lambda f: f"{_sentence_start(possessive)} late innings still have shape, which gives the staff somewhere to land while the middle of the game does more work.",
+            lambda f: f"For {article}, the finish still looks familiar; the bigger test is how much has to happen before the game gets there.",
+            lambda f: f"{_sentence_start(possessive)} back end still gives the night structure, even while the bridge into it asks for more.",
+        ],
+        SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS: [
+            lambda f: f"{_sentence_start(article)} can find arms for the game; the harder question is which ones fit once the score gets tight.",
+            lambda f: f"{_sentence_start(possessive)} bullpen looks full enough until the game starts asking for close-game answers.",
+            lambda f: f"For {article}, the issue is not finding names. It is deciding how many of them belong in the innings that can swing the night.",
+        ],
+        SITUATION_RESULTS_GOOD_PATH_NARROWING: [
+            lambda f: f"{_sentence_start(possessive)} results are still holding, but the path to those outs is getting narrower.",
+            lambda f: f"For {article}, the scoreboard still reads clean while the route through the bullpen gets a little tighter.",
+            lambda f: f"{_sentence_start(possessive)} run prevention is still doing its job, but the way they are getting there is less roomy.",
+        ],
+        SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS: [
+            lambda f: f"When {article} get into the tighter parts of the game, the same relief names keep coming back into the picture.",
+            lambda f: f"{_sentence_start(possessive)} bullpen keeps finding its way back to the same few arms when the game starts to matter most.",
+            lambda f: f"For {article}, the biggest relief pockets keep landing on a familiar part of the bullpen.",
+        ],
+        SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT: [
+            lambda f: f"{_sentence_start(article)} have bullpen bodies for the night, but the comfort starts dropping after the first few names.",
+            lambda f: f"For {article}, the list is longer than the list of choices you would feel good about in a tight spot.",
+            lambda f: f"{_sentence_start(possessive)} bullpen is not empty; it just gets uncomfortable quickly once the game moves past the first few names.",
+        ],
+        SITUATION_FLEXIBILITY_WORK_SPREAD_OUT: [
+            lambda f: f"{_sentence_start(possessive)} bullpen has more than one way through the game because the work has been moving around.",
+            lambda f: f"For {article}, the recent usage gives the staff a few different paths instead of forcing everything through one lane.",
+            lambda f: f"{_sentence_start(possessive)} flexibility shows up in the way the staff can move the game around without going straight back to the same answer.",
+        ],
+        SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END: [
+            lambda f: f"{_sentence_start(possessive)} late innings can still look normal while the group behind them takes on more of the night.",
+            lambda f: f"For {article}, the top of the bullpen still gives the game a shape; the tighter part is everything needed to get there.",
+            lambda f: f"{_sentence_start(possessive)} back end still steadies the picture, but the path into it is carrying more weight.",
+        ],
+        SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN: [
+            lambda f: f"{_sentence_start(possessive)} work has moved through enough arms, but not every path carries the same close-game comfort.",
+            lambda f: f"For {article}, the innings have moved around; the comfort has not spread quite as evenly.",
+            lambda f: f"{_sentence_start(article)} have had different arms involved, but the game still narrows when the leverage climbs.",
+        ],
+        SITUATION_ROTATION_HANDOFF_STRETCHING_PEN: [
+            lambda f: f"{_sentence_start(possessive)} bullpen story starts with how much game the starter leaves behind.",
+            lambda f: f"For {article}, a shorter handoff can turn an ordinary relief night into a longer puzzle.",
+            lambda f: f"{_sentence_start(possessive)} relievers are not just covering the end of games; lately they have had to solve more of the middle, too.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_NARROWING: [
+            lambda f: f"{_sentence_start(possessive)} bullpen has less room for a clean fallback when the game moves off script.",
+            lambda f: f"For {article}, the recent relief shape has been moving enough that the night is harder to map out cleanly.",
+            lambda f: f"{_sentence_start(possessive)} group is losing some of the easy structure that makes a bullpen night feel simple.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_RETURNING: [
+            lambda f: f"{_sentence_start(possessive)} bullpen is getting back to a shape the staff can plan around.",
+            lambda f: f"For {article}, the relief group is starting to give the game a cleaner path again.",
+            lambda f: f"{_sentence_start(possessive)} recent usage has started to look less like patchwork and more like a usable bridge.",
+        ],
+        SITUATION_PRESSURES_STACKING_IN_GAME_PATH: [
+            lambda f: f"{_sentence_start(possessive)} bullpen has a few small problems that start to matter more when the game asks for multiple answers.",
+            lambda f: f"For {article}, the issue is how the pressures line up once the starter hands the game over.",
+            lambda f: f"{_sentence_start(possessive)} bullpen is not dealing with one clean problem; the night gets tighter when those pieces stack.",
+        ],
+    }
+    options = (
+        situation_pools.get(situation)
+        or angle_pools.get(archetype, {}).get(angle)
+        or pools[archetype]
+    )
+    return _sentence(_choose(facts, f'{archetype}:opening:{situation}:{angle}', options)) or ''
 
 
 def _contextual_middle_observation(
@@ -824,10 +972,89 @@ def _contextual_middle_observation(
     return _choose(facts, f'{archetype}:middle-context:{reason}:{angle}', options)
 
 
+def _situation_middle_observation(
+    facts: dict[str, Any],
+    archetype: str,
+    situation: str,
+) -> str | None:
+    options_by_situation: dict[str, list[_SentenceBuilder]] = {
+        SITUATION_FIRST_MOVE_OK_THEN_THIN: [
+            lambda f: "The first move can still make sense; the trouble is how quickly the staff has to start looking for the next one.",
+            lambda f: "This is the kind of night where the second relief decision can be more revealing than the first.",
+            lambda f: "A clean handoff is still possible, but the plan gets thinner if the game needs multiple turns from the pen.",
+        ],
+        SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED: [
+            lambda f: "That matters because the game can still get to a familiar finish, even if the road there is carrying more work.",
+            lambda f: "The staff still has somewhere to point the late innings; the bridge into that part is carrying more of the night.",
+            lambda f: "The late innings are not the uncomfortable part. The road there is working harder than the finish.",
+        ],
+        SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS: [
+            lambda f: "It is less a question of finding names and more a question of finding the right inning for them.",
+            lambda f: "The board can look complete before the game starts sorting the comfortable choices from the merely available ones.",
+            lambda f: "A longer list helps, but it does not mean every arm fits the same pocket of the game.",
+        ],
+        SITUATION_RESULTS_GOOD_PATH_NARROWING: [
+            lambda f: "The outs are still coming, but the route to them is not as roomy as the results make it look.",
+            lambda f: "That is the tension: the line still looks fine, while the bullpen has to work through a narrower path.",
+            lambda f: "Good results still count. They just do not make the way there feel as easy as the line suggests.",
+        ],
+        SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS: [
+            lambda f: "When the game gets tight, it keeps finding the same pocket of the bullpen.",
+            lambda f: "That can work for a night, but the same few names keep making the next clean inning behind them matter more.",
+            lambda f: "The bullpen still has answers; they just keep coming from the same few names.",
+        ],
+        SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT: [
+            lambda f: "There are bodies for the night; the comfort starts dropping after the first few names.",
+            lambda f: "The staff can find a pitcher, but the game gets harder once it moves past the first few choices.",
+            lambda f: "That is where a normal-looking list can turn into a tougher in-game problem after the first few choices.",
+        ],
+        SITUATION_FLEXIBILITY_WORK_SPREAD_OUT: [
+            lambda f: "Because the work has moved around, the staff is not forced back to one answer every time the game changes.",
+            lambda f: "The value is practical: a messy inning does not immediately collapse the whole night onto one small group.",
+            lambda f: "That kind of width gives the staff a way to adjust without treating every inning like the same inning.",
+        ],
+        SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END: [
+            lambda f: "The back end can still make the night feel normal; the work before that is where the stress shows.",
+            lambda f: "The top of the bullpen can hide some of the strain, because the finish still has a familiar shape.",
+            lambda f: "That structure helps, but it also puts more importance on getting the game there cleanly.",
+        ],
+        SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN: [
+            lambda f: "The work has moved around, but not every path carries the same late-game comfort.",
+            lambda f: "That is a different kind of width: useful, but still uneven once the game gets tight.",
+            lambda f: "Several arms can be part of the night without making every inning feel equally settled.",
+        ],
+        SITUATION_ROTATION_HANDOFF_STRETCHING_PEN: [
+            lambda f: "The handoff matters because a shorter start can turn a normal bullpen night into a coverage problem.",
+            lambda f: "The bullpen can look different depending on whether it is asked for the sixth inning or just the finish.",
+            lambda f: "A few extra outs in the middle of the game can change which relief choices are still comfortable late.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_NARROWING: [
+            lambda f: "A moving group leaves less room for a clean fallback if the first plan changes.",
+            lambda f: "The more the relief map moves, the harder it is for the staff to know where the safe exits are.",
+            lambda f: "That kind of churn makes a normal bullpen night feel a little more improvised.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_RETURNING: [
+            lambda f: "A steadier group gives the staff a cleaner fallback if the game moves off script.",
+            lambda f: "The useful part is not just who is available; it is that the innings are starting to line up again.",
+            lambda f: "When the bridge looks familiar, the game does not have to be solved from scratch every night.",
+        ],
+        SITUATION_PRESSURES_STACKING_IN_GAME_PATH: [
+            lambda f: "None of the issues has to carry the whole headline; together, they make the path through the game tighter.",
+            lambda f: "One clean answer would miss the point. The game gets complicated when those smaller pressures arrive together.",
+            lambda f: "The squeeze is cumulative: depth, workload, and the handoff all start touching the same part of the night.",
+        ],
+    }
+    options = options_by_situation.get(situation)
+    if not options:
+        return None
+    return _choose(facts, f'{archetype}:middle-situation:{situation}', options)
+
+
 def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]:
     metric = _metric_sentence(facts, archetype)
     bullpen_context = facts.get('bullpen_context')
     angle = _story_angle(facts, archetype)
+    situation = _story_situation(facts, archetype)
     pools: dict[str, list[_SentenceBuilder]] = {
         ARCHETYPE_WORKLOAD_CONCENTRATION: [
             lambda f: "That makes the story less about the roster sheet and more about how tightly the work has collected.",
@@ -876,7 +1103,8 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
         ],
     }
     middle_observation = _sentence(
-        _contextual_middle_observation(facts, archetype, angle, bullpen_context)
+        _situation_middle_observation(facts, archetype, situation)
+        or _contextual_middle_observation(facts, archetype, angle, bullpen_context)
         or _choose(facts, f'{archetype}:middle', pools[archetype])
     )
     return [
@@ -900,6 +1128,7 @@ def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
 def _ending_sentence(facts: dict[str, Any], archetype: str) -> str | None:
     tail = _tail_after_whether(facts.get('watch_question'))
     family = _ending_family(facts, archetype)
+    situation = _story_situation(facts, archetype)
     pools: dict[str, dict[str, list[_SentenceBuilder]]] = {
         ARCHETYPE_WORKLOAD_CONCENTRATION: {
             _ENDING_WATCH_QUESTION: [
@@ -992,10 +1221,85 @@ def _ending_sentence(facts: dict[str, Any], archetype: str) -> str | None:
             ],
         },
     }
-    options = list(pools[archetype][family])
+    situation_pools: dict[str, list[_SentenceBuilder]] = {
+        SITUATION_FIRST_MOVE_OK_THEN_THIN: [
+            lambda f: "The pressure is not only the first move; it is how carefully they have to manage the next one.",
+            lambda f: "That leaves the staff managing the second and third answers more carefully than the first.",
+        ],
+        SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED: [
+            lambda f: "That gives the staff more than one way to get through a game.",
+            lambda f: "That is useful flexibility: the late plan still has somewhere to land.",
+        ],
+        SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS: [
+            lambda f: "That makes the close-game path more important than the size of the board.",
+            lambda f: "The game can look covered before it starts asking which arms fit the biggest innings.",
+        ],
+        SITUATION_RESULTS_GOOD_PATH_NARROWING: [
+            lambda f: "That shape keeps the strong results from being the whole story.",
+            lambda f: "Good run prevention helps, but it does not erase how narrow the route has become.",
+        ],
+        SITUATION_SAME_FEW_CARRYING_TIGHT_SPOTS: [
+            lambda f: "That kind of concentration makes every clean inning behind the main group matter.",
+            lambda f: "That leaves little margin if the same few names keep carrying the tight spots.",
+        ],
+        SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT: [
+            lambda f: "The gap between available arms and comfortable innings is where the pressure sits.",
+            lambda f: "That leaves less margin once the game moves past the first comfortable choices.",
+            lambda f: "That gap between bodies and comfort can matter quickly if the night gets messy.",
+            lambda f: "That leaves little margin once the first few choices are gone.",
+            lambda f: "Can the comfortable part of the bullpen widen before the game gets tight?",
+            lambda f: "Can more of the bullpen become usable before the first few choices are gone?",
+        ],
+        SITUATION_FLEXIBILITY_WORK_SPREAD_OUT: [
+            lambda f: "That gives the staff more than one way to get through a game.",
+            lambda f: "That is the useful part of the flexibility, a game that does not have to keep returning to one answer.",
+        ],
+        SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END: [
+            lambda f: "That mix leaves less margin for the bridge into the late innings.",
+            lambda f: "When several pressures meet at once, the bullpen can look tighter even before the late innings.",
+        ],
+        SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN: [
+            lambda f: "The gap between available arms and comfortable innings is where the pressure sits.",
+            lambda f: "That gap between available arms and comfortable innings can matter more than the size of the board.",
+            lambda f: "Can more usable arms become comfortable choices before the game gets tight?",
+        ],
+        SITUATION_ROTATION_HANDOFF_STRETCHING_PEN: [
+            lambda f: "The next few games are the reference point for how much work reaches the pen.",
+            lambda f: "The next turn through the rotation can put a clearer shape on the handoff.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_NARROWING: [
+            lambda f: "That leaves the group less settled than the availability list alone would show.",
+            lambda f: "The important part is the moving target, not just who is listed as available.",
+        ],
+        SITUATION_ROOM_FOR_ERROR_RETURNING: [
+            lambda f: "That gives the bullpen a more usable shape than it had when the work was tighter.",
+            lambda f: "That is the useful part of the recovery, a bullpen with more than one way through the middle innings.",
+        ],
+        SITUATION_PRESSURES_STACKING_IN_GAME_PATH: [
+            lambda f: "That mix leaves less margin for any one part of the plan to absorb the whole night.",
+            lambda f: "When several pressures meet at once, the bullpen can look tighter even before the late innings.",
+        ],
+    }
+    if situation == SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED and archetype == ARCHETYPE_THIN_TRUSTED_GROUP:
+        options = [
+            lambda f: "Can the comfortable part of the bridge widen before the game gets tight?",
+            lambda f: "The gap between the late plan and the innings before it is where the pressure sits.",
+        ]
+    elif situation == SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT and archetype in {
+        ARCHETYPE_CAPACITY_CONSTRAINT,
+        ARCHETYPE_MULTI_SOURCE_PRESSURE,
+    }:
+        options = [
+            lambda f: "The gap between available arms and comfortable innings is where the pressure sits.",
+            lambda f: "That leaves less margin once the game moves past the first comfortable choices.",
+            lambda f: "That gap between bodies and comfort can matter quickly if the night gets messy.",
+            lambda f: "That leaves little margin once the first few choices are gone.",
+        ]
+    else:
+        options = list(situation_pools.get(situation, pools[archetype][family]))
     if tail and family == _ENDING_WATCH_STATEMENT:
         options.append(lambda f: f"The next few games are the cleanest place to see whether {tail}.")
-    return _sentence(_choose(facts, f'{archetype}:ending:{family}', options))
+    return _sentence(_choose(facts, f'{archetype}:ending:{situation}:{family}', options))
 
 
 def _paragraph(sentences: list[str | None]) -> str | None:

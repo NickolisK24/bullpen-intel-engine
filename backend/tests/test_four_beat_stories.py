@@ -1472,6 +1472,12 @@ def test_same_archetype_uses_intelligence_angle_for_team_identity():
 
     assert select_story_archetype(late_structure) == ARCHETYPE_FLEXIBLE_BULLPEN
     assert select_story_archetype(wide_routes) == ARCHETYPE_FLEXIBLE_BULLPEN
+    assert team_story_narrative._story_situation(late_structure, ARCHETYPE_FLEXIBLE_BULLPEN) == (
+        team_story_narrative.SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED
+    )
+    assert team_story_narrative._story_situation(wide_routes, ARCHETYPE_FLEXIBLE_BULLPEN) == (
+        team_story_narrative.SITUATION_FLEXIBILITY_WORK_SPREAD_OUT
+    )
 
     late_text = render_story_narrative(late_structure).lower()
     wide_text = render_story_narrative(wide_routes).lower()
@@ -1490,12 +1496,87 @@ def test_same_archetype_uses_intelligence_angle_for_team_identity():
         for phrase in (
             'several routes',
             'actually been part of the path',
-            'spread across 8 relievers',
+            'few different paths',
+            'work has been moving around',
+            'more than one way through',
         )
     )
     for leaked in ('resource pool', 'trusted lane', 'active count', 'coverage safety'):
         assert leaked not in late_text
         assert leaked not in wide_text
+
+
+def test_story_situation_framing_is_selected_deterministically():
+    capacity_facts = _sample_story_facts(
+        401,
+        'Situation Club',
+        'SIT',
+        disclosure=False,
+        supporting_context='The current read is built around recent relief usage and the available bullpen layer.',
+        pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+        workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 88 recent relief pitches.',
+        capacity_context='The available group is already thin, leaving fewer usable arms than a normal night.',
+        bullpen_context='Once the game gets past the obvious choices, there is not much room for error.',
+        bullpen_context_reason='dependable_group_narrow',
+    )
+
+    archetype = select_story_archetype(capacity_facts)
+    first = team_story_narrative._story_situation(capacity_facts, archetype)
+    second = team_story_narrative._story_situation(dict(capacity_facts), archetype)
+    narrative = render_story_narrative(capacity_facts).lower()
+
+    assert archetype == ARCHETYPE_CAPACITY_CONSTRAINT
+    assert first == second == team_story_narrative.SITUATION_FIRST_MOVE_OK_THEN_THIN
+    assert any(
+        phrase in narrative
+        for phrase in (
+            'first bullpen decision',
+            'first relief move',
+            'second relief decision',
+            'second or third answer',
+            'multiple turns from the pen',
+        )
+    )
+
+
+def test_same_archetype_can_render_different_situations():
+    close_game_questions = _sample_story_facts(
+        402,
+        'Full Board Club',
+        'FBC',
+        disclosure=False,
+        supporting_context='The current read is built around recent relief usage and the available bullpen layer.',
+        pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+        workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 88 recent relief pitches.',
+        capacity_context='The available group is smaller than usual, leaving fewer places to turn.',
+        bullpen_context=(
+            'On paper the bullpen still has names. The question is how many of those options you would really feel '
+            'comfortable handing the game to.'
+        ),
+        bullpen_context_reason='thin_active_capacity_margin',
+    )
+    first_move_thin = _sample_story_facts(
+        403,
+        'Short Answer Club',
+        'SAC',
+        disclosure=False,
+        supporting_context='The current read is built around recent relief usage and the available bullpen layer.',
+        pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+        workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 88 recent relief pitches.',
+        capacity_context='The available group is already thin, leaving fewer usable arms than a normal night.',
+        bullpen_context='Once the game gets past the obvious choices, there is not much room for error.',
+        bullpen_context_reason='dependable_group_narrow',
+    )
+
+    assert select_story_archetype(close_game_questions) == ARCHETYPE_CAPACITY_CONSTRAINT
+    assert select_story_archetype(first_move_thin) == ARCHETYPE_CAPACITY_CONSTRAINT
+    assert team_story_narrative._story_situation(close_game_questions, ARCHETYPE_CAPACITY_CONSTRAINT) == (
+        team_story_narrative.SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS
+    )
+    assert team_story_narrative._story_situation(first_move_thin, ARCHETYPE_CAPACITY_CONSTRAINT) == (
+        team_story_narrative.SITUATION_FIRST_MOVE_OK_THEN_THIN
+    )
+    assert render_story_narrative(close_game_questions) != render_story_narrative(first_move_thin)
 
 
 def test_narratives_hide_metric_language_inside_baseball_observations():
@@ -1572,6 +1653,55 @@ def test_narratives_hide_metric_language_inside_baseball_observations():
         )
     )
     assert 'different hands' in combined or 'same few names' in combined
+
+
+def test_situation_specific_stories_avoid_state_labels_and_internal_language():
+    samples = [
+        *_archetype_story_fact_samples().values(),
+        _sample_story_facts(
+            404,
+            'Role History Club',
+            'RHC',
+            disclosure=False,
+            bullpen_context='The late innings still look pretty normal.',
+            bullpen_context_reason='top_structure_with_resource_strain',
+            supporting_context=(
+                'Recent relief work has been spread across 8 relievers, '
+                'averaging 14 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+            workload_pattern=(
+                'The workload pattern is broad: 8 relievers have shared the work '
+                'at 14 pitches per participating arm.'
+            ),
+        ),
+    ]
+
+    for narrative in (render_story_narrative(facts).lower() for facts in samples):
+        assert narrative_contains_forbidden_language(narrative) is False
+        for phrase in (
+            'the bullpen is thin',
+            'the bullpen remains flexible',
+            'limited comfortable options',
+            'state is',
+            'capacity state',
+            'resource health',
+            'coverage safety',
+            'trust hierarchy',
+            'resource pool',
+            'trusted lane',
+            'active count',
+            'this indicates',
+            'the data suggests',
+            'role_change_detection',
+            'ranking_applied',
+            'selection_made',
+            'prediction_applied',
+            'should pitch',
+            'recommend',
+            'prediction',
+        ):
+            assert phrase not in narrative
 
 
 def test_archetype_endings_use_distinct_family_mix():
