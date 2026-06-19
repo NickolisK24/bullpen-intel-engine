@@ -20,7 +20,7 @@ from services.availability import (
 )
 from services.pitcher_role_authority import author_role_read_labels
 from services.team_story_facts import build_story_facts
-from services.team_story_narrative import render_story_narrative
+from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
     CONCENTRATED_TOP_ARM_COUNT,
     CONCENTRATED_TOP_SHARE_MIN,
@@ -33,7 +33,7 @@ from services.workload_concentration import (
 
 
 CAPABILITY = 'four_beat_story_template_v1'
-VERSION = '2026-06-18.narrative_renderer_v1'
+VERSION = '2026-06-18.narrative_renderer_v2'
 FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
@@ -1827,7 +1827,7 @@ def assemble_story(rule_key, inputs, lead=None):
         },
     }
     if story_facts.get('disclosure'):
-        story['disclosure_note'] = story_facts['disclosure']
+        story['disclosure_note'] = render_story_disclosure_note(story_facts) or story_facts['disclosure']
     return story
 
 
