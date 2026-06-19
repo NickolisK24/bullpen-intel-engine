@@ -16,6 +16,7 @@ from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
 from services.bullpen_resource_health import build_bullpen_resource_health
+from services.bullpen_trust_hierarchy import build_bullpen_trust_hierarchy
 from utils.innings import decimal_innings_to_outs, log_innings_outs
 
 
@@ -355,7 +356,8 @@ def build_team_bullpen_capacity(
 ):
     """Build serializable capacity loss intelligence for one team."""
     normalized = _records(records)
-    weighting = _weighting(normalized, relief_outs_by_pitcher or {})
+    relief_outs_by_pitcher = relief_outs_by_pitcher or {}
+    weighting = _weighting(normalized, relief_outs_by_pitcher)
     weights = weighting['weights']
     total_weight = sum(weights.values())
     available_weight = _sum_weight(normalized, weights, 'available')
@@ -458,6 +460,12 @@ def build_team_bullpen_capacity(
         'team': team.get('team_abbreviation') if isinstance(team, dict) else None,
         **_team_identity(team),
         'resource_health': build_bullpen_resource_health(records, team=team),
+        'trust_hierarchy': build_bullpen_trust_hierarchy(
+            records,
+            team=team,
+            relief_outs_by_pitcher=relief_outs_by_pitcher,
+            include_pitchers=False,
+        ),
         'capacity_loss': capacity_loss,
         'trust_capacity_loss': trust_capacity_loss,
     }

@@ -410,6 +410,7 @@ class TestDashboardEndpoint:
         assert body['injury_il_context']['league']['bullpen_population_count'] == body['availability_summary']['total_pitchers']
         capacity = body['capacity_intelligence']['by_team_id']['1']['capacity_loss']
         resource_health = body['capacity_intelligence']['by_team_id']['1']['resource_health']
+        trust_hierarchy = body['capacity_intelligence']['by_team_id']['1']['trust_hierarchy']
         assert body['capacity_intelligence']['capability'] == 'league_bullpen_capacity_intelligence_v1'
         assert capacity['total_bullpen_pitcher_count'] == 4
         assert capacity['unavailable_pitcher_count'] == 3
@@ -424,6 +425,13 @@ class TestDashboardEndpoint:
         assert resource_health['unavailable_reliever_count'] == 1
         assert resource_health['total_bullpen_resource_count'] == 4
         assert resource_health['resource_availability_ratio'] == 0.25
+        assert trust_hierarchy['capability'] == 'bullpen_trust_hierarchy_v1'
+        assert sum(trust_hierarchy['bucket_counts'].values()) == 4
+        assert trust_hierarchy['unknown_count'] >= 3
+        assert trust_hierarchy['ranking_applied'] is False
+        assert trust_hierarchy['selection_made'] is False
+        assert trust_hierarchy['prediction_applied'] is False
+        assert 'pitchers' not in trust_hierarchy
 
     def test_dashboard_exposes_rotation_support_pressure_payload(self, client):
         with client.application.app_context():
