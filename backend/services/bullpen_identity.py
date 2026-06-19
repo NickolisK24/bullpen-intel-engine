@@ -240,10 +240,23 @@ def _leverage_heavy(evidence: dict[str, Any]) -> bool:
     )
 
 
+def _resource_strained(evidence: dict[str, Any]) -> bool:
+    if evidence['resource_health_state'] == RESOURCE_DEPLETED:
+        return True
+    return (
+        evidence['resource_health_state'] == RESOURCE_STRAINED
+        and (
+            evidence['capacity_state'] in {CAPACITY_REDUCED, CAPACITY_THIN, CAPACITY_DEPLETED}
+            or evidence['coverage_label'] in TIGHT_COVERAGE_LABELS
+            or evidence['clean_active_reliever_count'] <= 3
+        )
+    )
+
+
 def _identity_key(evidence: dict[str, Any]) -> str:
     if _insufficient_evidence(evidence):
         return IDENTITY_UNKNOWN
-    if evidence['resource_health_state'] in {RESOURCE_STRAINED, RESOURCE_DEPLETED}:
+    if _resource_strained(evidence):
         return IDENTITY_RESOURCE_STRAINED
     if (
         evidence['capacity_state'] in {CAPACITY_THIN, CAPACITY_DEPLETED}

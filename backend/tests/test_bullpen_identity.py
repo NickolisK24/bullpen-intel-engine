@@ -5,6 +5,7 @@ from services.bullpen_identity import (
     IDENTITY_DEPTH_DRIVEN,
     IDENTITY_FLEXIBLE_DISTRIBUTION,
     IDENTITY_FRAGILE_COVERAGE,
+    IDENTITY_LEVERAGE_HEAVY,
     IDENTITY_RESOURCE_STRAINED,
     IDENTITY_TRUST_CONCENTRATED,
     IDENTITY_UNKNOWN,
@@ -119,9 +120,10 @@ def test_flexible_distribution_identity_uses_broad_usable_lanes():
 
 def test_resource_strained_identity_keeps_pool_strain_separate_from_coverage():
     result = build_bullpen_identity(capacity_payload(
+        capacity_state='reduced',
         resource_state='strained',
-        active=8,
-        clean=5,
+        active=7,
+        clean=2,
         anchor=1,
         leverage=3,
         trusted=1,
@@ -131,6 +133,22 @@ def test_resource_strained_identity_keeps_pool_strain_separate_from_coverage():
     assert result['identity_key'] == IDENTITY_RESOURCE_STRAINED
     assert result['identity_label'] == 'Resource-Strained Bullpen'
     assert any('broader resource pool is strained' in trait['text'] for trait in result['supporting_traits'])
+
+
+def test_resource_strain_does_not_override_healthy_usable_structure():
+    result = build_bullpen_identity(capacity_payload(
+        resource_state='strained',
+        active=8,
+        clean=5,
+        anchor=1,
+        leverage=3,
+        trusted=1,
+        depth=1,
+    ))
+
+    assert result['identity_key'] == IDENTITY_LEVERAGE_HEAVY
+    assert result['identity_label'] == 'Leverage-Heavy Bullpen'
+    assert any('Resource health is strained' in trait['text'] for trait in result['supporting_traits'])
 
 
 def test_fragile_coverage_identity_uses_thin_capacity_or_coverage():
