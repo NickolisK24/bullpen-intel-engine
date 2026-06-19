@@ -404,6 +404,8 @@ def build_board_payload(
         groups,
         context=context,
         workload_concentration=workload_concentration,
+        capacity_intelligence=capacity_intelligence,
+        bullpen_environment=bullpen_environment,
     )
     visibility = summarize_visibility(cards)
 

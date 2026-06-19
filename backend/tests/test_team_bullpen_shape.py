@@ -41,11 +41,55 @@ def card(role_key, read_key, fatigue_score=20):
     }
 
 
-def shape(cards, state='manageable', workload_concentration=None):
+def capacity_payload(
+    *,
+    capacity_state='healthy',
+    resource_state='strong',
+    active=8,
+    clean=6,
+    anchor=1,
+    leverage=4,
+    trusted=1,
+    top_available=1,
+):
+    return {
+        'resource_health': {
+            'capacity_state': capacity_state,
+            'resource_health_state': resource_state,
+            'bullpen_capacity': {
+                'capacity_state': capacity_state,
+                'active_reliever_count': active,
+                'clean_active_reliever_count': clean,
+            },
+        },
+        'trust_hierarchy': {
+            'anchor_count': anchor,
+            'leverage_count': leverage,
+            'trusted_count': trusted,
+            'trusted_group_size': anchor + leverage + trusted,
+            'top_trust_bucket_available_count': top_available,
+            'hierarchy_confidence': 'medium',
+        },
+        'trust_capacity_loss': {
+            'trust_arms_unavailable': 0,
+            'trust_capacity_unavailable_pct': 0,
+        },
+    }
+
+
+def shape(
+    cards,
+    state='manageable',
+    workload_concentration=None,
+    capacity_intelligence=None,
+    bullpen_environment=None,
+):
     return build_team_bullpen_shape(
         [{'status': 'Available', 'pitchers': cards, 'count': len(cards)}],
         context={'health': {'state': state}},
         workload_concentration=workload_concentration,
+        capacity_intelligence=capacity_intelligence,
+        bullpen_environment=bullpen_environment,
     )
 
 
@@ -192,6 +236,32 @@ def test_coverage_safety_substitute_capacity_lifts_limited_to_thin_only():
 
     assert result['coverageSafety']['label'] == 'Thin Coverage Safety'
     assert result['coverageSafety']['supportingCounts']['substituteCoverageApplied'] is True
+
+
+def test_coverage_safety_v2_uses_capacity_resource_health_and_trust_structure():
+    result = shape(
+        [
+            card('coverage_arm', 'clean_option'),
+            card('coverage_arm', 'clean_option'),
+            card('trust_arm', 'clean_option'),
+            card('bridge_arm', 'clean_option'),
+        ],
+        capacity_intelligence=capacity_payload(
+            capacity_state='thin',
+            resource_state='strained',
+            active=8,
+            clean=1,
+            anchor=0,
+            leverage=6,
+            trusted=0,
+            top_available=6,
+        ),
+    )
+
+    assert result['coverageSafety']['label'] == 'Thin Coverage Safety'
+    assert result['coverageSafety']['supportingCounts']['coverageSafetyVersion'] == '2.0'
+    assert result['coverageSafety']['supportingCounts']['capacityState'] == 'thin'
+    assert 'substituteCoverageApplied' not in result['coverageSafety']['supportingCounts']
 
 
 def test_depth_safety_trust_anchor_guardrail_lives_on_backend():

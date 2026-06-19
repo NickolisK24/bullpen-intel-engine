@@ -96,6 +96,10 @@ from services.story_continuity import (
     LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
     build_story_continuity_payload,
 )
+from services.bullpen_role_change_detection import (
+    build_role_change_detection_payload,
+    has_role_change_detection_inputs,
+)
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
     apply_roster_status_to_availability,
@@ -1282,6 +1286,23 @@ def _dashboard_bullpen_environment_payload(
     return build_league_bullpen_environment_payload(team_items)
 
 
+def _latest_comparable_role_change_payload(data_through, immediate_prior_snapshot=None):
+    if immediate_prior_snapshot is not None and has_role_change_detection_inputs(
+        immediate_prior_snapshot.payload,
+    ):
+        return immediate_prior_snapshot.payload
+
+    for snapshot in dashboard_snapshot_service.get_recent_dashboard_snapshots_before(
+        data_through,
+        lookback_days=14,
+    ):
+        if snapshot is immediate_prior_snapshot:
+            continue
+        if has_role_change_detection_inputs(snapshot.payload):
+            return snapshot.payload
+    return None
+
+
 def _merge_limitations(*groups):
     merged = []
     for group in groups:
@@ -2175,9 +2196,17 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         or freshness.get('latest_workload_date')
     )
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
+    previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
+    payload['role_change_detection'] = build_role_change_detection_payload(
+        payload,
+        _latest_comparable_role_change_payload(
+            data_through,
+            immediate_prior_snapshot=previous_snapshot,
+        ),
+    )
     changes = build_homepage_changes_payload(
         payload,
-        previous_snapshot.payload if previous_snapshot is not None else None,
+        previous_payload,
     )
     if changes['items']:
         payload['what_changed_since_yesterday'] = changes
