@@ -57,6 +57,13 @@ function cleanText(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function storyParagraphs(value) {
+  return cleanText(value)
+    .split(/\n{2,}/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+}
+
 const CONTEXT_STORY_KINDS = new Set([
   'team_pressure',
   'team_workload',
@@ -119,11 +126,6 @@ export function StorySection({
   const body = children ?? cleanText(text)
   if (body == null || body === '') return null
 
-  const labelClass = {
-    observation: 'text-chalk600/70',
-    continuity: 'text-chalk600/60',
-    context: 'text-chalk600/50',
-  }[tone] || 'text-chalk600/65'
   const bodyClass = {
     observation: compact ? 'text-chalk400' : 'text-chalk300',
     continuity: 'text-chalk400/85',
@@ -136,9 +138,7 @@ export function StorySection({
   return (
     <section
       className={`space-y-0.5 ${className}`}
-      aria-label={label}
     >
-      <div className={`font-mono text-[9px] uppercase tracking-[0.14em] ${labelClass}`}>{label}</div>
       {typeof body === 'string' ? (
         <p className={`${bodySize} leading-relaxed ${bodyClass} ${bodyClassName}`}>{body}</p>
       ) : body}
@@ -154,24 +154,27 @@ export function StoryPresentation({
   observationBodyClassName = '',
   forceContext = false,
 }) {
-  const observationText = cleanText(observation ?? story?.body ?? story?.observation)
+  const narrativeText = cleanText(story?.narrative || story?.story_body || observation || story?.body || story?.observation)
   const hasContinuity = Boolean(cleanText(story?.continuity_note))
   const hasContext = forceContext
     ? Boolean(cleanText(story?.context_note))
     : shouldRenderStoryContext(story, { compact })
+  const baseParagraphs = storyParagraphs(narrativeText)
 
   return (
     <div className={`story-presentation ${className}`}>
-      <StorySection
-        label="Observation"
-        text={observationText}
-        compact={compact}
-        tone="observation"
-        bodyClassName={observationBodyClassName}
-      />
+      {baseParagraphs.map((paragraph, index) => (
+        <StorySection
+          key={`story-paragraph-${index}`}
+          text={paragraph}
+          compact={compact}
+          tone="observation"
+          bodyClassName={observationBodyClassName}
+          className={index > 0 ? 'mt-2' : ''}
+        />
+      ))}
       {hasContinuity && (
         <StorySection
-          label="Continuity"
           text={story.continuity_note}
           compact
           tone="continuity"
@@ -180,7 +183,6 @@ export function StoryPresentation({
       )}
       {hasContext && (
         <StorySection
-          label="Context"
           text={story.context_note}
           compact
           tone="context"
@@ -188,6 +190,16 @@ export function StoryPresentation({
         />
       )}
     </div>
+  )
+}
+
+export function StoryDisclosureNote({ note, className = '' }) {
+  const text = cleanText(note)
+  if (!text) return null
+  return (
+    <p className={`mt-3 border-t border-dirt/60 pt-2 text-[11px] leading-relaxed text-chalk600 ${className}`}>
+      {text}
+    </p>
   )
 }
 
@@ -201,19 +213,14 @@ function StoryCard({ story }) {
 
   const inner = (
     <>
-      <span
-        className="inline-flex w-fit items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest"
-        style={{ borderColor: tone.borderColor, backgroundColor: tone.backgroundColor, color: tone.color }}
-      >
-        <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
-        {story.kicker}
-      </span>
+      <span className="h-1 w-8 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
 
       <h3 className="mt-3 font-display text-xl leading-tight tracking-wide text-chalk100 group-hover:text-amber transition-colors">
         {story.title}
       </h3>
 
       <StoryPresentation story={story} compact className="mt-2 flex-1" />
+      <StoryDisclosureNote note={story.disclosureNote || story.disclosure_note} />
 
       {hasDestination && (
         <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">

@@ -84,6 +84,7 @@ const fourBeatDashboard = {
         category: 'stressed',
         title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
         body: 'The top 3 arms have carried 73% of recent relief pitches. That combination usually means the next close innings lean harder on the remaining clean late-inning path. Tonight, Chad Green is the clean Trust Arm path.',
+        narrative: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.\n\nThe recent workload has clustered around the same late-inning group, and the usable layer is thinner than the raw arm count suggests.\n\nThe next useful read is whether the work starts moving beyond that group.',
         href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
         cta: 'Open the team board',
         strength: 112,
@@ -122,6 +123,7 @@ const fourBeatDashboard = {
         category: 'rested',
         title: 'The Washington Nationals have a broader bullpen path tonight.',
         body: 'Recent relief work has been spread across the group, leaving more clean ways through the late innings.',
+        narrative: 'The Washington Nationals have a broader bullpen path tonight.\n\nRecent relief work has been spread across the group, leaving more usable ways through the late innings.\n\nThe next useful read is whether that broader shape holds after another completed game.',
         href: '/bullpen?view=board&team=WSH&source=four-beat-stories',
         cta: 'Open the team board',
         strength: 86,
@@ -159,6 +161,7 @@ const fourBeatDashboard = {
         tone: 'watch',
         title: 'The San Francisco Giants are leaning on a familiar core.',
         body: 'The same relievers have carried the recent late-inning work.',
+        narrative: 'The San Francisco Giants are leaning on a familiar core.\n\nThe same relievers have carried the recent late-inning work, so the board can look calmer than the workload feels.\n\nThe next useful read is whether support appears behind that group.',
         href: '/bullpen?view=board&team=SF&source=four-beat-stories',
         cta: 'Open the team board',
         strength: 74,
@@ -197,6 +200,7 @@ const fourBeatDashboard = {
         category: 'league',
         title: 'The league-wide bullpen picture is carrying mixed signals.',
         body: 'Some clubs have stress, some have room, and the feed separates those reads by lane.',
+        narrative: 'The league-wide bullpen picture is carrying mixed signals.\n\nSome clubs have stress, some have room, and the feed separates those reads by lane.\n\nThe useful read is how those lanes change after the next completed games.',
         href: '/dashboard',
         cta: 'See the league view',
         strength: 62,
@@ -248,6 +252,8 @@ test('four-beat feed normalizes backend-authored stories and browse categories',
   assert.equal(feed.items[0].teamId, 141)
   assert.equal(feed.items[0].category, 'stressed')
   assert.equal(feed.items[0].beats.length, 4)
+  assert.match(feed.items[0].narrative, /transferring bullpen pressure/)
+  assert.equal(feed.items[0].body, feed.items[0].narrative)
   assert.equal(feed.items[2].category, 'watch')
 })
 
@@ -328,10 +334,11 @@ test('the stories page renders four-beat as the feed-first surface beyond Today'
   assert.ok(htmlIncludes(html, 'Beyond Today'))
   assert.ok(htmlIncludes(html, 'What Else BaseballOS Is Seeing'))
   assert.ok(htmlIncludes(html, 'bullpen storylines in play today'))
-  assert.ok(htmlIncludes(html, 'Signal'))
-  assert.ok(htmlIncludes(html, 'Evidence'))
-  assert.ok(htmlIncludes(html, 'Mechanism'))
-  assert.ok(htmlIncludes(html, 'Implication'))
+  assert.ok(htmlIncludes(html, 'The next useful read is whether the work starts moving beyond that group.'))
+  assert.ok(!htmlIncludes(html, 'Signal'))
+  assert.ok(!htmlIncludes(html, 'Evidence'))
+  assert.ok(!htmlIncludes(html, 'Mechanism'))
+  assert.ok(!htmlIncludes(html, 'Implication'))
   assert.ok(!htmlIncludes(html, 'Top Story'))
   assert.ok(!htmlIncludes(html, 'thinnest late-inning margin in baseball today'))
   assert.ok(!htmlIncludes(html, 'Step inside the MIL pen'))
@@ -345,12 +352,12 @@ test('four-beat stories render by default without a story-path switch', () => {
   assert.ok(!htmlIncludes(html, 'aria-label="Story path"'))
   assert.ok(!htmlIncludes(html, 'Current'))
   assert.ok(!htmlIncludes(html, 'Four Beat'))
-  assert.ok(htmlIncludes(html, 'Signal'))
-  assert.ok(htmlIncludes(html, 'Evidence'))
-  assert.ok(htmlIncludes(html, 'Mechanism'))
-  assert.ok(htmlIncludes(html, 'Implication'))
+  assert.ok(!htmlIncludes(html, 'Signal'))
+  assert.ok(!htmlIncludes(html, 'Evidence'))
+  assert.ok(!htmlIncludes(html, 'Mechanism'))
+  assert.ok(!htmlIncludes(html, 'Implication'))
   assert.ok(htmlIncludes(html, 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.'))
-  assert.ok(htmlIncludes(html, 'That combination usually means'))
+  assert.ok(htmlIncludes(html, 'The next useful read is whether the work starts moving beyond that group.'))
   assert.ok(!htmlIncludes(html, 'causes'))
   assert.ok(!htmlIncludes(html, '{team_name}'))
 })

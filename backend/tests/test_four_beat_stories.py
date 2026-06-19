@@ -24,6 +24,17 @@ from services.four_beat_stories import (
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
+from services.team_story_facts import (
+    CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
+    DISCLOSURE_LIMITED_BULLPEN_PICTURE,
+)
+from services.team_story_narrative import (
+    FORBIDDEN_PUBLIC_LABELS,
+    INTERNAL_TAXONOMY_TERMS,
+    narrative_contains_forbidden_language,
+    render_story_disclosure_note,
+    render_story_narrative,
+)
 from services.team_bullpen_shape import build_team_bullpen_shape
 
 
@@ -689,6 +700,211 @@ def test_public_four_beat_copy_avoids_robotic_voice_residue():
         'among the bullpens teams are carrying right now',
     ):
         assert phrase not in text
+
+
+def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        capacity_by_team=_capacity_context(
+            status='constrained',
+            unavailable_pct=44,
+            limitations=[
+                'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.',
+            ],
+        ),
+    )), RULE_STRESS_TRANSFER)['story']
+
+    facts = story['story_facts']
+    narrative = story['narrative']
+
+    assert story['body']
+    assert story['beats']
+    assert story['rule_key'] == RULE_STRESS_TRANSFER
+    assert facts['capability'] == STORY_FACT_LAYER_CAPABILITY
+    assert facts['primary_observation'] == story['title']
+    assert facts['supporting_context']
+    assert facts['pressure_source']
+    assert facts['workload_pattern']
+    assert facts['capacity_context']
+    assert facts['watch_question']
+    assert facts['confidence'] == 'limited'
+    assert facts['disclosure'] == DISCLOSURE_LIMITED_BULLPEN_PICTURE
+    assert story['disclosure_note'] == render_story_disclosure_note(facts)
+    assert narrative.count('\n\n') == 2
+    assert story['team_name'] in narrative
+    assert facts['primary_observation'] not in narrative
+    assert facts['watch_question'] not in narrative
+    assert facts['disclosure'] not in narrative
+    assert 'The pressure source is' not in narrative
+    assert 'The thing to watch next is whether' not in narrative
+
+
+def test_public_narrative_avoids_forbidden_labels_and_internal_taxonomy():
+    story = _rule_eval(evaluate_team_rules(_thin_concentrated_team_inputs(
+        season_era_by_team=_ranked_era(rank=3, strong=True, solid=True),
+    )), RULE_STRESS_TRANSFER)['story']
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert narrative_contains_forbidden_language(narrative) is False
+    for label in FORBIDDEN_PUBLIC_LABELS:
+        assert label not in narrative
+    for term in INTERNAL_TAXONOMY_TERMS:
+        assert term.lower() not in lower
+    for forbidden in (
+        'betting',
+        'prediction',
+        'recommendation',
+        'preferred',
+        'should use',
+        'manager should',
+        'fatigue score',
+        'confidence score',
+        'HIGH or CRITICAL',
+        'pressure source',
+        'workload pattern is',
+        'the thing to watch next is whether',
+    ):
+        assert forbidden.lower() not in lower
+
+
+def _sample_story_facts(
+    team_id: int,
+    team_name: str,
+    abbr: str,
+    *,
+    disclosure: bool = True,
+    watch_question: str | None = None,
+) -> dict:
+    return {
+        'capability': STORY_FACT_LAYER_CAPABILITY,
+        'version': 'test',
+        'team': {
+            'team_id': team_id,
+            'team_name': team_name,
+            'team_abbreviation': abbr,
+        },
+        'primary_observation': f'The {team_name} have a narrower bullpen path tonight.',
+        'supporting_context': (
+            'The recent workload has clustered around the top 3 relievers, '
+            'who have handled 72% of relief pitches in the window, while 3 '
+            'of 8 bullpen arms are available.'
+        ),
+        'pressure_source': 'The pressure source is recent work being concentrated around a smaller set of relievers.',
+        'workload_pattern': 'The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
+        'capacity_context': None,
+        'rotation_context': None,
+        'stability_context': None,
+        'environment_context': None,
+        'watch_question': (
+            watch_question
+            or 'The thing to watch next is whether the same relievers remain at the center of the workload.'
+        ),
+        'confidence': 'limited' if disclosure else 'supported',
+        'disclosure': DISCLOSURE_LIMITED_BULLPEN_PICTURE if disclosure else None,
+    }
+
+
+def test_renderer_varies_repeated_disclosure_language_deterministically():
+    teams = [
+        (108, 'Los Angeles Angels', 'LAA'),
+        (109, 'Arizona Diamondbacks', 'ARI'),
+        (111, 'Boston Red Sox', 'BOS'),
+        (112, 'Chicago Cubs', 'CHC'),
+        (113, 'Cincinnati Reds', 'CIN'),
+        (114, 'Cleveland Guardians', 'CLE'),
+        (115, 'Colorado Rockies', 'COL'),
+        (116, 'Detroit Tigers', 'DET'),
+    ]
+    facts = [_sample_story_facts(team_id, team_name, abbr) for team_id, team_name, abbr in teams]
+
+    first = [render_story_narrative(item) for item in facts]
+    second = [render_story_narrative(item) for item in facts]
+    disclosure_sentences = [narrative.split('\n\n')[-1].split('. ')[0] for narrative in first]
+    notes = [render_story_disclosure_note(item) for item in facts]
+
+    assert first == second
+    assert notes == [render_story_disclosure_note(item) for item in facts]
+    assert len(set(disclosure_sentences)) >= 3
+    assert len(set(notes)) >= 3
+    for narrative in first:
+        assert DISCLOSURE_LIMITED_BULLPEN_PICTURE not in narrative
+        assert narrative_contains_forbidden_language(narrative) is False
+
+
+def test_renderer_varies_watch_question_openings_across_sample_set():
+    teams = [
+        (117, 'Houston Astros', 'HOU'),
+        (118, 'Kansas City Royals', 'KC'),
+        (119, 'Los Angeles Dodgers', 'LAD'),
+        (120, 'Washington Nationals', 'WSH'),
+        (121, 'New York Mets', 'NYM'),
+        (133, 'Oakland Athletics', 'ATH'),
+        (134, 'Pittsburgh Pirates', 'PIT'),
+        (135, 'San Diego Padres', 'SD'),
+        (136, 'Seattle Mariners', 'SEA'),
+        (137, 'San Francisco Giants', 'SF'),
+    ]
+    facts = [
+        _sample_story_facts(team_id, team_name, abbr, disclosure=False)
+        for team_id, team_name, abbr in teams
+    ]
+
+    narratives = [render_story_narrative(item) for item in facts]
+    watch_leads = [narrative.split('\n\n')[-1].split(' whether ')[0] for narrative in narratives]
+
+    assert narratives == [render_story_narrative(item) for item in facts]
+    assert len(set(watch_leads)) >= 3
+    for closing in [narrative.split('\n\n')[-1] for narrative in narratives]:
+        assert not closing.startswith('The thing to watch next is whether')
+        assert 'whether' in closing
+
+
+def test_renderer_varies_openings_without_repeating_team_have_pattern():
+    teams = [
+        (138, 'St. Louis Cardinals', 'STL'),
+        (139, 'Tampa Bay Rays', 'TB'),
+        (140, 'Texas Rangers', 'TEX'),
+        (141, 'Toronto Blue Jays', 'TOR'),
+        (142, 'Minnesota Twins', 'MIN'),
+        (143, 'Philadelphia Phillies', 'PHI'),
+    ]
+    facts = [
+        _sample_story_facts(team_id, team_name, abbr, disclosure=False)
+        for team_id, team_name, abbr in teams
+    ]
+
+    openers = [render_story_narrative(item).split('. ')[0] for item in facts]
+
+    assert len(set(openers)) >= 4
+    assert not all(opener.startswith('The ') for opener in openers)
+    for (_, team_name, _), opener in zip(teams, openers):
+        assert not opener.startswith(f'The {team_name} have')
+
+
+def test_story_narrative_output_is_deterministic():
+    pitchers, records, logs = _fixture_team(
+        141,
+        'Toronto Blue Jays',
+        'TOR',
+        [38, 34, 29, 11, 9, 8, 6],
+    )
+    season_era = {
+        'bullpens': [
+            _bullpen_era(141, 'Toronto Blue Jays', 'TOR', 3.15),
+        ],
+    }
+
+    first = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+    second = build_four_beat_story_feed(records, logs, reference_date=REF, season_era=season_era)
+
+    assert [
+        (item['team_abbreviation'], item['story_facts'], item['narrative'])
+        for item in first['items']
+    ] == [
+        (item['team_abbreviation'], item['story_facts'], item['narrative'])
+        for item in second['items']
+    ]
+    assert pitchers
 
 
 def test_bullpen_stability_passes_through_computed_data_without_new_claims():
