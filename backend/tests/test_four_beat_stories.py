@@ -109,11 +109,34 @@ AWKWARD_RENDERER_PHRASES = (
     'the run-prevention line gives',
 )
 
+BANNED_CAVEAT_PHRASES = (
+    'usage is the anchor',
+    'usage drives this',
+    'roster picture incomplete',
+    'roster detail is limited',
+    'the caveat is simple',
+    'this stays tied to usage',
+)
+
 ENVIRONMENT_INTRO_MARKERS = (
     'this is not one clean issue',
     'more than one thing tightening the picture',
     'not just one part of the pen',
 )
+
+DISCLOSURE_BODY_MARKERS = (
+    'full roster picture',
+    'roster context',
+    'usage pattern',
+    'work has been distributed',
+    'on the mound',
+    'roster variable',
+)
+
+
+def _narrative_has_disclosure_caveat(narrative: str) -> bool:
+    lower = narrative.lower()
+    return any(marker in lower for marker in DISCLOSURE_BODY_MARKERS)
 
 
 def _pitcher(pid, name, team_id=1, team_name='Test Club', abbr='TST'):
@@ -758,7 +781,13 @@ def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract
     assert facts['watch_question']
     assert facts['confidence'] == 'limited'
     assert facts['disclosure'] == DISCLOSURE_LIMITED_BULLPEN_PICTURE
-    assert story['disclosure_note'] == render_story_disclosure_note(facts)
+    disclosure_note = render_story_disclosure_note(facts)
+    if disclosure_note:
+        assert story['disclosure_note'] == disclosure_note
+    else:
+        assert 'disclosure_note' not in story
+    assert _narrative_has_disclosure_caveat(narrative) or disclosure_note
+    assert not (_narrative_has_disclosure_caveat(narrative) and disclosure_note)
     assert narrative.count('\n\n') == 2
     assert story['team_name'] in narrative
     assert facts['primary_observation'] not in narrative
@@ -857,16 +886,24 @@ def test_renderer_varies_repeated_disclosure_language_deterministically():
 
     first = [render_story_narrative(item) for item in facts]
     second = [render_story_narrative(item) for item in facts]
-    disclosure_sentences = [narrative.split('\n\n')[-1].split('. ')[0] for narrative in first]
+    disclosure_sentences = [
+        narrative.split('\n\n')[-1].split('. ')[0]
+        for narrative in first
+        if _narrative_has_disclosure_caveat(narrative)
+    ]
     notes = [render_story_disclosure_note(item) for item in facts]
+    present_notes = [note for note in notes if note]
 
     assert first == second
     assert notes == [render_story_disclosure_note(item) for item in facts]
-    assert len(set(disclosure_sentences)) >= 3
-    assert len(set(notes)) >= 3
-    for narrative in first:
+    assert len(set(disclosure_sentences)) >= 2
+    assert len(set(present_notes)) >= 2
+    assert any(note is None for note in notes)
+    for narrative, note in zip(first, notes):
         assert DISCLOSURE_LIMITED_BULLPEN_PICTURE not in narrative
         assert narrative_contains_forbidden_language(narrative) is False
+        assert _narrative_has_disclosure_caveat(narrative) or note
+        assert not (_narrative_has_disclosure_caveat(narrative) and note)
 
 
 def test_renderer_disclosure_stays_present_without_repeating_footer_language():
@@ -886,12 +923,18 @@ def test_renderer_disclosure_stays_present_without_repeating_footer_language():
         note = render_story_disclosure_note(item)
         closing = narrative.split('\n\n')[-1]
         combined = f'{narrative} {note}'.lower()
+        has_body_caveat = _narrative_has_disclosure_caveat(narrative)
 
-        assert note
-        assert note not in narrative
-        assert len(note) <= 55
-        assert any(marker in closing.lower() for marker in ('usage', 'roster', 'incomplete', 'availability', 'games'))
+        assert has_body_caveat or note
+        assert not (has_body_caveat and note)
+        if note:
+            assert note not in narrative
+            assert len(note) <= 32
+        else:
+            assert any(marker in closing.lower() for marker in DISCLOSURE_BODY_MARKERS)
         for phrase in AWKWARD_RENDERER_PHRASES:
+            assert phrase not in combined
+        for phrase in BANNED_CAVEAT_PHRASES:
             assert phrase not in combined
 
 
@@ -1107,6 +1150,8 @@ def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
             assert term.lower() not in lower
         for phrase in AWKWARD_RENDERER_PHRASES:
             assert phrase not in lower
+        for phrase in BANNED_CAVEAT_PHRASES:
+            assert phrase not in lower
         for forbidden in (
             'betting',
             'prediction',
@@ -1132,7 +1177,7 @@ def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
 def test_renderer_phrase_pools_do_not_keep_banned_awkward_templates():
     source = inspect.getsource(team_story_narrative).lower()
 
-    for phrase in AWKWARD_RENDERER_PHRASES:
+    for phrase in AWKWARD_RENDERER_PHRASES + BANNED_CAVEAT_PHRASES:
         assert phrase not in source
 
 

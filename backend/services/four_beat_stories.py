@@ -1827,7 +1827,9 @@ def assemble_story(rule_key, inputs, lead=None):
         },
     }
     if story_facts.get('disclosure'):
-        story['disclosure_note'] = render_story_disclosure_note(story_facts) or story_facts['disclosure']
+        disclosure_note = render_story_disclosure_note(story_facts)
+        if disclosure_note:
+            story['disclosure_note'] = disclosure_note
     return story
 
 

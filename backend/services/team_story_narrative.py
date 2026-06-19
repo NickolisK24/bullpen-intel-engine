@@ -69,6 +69,8 @@ INTERNAL_TAXONOMY_TERMS = (
 )
 
 _SentenceBuilder = Callable[[dict[str, Any]], str]
+_DISCLOSURE_CHANNEL_BODY = 'body'
+_DISCLOSURE_CHANNEL_FOOTER = 'footer'
 
 
 def _clean_text(value: Any) -> str:
@@ -138,6 +140,18 @@ def _stable_index(facts: dict[str, Any], namespace: str, length: int) -> int:
 
 def _choose(facts: dict[str, Any], namespace: str, options: list[_SentenceBuilder]) -> str:
     return options[_stable_index(facts, namespace, len(options))](facts)
+
+
+def _disclosure_channel(facts: dict[str, Any]) -> str | None:
+    if not facts.get('disclosure'):
+        return None
+    options = (
+        _DISCLOSURE_CHANNEL_BODY,
+        _DISCLOSURE_CHANNEL_BODY,
+        _DISCLOSURE_CHANNEL_FOOTER,
+        _DISCLOSURE_CHANNEL_FOOTER,
+    )
+    return options[_stable_index(facts, 'disclosure:channel', len(options))]
 
 
 def _team_name(facts: dict[str, Any]) -> str:
@@ -489,13 +503,13 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
 
 
 def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
-    if not facts.get('disclosure'):
+    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_BODY:
         return None
     options: list[_SentenceBuilder] = [
-        lambda f: "The caveat is simple: this stays tied to usage, not guesses about the full roster picture.",
-        lambda f: "With some of the bullpen picture still incomplete, the clearest baseball takeaway is how the innings have been handed out.",
-        lambda f: "That keeps the story on what has happened in games, not assumptions about every roster variable.",
-        lambda f: "Some roster details are less clear, so the public takeaway stays with usage and availability.",
+        lambda f: "The cleanest takeaway is still how the innings have been handled, not a guess at the full roster picture.",
+        lambda f: "The roster context is not complete enough to go beyond the usage pattern.",
+        lambda f: "This stays focused on how the work has been distributed, because that is the clearest part of the bullpen picture.",
+        lambda f: "The safer read is what has happened on the mound, not an assumption about every roster variable.",
     ]
     return _sentence(_choose(facts, 'disclosure:narrative', options))
 
@@ -574,13 +588,13 @@ def _paragraph(sentences: list[str | None]) -> str | None:
 def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
     """Render a short public disclosure note without changing canonical facts."""
 
-    if not facts.get('disclosure'):
+    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_FOOTER:
         return None
     options: list[_SentenceBuilder] = [
-        lambda f: "Usage-based; roster detail is limited.",
-        lambda f: "Roster picture incomplete; usage is the anchor.",
-        lambda f: "Usage is clearer than every roster variable.",
-        lambda f: "Limited roster detail; usage drives this.",
+        lambda f: "Limited roster context.",
+        lambda f: "Partial bullpen context.",
+        lambda f: "Roster context not complete.",
+        lambda f: "Source context is limited.",
     ]
     return _sentence(_choose(facts, 'disclosure:note', options))
 
