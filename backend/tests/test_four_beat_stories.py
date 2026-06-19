@@ -1,4 +1,5 @@
 import inspect
+import re
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -137,6 +138,38 @@ DISCLOSURE_BODY_MARKERS = (
 def _narrative_has_disclosure_caveat(narrative: str) -> bool:
     lower = narrative.lower()
     return any(marker in lower for marker in DISCLOSURE_BODY_MARKERS)
+
+
+def _ending_sentence_from_narrative(narrative: str) -> str:
+    closing = narrative.split('\n\n')[-1].strip()
+    sentences = re.findall(r'[^.!?]+[.!?]', closing)
+    return sentences[-1].strip() if sentences else closing
+
+
+def _ending_family_from_sentence(sentence: str) -> str:
+    lower = sentence.lower()
+    if sentence.endswith('?'):
+        return 'question'
+    if lower.startswith('the next ') or 'next few games' in lower or 'next turn through the rotation' in lower:
+        return 'watch_statement'
+    if lower.startswith((
+        'the main takeaway',
+        'the useful takeaway',
+        'that gives the staff',
+        'that is the useful part',
+    )):
+        return 'takeaway'
+    if any(marker in lower for marker in (
+        'little margin',
+        'less margin',
+        'every clean inning',
+        'gap between',
+        'pressure is not only',
+        'does not erase',
+        'keeps the strong results',
+    )):
+        return 'implication'
+    return 'observation'
 
 
 def _pitcher(pid, name, team_id=1, team_name='Test Club', abbr='TST'):
@@ -938,7 +971,7 @@ def test_renderer_disclosure_stays_present_without_repeating_footer_language():
             assert phrase not in combined
 
 
-def test_renderer_varies_watch_question_openings_across_sample_set():
+def test_renderer_uses_mixed_ending_families_across_sample_set():
     teams = [
         (117, 'Houston Astros', 'HOU'),
         (118, 'Kansas City Royals', 'KC'),
@@ -957,13 +990,18 @@ def test_renderer_varies_watch_question_openings_across_sample_set():
     ]
 
     narratives = [render_story_narrative(item) for item in facts]
-    watch_leads = [narrative.split('\n\n')[-1].split(' whether ')[0] for narrative in narratives]
+    endings = [_ending_sentence_from_narrative(narrative) for narrative in narratives]
+    families = [_ending_family_from_sentence(ending) for ending in endings]
 
     assert narratives == [render_story_narrative(item) for item in facts]
-    assert len(set(watch_leads)) >= 3
-    for closing in [narrative.split('\n\n')[-1] for narrative in narratives]:
-        assert not closing.startswith('The thing to watch next is whether')
-        assert '?' in closing or 'whether' in closing
+    assert len(set(endings)) >= 3
+    assert len(set(families)) >= 2
+    assert families.count('question') < len(families)
+    for ending in endings:
+        lower = ending.lower()
+        assert not lower.startswith('the next question is')
+        assert not lower.startswith('from here, the question is')
+        assert 'worth watching to see whether' not in lower
 
 
 def test_renderer_varies_openings_without_repeating_team_have_pattern():
@@ -1136,6 +1174,37 @@ def test_archetype_narratives_are_deterministic_and_structurally_distinct():
     assert narratives[ARCHETYPE_CAPACITY_CONSTRAINT].split('\n\n')[1] != narratives[ARCHETYPE_ROTATION_SPILLOVER].split('\n\n')[1]
 
 
+def test_archetype_endings_use_distinct_family_mix():
+    narratives = {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in _archetype_story_fact_samples().items()
+    }
+    endings = {
+        archetype: _ending_sentence_from_narrative(narrative)
+        for archetype, narrative in narratives.items()
+    }
+    families = {
+        archetype: _ending_family_from_sentence(ending)
+        for archetype, ending in endings.items()
+    }
+
+    assert families == {
+        archetype: _ending_family_from_sentence(_ending_sentence_from_narrative(render_story_narrative(facts)))
+        for archetype, facts in _archetype_story_fact_samples().items()
+    }
+    assert len(set(families.values())) >= 4
+    assert sum(ending.endswith('?') for ending in endings.values()) <= 4
+    assert families[ARCHETYPE_WORKLOAD_CONCENTRATION] in {'question', 'implication'}
+    assert families[ARCHETYPE_THIN_TRUSTED_GROUP] in {'question', 'implication'}
+    assert families[ARCHETYPE_CAPACITY_CONSTRAINT] in {'observation', 'implication'}
+    assert families[ARCHETYPE_ROTATION_SPILLOVER] in {'question', 'watch_statement'}
+    assert families[ARCHETYPE_STABILITY_EROSION] in {'observation', 'question'}
+    assert families[ARCHETYPE_STABILITY_RECOVERY] in {'observation', 'takeaway'}
+    assert families[ARCHETYPE_MULTI_SOURCE_PRESSURE] in {'observation', 'implication'}
+    assert families[ARCHETYPE_FLEXIBLE_BULLPEN] in {'takeaway', 'observation'}
+    assert families[ARCHETYPE_RUN_PREVENTION_MASK] in {'question', 'implication'}
+
+
 def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
     for narrative in [
         render_story_narrative(facts)
@@ -1165,6 +1234,9 @@ def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
             'pressure source',
             'workload pattern is',
             'the thing to watch next is whether',
+            'the next question is',
+            'from here, the question is',
+            'worth watching to see whether',
             'injury',
             'transaction',
             'called up',

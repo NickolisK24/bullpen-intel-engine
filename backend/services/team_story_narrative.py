@@ -71,6 +71,11 @@ INTERNAL_TAXONOMY_TERMS = (
 _SentenceBuilder = Callable[[dict[str, Any]], str]
 _DISCLOSURE_CHANNEL_BODY = 'body'
 _DISCLOSURE_CHANNEL_FOOTER = 'footer'
+_ENDING_WATCH_QUESTION = 'watch_question'
+_ENDING_CLOSING_OBSERVATION = 'closing_observation'
+_ENDING_IMPLICATION = 'implication'
+_ENDING_WATCH_STATEMENT = 'watch_statement'
+_ENDING_BASEBALL_TAKEAWAY = 'baseball_takeaway'
 
 
 def _clean_text(value: Any) -> str:
@@ -152,6 +157,58 @@ def _disclosure_channel(facts: dict[str, Any]) -> str | None:
         _DISCLOSURE_CHANNEL_FOOTER,
     )
     return options[_stable_index(facts, 'disclosure:channel', len(options))]
+
+
+def _ending_family(facts: dict[str, Any], archetype: str) -> str:
+    pools = {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: (
+            _ENDING_WATCH_QUESTION,
+            _ENDING_IMPLICATION,
+            _ENDING_IMPLICATION,
+        ),
+        ARCHETYPE_THIN_TRUSTED_GROUP: (
+            _ENDING_WATCH_QUESTION,
+            _ENDING_IMPLICATION,
+            _ENDING_IMPLICATION,
+        ),
+        ARCHETYPE_CAPACITY_CONSTRAINT: (
+            _ENDING_CLOSING_OBSERVATION,
+            _ENDING_IMPLICATION,
+            _ENDING_CLOSING_OBSERVATION,
+        ),
+        ARCHETYPE_ROTATION_SPILLOVER: (
+            _ENDING_WATCH_QUESTION,
+            _ENDING_WATCH_STATEMENT,
+            _ENDING_WATCH_STATEMENT,
+        ),
+        ARCHETYPE_STABILITY_EROSION: (
+            _ENDING_CLOSING_OBSERVATION,
+            _ENDING_WATCH_QUESTION,
+            _ENDING_CLOSING_OBSERVATION,
+        ),
+        ARCHETYPE_STABILITY_RECOVERY: (
+            _ENDING_CLOSING_OBSERVATION,
+            _ENDING_BASEBALL_TAKEAWAY,
+            _ENDING_BASEBALL_TAKEAWAY,
+        ),
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: (
+            _ENDING_CLOSING_OBSERVATION,
+            _ENDING_IMPLICATION,
+            _ENDING_IMPLICATION,
+        ),
+        ARCHETYPE_FLEXIBLE_BULLPEN: (
+            _ENDING_BASEBALL_TAKEAWAY,
+            _ENDING_CLOSING_OBSERVATION,
+            _ENDING_BASEBALL_TAKEAWAY,
+        ),
+        ARCHETYPE_RUN_PREVENTION_MASK: (
+            _ENDING_WATCH_QUESTION,
+            _ENDING_IMPLICATION,
+            _ENDING_IMPLICATION,
+        ),
+    }
+    options = pools[archetype]
+    return options[_stable_index(facts, f'{archetype}:ending-family', len(options))]
 
 
 def _team_name(facts: dict[str, Any]) -> str:
@@ -514,58 +571,105 @@ def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
     return _sentence(_choose(facts, 'disclosure:narrative', options))
 
 
-def _watch_sentence(facts: dict[str, Any], archetype: str) -> str | None:
+def _ending_sentence(facts: dict[str, Any], archetype: str) -> str | None:
     tail = _tail_after_whether(facts.get('watch_question'))
-    pools: dict[str, list[_SentenceBuilder]] = {
-        ARCHETYPE_WORKLOAD_CONCENTRATION: [
-            lambda f: "Can the workload spread to more of the group, or does it keep collecting around the same arms?",
-            lambda f: "The next question is whether the innings start moving through a wider lane.",
-            lambda f: "From here, watch whether the same relievers stay at the center of the work.",
-        ],
-        ARCHETYPE_THIN_TRUSTED_GROUP: [
-            lambda f: "Can the trusted lane widen without turning back to the same relievers?",
-            lambda f: "The next question is whether usable arms can also become trusted innings.",
-            lambda f: "What matters next is whether the late-inning path gets wider or stays narrow.",
-        ],
-        ARCHETYPE_CAPACITY_CONSTRAINT: [
-            lambda f: "Can another usable option emerge before the bullpen has to cover extra outs?",
-            lambda f: "The next question is whether the available layer gains any room behind the first few choices.",
-            lambda f: "From here, the question is whether the bullpen can find one more comfortable lane.",
-        ],
-        ARCHETYPE_ROTATION_SPILLOVER: [
-            lambda f: "Will starters cover more innings and give the pen a cleaner night?",
-            lambda f: "The next question is whether more outs stay with the rotation before the bullpen takes over.",
-            lambda f: "From here, the question is whether the relief group gets a lighter handoff.",
-        ],
-        ARCHETYPE_STABILITY_EROSION: [
-            lambda f: "Does the bullpen picture settle down, or does it keep changing from night to night?",
-            lambda f: "The next question is whether the same group starts appearing more often.",
-            lambda f: "What becomes interesting is whether the recent pattern steadies.",
-        ],
-        ARCHETYPE_STABILITY_RECOVERY: [
-            lambda f: "Can that steadier shape hold after another game worth of bullpen choices?",
-            lambda f: "The next question is whether the broader rhythm survives the next bullpen-heavy night.",
-            lambda f: "From here, the question is whether the relief mix keeps looking settled.",
-        ],
-        ARCHETYPE_MULTI_SOURCE_PRESSURE: [
-            lambda f: "Which part of the bullpen picture eases first: depth, starter length, or the usage mix?",
-            lambda f: "The next question is whether one pressure point clears enough to simplify the board.",
-            lambda f: "From here, the question is whether the bullpen story narrows back to one main issue.",
-        ],
-        ARCHETYPE_FLEXIBLE_BULLPEN: [
-            lambda f: "Can this flexibility hold if the game asks for multiple relief lanes?",
-            lambda f: "The next question is whether the work stays spread out.",
-            lambda f: "From here, the bullpen picture is worth watching to see whether the wider shape holds.",
-        ],
-        ARCHETYPE_RUN_PREVENTION_MASK: [
-            lambda f: "Does the workload start lining up with the results, or does stress stay underneath them?",
-            lambda f: "The next question is whether the recent usage starts to look as sturdy as the results.",
-            lambda f: "From here, the question is whether the good results get more support from the workload shape.",
-        ],
+    family = _ending_family(facts, archetype)
+    pools: dict[str, dict[str, list[_SentenceBuilder]]] = {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: {
+            _ENDING_WATCH_QUESTION: [
+                lambda f: "Can the workload begin spreading across a wider group?",
+                lambda f: "Can more of the bullpen take on the work, or does it stay with the same arms?",
+            ],
+            _ENDING_IMPLICATION: [
+                lambda f: "That shape leaves little margin if the workload stays concentrated.",
+                lambda f: "That kind of concentration makes every clean inning behind the main group matter.",
+            ],
+        },
+        ARCHETYPE_THIN_TRUSTED_GROUP: {
+            _ENDING_WATCH_QUESTION: [
+                lambda f: "Can the trusted late-inning lane widen beyond the first few choices?",
+                lambda f: "Can usable arms become trusted innings before the game gets tight?",
+            ],
+            _ENDING_IMPLICATION: [
+                lambda f: "That leaves a narrower bridge to the late innings than the raw arm count suggests.",
+                lambda f: "The gap between available arms and trusted innings is where the pressure sits.",
+            ],
+        },
+        ARCHETYPE_CAPACITY_CONSTRAINT: {
+            _ENDING_CLOSING_OBSERVATION: [
+                lambda f: "That leaves fewer comfortable pivots if the game asks for extra relief outs.",
+                lambda f: "The bullpen still has a plan, but the back side of that plan is thinner.",
+            ],
+            _ENDING_IMPLICATION: [
+                lambda f: "That shape leaves little margin once the game starts asking for extra outs.",
+                lambda f: "The pressure is not only the first move; it is what is left behind it.",
+            ],
+        },
+        ARCHETYPE_ROTATION_SPILLOVER: {
+            _ENDING_WATCH_QUESTION: [
+                lambda f: "Can the rotation hand off a cleaner game before the bullpen has to cover the middle innings?",
+                lambda f: "Can more outs stay with the starter before the relievers take over?",
+            ],
+            _ENDING_WATCH_STATEMENT: [
+                lambda f: "The next turn through the rotation can put a clearer shape on the handoff.",
+                lambda f: "The next few games are the reference point for how much work reaches the pen.",
+            ],
+        },
+        ARCHETYPE_STABILITY_EROSION: {
+            _ENDING_CLOSING_OBSERVATION: [
+                lambda f: "That leaves the bullpen picture less settled than a simple availability count would show.",
+                lambda f: "The important part is the moving target, not just how many arms are listed as available.",
+            ],
+            _ENDING_WATCH_QUESTION: [
+                lambda f: "Does the relief mix start settling, or does it keep moving night to night?",
+                lambda f: "Can the bullpen find a steadier shape over the next few games?",
+            ],
+        },
+        ARCHETYPE_STABILITY_RECOVERY: {
+            _ENDING_CLOSING_OBSERVATION: [
+                lambda f: "That gives the bullpen a more usable shape than it had when the work was tighter.",
+                lambda f: "The group looks closer to a normal bridge from the starter to the late plan.",
+            ],
+            _ENDING_BASEBALL_TAKEAWAY: [
+                lambda f: "The main takeaway is balance: the innings are no longer squeezing one small pocket as hard.",
+                lambda f: "That is the useful part of the recovery, a bullpen with more than one way through the middle innings.",
+            ],
+        },
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: {
+            _ENDING_CLOSING_OBSERVATION: [
+                lambda f: "That leaves a bullpen picture shaped by more than one problem at the same time.",
+                lambda f: "The story is not one clean pressure point; it is how those pressures stack.",
+            ],
+            _ENDING_IMPLICATION: [
+                lambda f: "That mix leaves less margin for any one part of the plan to absorb the whole night.",
+                lambda f: "When several pressures meet at once, the bullpen can look tighter even before the late innings.",
+            ],
+        },
+        ARCHETYPE_FLEXIBLE_BULLPEN: {
+            _ENDING_BASEBALL_TAKEAWAY: [
+                lambda f: "That gives the staff more than one way to get through a game.",
+                lambda f: "The useful takeaway is flexibility: the work has not collapsed onto one small group.",
+            ],
+            _ENDING_CLOSING_OBSERVATION: [
+                lambda f: "This is a bullpen with room to move innings around.",
+                lambda f: "The shape is wider than a bullpen leaning on the same few arms every night.",
+            ],
+        },
+        ARCHETYPE_RUN_PREVENTION_MASK: {
+            _ENDING_WATCH_QUESTION: [
+                lambda f: "Does the workload start lining up with the results, or does stress stay underneath them?",
+                lambda f: "Can the usage underneath start looking as steady as the results?",
+            ],
+            _ENDING_IMPLICATION: [
+                lambda f: "That shape keeps the strong results from being the whole story.",
+                lambda f: "Good run prevention helps, but it does not erase how much work the same group has been absorbing.",
+            ],
+        },
     }
-    if tail:
-        pools[archetype].append(lambda f: f"One more useful check is whether {tail}.")
-    return _sentence(_choose(facts, f'{archetype}:watch', pools[archetype]))
+    options = list(pools[archetype][family])
+    if tail and family == _ENDING_WATCH_STATEMENT:
+        options.append(lambda f: f"The next few games are the cleanest place to see whether {tail}.")
+    return _sentence(_choose(facts, f'{archetype}:ending:{family}', options))
 
 
 def _paragraph(sentences: list[str | None]) -> str | None:
@@ -607,7 +711,7 @@ def render_story_narrative(facts: dict[str, Any]) -> str:
     middle = _paragraph(_middle_sentences(facts, archetype))
     closing = _paragraph([
         _disclosure_sentence(facts),
-        _watch_sentence(facts, archetype),
+        _ending_sentence(facts, archetype),
     ])
 
     paragraphs = [item for item in (opening, middle, closing) if item]
