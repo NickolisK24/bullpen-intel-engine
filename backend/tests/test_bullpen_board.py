@@ -72,6 +72,32 @@ def record(name, pitcher_id, fatigue_score, status, **kwargs):
     }
 
 
+def coverage_capacity_payload():
+    return {
+        'resource_health': {
+            'capacity_state': 'healthy',
+            'resource_health_state': 'strong',
+            'bullpen_capacity': {
+                'capacity_state': 'healthy',
+                'active_reliever_count': 8,
+                'clean_active_reliever_count': 6,
+            },
+        },
+        'trust_hierarchy': {
+            'anchor_count': 1,
+            'leverage_count': 4,
+            'trusted_count': 1,
+            'trusted_group_size': 6,
+            'top_trust_bucket_available_count': 1,
+            'hierarchy_confidence': 'medium',
+        },
+        'trust_capacity_loss': {
+            'trust_arms_unavailable': 0,
+            'trust_capacity_unavailable_pct': 0,
+        },
+    }
+
+
 # ── Pure grouping service ──────────────────────────────────────────────────
 
 class TestGrouping:
@@ -223,6 +249,21 @@ class TestPayload:
         )
         assert payload['total_pitchers'] == 0
         assert [g['status'] for g in payload['groups']] == BOARD_GROUP_ORDER
+
+    def test_payload_uses_coverage_safety_v2_when_capacity_intelligence_is_present(self):
+        payload = build_board_payload(
+            team={'team_id': 1, 'team_name': 'Test', 'team_abbreviation': 'TST'},
+            records=[record('A', 1, 10, 'Available')],
+            capacity_intelligence=coverage_capacity_payload(),
+            bullpen_environment={'status': 'stable_environment', 'primary_pressure_sources': []},
+            generated_at='2026-06-05T00:00:00+00:00',
+        )
+
+        coverage = payload['team_shape']['coverageSafety']
+        assert coverage['label'] == 'Strong Coverage Safety'
+        assert coverage['supportingCounts']['coverageSafetyVersion'] == '2.0'
+        assert 'score' not in str(coverage).lower()
+        assert 'rank' not in str(coverage).lower()
 
 
 # ── Endpoint integration ───────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """Backend-authored team bullpen shape reads for board consumers."""
 
-
+from services.bullpen_coverage_safety import build_bullpen_coverage_safety_read
 from services.workload_concentration import RECENT_WORKLOAD_WINDOW_DAYS
 
 
@@ -455,7 +455,7 @@ def _workload_concentration(workload):
     return _read('workloadConcentration', label, explanation, counts)
 
 
-def _coverage_safety(summary):
+def _legacy_coverage_safety(summary):
     coverage_reads = summary['roleReadCounts']['coverage']
     bridge_reads = summary['roleReadCounts']['bridge']
     coverage_arms = summary['roleCounts']['Coverage Arm']
@@ -570,15 +570,28 @@ def _depth_safety(summary):
     return _read('depthSafety', 'Limited Depth Safety', explanation, counts)
 
 
-def build_team_bullpen_shape(groups, context=None, workload_concentration=None):
+def build_team_bullpen_shape(
+    groups,
+    context=None,
+    workload_concentration=None,
+    capacity_intelligence=None,
+    bullpen_environment=None,
+):
     """Return backend-authored public team reads for a board payload."""
     summary = _summarize_cards(groups, context=context)
+    coverage_safety = (
+        build_bullpen_coverage_safety_read(
+            capacity_intelligence,
+            bullpen_environment=bullpen_environment,
+        )
+        or _legacy_coverage_safety(summary)
+    )
     reads = [
         _trust_availability(summary),
         _clean_options(summary),
         _bullpen_pressure(summary),
         _workload_concentration(workload_concentration),
-        _coverage_safety(summary),
+        coverage_safety,
         _depth_safety(summary),
     ]
     by_key = {item['key']: item for item in reads}
