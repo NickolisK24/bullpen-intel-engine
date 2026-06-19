@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.story_identity_integration import build_story_identity_integration
 from services.story_context_integration import build_story_context_integration
 
 
@@ -286,6 +287,9 @@ def build_story_facts(
         'confidence': 'limited' if disclosure else 'supported',
         'disclosure': disclosure,
     }
+    story_identity = build_story_identity_integration(facts)
+    facts['identity_story_context'] = story_identity.get('text')
+    facts['story_identity_integration'] = story_identity
     return facts
 
 

@@ -1741,6 +1741,7 @@ def assemble_story(rule_key, inputs, lead=None):
     }
     story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
     story_context_meta = story_facts.get('bullpen_context_integration') or {}
+    story_identity_meta = story_facts.get('story_identity_integration') or {}
     narrative = render_story_narrative(story_facts)
     story = {
         'story_id': f"{team.get('team_id')}:{rule_key}",
@@ -1781,6 +1782,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'season_era': 'season_era.bullpens',
             'capacity_intelligence': 'bullpen_capacity_intelligence_v1',
             'bullpen_identity': 'bullpen_identity_v1',
+            'story_identity_integration': 'bullpen_identity_v1',
             'rotation_support_pressure': 'rotation_support_pressure_v1',
             'bullpen_stability': 'bullpen_stability_v1',
             'bullpen_environment': 'bullpen_environment_v1',
@@ -1815,6 +1817,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'bullpen_stability': inputs.get('bullpen_stability') or {},
             'bullpen_environment': inputs.get('bullpen_environment') or {},
             'story_context_integration': story_context_meta,
+            'story_identity_integration': story_identity_meta,
             'high_risk_arms': inputs['high_risk_arms'],
             'high_risk_arm_count': inputs['high_risk_arms'],
             'high_risk_arm_names': [

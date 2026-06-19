@@ -52,3 +52,15 @@ another may be thin because the bullpen is built around a narrow trusted lane.
 Bullpen Identity gives future story surfaces a stable baseball descriptor they
 can use for memorability without adding tactical advice or expanding the public
 contract beyond the existing governed intelligence layers.
+
+## Story Integration V1
+
+Identity-aware story integration uses Bullpen Identity only as supporting
+texture inside the backend narrative renderer. It can add one public-safe
+sentence that makes a story feel more aware of the bullpen's structural shape,
+but it does not expose raw identity labels in story copy.
+
+The integration is passive. It does not change story rule selection, feed
+ordering, lead selection, story strength, reliever ordering, recommendations,
+predictions, or public UI surfaces. Unknown or low-confidence identity reads
+fail closed and do not add identity-driven language.
