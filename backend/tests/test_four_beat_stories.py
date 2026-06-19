@@ -951,8 +951,22 @@ def test_story_context_adds_resource_pool_context_without_state_labels():
     assert story['computed']['story_context_integration']['reason'] == (
         'top_structure_with_resource_strain'
     )
-    assert "late innings still look pretty normal" in lower
-    assert 'being asked to carry more' in lower
+    assert any(
+        phrase in lower
+        for phrase in (
+            'back-end shape',
+            'familiar finish',
+            'late innings',
+        )
+    )
+    assert any(
+        phrase in lower
+        for phrase in (
+            'road there',
+            'working harder',
+            'carrying more',
+        )
+    )
     assert narrative_contains_forbidden_language(narrative) is False
     for leaked in (
         'capacity state',
@@ -1008,7 +1022,15 @@ def test_story_context_adds_clean_trusted_lane_context_when_narrow():
     assert story['computed']['story_context_integration']['reason'] == (
         'clean_trusted_lane_narrow'
     )
-    assert 'once you get past the first few names' in lower
+    assert any(
+        phrase in lower
+        for phrase in (
+            'first few choices',
+            'comfort drops fast',
+            'first layer and the rest',
+            'first few names',
+        )
+    )
     assert 'clean trusted lane' not in lower
     assert 'trusted lane' not in lower
     assert 'should pitch' not in lower
@@ -1071,7 +1093,14 @@ def test_story_context_replaces_generic_middle_instead_of_appending_explanation(
     paragraphs = [item.strip() for item in story['narrative'].split('\n\n')]
     middle = paragraphs[1].lower()
 
-    assert 'late innings still look pretty normal' in middle
+    assert any(
+        phrase in middle
+        for phrase in (
+            'familiar finish',
+            'late innings',
+            'back end',
+        )
+    )
     assert 'there is room to maneuver because' not in middle
     assert 'flexibility shows up when' not in middle
     assert middle.count('.') <= 3
@@ -1092,6 +1121,8 @@ def _sample_story_facts(
     rotation_context: str | None = None,
     stability_context: str | None = None,
     environment_context: str | None = None,
+    bullpen_context: str | None = None,
+    bullpen_context_reason: str | None = None,
 ) -> dict:
     return {
         'capability': STORY_FACT_LAYER_CAPABILITY,
@@ -1113,6 +1144,17 @@ def _sample_story_facts(
         'rotation_context': rotation_context,
         'stability_context': stability_context,
         'environment_context': environment_context,
+        'bullpen_context': bullpen_context,
+        'bullpen_context_integration': {
+            'applied': bool(bullpen_context),
+            'text': bullpen_context,
+            'reason': bullpen_context_reason,
+            'sources': [],
+            'ranking_applied': False,
+            'selection_made': False,
+            'prediction_applied': False,
+            'limitations': [],
+        },
         'watch_question': (
             watch_question
             or 'The thing to watch next is whether the same relievers remain at the center of the workload.'
@@ -1390,6 +1432,70 @@ def test_archetype_narratives_are_deterministic_and_structurally_distinct():
     assert len({text.split('\n\n')[1] for text in narratives.values()}) >= 8
     assert narratives[ARCHETYPE_WORKLOAD_CONCENTRATION].split('\n\n')[0] != narratives[ARCHETYPE_FLEXIBLE_BULLPEN].split('\n\n')[0]
     assert narratives[ARCHETYPE_CAPACITY_CONSTRAINT].split('\n\n')[1] != narratives[ARCHETYPE_ROTATION_SPILLOVER].split('\n\n')[1]
+
+
+def test_same_archetype_uses_intelligence_angle_for_team_identity():
+    late_structure = _sample_story_facts(
+        119,
+        'Los Angeles Dodgers',
+        'LAD',
+        disclosure=False,
+        supporting_context=(
+            'Recent relief work has been spread across 8 relievers, '
+            'averaging 14 pitches per participating arm.'
+        ),
+        pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+        workload_pattern=(
+            'The workload pattern is broad: 8 relievers have shared the work '
+            'at 14 pitches per participating arm.'
+        ),
+        bullpen_context='The late innings still look pretty normal.',
+        bullpen_context_reason='top_structure_with_resource_strain',
+        watch_question='The next useful read is whether that broad, usable shape still holds.',
+    )
+    wide_routes = _sample_story_facts(
+        109,
+        'Arizona Diamondbacks',
+        'AZ',
+        disclosure=False,
+        supporting_context=(
+            'Recent relief work has been spread across 8 relievers, '
+            'averaging 14 pitches per participating arm.'
+        ),
+        pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+        workload_pattern=(
+            'The workload pattern is broad: 8 relievers have shared the work '
+            'at 14 pitches per participating arm.'
+        ),
+        watch_question='The next useful read is whether that broad, usable shape still holds.',
+    )
+
+    assert select_story_archetype(late_structure) == ARCHETYPE_FLEXIBLE_BULLPEN
+    assert select_story_archetype(wide_routes) == ARCHETYPE_FLEXIBLE_BULLPEN
+
+    late_text = render_story_narrative(late_structure).lower()
+    wide_text = render_story_narrative(wide_routes).lower()
+
+    assert late_text != wide_text
+    assert any(
+        phrase in late_text
+        for phrase in (
+            'back-end shape',
+            'familiar finish',
+            'late innings',
+        )
+    )
+    assert any(
+        phrase in wide_text
+        for phrase in (
+            'several routes',
+            'actually been part of the path',
+            'spread across 8 relievers',
+        )
+    )
+    for leaked in ('resource pool', 'trusted lane', 'active count', 'coverage safety'):
+        assert leaked not in late_text
+        assert leaked not in wide_text
 
 
 def test_archetype_endings_use_distinct_family_mix():
