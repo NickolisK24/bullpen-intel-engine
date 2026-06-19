@@ -7,6 +7,7 @@ import services.team_story_narrative as team_story_narrative
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
 from services.bullpen_identity import (
     IDENTITY_LABELS,
+    IDENTITY_LEVERAGE_HEAVY,
     IDENTITY_UNKNOWN,
     build_bullpen_identity,
 )
@@ -1258,6 +1259,62 @@ def test_identity_story_texture_varies_deterministically_across_teams():
 
     assert first_pass == second_pass
     assert len(set(first_pass)) >= 2
+
+
+def test_leverage_identity_story_texture_has_safe_deterministic_variation():
+    teams = [
+        (109, 'Arizona Diamondbacks', 'AZ'),
+        (114, 'Cleveland Guardians', 'CLE'),
+        (119, 'Los Angeles Dodgers', 'LAD'),
+        (121, 'New York Mets', 'NYM'),
+        (137, 'San Francisco Giants', 'SF'),
+        (138, 'St. Louis Cardinals', 'STL'),
+        (142, 'Minnesota Twins', 'MIN'),
+    ]
+    first_pass = []
+    second_pass = []
+
+    for team_id, team_name, abbr in teams:
+        capacity_by_team = _foundation_capacity_context(
+            anchor=1,
+            leverage=5,
+            trusted=1,
+            depth=1,
+            trusted_group=7,
+        )
+        capacity_by_team[team_id] = capacity_by_team.pop(1)
+        capacity_by_team = _with_bullpen_identity(capacity_by_team, team_id=team_id)
+        team = {'team_id': team_id, 'team_name': team_name, 'team_abbreviation': abbr}
+        inputs = compute_team_story_inputs(
+            _broad_light_team_inputs(team=team, capacity_by_team=capacity_by_team)
+        )
+        story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+        first_pass.append(story['computed']['story_identity_integration']['text'])
+        second_pass.append(
+            assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)['computed'][
+                'story_identity_integration'
+            ]['text']
+        )
+        assert story['computed']['bullpen_identity']['identity_key'] == IDENTITY_LEVERAGE_HEAVY
+
+    assert first_pass == second_pass
+    assert len(set(first_pass)) >= 4
+    blocked = (
+        'best reliever',
+        'should use',
+        'must use',
+        'projected',
+        'expected',
+        'ranked',
+        'bet',
+        'lock',
+    )
+    for phrase in first_pass:
+        lower = phrase.lower()
+        for blocked_phrase in blocked:
+            assert blocked_phrase not in lower
+        for label in IDENTITY_LABELS.values():
+            assert label.lower() not in lower
 
 
 def _sample_story_facts(

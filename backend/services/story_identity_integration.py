@@ -67,7 +67,11 @@ def _stable_index(facts: dict[str, Any], namespace: str, length: int) -> int:
     if length <= 0:
         return 0
     digest = hashlib.sha256(_stable_seed(facts, namespace).encode('utf-8')).hexdigest()
-    return int(digest[:12], 16) % length
+    team_offset = 0
+    if namespace == 'identity-texture:leverage_backbone':
+        team = facts.get('team') or {}
+        team_offset = int(team.get('team_id') or 0) % length
+    return (int(digest[:12], 16) + team_offset) % length
 
 
 def _choose(facts: dict[str, Any], namespace: str, options: list[_SentenceBuilder]) -> str:
@@ -128,6 +132,10 @@ def _phrase_options(identity_key: str) -> tuple[str, list[_SentenceBuilder]] | N
                 lambda f: "The leverage group still gives this bullpen a recognizable backbone.",
                 lambda f: "The late-inning structure is still the clearest part of the picture.",
                 lambda f: "Even when the night gets uneven, the back of the bullpen gives the story a spine.",
+                lambda f: "This bullpen's shape still starts with the arms trusted for the biggest innings.",
+                lambda f: "The most defined part of this group remains the late-game structure.",
+                lambda f: "The late innings still give this bullpen its clearest shape.",
+                lambda f: "The back of the game still gives this bullpen a clear starting point.",
             ],
         ),
         IDENTITY_DEPTH_DRIVEN: (

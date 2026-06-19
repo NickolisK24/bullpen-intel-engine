@@ -15,12 +15,14 @@
       "Resource-Strained Bullpen": 6
     },
     "identity_sentence_counts": {
-      "Even when the night gets uneven, the back of the bullpen gives the story a spine.": 2,
+      "Even when the night gets uneven, the back of the bullpen gives the story a spine.": 1,
+      "The back of the game still gives this bullpen a clear starting point.": 1,
       "The challenge is not just tonight's workload; it is how much flexibility remains around the edges.": 1,
       "The coverage comes less from one obvious answer and more from having enough usable pieces.": 1,
       "The first move may be manageable, but the later innings can get narrower if the game stretches.": 3,
       "The late-inning structure is still the clearest part of the picture.": 1,
-      "The leverage group still gives this bullpen a recognizable backbone.": 4,
+      "The leverage group still gives this bullpen a recognizable backbone.": 2,
+      "The most defined part of this group remains the late-game structure.": 2,
       "The shape is less about one arm and more about how many paths are still open.": 1,
       "The stress shows up around the margins, where one extra inning can start shrinking the choices.": 2,
       "This bullpen can absorb a normal night because the options do not fall off immediately.": 1,
@@ -30,20 +32,9 @@
     "identity_text_skipped_count": 12,
     "repeated_identity_sentence_threshold": 3,
     "review_flag_counts": {
-      "identity_sentence_repeated_too_often": 4,
       "no_selected_story": 12
     },
     "teams_for_human_review": [
-      {
-        "identity_label": "Leverage-Heavy Bullpen",
-        "review_flags": [
-          "identity_sentence_repeated_too_often"
-        ],
-        "selected_story_key": "pressure_distribution",
-        "team_abbreviation": "AZ",
-        "team_id": 109,
-        "team_name": "Arizona Diamondbacks"
-      },
       {
         "identity_label": "Flexible Distribution Bullpen",
         "review_flags": [
@@ -95,16 +86,6 @@
         "team_name": "Chicago White Sox"
       },
       {
-        "identity_label": "Leverage-Heavy Bullpen",
-        "review_flags": [
-          "identity_sentence_repeated_too_often"
-        ],
-        "selected_story_key": "pressure_distribution",
-        "team_abbreviation": "CLE",
-        "team_id": 114,
-        "team_name": "Cleveland Guardians"
-      },
-      {
         "identity_label": "Flexible Distribution Bullpen",
         "review_flags": [
           "no_selected_story"
@@ -123,16 +104,6 @@
         "team_abbreviation": "LAA",
         "team_id": 108,
         "team_name": "Los Angeles Angels"
-      },
-      {
-        "identity_label": "Leverage-Heavy Bullpen",
-        "review_flags": [
-          "identity_sentence_repeated_too_often"
-        ],
-        "selected_story_key": "pressure_distribution",
-        "team_abbreviation": "MIN",
-        "team_id": 142,
-        "team_name": "Minnesota Twins"
       },
       {
         "identity_label": "Leverage-Heavy Bullpen",
@@ -165,16 +136,6 @@
         "team_name": "Seattle Mariners"
       },
       {
-        "identity_label": "Leverage-Heavy Bullpen",
-        "review_flags": [
-          "identity_sentence_repeated_too_often"
-        ],
-        "selected_story_key": "pressure_distribution",
-        "team_abbreviation": "STL",
-        "team_id": 138,
-        "team_name": "St. Louis Cardinals"
-      },
-      {
         "identity_label": "Flexible Distribution Bullpen",
         "review_flags": [
           "no_selected_story"
@@ -197,7 +158,7 @@
     ]
   },
   "expected_team_count": 30,
-  "generated_at": "2026-06-19T21:33:56.800959+00:00",
+  "generated_at": "2026-06-19T21:42:24.313557+00:00",
   "ordering_basis": "team_name_then_team_id",
   "payload_source": "live_dashboard_build",
   "prediction_applied": false,
@@ -227,9 +188,7 @@
       "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
       "identity_text_applied": true,
       "paragraph_count": 3,
-      "review_flags": [
-        "identity_sentence_repeated_too_often"
-      ],
+      "review_flags": [],
       "selected_story_archetype": "run_prevention_mask",
       "selected_story_key": "pressure_distribution",
       "selected_story_label": "Pressure Distribution",
@@ -433,18 +392,16 @@
       "identity_integration_reason": "leverage_backbone",
       "identity_key": "leverage_heavy",
       "identity_label": "Leverage-Heavy Bullpen",
-      "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
+      "identity_sentence": "The most defined part of this group remains the late-game structure.",
       "identity_text_applied": true,
       "paragraph_count": 3,
-      "review_flags": [
-        "identity_sentence_repeated_too_often"
-      ],
+      "review_flags": [],
       "selected_story_archetype": "thin_trusted_group",
       "selected_story_key": "pressure_distribution",
       "selected_story_label": "Pressure Distribution",
       "sentence_count": 5,
       "story_present": true,
-      "story_text": "For the Cleveland Guardians, the list is longer than the list of choices you would feel good about in a tight spot.\n\nMore of the bullpen has had to be part of the recent innings. There are bodies for the night; the comfort starts dropping after the first few names. The leverage group still gives this bullpen a recognizable backbone.\n\nThe gap between available arms and comfortable innings is where the pressure sits.",
+      "story_text": "For the Cleveland Guardians, the list is longer than the list of choices you would feel good about in a tight spot.\n\nMore of the bullpen has had to be part of the recent innings. There are bodies for the night; the comfort starts dropping after the first few names. The most defined part of this group remains the late-game structure.\n\nThe gap between available arms and comfortable innings is where the pressure sits.",
       "team_abbreviation": "CLE",
       "team_id": 114,
       "team_name": "Cleveland Guardians"
@@ -662,18 +619,16 @@
       "identity_integration_reason": "leverage_backbone",
       "identity_key": "leverage_heavy",
       "identity_label": "Leverage-Heavy Bullpen",
-      "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
+      "identity_sentence": "The back of the game still gives this bullpen a clear starting point.",
       "identity_text_applied": true,
       "paragraph_count": 3,
-      "review_flags": [
-        "identity_sentence_repeated_too_often"
-      ],
+      "review_flags": [],
       "selected_story_archetype": "flexible_bullpen",
       "selected_story_key": "pressure_distribution",
       "selected_story_label": "Pressure Distribution",
       "sentence_count": 5,
       "story_present": true,
-      "story_text": "For the Minnesota Twins, the recent usage gives the staff a few different answers instead of forcing everything through one lane.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. Because the work has moved around, the staff is not forced back to one answer every time the game changes. The leverage group still gives this bullpen a recognizable backbone.\n\nThat gives the staff more than one way to get through a game.",
+      "story_text": "For the Minnesota Twins, the recent usage gives the staff a few different answers instead of forcing everything through one lane.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. Because the work has moved around, the staff is not forced back to one answer every time the game changes. The back of the game still gives this bullpen a clear starting point.\n\nThat gives the staff more than one way to get through a game.",
       "team_abbreviation": "MIN",
       "team_id": 142,
       "team_name": "Minnesota Twins"
@@ -817,7 +772,7 @@
       "identity_integration_reason": "leverage_backbone",
       "identity_key": "leverage_heavy",
       "identity_label": "Leverage-Heavy Bullpen",
-      "identity_sentence": "Even when the night gets uneven, the back of the bullpen gives the story a spine.",
+      "identity_sentence": "The most defined part of this group remains the late-game structure.",
       "identity_text_applied": true,
       "paragraph_count": 3,
       "review_flags": [],
@@ -826,7 +781,7 @@
       "selected_story_label": "Pressure Distribution",
       "sentence_count": 5,
       "story_present": true,
-      "story_text": "San Francisco Giants' back end still gives the night structure, even while the bridge into it asks for more.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. The staff still has somewhere to point the late innings; the bridge into that part is carrying more of the night. Even when the night gets uneven, the back of the bullpen gives the story a spine.\n\nThat gives the staff more than one way to get through a game.",
+      "story_text": "San Francisco Giants' back end still gives the night structure, even while the bridge into it asks for more.\n\nThey have had to use a lot of different arms lately, and that gives the staff more than one way to manage a game. The staff still has somewhere to point the late innings; the bridge into that part is carrying more of the night. The most defined part of this group remains the late-game structure.\n\nThat gives the staff more than one way to get through a game.",
       "team_abbreviation": "SF",
       "team_id": 137,
       "team_name": "San Francisco Giants"
@@ -871,9 +826,7 @@
       "identity_sentence": "The leverage group still gives this bullpen a recognizable backbone.",
       "identity_text_applied": true,
       "paragraph_count": 3,
-      "review_flags": [
-        "identity_sentence_repeated_too_often"
-      ],
+      "review_flags": [],
       "selected_story_archetype": "flexible_bullpen",
       "selected_story_key": "pressure_distribution",
       "selected_story_label": "Pressure Distribution",
