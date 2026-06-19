@@ -409,11 +409,21 @@ class TestDashboardEndpoint:
         assert body['injury_il_context']['league']['tracked_pitchers_count'] == body['availability_summary']['total_pitchers']
         assert body['injury_il_context']['league']['bullpen_population_count'] == body['availability_summary']['total_pitchers']
         capacity = body['capacity_intelligence']['by_team_id']['1']['capacity_loss']
+        resource_health = body['capacity_intelligence']['by_team_id']['1']['resource_health']
         assert body['capacity_intelligence']['capability'] == 'league_bullpen_capacity_intelligence_v1'
         assert capacity['total_bullpen_pitcher_count'] == 4
         assert capacity['unavailable_pitcher_count'] == 3
         assert capacity['inactive_roster_unavailable_pitcher_count'] == 3
         assert capacity['unavailable_capacity_pct'] == 75
+        assert resource_health['capacity_state'] == 'depleted'
+        assert resource_health['resource_health_state'] == 'depleted'
+        assert resource_health['bullpen_capacity']['capacity_state'] == 'depleted'
+        assert resource_health['organizational_resource_health']['resource_health_state'] == 'depleted'
+        assert resource_health['active_reliever_count'] == 1
+        assert resource_health['injured_reliever_count'] == 2
+        assert resource_health['unavailable_reliever_count'] == 1
+        assert resource_health['total_bullpen_resource_count'] == 4
+        assert resource_health['resource_availability_ratio'] == 0.25
 
     def test_dashboard_exposes_rotation_support_pressure_payload(self, client):
         with client.application.app_context():

@@ -15,6 +15,7 @@ from typing import Any
 from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
+from services.bullpen_resource_health import build_bullpen_resource_health
 from utils.innings import decimal_innings_to_outs, log_innings_outs
 
 
@@ -456,6 +457,7 @@ def build_team_bullpen_capacity(
         'source': 'backend',
         'team': team.get('team_abbreviation') if isinstance(team, dict) else None,
         **_team_identity(team),
+        'resource_health': build_bullpen_resource_health(records, team=team),
         'capacity_loss': capacity_loss,
         'trust_capacity_loss': trust_capacity_loss,
     }
