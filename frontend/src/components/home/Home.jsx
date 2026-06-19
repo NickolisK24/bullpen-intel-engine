@@ -96,26 +96,33 @@ function WhatChangedSinceYesterday({ changes }) {
         subtitle="The short version of how the bullpen map moved from the prior window."
       />
 
-      <ol className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {items.map((item, index) => (
+      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        {items.map(item => (
           <li key={item.key} className="border border-dirt bg-dugout p-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="min-w-0 font-display text-xl leading-none tracking-wide text-chalk100">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {item.teamAbbr && (
+                <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
+                  {item.teamAbbr}
+                </span>
+              )}
+              <div className="min-w-0 font-mono text-[10px] uppercase tracking-widest text-chalk500">
                 {item.teamName}
-              </h3>
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-amber/70">
-                {String(index + 1).padStart(2, '0')}
-              </span>
+              </div>
             </div>
+            <h3 className="mt-2 font-display text-xl leading-none tracking-wide text-chalk100">
+              {item.headline}
+            </h3>
             <p className="mt-2 text-sm leading-relaxed text-chalk200">
-              {item.change}
+              {item.summary}
             </p>
-            <p className="mt-2 border-t border-dirt/70 pt-2 text-xs leading-relaxed text-chalk400">
-              {item.whyChanged}
-            </p>
+            {item.context && (
+              <p className="mt-2 border-t border-dirt/70 pt-2 text-xs leading-relaxed text-chalk400">
+                {item.context}
+              </p>
+            )}
           </li>
         ))}
-      </ol>
+      </ul>
     </section>
   )
 }

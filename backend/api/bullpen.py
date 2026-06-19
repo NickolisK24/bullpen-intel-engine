@@ -81,7 +81,6 @@ from services.four_beat_stories import (
     build_four_beat_story_feed,
     four_beat_stories_enabled,
 )
-from services.homepage_changes import build_homepage_changes_payload
 from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
@@ -100,6 +99,7 @@ from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
 )
+from services.what_changed_since_yesterday_public import build_what_changed_public_payload
 from services.team_changes import build_team_changes_payload
 from services.roster_status import (
     apply_roster_status_to_availability,
@@ -2204,7 +2204,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             immediate_prior_snapshot=previous_snapshot,
         ),
     )
-    changes = build_homepage_changes_payload(
+    changes = build_what_changed_public_payload(
         payload,
         previous_payload,
     )
@@ -2316,14 +2316,19 @@ def _dashboard_snapshot_unavailable_payload(reason):
             ],
         },
         'what_changed_since_yesterday': {
-            'capability': 'homepage_bullpen_changes_v1',
+            'capability': 'what_changed_since_yesterday_public_v1',
             'ranking_applied': False,
             'selection_made': False,
+            'prediction_applied': False,
+            'ordering_basis': 'team_abbreviation_then_team_name',
+            'item_limit': 6,
             'comparison': {
                 'current_data_through': None,
                 'previous_data_through': None,
+                'comparison_available': False,
             },
             'items': [],
+            'item_count': 0,
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],

@@ -31,6 +31,7 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 import models.prospect  # noqa: F401
+import api.bullpen as bullpen_api
 from api.bullpen import bullpen_bp
 
 
@@ -132,6 +133,62 @@ class TestDashboardEndpoint:
         assert body['roles']['total'] == sum(body['roles']['counts'].values())
         # Freshness/data-through is present for the hero.
         assert 'data_through' in body['freshness']
+
+    def test_dashboard_surfaces_public_what_changed_payload(self, client, monkeypatch):
+        public_payload = {
+            'capability': 'what_changed_since_yesterday_public_v1',
+            'ranking_applied': False,
+            'selection_made': False,
+            'prediction_applied': False,
+            'ordering_basis': 'team_abbreviation_then_team_name',
+            'item_limit': 6,
+            'comparison': {
+                'current_data_through': '2026-06-19',
+                'previous_data_through': '2026-06-18',
+                'comparison_available': True,
+            },
+            'items': [
+                {
+                    'key': 'T1-what-changed',
+                    'team_id': 1,
+                    'team_name': 'Team 1',
+                    'team_abbreviation': 'T1',
+                    'public_headline': 'The Team 1 bullpen has more breathing room today.',
+                    'public_summary': 'The rested count moved from 2 to 5, opening three more ways to cover the game.',
+                    'public_context': None,
+                },
+            ],
+            'item_count': 1,
+            'limitations': [],
+        }
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_what_changed_public_payload',
+            lambda current, prior: public_payload,
+        )
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=1001)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        changes = body['what_changed_since_yesterday']
+        encoded = json.dumps(changes).lower()
+
+        assert changes == public_payload
+        assert changes['capability'] == 'what_changed_since_yesterday_public_v1'
+        assert changes['item_limit'] == 6
+        for forbidden in (
+            'change_type',
+            'confidence',
+            'supporting_facts',
+            'copy_review_flags',
+            'public_copy_generated',
+            'identity_label',
+            'score',
+            'recommend',
+            'prediction language',
+            'ranking language',
+        ):
+            assert forbidden not in encoded
 
     def test_four_beat_story_path_defaults_on(self, client):
         body = client.get('/api/bullpen/dashboard').get_json()
