@@ -1,7 +1,11 @@
 import json
 from datetime import datetime, timezone
 
-from services.bullpen_identity import build_bullpen_identity
+from services.bullpen_identity import (
+    STRUCTURAL_SCOPE_CAVEAT,
+    TACTICAL_BOUNDARY_CAVEAT,
+    build_bullpen_identity,
+)
 from services.bullpen_identity_distribution_review import (
     CAPABILITY,
     build_bullpen_identity_distribution_review,
@@ -166,6 +170,40 @@ def test_review_distribution_and_flags_surface_unknowns_without_ranking():
             ],
         }
     ]
+
+
+def test_review_many_caveats_flag_uses_non_boundary_caveats_only():
+    item = capacity_item(
+        team_id=1,
+        team_name='Alpha Club',
+        team_abbreviation='ALP',
+    )
+    item['bullpen_identity']['caveats'] = [
+        'Trust structure context is limited for this review.',
+        'Capacity context is limited for this review.',
+        STRUCTURAL_SCOPE_CAVEAT,
+        TACTICAL_BOUNDARY_CAVEAT,
+    ]
+
+    report = build_bullpen_identity_distribution_review(
+        dashboard_payload([item]),
+        generated_at=datetime(2026, 6, 19, tzinfo=timezone.utc),
+        expected_team_count=1,
+    )
+
+    assert 'many_caveats' not in report['teams'][0]['review_flags']
+
+    item['bullpen_identity']['caveats'].insert(
+        2,
+        'Coverage context is limited for this review.',
+    )
+    report = build_bullpen_identity_distribution_review(
+        dashboard_payload([item]),
+        generated_at=datetime(2026, 6, 19, tzinfo=timezone.utc),
+        expected_team_count=1,
+    )
+
+    assert 'many_caveats' in report['teams'][0]['review_flags']
 
 
 def test_review_output_keeps_governance_boundaries_and_no_score_leakage():

@@ -66,6 +66,14 @@ STRUCTURAL_SCOPE_CAVEAT = (
     'Identity describes bullpen structure from existing reads; daily availability can still change the board.'
 )
 TACTICAL_BOUNDARY_CAVEAT = 'This read is descriptive context only, not tactical advice.'
+CAPACITY_CONTEXT_LIMITATION_CAVEAT = (
+    'Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.'
+)
+CAPACITY_CONTEXT_CAVEATS = {
+    'Capacity uses count-based weighting because relief workload sample is limited.',
+    'Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.',
+    'Some bullpen capacity is based on limited-read or unknown availability inputs.',
+}
 
 
 def _get(mapping: dict[str, Any] | None, *keys, default=None):
@@ -94,6 +102,13 @@ def _mapping(value: Any) -> dict[str, Any]:
 
 def _list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _canonical_caveat_text(value: Any) -> str:
+    text = str(value or '').strip()
+    if text in CAPACITY_CONTEXT_CAVEATS:
+        return CAPACITY_CONTEXT_LIMITATION_CAVEAT
+    return text
 
 
 def _team_identity(capacity_intelligence: dict[str, Any]) -> dict[str, Any]:
@@ -234,9 +249,12 @@ def _flexible_distribution(evidence: dict[str, Any]) -> bool:
 def _leverage_heavy(evidence: dict[str, Any]) -> bool:
     return (
         evidence['hierarchy_confidence'] in HIERARCHY_CONFIDENCE_STRUCTURAL
-        and evidence['leverage_count'] >= 3
+        and evidence['anchor_count'] >= 1
+        and evidence['leverage_count'] >= 5
+        and evidence['trusted_count'] <= 1
         and evidence['depth_count'] <= 1
-        and evidence['trusted_group_size'] >= 3
+        and evidence['trusted_group_size'] >= 5
+        and evidence['coverage_label'] in FAVORABLE_COVERAGE_LABELS
     )
 
 
@@ -368,12 +386,12 @@ def _collect_caveats(
         ('trust_capacity_loss', 'limitations'),
     ):
         for item in _list(_get(capacity_intelligence, *path, default=[])):
-            text = str(item or '').strip()
+            text = _canonical_caveat_text(item)
             if text and text not in caveats:
                 caveats.append(text)
 
     for item in coverage_limitations:
-        text = str(item or '').strip()
+        text = _canonical_caveat_text(item)
         if text and text not in caveats:
             caveats.append(text)
 
@@ -484,6 +502,7 @@ def build_bullpen_identity(
 
 __all__ = [
     'CAPABILITY',
+    'CAPACITY_CONTEXT_LIMITATION_CAVEAT',
     'IDENTITY_DEPTH_DRIVEN',
     'IDENTITY_FLEXIBLE_DISTRIBUTION',
     'IDENTITY_FRAGILE_COVERAGE',

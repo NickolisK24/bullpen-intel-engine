@@ -2,17 +2,15 @@
   "capability": "bullpen_identity_distribution_review_v1",
   "complete_team_count": true,
   "expected_team_count": 30,
-  "generated_at": "2026-06-19T20:06:44.882677+00:00",
+  "generated_at": "2026-06-19T20:16:06.347874+00:00",
   "identity_distribution": {
     "Depth-Driven Bullpen": 3,
-    "Flexible Distribution Bullpen": 5,
-    "Leverage-Heavy Bullpen": 14,
+    "Flexible Distribution Bullpen": 10,
+    "Leverage-Heavy Bullpen": 9,
     "Resource-Strained Bullpen": 8
   },
   "non_boundary_caveat_distribution": {
-    "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.": 23,
-    "Capacity uses count-based weighting because relief workload sample is limited.": 3,
-    "Some bullpen capacity is based on limited-read or unknown availability inputs.": 1,
+    "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.": 23,
     "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.": 30
   },
   "ordering_basis": "team_name_then_team_id",
@@ -21,31 +19,19 @@
   "ranking_applied": false,
   "review_findings": {
     "high_confidence_with_incomplete_context_teams": [],
-    "overrepresented_identity_labels": [
-      "Leverage-Heavy Bullpen"
-    ],
+    "overrepresented_identity_labels": [],
     "overrepresented_identity_threshold": 0.45,
     "repeated_non_boundary_caveat_threshold": 0.5,
     "repeated_non_boundary_caveats": [
-      "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+      "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
       "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data."
     ],
     "teams_for_human_review": [
       {
-        "identity_label": "Leverage-Heavy Bullpen",
-        "review_flags": [
-          "many_caveats"
-        ],
-        "team_abbreviation": "AZ",
-        "team_id": 109,
-        "team_name": "Arizona Diamondbacks"
-      },
-      {
         "identity_label": "Resource-Strained Bullpen",
         "review_flags": [
           "thin_or_resource_strained_identity",
-          "coverage_needs_review",
-          "many_caveats"
+          "coverage_needs_review"
         ],
         "team_abbreviation": "ATL",
         "team_id": 144,
@@ -55,8 +41,7 @@
         "identity_label": "Resource-Strained Bullpen",
         "review_flags": [
           "thin_or_resource_strained_identity",
-          "coverage_needs_review",
-          "many_caveats"
+          "coverage_needs_review"
         ],
         "team_abbreviation": "CHC",
         "team_id": 112,
@@ -116,8 +101,7 @@
         "identity_label": "Resource-Strained Bullpen",
         "review_flags": [
           "thin_or_resource_strained_identity",
-          "coverage_needs_review",
-          "many_caveats"
+          "coverage_needs_review"
         ],
         "team_abbreviation": "TOR",
         "team_id": 141,
@@ -138,8 +122,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
-        "Capacity uses count-based weighting because relief workload sample is limited.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -167,9 +150,7 @@
       "identity_key": "leverage_heavy",
       "identity_label": "Leverage-Heavy Bullpen",
       "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
-      "review_flags": [
-        "many_caveats"
-      ],
+      "review_flags": [],
       "supporting_traits": [
         {
           "key": "capacity_shape",
@@ -223,9 +204,9 @@
           "unknown_count": 3
         }
       },
-      "identity_key": "leverage_heavy",
-      "identity_label": "Leverage-Heavy Bullpen",
-      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
       "review_flags": [],
       "supporting_traits": [
         {
@@ -246,7 +227,7 @@
         },
         {
           "key": "identity_reason",
-          "text": "Leverage arms carry much of the bullpen shape."
+          "text": "Usable capacity is spread across several structural lanes."
         }
       ],
       "team_abbreviation": "ATH",
@@ -256,8 +237,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
-        "Capacity uses count-based weighting because relief workload sample is limited.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -287,8 +267,7 @@
       "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
       "review_flags": [
         "thin_or_resource_strained_identity",
-        "coverage_needs_review",
-        "many_caveats"
+        "coverage_needs_review"
       ],
       "supporting_traits": [
         {
@@ -319,7 +298,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -434,8 +413,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
-        "Capacity uses count-based weighting because relief workload sample is limited.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -465,8 +443,7 @@
       "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
       "review_flags": [
         "thin_or_resource_strained_identity",
-        "coverage_needs_review",
-        "many_caveats"
+        "coverage_needs_review"
       ],
       "supporting_traits": [
         {
@@ -497,7 +474,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -615,7 +592,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -673,7 +650,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -731,7 +708,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -756,9 +733,9 @@
           "unknown_count": 8
         }
       },
-      "identity_key": "leverage_heavy",
-      "identity_label": "Leverage-Heavy Bullpen",
-      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
       "review_flags": [],
       "supporting_traits": [
         {
@@ -779,7 +756,7 @@
         },
         {
           "key": "identity_reason",
-          "text": "Leverage arms carry much of the bullpen shape."
+          "text": "Usable capacity is spread across several structural lanes."
         }
       ],
       "team_abbreviation": "DET",
@@ -849,7 +826,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -907,7 +884,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -965,7 +942,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1023,7 +1000,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1081,7 +1058,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1106,9 +1083,9 @@
           "unknown_count": 7
         }
       },
-      "identity_key": "leverage_heavy",
-      "identity_label": "Leverage-Heavy Bullpen",
-      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
       "review_flags": [],
       "supporting_traits": [
         {
@@ -1129,7 +1106,7 @@
         },
         {
           "key": "identity_reason",
-          "text": "Leverage arms carry much of the bullpen shape."
+          "text": "Usable capacity is spread across several structural lanes."
         }
       ],
       "team_abbreviation": "MIL",
@@ -1196,7 +1173,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1311,7 +1288,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1336,9 +1313,9 @@
           "unknown_count": 7
         }
       },
-      "identity_key": "leverage_heavy",
-      "identity_label": "Leverage-Heavy Bullpen",
-      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
       "review_flags": [],
       "supporting_traits": [
         {
@@ -1359,7 +1336,7 @@
         },
         {
           "key": "identity_reason",
-          "text": "Leverage arms carry much of the bullpen shape."
+          "text": "Usable capacity is spread across several structural lanes."
         }
       ],
       "team_abbreviation": "PHI",
@@ -1369,7 +1346,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1430,7 +1407,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1491,7 +1468,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1549,7 +1526,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1667,7 +1644,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1692,9 +1669,9 @@
           "unknown_count": 10
         }
       },
-      "identity_key": "leverage_heavy",
-      "identity_label": "Leverage-Heavy Bullpen",
-      "identity_summary": "Leverage-Heavy Bullpen: the structure is built around multiple leverage arms more than broad depth.",
+      "identity_key": "flexible_distribution",
+      "identity_label": "Flexible Distribution Bullpen",
+      "identity_summary": "Flexible Distribution Bullpen: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.",
       "review_flags": [],
       "supporting_traits": [
         {
@@ -1715,7 +1692,7 @@
         },
         {
           "key": "identity_reason",
-          "text": "Leverage arms carry much of the bullpen shape."
+          "text": "Usable capacity is spread across several structural lanes."
         }
       ],
       "team_abbreviation": "TB",
@@ -1725,7 +1702,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1783,8 +1760,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
-        "Some bullpen capacity is based on limited-read or unknown availability inputs.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],
@@ -1814,8 +1790,7 @@
       "identity_summary": "Resource-Strained Bullpen: the active group may still have usable pieces, but the broader resource pool is thinner than normal.",
       "review_flags": [
         "thin_or_resource_strained_identity",
-        "coverage_needs_review",
-        "many_caveats"
+        "coverage_needs_review"
       ],
       "supporting_traits": [
         {
@@ -1846,7 +1821,7 @@
     {
       "caveats": [
         "Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.",
-        "Capacity uses count-based weighting because one or more unavailable bullpen arms have limited relief workload history.",
+        "Capacity context uses conservative weighting because relief workload or availability coverage is limited for this group.",
         "Identity describes bullpen structure from existing reads; daily availability can still change the board.",
         "This read is descriptive context only, not tactical advice."
       ],

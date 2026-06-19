@@ -1,7 +1,12 @@
 import json
 
+from services.bullpen_capacity import (
+    COUNT_BASED_LIMITATION,
+    UNAVAILABLE_ZERO_OUTS_LIMITATION,
+)
 from services.bullpen_identity import (
     CAPABILITY,
+    CAPACITY_CONTEXT_LIMITATION_CAVEAT,
     IDENTITY_DEPTH_DRIVEN,
     IDENTITY_FLEXIBLE_DISTRIBUTION,
     IDENTITY_FRAGILE_COVERAGE,
@@ -27,6 +32,8 @@ def capacity_payload(
     top_available=1,
     trust_unavailable=0,
     hierarchy_confidence='high',
+    capacity_loss_limitations=None,
+    trust_limitations=None,
 ):
     return {
         'capability': 'bullpen_capacity_intelligence_v1',
@@ -56,6 +63,7 @@ def capacity_payload(
             'trusted_group_size': anchor + leverage + trusted,
             'top_trust_bucket_available_count': top_available,
             'hierarchy_confidence': hierarchy_confidence,
+            'limitations': list(trust_limitations or []),
         },
         'trust_capacity_loss': {
             'trust_arms_unavailable': trust_unavailable,
@@ -63,7 +71,7 @@ def capacity_payload(
         },
         'capacity_loss': {
             'status': 'clear',
-            'limitations': [],
+            'limitations': list(capacity_loss_limitations or []),
         },
     }
 
@@ -118,6 +126,40 @@ def test_flexible_distribution_identity_uses_broad_usable_lanes():
     assert 'several usable lanes' in result['identity_summary']
 
 
+def test_true_leverage_heavy_identity_requires_anchor_and_narrow_depth():
+    result = build_bullpen_identity(capacity_payload(
+        active=8,
+        clean=5,
+        anchor=1,
+        leverage=5,
+        trusted=1,
+        depth=1,
+        top_available=1,
+    ))
+
+    assert result['identity_key'] == IDENTITY_LEVERAGE_HEAVY
+    assert result['identity_label'] == 'Leverage-Heavy Bullpen'
+    assert any(
+        'Leverage arms carry much of the bullpen shape' in trait['text']
+        for trait in result['supporting_traits']
+    )
+
+
+def test_normal_hierarchy_does_not_automatically_become_leverage_heavy():
+    result = build_bullpen_identity(capacity_payload(
+        active=8,
+        clean=5,
+        anchor=1,
+        leverage=3,
+        trusted=2,
+        depth=1,
+        top_available=1,
+    ))
+
+    assert result['identity_key'] == IDENTITY_FLEXIBLE_DISTRIBUTION
+    assert result['identity_label'] == 'Flexible Distribution Bullpen'
+
+
 def test_resource_strained_identity_keeps_pool_strain_separate_from_coverage():
     result = build_bullpen_identity(capacity_payload(
         capacity_state='reduced',
@@ -135,7 +177,7 @@ def test_resource_strained_identity_keeps_pool_strain_separate_from_coverage():
     assert any('broader resource pool is strained' in trait['text'] for trait in result['supporting_traits'])
 
 
-def test_resource_strain_does_not_override_healthy_usable_structure():
+def test_resource_strain_does_not_overfire_on_healthy_usable_structure():
     result = build_bullpen_identity(capacity_payload(
         resource_state='strained',
         active=8,
@@ -146,8 +188,8 @@ def test_resource_strain_does_not_override_healthy_usable_structure():
         depth=1,
     ))
 
-    assert result['identity_key'] == IDENTITY_LEVERAGE_HEAVY
-    assert result['identity_label'] == 'Leverage-Heavy Bullpen'
+    assert result['identity_key'] == IDENTITY_FLEXIBLE_DISTRIBUTION
+    assert result['identity_label'] == 'Flexible Distribution Bullpen'
     assert any('Resource health is strained' in trait['text'] for trait in result['supporting_traits'])
 
 
@@ -186,6 +228,27 @@ def test_unknown_identity_fails_closed_for_missing_or_unknown_context():
     assert missing['confidence'] == 'none'
     assert unknown['identity_key'] == IDENTITY_UNKNOWN
     assert unknown['confidence'] == 'low'
+
+
+def test_identity_consolidates_repeated_capacity_context_caveats():
+    result = build_bullpen_identity(capacity_payload(
+        capacity_loss_limitations=[
+            COUNT_BASED_LIMITATION,
+            UNAVAILABLE_ZERO_OUTS_LIMITATION,
+            'Some bullpen capacity is based on limited-read or unknown availability inputs.',
+        ],
+        trust_limitations=[
+            'Trust Hierarchy uses conservative buckets because one or more bullpen resources have limited role or availability data.',
+        ],
+    ))
+
+    assert result['caveats'].count(CAPACITY_CONTEXT_LIMITATION_CAVEAT) == 1
+    assert COUNT_BASED_LIMITATION not in result['caveats']
+    assert UNAVAILABLE_ZERO_OUTS_LIMITATION not in result['caveats']
+    assert (
+        'Some bullpen capacity is based on limited-read or unknown availability inputs.'
+        not in result['caveats']
+    )
 
 
 def test_story_facts_expose_identity_without_changing_story_selection_inputs():

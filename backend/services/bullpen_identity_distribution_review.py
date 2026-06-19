@@ -170,12 +170,20 @@ def _incomplete_context(identity: dict[str, Any], context: dict[str, Any]) -> bo
     )
 
 
+def _non_boundary_caveat_count(identity: dict[str, Any]) -> int:
+    return sum(
+        1
+        for caveat in identity.get('caveats') or []
+        if caveat not in {STRUCTURAL_SCOPE_CAVEAT, TACTICAL_BOUNDARY_CAVEAT}
+    )
+
+
 def _team_review_flags(identity: dict[str, Any], context: dict[str, Any]) -> list[str]:
     flags = []
     identity_key = identity.get('identity_key')
     confidence = _norm(identity.get('confidence'))
     coverage_label = _get(context, 'coverage_safety', 'label')
-    caveat_count = len(identity.get('caveats') or [])
+    caveat_count = _non_boundary_caveat_count(identity)
 
     if identity_key == IDENTITY_UNKNOWN:
         flags.append('unknown_identity')
@@ -185,7 +193,7 @@ def _team_review_flags(identity: dict[str, Any], context: dict[str, Any]) -> lis
         flags.append('thin_or_resource_strained_identity')
     if not coverage_label or coverage_label in {LABEL_LIMITED_READ, LABEL_LIMITED, LABEL_THIN}:
         flags.append('coverage_needs_review')
-    if caveat_count > 4:
+    if caveat_count > 2:
         flags.append('many_caveats')
     if confidence == 'high' and _incomplete_context(identity, context):
         flags.append('high_confidence_with_incomplete_context')
