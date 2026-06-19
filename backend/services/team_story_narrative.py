@@ -56,6 +56,14 @@ INTERNAL_TAXONOMY_TERMS = (
     'fatigue score',
     'confidence score',
     'pressure source',
+    'capacity state',
+    'resource health',
+    'coverage safety',
+    'trust hierarchy',
+    'role_change_detection',
+    'ranking_applied',
+    'selection_made',
+    'prediction_applied',
     'workload pattern is',
     ARCHETYPE_WORKLOAD_CONCENTRATION,
     ARCHETYPE_THIN_TRUSTED_GROUP,
@@ -133,6 +141,8 @@ def _stable_seed(facts: dict[str, Any], namespace: str) -> str:
         'environment_context': facts.get('environment_context'),
         'watch_question': facts.get('watch_question'),
     }
+    if facts.get('bullpen_context'):
+        payload['bullpen_context'] = facts.get('bullpen_context')
     return json.dumps(payload, sort_keys=True, default=str)
 
 
@@ -240,6 +250,7 @@ def _all_fact_text(facts: dict[str, Any]) -> str:
         facts.get('rotation_context'),
         facts.get('stability_context'),
         facts.get('environment_context'),
+        facts.get('bullpen_context'),
         facts.get('watch_question'),
     ]
     return ' '.join(_public_language(value).lower() for value in values if value)
@@ -506,6 +517,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
 
 def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]:
     metric = _metric_sentence(facts, archetype)
+    bullpen_context = facts.get('bullpen_context')
     pools: dict[str, list[_SentenceBuilder]] = {
         ARCHETYPE_WORKLOAD_CONCENTRATION: [
             lambda f: "That makes the story less about the full bullpen count and more about how tightly the work has collected.",
@@ -555,6 +567,7 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
     }
     return [
         metric,
+        bullpen_context,
         _sentence(_choose(facts, f'{archetype}:middle', pools[archetype])),
     ]
 

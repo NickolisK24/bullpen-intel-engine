@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.story_context_integration import build_story_context_integration
+
 
 CAPABILITY = 'story_fact_layer_v1'
 VERSION = '2026-06-18'
@@ -257,6 +259,7 @@ def build_story_facts(
 
     context_items = _context_items(beats)
     disclosure = _disclosure(inputs, context_items)
+    bullpen_context = build_story_context_integration(rule_key, inputs, lead=lead)
     facts = {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -269,6 +272,8 @@ def build_story_facts(
         'rotation_context': _context_text(context_items, 'rotation_support_pressure'),
         'stability_context': _context_text(context_items, 'bullpen_stability'),
         'environment_context': _context_text(context_items, 'bullpen_environment'),
+        'bullpen_context': bullpen_context.get('text'),
+        'bullpen_context_integration': bullpen_context,
         'watch_question': _watch_question(rule_key, lead),
         'confidence': 'limited' if disclosure else 'supported',
         'disclosure': disclosure,

@@ -1740,6 +1740,7 @@ def assemble_story(rule_key, inputs, lead=None):
         'source_limitations_present': bool((why_context or {}).get('source_limitations_present')),
     }
     story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
+    story_context_meta = story_facts.get('bullpen_context_integration') or {}
     narrative = render_story_narrative(story_facts)
     story = {
         'story_id': f"{team.get('team_id')}:{rule_key}",
@@ -1811,6 +1812,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'rotation_support_pressure': inputs.get('rotation_support_pressure') or {},
             'bullpen_stability': inputs.get('bullpen_stability') or {},
             'bullpen_environment': inputs.get('bullpen_environment') or {},
+            'story_context_integration': story_context_meta,
             'high_risk_arms': inputs['high_risk_arms'],
             'high_risk_arm_count': inputs['high_risk_arms'],
             'high_risk_arm_names': [

@@ -14,6 +14,7 @@ from services.four_beat_stories import (
     LEAD_FATIGUE_LOAD,
     LEAD_TRUST_LANE_ABSENCE,
     LEAD_TRUST_LANE_DEPTH,
+    LEAD_TRUST_LANE_SHALLOW,
     LEAD_WORKLOAD_LIGHT,
     RULE_HIDDEN_CAPACITY_LOSS,
     RULE_PRESSURE_DISTRIBUTION,
@@ -315,6 +316,76 @@ def _capacity_context(status='elevated', *, unavailable_pct=32, limitations=None
             },
         }
     }
+
+
+def _foundation_capacity_context(
+    *,
+    capacity_state='healthy',
+    resource_state='moderate',
+    active=8,
+    clean=5,
+    anchor=1,
+    leverage=2,
+    trusted=2,
+    trusted_group=5,
+    top_available=1,
+    hierarchy_confidence='high',
+    trust_unavailable=0,
+):
+    restricted = max(active - clean, 0)
+    return {
+        1: {
+            'capability': 'bullpen_capacity_intelligence_v1',
+            'resource_health': {
+                'capacity_state': capacity_state,
+                'resource_health_state': resource_state,
+                'active_reliever_count': active,
+                'bullpen_capacity': {
+                    'capacity_state': capacity_state,
+                    'active_reliever_count': active,
+                    'active_restricted_reliever_count': restricted,
+                    'clean_active_reliever_count': clean,
+                },
+                'organizational_resource_health': {
+                    'resource_health_state': resource_state,
+                },
+            },
+            'trust_hierarchy': {
+                'anchor_count': anchor,
+                'leverage_count': leverage,
+                'trusted_count': trusted,
+                'depth_count': 2,
+                'unknown_count': 0,
+                'trusted_group_size': trusted_group,
+                'top_trust_bucket_available_count': top_available,
+                'hierarchy_confidence': hierarchy_confidence,
+            },
+            'capacity_loss': {
+                'status': 'clear',
+                'unavailable_capacity_pct': 0,
+                'unknown_limited_read_capacity_pct': 0,
+                'limitations': [],
+            },
+            'trust_capacity_loss': {
+                'status': 'clear',
+                'trust_arms_available': max(anchor + leverage - trust_unavailable, 0),
+                'trust_arms_total': anchor + leverage,
+                'trust_arms_unavailable': trust_unavailable,
+                'trust_capacity_unavailable_pct': 0,
+                'limitations': [],
+            },
+        }
+    }
+
+
+def _broad_light_team_inputs(**kwargs):
+    pitchers = [_pitcher(idx, f'Flexible Arm {idx}') for idx in range(1, 9)]
+    records = [_record(pitcher, STATUS_AVAILABLE) for pitcher in pitchers]
+    logs = {
+        pitcher.id: [_log(pitcher.id, 1, 10)]
+        for pitcher in pitchers
+    }
+    return _team_inputs(records, logs, **kwargs)
 
 
 def _rotation_context(status='heavy_pressure', *, limitations=None, games_analyzed=5):
@@ -857,6 +928,122 @@ def test_public_narrative_avoids_forbidden_labels_and_internal_taxonomy():
         'the thing to watch next is whether',
     ):
         assert forbidden.lower() not in lower
+
+
+def test_story_context_adds_resource_pool_context_without_state_labels():
+    team_inputs = _broad_light_team_inputs(
+        capacity_by_team=_foundation_capacity_context(
+            capacity_state='healthy',
+            resource_state='strained',
+            active=8,
+            clean=5,
+            anchor=1,
+            leverage=2,
+            trusted_group=5,
+        ),
+    )
+    inputs = compute_team_story_inputs(team_inputs)
+    story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert story['computed']['story_context_integration']['applied'] is True
+    assert story['computed']['story_context_integration']['reason'] == (
+        'top_structure_with_resource_strain'
+    )
+    assert 'larger resource pool under strain' in narrative
+    assert narrative_contains_forbidden_language(narrative) is False
+    for leaked in (
+        'capacity state',
+        'resource health',
+        'coverage safety',
+        'trust hierarchy',
+        'role_change_detection',
+        'ranking_applied',
+        'selection_made',
+        'prediction_applied',
+    ):
+        assert leaked not in lower
+
+
+def test_story_context_adds_clean_trusted_lane_context_when_narrow():
+    team_inputs = _thin_concentrated_team_inputs(
+        capacity_by_team=_foundation_capacity_context(
+            capacity_state='reduced',
+            resource_state='moderate',
+            active=7,
+            clean=4,
+            anchor=0,
+            leverage=1,
+            trusted=2,
+            trusted_group=3,
+            top_available=1,
+        ),
+    )
+    inputs = compute_team_story_inputs(team_inputs)
+    inputs['clean_options'] = [
+        {'pitcher_id': idx, 'name': f'Clean Arm {idx}'}
+        for idx in range(1, 5)
+    ]
+    inputs['clean_trust_options'] = [
+        {'pitcher_id': 1, 'name': 'Clean Arm 1'}
+    ]
+    story = assemble_story(
+        RULE_STRESS_TRANSFER,
+        inputs,
+        lead={
+            'dimension': LEAD_TRUST_LANE_SHALLOW,
+            'signal_skeleton_key': f'lead_signal:{LEAD_TRUST_LANE_SHALLOW}',
+            'evidence_skeleton_key': f'lead_evidence:{LEAD_TRUST_LANE_SHALLOW}',
+        },
+    )
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert story['computed']['story_context_integration']['applied'] is True
+    assert story['computed']['story_context_integration']['reason'] == (
+        'clean_trusted_lane_narrow'
+    )
+    assert 'even where arms are available, the clean trusted lane is narrow' in lower
+    assert 'should pitch' not in lower
+    assert 'recommend' not in lower
+    assert narrative_contains_forbidden_language(narrative) is False
+
+
+def test_story_context_ignores_insufficient_role_change_history_publicly():
+    team_inputs = _broad_light_team_inputs(
+        capacity_by_team=_foundation_capacity_context(
+            capacity_state='healthy',
+            resource_state='strained',
+            active=8,
+            clean=5,
+            anchor=1,
+            leverage=2,
+            trusted_group=5,
+        ),
+    )
+    inputs = compute_team_story_inputs(team_inputs)
+    inputs['role_change_detection'] = {'status': 'insufficient_history'}
+    story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+    narrative = story['narrative']
+    lower = narrative.lower()
+
+    assert story['computed']['story_context_integration']['applied'] is True
+    assert 'insufficient_history' not in lower
+    assert 'insufficient history' not in lower
+    assert 'role change' not in lower
+    assert 'role_change_detection' not in lower
+
+
+def test_story_context_renderer_still_works_without_new_intelligence_fields():
+    team_inputs = _broad_light_team_inputs()
+    inputs = compute_team_story_inputs(team_inputs)
+    story = assemble_story(RULE_PRESSURE_DISTRIBUTION, inputs)
+
+    assert story['story_facts']['bullpen_context'] is None
+    assert story['computed']['story_context_integration']['applied'] is False
+    assert story['narrative']
+    assert narrative_contains_forbidden_language(story['narrative']) is False
 
 
 def _sample_story_facts(
