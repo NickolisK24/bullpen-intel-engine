@@ -8,8 +8,18 @@ import re
 from typing import Any, Callable
 
 
-CAPABILITY = 'team_story_narrative_renderer_v2'
-VERSION = '2026-06-18.v2'
+CAPABILITY = 'team_story_narrative_renderer_v3'
+VERSION = '2026-06-18.v3'
+
+ARCHETYPE_WORKLOAD_CONCENTRATION = 'workload_concentration'
+ARCHETYPE_THIN_TRUSTED_GROUP = 'thin_trusted_group'
+ARCHETYPE_CAPACITY_CONSTRAINT = 'capacity_constraint'
+ARCHETYPE_ROTATION_SPILLOVER = 'rotation_spillover'
+ARCHETYPE_STABILITY_EROSION = 'stability_erosion'
+ARCHETYPE_STABILITY_RECOVERY = 'stability_recovery'
+ARCHETYPE_MULTI_SOURCE_PRESSURE = 'multi_source_pressure'
+ARCHETYPE_FLEXIBLE_BULLPEN = 'flexible_bullpen'
+ARCHETYPE_RUN_PREVENTION_MASK = 'run_prevention_mask'
 
 FORBIDDEN_PUBLIC_LABELS = (
     'Signal',
@@ -47,6 +57,15 @@ INTERNAL_TAXONOMY_TERMS = (
     'confidence score',
     'pressure source',
     'workload pattern is',
+    ARCHETYPE_WORKLOAD_CONCENTRATION,
+    ARCHETYPE_THIN_TRUSTED_GROUP,
+    ARCHETYPE_CAPACITY_CONSTRAINT,
+    ARCHETYPE_ROTATION_SPILLOVER,
+    ARCHETYPE_STABILITY_EROSION,
+    ARCHETYPE_STABILITY_RECOVERY,
+    ARCHETYPE_MULTI_SOURCE_PRESSURE,
+    ARCHETYPE_FLEXIBLE_BULLPEN,
+    ARCHETYPE_RUN_PREVENTION_MASK,
 )
 
 _SentenceBuilder = Callable[[dict[str, Any]], str]
@@ -54,15 +73,6 @@ _SentenceBuilder = Callable[[dict[str, Any]], str]
 
 def _clean_text(value: Any) -> str:
     return ' '.join(str(value or '').strip().split())
-
-
-def _sentence(value: Any) -> str | None:
-    text = _public_language(value)
-    if not text:
-        return None
-    if text[-1] not in '.!?':
-        text = f'{text}.'
-    return text
 
 
 def _public_language(value: Any) -> str:
@@ -90,6 +100,15 @@ def _public_language(value: Any) -> str:
     return text
 
 
+def _sentence(value: Any) -> str | None:
+    text = _public_language(value)
+    if not text:
+        return None
+    if text[-1] not in '.!?':
+        text = f'{text}.'
+    return text
+
+
 def _stable_seed(facts: dict[str, Any], namespace: str) -> str:
     team = facts.get('team') or {}
     payload = {
@@ -101,6 +120,10 @@ def _stable_seed(facts: dict[str, Any], namespace: str) -> str:
         'supporting_context': facts.get('supporting_context'),
         'pressure_source': facts.get('pressure_source'),
         'workload_pattern': facts.get('workload_pattern'),
+        'capacity_context': facts.get('capacity_context'),
+        'rotation_context': facts.get('rotation_context'),
+        'stability_context': facts.get('stability_context'),
+        'environment_context': facts.get('environment_context'),
         'watch_question': facts.get('watch_question'),
     }
     return json.dumps(payload, sort_keys=True, default=str)
@@ -136,6 +159,34 @@ def _possessive_team(facts: dict[str, Any]) -> str:
     return f"{team}'" if team.endswith('s') else f"{team}'s"
 
 
+def _all_fact_text(facts: dict[str, Any]) -> str:
+    values = [
+        facts.get('primary_observation'),
+        facts.get('supporting_context'),
+        facts.get('pressure_source'),
+        facts.get('workload_pattern'),
+        facts.get('capacity_context'),
+        facts.get('rotation_context'),
+        facts.get('stability_context'),
+        facts.get('environment_context'),
+        facts.get('watch_question'),
+    ]
+    return ' '.join(_public_language(value).lower() for value in values if value)
+
+
+def _source_count(facts: dict[str, Any]) -> int:
+    return sum(
+        1
+        for key in (
+            'capacity_context',
+            'rotation_context',
+            'stability_context',
+            'environment_context',
+        )
+        if facts.get(key)
+    )
+
+
 def _tail_after_whether(text: Any) -> str | None:
     sentence = _public_language(text)
     match = re.search(
@@ -149,341 +200,292 @@ def _tail_after_whether(text: Any) -> str | None:
     return tail[0].lower() + tail[1:] if tail else None
 
 
-def _all_fact_text(facts: dict[str, Any]) -> str:
-    values = [
-        facts.get('primary_observation'),
-        facts.get('supporting_context'),
-        facts.get('pressure_source'),
-        facts.get('workload_pattern'),
-        facts.get('capacity_context'),
-        facts.get('rotation_context'),
-        facts.get('stability_context'),
-        facts.get('environment_context'),
-    ]
-    return ' '.join(_public_language(value).lower() for value in values if value)
-
-
-def _opening_family(facts: dict[str, Any]) -> str:
+def _clustered_workload_parts(facts: dict[str, Any]) -> tuple[str, str] | None:
     text = _all_fact_text(facts)
-    if facts.get('environment_context'):
-        return 'environment'
-    if 'season run-prevention' in text or 'run prevention' in text:
-        return 'run_prevention'
-    if facts.get('capacity_context') or 'thin usable layer' in text or ('only ' in text and ' available' in text):
-        return 'capacity'
+    match = re.search(r'top\s+(\d+)\s+relievers?.*?(?:handled|taken|taking)\s+(\d+)%', text)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _broad_workload_parts(facts: dict[str, Any]) -> tuple[str, str | None] | None:
+    text = _all_fact_text(facts)
+    match = re.search(r'spread across\s+(\d+)\s+relievers?.*?averaging\s+([\d.]+)\s+pitches', text)
+    if match:
+        return match.group(1), match.group(2)
+    shared = re.search(r'(\d+)\s+relievers have shared.*?(?:at|around)\s+([\d.]+)\s+pitches', text)
+    if shared:
+        return shared.group(1), shared.group(2)
+    involved = re.search(r'(\d+)\s+relievers? (?:have been involved|carrying|shared)', text)
+    if involved:
+        return involved.group(1), None
+    return None
+
+
+def _availability_parts(facts: dict[str, Any]) -> tuple[str, str] | None:
+    text = _all_fact_text(facts)
+    match = re.search(r'(\d+)\s+of\s+(\d+)\s+(?:bullpen\s+)?arms are available', text)
+    if match:
+        return match.group(1), match.group(2)
+    match = re.search(r'only\s+(\d+)\s+of\s+(\d+)\s+(?:bullpen\s+)?arms are available', text)
+    if match:
+        return match.group(1), match.group(2)
+    return None
+
+
+def select_story_archetype(facts: dict[str, Any]) -> str:
+    """Select the internal narrative family from already-normalized story facts."""
+
+    text = _all_fact_text(facts)
+    stability = _public_language(facts.get('stability_context')).lower()
+    pressure = _public_language(facts.get('pressure_source')).lower()
+
+    if facts.get('environment_context') or _source_count(facts) >= 2:
+        return ARCHETYPE_MULTI_SOURCE_PRESSURE
+
+    run_prevention_signal = (
+        'run-prevention' in text
+        or 'run prevention' in text
+        or 'results line' in text
+        or re.search(r'\bera\b', text) is not None
+    )
+
+    if run_prevention_signal and any(marker in text for marker in (
+        'workload',
+        'usage',
+        'thin',
+        'only ',
+        'smaller set',
+        'concentrated',
+    )):
+        return ARCHETYPE_RUN_PREVENTION_MASK
+
+    if stability and any(marker in stability for marker in (
+        'more settled',
+        'settled',
+        'steadier',
+        'finding footing',
+        'same group',
+        'stable',
+        'recovery',
+    )):
+        return ARCHETYPE_STABILITY_RECOVERY
+
+    if stability:
+        return ARCHETYPE_STABILITY_EROSION
+
     if facts.get('rotation_context'):
-        return 'rotation'
-    if facts.get('stability_context'):
-        return 'stability'
-    if 'spread across' in text or 'broad' in text or 'deeper usable layer' in text:
-        return 'broad'
-    if 'trusted late-inning' in text:
-        return 'trust'
-    if 'clustered' in text or 'concentrated' in text or 'smaller set' in text or 'narrow' in text:
-        return 'narrow'
-    return 'default'
+        return ARCHETYPE_ROTATION_SPILLOVER
+
+    if 'trusted late-inning' in pressure and any(marker in pressure for marker in (
+        'do not fully line up',
+        'not fully line up',
+        'thin',
+        'shortage',
+        'scarce',
+        'absence',
+        'shallow',
+    )):
+        return ARCHETYPE_THIN_TRUSTED_GROUP
+
+    if facts.get('capacity_context') or any(marker in text for marker in (
+        'thin usable layer',
+        'thinner usable layer',
+        'fewer usable arms',
+        'short on usable arms',
+        'available group is smaller',
+        'only ',
+    )):
+        return ARCHETYPE_CAPACITY_CONSTRAINT
+
+    if any(marker in text for marker in (
+        'deeper usable layer',
+        'spread across',
+        'broad',
+        'room to maneuver',
+        'more ways',
+        'usable shape still holds',
+    )):
+        return ARCHETYPE_FLEXIBLE_BULLPEN
+
+    if any(marker in text for marker in (
+        'clustered',
+        'concentrated',
+        'smaller set',
+        'smaller group',
+        'narrow',
+        'top ',
+    )):
+        return ARCHETYPE_WORKLOAD_CONCENTRATION
+
+    return ARCHETYPE_WORKLOAD_CONCENTRATION
 
 
-def _opening_sentence(facts: dict[str, Any]) -> str | None:
-    family = _opening_family(facts)
+def _metric_sentence(facts: dict[str, Any], archetype: str) -> str | None:
+    clustered = _clustered_workload_parts(facts)
+    broad = _broad_workload_parts(facts)
+    availability = _availability_parts(facts)
+
+    if archetype == ARCHETYPE_WORKLOAD_CONCENTRATION and clustered:
+        arms, share = clustered
+        options: list[_SentenceBuilder] = [
+            lambda f: f"The recent workload backs that up: the top {arms} relievers have handled {share}% of the relief pitches in the window.",
+            lambda f: f"The usage map is tight, with {share}% of the recent relief work moving through the top {arms} relievers.",
+            lambda f: f"That concentration is visible in the pitch distribution, where the top {arms} relievers have taken {share}% of the recent work.",
+        ]
+        return _sentence(_choose(facts, f'{archetype}:metric:clustered', options))
+
+    if archetype == ARCHETYPE_CAPACITY_CONSTRAINT and availability:
+        available, total = availability
+        options = [
+            lambda f: f"The count matters here: {available} of {total} bullpen arms are available in the current read.",
+            lambda f: f"The usable layer is smaller than a full bullpen board, with {available} of {total} arms available.",
+            lambda f: f"The practical read begins with depth, because the available group is {available} of {total} arms.",
+        ]
+        return _sentence(_choose(facts, f'{archetype}:metric:availability', options))
+
+    if archetype == ARCHETYPE_FLEXIBLE_BULLPEN and broad:
+        arms, pitches = broad
+        options = [
+            lambda f: f"The recent work has been spread across {arms} relievers, which gives the bullpen more than one path through the game.",
+            lambda f: f"The shape is wider than a one-lane bullpen read, with {arms} relievers sharing the recent work.",
+            lambda f: f"That flexibility comes from distribution, with {arms} relievers involved in the recent workload.",
+        ]
+        if pitches:
+            options.append(
+                lambda f: f"The recent work has been spread across {arms} relievers at about {pitches} pitches per participating arm."
+            )
+        return _sentence(_choose(facts, f'{archetype}:metric:broad', options))
+
+    if archetype == ARCHETYPE_RUN_PREVENTION_MASK:
+        supporting = _public_language(facts.get('supporting_context'))
+        if supporting:
+            options = [
+                lambda f: "The results line belongs in the story, but the recent usage underneath it still needs its own read.",
+                lambda f: "The surface result is only half the picture; the workload trail is the part that can make a good run-prevention line feel less simple.",
+                lambda f: "The run-prevention line gives the bullpen cover, while recent usage explains why the read does not stop there.",
+            ]
+            return _sentence(_choose(facts, f'{archetype}:metric:run-prevention', options))
+
+    if clustered:
+        arms, share = clustered
+        return _sentence(f"The top {arms} relievers have handled {share}% of the recent relief work.")
+    if broad:
+        arms, pitches = broad
+        if pitches:
+            return _sentence(f"Recent relief work has been spread across {arms} relievers at about {pitches} pitches per participating arm.")
+        return _sentence(f"Recent relief work has moved through {arms} relievers.")
+    return None
+
+
+def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
     article = _article_team(facts)
     possessive = _possessive_team(facts)
-    team = _team_name(facts)
 
     pools: dict[str, list[_SentenceBuilder]] = {
-        'narrow': [
-            lambda f: f"{possessive} bullpen enters tonight with recent relief work tilted toward a smaller group.",
-            lambda f: f"For {article}, the bullpen story starts with pressure moving toward a tighter relief lane.",
-            lambda f: f"The current {team} bullpen picture starts with a narrower workload shape.",
-            lambda f: f"One of the more interesting bullpen reads tonight is how {article} is carrying recent relief work through fewer arms.",
+        ARCHETYPE_WORKLOAD_CONCENTRATION: [
+            lambda f: f"A small group is carrying most of the relief work for {article} right now.",
+            lambda f: f"{possessive} bullpen read starts with concentration, not the full arm count.",
+            lambda f: f"The workload story for {article} is about how often the same relievers are taking the ball.",
+            lambda f: f"For {article}, the bullpen story is the pull toward the same relief pocket.",
         ],
-        'broad': [
-            lambda f: f"{possessive} bullpen enters tonight with more of the recent work spread across the group.",
-            lambda f: f"For {article}, the bullpen story is a broader path through the relief mix.",
-            lambda f: f"The current {team} bullpen picture starts with a little more room to maneuver.",
-            lambda f: f"One of the cleaner bullpen reads tonight is {article} keeping the work from collapsing onto one small lane.",
+        ARCHETYPE_THIN_TRUSTED_GROUP: [
+            lambda f: f"Available innings may not be the main challenge for {article}; trusted innings are tighter.",
+            lambda f: f"{possessive} bullpen has arms to consider, but the late-inning lane is narrower.",
+            lambda f: f"For {article}, the count of usable arms does not fully answer the trust question.",
         ],
-        'capacity': [
-            lambda f: f"{possessive} bullpen enters tonight with the usable layer carrying the main tension.",
-            lambda f: f"For {article}, the bullpen story is less about the headline shape and more about how much usable depth is left.",
-            lambda f: f"The current {team} bullpen picture starts with how thin the available layer looks behind the results.",
-            lambda f: f"One of the more important bullpen reads tonight is how much room {article} has behind the first few lanes.",
+        ARCHETYPE_CAPACITY_CONSTRAINT: [
+            lambda f: f"The bullpen picture for {article} starts with fewer comfortable options than usual.",
+            lambda f: f"{possessive} relief read is a depth read before it is anything else.",
+            lambda f: f"For {article}, the tight part of the bullpen board is how quickly the usable layer thins out.",
         ],
-        'rotation': [
-            lambda f: f"{possessive} bullpen enters tonight with recent starter support adding to the relief read.",
-            lambda f: f"For {article}, the bullpen story is tied to how much of the game the pen has had to cover.",
-            lambda f: f"The current {team} bullpen picture starts with the innings that have been landing on the relief group.",
-            lambda f: f"One of the more interesting bullpen reads tonight is how starter length has shaped {possessive} relief workload.",
+        ARCHETYPE_ROTATION_SPILLOVER: [
+            lambda f: f"{possessive} bullpen has recently been asked to absorb more of the game.",
+            lambda f: f"The relief story for {article} starts before the bullpen gate opens.",
+            lambda f: f"For {article}, starter length is part of tonight's bullpen read.",
         ],
-        'stability': [
-            lambda f: f"{possessive} bullpen enters tonight with the relief mix looking less settled than a simple count suggests.",
-            lambda f: f"For {article}, the bullpen story includes how often the recent mix has shifted.",
-            lambda f: f"The current {team} bullpen picture starts with a group that has not been the same every night.",
-            lambda f: f"One of the more interesting bullpen reads tonight is how {article} has been moving innings through a changing group.",
+        ARCHETYPE_STABILITY_EROSION: [
+            lambda f: f"{possessive} bullpen picture is less settled than a simple arm count suggests.",
+            lambda f: f"For {article}, the recent relief mix has been moving around.",
+            lambda f: f"The bullpen story for {article} starts with a group that has not looked the same every night.",
         ],
-        'environment': [
-            lambda f: f"{possessive} bullpen enters tonight with more than one pressure point shaping the read.",
-            lambda f: f"For {article}, the bullpen story is not coming from just one part of the picture.",
-            lambda f: f"The current {team} bullpen picture starts with several sources tightening at once.",
-            lambda f: f"One of the more interesting bullpen reads tonight is how multiple pressures are meeting in {possessive} relief group.",
+        ARCHETYPE_STABILITY_RECOVERY: [
+            lambda f: f"{possessive} bullpen read starts with a group looking more settled in the recent usage trail.",
+            lambda f: f"For {article}, the relief picture has a little more footing than it did before.",
+            lambda f: f"{possessive} bullpen story is about a usage shape that is starting to settle.",
         ],
-        'run_prevention': [
-            lambda f: f"{possessive} bullpen enters tonight with strong results sitting next to a workload question.",
-            lambda f: f"For {article}, the bullpen story is the split between the run-prevention line and the recent relief ask.",
-            lambda f: f"The current {team} bullpen picture starts with results that look sturdier than the workload underneath.",
-            lambda f: f"One of the more interesting bullpen reads tonight is how {article} is pairing run prevention with recent usage.",
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: [
+            lambda f: f"{possessive} bullpen pressure is arriving from more than one direction.",
+            lambda f: f"For {article}, this is not a one-lane bullpen story.",
+            lambda f: f"The current bullpen read for {article} has multiple pressure points meeting at once.",
         ],
-        'trust': [
-            lambda f: f"{possessive} bullpen enters tonight with the late-inning lane carrying extra importance.",
-            lambda f: f"For {article}, the bullpen story starts with how much of the read runs through the trusted late-inning group.",
-            lambda f: f"The current {team} bullpen picture starts with the trusted lane and how much sits behind it.",
-            lambda f: f"One of the more interesting bullpen reads tonight is whether {article} has enough support behind the trusted lane.",
+        ARCHETYPE_FLEXIBLE_BULLPEN: [
+            lambda f: f"{possessive} bullpen enters tonight with room to maneuver.",
+            lambda f: f"For {article}, the useful part of the read is flexibility.",
+            lambda f: f"{possessive} bullpen picture starts with more than one workable path.",
         ],
-        'default': [
-            lambda f: f"{possessive} bullpen has a live read tonight.",
-            lambda f: f"For {article}, the bullpen story starts with the recent usage shape.",
-            lambda f: f"The current {team} bullpen picture starts with how the relief work has been distributed.",
+        ARCHETYPE_RUN_PREVENTION_MASK: [
+            lambda f: f"{possessive} results line looks sturdy, but the workload underneath still matters.",
+            lambda f: f"For {article}, good run prevention is not the whole bullpen story.",
+            lambda f: f"The first glance at {possessive} bullpen is the results; the second is the usage underneath.",
         ],
     }
-    return _sentence(_choose(facts, f'opening:{family}', pools[family]))
+    return _sentence(_choose(facts, f'{archetype}:opening', pools[archetype])) or ''
 
 
-def _supporting_context_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('supporting_context'))
-    if not text:
-        return None
-    lower = text.lower()
-    clustered = re.search(
-        r'top\s+(\d+)\s+relievers?.*?handled\s+(\d+)%.*?while\s+(\d+)\s+of\s+(\d+)\s+bullpen arms are available',
-        lower,
-    )
-    if clustered:
-        top_arms, top_share, available, total = clustered.groups()
-        options: list[_SentenceBuilder] = [
-            lambda f: (
-                f"The recent innings have not been spread evenly: the top {top_arms} "
-                f"relievers have handled {top_share}% of the relief pitches, with {available} "
-                f"of {total} arms available."
-            ),
-            lambda f: (
-                f"That read is rooted in distribution, with {top_share}% of recent relief "
-                f"work going to the top {top_arms} relievers and {available} of {total} "
-                "arms available."
-            ),
-            lambda f: (
-                f"The underlying shape is tight: {available} of {total} arms are available, "
-                f"and the top {top_arms} relievers have taken {top_share}% of the recent relief work."
-            ),
-        ]
-        return _sentence(_choose(facts, 'supporting:clustered', options))
-
-    broad = re.search(
-        r'spread across\s+(\d+)\s+relievers?.*?averaging\s+([\d.]+)\s+pitches',
-        lower,
-    )
-    if broad:
-        participants, per_arm = broad.groups()
-        options = [
-            lambda f: (
-                f"The base of the read is distribution: {participants} relievers have shared "
-                f"the work at about {per_arm} pitches per participating arm."
-            ),
-            lambda f: (
-                f"That comes from a wider workload map, with {participants} relievers involved "
-                f"and no single arm carrying the whole recent picture."
-            ),
-            lambda f: (
-                f"The recent work has been more spread out, with {participants} relievers "
-                f"averaging {per_arm} pitches apiece in the window."
-            ),
-        ]
-        return _sentence(_choose(facts, 'supporting:broad', options))
-
-    if 'season run prevention' in lower or 'run prevention' in lower:
-        options = [
-            lambda f: "That read is grounded in the split between the results line and the recent workload ask.",
-            lambda f: "The results line is part of the story, but the recent usage still has to be read on its own.",
-            lambda f: "The run-prevention line gives the bullpen some cover, while the workload trail explains why the read is not finished there.",
-        ]
-        return _sentence(_choose(facts, 'supporting:run_prevention', options))
-
-    return _sentence(text)
-
-
-def _pressure_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('pressure_source'))
-    if not text:
-        return None
-    lower = text.lower()
-    if 'heavier usage flag' in lower or 'heavier workload flag' in lower:
-        options = [
-            lambda f: "The heavier part of the read is recent work landing on arms that already carry a larger usage marker.",
-            lambda f: "A lot of the strain sits in the same place: the recent workload has found arms that were already carrying more.",
-            lambda f: "The workload trail matters here because some of the same arms are already on the heavier side of the usage read.",
-        ]
-        return _sentence(_choose(facts, 'pressure:fatigue', options))
-    if 'trusted late-inning layer' in lower:
-        options = [
-            lambda f: "The late-inning layer is doing more of the explaining, especially where the trusted group and the usable group do not fully overlap.",
-            lambda f: "Part of the squeeze is late-inning trust: the cleanest lane is not as wide as the full bullpen count.",
-            lambda f: "The read tightens around the trusted lane, where usable arms and high-leverage comfort are not the same thing.",
-        ]
-        return _sentence(_choose(facts, 'pressure:trust', options))
-    if 'concentrated' in lower or 'smaller set' in lower or 'smaller usable group' in lower:
-        options = [
-            lambda f: "The recent work has been gathering around fewer relievers, which makes the board feel tighter than the raw arm count.",
-            lambda f: "The shape is coming from concentration: the same part of the bullpen has been asked to absorb a larger share.",
-            lambda f: "The narrow lane is the point, with recent innings finding a smaller group more often.",
-        ]
-        return _sentence(_choose(facts, 'pressure:concentration', options))
-    if 'spread across more' in lower or 'workload distribution' in lower:
-        options = [
-            lambda f: "The shape is coming from distribution rather than one narrow lane.",
-            lambda f: "What backs the read is the way recent work has moved through more of the group.",
-            lambda f: "The workload map is doing the work here, with more relievers involved in the recent path.",
-        ]
-        return _sentence(_choose(facts, 'pressure:distribution', options))
-    if 'thinner usable layer' in lower or 'usable depth' in lower:
-        options = [
-            lambda f: "The pinch point is usable depth behind the late-inning plan.",
-            lambda f: "The available layer is the part that makes the read tighter.",
-            lambda f: "The bullpen count is less important than how many of those arms look usable right now.",
-        ]
-        return _sentence(_choose(facts, 'pressure:capacity', options))
-    if 'deeper usable layer' in lower:
-        options = [
-            lambda f: "The useful part of the read is the depth behind the late-inning plan.",
-            lambda f: "There is more room in the usable layer than the average stressed bullpen read.",
-            lambda f: "The board has more than one path because the usable layer is not as thin.",
-        ]
-        return _sentence(_choose(facts, 'pressure:depth', options))
-    if 'run-prevention' in lower or 'run prevention' in lower:
-        options = [
-            lambda f: "The results line belongs in the read, but it does not erase the workload picture.",
-            lambda f: "Run prevention is part of the story, while recent usage explains why the bullpen still needs a closer look.",
-            lambda f: "The season line gives the bullpen one kind of cushion; the recent workload gives it another kind of question.",
-        ]
-        return _sentence(_choose(facts, 'pressure:run_prevention', options))
-    return _sentence(text)
-
-
-def _workload_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('workload_pattern'))
-    if not text:
-        return None
-    lower = text.lower()
-    narrow = re.search(r'top\s+(\d+)\s+relievers?.*?taken\s+(\d+)%', lower)
-    if narrow:
-        top_arms, top_share = narrow.groups()
-        options: list[_SentenceBuilder] = [
-            lambda f: f"That concentration shows up in the workload ledger, with the top {top_arms} relievers taking {top_share}% of the recent relief work.",
-            lambda f: f"The usage trail is narrow enough to matter: {top_share}% of the recent work has gone through the top {top_arms} relievers.",
-            lambda f: f"That is a smaller-lane workload shape, with the top {top_arms} relievers absorbing {top_share}% of the recent relief work.",
-        ]
-        return _sentence(_choose(facts, 'workload:narrow', options))
-
-    broad = re.search(r'(\d+)\s+relievers have shared.*?([\d.]+)\s+pitches', lower)
-    if broad:
-        participants, per_arm = broad.groups()
-        options = [
-            lambda f: f"The recent workload has more balance to it, with {participants} relievers sharing the work at {per_arm} pitches per participating arm.",
-            lambda f: f"The usage trail is broader: {participants} relievers have been involved, and the per-arm load sits around {per_arm} pitches.",
-            lambda f: f"That gives the read a wider base, with {participants} relievers carrying the recent work instead of one small pocket.",
-        ]
-        return _sentence(_choose(facts, 'workload:broad', options))
-
-    if 'too thin' in lower:
-        options = [
-            lambda f: "The recent sample is thin enough that the read should stay modest.",
-            lambda f: "There is not enough recent workload to make a bigger claim from usage alone.",
-            lambda f: "The usage trail is light, so the story has to stay narrower.",
-        ]
-        return _sentence(_choose(facts, 'workload:thin_sample', options))
-    return _sentence(text)
-
-
-def _capacity_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('capacity_context'))
-    if not text:
-        return None
-    lower = text.lower()
-    if any(marker in lower for marker in ('fewer usable arms', 'short on usable arms', 'available group', 'less usable depth', 'thin')):
-        options = [
-            lambda f: "The usable layer is part of the squeeze, with fewer clean paths available if the game asks for repeat relief innings.",
-            lambda f: "Capacity is showing up in baseball terms: there are fewer comfortable places to turn if the bullpen has to cover more outs.",
-            lambda f: "The depth read is narrower than the roster count, which keeps the bullpen room tighter.",
-        ]
-        return _sentence(_choose(facts, 'capacity:constrained', options))
-    return _sentence(text)
-
-
-def _rotation_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('rotation_context'))
-    if not text:
-        return None
-    options = [
-        lambda f: "Starter length is part of the background here, because extra outs have recently been finding the relief group.",
-        lambda f: "The rotation side matters only as workload pressure: more of the game has been landing on the bullpen.",
-        lambda f: "Recent starter support has kept the bullpen more involved than a clean availability count would show.",
+def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]:
+    metric = _metric_sentence(facts, archetype)
+    pools: dict[str, list[_SentenceBuilder]] = {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: [
+            lambda f: "That makes the story less about the full bullpen count and more about how tightly the work has collected.",
+            lambda f: "The important shape is the lane itself: the same part of the bullpen keeps carrying the read.",
+            lambda f: "This is where usage matters more than labels, because the stress is gathering around the same pocket of arms.",
+        ],
+        ARCHETYPE_THIN_TRUSTED_GROUP: [
+            lambda f: "The split is between arms who are merely usable and arms who fit the innings a club usually protects.",
+            lambda f: "That is why the raw arm count can overstate the amount of late-game comfort on the board.",
+            lambda f: "The middle of the story is trust, not volume: the lane narrows when leverage starts to matter.",
+        ],
+        ARCHETYPE_CAPACITY_CONSTRAINT: [
+            lambda f: "This is a depth problem in baseball terms: the next clean inning can matter as much as the late plan.",
+            lambda f: "The squeeze is not just who is available, but how many comfortable pivots remain if the game asks for extra relief outs.",
+            lambda f: "The bullpen can still have a plan, but there is less margin behind the first few choices.",
+        ],
+        ARCHETYPE_ROTATION_SPILLOVER: [
+            lambda f: "Starter length is the background. When more outs keep landing on the pen, the same availability count carries a different weight.",
+            lambda f: "This read starts with innings, not labels: the bullpen has had to pick up more of the game lately.",
+            lambda f: "The burden is cumulative, because relief depth changes when starters leave more work behind.",
+        ],
+        ARCHETYPE_STABILITY_EROSION: [
+            lambda f: "This read is about continuity. When the mix changes, usage becomes a cleaner guide than assuming yesterday's bullpen shape still applies.",
+            lambda f: "A moving relief group makes the workload trail more important, because the board is not static night to night.",
+            lambda f: "The innings have been moving through a changing group, which keeps the read tied to actual usage.",
+        ],
+        ARCHETYPE_STABILITY_RECOVERY: [
+            lambda f: "The important part is balance. A steadier usage trail gives the group more ways through the middle innings.",
+            lambda f: "This is less about one arm carrying the read and more about the bullpen finding a usable rhythm.",
+            lambda f: "A steadier mix gives the story a different shape: the bullpen has more ways to get from the starter to the late plan.",
+        ],
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: [
+            lambda f: "No single pressure point carries the whole story. Depth, workload, and recent bullpen shape all have to be read together.",
+            lambda f: "The middle of the read is how those pressures stack, not which one wins the headline.",
+            lambda f: "That layered shape matters because one clean answer would miss how the bullpen picture is tightening.",
+        ],
+        ARCHETYPE_FLEXIBLE_BULLPEN: [
+            lambda f: "The useful part is distribution. More arms in the recent path gives the bullpen multiple ways to cover the same game.",
+            lambda f: "This is a room-to-maneuver story: the work has not collapsed onto one small lane.",
+            lambda f: "Flexibility shows up when the bullpen can move innings around without immediately returning to the same pocket.",
+        ],
+        ARCHETYPE_RUN_PREVENTION_MASK: [
+            lambda f: "Good results can make the stress harder to see, so the better read is the usage sitting underneath that line.",
+            lambda f: "The results matter, but they do not erase how the innings have been distributed lately.",
+            lambda f: "The mask is the surface line; the baseball question underneath is how much work the same group has had to absorb.",
+        ],
+    }
+    return [
+        metric,
+        _sentence(_choose(facts, f'{archetype}:middle', pools[archetype])),
     ]
-    return _sentence(_choose(facts, 'rotation', options))
-
-
-def _stability_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('stability_context'))
-    if not text:
-        return None
-    options = [
-        lambda f: "The mix has also been moving around, so the usage trail matters more than a static roster count.",
-        lambda f: "There is a stability piece too: recent innings have not always moved through the same exact group.",
-        lambda f: "The bullpen has not looked identical night to night, which keeps the read tied to actual usage.",
-    ]
-    return _sentence(_choose(facts, 'stability', options))
-
-
-def _environment_sentence(facts: dict[str, Any]) -> str | None:
-    text = _public_language(facts.get('environment_context'))
-    if not text:
-        return None
-    options = [
-        lambda f: "This does not read like one isolated issue; several pressure points are tightening the bullpen picture at once.",
-        lambda f: "The story is layered, with more than one part of the recent bullpen picture adding weight.",
-        lambda f: "The read is not coming from a single lane, which is why the workload trail has to be paired with the rest of the bullpen picture.",
-    ]
-    return _sentence(_choose(facts, 'environment', options))
-
-
-def _domain_sentences(facts: dict[str, Any]) -> list[str]:
-    if facts.get('environment_context'):
-        candidates = [
-            _environment_sentence(facts),
-            _capacity_sentence(facts),
-            _rotation_sentence(facts),
-            _stability_sentence(facts),
-            _workload_sentence(facts),
-        ]
-    else:
-        candidates = [
-            _pressure_sentence(facts),
-            _capacity_sentence(facts),
-            _rotation_sentence(facts),
-            _stability_sentence(facts),
-            _workload_sentence(facts),
-        ]
-
-    sentences: list[str] = []
-    seen = set()
-    for sentence in candidates:
-        if not sentence:
-            continue
-        key = sentence.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        sentences.append(sentence)
-        if len(sentences) >= 2:
-            break
-    return sentences
 
 
 def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
@@ -498,18 +500,58 @@ def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
     return _sentence(_choose(facts, 'disclosure:narrative', options))
 
 
-def _watch_sentence(facts: dict[str, Any]) -> str | None:
+def _watch_sentence(facts: dict[str, Any], archetype: str) -> str | None:
     tail = _tail_after_whether(facts.get('watch_question'))
-    if not tail:
-        return _sentence(facts.get('watch_question'))
-    options: list[_SentenceBuilder] = [
-        lambda f: f"The next question is whether {tail}.",
-        lambda f: f"What becomes interesting from here is whether {tail}.",
-        lambda f: f"The next few games should show whether {tail}.",
-        lambda f: f"The bullpen picture will be worth watching to see whether {tail}.",
-        lambda f: f"From here, the question is whether {tail}.",
-    ]
-    return _sentence(_choose(facts, 'watch', options))
+    pools: dict[str, list[_SentenceBuilder]] = {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: [
+            lambda f: "Can the workload spread to more of the group, or does it keep collecting around the same arms?",
+            lambda f: "The next useful read is whether the innings start moving through a wider lane.",
+            lambda f: "From here, the bullpen is worth watching for whether the same relievers stay at the center of the work.",
+        ],
+        ARCHETYPE_THIN_TRUSTED_GROUP: [
+            lambda f: "Can the trusted lane widen without turning back to the same relievers?",
+            lambda f: "The next question is whether usable arms can also become trusted innings.",
+            lambda f: "What matters next is whether the late-inning path gets wider or stays narrow.",
+        ],
+        ARCHETYPE_CAPACITY_CONSTRAINT: [
+            lambda f: "Can another usable option emerge before the bullpen has to cover extra outs?",
+            lambda f: "The next read is whether the available layer gains any room behind the first few choices.",
+            lambda f: "From here, the question is whether the bullpen can find one more comfortable lane.",
+        ],
+        ARCHETYPE_ROTATION_SPILLOVER: [
+            lambda f: "Will starters cover more innings and give the pen a cleaner night?",
+            lambda f: "The next few games should show whether more outs stay with the rotation before the bullpen takes over.",
+            lambda f: "From here, the question is whether the relief group gets a lighter handoff.",
+        ],
+        ARCHETYPE_STABILITY_EROSION: [
+            lambda f: "Does the bullpen picture settle down, or does it keep changing from night to night?",
+            lambda f: "The next useful read is whether the same group starts appearing more often.",
+            lambda f: "What becomes interesting is whether the usage trail steadies.",
+        ],
+        ARCHETYPE_STABILITY_RECOVERY: [
+            lambda f: "Can that steadier shape hold after another game worth of bullpen choices?",
+            lambda f: "The next read is whether the broader rhythm survives the next bullpen-heavy night.",
+            lambda f: "From here, the question is whether the relief mix keeps looking settled.",
+        ],
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: [
+            lambda f: "Which part of the bullpen picture eases first: depth, starter length, or the usage mix?",
+            lambda f: "The next read is whether one pressure point clears enough to simplify the board.",
+            lambda f: "From here, the question is whether the bullpen story narrows back to one main issue.",
+        ],
+        ARCHETYPE_FLEXIBLE_BULLPEN: [
+            lambda f: "Can this flexibility hold if the game asks for multiple relief lanes?",
+            lambda f: "The next useful read is whether the work stays spread out.",
+            lambda f: "From here, the bullpen picture is worth watching to see whether the wider shape holds.",
+        ],
+        ARCHETYPE_RUN_PREVENTION_MASK: [
+            lambda f: "Does the workload start matching the results line, or does stress stay underneath it?",
+            lambda f: "The next useful read is whether the usage trail starts to look as sturdy as the results.",
+            lambda f: "From here, the question is whether the good run-prevention line gets more support from the workload shape.",
+        ],
+    }
+    if tail:
+        pools[archetype].append(lambda f: f"One more useful check is whether {tail}.")
+    return _sentence(_choose(facts, f'{archetype}:watch', pools[archetype]))
 
 
 def _paragraph(sentences: list[str | None]) -> str | None:
@@ -546,17 +588,15 @@ def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
 def render_story_narrative(facts: dict[str, Any]) -> str:
     """Render a natural two-to-three paragraph baseball story."""
 
-    opening = _paragraph([
-        _opening_sentence(facts),
-        _supporting_context_sentence(facts),
-    ])
-    supporting = _paragraph(_domain_sentences(facts))
+    archetype = select_story_archetype(facts)
+    opening = _paragraph([_opening_sentence(facts, archetype)])
+    middle = _paragraph(_middle_sentences(facts, archetype))
     closing = _paragraph([
         _disclosure_sentence(facts),
-        _watch_sentence(facts),
+        _watch_sentence(facts, archetype),
     ])
 
-    paragraphs = [item for item in (opening, supporting, closing) if item]
+    paragraphs = [item for item in (opening, middle, closing) if item]
     if not paragraphs:
         return ''
     return '\n\n'.join(paragraphs)
@@ -573,9 +613,19 @@ def narrative_contains_forbidden_language(narrative: str) -> bool:
 __all__ = [
     'CAPABILITY',
     'VERSION',
+    'ARCHETYPE_WORKLOAD_CONCENTRATION',
+    'ARCHETYPE_THIN_TRUSTED_GROUP',
+    'ARCHETYPE_CAPACITY_CONSTRAINT',
+    'ARCHETYPE_ROTATION_SPILLOVER',
+    'ARCHETYPE_STABILITY_EROSION',
+    'ARCHETYPE_STABILITY_RECOVERY',
+    'ARCHETYPE_MULTI_SOURCE_PRESSURE',
+    'ARCHETYPE_FLEXIBLE_BULLPEN',
+    'ARCHETYPE_RUN_PREVENTION_MASK',
     'FORBIDDEN_PUBLIC_LABELS',
     'INTERNAL_TAXONOMY_TERMS',
     'narrative_contains_forbidden_language',
     'render_story_disclosure_note',
     'render_story_narrative',
+    'select_story_archetype',
 ]

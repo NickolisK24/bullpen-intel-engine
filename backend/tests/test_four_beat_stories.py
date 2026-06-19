@@ -29,11 +29,21 @@ from services.team_story_facts import (
     DISCLOSURE_LIMITED_BULLPEN_PICTURE,
 )
 from services.team_story_narrative import (
+    ARCHETYPE_CAPACITY_CONSTRAINT,
+    ARCHETYPE_FLEXIBLE_BULLPEN,
+    ARCHETYPE_MULTI_SOURCE_PRESSURE,
+    ARCHETYPE_ROTATION_SPILLOVER,
+    ARCHETYPE_RUN_PREVENTION_MASK,
+    ARCHETYPE_STABILITY_EROSION,
+    ARCHETYPE_STABILITY_RECOVERY,
+    ARCHETYPE_THIN_TRUSTED_GROUP,
+    ARCHETYPE_WORKLOAD_CONCENTRATION,
     FORBIDDEN_PUBLIC_LABELS,
     INTERNAL_TAXONOMY_TERMS,
     narrative_contains_forbidden_language,
     render_story_disclosure_note,
     render_story_narrative,
+    select_story_archetype,
 )
 from services.team_bullpen_shape import build_team_bullpen_shape
 
@@ -774,6 +784,14 @@ def _sample_story_facts(
     *,
     disclosure: bool = True,
     watch_question: str | None = None,
+    primary_observation: str | None = None,
+    supporting_context: str | None = None,
+    pressure_source: str | None = None,
+    workload_pattern: str | None = None,
+    capacity_context: str | None = None,
+    rotation_context: str | None = None,
+    stability_context: str | None = None,
+    environment_context: str | None = None,
 ) -> dict:
     return {
         'capability': STORY_FACT_LAYER_CAPABILITY,
@@ -783,18 +801,18 @@ def _sample_story_facts(
             'team_name': team_name,
             'team_abbreviation': abbr,
         },
-        'primary_observation': f'The {team_name} have a narrower bullpen path tonight.',
-        'supporting_context': (
+        'primary_observation': primary_observation or f'The {team_name} have a narrower bullpen path tonight.',
+        'supporting_context': supporting_context or (
             'The recent workload has clustered around the top 3 relievers, '
             'who have handled 72% of relief pitches in the window, while 3 '
             'of 8 bullpen arms are available.'
         ),
-        'pressure_source': 'The pressure source is recent work being concentrated around a smaller set of relievers.',
-        'workload_pattern': 'The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
-        'capacity_context': None,
-        'rotation_context': None,
-        'stability_context': None,
-        'environment_context': None,
+        'pressure_source': pressure_source or 'The pressure source is recent work being concentrated around a smaller set of relievers.',
+        'workload_pattern': workload_pattern or 'The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
+        'capacity_context': capacity_context,
+        'rotation_context': rotation_context,
+        'stability_context': stability_context,
+        'environment_context': environment_context,
         'watch_question': (
             watch_question
             or 'The thing to watch next is whether the same relievers remain at the center of the workload.'
@@ -856,7 +874,7 @@ def test_renderer_varies_watch_question_openings_across_sample_set():
     assert len(set(watch_leads)) >= 3
     for closing in [narrative.split('\n\n')[-1] for narrative in narratives]:
         assert not closing.startswith('The thing to watch next is whether')
-        assert 'whether' in closing
+        assert '?' in closing or 'whether' in closing
 
 
 def test_renderer_varies_openings_without_repeating_team_have_pattern():
@@ -879,6 +897,188 @@ def test_renderer_varies_openings_without_repeating_team_have_pattern():
     assert not all(opener.startswith('The ') for opener in openers)
     for (_, team_name, _), opener in zip(teams, openers):
         assert not opener.startswith(f'The {team_name} have')
+
+
+def _archetype_story_fact_samples() -> dict[str, dict]:
+    return {
+        ARCHETYPE_WORKLOAD_CONCENTRATION: _sample_story_facts(
+            201,
+            'Workload Club',
+            'WLD',
+            disclosure=False,
+        ),
+        ARCHETYPE_THIN_TRUSTED_GROUP: _sample_story_facts(
+            202,
+            'Trust Club',
+            'TRU',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 6 relievers, '
+                'averaging 18 pitches per participating arm.'
+            ),
+            pressure_source=(
+                'The pressure source is the trusted late-inning layer, where '
+                'the usable group and the preferred group do not fully line up.'
+            ),
+            workload_pattern=(
+                'The workload pattern is broad: 6 relievers have shared the work '
+                'at 18 pitches per participating arm.'
+            ),
+            watch_question=(
+                'The thing to watch next is whether the late-inning work can move '
+                'through more than the same trusted lane.'
+            ),
+        ),
+        ARCHETYPE_CAPACITY_CONSTRAINT: _sample_story_facts(
+            203,
+            'Capacity Club',
+            'CAP',
+            disclosure=False,
+            supporting_context='The current read is built around recent relief usage and the available bullpen layer.',
+            pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 88 recent relief pitches.',
+            capacity_context='The available group is already thin, leaving fewer usable arms than a normal night.',
+            watch_question='The next useful read is whether one more bullpen-heavy game exposes the thin usable layer.',
+        ),
+        ARCHETYPE_ROTATION_SPILLOVER: _sample_story_facts(
+            204,
+            'Rotation Club',
+            'ROT',
+            disclosure=False,
+            supporting_context='Recent relief usage has not centered on one narrow group.',
+            pressure_source='The shape comes from workload distribution rather than one narrow lane.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 92 recent relief pitches.',
+            rotation_context='The bullpen has been covering more of the game than usual.',
+            watch_question='The next useful read is whether starters cover more innings before the bullpen takes over.',
+        ),
+        ARCHETYPE_STABILITY_EROSION: _sample_story_facts(
+            205,
+            'Churn Club',
+            'CHN',
+            disclosure=False,
+            supporting_context='Recent relief usage has not centered on one narrow group.',
+            pressure_source='The shape comes from workload distribution rather than one narrow lane.',
+            workload_pattern='The workload pattern sits between those poles, with 5 relievers sharing 82 recent relief pitches.',
+            stability_context='The bullpen group has not looked exactly the same from week to week.',
+            watch_question='The thing to watch next is whether the recent usage pattern changes after the next completed game.',
+        ),
+        ARCHETYPE_STABILITY_RECOVERY: _sample_story_facts(
+            206,
+            'Recovery Club',
+            'REC',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 6 relievers, '
+                'averaging 16 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+            workload_pattern=(
+                'The workload pattern is broad: 6 relievers have shared the work '
+                'at 16 pitches per participating arm.'
+            ),
+            stability_context='The bullpen group has looked more settled, with the same group carrying recent innings.',
+            watch_question='The next useful read is whether the work stays spread across the group.',
+        ),
+        ARCHETYPE_MULTI_SOURCE_PRESSURE: _sample_story_facts(
+            207,
+            'Layered Club',
+            'LAY',
+            disclosure=False,
+            supporting_context='The recent workload has clustered around the top 3 relievers, who have handled 68% of relief pitches in the window, while 4 of 8 bullpen arms are available.',
+            pressure_source='The pressure source is workload concentration meeting a smaller usable group.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 68% of the recent relief work.',
+            capacity_context='The available group is already thin.',
+            rotation_context='Extra outs have been finding their way to the bullpen lately.',
+            watch_question='The thing to watch next is whether the recent usage pattern changes after the next completed game.',
+        ),
+        ARCHETYPE_FLEXIBLE_BULLPEN: _sample_story_facts(
+            208,
+            'Flexible Club',
+            'FLX',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 7 relievers, '
+                'averaging 14 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from a deeper usable layer behind the late-inning plan.',
+            workload_pattern=(
+                'The workload pattern is broad: 7 relievers have shared the work '
+                'at 14 pitches per participating arm.'
+            ),
+            watch_question='The next useful read is whether that broad, usable shape still holds after the next completed game.',
+        ),
+        ARCHETYPE_RUN_PREVENTION_MASK: _sample_story_facts(
+            209,
+            'Results Club',
+            'RES',
+            disclosure=False,
+            primary_observation='The Results Club bullpen has pitched well this year, but they are leaning on it hard tonight.',
+            supporting_context='The season run prevention has been strong at a 2.75 ERA, but recent usage is averaging 34 pitches per participating reliever.',
+            pressure_source='The season run-prevention line is part of the read, but it is not the whole bullpen picture.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 64% of the recent relief work.',
+            watch_question='The thing to watch next is whether the same relievers remain at the center of the workload.',
+        ),
+    }
+
+
+def test_story_archetype_selection_is_deterministic():
+    samples = _archetype_story_fact_samples()
+
+    for expected, facts in samples.items():
+        assert select_story_archetype(facts) == expected
+        assert select_story_archetype(dict(facts)) == expected
+
+
+def test_archetype_narratives_are_deterministic_and_structurally_distinct():
+    samples = _archetype_story_fact_samples()
+    narratives = {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in samples.items()
+    }
+
+    assert narratives == {
+        archetype: render_story_narrative(facts)
+        for archetype, facts in samples.items()
+    }
+    assert len(set(narratives.values())) == len(samples)
+    assert len({text.split('\n\n')[0] for text in narratives.values()}) >= 8
+    assert len({text.split('\n\n')[1] for text in narratives.values()}) >= 8
+    assert narratives[ARCHETYPE_WORKLOAD_CONCENTRATION].split('\n\n')[0] != narratives[ARCHETYPE_FLEXIBLE_BULLPEN].split('\n\n')[0]
+    assert narratives[ARCHETYPE_CAPACITY_CONSTRAINT].split('\n\n')[1] != narratives[ARCHETYPE_ROTATION_SPILLOVER].split('\n\n')[1]
+
+
+def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
+    for narrative in [
+        render_story_narrative(facts)
+        for facts in _archetype_story_fact_samples().values()
+    ]:
+        lower = narrative.lower()
+
+        assert narrative_contains_forbidden_language(narrative) is False
+        for label in FORBIDDEN_PUBLIC_LABELS:
+            assert label not in narrative
+        for term in INTERNAL_TAXONOMY_TERMS:
+            assert term.lower() not in lower
+        for forbidden in (
+            'betting',
+            'prediction',
+            'recommendation',
+            'preferred',
+            'should use',
+            'manager should',
+            'fatigue score',
+            'confidence score',
+            'HIGH or CRITICAL',
+            'pressure source',
+            'workload pattern is',
+            'the thing to watch next is whether',
+            'injury',
+            'transaction',
+            'called up',
+            'optioned',
+            'dfa',
+        ):
+            assert forbidden.lower() not in lower
 
 
 def test_story_narrative_output_is_deterministic():

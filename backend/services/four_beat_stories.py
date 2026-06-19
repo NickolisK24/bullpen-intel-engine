@@ -33,7 +33,7 @@ from services.workload_concentration import (
 
 
 CAPABILITY = 'four_beat_story_template_v1'
-VERSION = '2026-06-18.narrative_renderer_v2'
+VERSION = '2026-06-18.narrative_renderer_v3'
 FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
