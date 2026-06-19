@@ -15,6 +15,7 @@ from typing import Any
 from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
+from services.bullpen_identity import build_bullpen_identity
 from services.bullpen_resource_health import build_bullpen_resource_health
 from services.bullpen_trust_hierarchy import build_bullpen_trust_hierarchy
 from utils.innings import decimal_innings_to_outs, log_innings_outs
@@ -453,7 +454,7 @@ def build_team_bullpen_capacity(
         'limitations': trust_limitations,
     }
 
-    return {
+    payload = {
         'capability': CAPABILITY,
         'version': VERSION,
         'source': 'backend',
@@ -469,6 +470,8 @@ def build_team_bullpen_capacity(
         'capacity_loss': capacity_loss,
         'trust_capacity_loss': trust_capacity_loss,
     }
+    payload['bullpen_identity'] = build_bullpen_identity(payload)
+    return payload
 
 
 def build_league_capacity_payload(team_capacity_items):
