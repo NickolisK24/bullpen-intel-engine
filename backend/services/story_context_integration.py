@@ -277,7 +277,7 @@ def build_story_context_integration(
 
     if (lead_dimension in TRUST_LANE_LEADS or pressure_story) and trust_narrow:
         return _result(
-            'Even where arms are available, the clean trusted lane is narrow.',
+            'Once you get past the first few names, the picture starts getting a little less comfortable.',
             reason='clean_trusted_lane_narrow',
             sources=['trusted_lane', 'active_capacity'],
         )
@@ -285,40 +285,40 @@ def build_story_context_integration(
     if active_room and resource_strained:
         if top_structure:
             return _result(
-                'The top of the bullpen still gives them structure, even with the larger resource pool under strain.',
+                "The late innings still look pretty normal. It's everything behind that group that is being asked to carry more.",
                 reason='top_structure_with_resource_strain',
                 sources=['active_capacity', 'resource_pool', 'trusted_lane'],
             )
         return _result(
-            'The active group is still mostly intact, but the broader bullpen pool is thinner than it looks.',
+            'The late-inning group may still look intact, but the cushion behind it is not as thick.',
             reason='active_group_intact_resource_pool_strained',
             sources=['active_capacity', 'resource_pool'],
         )
 
     if capacity_state == CAPACITY_THIN and (pressure_story or coverage_tight):
         return _result(
-            'There are enough arms to get through a night, but the margin is tighter than the active count suggests.',
+            "On paper the bullpen still has names. The question is how many of those options you would really feel comfortable handing the game to.",
             reason='thin_active_capacity_margin',
             sources=['active_capacity', 'coverage_read'],
         )
 
     if capacity_state == CAPACITY_DEPLETED or coverage_tight:
         return _result(
-            'This is less about one missing arm and more about how narrow the dependable group has become.',
+            'Once the game gets past the obvious choices, there is not much room for error.',
             reason='dependable_group_narrow',
             sources=['active_capacity', 'coverage_read', 'trusted_lane'],
         )
 
     if flexible_story and coverage_stable and top_structure:
         return _result(
-            'The active group and trusted lane both support the flexibility, so this is more than just extra names on the board.',
+            'That looks like real flexibility, not just extra names on a roster sheet.',
             reason='flexibility_supported_by_trust_structure',
             sources=['active_capacity', 'trusted_lane', 'coverage_read'],
         )
 
     if results_mask_story and (resource_strained or trust_narrow):
         return _result(
-            'The results may still look sturdy, but the bullpen picture underneath has less cushion.',
+            'The results can still look sturdy while the usable paths through the game are getting thinner.',
             reason='results_mask_thinner_bullpen_context',
             sources=['resource_pool', 'trusted_lane'],
         )

@@ -951,13 +951,17 @@ def test_story_context_adds_resource_pool_context_without_state_labels():
     assert story['computed']['story_context_integration']['reason'] == (
         'top_structure_with_resource_strain'
     )
-    assert 'larger resource pool under strain' in narrative
+    assert "late innings still look pretty normal" in lower
+    assert 'being asked to carry more' in lower
     assert narrative_contains_forbidden_language(narrative) is False
     for leaked in (
         'capacity state',
         'resource health',
         'coverage safety',
         'trust hierarchy',
+        'resource pool',
+        'active count',
+        'trusted lane',
         'role_change_detection',
         'ranking_applied',
         'selection_made',
@@ -1004,7 +1008,9 @@ def test_story_context_adds_clean_trusted_lane_context_when_narrow():
     assert story['computed']['story_context_integration']['reason'] == (
         'clean_trusted_lane_narrow'
     )
-    assert 'even where arms are available, the clean trusted lane is narrow' in lower
+    assert 'once you get past the first few names' in lower
+    assert 'clean trusted lane' not in lower
+    assert 'trusted lane' not in lower
     assert 'should pitch' not in lower
     assert 'recommend' not in lower
     assert narrative_contains_forbidden_language(narrative) is False
@@ -1044,6 +1050,31 @@ def test_story_context_renderer_still_works_without_new_intelligence_fields():
     assert story['computed']['story_context_integration']['applied'] is False
     assert story['narrative']
     assert narrative_contains_forbidden_language(story['narrative']) is False
+
+
+def test_story_context_replaces_generic_middle_instead_of_appending_explanation():
+    team_inputs = _broad_light_team_inputs(
+        capacity_by_team=_foundation_capacity_context(
+            capacity_state='healthy',
+            resource_state='strained',
+            active=8,
+            clean=5,
+            anchor=1,
+            leverage=2,
+            trusted_group=5,
+        ),
+    )
+    story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        compute_team_story_inputs(team_inputs),
+    )
+    paragraphs = [item.strip() for item in story['narrative'].split('\n\n')]
+    middle = paragraphs[1].lower()
+
+    assert 'late innings still look pretty normal' in middle
+    assert 'there is room to maneuver because' not in middle
+    assert 'flexibility shows up when' not in middle
+    assert middle.count('.') <= 3
 
 
 def _sample_story_facts(

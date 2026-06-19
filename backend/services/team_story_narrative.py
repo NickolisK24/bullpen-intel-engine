@@ -565,10 +565,13 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
             lambda f: "The scoreboard can hide the strain; underneath it, the same group may still be taking on a lot.",
         ],
     }
+    middle_observation = _sentence(
+        bullpen_context
+        or _choose(facts, f'{archetype}:middle', pools[archetype])
+    )
     return [
         metric,
-        bullpen_context,
-        _sentence(_choose(facts, f'{archetype}:middle', pools[archetype])),
+        middle_observation,
     ]
 
 
