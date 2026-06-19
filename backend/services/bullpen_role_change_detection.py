@@ -369,6 +369,10 @@ def _count_change(
         summary = f'Anchor emerged from {previous} to {current}.'
     elif change_type == 'anchor_count_change' and current <= 0 < previous:
         summary = f'Anchor lost from {previous} to {current}.'
+    elif change_type == 'trusted_unavailability_change' and current > previous:
+        summary = f'Trusted unavailability worsened from {previous} to {current}.'
+    elif change_type == 'trusted_unavailability_change':
+        summary = f'Trusted unavailability improved from {previous} to {current}.'
     else:
         summary = f'{label} {direction} from {previous} to {current}.'
     return _change(

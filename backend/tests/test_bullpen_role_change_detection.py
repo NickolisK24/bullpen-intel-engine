@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from services.bullpen_role_change_detection import (
     CAPABILITY,
     STATUS_AVAILABLE,
@@ -26,6 +28,7 @@ def team_item(
     trust_unavailable=0,
     trust_unavailable_pct=0,
     clean_trusted=None,
+    coverage_label=None,
 ):
     trusted_group = (
         trusted_group
@@ -60,6 +63,8 @@ def team_item(
     }
     if clean_trusted is not None:
         item['clean_trusted_options_count'] = clean_trusted
+    if coverage_label is not None:
+        item['coverage_safety'] = {'label': coverage_label}
     return item
 
 
@@ -92,6 +97,240 @@ def change_types(result, team_id=1):
 def first_change(result, change_type, team_id=1):
     team = result['by_team_id'][str(team_id)]
     return next(item for item in team['changes'] if item['type'] == change_type)
+
+
+def assert_safe_change(change, *, change_type, direction, severity, previous, current):
+    assert change['type'] == change_type
+    assert change['direction'] == direction
+    assert change['severity'] == severity
+    assert isinstance(change['summary'], str)
+    assert change['summary']
+    assert 'recommend' not in change['summary'].lower()
+    assert 'should pitch' not in change['summary'].lower()
+    assert change['evidence']['previous']['value'] == previous
+    assert change['evidence']['current']['value'] == current
+
+
+def assert_single_synthetic_change(
+    *,
+    previous_item,
+    current_item,
+    change_type,
+    direction,
+    severity,
+    previous,
+    current,
+):
+    result = build_role_change_detection_payload(
+        payload('2026-06-19', [current_item]),
+        payload('2026-06-18', [previous_item]),
+    )
+    team = result['by_team_id']['1']
+    assert result['status'] == STATUS_AVAILABLE
+    assert result['teams_compared'] == 1
+    assert [item['type'] for item in team['changes']] == [change_type]
+    assert_safe_change(
+        team['changes'][0],
+        change_type=change_type,
+        direction=direction,
+        severity=severity,
+        previous=previous,
+        current=current,
+    )
+    return result
+
+
+STABLE_LABEL = 'Stable Coverage Safety'
+THIN_LABEL = 'Thin Coverage Safety'
+
+
+@pytest.mark.parametrize('name,previous_item,current_item,change_type,direction,severity,previous,current', [
+    (
+        'capacity decline',
+        team_item(capacity_state='healthy', coverage_label=STABLE_LABEL),
+        team_item(capacity_state='reduced', coverage_label=STABLE_LABEL),
+        'capacity_state_change',
+        'declined',
+        'meaningful',
+        'healthy',
+        'reduced',
+    ),
+    (
+        'capacity improvement',
+        team_item(capacity_state='thin', coverage_label=STABLE_LABEL),
+        team_item(capacity_state='reduced', coverage_label=STABLE_LABEL),
+        'capacity_state_change',
+        'improved',
+        'meaningful',
+        'thin',
+        'reduced',
+    ),
+    (
+        'resource health decline',
+        team_item(resource_state='moderate', coverage_label=STABLE_LABEL),
+        team_item(resource_state='strained', coverage_label=STABLE_LABEL),
+        'resource_health_change',
+        'declined',
+        'meaningful',
+        'moderate',
+        'strained',
+    ),
+    (
+        'resource health improvement',
+        team_item(resource_state='strained', coverage_label=STABLE_LABEL),
+        team_item(resource_state='moderate', coverage_label=STABLE_LABEL),
+        'resource_health_change',
+        'improved',
+        'meaningful',
+        'strained',
+        'moderate',
+    ),
+    (
+        'coverage safety decline',
+        team_item(coverage_label=STABLE_LABEL),
+        team_item(coverage_label=THIN_LABEL),
+        'coverage_safety_change',
+        'declined',
+        'meaningful',
+        STABLE_LABEL,
+        THIN_LABEL,
+    ),
+    (
+        'coverage safety improvement',
+        team_item(coverage_label=THIN_LABEL),
+        team_item(coverage_label=STABLE_LABEL),
+        'coverage_safety_change',
+        'improved',
+        'meaningful',
+        THIN_LABEL,
+        STABLE_LABEL,
+    ),
+    (
+        'anchor lost',
+        team_item(anchor=1, trusted_group=7, coverage_label=STABLE_LABEL),
+        team_item(anchor=0, trusted_group=7, coverage_label=STABLE_LABEL),
+        'anchor_count_change',
+        'contracted',
+        'meaningful',
+        1,
+        0,
+    ),
+    (
+        'anchor emerged',
+        team_item(anchor=0, trusted_group=7, coverage_label=STABLE_LABEL),
+        team_item(anchor=1, trusted_group=7, coverage_label=STABLE_LABEL),
+        'anchor_count_change',
+        'expanded',
+        'meaningful',
+        0,
+        1,
+    ),
+    (
+        'leverage group contracted',
+        team_item(leverage=7, trusted_group=8, coverage_label=STABLE_LABEL),
+        team_item(leverage=5, trusted_group=8, coverage_label=STABLE_LABEL),
+        'leverage_count_change',
+        'contracted',
+        'meaningful',
+        7,
+        5,
+    ),
+    (
+        'leverage group expanded',
+        team_item(leverage=4, trusted_group=8, coverage_label=STABLE_LABEL),
+        team_item(leverage=6, trusted_group=8, coverage_label=STABLE_LABEL),
+        'leverage_count_change',
+        'expanded',
+        'meaningful',
+        4,
+        6,
+    ),
+    (
+        'trusted group contracted',
+        team_item(trusted_group=8, coverage_label=STABLE_LABEL),
+        team_item(trusted_group=6, coverage_label=STABLE_LABEL),
+        'trusted_group_change',
+        'contracted',
+        'meaningful',
+        8,
+        6,
+    ),
+    (
+        'trusted group expanded',
+        team_item(trusted_group=5, coverage_label=STABLE_LABEL),
+        team_item(trusted_group=7, coverage_label=STABLE_LABEL),
+        'trusted_group_change',
+        'expanded',
+        'meaningful',
+        5,
+        7,
+    ),
+    (
+        'clean trusted options decreased',
+        team_item(clean_trusted=5, coverage_label=STABLE_LABEL),
+        team_item(clean_trusted=3, coverage_label=STABLE_LABEL),
+        'clean_trusted_options_change',
+        'contracted',
+        'meaningful',
+        5,
+        3,
+    ),
+    (
+        'clean trusted options increased',
+        team_item(clean_trusted=3, coverage_label=STABLE_LABEL),
+        team_item(clean_trusted=5, coverage_label=STABLE_LABEL),
+        'clean_trusted_options_change',
+        'expanded',
+        'meaningful',
+        3,
+        5,
+    ),
+    (
+        'trusted unavailability worsened',
+        team_item(trust_unavailable=1, coverage_label=STABLE_LABEL),
+        team_item(trust_unavailable=3, coverage_label=STABLE_LABEL),
+        'trusted_unavailability_change',
+        'declined',
+        'meaningful',
+        1,
+        3,
+    ),
+    (
+        'trusted unavailability improved',
+        team_item(trust_unavailable=3, coverage_label=STABLE_LABEL),
+        team_item(trust_unavailable=1, coverage_label=STABLE_LABEL),
+        'trusted_unavailability_change',
+        'improved',
+        'meaningful',
+        3,
+        1,
+    ),
+])
+def test_synthetic_role_change_scenarios_emit_single_safe_change(
+    name,
+    previous_item,
+    current_item,
+    change_type,
+    direction,
+    severity,
+    previous,
+    current,
+):
+    result = assert_single_synthetic_change(
+        previous_item=previous_item,
+        current_item=current_item,
+        change_type=change_type,
+        direction=direction,
+        severity=severity,
+        previous=previous,
+        current=current,
+    )
+    encoded = json.dumps(result).lower()
+    assert 'recommend' not in encoded
+    assert 'should_pitch' not in encoded
+    assert 'priority' not in encoded
+    assert result['ranking_applied'] is False
+    assert result['selection_made'] is False
 
 
 def test_insufficient_prior_history_returns_conservative_no_read():
@@ -278,7 +517,9 @@ def test_deterministic_output_ordering():
     )
 
     result = build_role_change_detection_payload(current, prior)
+    second = build_role_change_detection_payload(current, prior)
 
+    assert result == second
     assert change_types(result) == [
         'capacity_state_change',
         'resource_health_change',
