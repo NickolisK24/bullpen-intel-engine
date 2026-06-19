@@ -111,6 +111,10 @@ class TestDashboardEndpoint:
         assert body['context']['health']['state'] == 'no_data'
         assert body['roles']['total'] == 0
         assert set(body['roles']['counts']) == set(ROLE_KEYS)
+        assert body['role_change_detection']['capability'] == 'bullpen_role_change_detection_v1'
+        assert body['role_change_detection']['status'] == 'unavailable'
+        assert body['role_change_detection']['ranking_applied'] is False
+        assert body['role_change_detection']['selection_made'] is False
 
     def test_aggregates_context_and_roles_across_teams(self, client):
         with client.application.app_context():
