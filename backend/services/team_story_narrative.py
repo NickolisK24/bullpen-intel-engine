@@ -506,37 +506,47 @@ def _metric_sentence(facts: dict[str, Any], archetype: str) -> str | None:
     clustered = _clustered_workload_parts(facts)
     broad = _broad_workload_parts(facts)
     availability = _availability_parts(facts)
+    angle = _story_angle(facts, archetype)
 
     if archetype == ARCHETYPE_WORKLOAD_CONCENTRATION and clustered:
-        arms, share = clustered
-        options: list[_SentenceBuilder] = [
-            lambda f: f"The recent workload shows it: the top {arms} relievers have handled {share}% of the relief pitches in the window.",
-            lambda f: f"The work has been bunched together, with {share}% of the recent relief pitches going through the top {arms} relievers.",
-            lambda f: f"The pitch distribution says the same thing, with the top {arms} relievers taking {share}% of the recent work.",
-        ]
-        return _sentence(_choose(facts, f'{archetype}:metric:clustered', options))
+        top_share = _int_text(clustered[1])
+        if top_share is not None and top_share >= 70:
+            options: list[_SentenceBuilder] = [
+                lambda f: "The same few names keep showing up in the heaviest spots.",
+                lambda f: "The late work keeps circling back to the same small group.",
+                lambda f: "The biggest relief pockets have been finding the same arms.",
+            ]
+        else:
+            options = [
+                lambda f: "The recent work has been bunched into a smaller group.",
+                lambda f: "The bullpen has not been spreading the work around as much lately.",
+                lambda f: "The workload has been moving through familiar hands.",
+            ]
+        return _sentence(_choose(facts, f'{archetype}:metric:clustered:{angle}', options))
 
     if archetype == ARCHETYPE_CAPACITY_CONSTRAINT and availability:
-        available, total = availability
-        options = [
-            lambda f: f"The count matters here: {available} of {total} bullpen arms are available tonight.",
-            lambda f: f"The usable layer is smaller than a full bullpen board, with {available} of {total} arms available.",
-            lambda f: f"In baseball terms, this starts with depth, because the available group is {available} of {total} arms.",
-        ]
-        return _sentence(_choose(facts, f'{archetype}:metric:availability', options))
+        available = _int_text(availability[0])
+        if available is not None and available <= 3:
+            options = [
+                lambda f: "The choices get thin quickly once the game starts stretching.",
+                lambda f: "There are not many comfortable pivots left if the night gets long.",
+                lambda f: "The bullpen can still make the first move; the harder part is what comes after it.",
+            ]
+        else:
+            options = [
+                lambda f: "The board has names, but the comfortable part is not very deep.",
+                lambda f: "This starts with a shorter list of usable choices than a normal night.",
+                lambda f: "The margin is thinner than the names on the board make it look.",
+            ]
+        return _sentence(_choose(facts, f'{archetype}:metric:availability:{angle}', options))
 
     if archetype == ARCHETYPE_FLEXIBLE_BULLPEN and broad:
-        arms, pitches = broad
-        options = [
-            lambda f: f"The recent work has been spread across {arms} relievers, which gives the bullpen more than one path through the game.",
-            lambda f: f"The work is not leaning on one small group, with {arms} relievers sharing the recent load.",
-            lambda f: f"That flexibility comes from how the innings have been spread around, with {arms} relievers involved lately.",
+        options: list[_SentenceBuilder] = [
+            lambda f: "They have had to use a lot of different arms lately, and that gives the staff more than one path.",
+            lambda f: "The workload has been moving through a lot of different hands.",
+            lambda f: "The recent path through games has not been stuck on one small pocket of the bullpen.",
         ]
-        if pitches:
-            options.append(
-                lambda f: f"The recent work has been spread across {arms} relievers at about {pitches} pitches per participating arm."
-            )
-        return _sentence(_choose(facts, f'{archetype}:metric:broad', options))
+        return _sentence(_choose(facts, f'{archetype}:metric:broad:{angle}', options))
 
     if archetype == ARCHETYPE_RUN_PREVENTION_MASK:
         supporting = _public_language(facts.get('supporting_context'))
@@ -549,13 +559,9 @@ def _metric_sentence(facts: dict[str, Any], archetype: str) -> str | None:
             return _sentence(_choose(facts, f'{archetype}:metric:run-prevention', options))
 
     if clustered:
-        arms, share = clustered
-        return _sentence(f"The top {arms} relievers have handled {share}% of the recent relief work.")
+        return _sentence("The same few names keep showing up in the heaviest spots.")
     if broad:
-        arms, pitches = broad
-        if pitches:
-            return _sentence(f"Recent relief work has been spread across {arms} relievers at about {pitches} pitches per participating arm.")
-        return _sentence(f"Recent relief work has moved through {arms} relievers.")
+        return _sentence("Recent relief work has moved through a lot of different hands.")
     return None
 
 
@@ -574,7 +580,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
         ARCHETYPE_THIN_TRUSTED_GROUP: [
             lambda f: f"Available innings may not be the main challenge for {article}; comfortable late innings are tighter.",
             lambda f: f"{possessive} bullpen has arms to consider, but the late-inning path is narrower.",
-            lambda f: f"For {article}, the count of usable arms does not fully answer the comfort question.",
+            lambda f: f"For {article}, a fuller-looking board does not fully answer the comfort question.",
         ],
         ARCHETYPE_CAPACITY_CONSTRAINT: [
             lambda f: f"{possessive} bullpen is running with fewer comfortable choices than usual.",
@@ -587,7 +593,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
             lambda f: f"For {article}, starter length changes what the bullpen has to solve tonight.",
         ],
         ARCHETYPE_STABILITY_EROSION: [
-            lambda f: f"{possessive} bullpen is less settled than a simple arm count suggests.",
+            lambda f: f"{possessive} bullpen is less settled than the roster sheet suggests.",
             lambda f: f"For {article}, the recent relief mix has been moving around.",
             lambda f: f"{possessive} relief group has not looked the same every night.",
         ],
@@ -603,7 +609,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
         ],
         ARCHETYPE_FLEXIBLE_BULLPEN: [
             lambda f: f"{possessive} bullpen enters tonight with room to maneuver.",
-            lambda f: f"For {article}, the useful part is how many ways the game can be covered.",
+            lambda f: f"For {article}, the useful part is having multiple ways to cover the game.",
             lambda f: f"{possessive} bullpen has more than one workable path.",
         ],
         ARCHETYPE_RUN_PREVENTION_MASK: [
@@ -714,7 +720,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
             ],
             'wide_routes': [
                 lambda f: f"{possessive} bullpen has had several routes through games lately.",
-                lambda f: f"For {article}, flexibility is showing up in how many relievers have actually been part of the path.",
+                lambda f: f"For {article}, flexibility is showing up in how many different hands have actually been part of the path.",
             ],
             'real_flexibility': [
                 lambda f: f"{possessive} flexibility looks real, not just like a long list of available names.",
@@ -824,7 +830,7 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
     angle = _story_angle(facts, archetype)
     pools: dict[str, list[_SentenceBuilder]] = {
         ARCHETYPE_WORKLOAD_CONCENTRATION: [
-            lambda f: "That makes the story less about the full bullpen count and more about how tightly the work has collected.",
+            lambda f: "That makes the story less about the roster sheet and more about how tightly the work has collected.",
             lambda f: "The same group keeps taking on most of the work.",
             lambda f: "The names on the board matter less than who keeps getting called on.",
         ],
@@ -938,7 +944,7 @@ def _ending_sentence(facts: dict[str, Any], archetype: str) -> str | None:
         ARCHETYPE_STABILITY_EROSION: {
             _ENDING_CLOSING_OBSERVATION: [
                 lambda f: "That leaves the group less settled than the availability list alone would show.",
-                lambda f: "The important part is the moving target, not just how many arms are listed as available.",
+                lambda f: "The important part is the moving target, not just who is listed as available.",
             ],
             _ENDING_WATCH_QUESTION: [
                 lambda f: "Does the relief mix start settling, or does it keep moving night to night?",

@@ -1498,6 +1498,82 @@ def test_same_archetype_uses_intelligence_angle_for_team_identity():
         assert leaked not in wide_text
 
 
+def test_narratives_hide_metric_language_inside_baseball_observations():
+    samples = [
+        _sample_story_facts(
+            301,
+            'Short Board Club',
+            'SBC',
+            disclosure=False,
+            supporting_context=(
+                'The recent workload has clustered around the top 3 relievers, '
+                'who have handled 72% of relief pitches in the window, while 3 '
+                'of 8 bullpen arms are available.'
+            ),
+            pressure_source='The pressure source is a thinner usable layer behind the late-inning plan.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
+            capacity_context='The available group is already thin, leaving fewer usable arms than a normal night.',
+        ),
+        _sample_story_facts(
+            302,
+            'Wide Route Club',
+            'WRC',
+            disclosure=False,
+            supporting_context=(
+                'Recent relief work has been spread across 9 relievers, '
+                'averaging 29.6 pitches per participating arm.'
+            ),
+            pressure_source='The shape comes from recent work being spread across more of the bullpen.',
+            workload_pattern=(
+                'The workload pattern is broad: 9 relievers have shared the work '
+                'at 29.6 pitches per participating arm.'
+            ),
+        ),
+        _sample_story_facts(
+            303,
+            'Same Few Club',
+            'SFC',
+            disclosure=False,
+            supporting_context=(
+                'The recent workload has clustered around the top 3 relievers, '
+                'who have handled 72% of relief pitches in the window.'
+            ),
+            pressure_source='The pressure source is recent work being concentrated around a smaller set of relievers.',
+            workload_pattern='The workload pattern is narrow: the top 3 relievers have taken 72% of the recent relief work.',
+        ),
+    ]
+    narratives = [render_story_narrative(item).lower() for item in samples]
+
+    for narrative in narratives:
+        assert narrative_contains_forbidden_language(narrative) is False
+        assert not re.search(r'\b\d+\s+of\s+\d+\b', narrative)
+        assert '%' not in narrative
+        for fragment in (
+            'pitches per participating arm',
+            'per participating reliever',
+            'top 3 relievers',
+            'spread across 9 relievers',
+            '9 relievers',
+            '29.6 pitches',
+            '72%',
+            'full bullpen count',
+        ):
+            assert fragment not in narrative
+
+    combined = ' '.join(narratives)
+    assert any(
+        phrase in combined
+        for phrase in (
+            'choices get thin',
+            'not many comfortable pivots',
+            'shorter list of usable choices',
+            'harder part is what comes after',
+            'short board',
+        )
+    )
+    assert 'different hands' in combined or 'same few names' in combined
+
+
 def test_archetype_endings_use_distinct_family_mix():
     narratives = {
         archetype: render_story_narrative(facts)
