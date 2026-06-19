@@ -144,8 +144,12 @@ def test_review_does_not_promote_tiny_capacity_changes():
     assert team['all_meaningful_changes'] == []
     assert 'no_meaningful_change' in team['review_flags']
     assert 'tiny_change_promoted' not in team['review_flags']
+    assert team['public_copy_generated'] is False
+    assert team['public_copy_status'] == 'skipped_no_meaningful_change'
     assert report['distribution_summary']['teams_with_no_meaningful_changes'] == 1
     assert report['distribution_summary']['count_by_change_type'] == {}
+    assert report['distribution_summary']['public_copy_generated_count'] == 0
+    assert report['distribution_summary']['no_public_copy_count'] == 1
 
 
 def test_review_does_not_select_tiny_capacity_change_over_structural_change():
@@ -176,6 +180,181 @@ def test_review_does_not_select_tiny_capacity_change_over_structural_change():
         'Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.'
     )
     assert 'tiny_change_promoted' not in team['review_flags']
+    assert team['public_copy_generated'] is True
+    assert team['public_headline']
+    assert team['public_summary'] == (
+        'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.'
+    )
+    assert team['public_context'] is None
+    assert team['copy_review_flags'] == []
+
+
+def test_review_generates_concise_public_copy_for_meaningful_change():
+    report = build_review(
+        [
+            snapshot(
+                team_name='Cleveland Guardians',
+                team_abbreviation='CLE',
+                clean=5,
+                coverage_label='Stable Coverage Safety',
+            )
+        ],
+        [
+            snapshot(
+                team_name='Cleveland Guardians',
+                team_abbreviation='CLE',
+                clean=2,
+                coverage_label='Thin Coverage Safety',
+            )
+        ],
+    )
+    team = report['teams'][0]
+
+    assert team['public_copy_generated'] is True
+    assert team['public_copy_status'] == 'generated'
+    assert 'Cleveland Guardians' in team['public_headline']
+    assert team['public_summary']
+    assert team['public_context'] == (
+        'There is another meaningful shift here: coverage also stabilized.'
+    )
+    assert report['distribution_summary']['public_copy_generated_count'] == 1
+    assert report['distribution_summary']['no_public_copy_count'] == 0
+
+
+def test_review_repeated_public_copy_flags_work():
+    current = [
+        snapshot(team_id=1, team_name='Same Club', team_abbreviation='DUP', clean=5),
+        snapshot(team_id=2, team_name='Same Club', team_abbreviation='DUP', clean=5),
+    ]
+    prior = [
+        snapshot(team_id=1, team_name='Same Club', team_abbreviation='DUP', clean=2),
+        snapshot(team_id=2, team_name='Same Club', team_abbreviation='DUP', clean=2),
+    ]
+
+    report = build_review(current, prior)
+    summary = report['distribution_summary']
+
+    assert summary['public_copy_generated_count'] == 2
+    assert list(summary['repeated_headline_counts'].values()) == [2]
+    assert list(summary['repeated_summary_counts'].values()) == [2]
+    assert summary['copy_review_flag_counts'] == {
+        'repeated_headline': 2,
+        'repeated_summary': 2,
+    }
+    assert all(
+        {'repeated_headline', 'repeated_summary'} <= set(team['copy_review_flags'])
+        for team in report['teams']
+    )
+
+
+def test_review_public_copy_governance_safe_and_deterministic():
+    report = build_review(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )
+    repeated = build_review(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )
+    team = report['teams'][0]
+    repeated_team = repeated['teams'][0]
+
+    assert {
+        key: team[key]
+        for key in ('public_headline', 'public_summary', 'public_context')
+    } == {
+        key: repeated_team[key]
+        for key in ('public_headline', 'public_summary', 'public_context')
+    }
+    assert team['copy_review_flags'] == []
+
+    blocked = (
+        'recommend',
+        'prediction',
+        'projected',
+        'expected',
+        'likely',
+        'ranked',
+        'best reliever',
+        'bet',
+        'raw score',
+        'score:',
+        'should use',
+        'must use',
+    )
+    text = ' '.join(
+        part
+        for part in (
+            team['public_headline'],
+            team['public_summary'],
+            team['public_context'],
+        )
+        if part
+    ).lower()
+    for term in blocked:
+        assert term not in text
+
+
+def test_review_public_copy_does_not_leak_identity_labels():
+    report = build_review(
+        [
+            snapshot(
+                identity_key='resource_strained',
+                identity_label='Resource-Strained Bullpen',
+            )
+        ],
+        [
+            snapshot(
+                identity_key='flexible_distribution',
+                identity_label='Flexible Distribution Bullpen',
+            )
+        ],
+    )
+    team = report['teams'][0]
+    text = ' '.join(
+        part
+        for part in (
+            team['public_headline'],
+            team['public_summary'],
+            team['public_context'],
+        )
+        if part
+    )
+
+    assert team['public_copy_generated'] is True
+    assert 'Flexible Distribution Bullpen' not in text
+    assert 'Resource-Strained Bullpen' not in text
+    assert 'identity_label_leak' not in team['copy_review_flags']
+
+
+def test_review_tiny_change_not_promoted_into_public_copy():
+    report = build_review(
+        [
+            snapshot(
+                capacity_state='reduced',
+                clean=5,
+                coverage_label='Stable Coverage Safety',
+            )
+        ],
+        [
+            snapshot(
+                capacity_state='thin',
+                clean=4,
+                coverage_label='Stable Coverage Safety',
+            )
+        ],
+    )
+    team = report['teams'][0]
+
+    assert team['selected_top_change']['change_type'] == 'rested_options_changed'
+    assert team['public_copy_generated'] is False
+    assert team['public_copy_status'] == 'skipped_tiny_change'
+    assert team['public_headline'] is None
+    assert team['public_summary'] is None
+    assert team['copy_review_flags'] == ['tiny_change_promoted']
+    assert report['distribution_summary']['copy_review_flag_counts'] == {
+        'tiny_change_promoted': 1,
+    }
 
 
 def test_review_summary_counts_change_types_and_directions():

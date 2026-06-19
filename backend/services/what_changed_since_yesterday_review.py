@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from services.bullpen_identity import IDENTITY_LABELS
+from services.what_changed_since_yesterday_copy import (
+    COPY_FLAG_REPEATED_HEADLINE,
+    COPY_FLAG_REPEATED_SUMMARY,
+    build_what_changed_public_copy,
+)
 from services.what_changed_since_yesterday import (
     CHANGE_IDENTITY,
     CHANGE_RESTED_OPTIONS,
@@ -305,6 +310,11 @@ def _team_review_item(
     top_change = _select_top_change(changes)
     review_summary = _safe_review_summary(team_change, top_change)
     comparison_possible = team_change.get('status') == STATUS_AVAILABLE
+    public_copy = build_what_changed_public_copy(
+        team_change,
+        top_change=top_change,
+        changes=changes,
+    )
 
     return {
         'team_id': team_change.get('team_id'),
@@ -335,13 +345,47 @@ def _team_review_item(
             top_change=top_change,
             review_summary=review_summary,
         ),
+        **public_copy,
     }
+
+
+def _repeated_public_copy_counts(teams: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts = Counter(
+        team.get(field)
+        for team in teams
+        if team.get('public_copy_generated') and team.get(field)
+    )
+    return {
+        text: count
+        for text, count in sorted(counts.items())
+        if count > 1
+    }
+
+
+def _apply_repeated_public_copy_flags(teams: list[dict[str, Any]]) -> None:
+    repeated_headlines = _repeated_public_copy_counts(teams, 'public_headline')
+    repeated_summaries = _repeated_public_copy_counts(teams, 'public_summary')
+    for team in teams:
+        if not team.get('public_copy_generated'):
+            continue
+        flags = team.setdefault('copy_review_flags', [])
+        if (
+            team.get('public_headline') in repeated_headlines
+            and COPY_FLAG_REPEATED_HEADLINE not in flags
+        ):
+            flags.append(COPY_FLAG_REPEATED_HEADLINE)
+        if (
+            team.get('public_summary') in repeated_summaries
+            and COPY_FLAG_REPEATED_SUMMARY not in flags
+        ):
+            flags.append(COPY_FLAG_REPEATED_SUMMARY)
 
 
 def _distribution_summary(teams: list[dict[str, Any]]) -> dict[str, Any]:
     change_types = Counter()
     change_directions = Counter()
     flags = Counter()
+    copy_flags = Counter()
 
     for team in teams:
         for change in team.get('all_meaningful_changes') or []:
@@ -349,12 +393,17 @@ def _distribution_summary(teams: list[dict[str, Any]]) -> dict[str, Any]:
             change_directions[change.get('change_direction') or 'unknown'] += 1
         for flag in team.get('review_flags') or []:
             flags[flag] += 1
+        for flag in team.get('copy_review_flags') or []:
+            copy_flags[flag] += 1
 
     teams_with_comparison = [
         team for team in teams if team.get('comparison_possible')
     ]
     teams_with_changes = [
         team for team in teams if team.get('all_meaningful_changes')
+    ]
+    teams_with_copy = [
+        team for team in teams if team.get('public_copy_generated')
     ]
 
     return {
@@ -384,6 +433,20 @@ def _distribution_summary(teams: list[dict[str, Any]]) -> dict[str, Any]:
         'review_flag_counts': {
             flag: flags[flag]
             for flag in sorted(flags)
+        },
+        'public_copy_generated_count': len(teams_with_copy),
+        'no_public_copy_count': len(teams) - len(teams_with_copy),
+        'repeated_headline_counts': _repeated_public_copy_counts(
+            teams,
+            'public_headline',
+        ),
+        'repeated_summary_counts': _repeated_public_copy_counts(
+            teams,
+            'public_summary',
+        ),
+        'copy_review_flag_counts': {
+            flag: copy_flags[flag]
+            for flag in sorted(copy_flags)
         },
     }
 
@@ -430,6 +493,7 @@ def build_what_changed_since_yesterday_review(
         ),
         key=_team_sort_key,
     )
+    _apply_repeated_public_copy_flags(teams)
     summary = _distribution_summary(teams)
 
     return {

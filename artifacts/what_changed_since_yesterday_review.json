@@ -27,6 +27,7 @@
   "complete_team_count": true,
   "current_payload_source": "live_dashboard_build",
   "distribution_summary": {
+    "copy_review_flag_counts": {},
     "count_by_change_direction": {
       "decreased": 1,
       "expanded": 2,
@@ -40,6 +41,10 @@
       "rested_options_changed": 16,
       "trusted_group_changed": 3
     },
+    "no_public_copy_count": 13,
+    "public_copy_generated_count": 17,
+    "repeated_headline_counts": {},
+    "repeated_summary_counts": {},
     "review_flag_counts": {
       "no_meaningful_change": 13
     },
@@ -50,7 +55,7 @@
     "teams_without_prior_snapshot": 0
   },
   "expected_team_count": 30,
-  "generated_at": "2026-06-19T22:48:08.530177+00:00",
+  "generated_at": "2026-06-19T22:59:05.638089+00:00",
   "ordering_basis": "team_abbreviation_then_team_name",
   "prediction_applied": false,
   "prior_payload_source": "scheduled_sync",
@@ -80,6 +85,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -94,6 +100,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Athletics bullpen has more room than yesterday.",
+      "public_summary": "For the Athletics bullpen, rested options moved from 3 to 6, giving the group three more usable paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 3 to 6.",
       "selected_top_change": {
@@ -133,6 +144,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -147,6 +159,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -167,6 +184,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -181,6 +199,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -201,6 +224,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -215,6 +239,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -251,6 +280,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -265,6 +295,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Boston Red Sox bullpen has more breathing room today.",
+      "public_summary": "The bullpen went from 5 rested options to 7, adding two cleaner paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 5 to 7.",
       "selected_top_change": {
@@ -320,6 +355,7 @@
       ],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -334,6 +370,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Chicago Cubs trusted layer is smaller than yesterday.",
+      "public_summary": "The trusted group moved from 8 to 6, making the late-inning support layer smaller than yesterday.",
       "review_flags": [],
       "review_summary": "Trusted group narrowed from 8 to 6.",
       "selected_top_change": {
@@ -373,6 +414,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -387,6 +429,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -438,6 +485,7 @@
       ],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -452,6 +500,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Cleveland Guardians coverage picture stabilized.",
+      "public_summary": "Coverage moved from stable to strong, giving the bullpen more room if the game stretches.",
       "review_flags": [],
       "review_summary": "Coverage safety improved from Stable Coverage Safety to Strong Coverage Safety.",
       "selected_top_change": {
@@ -522,6 +575,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -536,6 +590,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There is another meaningful shift here: coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Colorado Rockies bullpen has a few more paths available.",
+      "public_summary": "The bullpen went from 4 rested options to 8, adding four cleaner paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 4 to 8.",
       "selected_top_change": {
@@ -591,6 +650,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -605,6 +665,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Chicago White Sox bullpen has a few more paths available.",
+      "public_summary": "There are 10 rested options after 8 yesterday, giving the bullpen more margin.",
       "review_flags": [],
       "review_summary": "Rested options increased from 8 to 10.",
       "selected_top_change": {
@@ -660,6 +725,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -674,6 +740,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Detroit Tigers bullpen has more room than yesterday.",
+      "public_summary": "The rested count moved from 5 to 8, opening three more ways to cover the game.",
       "review_flags": [],
       "review_summary": "Rested options increased from 5 to 8.",
       "selected_top_change": {
@@ -713,6 +784,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -727,6 +799,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -747,6 +824,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -761,6 +839,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -797,6 +880,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -811,6 +895,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Los Angeles Angels bullpen has a few more paths available.",
+      "public_summary": "Yesterday's 5 rested options became 7, so there is more room around the edges.",
       "review_flags": [],
       "review_summary": "Rested options increased from 5 to 7.",
       "selected_top_change": {
@@ -881,6 +970,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -895,6 +985,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There is another meaningful shift here: coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Los Angeles Dodgers bullpen has more room than yesterday.",
+      "public_summary": "For the Los Angeles Dodgers bullpen, rested options moved from 4 to 8, giving the group four more usable paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 4 to 8.",
       "selected_top_change": {
@@ -934,6 +1029,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -948,6 +1044,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1014,6 +1115,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1028,6 +1130,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There are 2 other meaningful shifts here, including coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Milwaukee Brewers bullpen has more breathing room today.",
+      "public_summary": "For the Milwaukee Brewers bullpen, rested options moved from 3 to 5, giving the group two more usable paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 3 to 5.",
       "selected_top_change": {
@@ -1098,6 +1205,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1112,6 +1220,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There is another meaningful shift here: coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Minnesota Twins bullpen has more room than yesterday.",
+      "public_summary": "For the Minnesota Twins bullpen, rested options moved from 4 to 8, giving the group four more usable paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 4 to 8.",
       "selected_top_change": {
@@ -1182,6 +1295,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1196,6 +1310,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There is another meaningful shift here: coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The New York Mets bullpen has a few more paths available.",
+      "public_summary": "The rested count moved from 4 to 6, opening two more ways to cover the game.",
       "review_flags": [],
       "review_summary": "Rested options increased from 4 to 6.",
       "selected_top_change": {
@@ -1251,6 +1370,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1265,6 +1385,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The New York Yankees bullpen has more room than yesterday.",
+      "public_summary": "There are 8 rested options after 5 yesterday, giving the bullpen more margin.",
       "review_flags": [],
       "review_summary": "Rested options increased from 5 to 8.",
       "selected_top_change": {
@@ -1350,6 +1475,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1364,6 +1490,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There are 2 other meaningful shifts here, including coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Philadelphia Phillies bullpen has more breathing room today.",
+      "public_summary": "There are 7 rested options after 2 yesterday, giving the bullpen more margin.",
       "review_flags": [],
       "review_summary": "Rested options increased from 2 to 7.",
       "selected_top_change": {
@@ -1403,6 +1534,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1417,6 +1549,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1453,6 +1590,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1467,6 +1605,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The San Diego Padres bullpen has more room than yesterday.",
+      "public_summary": "For the San Diego Padres bullpen, rested options moved from 5 to 7, giving the group two more usable paths than yesterday.",
       "review_flags": [],
       "review_summary": "Rested options increased from 5 to 7.",
       "selected_top_change": {
@@ -1506,6 +1649,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1520,6 +1664,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1540,6 +1689,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1554,6 +1704,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1574,6 +1729,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1588,6 +1744,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1608,6 +1769,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1622,6 +1784,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],
@@ -1673,6 +1840,7 @@
       ],
       "comparison_possible": true,
       "confidence": "high",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1687,6 +1855,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": "There is another meaningful shift here: coverage also stabilized.",
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Texas Rangers bullpen has more breathing room today.",
+      "public_summary": "Yesterday's 3 rested options became 7, so there is more room around the edges.",
       "review_flags": [],
       "review_summary": "Rested options increased from 3 to 7.",
       "selected_top_change": {
@@ -1757,6 +1930,7 @@
       ],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1771,6 +1945,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": true,
+      "public_copy_status": "generated",
+      "public_headline": "The Toronto Blue Jays margin got thinner.",
+      "public_summary": "Coverage slipped from thin to limited, leaving less room if the game stretches.",
       "review_flags": [],
       "review_summary": "Coverage safety worsened from Thin Coverage Safety to Limited Coverage Safety.",
       "selected_top_change": {
@@ -1810,6 +1989,7 @@
       "all_meaningful_changes": [],
       "comparison_possible": true,
       "confidence": "medium",
+      "copy_review_flags": [],
       "current_snapshot": {
         "availability_reference_date": "2026-06-20",
         "data_through": "2026-06-19",
@@ -1824,6 +2004,11 @@
         "snapshot_id": 46,
         "source": "scheduled_sync"
       },
+      "public_context": null,
+      "public_copy_generated": false,
+      "public_copy_status": "skipped_no_meaningful_change",
+      "public_headline": null,
+      "public_summary": null,
       "review_flags": [
         "no_meaningful_change"
       ],

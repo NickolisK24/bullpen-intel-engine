@@ -56,6 +56,8 @@ def print_summary(report, output_path):
     print(f"Teams with comparison: {summary['teams_with_comparison_available']}")
     print(f"Teams without prior snapshot: {summary['teams_without_prior_snapshot']}")
     print(f"Teams with meaningful changes: {summary['teams_with_meaningful_changes']}")
+    print(f"Public copy generated: {summary['public_copy_generated_count']}")
+    print(f"No public copy: {summary['no_public_copy_count']}")
     print(
         'Change types: '
         f"{json.dumps(summary['count_by_change_type'], sort_keys=True)}"
@@ -63,6 +65,10 @@ def print_summary(report, output_path):
     print(
         'Review flags: '
         f"{json.dumps(summary['review_flag_counts'], sort_keys=True)}"
+    )
+    print(
+        'Copy review flags: '
+        f"{json.dumps(summary['copy_review_flag_counts'], sort_keys=True)}"
     )
 
 
