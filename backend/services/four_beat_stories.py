@@ -165,7 +165,7 @@ PHRASE_VARIANTS = {
         "The results are not the issue; the cost of every clean inning is a little higher tonight.",
         "The challenge isn't getting outs. It's replacing them.",
         'The results have held up. The margin has gotten thinner.',
-        "They're still getting outs, but the path through the game is tighter.",
+        "They're still getting outs, but the margin inside the game is tighter.",
         'Every clean inning carries a little more weight tonight.',
         'The bullpen is still effective, but there is less room for mistakes.',
     ),
@@ -1740,6 +1740,7 @@ def assemble_story(rule_key, inputs, lead=None):
         'source_limitations_present': bool((why_context or {}).get('source_limitations_present')),
     }
     story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
+    story_context_meta = story_facts.get('bullpen_context_integration') or {}
     narrative = render_story_narrative(story_facts)
     story = {
         'story_id': f"{team.get('team_id')}:{rule_key}",
@@ -1811,6 +1812,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'rotation_support_pressure': inputs.get('rotation_support_pressure') or {},
             'bullpen_stability': inputs.get('bullpen_stability') or {},
             'bullpen_environment': inputs.get('bullpen_environment') or {},
+            'story_context_integration': story_context_meta,
             'high_risk_arms': inputs['high_risk_arms'],
             'high_risk_arm_count': inputs['high_risk_arms'],
             'high_risk_arm_names': [
