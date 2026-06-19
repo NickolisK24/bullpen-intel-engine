@@ -442,28 +442,55 @@ function teamNameFromChange(item) {
   )
 }
 
+const WHAT_CHANGED_PUBLIC_CAPABILITY = 'what_changed_since_yesterday_public_v1'
+const WHAT_CHANGED_PUBLIC_LIMIT = 6
+const WHAT_CHANGED_PUBLIC_MAX = 8
+
 function normalizeHomepageChange(item, index) {
   const teamName = teamNameFromChange(item)
-  const change = cleanStoryText(item?.change || item?.summary)
-  const whyChanged = cleanStoryText(item?.why_changed || item?.whyChanged || item?.reason)
-  if (!teamName || !change || !whyChanged) return null
+  const headline = cleanStoryText(item?.public_headline || item?.publicHeadline)
+  const summary = cleanStoryText(item?.public_summary || item?.publicSummary)
+  const context = cleanStoryText(item?.public_context || item?.publicContext)
+  const flags = item?.copy_review_flags || item?.copyReviewFlags || []
+  if (item?.public_copy_generated === false || item?.publicCopyGenerated === false) return null
+  if (Array.isArray(flags) && flags.length > 0) return null
+  if (!teamName || !headline || !summary) return null
 
   return {
     key: cleanStoryText(item?.key) || `${teamName}-${index}`,
     teamName,
     teamAbbr: cleanStoryText(item?.team_abbreviation || item?.teamAbbr || item?.team?.team_abbreviation),
-    change,
-    whyChanged,
+    headline,
+    summary,
+    context,
   }
 }
 
 export function getWhatChangedSinceYesterday(dashboard) {
   const payload = dashboard?.what_changed_since_yesterday || dashboard?.whatChangedSinceYesterday
+  if (payload?.capability !== WHAT_CHANGED_PUBLIC_CAPABILITY) {
+    return {
+      hasChanges: false,
+      items: [],
+      comparison: payload?.comparison || null,
+    }
+  }
+  if (payload?.comparison?.comparison_available === false) {
+    return {
+      hasChanges: false,
+      items: [],
+      comparison: payload?.comparison || null,
+    }
+  }
   const items = Array.isArray(payload?.items) ? payload.items : []
+  const limit = Math.min(
+    WHAT_CHANGED_PUBLIC_MAX,
+    Math.max(0, Number(payload?.item_limit) || WHAT_CHANGED_PUBLIC_LIMIT),
+  )
   const normalized = items
     .map(normalizeHomepageChange)
     .filter(Boolean)
-    .slice(0, 3)
+    .slice(0, limit)
 
   return {
     hasChanges: normalized.length > 0,

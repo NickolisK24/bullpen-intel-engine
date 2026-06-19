@@ -162,45 +162,92 @@ function dashboardWithHomepageChanges(base = dashboard) {
   return {
     ...base,
     what_changed_since_yesterday: {
-      capability: 'homepage_bullpen_changes_v1',
+      capability: 'what_changed_since_yesterday_public_v1',
       ranking_applied: false,
       selection_made: false,
+      prediction_applied: false,
+      ordering_basis: 'team_abbreviation_then_team_name',
+      item_limit: 6,
       comparison: {
         previous_data_through: '2026-06-04',
         current_data_through: '2026-06-05',
+        comparison_available: true,
       },
       items: [
         {
-          key: '141-monitor',
+          key: '141-what-changed',
           team_id: 141,
           team_name: 'Toronto Blue Jays',
           team_abbreviation: 'TOR',
-          change: 'Watch-list arms increased from 2 to 4.',
-          why_changed: 'More relievers now sit in the watch-list workload band than in the prior window.',
+          public_headline: 'The Toronto Blue Jays bullpen has more breathing room today.',
+          public_summary: 'The rested count moved from 2 to 5, opening three more ways to cover the game.',
+          public_context: 'Coverage also stabilized behind the change.',
+          confidence: 'high',
+          change_type: 'rested_options_changed',
         },
         {
-          key: '120-available',
+          key: '120-what-changed',
           team_id: 120,
           team_name: 'Washington Nationals',
           team_abbreviation: 'WSH',
-          change: 'Rested options increased from 4 to 6.',
-          why_changed: 'The current board shows more rested options than the prior window.',
+          public_copy_generated: false,
+          public_headline: 'The Washington Nationals bullpen has more room than yesterday.',
+          public_summary: 'This skipped item should not render.',
         },
         {
-          key: '121-restricted',
+          key: '121-what-changed',
           team_id: 121,
           team_name: 'New York Mets',
           team_abbreviation: 'NYM',
-          change: 'Relievers needing rest decreased from 4 to 3.',
-          why_changed: 'Fewer relievers now need rest after recent work than in the prior window.',
+          public_headline: 'The New York Mets margin got thinner.',
+          public_summary: 'This flagged item should not render.',
+          copy_review_flags: ['too_mechanical'],
         },
         {
-          key: '137-monitor',
+          key: '137-what-changed',
           team_id: 137,
           team_name: 'San Francisco Giants',
           team_abbreviation: 'SF',
-          change: 'Watch-list arms decreased from 3 to 2.',
-          why_changed: 'Fewer relievers now sit in the watch-list workload band than in the prior window.',
+          public_headline: 'Coverage looks sturdier for the San Francisco Giants bullpen today.',
+          public_summary: 'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.',
+          public_context: null,
+          identity_label: 'Flexible Distribution Bullpen',
+        },
+        {
+          key: '114-what-changed',
+          team_id: 114,
+          team_name: 'Cleveland Guardians',
+          team_abbreviation: 'CLE',
+          public_headline: 'The Cleveland Guardians bullpen has a few more paths available.',
+          public_summary: "Yesterday's 3 rested options became 5, so there is more room around the edges.",
+          public_context: null,
+        },
+        {
+          key: '111-what-changed',
+          team_id: 111,
+          team_name: 'Boston Red Sox',
+          team_abbreviation: 'BOS',
+          public_headline: 'The Boston Red Sox coverage picture stabilized.',
+          public_summary: 'The coverage read moved from thin to stable, leaving more margin than yesterday.',
+          public_context: null,
+        },
+        {
+          key: '112-what-changed',
+          team_id: 112,
+          team_name: 'Chicago Cubs',
+          team_abbreviation: 'CHC',
+          public_headline: 'The Chicago Cubs bullpen has more usable depth today.',
+          public_summary: 'Usable bullpen depth moved from 4 to 6, creating two more paths through the game.',
+          public_context: null,
+        },
+        {
+          key: '113-what-changed',
+          team_id: 113,
+          team_name: 'Chicago White Sox',
+          team_abbreviation: 'CWS',
+          public_headline: 'The Chicago White Sox bullpen has more room than yesterday.',
+          public_summary: 'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.',
+          public_context: null,
         },
       ],
       limitations: [],
@@ -766,31 +813,87 @@ test('what changed since yesterday stays hidden without comparison data', () => 
   assert.ok(!htmlIncludes(html, 'No data available'))
 })
 
-test('what changed since yesterday normalizes three complete change items', () => {
+test('what changed since yesterday normalizes eligible public copy items', () => {
   const changes = getWhatChangedSinceYesterday(dashboardWithHomepageChanges())
 
   assert.equal(changes.hasChanges, true)
-  assert.equal(changes.items.length, 3)
+  assert.equal(changes.items.length, 6)
   assert.deepEqual(
-    changes.items.map(item => [item.teamName, item.change, item.whyChanged]),
+    changes.items.map(item => [item.teamAbbr, item.teamName, item.headline, item.summary, item.context || null]),
     [
       [
+        'TOR',
         'Toronto Blue Jays',
-        'Watch-list arms increased from 2 to 4.',
-        'More relievers now sit in the watch-list workload band than in the prior window.',
+        'The Toronto Blue Jays bullpen has more breathing room today.',
+        'The rested count moved from 2 to 5, opening three more ways to cover the game.',
+        'Coverage also stabilized behind the change.',
       ],
       [
-        'Washington Nationals',
-        'Rested options increased from 4 to 6.',
-        'The current board shows more rested options than the prior window.',
+        'SF',
+        'San Francisco Giants',
+        'Coverage looks sturdier for the San Francisco Giants bullpen today.',
+        'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.',
+        null,
       ],
       [
-        'New York Mets',
-        'Relievers needing rest decreased from 4 to 3.',
-        'Fewer relievers now need rest after recent work than in the prior window.',
+        'CLE',
+        'Cleveland Guardians',
+        'The Cleveland Guardians bullpen has a few more paths available.',
+        "Yesterday's 3 rested options became 5, so there is more room around the edges.",
+        null,
+      ],
+      [
+        'BOS',
+        'Boston Red Sox',
+        'The Boston Red Sox coverage picture stabilized.',
+        'The coverage read moved from thin to stable, leaving more margin than yesterday.',
+        null,
+      ],
+      [
+        'CHC',
+        'Chicago Cubs',
+        'The Chicago Cubs bullpen has more usable depth today.',
+        'Usable bullpen depth moved from 4 to 6, creating two more paths through the game.',
+        null,
+      ],
+      [
+        'CWS',
+        'Chicago White Sox',
+        'The Chicago White Sox bullpen has more room than yesterday.',
+        'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.',
+        null,
       ],
     ],
   )
+  assert.ok(!changes.items.some(item => item.teamName === 'Washington Nationals'))
+  assert.ok(!changes.items.some(item => item.teamName === 'New York Mets'))
+})
+
+test('what changed since yesterday hides low-trust public payloads', () => {
+  const unavailable = dashboardWithHomepageChanges()
+  unavailable.what_changed_since_yesterday = {
+    ...unavailable.what_changed_since_yesterday,
+    comparison: {
+      ...unavailable.what_changed_since_yesterday.comparison,
+      comparison_available: false,
+    },
+  }
+  const oldPayload = {
+    ...dashboard,
+    what_changed_since_yesterday: {
+      capability: 'homepage_bullpen_changes_v1',
+      items: [
+        {
+          team_name: 'Toronto Blue Jays',
+          change: 'Raw old change.',
+          why_changed: 'Raw old reason.',
+        },
+      ],
+    },
+  }
+
+  assert.equal(getWhatChangedSinceYesterday(unavailable).hasChanges, false)
+  assert.equal(getWhatChangedSinceYesterday(oldPayload).hasChanges, false)
 })
 
 test('what changed since yesterday renders between the flagship and watch list', () => {
@@ -806,10 +909,17 @@ test('what changed since yesterday renders between the flagship and watch list',
   assert.ok(changedIndex > flagshipIndex, 'change section should follow the flagship')
   assert.ok(watchIndex > changedIndex, 'watch list should follow the change section')
   assert.ok(htmlIncludes(html, 'Toronto Blue Jays'))
-  assert.ok(htmlIncludes(html, 'Watch-list arms increased from 2 to 4.'))
-  assert.ok(htmlIncludes(html, 'More relievers now sit in the watch-list workload band than in the prior window.'))
+  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays bullpen has more breathing room today.'))
+  assert.ok(htmlIncludes(html, 'The rested count moved from 2 to 5, opening three more ways to cover the game.'))
+  assert.ok(htmlIncludes(html, 'Coverage also stabilized behind the change.'))
+  assert.ok(!htmlIncludes(html, 'This skipped item should not render.'))
+  assert.ok(!htmlIncludes(html, 'This flagged item should not render.'))
+  assert.ok(!htmlIncludes(html, 'rested_options_changed'))
+  assert.ok(!htmlIncludes(html, 'Flexible Distribution Bullpen'))
+  assert.ok(!htmlIncludes(html, 'confidence'))
   assert.ok(!htmlIncludes(html, 'Top-ranked change'))
   assert.ok(!htmlIncludes(html, '#1 biggest mover'))
+  assert.ok(!htmlIncludes(html, '>01<'))
 })
 
 test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {
