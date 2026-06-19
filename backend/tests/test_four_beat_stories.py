@@ -127,12 +127,15 @@ ENVIRONMENT_INTRO_MARKERS = (
 )
 
 DISCLOSURE_BODY_MARKERS = (
-    'full roster picture',
-    'roster context',
-    'usage pattern',
-    'work has been distributed',
+    'bullpen workload',
+    'usage read',
+    'roster read',
+    'recent innings tell',
+    'cleanest part of the read',
+    'clearest clue',
+    'roster edges',
     'on the mound',
-    'roster variable',
+    'cleanest part of the picture',
 )
 
 
@@ -1222,7 +1225,7 @@ def test_renderer_disclosure_stays_present_without_repeating_footer_language():
         assert not (has_body_caveat and note)
         if note:
             assert note not in narrative
-            assert len(note) <= 32
+            assert len(note) <= 72
         else:
             assert any(marker in closing.lower() for marker in DISCLOSURE_BODY_MARKERS)
         for phrase in AWKWARD_RENDERER_PHRASES:

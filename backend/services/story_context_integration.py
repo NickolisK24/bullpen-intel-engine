@@ -285,7 +285,7 @@ def build_story_context_integration(
     if active_room and resource_strained:
         if top_structure:
             return _result(
-                "The late innings still look pretty normal. It's everything behind that group that is being asked to carry more.",
+                "The late innings still look pretty normal. It is everything behind that group being asked to handle more.",
                 reason='top_structure_with_resource_strain',
                 sources=['active_capacity', 'resource_pool', 'trusted_lane'],
             )
@@ -318,7 +318,7 @@ def build_story_context_integration(
 
     if results_mask_story and (resource_strained or trust_narrow):
         return _result(
-            'The results can still look sturdy while the usable paths through the game are getting thinner.',
+            'The results can still look sturdy while the usable answers underneath them get thinner.',
             reason='results_mask_thinner_bullpen_context',
             sources=['resource_pool', 'trusted_lane'],
         )

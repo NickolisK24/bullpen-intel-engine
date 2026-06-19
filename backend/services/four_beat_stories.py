@@ -165,7 +165,7 @@ PHRASE_VARIANTS = {
         "The results are not the issue; the cost of every clean inning is a little higher tonight.",
         "The challenge isn't getting outs. It's replacing them.",
         'The results have held up. The margin has gotten thinner.',
-        "They're still getting outs, but the path through the game is tighter.",
+        "They're still getting outs, but the margin inside the game is tighter.",
         'Every clean inning carries a little more weight tonight.',
         'The bullpen is still effective, but there is less room for mistakes.',
     ),
