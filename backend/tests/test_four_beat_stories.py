@@ -1,6 +1,8 @@
+import inspect
 from datetime import date, timedelta
 from types import SimpleNamespace
 
+import services.team_story_narrative as team_story_narrative
 from services.availability import STATUS_AVAILABLE, STATUS_AVOID, STATUS_MONITOR
 from services.four_beat_stories import (
     BEAT_CONTEXT,
@@ -87,6 +89,24 @@ STABILITY_CONTEXT_MARKERS = (
     'not looked exactly the same',
     'innings have been moving around',
     'bullpen mix has been shifting',
+)
+
+AWKWARD_RENDERER_PHRASES = (
+    'one-lane bullpen story',
+    'one-lane bullpen read',
+    'run-prevention line',
+    'workload trail',
+    'usage trail',
+    'surface result',
+    'surface line',
+    'carrying the read',
+    'the same part of the bullpen keeps carrying the read',
+    'this read starts with',
+    'the first glance',
+    'because the full bullpen picture is not completely settled',
+    'the workload trail explains',
+    'the usage trail explains',
+    'the run-prevention line gives',
 )
 
 ENVIRONMENT_INTRO_MARKERS = (
@@ -849,6 +869,32 @@ def test_renderer_varies_repeated_disclosure_language_deterministically():
         assert narrative_contains_forbidden_language(narrative) is False
 
 
+def test_renderer_disclosure_stays_present_without_repeating_footer_language():
+    facts = [
+        _sample_story_facts(team_id, team_name, abbr)
+        for team_id, team_name, abbr in [
+            (125, 'Miami Marlins', 'MIA'),
+            (126, 'Milwaukee Brewers', 'MIL'),
+            (127, 'New York Yankees', 'NYY'),
+            (128, 'Baltimore Orioles', 'BAL'),
+            (129, 'Chicago White Sox', 'CWS'),
+        ]
+    ]
+
+    for item in facts:
+        narrative = render_story_narrative(item)
+        note = render_story_disclosure_note(item)
+        closing = narrative.split('\n\n')[-1]
+        combined = f'{narrative} {note}'.lower()
+
+        assert note
+        assert note not in narrative
+        assert len(note) <= 55
+        assert any(marker in closing.lower() for marker in ('usage', 'roster', 'incomplete', 'availability', 'games'))
+        for phrase in AWKWARD_RENDERER_PHRASES:
+            assert phrase not in combined
+
+
 def test_renderer_varies_watch_question_openings_across_sample_set():
     teams = [
         (117, 'Houston Astros', 'HOU'),
@@ -1059,6 +1105,8 @@ def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
             assert label not in narrative
         for term in INTERNAL_TAXONOMY_TERMS:
             assert term.lower() not in lower
+        for phrase in AWKWARD_RENDERER_PHRASES:
+            assert phrase not in lower
         for forbidden in (
             'betting',
             'prediction',
@@ -1079,6 +1127,13 @@ def test_archetype_narratives_avoid_forbidden_language_and_taxonomy():
             'dfa',
         ):
             assert forbidden.lower() not in lower
+
+
+def test_renderer_phrase_pools_do_not_keep_banned_awkward_templates():
+    source = inspect.getsource(team_story_narrative).lower()
+
+    for phrase in AWKWARD_RENDERER_PHRASES:
+        assert phrase not in source
 
 
 def test_story_narrative_output_is_deterministic():
