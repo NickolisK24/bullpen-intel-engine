@@ -31,6 +31,14 @@ The layer is intentionally explanatory. It turns existing structured reads into
 plain baseball implications such as fewer clean paths, more coverage margin, or
 a narrower trusted support layer.
 
+## Narrative Language Standard
+
+Any user-facing consequence, summary, or explanatory line derived from this
+layer must comply with
+[`docs/product/BASEBALLOS_WRITING_RULES.md`](../product/BASEBALLOS_WRITING_RULES.md).
+Internal metric names should be translated into baseball meaning before reaching
+users, with the managerial consequence made explicit.
+
 ## What It Does Not Do
 
 This layer does not predict game outcomes, forecast performance, estimate

@@ -54,6 +54,14 @@ This foundation gives future story or review surfaces a stable way to say that
 capacity improved, coverage tightened, a trusted group widened, or the identity
 shifted without turning that observation into tactical advice.
 
+## Narrative Language Standard
+
+Any user-facing summary or story derived from this layer must comply with
+[`docs/product/BASEBALLOS_WRITING_RULES.md`](../product/BASEBALLOS_WRITING_RULES.md).
+Change language should explain what moved, why that movement matters in baseball
+terms, and how internal reads translate into bullpen reality before users see
+them.
+
 ## Relationship To Role Change Detection
 
 Role Change Detection V1 is about structural role movement and bullpen role

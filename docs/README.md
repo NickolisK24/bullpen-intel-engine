@@ -33,6 +33,10 @@ preserved without cluttering the current view.
   [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md).
 - Governance and trust posture:
   [`governance/CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md).
+- User-facing language and narrative governance:
+  [`product/BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md)
+  and
+  [`governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md).
 
 ## Authoritative Docs
 
@@ -52,6 +56,8 @@ under `archive/` — provide history and context but do not override these.
 | Roster status sync | [`methodology/ROSTER_STATUS_SYNC_IMPLEMENTATION.md`](methodology/ROSTER_STATUS_SYNC_IMPLEMENTATION.md) |
 | Recommendation engine (V2) architecture | [`methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md`](methodology/RECOMMENDATION_ENGINE_V2_ARCHITECTURE.md) |
 | Recommendation engine (V2) API contract | [`methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md`](methodology/RECOMMENDATION_ENGINE_V2_API_CONTRACT.md) |
+| Writing rules and narrative standards | [`product/BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md) |
+| Narrative governance | [`governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md) |
 | Certification ledger | [`governance/CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md) |
 | Governance boundaries | [`governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`](governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md) |
 | Operational reviews summary | [`governance/OPERATIONAL_REVIEWS.md`](governance/OPERATIONAL_REVIEWS.md) |
@@ -70,6 +76,7 @@ under `archive/` — provide history and context but do not override these.
 
 ### product/
 
+- [`BASEBALLOS_WRITING_RULES.md`](product/BASEBALLOS_WRITING_RULES.md)
 - [`PRODUCT_AUDIT_JUNE_2026.md`](product/PRODUCT_AUDIT_JUNE_2026.md)
 - [`COMPETITIVE_ANALYSIS_JUNE_2026.md`](product/COMPETITIVE_ANALYSIS_JUNE_2026.md)
 - [`MONETIZATION_AND_ADOPTION.md`](product/MONETIZATION_AND_ADOPTION.md)
@@ -90,6 +97,7 @@ under `archive/` — provide history and context but do not override these.
 
 ### governance/
 
+- [`BASEBALLOS_NARRATIVE_GOVERNANCE.md`](governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md)
 - [`CERTIFICATION_LEDGER.md`](governance/CERTIFICATION_LEDGER.md)
 - [`OPERATIONAL_REVIEWS.md`](governance/OPERATIONAL_REVIEWS.md)
 - [`RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md`](governance/RECOMMENDATION_ENGINE_V2_GOVERNANCE_BOUNDARIES.md)

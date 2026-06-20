@@ -299,6 +299,8 @@ entry points:
   context.
 - [Certification Ledger](docs/governance/CERTIFICATION_LEDGER.md) -
   certification, production, rollout, and governance state by surface.
+- [Narrative Governance](docs/governance/BASEBALLOS_NARRATIVE_GOVERNANCE.md) -
+  source-of-truth writing rules for user-facing BaseballOS language.
 - [Operational Reviews](docs/governance/OPERATIONAL_REVIEWS.md) - deployment
   review, remediation, verification, and rollout evidence summaries.
 
