@@ -975,7 +975,7 @@ test('what changed since yesterday renders between the flagship and watch list',
   assert.ok(watchIndex > changedIndex, 'watch list should follow the change section')
   assert.equal((html.match(/<option /g) || []).length, 0)
   assert.ok(!htmlIncludes(html, 'Change Team'))
-  assert.ok(htmlIncludes(html, 'Yesterday, today, who worked, and what it changes for tonight.'))
+  assert.ok(htmlIncludes(html, 'tonight, with yesterday&#x27;s workload and today&#x27;s rested options underneath.'))
   assert.ok(htmlIncludes(html, 'Toronto Blue Jays'))
   assert.ok(htmlIncludes(html, 'Yesterday'))
   assert.ok(htmlIncludes(html, 'Today'))

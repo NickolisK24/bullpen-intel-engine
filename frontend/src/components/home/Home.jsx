@@ -320,32 +320,27 @@ function WhatChangedSinceYesterday({
   if (!changes?.hasChanges || items.length < 1) return null
 
   return (
-    <section className="mb-8" aria-label="What Changed Since Yesterday">
+    <section className="mb-7" aria-label="What Changed Since Yesterday">
       <div className="overflow-hidden border border-dirt bg-dugout">
-        <div className="flex flex-col gap-3 border-b border-dirt/80 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            {selectedTeam && (
-              <TeamMark
-                team={selectedTeam}
-                className="h-10 w-10 border-amber/15 bg-white/[0.035] p-1"
-                fallbackClassName="text-sm"
-              />
-            )}
+        <div className="flex flex-col gap-3 border-b border-dirt/70 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+              What Changed Since Yesterday
+            </div>
+            <h2 className="mt-1 font-display text-3xl leading-none tracking-wide text-chalk100">
+              Tonight's shift
+            </h2>
+          </div>
+          {selectedTeam && (
             <div className="min-w-0">
-              <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
-                What Changed Since Yesterday
-              </div>
-              <h2 className="mt-1 font-display text-2xl leading-none tracking-wide text-chalk100 sm:text-3xl">
-                {selectedTeam?.teamName || 'Selected bullpen'}
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
-                Yesterday, today, who worked, and what it changes for tonight.
+              <p className="max-w-xl text-sm leading-relaxed text-chalk400">
+                {selectedTeam.teamName} tonight, with yesterday's workload and today's rested options underneath.
               </p>
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="p-3 sm:p-4">
+        <div className="p-4 sm:p-5">
           {selectedItem ? (
             <SelectedChangePanel item={selectedItem} team={selectedTeam} comparison={changes.comparison} />
           ) : (
@@ -394,15 +389,15 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
   }
 
   return (
-    <section className="mb-8" aria-label="My team">
-      <div className="relative min-h-[12rem] overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-6 sm:p-8 lg:p-9">
-        <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-60" />
-        <div className="relative z-10 flex min-h-[10rem] flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
+    <section className="mb-7" aria-label="My team">
+      <div className="relative min-h-[15rem] overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-8 sm:p-10 lg:p-12">
+        <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-45" />
+        <div className="relative z-10 flex min-h-[12rem] flex-col justify-between gap-8 lg:min-h-[13rem]">
+          <div className="flex min-w-0 flex-col gap-7 sm:flex-row sm:items-center sm:gap-10">
             <TeamMark
               team={team}
-              className="h-28 w-28 border-amber/25 bg-white/[0.04] p-3 shadow-inner sm:h-32 sm:w-32 lg:h-36 lg:w-36"
-              fallbackClassName="text-5xl"
+              className="h-36 w-36 border-amber/25 bg-white/[0.04] p-3 shadow-inner sm:h-40 sm:w-40 lg:h-48 lg:w-48"
+              fallbackClassName="text-6xl"
             />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -413,23 +408,23 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
                   Following
                 </span>
               </div>
-              <h2 className="mt-3 break-words font-display text-5xl leading-none tracking-wide text-chalk100 sm:text-6xl lg:text-7xl">
+              <h2 className="mt-5 break-words font-display text-6xl leading-none tracking-wide text-chalk100 sm:text-7xl lg:text-8xl">
                 {teamLabel}
               </h2>
-              <p className="mt-3 text-lg leading-relaxed text-chalk300">
+              <p className="mt-4 text-xl leading-relaxed text-chalk300">
                 Your bullpen. Tonight.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end lg:self-end">
-            <label className="flex w-full min-w-[12rem] flex-col gap-1 font-mono text-[9px] uppercase tracking-widest text-chalk600 sm:w-auto">
+          <div className="flex flex-col gap-2 border-t border-dirt/50 pt-4 opacity-75 transition-opacity hover:opacity-100 sm:flex-row sm:items-end lg:absolute lg:bottom-8 lg:right-8 lg:border-0 lg:pt-0">
+            <label className="flex w-full min-w-[11rem] flex-col gap-1 font-mono text-[8px] uppercase tracking-widest text-chalk600 sm:w-auto">
               Change team
               <select
                 value={selectValue}
                 onChange={handleChange}
                 disabled={!canSwitch}
-                className="min-h-9 rounded border border-dirt bg-field/60 px-3 py-1.5 text-sm normal-case tracking-normal text-chalk300 outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-8 rounded border border-dirt bg-field/50 px-2.5 py-1 text-xs normal-case tracking-normal text-chalk400 outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Change preferred team"
               >
                 {!selectValue && <option value="">Choose team</option>}
@@ -442,7 +437,7 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
             </label>
             <Link
               to={boardHref}
-              className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+              className="inline-flex min-h-8 items-center justify-center rounded border border-dirt bg-field/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-chalk500 transition-colors hover:border-amber/40 hover:text-amber"
             >
               Open Team Board -&gt;
             </Link>
@@ -560,46 +555,61 @@ function TonightsTeamBullpenPicture({
   const inactiveCount = Number(board?.roster_status?.inactive_context_count || 0)
 
   return (
-    <section className="mb-10" aria-label="Tonight's bullpen picture">
+    <section className="mb-9" aria-label="Tonight's bullpen picture">
       <SectionHeading
         title="Tonight's Bullpen Picture"
-        subtitle={`Who is available, who needs monitoring, and how much room ${teamLabel} has tonight.`}
+        subtitle={`The quick read on ${teamLabel}'s usable depth tonight.`}
       />
 
-      <div className="border border-dirt bg-dugout p-3 sm:p-4">
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
         {loading ? (
           <p className="font-mono text-xs text-chalk500">Loading {teamLabel} bullpen picture...</p>
         ) : error ? (
           <p className="font-mono text-xs text-chalk500">Team bullpen picture is unavailable right now.</p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <TeamPictureMetric
-              label="Available Tonight"
-              value={available}
-              detail="relievers usable now"
-              tone="rest"
-            />
-            <TeamPictureMetric
-              label="On Watch"
-              value={monitor}
-              detail="relievers to monitor"
-              tone="watch"
-            />
-            <TeamPictureMetric
-              label="Needing Rest"
-              value={needingRest}
-              detail="limited, avoid, or unavailable"
-              tone="stress"
-            />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)]">
+            <div className="min-w-0 border border-dirt/70 bg-field/30 p-4">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Supporting Signals
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-4 divide-dirt/60 sm:grid-cols-3 sm:divide-x">
+                <TeamPictureMetric
+                  label="Available Tonight"
+                  value={available}
+                  detail="relievers usable now"
+                  tone="rest"
+                  surface="bare"
+                  valueClassName="text-4xl"
+                />
+                <TeamPictureMetric
+                  label="On Watch"
+                  value={monitor}
+                  detail="relievers to monitor"
+                  tone="watch"
+                  surface="bare"
+                  valueClassName="text-4xl"
+                  className="sm:pl-4"
+                />
+                <TeamPictureMetric
+                  label="Needing Rest"
+                  value={needingRest}
+                  detail="limited, avoid, or unavailable"
+                  tone="stress"
+                  surface="bare"
+                  valueClassName="text-4xl"
+                  className="sm:pl-4"
+                />
+              </div>
+            </div>
 
-            <TeamPictureSlot label="Bullpen Health" tone={stress.state === 'constrained' || stress.state === 'elevated' ? 'stress' : 'rest'}>
-              <p className="font-display text-4xl leading-none tracking-wide text-chalk100">
+            <TeamPictureSlot label="Bullpen Health" tone={stress.state === 'constrained' || stress.state === 'elevated' ? 'stress' : 'rest'} surface="highlight">
+              <p className="font-display text-5xl leading-none tracking-wide text-chalk100">
                 {stress.label || 'No Read'}
               </p>
-              <p className="mt-1 text-sm leading-relaxed text-chalk300">
+              <p className="mt-3 text-base leading-relaxed text-chalk200">
                 {stress.summary || 'No current bullpen health read is available.'}
               </p>
-              <p className="mt-3 font-mono text-[11px] uppercase tracking-wider text-chalk500">
+              <p className="mt-5 border-t border-dirt/60 pt-3 font-mono text-[11px] uppercase tracking-wider text-chalk500">
                 {rosterStatusLine(inactiveCount)}
               </p>
             </TeamPictureSlot>
@@ -624,14 +634,19 @@ function rosterStatusLine(count) {
   return `${count} roster-status ${count === 1 ? 'limit' : 'limits'}`
 }
 
-function TeamPictureSlot({ label, tone = 'rest', className = '', children }) {
+function TeamPictureSlot({ label, tone = 'rest', className = '', surface = 'card', children }) {
   const toneClass = tone === 'stress'
     ? 'text-red-300'
     : tone === 'watch'
       ? 'text-yellow-300'
       : 'text-emerald-300'
+  const surfaceClass = surface === 'bare'
+    ? 'min-w-0'
+    : surface === 'highlight'
+      ? 'min-w-0 border border-amber/30 bg-amber/10 p-5 sm:p-6'
+      : 'min-w-0 border border-dirt/80 bg-field/50 p-4'
   return (
-    <div className={`min-w-0 border border-dirt/80 bg-field/50 p-4 ${className}`}>
+    <div className={`${surfaceClass} ${className}`}>
       <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
         {label}
       </div>
@@ -640,10 +655,10 @@ function TeamPictureSlot({ label, tone = 'rest', className = '', children }) {
   )
 }
 
-function TeamPictureMetric({ label, value, detail, tone, className = '' }) {
+function TeamPictureMetric({ label, value, detail, tone, className = '', surface = 'card', valueClassName = 'text-5xl' }) {
   return (
-    <TeamPictureSlot label={label} tone={tone} className={className}>
-      <p className="font-display text-5xl leading-none tracking-wide text-chalk100">
+    <TeamPictureSlot label={label} tone={tone} className={className} surface={surface}>
+      <p className={`font-display ${valueClassName} leading-none tracking-wide text-chalk100`}>
         {Number.isFinite(value) ? value : '-'}
       </p>
       <p className="mt-1 text-sm leading-relaxed text-chalk300">{detail}</p>
@@ -666,10 +681,12 @@ function SelectedChangePanel({ item, team, comparison }) {
   const delta = restedCountDelta(item)
   const changeTone = delta < 0 ? 'text-red-300' : delta > 0 ? 'text-emerald-300' : 'text-chalk300'
   const changeWord = delta < 0 ? 'fewer' : delta > 0 ? 'more' : 'changed'
+  const consequence = item.context || item.summary || item.headline
+  const supportingLine = item.summary || restedCountLine(item)
 
   return (
     <div>
-      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
         {item.teamAbbr && (
           <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
             {item.teamAbbr}
@@ -678,26 +695,38 @@ function SelectedChangePanel({ item, team, comparison }) {
         <ComparisonWindow comparison={comparison} />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_1.15fr_1.25fr]">
-        <div className="min-w-0 border border-dirt/80 bg-field/60 p-3">
-          <div className="grid grid-cols-3 items-start divide-x divide-dirt/80">
-            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" />
-            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" />
-            <RestedChangeInline delta={delta} changeTone={changeTone} changeWord={changeWord} />
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]">
+        <div className="min-w-0 border-l-2 border-amber/60 bg-field/35 px-4 py-4 sm:px-5">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-amber">
+            Why It Matters
           </div>
-          <p className="mt-3 border-t border-dirt/70 pt-3 text-sm leading-relaxed text-chalk300">
-            {item.summary || restedCountLine(item)}
+          <p className="mt-3 max-w-3xl break-words text-xl leading-relaxed text-chalk100 sm:text-2xl">
+            {consequence}
           </p>
+          {supportingLine && supportingLine !== consequence && (
+            <p className="mt-4 max-w-2xl break-words border-t border-dirt/60 pt-3 text-sm leading-relaxed text-chalk400">
+              {supportingLine}
+            </p>
+          )}
         </div>
 
         <WorkloadAddedSlot workload={item.workloadAdded} />
-        <WhyItMattersSlot value={item.context || item.summary || item.headline} />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-dirt/70 pt-3">
+      <div className="mt-4 flex flex-col gap-4 border-t border-dirt/60 pt-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Rested Options
+          </div>
+          <div className="mt-3 grid max-w-xl grid-cols-3 items-start divide-x divide-dirt/60">
+            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" compact />
+            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" compact />
+            <RestedChangeInline delta={delta} changeTone={changeTone} changeWord={changeWord} compact />
+          </div>
+        </div>
         <Link
           to={item.href || team?.href || '/bullpen?view=board'}
-          className="inline-flex min-h-9 items-center rounded border border-amber/35 bg-amber/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+          className="inline-flex min-h-8 shrink-0 items-center rounded border border-dirt bg-field/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk400 transition-colors hover:border-amber/40 hover:text-amber"
         >
           Open Team Board -&gt;
         </Link>
@@ -734,22 +763,22 @@ function workloadAddedLine(item) {
   return `${count} ${count === 1 ? 'pitcher' : 'pitchers'} added meaningful workload yesterday`
 }
 
-function RestedCountInline({ label, count, tone = 'rest' }) {
+function RestedCountInline({ label, count, tone = 'rest', compact = false }) {
   const toneClass = tone === 'watch' ? 'text-violet-300' : 'text-emerald-300'
   return (
     <div className="min-w-0 px-3 first:pl-0">
       <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
         {label}
       </div>
-      <p className="mt-1.5 font-display text-4xl leading-none tracking-wide text-chalk100">
+      <p className={`${compact ? 'mt-1 text-3xl' : 'mt-1.5 text-4xl'} font-display leading-none tracking-wide text-chalk100`}>
         {Number.isFinite(count) ? count : '-'}
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-chalk200">{restedRelieverLabel(count)}</p>
+      <p className={`${compact ? 'text-xs' : 'text-sm'} mt-1 leading-relaxed text-chalk300`}>{restedRelieverLabel(count)}</p>
     </div>
   )
 }
 
-function RestedChangeInline({ delta, changeTone, changeWord }) {
+function RestedChangeInline({ delta, changeTone, changeWord, compact = false }) {
   const labelTone = delta < 0
     ? 'text-red-300'
     : delta > 0
@@ -760,10 +789,10 @@ function RestedChangeInline({ delta, changeTone, changeWord }) {
       <div className={`font-mono text-[10px] uppercase tracking-widest ${labelTone}`}>
         Change
       </div>
-      <p className={`mt-1.5 font-display text-4xl leading-none tracking-wide ${changeTone}`}>
+      <p className={`${compact ? 'mt-1 text-3xl' : 'mt-1.5 text-4xl'} font-display leading-none tracking-wide ${changeTone}`}>
         {Number.isFinite(delta) ? Math.abs(delta) : '-'}
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-chalk200">
+      <p className={`${compact ? 'text-xs' : 'text-sm'} mt-1 leading-relaxed text-chalk300`}>
         {Number.isFinite(delta) ? `${changeWord} rested relievers` : 'rested reliever change'}
       </p>
     </div>
@@ -773,7 +802,7 @@ function RestedChangeInline({ delta, changeTone, changeWord }) {
 function WorkloadAddedSlot({ workload = [] }) {
   const rows = Array.isArray(workload) ? workload : []
   return (
-    <div className="min-w-0 border border-dirt/80 bg-field/50 p-3">
+    <div className="min-w-0 border border-dirt/70 bg-field/35 p-3">
       <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
         Workload Added Yesterday
       </div>
@@ -793,19 +822,6 @@ function WorkloadAddedSlot({ workload = [] }) {
           No meaningful bullpen movement stands out for this club in the current comparison.
         </p>
       )}
-    </div>
-  )
-}
-
-function WhyItMattersSlot({ value }) {
-  return (
-    <div className="min-w-0 border border-dirt/80 bg-field/50 p-3">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
-        Why It Matters
-      </div>
-      <p className="mt-3 break-words text-sm leading-relaxed text-chalk100">
-        {value}
-      </p>
     </div>
   )
 }
