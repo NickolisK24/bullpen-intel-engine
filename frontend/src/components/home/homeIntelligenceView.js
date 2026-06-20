@@ -442,12 +442,40 @@ function teamNameFromChange(item) {
   )
 }
 
+function teamIdFromChange(item) {
+  const value = item?.team_id ?? item?.teamId ?? item?.team?.team_id ?? item?.team?.teamId
+  if (value == null || value === '') return null
+  const id = Number(value)
+  return Number.isInteger(id) ? id : null
+}
+
+function teamAbbrFromChange(item) {
+  return cleanStoryText(
+    item?.team_abbreviation
+    || item?.teamAbbr
+    || item?.team?.team_abbreviation
+    || item?.team?.teamAbbr,
+  )
+}
+
+function normalizePublicFact(item) {
+  const fact = item?.public_fact || item?.publicFact
+  if (!fact || typeof fact !== 'object') return null
+  const label = cleanStoryText(fact.label)
+  const yesterday = cleanStoryText(fact.yesterday)
+  const today = cleanStoryText(fact.today)
+  if (!label || !yesterday || !today) return null
+  return { label, yesterday, today }
+}
+
 const WHAT_CHANGED_PUBLIC_CAPABILITY = 'what_changed_since_yesterday_public_v1'
 const WHAT_CHANGED_PUBLIC_LIMIT = 6
-const WHAT_CHANGED_PUBLIC_MAX = 8
+const WHAT_CHANGED_PUBLIC_MAX = 30
 
 function normalizeHomepageChange(item, index) {
   const teamName = teamNameFromChange(item)
+  const teamId = teamIdFromChange(item)
+  const teamAbbr = teamAbbrFromChange(item)
   const headline = cleanStoryText(item?.public_headline || item?.publicHeadline)
   const summary = cleanStoryText(item?.public_summary || item?.publicSummary)
   const context = cleanStoryText(item?.public_context || item?.publicContext)
@@ -458,11 +486,17 @@ function normalizeHomepageChange(item, index) {
 
   return {
     key: cleanStoryText(item?.key) || `${teamName}-${index}`,
+    teamId,
     teamName,
-    teamAbbr: cleanStoryText(item?.team_abbreviation || item?.teamAbbr || item?.team?.team_abbreviation),
+    teamAbbr,
     headline,
     summary,
     context,
+    fact: normalizePublicFact(item),
+    href: buildHomeTeamHref({
+      team_id: teamId,
+      team_abbreviation: teamAbbr,
+    }, 'home-what-changed'),
   }
 }
 

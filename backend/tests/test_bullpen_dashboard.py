@@ -141,7 +141,7 @@ class TestDashboardEndpoint:
             'selection_made': False,
             'prediction_applied': False,
             'ordering_basis': 'team_abbreviation_then_team_name',
-            'item_limit': 6,
+            'item_limit': 30,
             'comparison': {
                 'current_data_through': '2026-06-19',
                 'previous_data_through': '2026-06-18',
@@ -156,6 +156,11 @@ class TestDashboardEndpoint:
                     'public_headline': 'The Team 1 bullpen has more breathing room today.',
                     'public_summary': 'The rested count moved from 2 to 5, opening three more ways to cover the game.',
                     'public_context': None,
+                    'public_fact': {
+                        'label': 'Rested options',
+                        'yesterday': '2 rested options',
+                        'today': '5 rested options',
+                    },
                 },
             ],
             'item_count': 1,
@@ -164,7 +169,7 @@ class TestDashboardEndpoint:
         monkeypatch.setattr(
             bullpen_api,
             'build_what_changed_public_payload',
-            lambda current, prior: public_payload,
+            lambda current, prior, **kwargs: public_payload,
         )
         with client.application.app_context():
             _seed_pitcher('A One', team_id=1, mlb_id=1001)
@@ -175,7 +180,7 @@ class TestDashboardEndpoint:
 
         assert changes == public_payload
         assert changes['capability'] == 'what_changed_since_yesterday_public_v1'
-        assert changes['item_limit'] == 6
+        assert changes['item_limit'] == 30
         for forbidden in (
             'change_type',
             'confidence',

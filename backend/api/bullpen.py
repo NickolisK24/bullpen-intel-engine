@@ -124,6 +124,7 @@ PITCHER_LOG_DAYS_MAX = 3650
 MLB_SEASON_MIN = 1876
 MLB_SEASON_MAX = 2100
 RISK_LEVELS = {'LOW', 'MODERATE', 'HIGH', 'CRITICAL'}
+WHAT_CHANGED_PUBLIC_TEAM_LIMIT = 30
 
 FATIGUE_ERA_RESULTS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -2207,6 +2208,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     changes = build_what_changed_public_payload(
         payload,
         previous_payload,
+        limit=WHAT_CHANGED_PUBLIC_TEAM_LIMIT,
     )
     if changes['items']:
         payload['what_changed_since_yesterday'] = changes

@@ -23,6 +23,14 @@ from services.what_changed_since_yesterday_copy import (
 
 CAPABILITY = 'what_changed_since_yesterday_public_v1'
 DEFAULT_PUBLIC_ITEM_LIMIT = 6
+PUBLIC_FACT_LABELS = {
+    'rested_options': 'Rested options',
+    'usable_depth': 'Usable bullpen depth',
+    'resource_health_state': 'Resource picture',
+    'coverage_safety': 'Coverage',
+    'trusted_group_size': 'Trusted group',
+    'identity_key': 'Bullpen shape',
+}
 
 CONSEQUENCE_CONFIDENCE_ALLOWED = {'medium', 'high'}
 CONSEQUENCE_SIGNIFICANCE_ALLOWED = {'meaningful', 'structural'}
@@ -147,6 +155,64 @@ def _facts(item: dict[str, Any] | None) -> list[dict[str, Any]]:
         for fact in (facts if isinstance(facts, list) else [])
         if isinstance(fact, dict)
     ]
+
+
+def _plural_count(value: Any, singular: str, plural: str | None = None) -> str | None:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return None
+    noun = singular if count == 1 else (plural or f'{singular}s')
+    return f'{count} {noun}'
+
+
+def _title_value(value: Any) -> str | None:
+    text = str(value or '').replace('_', ' ').replace('-', ' ').strip()
+    return text.title() if text else None
+
+
+def _coverage_value(value: Any) -> str | None:
+    text = str(value or '').replace('Coverage Safety', '').strip()
+    return f'{text.title()} coverage' if text else None
+
+
+def _display_fact_value(fact_key: str, value: Any) -> str | None:
+    if fact_key == 'rested_options':
+        return _plural_count(value, 'rested option')
+    if fact_key == 'usable_depth':
+        return _plural_count(value, 'usable reliever')
+    if fact_key == 'trusted_group_size':
+        return _plural_count(value, 'trusted arm')
+    if fact_key == 'coverage_safety':
+        return _coverage_value(value)
+    if fact_key == 'resource_health_state':
+        text = _title_value(value)
+        return f'{text} resource picture' if text else None
+    if fact_key == 'identity_key':
+        return 'new bullpen shape'
+    return _title_value(value)
+
+
+def _public_fact(change: dict[str, Any]) -> dict[str, str] | None:
+    facts = _facts(change)
+    if not facts:
+        return None
+    fact = facts[0]
+    fact_key = str(fact.get('fact_key') or '').strip()
+    label = PUBLIC_FACT_LABELS.get(fact_key)
+    if not label:
+        return None
+    previous = _display_fact_value(fact_key, fact.get('previous_value'))
+    current = _display_fact_value(fact_key, fact.get('current_value'))
+    if not previous or not current:
+        return None
+    if fact_key == 'identity_key':
+        previous = 'prior bullpen shape'
+    return {
+        'label': label,
+        'yesterday': previous,
+        'today': current,
+    }
 
 
 def _fact_matches(left: dict[str, Any], right: dict[str, Any]) -> bool:
@@ -283,6 +349,7 @@ def _public_item(
         'public_headline': copy.get('public_headline'),
         'public_summary': copy.get('public_summary'),
         'public_context': consequence_context or copy.get('public_context'),
+        'public_fact': _public_fact(top_change),
         '_copy_review_flags': list(copy.get('copy_review_flags') or []),
     }
 

@@ -109,6 +109,11 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'public_context': (
                 'The Alpha Club bullpen is less boxed into one narrow route than it was yesterday.'
             ),
+            'public_fact': {
+                'label': 'Rested options',
+                'yesterday': '2 rested options',
+                'today': '5 rested options',
+            },
         }
     ]
 
@@ -131,6 +136,7 @@ def test_public_payload_uses_safe_consequence_context_when_available():
         'raw_score',
         'score',
         'identity_label',
+        'identity_key',
     ):
         assert forbidden not in encoded
 
