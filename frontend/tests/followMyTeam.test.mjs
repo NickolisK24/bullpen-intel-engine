@@ -76,12 +76,12 @@ function createFailingStorage() {
   }
 }
 
-test('dashboard renders a non-blocking Follow My Team prompt with no followed team', () => {
+test('dashboard does not render Follow My Team before retention phase', () => {
   const html = inRouter(React.createElement(DashboardView, { data: null, loading: true }))
 
-  assert.ok(htmlIncludes(html, 'Follow My Team'))
-  assert.ok(htmlIncludes(html, 'Follow your team to make BaseballOS open with the bullpen you care about.'))
-  assert.ok(htmlIncludes(html, 'Loading team list...'))
+  assert.ok(!htmlIncludes(html, 'Follow My Team'))
+  assert.ok(!htmlIncludes(html, 'Follow your team to make BaseballOS open with the bullpen you care about.'))
+  assert.ok(!htmlIncludes(html, 'Loading team list...'))
 })
 
 test('first-time card lets the user choose a followed team', () => {

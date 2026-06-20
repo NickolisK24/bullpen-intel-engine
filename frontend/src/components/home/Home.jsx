@@ -1,6 +1,7 @@
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard } from '../../utils/api'
+import { getBullpenDashboard, getTeams } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
@@ -20,10 +21,14 @@ import {
 // browseable feed and the Bullpen page remains the team directory.
 export default function Home() {
   const dash = useFetch(getBullpenDashboard)
+  const teams = useFetch(getTeams)
 
   return (
     <HomeView
       dashboard={dash.data}
+      teams={teams.data || []}
+      teamsLoading={teams.loading}
+      teamsError={teams.error}
       loading={dash.loading}
       error={dash.error}
       staleWithError={dash.staleWithError}
@@ -34,6 +39,9 @@ export default function Home() {
 
 export function HomeView({
   dashboard,
+  teams = [],
+  teamsLoading = false,
+  teamsError = null,
   loading = false,
   error = null,
   staleWithError = false,
@@ -68,7 +76,12 @@ export function HomeView({
             </div>
             <HeroStory hero={hero} />
           </section>
-          <WhatChangedSinceYesterday changes={whatChanged} />
+          <WhatChangedSinceYesterday
+            changes={whatChanged}
+            teams={teams}
+            teamsLoading={teamsLoading}
+            teamsError={teamsError}
+          />
           <BullpenStories stories={watchItems} showCta={false} />
           <LeagueContext context={leagueContext} />
         </>
@@ -85,45 +98,379 @@ export function HomeView({
   )
 }
 
-function WhatChangedSinceYesterday({ changes }) {
+const WHAT_CHANGED_TEAM_STORAGE_KEY = 'baseballos.whatChangedTeam'
+
+function getBrowserStorage() {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage || null
+  } catch {
+    return null
+  }
+}
+
+export function readWhatChangedTeamSelection(storage = getBrowserStorage()) {
+  if (!storage) return null
+  try {
+    const value = storage.getItem(WHAT_CHANGED_TEAM_STORAGE_KEY)
+    return value && typeof value === 'string' ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function saveWhatChangedTeamSelection(value, storage = getBrowserStorage()) {
+  const clean = typeof value === 'string' ? value.trim() : ''
+  if (!clean || !storage) return false
+  try {
+    storage.setItem(WHAT_CHANGED_TEAM_STORAGE_KEY, clean)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function cleanTeamText(value) {
+  const text = value == null ? '' : String(value).trim()
+  return text || null
+}
+
+function teamIdValue(value) {
+  if (value == null || value === '') return null
+  const id = Number(value)
+  return Number.isInteger(id) ? id : null
+}
+
+function teamOptionValue(team) {
+  const teamId = teamIdValue(team.teamId ?? team.team_id)
+  if (teamId != null) return `team:${teamId}`
+  const abbr = cleanTeamText(team.teamAbbr ?? team.team_abbreviation)
+  if (abbr) return `abbr:${abbr.toUpperCase()}`
+  const name = cleanTeamText(team.teamName ?? team.team_name)
+  return name ? `name:${name.toLowerCase()}` : null
+}
+
+function normalizeTeamOption(team) {
+  if (!team || typeof team !== 'object') return null
+  const teamId = teamIdValue(team.teamId ?? team.team_id)
+  const teamName = cleanTeamText(team.teamName ?? team.team_name)
+  const teamAbbr = cleanTeamText(team.teamAbbr ?? team.team_abbreviation)
+  const value = teamOptionValue({ teamId, teamName, teamAbbr })
+  if (!value || (!teamName && !teamAbbr)) return null
+
+  return {
+    value,
+    teamId,
+    teamName: teamName || teamAbbr,
+    teamAbbr,
+    href: buildWhatChangedTeamHref({ teamId, teamAbbr }),
+  }
+}
+
+function buildWhatChangedTeamHref(team) {
+  const teamParam = team?.teamAbbr || (
+    team?.teamId != null ? String(team.teamId) : null
+  )
+  if (!teamParam) return '/bullpen?view=board'
+  const query = new URLSearchParams({
+    view: 'board',
+    team: teamParam,
+    source: 'home-what-changed',
+  })
+  return `/bullpen?${query.toString()}`
+}
+
+function changeMatchesTeam(change, option) {
+  if (!change || !option) return false
+  if (option.teamId != null && change.teamId != null) {
+    if (Number(option.teamId) === Number(change.teamId)) return true
+  }
+  if (option.teamAbbr && change.teamAbbr) {
+    return option.teamAbbr.toLowerCase() === change.teamAbbr.toLowerCase()
+  }
+  return option.teamName?.toLowerCase() === change.teamName?.toLowerCase()
+}
+
+export function buildWhatChangedTeamOptions(teams = [], items = []) {
+  const seen = new Set()
+  const options = []
+  const add = (raw) => {
+    const option = normalizeTeamOption(raw)
+    if (!option) return
+    const keys = [
+      option.value,
+      option.teamAbbr ? `abbr:${option.teamAbbr.toLowerCase()}` : null,
+      option.teamName ? `name:${option.teamName.toLowerCase()}` : null,
+    ].filter(Boolean)
+    if (keys.some(key => seen.has(key))) return
+    keys.forEach(key => seen.add(key))
+    options.push(option)
+  }
+
+  for (const team of (Array.isArray(teams) ? teams : [])) add(team)
+  for (const item of (Array.isArray(items) ? items : [])) add({
+    teamId: item.teamId,
+    teamName: item.teamName,
+    teamAbbr: item.teamAbbr,
+  })
+
+  return options.sort((left, right) => (
+    left.teamName.localeCompare(right.teamName)
+    || String(left.teamAbbr || '').localeCompare(String(right.teamAbbr || ''))
+  ))
+}
+
+function defaultWhatChangedTeamValue(options, items) {
+  const firstChangedItem = items.find(item => options.some(option => changeMatchesTeam(item, option)))
+  const withChange = options.find(option => changeMatchesTeam(firstChangedItem, option))
+  return withChange?.value || options[0]?.value || ''
+}
+
+function selectedWhatChangedTeam(options, value) {
+  return options.find(option => option.value === value) || null
+}
+
+function selectedWhatChangedItem(items, option) {
+  return items.find(item => changeMatchesTeam(item, option)) || null
+}
+
+function WhatChangedSinceYesterday({ changes, teams = [], teamsLoading = false, teamsError = null }) {
   const items = Array.isArray(changes?.items) ? changes.items : []
+  const teamOptions = useMemo(
+    () => buildWhatChangedTeamOptions(teams, items),
+    [teams, items],
+  )
+  const [storedTeamValue, setStoredTeamValue] = useState(() => readWhatChangedTeamSelection())
+  const fallbackValue = defaultWhatChangedTeamValue(teamOptions, items)
+  const selectedValue = teamOptions.some(option => option.value === storedTeamValue)
+    ? storedTeamValue
+    : fallbackValue
+  const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
+  const selectedItem = selectedWhatChangedItem(items, selectedTeam)
+
   if (!changes?.hasChanges || items.length < 1) return null
+
+  const handleTeamChange = (event) => {
+    const nextValue = event.target.value
+    setStoredTeamValue(nextValue)
+    saveWhatChangedTeamSelection(nextValue)
+  }
 
   return (
     <section className="mb-8" aria-label="What Changed Since Yesterday">
       <SectionHeading
         title="What Changed Since Yesterday"
-        subtitle="The short version of how the bullpen map moved from the prior window."
+        subtitle="Pick one club and see how its bullpen picture moved from the prior window."
       />
 
-      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {items.map(item => (
-          <li key={item.key} className="border border-dirt bg-dugout p-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {item.teamAbbr && (
-                <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
-                  {item.teamAbbr}
-                </span>
-              )}
-              <div className="min-w-0 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                {item.teamName}
-              </div>
-            </div>
-            <h3 className="mt-2 font-display text-xl leading-none tracking-wide text-chalk100">
-              {item.headline}
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-chalk200">
-              {item.summary}
-            </p>
-            {item.context && (
-              <p className="mt-2 border-t border-dirt/70 pt-2 text-xs leading-relaxed text-chalk400">
-                {item.context}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <label className="flex w-full max-w-[20rem] flex-col gap-1 font-mono text-[11px] uppercase tracking-wider text-chalk500 sm:min-w-[14rem] sm:max-w-none">
+            Team Selector
+            <select
+              value={selectedValue}
+              onChange={handleTeamChange}
+              disabled={teamOptions.length === 0}
+              className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Choose team for What Changed Since Yesterday"
+            >
+              {teamOptions.map(team => (
+                <option key={team.value} value={team.value}>
+                  {team.teamName}{team.teamAbbr ? ` (${team.teamAbbr})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="font-mono text-[11px] text-chalk500">
+            {teamsLoading && teamOptions.length <= items.length
+              ? 'Loading full team list...'
+              : teamsError
+                ? 'Team list unavailable; showing changed teams.'
+                : `${teamOptions.length} teams available`}
+          </div>
+        </div>
+
+        {selectedItem ? (
+          <SelectedChangePanel item={selectedItem} team={selectedTeam} comparison={changes.comparison} />
+        ) : (
+          <NoSelectedChange team={selectedTeam} comparison={changes.comparison} />
+        )}
+
+        {items.length > 1 && (
+          <details className="mt-4 border-t border-dirt/70 pt-3">
+            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber">
+              View League-Wide Changes ({items.length})
+            </summary>
+            <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map(item => (
+                <li key={item.key} className="border border-dirt/80 bg-field/50 p-3">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                    {item.teamAbbr || item.teamName}
+                  </div>
+                  <p className="mt-1 text-sm leading-snug text-chalk200">
+                    {restedCountLine(item)}
+                  </p>
+                  <p className="mt-1 text-xs leading-snug text-chalk500">
+                    {workloadAddedLine(item)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
     </section>
+  )
+}
+
+function ComparisonWindow({ comparison }) {
+  const previous = comparison?.previous_data_through
+  const current = comparison?.current_data_through
+  if (!previous || !current) return null
+  return (
+    <span className="rounded border border-dirt bg-field/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+      {previous} -&gt; {current}
+    </span>
+  )
+}
+
+function SelectedChangePanel({ item, team, comparison }) {
+  return (
+    <div className="mt-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {item.teamAbbr && (
+          <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
+            {item.teamAbbr}
+          </span>
+        )}
+        <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+          Showing
+        </span>
+        <h3 className="min-w-0 font-display text-2xl leading-none tracking-wide text-chalk100">
+          {item.teamName}
+        </h3>
+        <ComparisonWindow comparison={comparison} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[0.8fr_0.8fr_1.3fr_1.3fr]">
+        <RestedCountSlot label="Yesterday" count={item.yesterdayRestedCount} tone="rest" />
+        <RestedCountSlot label="Today" count={item.todayRestedCount} tone="watch" />
+        <WorkloadAddedSlot workload={item.workloadAdded} />
+        <WhyItMattersSlot value={item.context || item.summary || item.headline} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Link
+          to={item.href || team?.href || '/bullpen?view=board'}
+          className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+        >
+          Open Team Board -&gt;
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function restedRelieverLabel(count) {
+  if (!Number.isFinite(count)) return 'rested relievers'
+  return `rested ${count === 1 ? 'reliever' : 'relievers'}`
+}
+
+function restedCountLine(item) {
+  const today = item?.todayRestedCount
+  const yesterday = item?.yesterdayRestedCount
+  if (Number.isFinite(today) && Number.isFinite(yesterday)) {
+    return `${today} rested today, ${yesterday} yesterday`
+  }
+  if (Number.isFinite(today)) return `${today} rested today`
+  return item?.teamName ? `${item.teamName} bullpen moved from yesterday.` : 'Bullpen moved from yesterday.'
+}
+
+function workloadAddedLine(item) {
+  const count = Array.isArray(item?.workloadAdded) ? item.workloadAdded.length : 0
+  if (count < 1) return 'No meaningful workload added yesterday'
+  return `${count} ${count === 1 ? 'pitcher' : 'pitchers'} added meaningful workload yesterday`
+}
+
+function RestedCountSlot({ label, count, tone = 'rest' }) {
+  const toneClass = tone === 'watch' ? 'text-violet-300' : 'text-emerald-300'
+  return (
+    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+      <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
+        {label}
+      </div>
+      <p className="mt-2 font-display text-4xl leading-none tracking-wide text-chalk100">
+        {Number.isFinite(count) ? count : '-'}
+      </p>
+      <p className="mt-1 text-sm leading-relaxed text-chalk200">{restedRelieverLabel(count)}</p>
+    </div>
+  )
+}
+
+function WorkloadAddedSlot({ workload = [] }) {
+  const rows = Array.isArray(workload) ? workload : []
+  return (
+    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
+        Workload Added Yesterday
+      </div>
+      {rows.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {rows.map(row => (
+            <li key={`${row.pitcherId || row.name}-${row.pitches}`} className="flex min-w-0 items-baseline justify-between gap-3 text-sm leading-snug">
+              <span className="min-w-0 break-words text-chalk100">{row.name}</span>
+              <span className="shrink-0 font-mono text-xs text-chalk300">
+                {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 break-words text-sm leading-relaxed text-chalk300">
+          No meaningful bullpen movement stands out for this club in the current comparison.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function WhyItMattersSlot({ value }) {
+  return (
+    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
+        Why It Matters
+      </div>
+      <p className="mt-3 break-words text-sm leading-relaxed text-chalk100">
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function NoSelectedChange({ team, comparison }) {
+  return (
+    <div className="mt-4 border border-dirt/80 bg-field/50 p-4" role="status" aria-live="polite">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+          Showing
+        </span>
+        <h3 className="font-display text-2xl leading-none tracking-wide text-chalk100">
+          {team?.teamName || 'Selected team'}
+        </h3>
+        <ComparisonWindow comparison={comparison} />
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-chalk300">
+        No meaningful bullpen movement stands out for this club in the current comparison.
+      </p>
+      {team?.href && (
+        <Link
+          to={team.href}
+          className="mt-4 inline-flex rounded border border-dirt bg-dugout px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
+        >
+          Open Team Board -&gt;
+        </Link>
+      )}
+    </div>
   )
 }
 
@@ -183,7 +530,7 @@ function HeroStory({ hero }) {
           )}
         </div>
 
-        <h2 className="mt-3 max-w-4xl font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl">
+        <h2 className="mt-3 max-w-full break-words font-display text-4xl leading-none tracking-wide text-chalk100 sm:max-w-4xl sm:text-5xl">
           {hero.headline}
         </h2>
 

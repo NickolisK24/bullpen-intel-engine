@@ -442,12 +442,69 @@ function teamNameFromChange(item) {
   )
 }
 
+function teamIdFromChange(item) {
+  const value = item?.team_id ?? item?.teamId ?? item?.team?.team_id ?? item?.team?.teamId
+  if (value == null || value === '') return null
+  const id = Number(value)
+  return Number.isInteger(id) ? id : null
+}
+
+function teamAbbrFromChange(item) {
+  return cleanStoryText(
+    item?.team_abbreviation
+    || item?.teamAbbr
+    || item?.team?.team_abbreviation
+    || item?.team?.teamAbbr,
+  )
+}
+
+function normalizePublicFact(item) {
+  const fact = item?.public_fact || item?.publicFact
+  if (!fact || typeof fact !== 'object') return null
+  const label = cleanStoryText(fact.label)
+  const yesterday = cleanStoryText(fact.yesterday)
+  const today = cleanStoryText(fact.today)
+  if (!label || !yesterday || !today) return null
+  return { label, yesterday, today }
+}
+
+function normalizeRestedCount(value) {
+  if (value == null || value === '') return null
+  const count = Number(value)
+  return Number.isFinite(count) ? count : null
+}
+
+function normalizeWorkloadAdded(item) {
+  const rows = item?.workload_added || item?.workloadAdded
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map(row => {
+      const name = cleanStoryText(row?.name || row?.pitcher_name || row?.pitcherName)
+      const pitches = Number(row?.pitches)
+      if (!name || !Number.isFinite(pitches)) return null
+      return {
+        pitcherId: row?.pitcher_id ?? row?.pitcherId ?? null,
+        name,
+        pitches,
+        innings: row?.innings ?? null,
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => (
+      right.pitches - left.pitches
+      || left.name.localeCompare(right.name)
+    ))
+    .slice(0, 3)
+}
+
 const WHAT_CHANGED_PUBLIC_CAPABILITY = 'what_changed_since_yesterday_public_v1'
 const WHAT_CHANGED_PUBLIC_LIMIT = 6
-const WHAT_CHANGED_PUBLIC_MAX = 8
+const WHAT_CHANGED_PUBLIC_MAX = 30
 
 function normalizeHomepageChange(item, index) {
   const teamName = teamNameFromChange(item)
+  const teamId = teamIdFromChange(item)
+  const teamAbbr = teamAbbrFromChange(item)
   const headline = cleanStoryText(item?.public_headline || item?.publicHeadline)
   const summary = cleanStoryText(item?.public_summary || item?.publicSummary)
   const context = cleanStoryText(item?.public_context || item?.publicContext)
@@ -458,11 +515,20 @@ function normalizeHomepageChange(item, index) {
 
   return {
     key: cleanStoryText(item?.key) || `${teamName}-${index}`,
+    teamId,
     teamName,
-    teamAbbr: cleanStoryText(item?.team_abbreviation || item?.teamAbbr || item?.team?.team_abbreviation),
+    teamAbbr,
     headline,
     summary,
     context,
+    yesterdayRestedCount: normalizeRestedCount(item?.yesterday_rested_count ?? item?.yesterdayRestedCount),
+    todayRestedCount: normalizeRestedCount(item?.today_rested_count ?? item?.todayRestedCount),
+    workloadAdded: normalizeWorkloadAdded(item),
+    fact: normalizePublicFact(item),
+    href: buildHomeTeamHref({
+      team_id: teamId,
+      team_abbreviation: teamAbbr,
+    }, 'home-what-changed'),
   }
 }
 

@@ -16,7 +16,12 @@ after(async () => {
   await server.close()
 })
 
-const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const {
+  HomeView,
+  buildWhatChangedTeamOptions,
+  readWhatChangedTeamSelection,
+  saveWhatChangedTeamSelection,
+} = await server.ssrLoadModule('/src/components/home/Home.jsx')
 const {
   default: BullpenStories,
   StoryPresentation,
@@ -74,6 +79,43 @@ const dashboard = {
   freshness: { data_through: '2026-06-05', last_successful_sync: '2026-06-06T08:00:00Z', is_current: true, sync_status: 'success' },
   availability_summary: { statuses: {} },
 }
+
+const mlbTeams = [
+  [133, 'ATH', 'Athletics'],
+  [109, 'AZ', 'Arizona Diamondbacks'],
+  [144, 'ATL', 'Atlanta Braves'],
+  [110, 'BAL', 'Baltimore Orioles'],
+  [111, 'BOS', 'Boston Red Sox'],
+  [112, 'CHC', 'Chicago Cubs'],
+  [145, 'CWS', 'Chicago White Sox'],
+  [113, 'CIN', 'Cincinnati Reds'],
+  [114, 'CLE', 'Cleveland Guardians'],
+  [115, 'COL', 'Colorado Rockies'],
+  [116, 'DET', 'Detroit Tigers'],
+  [117, 'HOU', 'Houston Astros'],
+  [118, 'KC', 'Kansas City Royals'],
+  [108, 'LAA', 'Los Angeles Angels'],
+  [119, 'LAD', 'Los Angeles Dodgers'],
+  [146, 'MIA', 'Miami Marlins'],
+  [158, 'MIL', 'Milwaukee Brewers'],
+  [142, 'MIN', 'Minnesota Twins'],
+  [121, 'NYM', 'New York Mets'],
+  [147, 'NYY', 'New York Yankees'],
+  [143, 'PHI', 'Philadelphia Phillies'],
+  [134, 'PIT', 'Pittsburgh Pirates'],
+  [135, 'SD', 'San Diego Padres'],
+  [136, 'SEA', 'Seattle Mariners'],
+  [137, 'SF', 'San Francisco Giants'],
+  [138, 'STL', 'St. Louis Cardinals'],
+  [139, 'TB', 'Tampa Bay Rays'],
+  [140, 'TEX', 'Texas Rangers'],
+  [141, 'TOR', 'Toronto Blue Jays'],
+  [120, 'WSH', 'Washington Nationals'],
+].map(([team_id, team_abbreviation, team_name]) => ({
+  team_id,
+  team_name,
+  team_abbreviation,
+}))
 
 const observations = {
   contractState: 'available',
@@ -179,9 +221,16 @@ function dashboardWithHomepageChanges(base = dashboard) {
           team_id: 141,
           team_name: 'Toronto Blue Jays',
           team_abbreviation: 'TOR',
-          public_headline: 'The Toronto Blue Jays bullpen has more breathing room today.',
-          public_summary: 'The rested count moved from 2 to 5, opening three more ways to cover the game.',
-          public_context: 'Coverage also stabilized behind the change.',
+          public_headline: 'Toronto Blue Jays bullpen moved from 2 to 5 rested relievers.',
+          public_summary: 'Toronto Blue Jays has 3 more rested relievers than it had yesterday.',
+          public_context: '3 relievers took on meaningful workload yesterday, but Toronto still has more rested options than it had before.',
+          yesterday_rested_count: 2,
+          today_rested_count: 5,
+          workload_added: [
+            { pitcher_id: 301, name: 'Spencer Miles', pitches: 31 },
+            { pitcher_id: 302, name: 'Tommy Nance', pitches: 27 },
+            { pitcher_id: 303, name: 'Tyler Rogers', pitches: 22 },
+          ],
           confidence: 'high',
           change_type: 'rested_options_changed',
         },
@@ -208,9 +257,12 @@ function dashboardWithHomepageChanges(base = dashboard) {
           team_id: 137,
           team_name: 'San Francisco Giants',
           team_abbreviation: 'SF',
-          public_headline: 'Coverage looks sturdier for the San Francisco Giants bullpen today.',
-          public_summary: 'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.',
+          public_headline: 'San Francisco Giants bullpen moved from 4 to 5 rested relievers.',
+          public_summary: 'San Francisco Giants has 1 more rested reliever than it had yesterday.',
           public_context: null,
+          yesterday_rested_count: 4,
+          today_rested_count: 5,
+          workload_added: [{ pitcher_id: 304, name: 'Ryan Walker', pitches: 21 }],
           identity_label: 'Flexible Distribution Bullpen',
         },
         {
@@ -218,36 +270,48 @@ function dashboardWithHomepageChanges(base = dashboard) {
           team_id: 114,
           team_name: 'Cleveland Guardians',
           team_abbreviation: 'CLE',
-          public_headline: 'The Cleveland Guardians bullpen has a few more paths available.',
-          public_summary: "Yesterday's 3 rested options became 5, so there is more room around the edges.",
+          public_headline: 'Cleveland Guardians bullpen moved from 3 to 5 rested relievers.',
+          public_summary: 'Cleveland Guardians has 2 more rested relievers than it had yesterday.',
           public_context: null,
+          yesterday_rested_count: 3,
+          today_rested_count: 5,
+          workload_added: [{ pitcher_id: 305, name: 'James Karinchak', pitches: 19 }],
         },
         {
           key: '111-what-changed',
           team_id: 111,
           team_name: 'Boston Red Sox',
           team_abbreviation: 'BOS',
-          public_headline: 'The Boston Red Sox coverage picture stabilized.',
-          public_summary: 'The coverage read moved from thin to stable, leaving more margin than yesterday.',
+          public_headline: 'Boston Red Sox bullpen moved from 4 to 4 rested relievers.',
+          public_summary: 'Boston Red Sox still has 4 rested relievers today.',
           public_context: null,
+          yesterday_rested_count: 4,
+          today_rested_count: 4,
+          workload_added: [],
         },
         {
           key: '112-what-changed',
           team_id: 112,
           team_name: 'Chicago Cubs',
           team_abbreviation: 'CHC',
-          public_headline: 'The Chicago Cubs bullpen has more usable depth today.',
-          public_summary: 'Usable bullpen depth moved from 4 to 6, creating two more paths through the game.',
+          public_headline: 'Chicago Cubs bullpen moved from 4 to 6 rested relievers.',
+          public_summary: 'Chicago Cubs has 2 more rested relievers than it had yesterday.',
           public_context: null,
+          yesterday_rested_count: 4,
+          today_rested_count: 6,
+          workload_added: [{ pitcher_id: 306, name: 'Julian Merryweather', pitches: 18 }],
         },
         {
-          key: '113-what-changed',
-          team_id: 113,
+          key: '145-what-changed',
+          team_id: 145,
           team_name: 'Chicago White Sox',
           team_abbreviation: 'CWS',
-          public_headline: 'The Chicago White Sox bullpen has more room than yesterday.',
-          public_summary: 'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.',
+          public_headline: 'Chicago White Sox bullpen moved from 2 to 5 rested relievers.',
+          public_summary: 'Chicago White Sox has 3 more rested relievers than it had yesterday.',
           public_context: null,
+          yesterday_rested_count: 2,
+          today_rested_count: 5,
+          workload_added: [{ pitcher_id: 307, name: 'Jordan Leasure', pitches: 20 }],
         },
       ],
       limitations: [],
@@ -819,54 +883,53 @@ test('what changed since yesterday normalizes eligible public copy items', () =>
   assert.equal(changes.hasChanges, true)
   assert.equal(changes.items.length, 6)
   assert.deepEqual(
-    changes.items.map(item => [item.teamAbbr, item.teamName, item.headline, item.summary, item.context || null]),
+    changes.items.map(item => [
+      item.teamAbbr,
+      item.teamName,
+      item.yesterdayRestedCount,
+      item.todayRestedCount,
+      item.workloadAdded.length,
+    ]),
     [
-      [
-        'TOR',
-        'Toronto Blue Jays',
-        'The Toronto Blue Jays bullpen has more breathing room today.',
-        'The rested count moved from 2 to 5, opening three more ways to cover the game.',
-        'Coverage also stabilized behind the change.',
-      ],
-      [
-        'SF',
-        'San Francisco Giants',
-        'Coverage looks sturdier for the San Francisco Giants bullpen today.',
-        'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.',
-        null,
-      ],
-      [
-        'CLE',
-        'Cleveland Guardians',
-        'The Cleveland Guardians bullpen has a few more paths available.',
-        "Yesterday's 3 rested options became 5, so there is more room around the edges.",
-        null,
-      ],
-      [
-        'BOS',
-        'Boston Red Sox',
-        'The Boston Red Sox coverage picture stabilized.',
-        'The coverage read moved from thin to stable, leaving more margin than yesterday.',
-        null,
-      ],
-      [
-        'CHC',
-        'Chicago Cubs',
-        'The Chicago Cubs bullpen has more usable depth today.',
-        'Usable bullpen depth moved from 4 to 6, creating two more paths through the game.',
-        null,
-      ],
-      [
-        'CWS',
-        'Chicago White Sox',
-        'The Chicago White Sox bullpen has more room than yesterday.',
-        'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.',
-        null,
-      ],
+      ['TOR', 'Toronto Blue Jays', 2, 5, 3],
+      ['SF', 'San Francisco Giants', 4, 5, 1],
+      ['CLE', 'Cleveland Guardians', 3, 5, 1],
+      ['BOS', 'Boston Red Sox', 4, 4, 0],
+      ['CHC', 'Chicago Cubs', 4, 6, 1],
+      ['CWS', 'Chicago White Sox', 2, 5, 1],
     ],
   )
   assert.ok(!changes.items.some(item => item.teamName === 'Washington Nationals'))
   assert.ok(!changes.items.some(item => item.teamName === 'New York Mets'))
+  assert.deepEqual(changes.items[0].workloadAdded.map(item => [item.name, item.pitches]), [
+    ['Spencer Miles', 31],
+    ['Tommy Nance', 27],
+    ['Tyler Rogers', 22],
+  ])
+  assert.equal(changes.items[0].teamId, 141)
+  assert.equal(changes.items[0].href, '/bullpen?view=board&team=TOR&source=home-what-changed')
+})
+
+test('what changed team selector exposes all teams without duplicating changed clubs', () => {
+  const changes = getWhatChangedSinceYesterday(dashboardWithHomepageChanges())
+  const options = buildWhatChangedTeamOptions(mlbTeams, changes.items)
+
+  assert.equal(options.length, 30)
+  assert.equal(options.filter(option => option.teamAbbr === 'CWS').length, 1)
+  assert.ok(options.some(option => option.teamName === 'Cleveland Guardians'))
+  assert.ok(options.some(option => option.teamName === 'Toronto Blue Jays'))
+})
+
+test('what changed selector preference persists locally when storage is available', () => {
+  const values = new Map()
+  const storage = {
+    getItem: (key) => values.get(key) || null,
+    setItem: (key, value) => values.set(key, value),
+  }
+
+  assert.equal(readWhatChangedTeamSelection(storage), null)
+  assert.equal(saveWhatChangedTeamSelection('team:114', storage), true)
+  assert.equal(readWhatChangedTeamSelection(storage), 'team:114')
 })
 
 test('what changed since yesterday hides low-trust public payloads', () => {
@@ -899,6 +962,7 @@ test('what changed since yesterday hides low-trust public payloads', () => {
 test('what changed since yesterday renders between the flagship and watch list', () => {
   const html = render(React.createElement(HomeView, {
     dashboard: dashboardWithHomepageChanges(),
+    teams: mlbTeams,
     observations,
   }))
   const flagshipIndex = html.indexOf('What BaseballOS Sees Today')
@@ -908,10 +972,30 @@ test('what changed since yesterday renders between the flagship and watch list',
   assert.ok(flagshipIndex >= 0, 'flagship should render')
   assert.ok(changedIndex > flagshipIndex, 'change section should follow the flagship')
   assert.ok(watchIndex > changedIndex, 'watch list should follow the change section')
+  assert.equal((html.match(/<option /g) || []).length, 30)
+  assert.ok(htmlIncludes(html, 'Team Selector'))
+  assert.ok(htmlIncludes(html, 'Showing'))
   assert.ok(htmlIncludes(html, 'Toronto Blue Jays'))
-  assert.ok(htmlIncludes(html, 'The Toronto Blue Jays bullpen has more breathing room today.'))
-  assert.ok(htmlIncludes(html, 'The rested count moved from 2 to 5, opening three more ways to cover the game.'))
-  assert.ok(htmlIncludes(html, 'Coverage also stabilized behind the change.'))
+  assert.ok(htmlIncludes(html, 'Yesterday'))
+  assert.ok(htmlIncludes(html, 'Today'))
+  assert.ok(!htmlIncludes(html, 'Change</div>'))
+  assert.ok(htmlIncludes(html, 'Workload Added Yesterday'))
+  assert.ok(htmlIncludes(html, 'Why It Matters'))
+  assert.ok(htmlIncludes(html, '>2</p>'))
+  assert.ok(htmlIncludes(html, '>5</p>'))
+  assert.ok(htmlIncludes(html, 'rested relievers'))
+  assert.ok(htmlIncludes(html, 'Spencer Miles'))
+  assert.ok(htmlIncludes(html, '31 pitches'))
+  assert.ok(htmlIncludes(html, 'Tommy Nance'))
+  assert.ok(htmlIncludes(html, '27 pitches'))
+  assert.ok(htmlIncludes(html, 'Tyler Rogers'))
+  assert.ok(htmlIncludes(html, '22 pitches'))
+  assert.ok(htmlIncludes(html, 'Open Team Board'))
+  assert.ok(htmlIncludes(html, 'View League-Wide Changes (6)'))
+  assert.ok(htmlIncludes(html, '3 relievers took on meaningful workload yesterday'))
+  assert.ok(!htmlIncludes(html, 'Coverage'))
+  assert.ok(!htmlIncludes(html, 'cleaner paths'))
+  assert.ok(!htmlIncludes(html, 'clean paths'))
   assert.ok(!htmlIncludes(html, 'This skipped item should not render.'))
   assert.ok(!htmlIncludes(html, 'This flagged item should not render.'))
   assert.ok(!htmlIncludes(html, 'rested_options_changed'))

@@ -57,8 +57,8 @@ def snapshot(
     }
 
 
-def payload(items, *, data_through='2026-06-19'):
-    return {
+def payload(items, *, data_through='2026-06-19', workload=None):
+    result = {
         'freshness': {
             'data_through': data_through,
             'availability_reference_date': data_through,
@@ -68,11 +68,14 @@ def payload(items, *, data_through='2026-06-19'):
             'by_team_id': {str(item['team_id']): item for item in items},
         },
     }
+    if workload is not None:
+        result['what_changed_workload'] = workload
+    return result
 
 
-def build_public(current_items, prior_items=None, **kwargs):
+def build_public(current_items, prior_items=None, *, workload=None, **kwargs):
     return build_what_changed_public_payload(
-        payload(current_items, data_through='2026-06-19'),
+        payload(current_items, data_through='2026-06-19', workload=workload),
         payload(prior_items, data_through='2026-06-18') if prior_items is not None else None,
         **kwargs,
     )
@@ -88,7 +91,21 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
         snapshot(team_id=2, team_name='Beta Club', team_abbreviation='BBB', clean=4),
     ]
 
-    result = build_public(current, prior)
+    result = build_public(
+        current,
+        prior,
+        workload={
+            'by_team_id': {
+                '1': {
+                    'workload_added': [
+                        {'pitcher_id': 10, 'name': 'Reynaldo Lopez', 'pitches': 28},
+                        {'pitcher_id': 11, 'name': 'Dylan Dodd', 'pitches': 24},
+                        {'pitcher_id': 12, 'name': 'James Karinchak', 'pitches': 19},
+                    ],
+                },
+            },
+        },
+    )
 
     assert result['capability'] == CAPABILITY
     assert result['ranking_applied'] is False
@@ -102,18 +119,24 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'team_id': 1,
             'team_name': 'Alpha Club',
             'team_abbreviation': 'AAA',
-            'public_headline': 'The Alpha Club bullpen has a few more paths available.',
-            'public_summary': (
-                'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.'
-            ),
+            'public_headline': 'Alpha Club bullpen moved from 2 to 5 rested relievers.',
+            'public_summary': 'Alpha Club has 3 more rested relievers than it had yesterday.',
             'public_context': (
-                'The Alpha Club bullpen is less boxed into one narrow route than it was yesterday.'
+                '3 relievers took on meaningful workload yesterday, but Alpha Club still has more '
+                'rested options than it had before.'
             ),
+            'yesterday_rested_count': 2,
+            'today_rested_count': 5,
+            'workload_added': [
+                {'pitcher_id': 10, 'name': 'Reynaldo Lopez', 'pitches': 28},
+                {'pitcher_id': 11, 'name': 'Dylan Dodd', 'pitches': 24},
+                {'pitcher_id': 12, 'name': 'James Karinchak', 'pitches': 19},
+            ],
         }
     ]
 
 
-def test_public_payload_uses_safe_consequence_context_when_available():
+def test_public_payload_uses_plain_baseball_why_it_matters_copy():
     result = build_public(
         [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
         [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
@@ -121,7 +144,8 @@ def test_public_payload_uses_safe_consequence_context_when_available():
     item = result['items'][0]
 
     assert item['public_context']
-    assert 'Alpha Club bullpen' in item['public_context']
+    assert 'rested relievers' in item['public_context']
+    assert 'tonight' in item['public_context']
     encoded = json.dumps(item).lower()
     for forbidden in (
         'consequence_type',
@@ -131,8 +155,36 @@ def test_public_payload_uses_safe_consequence_context_when_available():
         'raw_score',
         'score',
         'identity_label',
+        'identity_key',
+        'coverage',
+        'cleaner paths',
     ):
         assert forbidden not in encoded
+
+
+def test_public_payload_sorts_and_limits_workload_added_pitchers():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        workload={
+            'by_team_id': {
+                '1': {
+                    'workload_added': [
+                        {'pitcher_id': 10, 'name': 'Third Arm', 'pitches': 19},
+                        {'pitcher_id': 11, 'name': 'First Arm', 'pitches': 31},
+                        {'pitcher_id': 12, 'name': 'Fourth Arm', 'pitches': 17},
+                        {'pitcher_id': 13, 'name': 'Second Arm', 'pitches': 24},
+                    ],
+                },
+            },
+        },
+    )
+
+    assert result['items'][0]['workload_added'] == [
+        {'pitcher_id': 11, 'name': 'First Arm', 'pitches': 31},
+        {'pitcher_id': 13, 'name': 'Second Arm', 'pitches': 24},
+        {'pitcher_id': 10, 'name': 'Third Arm', 'pitches': 19},
+    ]
 
 
 def test_public_payload_preserves_card_without_consequence_context_when_absent_or_unsafe():
@@ -224,11 +276,11 @@ def test_public_payload_preserves_card_without_consequence_context_when_absent_o
     )
 
     assert no_consequence['item_count'] == 1
-    assert no_consequence['items'][0]['public_context'] is None
+    assert 'rested relievers' in no_consequence['items'][0]['public_context']
     assert unsafe_consequence['item_count'] == 1
-    assert unsafe_consequence['items'][0]['public_context'] is None
+    assert 'rested relievers' in unsafe_consequence['items'][0]['public_context']
     assert flagged_consequence['item_count'] == 1
-    assert flagged_consequence['items'][0]['public_context'] is None
+    assert 'rested relievers' in flagged_consequence['items'][0]['public_context']
     assert 'should use' not in json.dumps(unsafe_consequence['items']).lower()
 
 
