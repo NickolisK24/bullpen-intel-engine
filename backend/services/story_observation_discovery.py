@@ -249,7 +249,7 @@ def _flexibility_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         observation_type=OBSERVATION_FLEXIBILITY,
         text=(
             f'{_team_name(inputs)} {_team_have_verb(inputs)} spread recent bullpen work across {participants} relievers '
-            f'and still has {available} of {total} relievers available, led by {subject}.'
+            f'and still {_team_have_verb(inputs)} {available} of {total} relievers available, led by {subject}.'
         ),
         score=score,
         score_components={

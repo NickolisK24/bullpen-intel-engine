@@ -45,6 +45,10 @@ from services.story_observation_discovery import (
     generate_observation_candidates,
     story_template_dependency_audit,
 )
+from services.story_observation_voice import (
+    build_observation_voice,
+    validate_observation_voice,
+)
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
@@ -985,22 +989,19 @@ def test_story_context_adds_resource_pool_context_without_state_labels():
     assert story['computed']['story_context_integration']['reason'] == (
         'top_structure_with_resource_strain'
     )
+    context_text = story['story_facts']['bullpen_context'].lower()
     assert any(
-        phrase in lower
+        phrase in context_text
         for phrase in (
             'back-end shape',
             'familiar finish',
             'late innings',
         )
     )
-    assert any(
-        phrase in lower
-        for phrase in (
-            'road there',
-            'working harder',
-            'carrying more',
-        )
-    )
+    assert story['story_voice']['applied'] is True
+    assert story['story_voice']['human_frame'] in narrative
+    assert story['story_voice']['evidence_sentence'] in narrative
+    assert story['story_voice']['consequence_sentence'] in narrative
     assert narrative_contains_forbidden_language(narrative) is False
     for leaked in (
         'capacity state',
@@ -1056,8 +1057,9 @@ def test_story_context_adds_clean_trusted_lane_context_when_narrow():
     assert story['computed']['story_context_integration']['reason'] == (
         'clean_trusted_lane_narrow'
     )
+    context_text = story['story_facts']['bullpen_context'].lower()
     assert any(
-        phrase in lower
+        phrase in context_text
         for phrase in (
             'first few choices',
             'comfort drops fast',
@@ -1065,6 +1067,10 @@ def test_story_context_adds_clean_trusted_lane_context_when_narrow():
             'first few names',
         )
     )
+    assert story['story_voice']['applied'] is True
+    assert story['story_voice']['human_frame'] in narrative
+    assert story['story_voice']['evidence_sentence'] in narrative
+    assert story['story_voice']['consequence_sentence'] in narrative
     assert 'clean trusted lane' not in lower
     assert 'trusted lane' not in lower
     assert 'should pitch' not in lower
@@ -1127,20 +1133,17 @@ def test_story_context_replaces_generic_middle_instead_of_appending_explanation(
     paragraphs = [item.strip() for item in story['narrative'].split('\n\n')]
     middle = paragraphs[1].lower()
 
-    assert any(
-        phrase in middle
-        for phrase in (
-            'familiar finish',
-            'late innings',
-            'back end',
-        )
-    )
+    assert len(paragraphs) == 3
+    assert story['story_voice']['applied'] is True
+    assert paragraphs[0] == story['story_voice']['human_frame']
+    assert paragraphs[1] == story['story_voice']['evidence_sentence']
+    assert paragraphs[2] == story['story_voice']['consequence_sentence']
     assert 'there is room to maneuver because' not in middle
     assert 'flexibility shows up when' not in middle
     assert middle.count('.') <= 3
 
 
-def test_identity_story_texture_adds_public_phrase_without_exposing_label():
+def test_identity_story_texture_metadata_stays_available_without_public_label_leak():
     team_inputs = _broad_light_team_inputs(
         capacity_by_team=_with_bullpen_identity(_foundation_capacity_context()),
     )
@@ -1154,10 +1157,12 @@ def test_identity_story_texture_adds_public_phrase_without_exposing_label():
 
     assert integration['capability'] == STORY_IDENTITY_CAPABILITY
     assert integration['applied'] is True
-    assert integration['text'] in narrative
     assert story['story_facts']['identity_story_context'] == integration['text']
     assert story['story_facts']['story_identity_integration'] == integration
     assert story['slot_sources']['story_identity_integration'] == 'bullpen_identity_v1'
+    assert story['story_voice']['applied'] is True
+    assert story['story_voice']['human_frame'] in narrative
+    assert integration['text'] not in narrative
     for label in IDENTITY_LABELS.values():
         assert label not in narrative
     for forbidden in (
@@ -2110,13 +2115,188 @@ def test_observation_led_story_references_selected_observation_directly():
     feed = build_four_beat_story_feed(records, logs, reference_date=REF)
     story = feed['items'][0]
     selected = story['story_observation']['selected_observation']
+    voice = story['story_voice']
+    paragraphs = story['narrative'].split('\n\n')
 
     assert selected['rank'] == 1
     assert story['story_facts']['selected_observation'] == selected
     assert story['story_facts']['evidence_statement'] == selected['text']
     assert story['story_evidence']['evidence_statement'] == selected['text']
-    assert story['narrative'].startswith(selected['text'])
+    assert voice['applied'] is True
+    assert voice['human_frame'] == paragraphs[0]
+    assert paragraphs[1] == selected['text']
+    assert selected['text'] in story['narrative']
     assert story['story_evidence_framework']['checks']['selected_observation_referenced'] is True
+    assert pitchers
+
+
+def test_observation_voice_layer_adds_supported_frame_before_evidence():
+    pitchers, records, logs = _fixture_team(
+        603,
+        'Voice Club',
+        'VOC',
+        [50, 34, 20, 5, 3],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+    story = feed['items'][0]
+    voice = story['story_voice']
+    narrative = story['narrative']
+    selected = story['story_observation']['selected_observation']
+    evidence = story['story_evidence']
+
+    assert voice['capability'] == 'observation_voice_layer_v1'
+    assert voice['applied'] is True
+    assert voice['validation']['passed'] is True
+    assert voice['validation']['checks']['human_frame_supported'] is True
+    assert voice['human_frame'] == narrative.split('\n\n')[0]
+    assert voice['evidence_sentence'] == selected['text']
+    assert voice['evidence_sentence'] in narrative
+    assert voice['consequence_sentence'] in narrative
+    assert evidence['evidence_statement'] == selected['text']
+    assert any(name in narrative for name in evidence['pitcher_names'])
+    assert re.search(r'\d', narrative)
+    assert pitchers
+
+
+def test_observation_voice_layer_rejects_empty_fluff_frame():
+    selected_text = 'Named Reliever has handled 70% of Fluff Club recent relief pitches.'
+    voice = {
+        'capability': 'observation_voice_layer_v1',
+        'version': 'test',
+        'observation_type': 'workload_concentration',
+        'selected_observation_text': selected_text,
+        'human_frame': 'The bullpen picture remains stable.',
+        'evidence_sentence': selected_text,
+        'consequence_sentence': 'That leaves less coverage margin.',
+        'pitcher_names': ['Named Reliever'],
+    }
+
+    validation = validate_observation_voice(voice)
+
+    assert validation['passed'] is False
+    assert 'generic_frame_absent' in validation['fail_reasons']
+    assert 'human_frame_supported' in validation['fail_reasons']
+    assert validation['generic_frame_hits'] == ['the bullpen picture remains stable', 'bullpen picture remains stable']
+
+
+def test_observation_voice_layer_builds_public_safe_supported_frames():
+    selected_observation = {
+        'observation_id': 'workload_concentration',
+        'observation_type': 'workload_concentration',
+        'text': 'Frame Arm and Bridge Arm have handled 78% of Voice Safety Club recent relief pitches.',
+        'pitcher_names': ['Frame Arm', 'Bridge Arm'],
+        'consequence_category': 'heavier_workload_concentration',
+        'consequence_statement': (
+            'That keeps heavier workload concentration in play if the next tight inning '
+            'has to move back through Frame Arm and Bridge Arm.'
+        ),
+    }
+    voice = build_observation_voice({
+        'team': {
+            'team_id': 604,
+            'team_name': 'Voice Safety Club',
+            'team_abbreviation': 'VSC',
+        },
+        'selected_observation': selected_observation,
+        'named_pitchers': selected_observation['pitcher_names'],
+        'evidence_statement': selected_observation['text'],
+        'consequence_statement': selected_observation['consequence_statement'],
+        'consequence_category': selected_observation['consequence_category'],
+    })
+
+    assert voice['applied'] is True
+    assert voice['validation']['passed'] is True
+    assert voice['validation']['checks']['public_language_safe'] is True
+    assert 'not really spreading bullpen work' in voice['human_frame']
+    assert voice['evidence_sentence'] == selected_observation['text']
+    assert voice['consequence_sentence'] == selected_observation['consequence_statement']
+
+
+def test_repeated_observation_voice_frames_are_suppressed_across_teams():
+    def story(team_id, team_name, abbr, pitcher_name, pct):
+        frame = 'The bullpen is not really spreading bullpen work right now; it is leaning on two arms.'
+        evidence_statement = (
+            f'{pitcher_name} has handled {pct}% of {team_name} recent relief pitches.'
+        )
+        consequence_statement = (
+            f'That leaves less coverage margin if {team_name} needs another clean inning.'
+        )
+        return {
+            'story_id': f'{team_id}:story',
+            'team_id': team_id,
+            'team_name': team_name,
+            'team_abbreviation': abbr,
+            'rule_key': RULE_STRESS_TRANSFER,
+            'title': f'{team_name} bullpen workload is concentrated.',
+            'narrative': f'{frame}\n\n{evidence_statement}\n\n{consequence_statement}',
+            'story_evidence': {
+                'pitcher_names': [pitcher_name],
+                'evidence_statement': evidence_statement,
+                'consequence_statement': consequence_statement,
+                'consequence_category': 'less_coverage_margin',
+            },
+            'story_observation': {
+                'selected_observation': {
+                    'text': evidence_statement,
+                },
+            },
+            'story_voice': {
+                'capability': 'observation_voice_layer_v1',
+                'version': 'test',
+                'applied': True,
+                'observation_type': 'workload_concentration',
+                'selected_observation_text': evidence_statement,
+                'human_frame': frame,
+                'evidence_sentence': evidence_statement,
+                'consequence_sentence': consequence_statement,
+                'pitcher_names': [pitcher_name],
+            },
+        }
+
+    published, suppressed = apply_story_evidence_framework([
+        story(605, 'First Voice Club', 'FVC', 'First Voice Arm', 72),
+        story(606, 'Second Voice Club', 'SVC', 'Second Voice Arm', 69),
+    ])
+
+    assert [item['team_abbreviation'] for item in published] == ['FVC']
+    assert suppressed == [{
+        'team_id': 606,
+        'team_name': 'Second Voice Club',
+        'team_abbreviation': 'SVC',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'story_id': '606:story',
+        'reasons': [
+            'duplicate_voice_frame',
+        ],
+    }]
+
+
+def test_observation_voice_narrative_does_not_expose_internal_labels():
+    pitchers, records, logs = _fixture_team(
+        607,
+        'Label Safety Club',
+        'LSC',
+        [46, 35, 24, 5, 3],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+    narrative = feed['items'][0]['narrative'].lower()
+
+    for internal_label in (
+        'observation_voice_layer_v1',
+        'observation_discovery_engine_v1',
+        'selected_observation',
+        'human_frame',
+        'workload_concentration',
+        'ranking_applied',
+        'selection_made',
+    ):
+        assert internal_label not in narrative
     assert pitchers
 
 

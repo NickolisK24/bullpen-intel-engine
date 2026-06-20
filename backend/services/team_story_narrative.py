@@ -1355,7 +1355,9 @@ def _paragraph(sentences: list[str | None]) -> str | None:
 def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
     """Render a short public disclosure note without changing canonical facts."""
 
-    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_FOOTER:
+    voice = facts.get('observation_voice') or {}
+    voice_applied = isinstance(voice, dict) and bool(voice.get('applied'))
+    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_FOOTER and not voice_applied:
         return None
     options: list[_SentenceBuilder] = [
         lambda f: "Usage provides the strongest signal here.",
@@ -1366,8 +1368,28 @@ def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
     return _sentence(_choose(facts, 'disclosure:note', options))
 
 
+def _observation_voice_paragraphs(facts: dict[str, Any]) -> list[str] | None:
+    voice = facts.get('observation_voice') or {}
+    if not isinstance(voice, dict):
+        return None
+    validation = voice.get('validation') or {}
+    if not voice.get('applied') or not validation.get('passed'):
+        return None
+    paragraphs = [
+        _paragraph([voice.get('human_frame')]),
+        _paragraph([voice.get('evidence_sentence')]),
+        _paragraph([voice.get('consequence_sentence')]),
+    ]
+    cleaned = [paragraph for paragraph in paragraphs if paragraph]
+    return cleaned or None
+
+
 def render_story_narrative(facts: dict[str, Any]) -> str:
     """Render a natural two-to-three paragraph baseball story."""
+
+    voice_paragraphs = _observation_voice_paragraphs(facts)
+    if voice_paragraphs:
+        return '\n\n'.join(voice_paragraphs)
 
     archetype = select_story_archetype(facts)
     observation = _clean_text(facts.get('evidence_statement'))

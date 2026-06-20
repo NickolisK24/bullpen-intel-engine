@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.story_observation_discovery import discover_story_observations
+from services.story_observation_voice import build_observation_voice
 from services.story_identity_integration import build_story_identity_integration
 from services.story_context_integration import build_story_context_integration
 
@@ -431,6 +432,14 @@ def build_story_facts(
         or _consequence_statement(rule_key, inputs, lead)
     )
     named_pitchers = selected_observation.get('pitcher_names') or _named_pitchers(inputs, rule_key)
+    observation_voice = build_observation_voice({
+        'team': _team_identity(inputs),
+        'selected_observation': selected_observation,
+        'named_pitchers': named_pitchers,
+        'evidence_statement': evidence_statement,
+        'consequence_statement': consequence_statement,
+        'consequence_category': consequence_category,
+    })
     facts = {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -439,6 +448,7 @@ def build_story_facts(
         'team': _team_identity(inputs),
         'observation_discovery': observation_discovery,
         'selected_observation': selected_observation,
+        'observation_voice': observation_voice,
         'named_pitchers': named_pitchers,
         'evidence_statement': evidence_statement,
         'consequence_category': consequence_category,

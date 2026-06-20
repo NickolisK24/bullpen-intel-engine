@@ -1885,6 +1885,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'consequence_statement': story_facts.get('consequence_statement'),
         },
         'story_observation': story_facts.get('observation_discovery') or {},
+        'story_voice': story_facts.get('observation_voice') or {},
     }
     if story_facts.get('disclosure'):
         disclosure_note = render_story_disclosure_note(story_facts)

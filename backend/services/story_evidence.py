@@ -5,15 +5,23 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from services.story_observation_voice import validate_observation_voice
+
 
 CAPABILITY = 'story_evidence_framework_v1'
 VERSION = '2026-06-19'
 
 GENERIC_LANGUAGE_DENYLIST = (
+    'the bullpen picture remains stable',
+    'bullpen picture remains stable',
     'steadies the picture',
     'shape of the picture',
+    'shape of the bullpen remains stable',
     'cleanest part of the picture',
+    'what happened on the mound is the cleanest part of the picture',
+    'the back end gives the night structure',
     'gives the night structure',
+    'the shape is less about one arm and more about the paths still open',
     'tells the story',
     'remains part of the equation',
     'still sits in a workable spot',
@@ -60,6 +68,11 @@ def _sentences(value: Any) -> list[str]:
 def _story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     evidence = story.get('story_evidence')
     return evidence if isinstance(evidence, dict) else {}
+
+
+def _story_voice(story: dict[str, Any]) -> dict[str, Any]:
+    voice = story.get('story_voice')
+    return voice if isinstance(voice, dict) else {}
 
 
 def _pitcher_names(story: dict[str, Any]) -> list[str]:
@@ -139,6 +152,10 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     text = story_public_text(story)
     names = _pitcher_names(story)
     generic_hits = _generic_language_hits(text)
+    voice = _story_voice(story)
+    voice_validation = validate_observation_voice(voice) if voice else None
+    if voice_validation:
+        generic_hits = sorted(set(generic_hits + voice_validation.get('generic_frame_hits', [])))
     checks = {
         'evidence_presence': _has_measurable_fact(text),
         'name_presence': _has_pitcher_name(text, names),
@@ -147,6 +164,11 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'generic_language_absent': not generic_hits,
         'phrase_diversity': True,
     }
+    if voice_validation:
+        checks.update({
+            f"voice_{reason}": False
+            for reason in voice_validation.get('fail_reasons', [])
+        })
     fail_reasons = [key for key, passed in checks.items() if not passed]
     evidence = _story_evidence(story)
     return {
@@ -161,6 +183,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'consequence_category': evidence.get('consequence_category'),
         'consequence_statement': evidence.get('consequence_statement'),
         'selected_observation': _selected_observation_text(story),
+        'observation_voice': voice_validation,
     }
 
 
@@ -188,10 +211,13 @@ def _story_phrase_signatures(story: dict[str, Any]) -> list[tuple[str, str]]:
     signatures: list[tuple[str, str]] = []
     evidence = _story_evidence(story)
     evidence_statement = _normalize_text(evidence.get('evidence_statement'))
+    voice = _story_voice(story)
+    voice_frame = _clean_text(voice.get('human_frame'))
     first_sentence = sentences[0] if sentences else ''
     first_is_generic = (
         first_sentence
         and _normalize_text(first_sentence) != evidence_statement
+        and _normalize_text(first_sentence) != _normalize_text(voice_frame)
         and not _has_measurable_fact(first_sentence)
         and not _has_pitcher_name(first_sentence, _pitcher_names(story))
     )
@@ -212,6 +238,16 @@ def _story_phrase_signatures(story: dict[str, Any]) -> list[tuple[str, str]]:
         signatures.append((
             'consequence_construction',
             _signature_base(consequence, story, normalize_identity=False),
+        ))
+    lead_detail = story.get('lead_dimension_detail') or {}
+    honest_sameness = (
+        isinstance(lead_detail, dict)
+        and (lead_detail.get('honest_sameness') or lead_detail.get('feed_wide_honest_sameness'))
+    )
+    if voice_frame and not honest_sameness:
+        signatures.append((
+            'voice_frame',
+            _signature_base(voice_frame, story, normalize_identity=False),
         ))
     return [
         (kind, signature)
