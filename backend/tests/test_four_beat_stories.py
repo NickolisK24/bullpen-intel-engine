@@ -43,6 +43,9 @@ from services.story_evidence import (
     validate_story_evidence,
 )
 from services.story_observation_discovery import (
+    DIFFERENTIATION_CAPABILITY,
+    build_feed_observation_inventory,
+    differentiate_observation_inventory,
     discover_story_observations,
     generate_observation_candidates,
     story_template_dependency_audit,
@@ -591,6 +594,38 @@ def _bullpen_era(team_id, team_name, abbr, era, earned_runs=20):
         'innings_outs': innings_outs,
         'earned_runs': earned_runs,
     }
+
+
+def _crowded_observation_feed():
+    teams = [
+        (701, 'Atlanta Test', 'ATL', [48, 42, 30, 18, 12, 8]),
+        (702, 'San Diego Test', 'SD', [50, 40, 26, 16, 11, 9]),
+        (703, 'Texas Test', 'TEX', [46, 43, 28, 17, 10, 8]),
+        (704, 'Houston Test', 'HOU', [52, 38, 27, 16, 9, 8]),
+        (705, 'Detroit Test', 'DET', [49, 41, 25, 18, 10, 7]),
+    ]
+    records = []
+    log_groups = []
+    bullpens = []
+    for team_id, team_name, abbr, pitch_totals in teams:
+        _, team_records, logs = _fixture_team(
+            team_id,
+            team_name,
+            abbr,
+            pitch_totals,
+            available_count=4,
+            high_risk_indices=(0, 1),
+            trust_indices=(0, 1),
+        )
+        records.extend(team_records)
+        log_groups.append(logs)
+        bullpens.append(_bullpen_era(team_id, team_name, abbr, 2.75, earned_runs=18))
+    return build_four_beat_story_feed(
+        records,
+        _merge_logs(*log_groups),
+        reference_date=REF,
+        season_era={'bullpens': bullpens},
+    )
 
 
 def test_stress_transfer_fires_only_when_concentrated_and_thin():
@@ -2131,6 +2166,187 @@ def test_observation_discovery_generates_ranked_candidates_before_story_generati
     assert all(any(name in candidate['text'] for name in candidate['pitcher_names']) for candidate in candidates)
     assert all(re.search(r'\d', candidate['text']) for candidate in candidates)
     assert pitchers
+
+
+def test_observation_marketplace_generates_inventory_before_feed_assignment():
+    pitchers, records, logs = _fixture_team(
+        606,
+        'Marketplace Club',
+        'MPC',
+        [46, 34, 24, 4, 3],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+    inputs = compute_team_story_inputs(_team_inputs(
+        records,
+        logs,
+        team={
+            'team_id': 606,
+            'team_name': 'Marketplace Club',
+            'team_abbreviation': 'MPC',
+        },
+    ))
+    story = assemble_story(RULE_STRESS_TRANSFER, inputs)
+
+    inventory = build_feed_observation_inventory([{
+        'story': story,
+        'inputs': inputs,
+    }])
+    result = differentiate_observation_inventory(inventory)
+    metadata = result['metadata']
+
+    assert story
+    assert metadata['capability'] == DIFFERENTIATION_CAPABILITY
+    assert metadata['generated_inventory_before_story_assignment'] is True
+    assert metadata['feed_awareness_applied'] is True
+    assert metadata['inventory_count'] == 1
+    assert inventory[0]['candidate_count'] >= 2
+    assert len(inventory[0]['candidate_families']) >= 2
+    assert result['assignments'][(606, RULE_STRESS_TRANSFER)]['selected_observation']['text']
+    assert pitchers
+
+
+def test_observation_differentiation_uses_diversity_as_secondary_ranking():
+    def candidate(observation_type, score, rank):
+        return {
+            'observation_id': observation_type,
+            'observation_type': observation_type,
+            'text': f'{observation_type} candidate {score}',
+            'score': score,
+            'rank': rank,
+        }
+
+    inventory = [
+        {
+            'key': (701, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Alpha Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'workload_concentration'],
+            'candidates': [
+                candidate('run_prevention_stress', 100, 1),
+                candidate('workload_concentration', 99, 2),
+            ],
+        },
+        {
+            'key': (702, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Beta Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'workload_concentration'],
+            'candidates': [
+                candidate('run_prevention_stress', 98, 1),
+                candidate('workload_concentration', 97, 2),
+            ],
+        },
+        {
+            'key': (703, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Gamma Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'workload_concentration'],
+            'candidates': [
+                candidate('run_prevention_stress', 96, 1),
+                candidate('workload_concentration', 94, 2),
+            ],
+        },
+    ]
+
+    result = differentiate_observation_inventory(inventory, quality_band_points=5)
+    gamma = result['assignments'][(703, RULE_SUSTAINABILITY_QUESTION)]
+
+    assert result['metadata']['family_soft_cap'] == 2
+    assert result['metadata']['initial_family_counts'] == {'run_prevention_stress': 3}
+    assert result['metadata']['final_family_counts'] == {
+        'workload_concentration': 1,
+        'run_prevention_stress': 2,
+    }
+    assert gamma['selected_observation']['observation_type'] == 'workload_concentration'
+    assert gamma['observation_differentiation']['selection_reason'] == (
+        'feed_diversification_within_quality_band'
+    )
+    assert gamma['observation_differentiation']['score_delta_from_local_top'] == 2
+
+
+def test_observation_differentiation_keeps_quality_primary_when_gap_is_large():
+    def candidate(observation_type, score, rank):
+        return {
+            'observation_id': observation_type,
+            'observation_type': observation_type,
+            'text': f'{observation_type} candidate {score}',
+            'score': score,
+            'rank': rank,
+        }
+
+    inventory = [
+        {
+            'key': (711, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Alpha Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'trust_shape'],
+            'candidates': [
+                candidate('run_prevention_stress', 100, 1),
+                candidate('trust_shape', 99, 2),
+            ],
+        },
+        {
+            'key': (712, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Beta Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'trust_shape'],
+            'candidates': [
+                candidate('run_prevention_stress', 98, 1),
+                candidate('trust_shape', 97, 2),
+            ],
+        },
+        {
+            'key': (713, RULE_SUSTAINABILITY_QUESTION),
+            'team_name': 'Gamma Club',
+            'rule_key': RULE_SUSTAINABILITY_QUESTION,
+            'candidate_families': ['run_prevention_stress', 'trust_shape'],
+            'candidates': [
+                candidate('run_prevention_stress', 96, 1),
+                candidate('trust_shape', 80, 2),
+            ],
+        },
+    ]
+
+    result = differentiate_observation_inventory(inventory, quality_band_points=5)
+    gamma = result['assignments'][(713, RULE_SUSTAINABILITY_QUESTION)]
+
+    assert gamma['selected_observation']['observation_type'] == 'run_prevention_stress'
+    assert gamma['observation_differentiation']['selection_reason'] == (
+        'quality_protected_top_observation'
+    )
+    assert gamma['observation_differentiation']['feed_wide_alternative_selected'] is False
+    assert result['metadata']['final_family_counts'] == {'run_prevention_stress': 3}
+
+
+def test_daily_feed_observation_differentiation_broadens_crowded_story_families():
+    feed = _crowded_observation_feed()
+    metadata = feed['observation_differentiation']
+    stories = feed['items']
+    selected_families = [
+        story['story_observation']['selected_observation']['observation_type']
+        for story in stories
+    ]
+
+    assert feed['count'] == 5
+    assert metadata['capability'] == DIFFERENTIATION_CAPABILITY
+    assert metadata['generated_inventory_before_story_assignment'] is True
+    assert metadata['initial_family_counts'] == {'run_prevention_stress': 5}
+    assert metadata['final_family_counts'] == {
+        'workload_concentration': 2,
+        'run_prevention_stress': 3,
+    }
+    assert metadata['published_family_counts'] == metadata['final_family_counts']
+    assert metadata['alternative_selection_count'] == 2
+    assert len(set(selected_families)) == 2
+    assert all(summary['candidate_count'] >= 2 for summary in metadata['team_summaries'])
+    assert all(story['story_observation']['selection_source'] == 'feed_observation_differentiation' for story in stories)
+    assert all(story['story_evidence_framework']['passed'] for story in stories)
+    assert all(story['story_evidence']['evidence_statement'] in story['narrative'] for story in stories)
+    assert any(
+        story['observation_differentiation']['feed_wide_alternative_selected']
+        for story in stories
+    )
 
 
 def test_observation_led_story_references_selected_observation_directly():

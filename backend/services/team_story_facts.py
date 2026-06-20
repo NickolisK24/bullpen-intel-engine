@@ -408,6 +408,8 @@ def build_story_facts(
     inputs: dict[str, Any],
     beats: list[dict[str, Any]],
     lead: dict[str, Any] | None = None,
+    selected_observation_override: dict[str, Any] | None = None,
+    observation_differentiation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Adapt four-beat story inputs into normalized baseball story facts."""
 
@@ -420,7 +422,13 @@ def build_story_facts(
         if isinstance(capacity_intelligence, dict)
         else None
     ) or {}
-    observation_discovery = discover_story_observations(rule_key, inputs, lead=lead)
+    observation_discovery = discover_story_observations(
+        rule_key,
+        inputs,
+        lead=lead,
+        selected_observation_override=selected_observation_override,
+        observation_differentiation=observation_differentiation,
+    )
     selected_observation = observation_discovery.get('selected_observation') or {}
     evidence_statement = selected_observation.get('text') or _evidence_statement(rule_key, inputs, lead)
     consequence_category = (
@@ -449,6 +457,7 @@ def build_story_facts(
         'evidence_version': EVIDENCE_VERSION,
         'team': _team_identity(inputs),
         'observation_discovery': observation_discovery,
+        'observation_differentiation': observation_discovery.get('observation_differentiation') or {},
         'selected_observation': selected_observation,
         'observation_voice': observation_voice,
         'named_pitchers': named_pitchers,

@@ -20,7 +20,7 @@ from services.availability import (
 )
 from services.pitcher_role_authority import author_role_read_labels
 from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
-from services.story_observation_discovery import story_template_dependency_audit
+from services.story_observation_discovery import select_feed_observations, story_template_dependency_audit
 from services.story_observation_voice import build_observation_voice, observation_prose_paths
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
@@ -1834,7 +1834,13 @@ def diversify_adjacent_story_prose(stories: list[dict[str, Any]]) -> list[dict[s
     return diversified
 
 
-def assemble_story(rule_key, inputs, lead=None):
+def assemble_story(
+    rule_key,
+    inputs,
+    lead=None,
+    selected_observation_override=None,
+    observation_differentiation=None,
+):
     rule = RULES[rule_key]
     slots = _base_slots(inputs)
     beats = []
@@ -1881,7 +1887,14 @@ def assemble_story(rule_key, inputs, lead=None):
         'context_flags': (why_context or {}).get('context_flags') or [],
         'source_limitations_present': bool((why_context or {}).get('source_limitations_present')),
     }
-    story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
+    story_facts = build_story_facts(
+        rule_key,
+        inputs,
+        beats,
+        lead=lead,
+        selected_observation_override=selected_observation_override,
+        observation_differentiation=observation_differentiation,
+    )
     story_context_meta = story_facts.get('bullpen_context_integration') or {}
     story_identity_meta = story_facts.get('story_identity_integration') or {}
     observation_voice = story_facts.get('observation_voice') or {}
@@ -1998,6 +2011,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'consequence_statement': story_facts.get('consequence_statement'),
         },
         'story_observation': story_facts.get('observation_discovery') or {},
+        'observation_differentiation': story_facts.get('observation_differentiation') or {},
         'story_voice': observation_voice,
         'story_prose': _story_prose_metadata(observation_voice),
     }
@@ -2114,6 +2128,37 @@ def _team_inputs_from_records(
     ]
 
 
+def _selected_observation_family(story: dict[str, Any]) -> str | None:
+    selected = (story.get('story_observation') or {}).get('selected_observation') or {}
+    return selected.get('observation_type')
+
+
+def _published_observation_family_counts(
+    stories: list[dict[str, Any]],
+    family_order: dict[str, int],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for story in stories:
+        family = _selected_observation_family(story)
+        if not family:
+            continue
+        counts[family] = counts.get(family, 0) + 1
+    ordered = [
+        family
+        for family in family_order
+        if family in counts
+    ]
+    ordered.extend(sorted(
+        family
+        for family in counts
+        if family not in family_order
+    ))
+    return {
+        family: counts[family]
+        for family in ordered
+    }
+
+
 def build_four_beat_story_feed(
     availability_records,
     logs_by_pitcher,
@@ -2156,16 +2201,33 @@ def build_four_beat_story_feed(
         story_records.append(team_story_records[0])
 
     selected_leads = select_lead_dimensions(story_records)
+    observation_marketplace = select_feed_observations(story_records, selected_leads)
+    observation_assignments = observation_marketplace.get('assignments') or {}
+    observation_differentiation = observation_marketplace.get('metadata') or {}
     stories = []
     for record in story_records:
         story = record['story']
-        lead = selected_leads.get((story.get('team_id'), story.get('rule_key')))
-        final_story = assemble_story(story['rule_key'], record['inputs'], lead=lead)
+        key = (story.get('team_id'), story.get('rule_key'))
+        lead = selected_leads.get(key)
+        assignment = observation_assignments.get(key) or {}
+        final_story = assemble_story(
+            story['rule_key'],
+            record['inputs'],
+            lead=lead,
+            selected_observation_override=assignment.get('selected_observation'),
+            observation_differentiation=assignment.get('observation_differentiation'),
+        )
         if final_story:
             stories.append(final_story)
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
     stories = diversify_adjacent_story_prose(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
+    assigned_family_counts = observation_differentiation.get('final_family_counts') or {}
+    published_family_counts = _published_observation_family_counts(
+        stories,
+        assigned_family_counts,
+    )
+    family_soft_cap = observation_differentiation.get('family_soft_cap') or 0
 
     return {
         'capability': CAPABILITY,
@@ -2197,6 +2259,18 @@ def build_four_beat_story_feed(
             'version': '2026-06-19',
             'published_count': len(stories),
             'suppressed_count': len(evidence_suppressed),
+        },
+        'observation_differentiation': {
+            **observation_differentiation,
+            'assigned_family_counts': assigned_family_counts,
+            'assigned_saturated_families': observation_differentiation.get('saturated_families') or [],
+            'final_family_counts': published_family_counts,
+            'published_family_counts': published_family_counts,
+            'published_saturated_families': [
+                family
+                for family, count in published_family_counts.items()
+                if family_soft_cap and count >= family_soft_cap
+            ],
         },
         'template_dependency_audit': story_template_dependency_audit(),
         'suppressed_stories': evidence_suppressed,

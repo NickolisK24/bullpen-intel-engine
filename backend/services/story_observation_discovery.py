@@ -7,8 +7,11 @@ from typing import Any
 
 CAPABILITY = 'observation_discovery_engine_v1'
 VERSION = '2026-06-19'
+DIFFERENTIATION_CAPABILITY = 'observation_differentiation_engine_v1'
+DIFFERENTIATION_VERSION = '2026-06-19'
 
 MIN_INTERESTING_SCORE = 55.0
+DIFFERENTIATION_QUALITY_BAND_POINTS = 8.0
 
 OBSERVATION_WORKLOAD_CONCENTRATION = 'workload_concentration'
 OBSERVATION_RESOURCE_CONSTRAINT = 'resource_constraint'
@@ -484,10 +487,246 @@ def rank_observation_candidates(candidates: list[dict[str, Any]]) -> list[dict[s
     ]
 
 
+def _observation_family(candidate: dict[str, Any] | None) -> str:
+    if not isinstance(candidate, dict):
+        return 'unknown'
+    return _clean_text(candidate.get('observation_type') or candidate.get('observation_id')) or 'unknown'
+
+
+def _ordered_counts(values: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return {
+        key: counts[key]
+        for key in sorted(
+            counts,
+            key=lambda item: (
+                OBSERVATION_TYPE_ORDER.get(item, 999),
+                item,
+            ),
+        )
+    }
+
+
+def _story_key(story: dict[str, Any]) -> tuple[Any, Any]:
+    return (story.get('team_id'), story.get('rule_key'))
+
+
+def build_feed_observation_inventory(
+    story_records: list[dict[str, Any]],
+    selected_leads: dict[tuple[Any, Any], dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Generate the full feed observation marketplace before final story assignment."""
+
+    inventory: list[dict[str, Any]] = []
+    for record in story_records or []:
+        story = record.get('story') or {}
+        inputs = record.get('inputs') or {}
+        key = _story_key(story)
+        lead = (selected_leads or {}).get(key)
+        candidates = rank_observation_candidates(
+            generate_observation_candidates(story.get('rule_key'), inputs, lead=lead)
+        )
+        top = candidates[0] if candidates else None
+        inventory.append({
+            'key': key,
+            'story_key': f'{key[0]}:{key[1]}',
+            'team_id': story.get('team_id'),
+            'team_name': story.get('team_name'),
+            'team_abbreviation': story.get('team_abbreviation'),
+            'rule_key': story.get('rule_key'),
+            'lead_dimension': (lead or {}).get('dimension'),
+            'candidate_count': len(candidates),
+            'candidate_families': [
+                family
+                for family in _ordered_counts([
+                    _observation_family(candidate)
+                    for candidate in candidates
+                ])
+            ],
+            'local_top_observation_type': _observation_family(top),
+            'local_top_score': (top or {}).get('score'),
+            'candidates': candidates,
+        })
+    return inventory
+
+
+def _feed_family_soft_cap(inventory: list[dict[str, Any]]) -> int:
+    publishable = [item for item in inventory if item.get('candidates')]
+    if not publishable:
+        return 0
+    candidate_families = {
+        _observation_family(candidate)
+        for item in publishable
+        for candidate in item.get('candidates') or []
+    }
+    family_slots = min(len(candidate_families) or 1, max(len(OBSERVATION_TYPE_ORDER), 1))
+    minimum_repetition = 1 if len(publishable) == 1 else 2
+    return max(minimum_repetition, (len(publishable) + family_slots - 1) // family_slots)
+
+
+def differentiate_observation_inventory(
+    inventory: list[dict[str, Any]],
+    *,
+    quality_band_points: float = DIFFERENTIATION_QUALITY_BAND_POINTS,
+) -> dict[str, Any]:
+    """Select feed-aware observations while protecting materially stronger local reads."""
+
+    inventory = list(inventory or [])
+    initial_families = [
+        _observation_family((item.get('candidates') or [None])[0])
+        for item in inventory
+        if item.get('candidates')
+    ]
+    family_soft_cap = _feed_family_soft_cap(inventory)
+    running_counts: dict[str, int] = {}
+    assignments: dict[tuple[Any, Any], dict[str, Any]] = {}
+    team_summaries: list[dict[str, Any]] = []
+
+    ordered_inventory = sorted(
+        [item for item in inventory if item.get('candidates')],
+        key=lambda item: (
+            -_number((item.get('candidates') or [{}])[0].get('score')),
+            item.get('team_name') or '',
+            item.get('rule_key') or '',
+        ),
+    )
+    for item in ordered_inventory:
+        candidates = item.get('candidates') or []
+        top = candidates[0]
+        top_family = _observation_family(top)
+        top_score = _number(top.get('score'))
+        selected = top
+        selection_reason = 'top_observation_unsaturated'
+
+        if family_soft_cap and running_counts.get(top_family, 0) >= family_soft_cap:
+            selected = None
+            for candidate in candidates[1:]:
+                family = _observation_family(candidate)
+                score_delta = top_score - _number(candidate.get('score'))
+                if score_delta > quality_band_points:
+                    continue
+                if running_counts.get(family, 0) >= family_soft_cap:
+                    continue
+                selected = candidate
+                selection_reason = 'feed_diversification_within_quality_band'
+                break
+            if selected is None:
+                selected = top
+                selection_reason = 'quality_protected_top_observation'
+
+        selected_family = _observation_family(selected)
+        family_count_before = running_counts.get(selected_family, 0)
+        running_counts[selected_family] = family_count_before + 1
+        score_delta = round(top_score - _number(selected.get('score')), 2)
+        selection = {
+            'capability': DIFFERENTIATION_CAPABILITY,
+            'version': DIFFERENTIATION_VERSION,
+            'applied': True,
+            'generated_from_feed_inventory': True,
+            'candidate_count': len(candidates),
+            'candidate_families': item.get('candidate_families') or [],
+            'family_soft_cap': family_soft_cap,
+            'quality_band_points': quality_band_points,
+            'local_top_observation_type': top_family,
+            'local_top_score': top.get('score'),
+            'selected_observation_type': selected_family,
+            'selected_local_rank': selected.get('rank'),
+            'selected_score': selected.get('score'),
+            'score_delta_from_local_top': score_delta,
+            'family_count_before_selection': family_count_before,
+            'family_count_after_selection': family_count_before + 1,
+            'feed_wide_alternative_selected': selected is not top,
+            'selection_reason': selection_reason,
+        }
+        assignment = {
+            'selected_observation': selected,
+            'observation_differentiation': selection,
+        }
+        assignments[item['key']] = assignment
+        team_summaries.append({
+            'story_key': item.get('story_key'),
+            'team_id': item.get('team_id'),
+            'team_name': item.get('team_name'),
+            'team_abbreviation': item.get('team_abbreviation'),
+            'rule_key': item.get('rule_key'),
+            'candidate_count': len(candidates),
+            'candidate_families': item.get('candidate_families') or [],
+            'local_top_observation_type': top_family,
+            'selected_observation_type': selected_family,
+            'selection_reason': selection_reason,
+            'feed_wide_alternative_selected': selected is not top,
+            'score_delta_from_local_top': score_delta,
+        })
+
+    final_families = [
+        summary['selected_observation_type']
+        for summary in team_summaries
+        if summary.get('selected_observation_type')
+    ]
+    initial_counts = _ordered_counts(initial_families)
+    final_counts = _ordered_counts(final_families)
+    metadata = {
+        'capability': DIFFERENTIATION_CAPABILITY,
+        'version': DIFFERENTIATION_VERSION,
+        'applied': bool(inventory),
+        'feed_awareness_applied': bool(inventory),
+        'generated_inventory_before_story_assignment': True,
+        'inventory_count': len(inventory),
+        'publishable_inventory_count': len(ordered_inventory),
+        'family_soft_cap': family_soft_cap,
+        'quality_band_points': quality_band_points,
+        'selection_policy': [
+            'rank local candidates by observation quality first',
+            'track selected observation-family counts across the feed',
+            'prefer an unsaturated alternative only inside the quality band',
+            'keep the local top observation when alternatives are materially weaker',
+        ],
+        'initial_family_counts': initial_counts,
+        'final_family_counts': final_counts,
+        'saturated_families': [
+            family
+            for family, count in final_counts.items()
+            if family_soft_cap and count >= family_soft_cap
+        ],
+        'alternative_selection_count': sum(
+            1 for summary in team_summaries
+            if summary.get('feed_wide_alternative_selected')
+        ),
+        'team_summaries': sorted(
+            team_summaries,
+            key=lambda item: (
+                item.get('team_name') or '',
+                item.get('rule_key') or '',
+            ),
+        ),
+    }
+    return {
+        'assignments': assignments,
+        'metadata': metadata,
+    }
+
+
+def select_feed_observations(
+    story_records: list[dict[str, Any]],
+    selected_leads: dict[tuple[Any, Any], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a feed-level observation marketplace and select final observations."""
+
+    return differentiate_observation_inventory(
+        build_feed_observation_inventory(story_records, selected_leads)
+    )
+
+
 def discover_story_observations(
     rule_key: str,
     inputs: dict[str, Any],
     lead: dict[str, Any] | None = None,
+    selected_observation_override: dict[str, Any] | None = None,
+    observation_differentiation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return ranked observation candidates and the selected story observation."""
 
@@ -495,6 +734,20 @@ def discover_story_observations(
         generate_observation_candidates(rule_key, inputs, lead=lead)
     )
     selected = candidates[0] if candidates else None
+    selection_source = 'team_local_rank'
+    if selected_observation_override:
+        override_text = selected_observation_override.get('text')
+        override_type = selected_observation_override.get('observation_type')
+        selected = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.get('text') == override_text
+                and candidate.get('observation_type') == override_type
+            ),
+            selected_observation_override,
+        )
+        selection_source = 'feed_observation_differentiation'
     return {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -502,8 +755,10 @@ def discover_story_observations(
         'candidate_count': len(candidates),
         'ranking_applied': True,
         'selection_made': bool(selected),
+        'selection_source': selection_source,
         'selected_observation': selected,
         'candidates': candidates,
+        'observation_differentiation': observation_differentiation or {},
     }
 
 
@@ -531,9 +786,15 @@ def story_template_dependency_audit() -> dict[str, Any]:
 
 __all__ = [
     'CAPABILITY',
+    'DIFFERENTIATION_CAPABILITY',
+    'DIFFERENTIATION_QUALITY_BAND_POINTS',
+    'DIFFERENTIATION_VERSION',
     'VERSION',
+    'build_feed_observation_inventory',
+    'differentiate_observation_inventory',
     'discover_story_observations',
     'generate_observation_candidates',
     'rank_observation_candidates',
+    'select_feed_observations',
     'story_template_dependency_audit',
 ]
