@@ -7,13 +7,13 @@ import {
   buildPreferredTeamHref,
   preferredTeamLabel,
   preferredTeamSelectionValue,
-  preferredTeamShortLabel,
   readPreferredTeamPreference,
   savePreferredTeamSelectionValue,
 } from '../../utils/preferredTeam'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
+import TeamMark from '../team/TeamMark'
 import {
   getBoardContextView,
   getBullpenStressView,
@@ -340,16 +340,25 @@ function WhatChangedSinceYesterday({
     <section className="mb-10" aria-label="What Changed Since Yesterday">
       <div className="overflow-hidden border border-dirt bg-dugout">
         <div className="flex flex-col gap-4 border-b border-dirt/80 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
-              What Changed Since Yesterday
+          <div className="flex min-w-0 items-center gap-3">
+            {selectedTeam && (
+              <TeamMark
+                team={selectedTeam}
+                className="h-12 w-12 border-amber/15 bg-white/[0.035] p-1.5"
+                fallbackClassName="text-sm"
+              />
+            )}
+            <div className="min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+                What Changed Since Yesterday
+              </div>
+              <h2 className="mt-1 font-display text-2xl leading-none tracking-wide text-chalk100 sm:text-3xl">
+                {selectedTeam?.teamName || 'Selected bullpen'}
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
+                Yesterday, today, who worked, and what it changes for tonight.
+              </p>
             </div>
-            <h2 className="mt-1 font-display text-2xl leading-none tracking-wide text-chalk100 sm:text-3xl">
-              {selectedTeam?.teamName || 'Selected bullpen'}
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
-              Yesterday, today, who worked, and what it changes for tonight.
-            </p>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -416,7 +425,6 @@ function WhatChangedSinceYesterday({
 
 function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSelectTeam = () => {} }) {
   const teamLabel = preferredTeamLabel(team)
-  const shortLabel = preferredTeamShortLabel(team)
   const boardHref = buildPreferredTeamHref(team, 'home-my-team')
   const canSwitch = teamOptions.length > 0
   const selectValue = teamOptions.some(option => option.value === selectedValue)
@@ -434,9 +442,11 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
         <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-60" />
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-4 sm:gap-5">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-amber/35 bg-amber/10 font-display text-3xl tracking-wide text-amber shadow-inner sm:h-24 sm:w-24 sm:text-4xl">
-              {shortLabel.slice(0, 3)}
-            </div>
+            <TeamMark
+              team={team}
+              className="h-20 w-20 border-amber/25 bg-white/[0.04] p-2 shadow-inner sm:h-24 sm:w-24"
+              fallbackClassName="text-3xl sm:text-4xl"
+            />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-amber">
@@ -725,10 +735,16 @@ function SelectedChangePanel({ item, team, comparison }) {
   const delta = restedCountDelta(item)
   const changeTone = delta < 0 ? 'text-red-300' : delta > 0 ? 'text-emerald-300' : 'text-chalk300'
   const changeWord = delta < 0 ? 'fewer' : delta > 0 ? 'more' : 'changed'
+  const teamIdentity = team || item
 
   return (
     <div>
       <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
+        <TeamMark
+          team={teamIdentity}
+          className="h-8 w-8 border-amber/15 bg-white/[0.035] p-1"
+          fallbackClassName="text-[10px]"
+        />
         {item.teamAbbr && (
           <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
             {item.teamAbbr}

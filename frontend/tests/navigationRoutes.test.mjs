@@ -63,6 +63,16 @@ test('Pipeline is demoted from primary nav while Today remains the first destina
   assert.equal(htmlIncludes(html, 'Pipeline'), false)
 })
 
+test('desktop shell keeps the navigation rail fixed while content scrolls', () => {
+  const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
+  const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+
+  assert.ok(sidebarSource.includes('lg:fixed'))
+  assert.ok(sidebarSource.includes('lg:inset-y-0'))
+  assert.ok(sidebarSource.includes('lg:overflow-y-auto'))
+  assert.ok(appSource.includes('lg:ml-56'))
+})
+
 test('Vercel keeps shareable team URLs out of the SPA catch-all', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'))
   const rewrites = config.rewrites || []

@@ -43,7 +43,7 @@ export default function App() {
     <BrowserRouter>
       <div className="app-shell bg-noise flex-col lg:flex-row">
         <Sidebar />
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 lg:ml-56">
           <AppRoutes />
         </main>
       </div>

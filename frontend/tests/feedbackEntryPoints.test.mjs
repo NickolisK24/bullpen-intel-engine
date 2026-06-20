@@ -50,14 +50,17 @@ test('reusable feedback link centralizes the Google Form and safe external attri
   assertSafeExternalFeedbackLink(html)
 })
 
-test('main navigation and footer both expose Give Feedback', () => {
+test('sidebar keeps feedback out of the permanent app rail', () => {
   const html = inRouter(React.createElement(Sidebar))
   const linkCount = (html.match(new RegExp(feedbackHref, 'g')) || []).length
 
-  assert.equal(linkCount, 2)
+  assert.equal(linkCount, 0)
   assert.ok(htmlIncludes(html, 'nav-item'))
-  assert.ok(htmlIncludes(html, 'Building BaseballOS in public. Have feedback?'))
-  assertSafeExternalFeedbackLink(html)
+  assert.ok(htmlIncludes(html, 'Data Freshness'))
+  assert.ok(htmlIncludes(html, 'Last Sync'))
+  assert.ok(htmlIncludes(html, 'Data Through'))
+  assert.ok(!htmlIncludes(html, 'Building BaseballOS in public. Have feedback?'))
+  assert.ok(!htmlIncludes(html, 'Give Feedback'))
 })
 
 test('Dashboard includes a non-intrusive feedback CTA', () => {

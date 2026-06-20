@@ -7,6 +7,7 @@ import {
   buildPreferredTeamHref,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
+  preferredTeamLogoUrl,
   preferredTeamSelectionValue,
   readPreferredTeamPreference,
   readPreferredTeamState,
@@ -97,6 +98,7 @@ test('preferred team helpers build the team board path and clear state', () => {
     buildPreferredTeamHref(teams[0], 'test-source'),
     '/bullpen?view=board&team=ACE&source=test-source',
   )
+  assert.equal(preferredTeamLogoUrl(teams[0]), 'https://www.mlbstatic.com/team-logos/1.svg')
   assert.equal(clearPreferredTeamPreference(storage), true)
   assert.equal(readPreferredTeamPreference(storage), null)
 })

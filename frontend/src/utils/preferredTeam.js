@@ -280,3 +280,9 @@ export function preferredTeamShortLabel(team, fallback = 'Team') {
     || normalized?.team_name
     || (normalized?.team_id != null ? String(normalized.team_id) : fallback)
 }
+
+export function preferredTeamLogoUrl(team) {
+  const normalized = normalizePreferredTeam(team)
+  if (normalized?.team_id == null) return null
+  return `https://www.mlbstatic.com/team-logos/${normalized.team_id}.svg`
+}
