@@ -173,7 +173,7 @@ export function HomeView({
             </>
           )}
           <BullpenStories stories={watchItems} showCta={false} />
-          <LeagueContext context={leagueContext} />
+          <LeagueContext context={leagueContext} changes={whatChanged} />
         </>
       )}
 
@@ -417,14 +417,14 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-dirt/50 pt-4 opacity-75 transition-opacity hover:opacity-100 sm:flex-row sm:items-end lg:absolute lg:bottom-8 lg:right-8 lg:border-0 lg:pt-0">
-            <label className="flex w-full min-w-[11rem] flex-col gap-1 font-mono text-[8px] uppercase tracking-widest text-chalk600 sm:w-auto">
+          <div className="flex flex-col gap-1.5 pt-2 opacity-50 transition-opacity hover:opacity-90 sm:flex-row sm:items-end lg:absolute lg:bottom-7 lg:right-7 lg:pt-0">
+            <label className="flex w-full min-w-[10rem] flex-col gap-1 font-mono text-[8px] uppercase tracking-widest text-chalk700 sm:w-auto">
               Change team
               <select
                 value={selectValue}
                 onChange={handleChange}
                 disabled={!canSwitch}
-                className="min-h-8 rounded border border-dirt bg-field/50 px-2.5 py-1 text-xs normal-case tracking-normal text-chalk400 outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-7 rounded border border-dirt/80 bg-field/30 px-2 py-0.5 text-[11px] normal-case tracking-normal text-chalk500 outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Change preferred team"
               >
                 {!selectValue && <option value="">Choose team</option>}
@@ -437,7 +437,7 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
             </label>
             <Link
               to={boardHref}
-              className="inline-flex min-h-8 items-center justify-center rounded border border-dirt bg-field/40 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-chalk500 transition-colors hover:border-amber/40 hover:text-amber"
+              className="inline-flex min-h-7 items-center justify-center rounded border border-dirt/80 bg-transparent px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-chalk600 transition-colors hover:border-amber/40 hover:text-amber"
             >
               Open Team Board -&gt;
             </Link>
@@ -695,7 +695,7 @@ function SelectedChangePanel({ item, team, comparison }) {
         <ComparisonWindow comparison={comparison} />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]">
+      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
         <div className="min-w-0 border-l-2 border-amber/60 bg-field/35 px-4 py-4 sm:px-5">
           <div className="font-mono text-[10px] uppercase tracking-widest text-amber">
             Why It Matters
@@ -710,20 +710,23 @@ function SelectedChangePanel({ item, team, comparison }) {
           )}
         </div>
 
+        <RestedChangeFeature delta={delta} changeTone={changeTone} changeWord={changeWord} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 border-t border-dirt/60 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)]">
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Evidence
+          </div>
+          <div className="mt-3 grid max-w-sm grid-cols-2 items-start divide-x divide-dirt/60">
+            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" compact />
+            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" compact />
+          </div>
+        </div>
         <WorkloadAddedSlot workload={item.workloadAdded} />
       </div>
 
-      <div className="mt-4 flex flex-col gap-4 border-t border-dirt/60 pt-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Rested Options
-          </div>
-          <div className="mt-3 grid max-w-xl grid-cols-3 items-start divide-x divide-dirt/60">
-            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" compact />
-            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" compact />
-            <RestedChangeInline delta={delta} changeTone={changeTone} changeWord={changeWord} compact />
-          </div>
-        </div>
+      <div className="mt-4 flex justify-end">
         <Link
           to={item.href || team?.href || '/bullpen?view=board'}
           className="inline-flex min-h-8 shrink-0 items-center rounded border border-dirt bg-field/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk400 transition-colors hover:border-amber/40 hover:text-amber"
@@ -778,21 +781,21 @@ function RestedCountInline({ label, count, tone = 'rest', compact = false }) {
   )
 }
 
-function RestedChangeInline({ delta, changeTone, changeWord, compact = false }) {
+function RestedChangeFeature({ delta, changeTone, changeWord }) {
   const labelTone = delta < 0
     ? 'text-red-300'
     : delta > 0
       ? 'text-emerald-300'
       : 'text-chalk300'
   return (
-    <div className="min-w-0 px-3">
+    <div className="flex min-h-full min-w-0 flex-col justify-center border border-amber/25 bg-amber/10 p-4">
       <div className={`font-mono text-[10px] uppercase tracking-widest ${labelTone}`}>
         Change
       </div>
-      <p className={`${compact ? 'mt-1 text-3xl' : 'mt-1.5 text-4xl'} font-display leading-none tracking-wide ${changeTone}`}>
-        {Number.isFinite(delta) ? Math.abs(delta) : '-'}
+      <p className={`mt-2 font-display text-6xl leading-none tracking-wide ${changeTone}`}>
+        {Number.isFinite(delta) ? `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${Math.abs(delta)}` : '-'}
       </p>
-      <p className={`${compact ? 'text-xs' : 'text-sm'} mt-1 leading-relaxed text-chalk300`}>
+      <p className="mt-2 text-sm leading-relaxed text-chalk200">
         {Number.isFinite(delta) ? `${changeWord} rested relievers` : 'rested reliever change'}
       </p>
     </div>
@@ -1006,7 +1009,52 @@ function FlagshipEvidence({ facts = [] }) {
   )
 }
 
-function LeagueContext({ context }) {
+function leagueContextDeltaLines(changes = {}) {
+  const items = Array.isArray(changes?.items) ? changes.items : []
+  const restedDeltas = items.map(restedCountDelta).filter(Number.isFinite)
+  const hasItems = items.length > 0
+  const netRested = restedDeltas.reduce((sum, value) => sum + value, 0)
+  const changedBoards = restedDeltas.filter(value => value !== 0).length
+  const workloadAdded = items.reduce((sum, item) => {
+    const workload = Array.isArray(item?.workloadAdded) ? item.workloadAdded.length : 0
+    return sum + workload
+  }, 0)
+  const restedTone = netRested < 0
+    ? 'text-red-300'
+    : netRested > 0
+      ? 'text-emerald-300'
+      : 'text-chalk300'
+
+  return {
+    pressure: {
+      value: hasItems ? signedCount(netRested) : '-',
+      label: netRested === 0
+        ? 'net rested change on changed boards'
+        : `${netRested < 0 ? 'fewer' : 'more'} rested relievers on changed boards`,
+      toneClass: restedTone,
+    },
+    concentration: {
+      value: hasItems ? String(workloadAdded) : '-',
+      label: 'pitchers added workload yesterday',
+      toneClass: workloadAdded > 0 ? 'text-yellow-300' : 'text-chalk300',
+    },
+    clean: {
+      value: hasItems ? String(changedBoards) : '-',
+      label: 'teams with rested-option movement',
+      toneClass: changedBoards > 0 ? 'text-amber' : 'text-chalk300',
+    },
+  }
+}
+
+function signedCount(value) {
+  if (!Number.isFinite(value)) return '-'
+  if (value > 0) return `+${value}`
+  if (value < 0) return `-${Math.abs(value)}`
+  return '0'
+}
+
+function LeagueContext({ context, changes }) {
+  const deltaLines = leagueContextDeltaLines(changes)
   return (
     <section className="mb-8" aria-label="League context">
       <SectionHeading
@@ -1022,6 +1070,11 @@ function LeagueContext({ context }) {
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {context.facts.map(fact => {
             const tone = homeTone(fact.tone)
+            const delta = deltaLines[fact.key] || {
+              value: '-',
+              label: 'day-over-day change unavailable',
+              toneClass: 'text-chalk300',
+            }
             return (
               <div key={fact.key} className="border border-dirt bg-field/50 p-3">
                 <div
@@ -1031,10 +1084,16 @@ function LeagueContext({ context }) {
                   <span className="h-1 w-1 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
                   {fact.label}
                 </div>
-                <div className="mt-2 font-display text-2xl leading-none tracking-wide text-chalk100">
-                  {fact.value}
+                <div className={`mt-3 font-display text-3xl leading-none tracking-wide ${delta.toneClass}`}>
+                  {delta.value}
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-chalk500">{fact.detail}</p>
+                <p className="mt-1 text-xs leading-relaxed text-chalk300">{delta.label}</p>
+                <div className="mt-3 border-t border-dirt/60 pt-3">
+                  <div className="font-display text-xl leading-none tracking-wide text-chalk100">
+                    {fact.value}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-chalk500">{fact.detail}</p>
+                </div>
               </div>
             )
           })}
