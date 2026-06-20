@@ -36,6 +36,14 @@ def _clean_text(value: Any) -> str:
     return ' '.join(str(value or '').strip().split())
 
 
+def _sentence_text(value: Any) -> str:
+    text = _clean_text(value)
+    text = text.rstrip('.?!')
+    if not text:
+        return ''
+    return f'{text}.'
+
+
 def _number(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -113,7 +121,27 @@ def _possessive_team(inputs: dict[str, Any]) -> str:
 
 
 def _team_have_verb(inputs: dict[str, Any]) -> str:
-    return 'have' if _team_name(inputs).endswith('s') else 'has'
+    return 'have' if _team_name(inputs).endswith(('s', 'x')) else 'has'
+
+
+def _count_is_verb(count: int) -> str:
+    return 'is' if count == 1 else 'are'
+
+
+def _stable_identity_is_flexible(public_summary: str, clean_option_count: int) -> bool:
+    lower = _clean_text(public_summary).lower()
+    if clean_option_count >= 5:
+        return True
+    return any(
+        phrase in lower
+        for phrase in (
+            'enough trusted relievers',
+            'avoid forcing every important inning',
+            'more than one',
+            'multiple',
+            'not forced',
+        )
+    )
 
 
 def _candidate(
@@ -127,7 +155,8 @@ def _candidate(
     consequence_statement: str,
     source_fields: list[str],
 ) -> dict[str, Any] | None:
-    text = _clean_text(text)
+    text = _sentence_text(text)
+    consequence_statement = _sentence_text(consequence_statement)
     pitcher_names = [name for name in pitcher_names if _clean_text(name)]
     has_name = any(name in text for name in pitcher_names)
     has_number = any(character.isdigit() for character in text)
@@ -211,7 +240,7 @@ def _resource_constraint_observation(inputs: dict[str, Any]) -> dict[str, Any] |
         observation_type=OBSERVATION_RESOURCE_CONSTRAINT,
         text=(
             f'{subject} sit in the current {_team_name(inputs)} bullpen picture while '
-            f'only {available} of {total} relievers are available tonight.'
+            f'only {available} of {total} relievers {_count_is_verb(available)} available tonight.'
         ),
         score=score,
         score_components={
@@ -300,7 +329,8 @@ def _trust_shape_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         score = 58 + max(0, 2 - clean_trust_count) * 7
         text = (
             f'{subject} are carrying the named part of {_possessive_team(inputs)} relief read '
-            f'while only {clean_trust_count} clean trusted late-inning option is available.'
+            f'while only {clean_trust_count} clean trusted late-inning {_plural(clean_trust_count, "option")} '
+            f'{_count_is_verb(clean_trust_count)} available.'
         )
         category = 'reduced_flexibility'
         consequence = (
@@ -376,7 +406,7 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     if not summary:
         return None
     public_summary = summary.split(':', 1)[1].strip() if ':' in summary else summary
-    public_summary = _clean_text(public_summary)
+    public_summary = _clean_text(public_summary).rstrip('.?!')
     if not public_summary:
         return None
     names = _named_pitchers(inputs)
@@ -384,6 +414,17 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     if not subject:
         return None
     clean_option_count = len(inputs.get('clean_options') or [])
+    stable_shape = _stable_identity_is_flexible(public_summary, clean_option_count)
+    consequence_category = 'more_stable_bullpen_shape' if stable_shape else 'reduced_flexibility'
+    consequence_statement = (
+        f'That gives {_team_name(inputs)} a front group without making every important inning '
+        'depend on one lane.'
+        if stable_shape
+        else (
+            'That reduces flexibility if the game moves away from the relievers who best match '
+            f'{_possessive_team(inputs)} current bullpen shape.'
+        )
+    )
     score = 56 + clean_option_count * 2 + min(len(names), 3) * 4
     return _candidate(
         observation_type=OBSERVATION_IDENTITY,
@@ -398,11 +439,8 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
             'specific_named_pitchers': min(len(names), 3) * 4,
         },
         pitcher_names=names,
-        consequence_category='reduced_flexibility',
-        consequence_statement=(
-            'That reduces flexibility if the game moves away from the relievers who best match '
-            f'{_possessive_team(inputs)} current bullpen shape.'
-        ),
+        consequence_category=consequence_category,
+        consequence_statement=consequence_statement,
         source_fields=[
             'capacity_intelligence.bullpen_identity',
             'clean_options',
@@ -423,7 +461,7 @@ def _change_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     return _candidate(
         observation_type=OBSERVATION_CHANGE,
         text=(
-            f'{_team_name(inputs)} has {changed} recently reintroduced {_plural(changed, "reliever")}, '
+            f'{_team_name(inputs)} {_team_have_verb(inputs)} {changed} recently reintroduced {_plural(changed, "reliever")}, '
             f'but {subject} still anchor the current usage read.'
         ),
         score=score,

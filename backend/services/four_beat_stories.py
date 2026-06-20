@@ -21,7 +21,11 @@ from services.availability import (
 from services.pitcher_role_authority import author_role_read_labels
 from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
 from services.story_observation_discovery import select_feed_observations, story_template_dependency_audit
-from services.story_observation_voice import build_observation_voice, observation_prose_paths
+from services.story_observation_voice import (
+    build_observation_voice,
+    observation_prose_paths,
+    polish_selected_observation,
+)
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -1749,11 +1753,25 @@ def _apply_story_voice(
     story: dict[str, Any],
     voice: dict[str, Any],
     *,
+    facts_override: dict[str, Any] | None = None,
     adjacent_diversification_applied: bool = False,
 ) -> None:
-    facts = dict(story.get('story_facts') or {})
+    facts = dict(facts_override or story.get('story_facts') or {})
     facts['observation_voice'] = voice
     facts['prose_path'] = voice.get('prose_path')
+    selected_observation = facts.get('selected_observation') or {}
+    story_observation = dict(story.get('story_observation') or {})
+    if selected_observation:
+        story_observation['selected_observation'] = selected_observation
+        story['story_observation'] = story_observation
+        story['story_evidence'] = {
+            **(story.get('story_evidence') or {}),
+            'pitcher_names': facts.get('named_pitchers') or [],
+            'evidence_statement': facts.get('evidence_statement'),
+            'consequence_category': facts.get('consequence_category'),
+            'consequence_statement': facts.get('consequence_statement'),
+        }
+    facts.pop('story_inputs', None)
     story['story_facts'] = facts
     story['story_voice'] = voice
     if voice.get('applied') and voice.get('headline'):
@@ -1766,15 +1784,37 @@ def _apply_story_voice(
     story['story_evidence_framework'] = validate_story_evidence(story)
 
 
-def _rebuild_story_voice(story: dict[str, Any], prose_path: str) -> dict[str, Any] | None:
+def _editorial_inputs_from_story(story: dict[str, Any]) -> dict[str, Any]:
+    computed = story.get('computed') or {}
+    return {
+        'workload': computed.get('workload') or {},
+        'availability': computed.get('availability') or {},
+        'season_era': computed.get('season_era') or {},
+        'capacity_intelligence': computed.get('capacity_intelligence') or {},
+        'bullpen_stability': computed.get('bullpen_stability') or {},
+        'clean_options': [{} for _ in range(int(_number(computed.get('clean_option_count'))))],
+        'clean_trust_options': [{} for _ in range(int(_number(computed.get('clean_trust_count'))))],
+    }
+
+
+def _rebuild_story_voice(story: dict[str, Any], prose_path: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
     facts = dict(story.get('story_facts') or {})
     if not facts:
         return None
     facts['prose_path'] = prose_path
+    facts['forced_prose_path'] = prose_path
+    facts['story_inputs'] = _editorial_inputs_from_story(story)
+    selected = facts.get('selected_observation') or (story.get('story_observation') or {}).get('selected_observation') or {}
+    selected = polish_selected_observation(facts, selected, prose_path)
+    facts['selected_observation'] = selected
+    facts['evidence_statement'] = selected.get('text') or facts.get('evidence_statement')
+    facts['consequence_category'] = selected.get('consequence_category') or facts.get('consequence_category')
+    facts['consequence_statement'] = selected.get('consequence_statement') or facts.get('consequence_statement')
     voice = build_observation_voice(facts)
     if not voice.get('applied'):
         return None
-    return voice
+    facts['observation_voice'] = voice
+    return voice, facts
 
 
 def _story_prose_collision_shape(story: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
@@ -1825,9 +1865,11 @@ def diversify_adjacent_story_prose(stories: list[dict[str, Any]]) -> list[dict[s
             if next_path:
                 rebuilt = _rebuild_story_voice(story, next_path)
                 if rebuilt:
+                    rebuilt_voice, rebuilt_facts = rebuilt
                     _apply_story_voice(
                         story,
-                        rebuilt,
+                        rebuilt_voice,
+                        facts_override=rebuilt_facts,
                         adjacent_diversification_applied=True,
                     )
         diversified.append(story)
@@ -2159,6 +2201,51 @@ def _published_observation_family_counts(
     }
 
 
+def diversify_feed_story_order(
+    stories: list[dict[str, Any]],
+    *,
+    quality_band_points: float = 8.0,
+    scan_window: int = 5,
+) -> tuple[list[dict[str, Any]], int]:
+    """Separate adjacent observation families while preserving the strength sort."""
+
+    remaining = list(stories or [])
+    ordered: list[dict[str, Any]] = []
+    applied_count = 0
+    while remaining:
+        selected_index = 0
+        previous_family = _selected_observation_family(ordered[-1]) if ordered else None
+        if previous_family:
+            top_strength = _number(remaining[0].get('strength'))
+            for index, candidate in enumerate(remaining[:scan_window]):
+                candidate_family = _selected_observation_family(candidate)
+                strength_delta = top_strength - _number(candidate.get('strength'))
+                if candidate_family and candidate_family != previous_family and strength_delta <= quality_band_points:
+                    selected_index = index
+                    break
+
+        story = remaining.pop(selected_index)
+        if selected_index:
+            applied_count += 1
+            story['feed_order_diversification'] = {
+                'applied': True,
+                'reason': 'separate_adjacent_observation_families_within_quality_band',
+                'moved_from_rank_offset': selected_index,
+                'quality_band_points': quality_band_points,
+            }
+        else:
+            story['feed_order_diversification'] = {
+                'applied': False,
+                'reason': 'strength_order_preserved',
+                'quality_band_points': quality_band_points,
+            }
+        ordered.append(story)
+
+    for index, story in enumerate(ordered, start=1):
+        story['feed_order_index'] = index
+    return ordered, applied_count
+
+
 def build_four_beat_story_feed(
     availability_records,
     logs_by_pitcher,
@@ -2220,6 +2307,7 @@ def build_four_beat_story_feed(
         if final_story:
             stories.append(final_story)
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
+    stories, feed_order_diversification_count = diversify_feed_story_order(stories)
     stories = diversify_adjacent_story_prose(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
     assigned_family_counts = observation_differentiation.get('final_family_counts') or {}
@@ -2235,7 +2323,8 @@ def build_four_beat_story_feed(
         'enabled': True,
         'source': 'backend',
         'feed_ordering_applied': True,
-        'feed_ordering_basis': 'story_strength',
+        'feed_ordering_basis': 'story_strength_with_observation_family_spacing',
+        'feed_order_diversification_count': feed_order_diversification_count,
         'selection_made': False,
         'reference_date': reference_date.isoformat() if reference_date else None,
         'freshness': freshness or {},
@@ -2304,6 +2393,7 @@ __all__ = [
     'assemble_story',
     'build_four_beat_story_feed',
     'compute_team_story_inputs',
+    'diversify_feed_story_order',
     'diversify_adjacent_story_prose',
     'evaluate_team_rules',
     'four_beat_stories_enabled',

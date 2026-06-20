@@ -71,6 +71,28 @@ INTERNAL_PROCESS_LANGUAGE_DENYLIST = (
     'stops at usage',
 )
 
+POSITIVE_DEPTH_EVIDENCE_MARKERS = (
+    'enough trusted relievers',
+    'avoid forcing every important inning',
+    'without making every important inning depend',
+    'does not end there',
+    'multiple ways',
+    'more than one route',
+    'more than one relief lane',
+    'not forced back to one narrow group',
+)
+
+NEGATIVE_FLEXIBILITY_CONSEQUENCE_MARKERS = (
+    'reduced flexibility',
+    'reduces flexibility',
+    'less coverage margin',
+    'less margin',
+    'fewer comfortable pivots',
+    'less room',
+    'gets thinner',
+    'thin once',
+)
+
 CONSEQUENCE_MARKERS = (
     'heavier workload concentration',
     'narrower',
@@ -204,6 +226,21 @@ def _internal_process_language_hits(text: str) -> list[str]:
     return [phrase for phrase in INTERNAL_PROCESS_LANGUAGE_DENYLIST if phrase in lower]
 
 
+def _consequence_consistent_with_evidence(story: dict[str, Any]) -> bool:
+    evidence = _story_evidence(story)
+    evidence_text = _normalize_text(evidence.get('evidence_statement'))
+    selected_text = _normalize_text(_selected_observation_text(story))
+    consequence_text = _normalize_text(evidence.get('consequence_statement'))
+    category = _normalize_text(evidence.get('consequence_category'))
+    combined_evidence = f'{evidence_text} {selected_text}'
+    has_positive_depth = any(marker in combined_evidence for marker in POSITIVE_DEPTH_EVIDENCE_MARKERS)
+    if not has_positive_depth:
+        return True
+    if category == 'reduced_flexibility':
+        return False
+    return not any(marker in consequence_text for marker in NEGATIVE_FLEXIBILITY_CONSEQUENCE_MARKERS)
+
+
 def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     """Validate that a story carries evidence, names, consequence, and clean language."""
 
@@ -227,6 +264,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'public_schema_language_absent': not schema_hits,
         'internal_process_language_absent': not process_hits,
         'closing_language_informational': not closing_hits,
+        'consequence_consistent_with_evidence': _consequence_consistent_with_evidence(story),
         'phrase_diversity': True,
     }
     if voice_validation:

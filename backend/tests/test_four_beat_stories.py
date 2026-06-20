@@ -31,6 +31,7 @@ from services.four_beat_stories import (
     assemble_story,
     build_four_beat_story_feed,
     compute_team_story_inputs,
+    diversify_feed_story_order,
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
@@ -322,6 +323,18 @@ def _story_text(story):
         story['title'],
         *(beat['text'] for beat in story['beats'] if beat['key'] != 'signal'),
     ])
+
+
+def _sentence_shape(text):
+    shape = re.sub(r'\b[A-Z]{2,4} Arm \d+\b', '{arm}', text or '')
+    shape = re.sub(
+        r'\b(?:Atlanta|San Diego|Texas|Houston|Detroit) Test(?:\'s)?\b',
+        '{team}',
+        shape,
+    )
+    shape = re.sub(r'\b\d+(?:\.\d+)?%?\b', '{num}', shape)
+    shape = re.sub(r'[^a-z{} ]+', ' ', shape.lower())
+    return ' '.join(shape.split())
 
 
 def _ranked_era(team_id=1, *, era=2.75, rank=5, total=30, strong=True, solid=True):
@@ -2347,6 +2360,182 @@ def test_daily_feed_observation_differentiation_broadens_crowded_story_families(
         story['observation_differentiation']['feed_wide_alternative_selected']
         for story in stories
     )
+
+
+def test_editorial_polish_fixes_plural_team_and_single_reliever_grammar():
+    padres_pitchers, padres_records, padres_logs = _fixture_team(
+        901,
+        'San Diego Padres',
+        'SD',
+        [50, 40, 26, 16, 11, 9],
+        available_count=4,
+        high_risk_indices=(0, 1),
+        trust_indices=(0, 1),
+    )
+    marlins_pitchers, marlins_records, marlins_logs = _fixture_team(
+        902,
+        'Miami Marlins',
+        'MIA',
+        [50, 40, 26, 16, 11, 9],
+        available_count=1,
+        high_risk_indices=(0, 1),
+        trust_indices=(0, 1),
+    )
+
+    feed = build_four_beat_story_feed(
+        [*padres_records, *marlins_records],
+        _merge_logs(padres_logs, marlins_logs),
+        reference_date=REF,
+        season_era={
+            'bullpens': [
+                _bullpen_era(901, 'San Diego Padres', 'SD', 2.75, earned_runs=18),
+                _bullpen_era(902, 'Miami Marlins', 'MIA', 2.75, earned_runs=18),
+            ],
+        },
+    )
+    public_text = story_public_text({
+        'title': '',
+        'narrative': ' '.join(story_public_text(story) for story in feed['items']),
+    })
+
+    assert feed['count'] == 2
+    assert 'Padres has' not in public_text
+    assert 'Marlins has' not in public_text
+    assert '1 relievers are' not in public_text
+    assert '..' not in public_text
+    assert all(story['story_evidence_framework']['passed'] for story in feed['items'])
+    assert padres_pitchers and marlins_pitchers
+
+
+def test_editorial_polish_diversifies_evidence_consequence_and_adjacent_families():
+    feed = _crowded_observation_feed()
+    stories = feed['items']
+    families = [
+        story['story_observation']['selected_observation']['observation_type']
+        for story in stories
+    ]
+    evidence_shapes = {
+        _sentence_shape(story['story_evidence']['evidence_statement'])
+        for story in stories
+    }
+    consequence_shapes = {
+        _sentence_shape(story['story_evidence']['consequence_statement'])
+        for story in stories
+    }
+    run_prevention_stories = [
+        story for story in stories
+        if story['story_observation']['selected_observation']['observation_type'] == 'run_prevention_stress'
+    ]
+    run_prevention_consequence_shapes = {
+        _sentence_shape(story['story_evidence']['consequence_statement'])
+        for story in run_prevention_stories
+    }
+
+    assert feed['count'] == 5
+    assert feed['feed_ordering_basis'] == 'story_strength_with_observation_family_spacing'
+    assert feed['feed_order_diversification_count'] >= 1
+    assert all(left != right for left, right in zip(families, families[1:]))
+    assert len(evidence_shapes) >= 4
+    assert len(consequence_shapes) >= 4
+    assert len(run_prevention_consequence_shapes) >= 2
+
+
+def test_feed_order_diversification_preserves_large_quality_gap():
+    stories = [
+        {
+            'team_name': 'A Club',
+            'strength': 100,
+            'story_observation': {'selected_observation': {'observation_type': 'run_prevention_stress'}},
+        },
+        {
+            'team_name': 'B Club',
+            'strength': 99,
+            'story_observation': {'selected_observation': {'observation_type': 'run_prevention_stress'}},
+        },
+        {
+            'team_name': 'C Club',
+            'strength': 80,
+            'story_observation': {'selected_observation': {'observation_type': 'workload_concentration'}},
+        },
+    ]
+
+    ordered, applied_count = diversify_feed_story_order(stories, quality_band_points=8)
+
+    assert [story['team_name'] for story in ordered] == ['A Club', 'B Club', 'C Club']
+    assert applied_count == 0
+
+
+def test_identity_evidence_with_positive_depth_uses_stable_consequence():
+    capacity_by_team = _with_bullpen_identity(
+        _foundation_capacity_context(active=8, clean=7),
+        identity_updates={
+            'identity_summary': (
+                'Flexible bullpen: enough trusted relievers are available to avoid forcing '
+                'every important inning through the same arms.'
+            ),
+        },
+    )
+    inputs = compute_team_story_inputs(_broad_light_team_inputs(
+        team={
+            'team_id': 910,
+            'team_name': 'Los Angeles Angels',
+            'team_abbreviation': 'LAA',
+        },
+        capacity_by_team={910: capacity_by_team[1]},
+    ))
+    discovery = discover_story_observations(RULE_PRESSURE_DISTRIBUTION, inputs)
+    identity = next(
+        candidate
+        for candidate in discovery['candidates']
+        if candidate['observation_type'] == 'identity'
+    )
+    story = assemble_story(
+        RULE_PRESSURE_DISTRIBUTION,
+        inputs,
+        selected_observation_override=identity,
+    )
+
+    assert story['story_evidence']['consequence_category'] == 'more_stable_bullpen_shape'
+    assert 'That reduces flexibility' not in story['narrative']
+    assert story['story_evidence_framework']['checks']['consequence_consistent_with_evidence'] is True
+
+
+def test_story_evidence_rejects_contradictory_positive_depth_consequence():
+    evidence_statement = (
+        'Contradiction Arm sits at the front of Contradiction Club relief shape with '
+        '7 usable relievers behind them because enough trusted relievers are available.'
+    )
+    story = {
+        'story_id': 'contradiction:story',
+        'team_id': 911,
+        'team_name': 'Contradiction Club',
+        'team_abbreviation': 'CNT',
+        'rule_key': RULE_PRESSURE_DISTRIBUTION,
+        'title': 'Contradiction Club has a relief shape issue.',
+        'body': '',
+        'narrative': (
+            f'{evidence_statement}\n\n'
+            'That reduces flexibility if the game moves away from the trusted group.'
+        ),
+        'story_evidence': {
+            'pitcher_names': ['Contradiction Arm'],
+            'evidence_statement': evidence_statement,
+            'consequence_category': 'reduced_flexibility',
+            'consequence_statement': (
+                'That reduces flexibility if the game moves away from the trusted group.'
+            ),
+        },
+        'story_observation': {
+            'selected_observation': {
+                'text': evidence_statement,
+            },
+        },
+    }
+
+    validation = validate_story_evidence(story)
+
+    assert validation['passed'] is False
+    assert 'consequence_consistent_with_evidence' in validation['fail_reasons']
 
 
 def test_observation_led_story_references_selected_observation_directly():

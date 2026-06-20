@@ -196,7 +196,9 @@ class TestDashboardEndpoint:
         assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
         assert body['four_beat_stories']['enabled'] is True
         assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == 'story_strength'
+        assert body['four_beat_stories']['feed_ordering_basis'] == (
+            'story_strength_with_observation_family_spacing'
+        )
         assert body['four_beat_stories']['items'] == []
 
     def test_four_beat_story_path_can_be_disabled(self, client):
@@ -226,7 +228,9 @@ class TestDashboardEndpoint:
 
         assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
         assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == 'story_strength'
+        assert body['four_beat_stories']['feed_ordering_basis'] == (
+            'story_strength_with_observation_family_spacing'
+        )
         assert body['four_beat_stories']['selection_made'] is False
         assert body['four_beat_stories']['items']
         assert 'season_era' not in body['four_beat_stories']

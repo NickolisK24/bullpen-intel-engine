@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from services.story_observation_discovery import discover_story_observations
-from services.story_observation_voice import build_observation_voice
+from services.story_observation_voice import (
+    build_observation_voice,
+    polish_selected_observation,
+    select_observation_prose_path,
+)
 from services.story_identity_integration import build_story_identity_integration
 from services.story_context_integration import build_story_context_integration
 
@@ -84,6 +88,10 @@ def _decimal(value: Any) -> str:
 
 def _plural(count: int, singular: str, plural: str | None = None) -> str:
     return singular if count == 1 else (plural or f'{singular}s')
+
+
+def _available_phrase(available: int, total: int) -> str:
+    return f'{available} of {total} relievers {"is" if available == 1 else "are"} available'
 
 
 def _join_names(names: list[str], limit: int = 2) -> str:
@@ -323,7 +331,7 @@ def _evidence_statement(rule_key: str, inputs: dict[str, Any], lead: dict[str, A
     if total > 0 and dimension in {LEAD_AVAILABILITY_THIN, LEAD_AVAILABILITY_DEEP}:
         return (
             f'{subject} {verb} in the current {team_name} bullpen mix while '
-            f'{available} of {total} relievers are available.'
+            f'{_available_phrase(available, total)}.'
         )
     if rule_key in {RULE_SUSTAINABILITY_QUESTION, RULE_HIDDEN_CAPACITY_LOSS} and era_text:
         if participants > 0:
@@ -338,7 +346,7 @@ def _evidence_statement(rule_key: str, inputs: dict[str, Any], lead: dict[str, A
     if total > 0:
         return (
             f'{subject} {verb} in the current {team_name} bullpen mix while '
-            f'{available} of {total} relievers are available.'
+            f'{_available_phrase(available, total)}.'
         )
     return None
 
@@ -430,6 +438,25 @@ def build_story_facts(
         observation_differentiation=observation_differentiation,
     )
     selected_observation = observation_discovery.get('selected_observation') or {}
+    named_pitchers = selected_observation.get('pitcher_names') or _named_pitchers(inputs, rule_key)
+    voice_context = {
+        'team': _team_identity(inputs),
+        'rule_key': rule_key,
+        'lead_dimension': (lead or {}).get('dimension'),
+        'selected_observation': selected_observation,
+        'named_pitchers': named_pitchers,
+        'story_inputs': inputs,
+    }
+    prose_path = select_observation_prose_path(voice_context, selected_observation)
+    selected_observation = polish_selected_observation(
+        voice_context,
+        selected_observation,
+        prose_path,
+    )
+    observation_discovery = {
+        **observation_discovery,
+        'selected_observation': selected_observation,
+    }
     evidence_statement = selected_observation.get('text') or _evidence_statement(rule_key, inputs, lead)
     consequence_category = (
         selected_observation.get('consequence_category')
@@ -439,7 +466,6 @@ def build_story_facts(
         selected_observation.get('consequence_statement')
         or _consequence_statement(rule_key, inputs, lead)
     )
-    named_pitchers = selected_observation.get('pitcher_names') or _named_pitchers(inputs, rule_key)
     observation_voice = build_observation_voice({
         'team': _team_identity(inputs),
         'rule_key': rule_key,
@@ -449,6 +475,8 @@ def build_story_facts(
         'evidence_statement': evidence_statement,
         'consequence_statement': consequence_statement,
         'consequence_category': consequence_category,
+        'forced_prose_path': prose_path,
+        'story_inputs': inputs,
     })
     facts = {
         'capability': CAPABILITY,
