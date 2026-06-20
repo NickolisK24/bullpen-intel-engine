@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.story_observation_discovery import discover_story_observations
 from services.story_identity_integration import build_story_identity_integration
 from services.story_context_integration import build_story_context_integration
 
@@ -418,16 +419,30 @@ def build_story_facts(
         if isinstance(capacity_intelligence, dict)
         else None
     ) or {}
+    observation_discovery = discover_story_observations(rule_key, inputs, lead=lead)
+    selected_observation = observation_discovery.get('selected_observation') or {}
+    evidence_statement = selected_observation.get('text') or _evidence_statement(rule_key, inputs, lead)
+    consequence_category = (
+        selected_observation.get('consequence_category')
+        or _consequence_category(rule_key, lead)
+    )
+    consequence_statement = (
+        selected_observation.get('consequence_statement')
+        or _consequence_statement(rule_key, inputs, lead)
+    )
+    named_pitchers = selected_observation.get('pitcher_names') or _named_pitchers(inputs, rule_key)
     facts = {
         'capability': CAPABILITY,
         'version': VERSION,
         'evidence_capability': EVIDENCE_CAPABILITY,
         'evidence_version': EVIDENCE_VERSION,
         'team': _team_identity(inputs),
-        'named_pitchers': _named_pitchers(inputs, rule_key),
-        'evidence_statement': _evidence_statement(rule_key, inputs, lead),
-        'consequence_category': _consequence_category(rule_key, lead),
-        'consequence_statement': _consequence_statement(rule_key, inputs, lead),
+        'observation_discovery': observation_discovery,
+        'selected_observation': selected_observation,
+        'named_pitchers': named_pitchers,
+        'evidence_statement': evidence_statement,
+        'consequence_category': consequence_category,
+        'consequence_statement': consequence_statement,
         'primary_observation': _beat_text(beats, BEAT_SIGNAL),
         'supporting_context': _supporting_context(rule_key, inputs),
         'pressure_source': _pressure_source(rule_key, lead),

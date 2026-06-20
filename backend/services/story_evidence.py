@@ -111,6 +111,23 @@ def _has_consequence(text: str, story: dict[str, Any]) -> bool:
     return any(marker in lower for marker in CONSEQUENCE_MARKERS)
 
 
+def _selected_observation_text(story: dict[str, Any]) -> str:
+    observation = story.get('story_observation') or {}
+    if not isinstance(observation, dict):
+        observation = {}
+    selected = observation.get('selected_observation') or {}
+    if not isinstance(selected, dict):
+        selected = {}
+    return _clean_text(selected.get('text'))
+
+
+def _references_selected_observation(text: str, story: dict[str, Any]) -> bool:
+    selected_text = _selected_observation_text(story)
+    if not selected_text:
+        return True
+    return selected_text in _clean_text(text)
+
+
 def _generic_language_hits(text: str) -> list[str]:
     lower = _normalize_text(text)
     return [phrase for phrase in GENERIC_LANGUAGE_DENYLIST if phrase in lower]
@@ -126,6 +143,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'evidence_presence': _has_measurable_fact(text),
         'name_presence': _has_pitcher_name(text, names),
         'consequence_presence': _has_consequence(text, story),
+        'selected_observation_referenced': _references_selected_observation(text, story),
         'generic_language_absent': not generic_hits,
         'phrase_diversity': True,
     }
@@ -142,6 +160,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'evidence_statement': evidence.get('evidence_statement'),
         'consequence_category': evidence.get('consequence_category'),
         'consequence_statement': evidence.get('consequence_statement'),
+        'selected_observation': _selected_observation_text(story),
     }
 
 
@@ -169,6 +188,13 @@ def _story_phrase_signatures(story: dict[str, Any]) -> list[tuple[str, str]]:
     signatures: list[tuple[str, str]] = []
     evidence = _story_evidence(story)
     evidence_statement = _normalize_text(evidence.get('evidence_statement'))
+    first_sentence = sentences[0] if sentences else ''
+    first_is_generic = (
+        first_sentence
+        and _normalize_text(first_sentence) != evidence_statement
+        and not _has_measurable_fact(first_sentence)
+        and not _has_pitcher_name(first_sentence, _pitcher_names(story))
+    )
     generic_sentences = [
         sentence
         for sentence in sentences
@@ -176,10 +202,10 @@ def _story_phrase_signatures(story: dict[str, Any]) -> list[tuple[str, str]]:
         and not _has_measurable_fact(sentence)
         and not _has_pitcher_name(sentence, _pitcher_names(story))
     ]
-    if generic_sentences:
+    if first_is_generic:
         signatures.append((
             'opening_construction',
-            _signature_base(generic_sentences[0], story, normalize_identity=False),
+            _signature_base(first_sentence, story, normalize_identity=False),
         ))
     consequence = _clean_text(evidence.get('consequence_statement'))
     if consequence:

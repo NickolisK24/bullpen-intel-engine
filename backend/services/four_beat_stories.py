@@ -20,6 +20,7 @@ from services.availability import (
 )
 from services.pitcher_role_authority import author_role_read_labels
 from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
+from services.story_observation_discovery import story_template_dependency_audit
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -1883,6 +1884,7 @@ def assemble_story(rule_key, inputs, lead=None):
             'consequence_category': story_facts.get('consequence_category'),
             'consequence_statement': story_facts.get('consequence_statement'),
         },
+        'story_observation': story_facts.get('observation_discovery') or {},
     }
     if story_facts.get('disclosure'):
         disclosure_note = render_story_disclosure_note(story_facts)
@@ -2080,6 +2082,7 @@ def build_four_beat_story_feed(
             'published_count': len(stories),
             'suppressed_count': len(evidence_suppressed),
         },
+        'template_dependency_audit': story_template_dependency_audit(),
         'suppressed_stories': evidence_suppressed,
         'evaluations': [
             {

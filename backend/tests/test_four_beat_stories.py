@@ -40,6 +40,11 @@ from services.story_evidence import (
     story_public_text,
     validate_story_evidence,
 )
+from services.story_observation_discovery import (
+    discover_story_observations,
+    generate_observation_candidates,
+    story_template_dependency_audit,
+)
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
@@ -2054,6 +2059,109 @@ def test_story_evidence_framework_surfaces_fact_name_and_consequence_in_narrativ
     assert pitchers
 
 
+def test_observation_discovery_generates_ranked_candidates_before_story_generation():
+    pitchers, records, logs = _fixture_team(
+        601,
+        'Discovery Club',
+        'DSC',
+        [44, 36, 24, 6, 5],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+    inputs = compute_team_story_inputs(_team_inputs(
+        records,
+        logs,
+        team={
+            'team_id': 601,
+            'team_name': 'Discovery Club',
+            'team_abbreviation': 'DSC',
+        },
+    ))
+
+    raw_candidates = generate_observation_candidates(RULE_STRESS_TRANSFER, inputs)
+    discovery = discover_story_observations(RULE_STRESS_TRANSFER, inputs)
+    candidates = discovery['candidates']
+
+    assert discovery['capability'] == 'observation_discovery_engine_v1'
+    assert discovery['generated_before_story_generation'] is True
+    assert discovery['ranking_applied'] is True
+    assert discovery['selection_made'] is True
+    assert len(raw_candidates) >= 2
+    assert len(candidates) >= 2
+    assert [candidate['rank'] for candidate in candidates] == list(range(1, len(candidates) + 1))
+    assert candidates == sorted(candidates, key=lambda item: item['rank'])
+    assert candidates[0] == discovery['selected_observation']
+    assert all(candidate['editorial_test']['passed'] is True for candidate in candidates)
+    assert all(any(name in candidate['text'] for name in candidate['pitcher_names']) for candidate in candidates)
+    assert all(re.search(r'\d', candidate['text']) for candidate in candidates)
+    assert pitchers
+
+
+def test_observation_led_story_references_selected_observation_directly():
+    pitchers, records, logs = _fixture_team(
+        602,
+        'Observation Club',
+        'OBS',
+        [48, 32, 22, 4, 3],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+    story = feed['items'][0]
+    selected = story['story_observation']['selected_observation']
+
+    assert selected['rank'] == 1
+    assert story['story_facts']['selected_observation'] == selected
+    assert story['story_facts']['evidence_statement'] == selected['text']
+    assert story['story_evidence']['evidence_statement'] == selected['text']
+    assert story['narrative'].startswith(selected['text'])
+    assert story['story_evidence_framework']['checks']['selected_observation_referenced'] is True
+    assert pitchers
+
+
+def test_generic_narrative_only_story_fails_selected_observation_validation():
+    story = {
+        'story_id': 'generic:story',
+        'team_id': 2,
+        'team_name': 'Generic Club',
+        'team_abbreviation': 'GEN',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'title': 'Generic Club bullpen story.',
+        'narrative': (
+            'The trusted group continues carrying the workload. '
+            'The shape of the bullpen remains stable. '
+            'The back end still gives the night structure.'
+        ),
+        'story_evidence': {
+            'pitcher_names': ['Named Reliever'],
+            'evidence_statement': 'Named Reliever has handled 70% of recent relief pitches.',
+            'consequence_statement': 'That leaves less coverage margin.',
+            'consequence_category': 'less_coverage_margin',
+        },
+        'story_observation': {
+            'selected_observation': {
+                'text': 'Named Reliever has handled 70% of recent relief pitches.',
+            },
+        },
+    }
+
+    validation = validate_story_evidence(story)
+
+    assert validation['passed'] is False
+    assert 'selected_observation_referenced' in validation['fail_reasons']
+    assert 'generic_language_absent' in validation['fail_reasons']
+
+
+def test_template_dependency_audit_documents_reduction_strategy():
+    audit = story_template_dependency_audit()
+
+    assert audit['capability'] == 'observation_discovery_engine_v1'
+    assert audit['status'] == 'template_dependency_reduced'
+    assert 'legacy_beat_skeletons' in audit['fixed_structure_surfaces']
+    assert 'open_public_narrative_with_selected_observation' in audit['reduction_strategy']
+
+
 def test_story_evidence_framework_fail_closed_for_invalid_story():
     story = {
         'story_id': 'bad:story',
@@ -2107,7 +2215,7 @@ def test_story_evidence_framework_suppresses_exact_repeated_constructions():
             'rule_key': RULE_STRESS_TRANSFER,
             'title': f'{team_name} bullpen workload is concentrated.',
             'narrative': (
-                f'{evidence_statement} The bullpen has a copied opening sentence.\n\n'
+                f'The bullpen has a copied opening sentence. {evidence_statement}\n\n'
                 f'{consequence_statement}'
             ),
             'story_evidence': {

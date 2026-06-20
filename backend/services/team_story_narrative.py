@@ -1370,9 +1370,9 @@ def render_story_narrative(facts: dict[str, Any]) -> str:
     """Render a natural two-to-three paragraph baseball story."""
 
     archetype = select_story_archetype(facts)
+    observation = _clean_text(facts.get('evidence_statement'))
     opening = _paragraph([
-        facts.get('evidence_statement'),
-        _opening_sentence(facts, archetype),
+        observation if observation else _opening_sentence(facts, archetype),
     ])
     middle = _paragraph(_middle_sentences(facts, archetype))
     closing = _paragraph([
