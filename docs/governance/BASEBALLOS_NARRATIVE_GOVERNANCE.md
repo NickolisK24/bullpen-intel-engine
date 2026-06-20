@@ -1,5 +1,10 @@
 # BaseballOS Narrative Governance
 
+BaseballOS story standards are governed by
+[`docs/product/BASEBALLOS_STORY_RULES.md`](../product/BASEBALLOS_STORY_RULES.md).
+`BASEBALLOS_STORY_RULES.md` governs what qualifies as a BaseballOS story and how
+story observations should be selected before writing rules are applied.
+
 BaseballOS writing standards are governed by
 [`docs/product/BASEBALLOS_WRITING_RULES.md`](../product/BASEBALLOS_WRITING_RULES.md).
 That document is the source of truth for all user-facing BaseballOS language.
