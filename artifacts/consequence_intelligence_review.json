@@ -1,0 +1,3005 @@
+{
+  "capability": "consequence_intelligence_review_v1",
+  "comparison": {
+    "comparison_available": true,
+    "current_data_through": "2026-06-19",
+    "current_snapshot": {
+      "availability_reference_date": "2026-06-20",
+      "data_through": "2026-06-19",
+      "snapshot_generated_at": null,
+      "snapshot_id": null,
+      "source": "live_dashboard_build"
+    },
+    "prior_data_through": "2026-06-18",
+    "prior_snapshot": {
+      "availability_reference_date": "2026-06-19",
+      "data_through": "2026-06-18",
+      "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+      "snapshot_id": 46,
+      "source": "scheduled_sync"
+    }
+  },
+  "complete_team_count": true,
+  "consequence_payload_state": {
+    "limitations": [],
+    "state": "consequences_detected",
+    "status": "available"
+  },
+  "current_payload_source": "live_dashboard_build",
+  "distribution_summary": {
+    "consequence_counts_by_significance": {
+      "meaningful": 16,
+      "structural": 12
+    },
+    "consequence_counts_by_type": {
+      "less_coverage_margin": 1,
+      "less_flexibility": 1,
+      "more_coverage_margin": 8,
+      "more_flexibility": 15,
+      "narrower_trust_support": 1,
+      "wider_trust_support": 2
+    },
+    "repeated_context_counts": {},
+    "repeated_summary_counts": {},
+    "review_flag_counts": {
+      "no_consequence": 13
+    },
+    "teams_for_human_review": [
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "ATL",
+        "team_id": 144,
+        "team_name": "Atlanta Braves"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "AZ",
+        "team_id": 109,
+        "team_name": "Arizona Diamondbacks"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "BAL",
+        "team_id": 110,
+        "team_name": "Baltimore Orioles"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "CIN",
+        "team_id": 113,
+        "team_name": "Cincinnati Reds"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "HOU",
+        "team_id": 117,
+        "team_name": "Houston Astros"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "KC",
+        "team_id": 118,
+        "team_name": "Kansas City Royals"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "MIA",
+        "team_id": 146,
+        "team_name": "Miami Marlins"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "PIT",
+        "team_id": 134,
+        "team_name": "Pittsburgh Pirates"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "SEA",
+        "team_id": 136,
+        "team_name": "Seattle Mariners"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "SF",
+        "team_id": 137,
+        "team_name": "San Francisco Giants"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "STL",
+        "team_id": 138,
+        "team_name": "St. Louis Cardinals"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "TB",
+        "team_id": 139,
+        "team_name": "Tampa Bay Rays"
+      },
+      {
+        "primary_consequence_type": null,
+        "review_flags": [
+          "no_consequence"
+        ],
+        "team_abbreviation": "WSH",
+        "team_id": 120,
+        "team_name": "Washington Nationals"
+      }
+    ],
+    "teams_reviewed": 30,
+    "teams_with_comparison_available": 30,
+    "teams_with_primary_consequence": 17,
+    "teams_without_consequence": 13
+  },
+  "expected_team_count": 30,
+  "generated_at": "2026-06-19T23:54:01.707779+00:00",
+  "ordering_basis": "team_abbreviation_then_team_name",
+  "prediction_applied": false,
+  "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+  "prior_payload_source": "scheduled_sync",
+  "prior_snapshot_source_used": "scheduled_sync",
+  "ranking_applied": false,
+  "selection_made": false,
+  "source": "backend",
+  "team_count": 30,
+  "teams": [
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "More rested options add clean paths before the Athletics bullpen reaches its tightest lanes.",
+          "consequence_summary": "The Athletics bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Rested options moved from 3 to 6.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 3 to 6.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Rested options moved from 3 to 6.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "More rested options add clean paths before the Athletics bullpen reaches its tightest lanes.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Athletics bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "More rested options add clean paths before the Athletics bullpen reaches its tightest lanes.",
+        "consequence_summary": "The Athletics bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Rested options moved from 3 to 6.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 3 to 6.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Rested options moved from 3 to 6.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 6,
+          "description": "Rested options moved from 3 to 6.",
+          "fact_key": "rested_options",
+          "previous_value": 3
+        }
+      ],
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "The Boston Red Sox bullpen is less boxed into one narrow route than it was yesterday.",
+          "consequence_summary": "The Boston Red Sox bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 5 to 7.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "The Boston Red Sox bullpen is less boxed into one narrow route than it was yesterday.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Boston Red Sox bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "The Boston Red Sox bullpen is less boxed into one narrow route than it was yesterday.",
+        "consequence_summary": "The Boston Red Sox bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 5 to 7.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 7,
+          "description": "Rested options moved from 5 to 7.",
+          "fact_key": "rested_options",
+          "previous_value": 5
+        }
+      ],
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "medium",
+          "consequence_context": "Late-inning support has less breadth around the most trusted part of the group.",
+          "consequence_summary": "The trusted group is narrower than yesterday.",
+          "consequence_type": "narrower_trust_support",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Trusted-group size moved from 8 to 6.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 8
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "narrowed",
+          "change_summary": "Trusted group narrowed from 8 to 6.",
+          "change_type": "trusted_group_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Trusted-group size moved from 8 to 6.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 8
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": "Late-inning support has less breadth around the most trusted part of the group.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The trusted group is narrower than yesterday.",
+      "consequence_type": "narrower_trust_support",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "medium",
+        "consequence_context": "Late-inning support has less breadth around the most trusted part of the group.",
+        "consequence_summary": "The trusted group is narrower than yesterday.",
+        "consequence_type": "narrower_trust_support",
+        "significance": "structural",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Trusted-group size moved from 8 to 6.",
+            "fact_key": "trusted_group_size",
+            "previous_value": 8
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "narrowed",
+        "change_summary": "Trusted group narrowed from 8 to 6.",
+        "change_type": "trusted_group_changed",
+        "confidence": "medium",
+        "significance": "structural",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Trusted-group size moved from 8 to 6.",
+            "fact_key": "trusted_group_size",
+            "previous_value": 8
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "structural",
+      "supporting_facts": [
+        {
+          "current_value": 6,
+          "description": "Trusted-group size moved from 8 to 6.",
+          "fact_key": "trusted_group_size",
+          "previous_value": 8
+        }
+      ],
+      "team_abbreviation": "CHC",
+      "team_id": 112,
+      "team_name": "Chicago Cubs",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "CIN",
+      "team_id": 113,
+      "team_name": "Cincinnati Reds",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "The Cleveland Guardians bullpen is less boxed into one narrow route than it was yesterday.",
+          "consequence_summary": "The Cleveland Guardians bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 5,
+              "description": "Rested options moved from 4 to 5.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The Cleveland Guardians bullpen has more room if the game asks for several relief innings.",
+          "consequence_summary": "The Cleveland Guardians bullpen has a wider coverage cushion.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Strong Coverage Safety",
+              "description": "Coverage safety moved from Stable Coverage Safety to Strong Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Stable Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 4 to 5.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 5,
+              "description": "Rested options moved from 4 to 5.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Stable Coverage Safety to Strong Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Strong Coverage Safety",
+              "description": "Coverage safety moved from Stable Coverage Safety to Strong Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Stable Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "The Cleveland Guardians bullpen is less boxed into one narrow route than it was yesterday.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Cleveland Guardians bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "The Cleveland Guardians bullpen is less boxed into one narrow route than it was yesterday.",
+        "consequence_summary": "The Cleveland Guardians bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 5,
+            "description": "Rested options moved from 4 to 5.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 4 to 5.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 5,
+            "description": "Rested options moved from 4 to 5.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 5,
+          "description": "Rested options moved from 4 to 5.",
+          "fact_key": "rested_options",
+          "previous_value": 4
+        }
+      ],
+      "team_abbreviation": "CLE",
+      "team_id": 114,
+      "team_name": "Cleveland Guardians",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "More rested options add clean paths before the Colorado Rockies bullpen reaches its tightest lanes.",
+          "consequence_summary": "The Colorado Rockies bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "There is more margin for the Colorado Rockies relief group to absorb extra outs.",
+          "consequence_summary": "The Colorado Rockies bullpen has a wider coverage cushion.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 4 to 8.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "More rested options add clean paths before the Colorado Rockies bullpen reaches its tightest lanes.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Colorado Rockies bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "More rested options add clean paths before the Colorado Rockies bullpen reaches its tightest lanes.",
+        "consequence_summary": "The Colorado Rockies bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 4 to 8.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 8,
+          "description": "Rested options moved from 4 to 8.",
+          "fact_key": "rested_options",
+          "previous_value": 4
+        }
+      ],
+      "team_abbreviation": "COL",
+      "team_id": 115,
+      "team_name": "Colorado Rockies",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That gives the Chicago White Sox staff more ways to spread the relief work.",
+          "consequence_summary": "The Chicago White Sox relief group has more usable paths available today.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 10,
+              "description": "Rested options moved from 8 to 10.",
+              "fact_key": "rested_options",
+              "previous_value": 8
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 8 to 10.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 10,
+              "description": "Rested options moved from 8 to 10.",
+              "fact_key": "rested_options",
+              "previous_value": 8
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That gives the Chicago White Sox staff more ways to spread the relief work.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Chicago White Sox relief group has more usable paths available today.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That gives the Chicago White Sox staff more ways to spread the relief work.",
+        "consequence_summary": "The Chicago White Sox relief group has more usable paths available today.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 10,
+            "description": "Rested options moved from 8 to 10.",
+            "fact_key": "rested_options",
+            "previous_value": 8
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 8 to 10.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 10,
+            "description": "Rested options moved from 8 to 10.",
+            "fact_key": "rested_options",
+            "previous_value": 8
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 10,
+          "description": "Rested options moved from 8 to 10.",
+          "fact_key": "rested_options",
+          "previous_value": 8
+        }
+      ],
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That creates more room for the Detroit Tigers bullpen if the game asks for multiple relief innings.",
+          "consequence_summary": "The Detroit Tigers bullpen has a little more room to maneuver.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 5 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 5 to 8.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 5 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That creates more room for the Detroit Tigers bullpen if the game asks for multiple relief innings.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Detroit Tigers bullpen has a little more room to maneuver.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That creates more room for the Detroit Tigers bullpen if the game asks for multiple relief innings.",
+        "consequence_summary": "The Detroit Tigers bullpen has a little more room to maneuver.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 5 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 5 to 8.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 5 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 8,
+          "description": "Rested options moved from 5 to 8.",
+          "fact_key": "rested_options",
+          "previous_value": 5
+        }
+      ],
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "KC",
+      "team_id": 118,
+      "team_name": "Kansas City Royals",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That creates more room for the Los Angeles Angels bullpen if the game asks for multiple relief innings.",
+          "consequence_summary": "There are more clean paths available around the Los Angeles Angels bullpen.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 5 to 7.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That creates more room for the Los Angeles Angels bullpen if the game asks for multiple relief innings.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "There are more clean paths available around the Los Angeles Angels bullpen.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That creates more room for the Los Angeles Angels bullpen if the game asks for multiple relief innings.",
+        "consequence_summary": "There are more clean paths available around the Los Angeles Angels bullpen.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 5 to 7.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 7,
+          "description": "Rested options moved from 5 to 7.",
+          "fact_key": "rested_options",
+          "previous_value": 5
+        }
+      ],
+      "team_abbreviation": "LAA",
+      "team_id": 108,
+      "team_name": "Los Angeles Angels",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That creates more room for the Los Angeles Dodgers bullpen if the game asks for multiple relief innings.",
+          "consequence_summary": "The Los Angeles Dodgers staff has more ways to cover the game than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "That gives the Los Angeles Dodgers staff a little more space if the night stretches.",
+          "consequence_summary": "Coverage has more margin for the Los Angeles Dodgers bullpen.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 4 to 8.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That creates more room for the Los Angeles Dodgers bullpen if the game asks for multiple relief innings.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Los Angeles Dodgers staff has more ways to cover the game than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That creates more room for the Los Angeles Dodgers bullpen if the game asks for multiple relief innings.",
+        "consequence_summary": "The Los Angeles Dodgers staff has more ways to cover the game than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 4 to 8.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 8,
+          "description": "Rested options moved from 4 to 8.",
+          "fact_key": "rested_options",
+          "previous_value": 4
+        }
+      ],
+      "team_abbreviation": "LAD",
+      "team_id": 119,
+      "team_name": "Los Angeles Dodgers",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "MIA",
+      "team_id": 146,
+      "team_name": "Miami Marlins",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "The Milwaukee Brewers bullpen is less boxed into one narrow route than it was yesterday.",
+          "consequence_summary": "The Milwaukee Brewers bullpen has a little more room to maneuver.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 5,
+              "description": "Rested options moved from 3 to 5.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The coverage read gives the Milwaukee Brewers bullpen more room around the middle innings.",
+          "consequence_summary": "The Milwaukee Brewers bullpen has a wider coverage cushion.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The structure has more trusted support around the highest-leverage lanes for the Milwaukee Brewers bullpen.",
+          "consequence_summary": "More of the Milwaukee Brewers bullpen sits in the trusted support layer.",
+          "consequence_type": "wider_trust_support",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Trusted-group size moved from 6 to 8.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 6
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 3 to 5.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 5,
+              "description": "Rested options moved from 3 to 5.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        },
+        {
+          "change_direction": "expanded",
+          "change_summary": "Trusted group expanded from 6 to 8.",
+          "change_type": "trusted_group_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Trusted-group size moved from 6 to 8.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 6
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "The Milwaukee Brewers bullpen is less boxed into one narrow route than it was yesterday.",
+      "consequence_state": {
+        "consequence_count": 3,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Milwaukee Brewers bullpen has a little more room to maneuver.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "The Milwaukee Brewers bullpen is less boxed into one narrow route than it was yesterday.",
+        "consequence_summary": "The Milwaukee Brewers bullpen has a little more room to maneuver.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 5,
+            "description": "Rested options moved from 3 to 5.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 3 to 5.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 5,
+            "description": "Rested options moved from 3 to 5.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 5,
+          "description": "Rested options moved from 3 to 5.",
+          "fact_key": "rested_options",
+          "previous_value": 3
+        }
+      ],
+      "team_abbreviation": "MIL",
+      "team_id": 158,
+      "team_name": "Milwaukee Brewers",
+      "what_changed_state": {
+        "change_count": 3,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That creates more room for the Minnesota Twins bullpen if the game asks for multiple relief innings.",
+          "consequence_summary": "The Minnesota Twins relief group has more usable paths available today.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "That gives the Minnesota Twins staff a little more space if the night stretches.",
+          "consequence_summary": "Coverage has more margin for the Minnesota Twins bullpen.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Strong Coverage Safety",
+              "description": "Coverage safety moved from Stable Coverage Safety to Strong Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Stable Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 4 to 8.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 4 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Stable Coverage Safety to Strong Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Strong Coverage Safety",
+              "description": "Coverage safety moved from Stable Coverage Safety to Strong Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Stable Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That creates more room for the Minnesota Twins bullpen if the game asks for multiple relief innings.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Minnesota Twins relief group has more usable paths available today.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That creates more room for the Minnesota Twins bullpen if the game asks for multiple relief innings.",
+        "consequence_summary": "The Minnesota Twins relief group has more usable paths available today.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 4 to 8.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 4 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 8,
+          "description": "Rested options moved from 4 to 8.",
+          "fact_key": "rested_options",
+          "previous_value": 4
+        }
+      ],
+      "team_abbreviation": "MIN",
+      "team_id": 142,
+      "team_name": "Minnesota Twins",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "The New York Mets bullpen is less boxed into one narrow route than it was yesterday.",
+          "consequence_summary": "The New York Mets bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Rested options moved from 4 to 6.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The coverage read gives the New York Mets bullpen more room around the middle innings.",
+          "consequence_summary": "The New York Mets bullpen has a wider coverage cushion.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 4 to 6.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Rested options moved from 4 to 6.",
+              "fact_key": "rested_options",
+              "previous_value": 4
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "The New York Mets bullpen is less boxed into one narrow route than it was yesterday.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The New York Mets bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "The New York Mets bullpen is less boxed into one narrow route than it was yesterday.",
+        "consequence_summary": "The New York Mets bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Rested options moved from 4 to 6.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 4 to 6.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 6,
+            "description": "Rested options moved from 4 to 6.",
+            "fact_key": "rested_options",
+            "previous_value": 4
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 6,
+          "description": "Rested options moved from 4 to 6.",
+          "fact_key": "rested_options",
+          "previous_value": 4
+        }
+      ],
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "More rested options add clean paths before the New York Yankees bullpen reaches its tightest lanes.",
+          "consequence_summary": "The New York Yankees bullpen has more flexibility than yesterday.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 5 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 5 to 8.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 8,
+              "description": "Rested options moved from 5 to 8.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "More rested options add clean paths before the New York Yankees bullpen reaches its tightest lanes.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The New York Yankees bullpen has more flexibility than yesterday.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "More rested options add clean paths before the New York Yankees bullpen reaches its tightest lanes.",
+        "consequence_summary": "The New York Yankees bullpen has more flexibility than yesterday.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 5 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 5 to 8.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 8,
+            "description": "Rested options moved from 5 to 8.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 8,
+          "description": "Rested options moved from 5 to 8.",
+          "fact_key": "rested_options",
+          "previous_value": 5
+        }
+      ],
+      "team_abbreviation": "NYY",
+      "team_id": 147,
+      "team_name": "New York Yankees",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "The Philadelphia Phillies bullpen is less boxed into one narrow route than it was yesterday.",
+          "consequence_summary": "The Philadelphia Phillies relief group has more usable paths available today.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 2 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 2
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The coverage read gives the Philadelphia Phillies bullpen more room around the middle innings.",
+          "consequence_summary": "The Philadelphia Phillies bullpen has a wider coverage cushion.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "That gives the Philadelphia Phillies staff a broader support layer before the late innings narrow.",
+          "consequence_summary": "The Philadelphia Phillies bullpen has broader trusted support than yesterday.",
+          "consequence_type": "wider_trust_support",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Trusted-group size moved from 4 to 6.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 4
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 2 to 7.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 2 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 2
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        },
+        {
+          "change_direction": "expanded",
+          "change_summary": "Trusted group expanded from 4 to 6.",
+          "change_type": "trusted_group_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": 6,
+              "description": "Trusted-group size moved from 4 to 6.",
+              "fact_key": "trusted_group_size",
+              "previous_value": 4
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "The Philadelphia Phillies bullpen is less boxed into one narrow route than it was yesterday.",
+      "consequence_state": {
+        "consequence_count": 3,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Philadelphia Phillies relief group has more usable paths available today.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "The Philadelphia Phillies bullpen is less boxed into one narrow route than it was yesterday.",
+        "consequence_summary": "The Philadelphia Phillies relief group has more usable paths available today.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 2 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 2
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 2 to 7.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 2 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 2
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 7,
+          "description": "Rested options moved from 2 to 7.",
+          "fact_key": "rested_options",
+          "previous_value": 2
+        }
+      ],
+      "team_abbreviation": "PHI",
+      "team_id": 143,
+      "team_name": "Philadelphia Phillies",
+      "what_changed_state": {
+        "change_count": 3,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "PIT",
+      "team_id": 134,
+      "team_name": "Pittsburgh Pirates",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That gives the San Diego Padres staff more ways to spread the relief work.",
+          "consequence_summary": "There are more clean paths available around the San Diego Padres bullpen.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 5 to 7.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 5 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 5
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That gives the San Diego Padres staff more ways to spread the relief work.",
+      "consequence_state": {
+        "consequence_count": 1,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "There are more clean paths available around the San Diego Padres bullpen.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That gives the San Diego Padres staff more ways to spread the relief work.",
+        "consequence_summary": "There are more clean paths available around the San Diego Padres bullpen.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 5 to 7.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 5 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 5
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 7,
+          "description": "Rested options moved from 5 to 7.",
+          "fact_key": "rested_options",
+          "previous_value": 5
+        }
+      ],
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres",
+      "what_changed_state": {
+        "change_count": 1,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "SEA",
+      "team_id": 136,
+      "team_name": "Seattle Mariners",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "SF",
+      "team_id": 137,
+      "team_name": "San Francisco Giants",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "STL",
+      "team_id": 138,
+      "team_name": "St. Louis Cardinals",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "TB",
+      "team_id": 139,
+      "team_name": "Tampa Bay Rays",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "That creates more room for the Texas Rangers bullpen if the game asks for multiple relief innings.",
+          "consequence_summary": "The Texas Rangers bullpen has a little more room to maneuver.",
+          "consequence_type": "more_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 3 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "There is more margin for the Texas Rangers relief group to absorb extra outs.",
+          "consequence_summary": "Coverage has more margin for the Texas Rangers bullpen.",
+          "consequence_type": "more_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "increased",
+          "change_summary": "Rested options increased from 3 to 7.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 7,
+              "description": "Rested options moved from 3 to 7.",
+              "fact_key": "rested_options",
+              "previous_value": 3
+            }
+          ]
+        },
+        {
+          "change_direction": "improved",
+          "change_summary": "Coverage safety improved from Thin Coverage Safety to Stable Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Stable Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Stable Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "That creates more room for the Texas Rangers bullpen if the game asks for multiple relief innings.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The Texas Rangers bullpen has a little more room to maneuver.",
+      "consequence_type": "more_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "That creates more room for the Texas Rangers bullpen if the game asks for multiple relief innings.",
+        "consequence_summary": "The Texas Rangers bullpen has a little more room to maneuver.",
+        "consequence_type": "more_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 3 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "increased",
+        "change_summary": "Rested options increased from 3 to 7.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 7,
+            "description": "Rested options moved from 3 to 7.",
+            "fact_key": "rested_options",
+            "previous_value": 3
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 7,
+          "description": "Rested options moved from 3 to 7.",
+          "fact_key": "rested_options",
+          "previous_value": 3
+        }
+      ],
+      "team_abbreviation": "TEX",
+      "team_id": 140,
+      "team_name": "Texas Rangers",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [
+        {
+          "confidence": "high",
+          "consequence_context": "Fewer rested options leave fewer clean paths before the game reaches the tightest lanes.",
+          "consequence_summary": "The bullpen has less flexibility than yesterday.",
+          "consequence_type": "less_flexibility",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 0,
+              "description": "Rested options moved from 1 to 0.",
+              "fact_key": "rested_options",
+              "previous_value": 1
+            }
+          ]
+        },
+        {
+          "confidence": "medium",
+          "consequence_context": "The bullpen has less room if the game asks for several relief innings.",
+          "consequence_summary": "Coverage has less margin than yesterday.",
+          "consequence_type": "less_coverage_margin",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Limited Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Limited Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "all_meaningful_changes": [
+        {
+          "change_direction": "decreased",
+          "change_summary": "Rested options decreased from 1 to 0.",
+          "change_type": "rested_options_changed",
+          "confidence": "high",
+          "significance": "meaningful",
+          "supporting_facts": [
+            {
+              "current_value": 0,
+              "description": "Rested options moved from 1 to 0.",
+              "fact_key": "rested_options",
+              "previous_value": 1
+            }
+          ]
+        },
+        {
+          "change_direction": "worsened",
+          "change_summary": "Coverage safety worsened from Thin Coverage Safety to Limited Coverage Safety.",
+          "change_type": "coverage_safety_changed",
+          "confidence": "medium",
+          "significance": "structural",
+          "supporting_facts": [
+            {
+              "current_value": "Limited Coverage Safety",
+              "description": "Coverage safety moved from Thin Coverage Safety to Limited Coverage Safety.",
+              "fact_key": "coverage_safety",
+              "previous_value": "Thin Coverage Safety"
+            }
+          ]
+        }
+      ],
+      "comparison_available": true,
+      "confidence": "high",
+      "consequence_context": "Fewer rested options leave fewer clean paths before the game reaches the tightest lanes.",
+      "consequence_state": {
+        "consequence_count": 2,
+        "limitations": [],
+        "state": "consequences_detected",
+        "status": "available"
+      },
+      "consequence_summary": "The bullpen has less flexibility than yesterday.",
+      "consequence_type": "less_flexibility",
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": {
+        "confidence": "high",
+        "consequence_context": "Fewer rested options leave fewer clean paths before the game reaches the tightest lanes.",
+        "consequence_summary": "The bullpen has less flexibility than yesterday.",
+        "consequence_type": "less_flexibility",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 0,
+            "description": "Rested options moved from 1 to 0.",
+            "fact_key": "rested_options",
+            "previous_value": 1
+          }
+        ]
+      },
+      "primary_consequence_selection_basis": "first_consequence_in_engine_order_not_ranked",
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": {
+        "change_direction": "decreased",
+        "change_summary": "Rested options decreased from 1 to 0.",
+        "change_type": "rested_options_changed",
+        "confidence": "high",
+        "significance": "meaningful",
+        "supporting_facts": [
+          {
+            "current_value": 0,
+            "description": "Rested options moved from 1 to 0.",
+            "fact_key": "rested_options",
+            "previous_value": 1
+          }
+        ]
+      },
+      "review_flags": [],
+      "significance": "meaningful",
+      "supporting_facts": [
+        {
+          "current_value": 0,
+          "description": "Rested options moved from 1 to 0.",
+          "fact_key": "rested_options",
+          "previous_value": 1
+        }
+      ],
+      "team_abbreviation": "TOR",
+      "team_id": 141,
+      "team_name": "Toronto Blue Jays",
+      "what_changed_state": {
+        "change_count": 2,
+        "limitations": [],
+        "state": "changes_detected",
+        "status": "available"
+      }
+    },
+    {
+      "all_consequences": [],
+      "all_meaningful_changes": [],
+      "comparison_available": true,
+      "confidence": "medium",
+      "consequence_context": null,
+      "consequence_state": {
+        "consequence_count": 0,
+        "limitations": [],
+        "state": "no_consequences",
+        "status": "available"
+      },
+      "consequence_summary": null,
+      "consequence_type": null,
+      "current_snapshot": {
+        "availability_reference_date": "2026-06-20",
+        "data_through": "2026-06-19",
+        "snapshot_generated_at": null,
+        "snapshot_id": null,
+        "source": "live_dashboard_build"
+      },
+      "primary_consequence": null,
+      "primary_consequence_selection_basis": null,
+      "prior_snapshot": {
+        "availability_reference_date": "2026-06-19",
+        "data_through": "2026-06-18",
+        "snapshot_generated_at": "2026-06-19T13:38:25.131987",
+        "snapshot_id": 46,
+        "source": "scheduled_sync"
+      },
+      "related_what_changed_item": null,
+      "review_flags": [
+        "no_consequence"
+      ],
+      "significance": null,
+      "supporting_facts": [],
+      "team_abbreviation": "WSH",
+      "team_id": 120,
+      "team_name": "Washington Nationals",
+      "what_changed_state": {
+        "change_count": 0,
+        "limitations": [],
+        "state": "no_meaningful_changes",
+        "status": "available"
+      }
+    }
+  ],
+  "version": "2026-06-19.v1",
+  "what_changed_payload_state": {
+    "limitations": [],
+    "state": "changes_detected",
+    "status": "available"
+  }
+}
