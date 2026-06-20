@@ -60,7 +60,7 @@ export default function FatigueInsightCard({ embedded = false }) {
       style={{ animationDelay: '350ms', animationFillMode: 'forwards' }}
     >
       <SectionHeader
-        title="Fatigue Score vs. Next-Outing ERA"
+        title="Recent Workload vs. Next-Outing ERA"
         subtitle="Exploratory · 2024–2025 MLB game logs · all pitchers"
       />
 
@@ -106,14 +106,14 @@ export default function FatigueInsightCard({ embedded = false }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
             <ComparisonCard
-              label="Lower fatigue"
+              label="Lighter workload"
               era={data?.comparison?.baseline_era}
               apps={data?.comparison?.baseline_apps}
               sublabel="MODERATE tier (rested baseline)"
               style={LOWER_STYLE}
             />
             <ComparisonCard
-              label="Higher fatigue"
+              label="Heavier workload"
               era={data?.comparison?.elevated_era}
               apps={data?.comparison?.elevated_apps}
               sublabel="HIGH + CRITICAL tiers"
@@ -136,7 +136,7 @@ export default function FatigueInsightCard({ embedded = false }) {
           <div className="text-chalk500 text-[11px] font-mono leading-relaxed pt-3 border-t border-dirt">
             Exploratory, correlational analysis across {data?.total_appearances_analyzed?.toLocaleString() ?? 0} appearances
             (2024–2025). Not a controlled study and not causal. The buckets are not adjusted for pitcher role
-            (starters vs. relievers), opponent quality, park, leverage, game state, or defense — and higher-fatigue
+            (starters vs. relievers), opponent quality, park, leverage, game state, or defense — and heavier-workload
             outings skew toward higher-workload (starter-style) appearances. LOW and CRITICAL tiers are sparse
             (see sample sizes above). See the Methodology page for the full method and limitations.
           </div>

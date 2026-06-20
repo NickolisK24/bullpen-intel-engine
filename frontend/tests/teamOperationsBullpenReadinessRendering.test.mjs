@@ -31,7 +31,8 @@ const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const sanitizedGovernanceText = html => visibleText(html)
-  .replace(/Context only - no team ranking or pitcher selection\./g, '')
+  .replace(/Context only - no bullpen choice is made\./g, '')
+  .replace(/Team order No ordering made Pitcher choice No pitcher chosen Trust order No ordering made Trust choice No choice made/g, '')
   .replace(/Team ranking Not applied Pitcher selection Not made Trust ranking Not applied Trust selection Not made/g, '')
   .replace(/ranking_applied/g, '')
   .replace(/selection_made/g, '')
@@ -196,16 +197,16 @@ function renderPanel(state, props = {}) {
 test('renders successful Team Operations readiness payloads', () => {
   const html = renderPanel(baseState)
 
-  assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
+  assert.ok(htmlIncludes(html, 'Bullpen Operations Context'))
   assert.ok(htmlIncludes(html, 'Bullpen Readiness Context'))
   assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Operationally Stable'))
   assert.ok(htmlIncludes(html, 'Team-level bullpen readiness looks steady from current public workload evidence.'))
-  assert.ok(htmlIncludes(html, 'Workload Pressure'))
-  assert.ok(htmlIncludes(html, 'Availability Distribution'))
-  assert.ok(htmlIncludes(html, 'Coverage Inventory'))
-  assert.ok(htmlIncludes(html, 'Handedness Coverage'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Availability Mix'))
+  assert.ok(htmlIncludes(html, 'Coverage Depth'))
+  assert.ok(htmlIncludes(html, 'Left/Right Coverage'))
 })
 
 test('renders degraded Team Operations readiness payloads', () => {
@@ -226,7 +227,7 @@ test('renders degraded Team Operations readiness payloads', () => {
 
   const html = renderPanel(state, { initialExpandedSections: ['metadata'] })
 
-  assert.ok(htmlIncludes(html, 'Degraded'))
+  assert.ok(htmlIncludes(html, 'Partial Read'))
   assert.ok(htmlIncludes(html, 'Limited Visibility'))
   assert.ok(htmlIncludes(html, 'Team-level bullpen visibility is limited.'))
   assert.ok(htmlIncludes(html, 'low'))
@@ -271,27 +272,27 @@ test('renders refused fail-closed Team Operations readiness payloads', () => {
   assert.ok(htmlIncludes(html, 'Team-level bullpen readiness is refused because required evidence is unavailable.'))
   assert.ok(htmlIncludes(html, 'Required readiness evidence is unavailable.'))
   assert.ok(htmlIncludes(html, 'Refresh source evidence before retrying.'))
-  assert.ok(htmlIncludes(html, 'Fail Closed'))
-  assert.ok(htmlIncludes(html, 'Critical Failure'))
+  assert.ok(htmlIncludes(html, 'Output withheld'))
+  assert.ok(htmlIncludes(html, 'Critical blocker'))
 })
 
 test('keeps internal limited-exposure status visible', () => {
   const html = renderPanel(baseState)
 
   assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
-  assert.ok(htmlIncludes(html, 'Governed Output'))
+  assert.ok(htmlIncludes(html, 'Decision Boundary'))
   assert.ok(htmlIncludes(html, 'Team-level context only.'))
 })
 
 test('renders compact Team Operations summary with evidence collapsed and governance visible', () => {
   const html = renderPanel(baseState, { compact: true })
 
-  assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
+  assert.ok(htmlIncludes(html, 'Bullpen Operations Context'))
   assert.ok(htmlIncludes(html, 'Internal / Limited Exposure'))
-  assert.ok(htmlIncludes(html, 'Context only - no team ranking or pitcher selection.'))
+  assert.ok(htmlIncludes(html, 'Context only - no bullpen choice is made.'))
   assert.ok(htmlIncludes(html, 'View Context Details'))
   assert.ok(htmlIncludes(html, 'View Evidence'))
-  assert.ok(htmlIncludes(html, 'View Metadata'))
+  assert.ok(htmlIncludes(html, 'View Source Detail'))
   assert.equal(htmlIncludes(html, 'Coverage inventory is represented.'), false)
   assert.equal(htmlIncludes(html, 'Readiness context is assembled from current bullpen evidence.'), false)
 })
@@ -299,13 +300,13 @@ test('renders compact Team Operations summary with evidence collapsed and govern
 test('renders governance flags and metadata', () => {
   const html = renderPanel(baseState, { initialExpandedSections: ['metadata'] })
 
-  assert.ok(htmlIncludes(html, 'Governance Metadata'))
-  assert.ok(htmlIncludes(html, 'Team ranking'))
-  assert.ok(htmlIncludes(html, 'Pitcher selection'))
-  assert.ok(htmlIncludes(html, 'Not applied'))
-  assert.ok(htmlIncludes(html, 'Not made'))
-  assert.ok(htmlIncludes(html, 'Trust Metadata'))
-  assert.ok(htmlIncludes(html, 'Freshness Metadata'))
+  assert.ok(htmlIncludes(html, 'Decision Boundary'))
+  assert.ok(htmlIncludes(html, 'Team order'))
+  assert.ok(htmlIncludes(html, 'Pitcher choice'))
+  assert.ok(htmlIncludes(html, 'No ordering made'))
+  assert.ok(htmlIncludes(html, 'No pitcher chosen'))
+  assert.ok(htmlIncludes(html, 'Source Detail'))
+  assert.ok(htmlIncludes(html, 'Freshness Detail'))
 })
 
 test('renders trust metadata when expanded', () => {
@@ -313,9 +314,9 @@ test('renders trust metadata when expanded', () => {
 
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'medium'))
-  assert.ok(htmlIncludes(html, 'Data State'))
+  assert.ok(htmlIncludes(html, 'Data coverage'))
   assert.ok(htmlIncludes(html, 'complete'))
-  assert.ok(htmlIncludes(html, 'Source Evidence'))
+  assert.ok(htmlIncludes(html, 'Source context'))
   assert.ok(htmlIncludes(html, 'represented'))
 })
 
@@ -338,11 +339,11 @@ test('humanizes readiness evidence keys while preserving technical keys', () => 
 
   assert.ok(htmlIncludes(html, 'Coverage Inventory'))
   assert.ok(htmlIncludes(html, 'Source key: coverage_inventory'))
-  assert.ok(htmlIncludes(html, 'Trust Metadata Limited'))
+  assert.ok(htmlIncludes(html, 'Visibility Detail Limited'))
   assert.ok(htmlIncludes(html, 'Source key: trust_metadata_limited'))
-  assert.ok(htmlIncludes(html, 'Affected Area: Trust Metadata'))
+  assert.ok(htmlIncludes(html, 'Affected Area: Visibility Detail'))
   assert.ok(htmlIncludes(html, 'Technical details'))
-  assert.ok(htmlIncludes(html, 'Context only - no team ranking or pitcher selection.'))
+  assert.ok(htmlIncludes(html, 'Context only - no bullpen choice is made.'))
 })
 
 test('renders freshness metadata when expanded', () => {
@@ -367,7 +368,7 @@ test('supports keyboard-operable expand and collapse controls', () => {
   assert.ok(!htmlIncludes(collapsedHtml, 'Coverage inventory is represented.'))
   assert.ok(htmlIncludes(expandedHtml, 'Hide Context Details'))
   assert.ok(htmlIncludes(expandedHtml, 'Hide Evidence'))
-  assert.ok(htmlIncludes(expandedHtml, 'Hide Metadata'))
+  assert.ok(htmlIncludes(expandedHtml, 'Hide Source Detail'))
   assert.ok(htmlIncludes(expandedHtml, 'aria-expanded="true"'))
   assert.ok(htmlIncludes(expandedHtml, 'Coverage inventory is represented.'))
   assert.ok(htmlIncludes(expandedHtml, 'Readiness context is assembled from current bullpen evidence.'))
@@ -413,7 +414,7 @@ test('derives unavailable view state for unsafe normalized payloads', () => {
 
   assert.equal(view.contractState, 'unavailable')
   assert.ok(htmlIncludes(html, 'Unavailable'))
-  assert.ok(htmlIncludes(html, 'Unavailable Contract State'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read Withheld'))
   assert.ok(htmlIncludes(html, 'Missing fields'))
   assert.ok(htmlIncludes(html, 'Malformed fields'))
 })

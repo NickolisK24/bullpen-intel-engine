@@ -133,7 +133,7 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
   assert.ok(htmlIncludes(html, 'Larry Limited'))
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
   assert.ok(htmlIncludes(html, '29 pitches yesterday'))   // short reason
-  assert.ok(htmlIncludes(html, 'Fatigue'))
+  assert.ok(htmlIncludes(html, 'Recent Load'))
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
@@ -156,7 +156,7 @@ test('groups with no pitchers render their own empty copy', () => {
     cardsByStatus: { Available: populatedBoard.groups[0].pitchers },
   })
   const html = render(board)
-  assert.ok(htmlIncludes(html, 'No unavailable pitchers are shown right now.'))
+  assert.ok(htmlIncludes(html, 'No pitchers are currently hidden from the bullpen plan.'))
 })
 
 test('stale data surfaces existing trust messaging', () => {
@@ -166,7 +166,7 @@ test('stale data surfaces existing trust messaging', () => {
   assert.ok(htmlIncludes(html, 'Availability note is limited by data freshness.'))
   assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
   assert.ok(htmlIncludes(html, 'Roster Unknown'))
-  assert.ok(htmlIncludes(html, 'Roster status unavailable'))
+  assert.ok(htmlIncludes(html, 'Roster context unavailable'))
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
   assert.ok(htmlIncludes(html, 'Roster Status Coverage'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
@@ -268,7 +268,7 @@ test('Unavailable Only empty state appears without showing active relievers', ()
     emptyState: view.getBullpenViewModeEmptyState(view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY),
   })
 
-  assert.ok(htmlIncludes(html, 'No unavailable relievers found for this bullpen.'))
+  assert.ok(htmlIncludes(html, 'No relievers are out of the current bullpen plan.'))
   assert.ok(!htmlIncludes(html, 'Zane Available'))
   assert.ok(!htmlIncludes(html, 'Uri Unavailable'))
 })
@@ -308,7 +308,7 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, '60-Day IL')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).pitcherLabels.read.label, 'Unavailable')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man (not active)')
-  assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster status unavailable')
+  assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster context unavailable')
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).unavailablePitchersCount, 3)
   assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).coverageLabel, '100%')
 })

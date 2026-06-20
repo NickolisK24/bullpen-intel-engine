@@ -225,7 +225,7 @@ def _availability_explanation_payload(pitcher_id: int) -> dict[str, Any]:
     if latest_score is None:
         raise ExplanationRouteError(
             reason_code='missing_source_data',
-            summary='Availability explanation cannot be generated because fatigue evidence is unavailable.',
+            summary='Availability explanation cannot be generated because recent workload evidence is unavailable.',
             status_code=503,
         )
 

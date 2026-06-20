@@ -26,36 +26,36 @@ export const BULLPEN_VIEW_MODES = [
   {
     id: BULLPEN_VIEW_MODE_ACTIVE,
     label: 'Active',
-    description: 'Active bullpen options only.',
+    description: 'Show the relievers currently available for bullpen planning.',
   },
   {
     id: BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
     label: 'Active + Unavailable',
-    description: 'Active board plus roster-status unavailable relievers.',
+    description: 'Show the current bullpen plus arms out of the plan because of roster context.',
   },
   {
     id: BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
     label: 'Unavailable Only',
-    description: 'Roster-status unavailable relievers only.',
+    description: 'Show only the relievers BaseballOS is not counting for the current bullpen plan.',
   },
 ]
 
 const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id))
 
 const GROUP_FALLBACK_META = {
-  Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
-  Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
-  Limited: { label: 'Limited', description: 'Recent workload suggests limited use right now.' },
-  Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
-  Unavailable: { label: 'Unavailable Pitchers', description: "Not available for tonight's bullpen picture." },
+  Available: { label: 'Available', description: 'Recent usage leaves these arms in a clean spot for normal bullpen coverage.' },
+  Monitor: { label: 'Monitor', description: 'Recent work should be checked before counting on a full late-game lane.' },
+  Limited: { label: 'Limited', description: 'Recent usage narrows how comfortably these arms can be used.' },
+  Avoid: { label: 'Avoid', description: 'Recent usage has tightened the margin enough that these arms should not be treated as normal options.' },
+  Unavailable: { label: 'Unavailable Pitchers', description: "Roster or workload context keeps these pitchers out of tonight's bullpen plan." },
 }
 
 const EMPTY_GROUP_COPY = {
-  Available: 'No arms are clear of recent workload right now.',
-  Monitor: 'No arms need a workload check right now.',
-  Limited: 'No arms are limited by workload right now.',
-  Avoid: 'No arms are carrying heavy recent use.',
-  Unavailable: 'No unavailable pitchers are shown right now.',
+  Available: 'No relievers are fully clear of recent workload right now.',
+  Monitor: 'No relievers need an extra workload check right now.',
+  Limited: 'No relievers have a narrowed-use read right now.',
+  Avoid: 'No relievers are carrying enough recent use to fall out of the normal plan.',
+  Unavailable: 'No pitchers are currently hidden from the bullpen plan.',
 }
 
 export function getBoardGroups(board) {
@@ -226,8 +226,8 @@ export function filterBoardForViewMode(board, mode) {
 export function getBullpenViewModeEmptyState(mode) {
   if (normalizeBullpenViewMode(mode) === BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY) {
     return {
-      title: 'No unavailable relievers found for this bullpen.',
-      subtitle: 'Active relievers remain hidden in Unavailable Only view.',
+      title: 'No relievers are out of the current bullpen plan.',
+      subtitle: 'Active relievers are hidden in this view so roster-limited arms stay easy to audit.',
     }
   }
   return null
@@ -294,12 +294,12 @@ export function getRosterStatusSummaryView(summary) {
     shouldShow,
     authority,
     label: authority === 'available'
-      ? 'Roster status available'
+      ? 'Roster context ready'
       : authority === 'partial'
-        ? 'Roster status partial'
+        ? 'Roster context partial'
         : authority === 'unavailable'
-          ? 'Roster status unavailable'
-          : 'Roster status not loaded',
+          ? 'Roster context unavailable'
+          : 'Roster context not loaded',
     activeMlbCount,
     unknownCount,
     inactiveContextCount,

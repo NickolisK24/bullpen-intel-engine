@@ -240,7 +240,7 @@ export default function OperationalReadinessSection({
               Bullpen State + Team Readiness
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
-              Governed bullpen context in one dashboard surface. Team-level context only. The user remains responsible for bullpen decisions.
+              Bullpen context in one dashboard surface. BaseballOS explains available choices without choosing the next arm.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -262,7 +262,7 @@ export default function OperationalReadinessSection({
                 Operational Snapshot
               </div>
               <p className="mt-1 text-sm leading-relaxed text-chalk500">
-                Current bullpen state, readiness, pressure, availability shape, freshness, and visibility in one governed view.
+                Current bullpen state, readiness, pressure, availability shape, freshness, and visibility in one baseball-facing view.
               </p>
             </div>
             <div className="font-mono text-[11px] uppercase tracking-wider text-chalk600">
@@ -296,7 +296,7 @@ export default function OperationalReadinessSection({
             <SnapshotMetric
               label="Inventory Concentration"
               value={availabilitySnapshot.label}
-              subtext="Largest inventory workload-status category"
+              subtext="Largest workload lane in the bullpen picture"
             />
             <SnapshotMetric
               label="Freshness Status"
@@ -315,8 +315,8 @@ export default function OperationalReadinessSection({
         <div className="rounded border border-dirt bg-dugout/70 p-3">
           <div className="rounded border border-dirt bg-chalk/20 px-3 py-2 font-mono text-xs text-emerald-300">
             {rankingApplied === false && selectionMade === false
-              ? 'Context only — no pitcher is ranked or selected.'
-              : 'Governance state unavailable for this surface; treat as context only.'}
+              ? 'Context only - BaseballOS does not choose the next arm.'
+              : 'Decision boundary unavailable for this surface; treat as context only.'}
           </div>
         </div>
 
@@ -333,7 +333,7 @@ export default function OperationalReadinessSection({
           <div className="rounded border border-red-400/35 bg-red-400/10 p-3" role="status" aria-live="polite">
             <div className="font-mono text-xs uppercase tracking-widest text-red-300">Operational readiness partially unavailable</div>
             <p className="mt-1 text-sm leading-relaxed text-chalk400">
-              One or more governed readiness surfaces could not be loaded. Existing fail-closed and refusal behavior remains controlled by each source surface.
+              One or more readiness surfaces could not be loaded. Existing source boundaries still control what can be shown.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {v2Error && (
@@ -368,8 +368,8 @@ export default function OperationalReadinessSection({
           </DetailDisclosure>
 
           <DetailDisclosure
-            title="Evidence & Metadata"
-            summary="Trust, freshness, fail-closed, inventory, neutral groups, and governance evidence remain available on demand."
+            title="Evidence & Source Detail"
+            summary="Freshness, source detail, inventory, neutral groups, and decision-boundary evidence remain available on demand."
             expanded={evidenceOpen}
             onToggle={() => setEvidenceOpen(current => !current)}
           >

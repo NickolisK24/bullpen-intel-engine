@@ -145,7 +145,7 @@ const tensionStory = story({
     {
       key: 'evidence',
       label: 'Evidence',
-      text: 'This bullpen has still run a 3.12 season ERA, 2nd among current pens, but recent workload is 34.2 pitches per participating arm with 2 arms at HIGH or CRITICAL fatigue.',
+      text: 'This bullpen has still run a 3.12 season ERA, 2nd among current pens, but recent workload is 34.2 pitches per participating arm with 2 arms carrying heavy recent workload.',
     },
     {
       key: 'mechanism',
@@ -349,7 +349,7 @@ test('drafts use real four-beat values and avoid fabricated stats', () => {
     '1 clean Trust Arm',
     '5 clean options',
     '3.12 current-pen ERA, No. 2 of 30',
-    '2 HIGH/CRITICAL arms (Abner Uribe and Elvis Peguero)',
+    '2 heavy-workload arms (Abner Uribe and Elvis Peguero)',
   ]) {
     assert.ok(draftText.includes(expected) || factValues.includes(expected), `missing real value: ${expected}`)
   }
@@ -372,7 +372,7 @@ test('verified fact object is structured from the same four-beat story payload',
   assert.equal(facts.clean_trust.text, '1 clean Trust Arm')
   assert.deepEqual(facts.clean_trust.names, ['Trevor Megill'])
   assert.equal(facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
-  assert.equal(facts.high_risk.text, '2 HIGH/CRITICAL arms (Abner Uribe and Elvis Peguero)')
+  assert.equal(facts.high_risk.text, '2 heavy-workload arms (Abner Uribe and Elvis Peguero)')
   for (const expected of ['6/8', '3.12', '2', '30', '34.2']) {
     assert.ok(facts.numeric_tokens.includes(expected), `missing verified token: ${expected}`)
   }

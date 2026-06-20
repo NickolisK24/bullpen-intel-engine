@@ -29,8 +29,8 @@ const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const withoutGovernanceCopy = html => visibleText(html)
-  .replace(/Observations are descriptive only and do not rank, select, or recommend pitchers\./g, '')
-  .replace(/Context only — not a ranking or selection\./g, '')
+  .replace(/Observations describe bullpen movement and decision context without choosing an arm\./g, '')
+  .replace(/Context only - bullpen decisions remain with the user\./g, '')
 
 const baseObservationResponse = {
   capability: 'v5_bullpen_intelligence_surface',
@@ -130,7 +130,7 @@ function buildObservation(index) {
     ...sourceObservation,
     observation_id: `inventory:test:2026-06-04:${index}`,
     title: `Dashboard observation ${index} surfaced.`,
-    summary: `Dashboard observation ${index} remains descriptive and governed.`,
+    summary: `Dashboard observation ${index} remains tied to bullpen movement.`,
     evidence: sourceObservation.evidence.map(item => ({
       ...item,
       evidence_id: `${item.evidence_id}:${index}`,
@@ -213,7 +213,7 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   const html = renderPanel(state)
 
   assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
-  assert.ok(htmlIncludes(html, 'Governed Observations'))
+  assert.ok(htmlIncludes(html, 'Bullpen Observations'))
   assert.ok(htmlIncludes(html, 'Availability inventory contracted since the previous snapshot.'))
   assert.ok(htmlIncludes(html, 'Availability inventory changed based on trusted platform state.'))
   assert.ok(htmlIncludes(html, 'Primary evidence'))
@@ -232,11 +232,11 @@ test('renders title, summary, evidence, limitations, metadata, and governance co
   assert.ok(htmlIncludes(html, 'Limited Read'))
   assert.ok(htmlIncludes(html, 'Explanation Reference'))
   assert.ok(htmlIncludes(html, 'v5.observations.inventory'))
-  assert.ok(htmlIncludes(html, 'Observations are descriptive only and do not rank, select, or recommend pitchers.'))
+  assert.ok(htmlIncludes(html, 'Observations describe bullpen movement and decision context without choosing an arm.'))
   // Plain-language governance reassurance replaces raw contract fields on the
   // user-facing surface. The governance booleans are still asserted via the
   // normalized view model above and in the contract tests.
-  assert.ok(htmlIncludes(html, 'Context only — not a ranking or selection.'))
+  assert.ok(htmlIncludes(html, 'Context only - bullpen decisions remain with the user.'))
 })
 
 test('caps dashboard observations at three and exposes additional observation access', () => {
@@ -248,7 +248,7 @@ test('caps dashboard observations at three and exposes additional observation ac
   const state = normalizeBullpenObservationsResponse(response)
   const html = renderPanel(state)
 
-  assert.ok(htmlIncludes(html, 'Showing 3 of 5 governed observations.'))
+  assert.ok(htmlIncludes(html, 'Showing 3 of 5 bullpen observations.'))
   assert.ok(htmlIncludes(html, '+2 additional observations available'))
   assert.ok(htmlIncludes(html, 'View All Observations'))
   assert.ok(htmlIncludes(html, 'Dashboard observation 1 surfaced.'))
@@ -256,7 +256,7 @@ test('caps dashboard observations at three and exposes additional observation ac
   assert.ok(htmlIncludes(html, 'Dashboard observation 3 surfaced.'))
   assert.equal(htmlIncludes(html, 'Dashboard observation 4 surfaced.'), false)
   assert.equal(htmlIncludes(html, 'Dashboard observation 5 surfaced.'), false)
-  assert.ok(htmlIncludes(html, 'Context only — not a ranking or selection.'))
+  assert.ok(htmlIncludes(html, 'Context only - bullpen decisions remain with the user.'))
 })
 
 test('renders empty and fail-closed states with safe copy', () => {
@@ -282,7 +282,7 @@ test('renders empty and fail-closed states with safe copy', () => {
   const html = renderPanel(failClosedState)
 
   assert.equal(failClosedState.contractState, 'fail_closed')
-  assert.ok(htmlIncludes(html, 'No governed bullpen observations are available from the current trusted state.'))
+  assert.ok(htmlIncludes(html, 'No bullpen observations have enough trusted movement to show yet.'))
   assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
   assert.ok(htmlIncludes(html, 'Unavailable - output withheld'))
   assert.ok(htmlIncludes(html, 'unavailable'))
@@ -298,7 +298,7 @@ test('handles loading, API failure, and unsafe contract states safely', () => {
     ranking_applied: true,
   }))
 
-  assert.ok(htmlIncludes(loadingHtml, 'Loading governed bullpen observations...'))
+  assert.ok(htmlIncludes(loadingHtml, 'Loading bullpen observations...'))
   assert.ok(htmlIncludes(loadingHtml, 'role="status"'))
   assert.ok(htmlIncludes(errorHtml, 'Bullpen observations could not be loaded safely.'))
   assert.ok(!htmlIncludes(errorHtml, 'network details should not render'))

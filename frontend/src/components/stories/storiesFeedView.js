@@ -9,31 +9,31 @@ export const STORY_FILTERS = [
     key: DEFAULT_STORY_FILTER,
     label: 'All',
     activeLabel: 'All Stories',
-    description: 'Every storyline BaseballOS is carrying today.',
+    description: 'Every bullpen story with enough movement to explain today.',
   },
   {
     key: 'stressed',
     label: 'Pressure',
     activeLabel: 'Pressure Stories',
-    description: 'Pens that have been worked hard and are short on rest.',
+    description: "Pens where recent work is narrowing the manager's late-game choices.",
   },
   {
     key: 'rested',
     label: 'Rest',
     activeLabel: 'Rest Stories',
-    description: 'Pens with rested options and room to maneuver.',
+    description: "Pens where rested options are widening the manager's choices.",
   },
   {
     key: 'watch',
     label: 'Watch',
     activeLabel: 'Watch Stories',
-    description: 'Pens quietly leaning on the same arms.',
+    description: 'Pens where the same arms may be absorbing more recent work.',
   },
   {
     key: 'league',
     label: 'League',
     activeLabel: 'League Stories',
-    description: 'League-wide observations not tied to a single bullpen.',
+    description: 'League-wide bullpen movement not tied to a single club.',
   },
 ]
 
@@ -50,15 +50,15 @@ const TONE_CATEGORY = {
 const STORY_FILTER_KEYS = new Set(STORY_FILTERS.map(option => option.key))
 
 export const FEED_EMPTY_COPY = {
-  all: 'No bullpen stories today.',
-  stressed: 'No pressure stories today.',
-  rested: 'No rest stories today.',
-  watch: 'No watch stories today.',
-  league: 'No league stories today.',
+  all: 'No bullpen story has enough movement yet today.',
+  stressed: 'No team has enough recent workload strain for a pressure story today.',
+  rested: 'No team has a standout recovery story yet today.',
+  watch: 'No team is clearly leaning on the same arms today.',
+  league: 'No league-wide bullpen movement stands out yet.',
 }
 
-export const FEED_EMPTY_SUPPORT_COPY = 'Try another category or return to the full feed.'
-export const FOUR_BEAT_STORIES_FALLBACK = 'No bullpen stories today.'
+export const FEED_EMPTY_SUPPORT_COPY = 'Return to the full feed or check back after the next completed games.'
+export const FOUR_BEAT_STORIES_FALLBACK = 'No bullpen story has enough movement yet today.'
 
 export function normalizeStoryFilter(filter) {
   return STORY_FILTER_BY_KEY[filter] ? filter : DEFAULT_STORY_FILTER

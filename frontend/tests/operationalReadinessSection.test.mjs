@@ -24,6 +24,7 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const sanitizedGovernanceText = html => visibleText(html)
   .replace(/No ranking, selection, recommendation, or prediction applied\./g, '')
+  .replace(/Context only - BaseballOS does not choose the next arm\./g, '')
   .replace(/ranking_applied/g, '')
   .replace(/selection_made/g, '')
 
@@ -175,7 +176,7 @@ test('renders the Operational Readiness hero and snapshot for V2 and V3 state', 
   assert.ok(htmlIncludes(html, 'current'))
   assert.ok(htmlIncludes(html, 'Bullpen Visibility'))
   assert.ok(htmlIncludes(html, 'Data state complete'))
-  assert.ok(htmlIncludes(html, 'Team-level context only. The user remains responsible for bullpen decisions.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS explains available choices without choosing the next arm.'))
 })
 
 test('keeps governance invariants visible while details are collapsed', () => {
@@ -184,9 +185,9 @@ test('keeps governance invariants visible while details are collapsed', () => {
   // Governance is stated in plain language on the primary surface; the raw
   // ranking_applied / selection_made booleans live in the API payload and the
   // Evidence & Metadata drawer.
-  assert.ok(htmlIncludes(html, 'Context only — no pitcher is ranked or selected.'))
+  assert.ok(htmlIncludes(html, 'Context only - BaseballOS does not choose the next arm.'))
   assert.ok(htmlIncludes(html, 'View Readiness Details'))
-  assert.ok(htmlIncludes(html, 'View Evidence &amp; Metadata'))
+  assert.ok(htmlIncludes(html, 'View Evidence &amp; Source Detail'))
   assert.equal(htmlIncludes(html, 'Coverage inventory is represented.'), false)
   assert.equal(htmlIncludes(html, 'Bullpen inventory is summarized from current availability evidence.'), false)
 })
@@ -198,11 +199,11 @@ test('preserves readiness and evidence detail views on demand', () => {
   })
 
   assert.ok(htmlIncludes(html, 'Hide Readiness Details'))
-  assert.ok(htmlIncludes(html, 'Hide Evidence &amp; Metadata'))
-  assert.ok(htmlIncludes(html, 'Team Operations Bullpen Readiness'))
+  assert.ok(htmlIncludes(html, 'Hide Evidence &amp; Source Detail'))
+  assert.ok(htmlIncludes(html, 'Bullpen Operations Context'))
   assert.ok(htmlIncludes(html, 'Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'View Context Details'))
-  assert.ok(htmlIncludes(html, 'View Evidence And Metadata'))
+  assert.ok(htmlIncludes(html, 'View Evidence And Source Detail'))
 })
 
 test('does not introduce prohibited dashboard guidance language', () => {

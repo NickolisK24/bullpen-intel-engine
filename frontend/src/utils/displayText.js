@@ -7,12 +7,23 @@ const ACRONYM_TOKENS = new Set([
   'url',
 ])
 
+const DISPLAY_LABEL_REPLACEMENTS = new Map([
+  ['trust metadata', 'visibility detail'],
+  ['trust metadata limited', 'visibility detail limited'],
+  ['governance metadata', 'decision boundary detail'],
+  ['freshness metadata', 'freshness detail'],
+  ['fail closed', 'source boundary'],
+  ['ranking applied', 'team order'],
+  ['selection made', 'pitcher choice'],
+])
+
 function normalizeDisplayString(value) {
-  return String(value || '')
+  const normalized = String(value || '')
     .replace(/^explains[_-]+/i, '')
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  return DISPLAY_LABEL_REPLACEMENTS.get(normalized.toLowerCase()) || normalized
 }
 
 function formatToken(token) {

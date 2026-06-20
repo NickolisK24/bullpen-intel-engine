@@ -36,7 +36,7 @@ const payload = {
     title: 'Operational Availability Backtest',
     summary: 'Stored backtest summary from the API.',
     claim: 'Avoid and Unavailable were used less often than Available.',
-    caveat: 'This is an observed association with bullpen management behavior, not a physiological proof or causal fatigue claim.',
+    caveat: 'This is an observed association with bullpen management behavior, not a physiological proof or causal workload claim.',
   },
   windows: [
     {
@@ -99,7 +99,7 @@ test('renders stored backtest values and honest framing', () => {
   assert.ok(text.includes('2025 secondary'))
   assert.ok(text.includes('No-appearance tier flips: 1.8%'))
   assert.ok(text.includes('observed association'))
-  assert.ok(text.includes('not a physiological proof or causal fatigue claim'))
+  assert.ok(text.includes('not a physiological proof or causal workload claim'))
 })
 
 test('renders an honest empty state when no stored computation exists', () => {

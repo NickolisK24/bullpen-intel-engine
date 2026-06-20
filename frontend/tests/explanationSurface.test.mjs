@@ -39,7 +39,8 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const visibleText = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const withoutGovernanceSentence = html => visibleText(html)
   .replace(/No ranking, selection, recommendation, or prediction applied\./g, '')
-  .replace(/Ranking Not applied Selection Not made Recommendation Not made Prediction Not made Decision scope Explanation only Advice scope No advice/g, '')
+  .replace(/BaseballOS explains the current bullpen read without choosing an arm or calling an outcome\./g, '')
+  .replace(/Team order No bullpen order made Pitcher choice No pitcher chosen Arm choice No arm chosen Outcome call No outcome call made Decision scope Explanation only Advice scope No bullpen advice/g, '')
 
 const governance = {
   ranking_applied: false,
@@ -271,7 +272,7 @@ test('renders evidence and limitations inside the opened explanation detail surf
   assert.ok(htmlIncludes(html, 'Data Limited Status Code'))
   assert.ok(htmlIncludes(html, 'Technical key: data_limited_status_code'))
   assert.ok(htmlIncludes(html, 'Source key: explains_workload_state'))
-  assert.ok(htmlIncludes(html, 'Affected Area: Trust Metadata'))
+  assert.ok(htmlIncludes(html, 'Affected Area: Visibility Detail'))
   assert.ok(htmlIncludes(html, 'Technical details'))
   assert.ok(htmlIncludes(html, 'Manager intent is not represented.'))
   assert.ok(htmlIncludes(html, 'medium'))
@@ -288,7 +289,7 @@ test('renders fail-closed explanation responses safely', () => {
   assert.ok(htmlIncludes(html, 'Required explanation inputs were unavailable for this request.'))
   assert.ok(htmlIncludes(html, 'missing_source_data'))
   assert.ok(htmlIncludes(html, 'Required Explanation Inputs Are Unavailable'))
-  assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS explains the current bullpen read without choosing an arm or calling an outcome.'))
 })
 
 test('keeps governance-safe messaging visible in explanation details', () => {
@@ -297,13 +298,14 @@ test('keeps governance-safe messaging visible in explanation details', () => {
     initialExplanation: normalizeV4ExplanationApiResponse(explanationEnvelope),
   })
 
-  assert.ok(htmlIncludes(html, 'No ranking, selection, recommendation, or prediction applied.'))
-  assert.ok(htmlIncludes(html, 'Ranking'))
-  assert.ok(htmlIncludes(html, 'Selection'))
-  assert.ok(htmlIncludes(html, 'Recommendation'))
-  assert.ok(htmlIncludes(html, 'Prediction'))
+  assert.ok(htmlIncludes(html, 'Decision Boundary'))
+  assert.ok(htmlIncludes(html, 'BaseballOS explains the current bullpen read without choosing an arm or calling an outcome.'))
+  assert.ok(htmlIncludes(html, 'Team order'))
+  assert.ok(htmlIncludes(html, 'Pitcher choice'))
+  assert.ok(htmlIncludes(html, 'Arm choice'))
+  assert.ok(htmlIncludes(html, 'Outcome call'))
   assert.ok(htmlIncludes(html, 'Explanation only'))
-  assert.ok(htmlIncludes(html, 'No advice'))
+  assert.ok(htmlIncludes(html, 'No bullpen advice'))
 })
 
 test('does not render prohibited explanation surface language', () => {
@@ -323,10 +325,10 @@ test('Operational Readiness renders the Why this state action without inline evi
   assert.ok(htmlIncludes(html, 'Explanation'))
   assert.equal(htmlIncludes(html, 'Availability Distribution Total'), false)
   assert.equal(htmlIncludes(html, explanationEnvelope.explanation.summary), false)
-  // The Dashboard surface now states governance in plain language; the raw
+  // The Dashboard surface now states the decision boundary in plain language; the raw
   // ranking_applied / selection_made booleans remain in the API payload and in
-  // the Evidence & Metadata drawer rather than as user-facing copy.
-  assert.ok(htmlIncludes(html, 'Context only — no pitcher is ranked or selected.'))
+  // the Evidence & Source Detail drawer rather than as user-facing copy.
+  assert.ok(htmlIncludes(html, 'Context only - BaseballOS does not choose the next arm.'))
 })
 
 test('Operational Readiness uses the certified team readiness explanation client', () => {

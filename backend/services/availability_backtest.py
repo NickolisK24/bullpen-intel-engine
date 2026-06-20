@@ -409,7 +409,7 @@ def _framing():
         ),
         'caveat': (
             'This is an observed association with bullpen management behavior, '
-            'not a physiological proof or causal fatigue claim. Reverse '
+            'not a physiological proof or causal workload claim. Reverse '
             'causality is present: an arm can be Avoid because he was just used, '
             'and managers may sit him the next day for the same reason.'
         ),

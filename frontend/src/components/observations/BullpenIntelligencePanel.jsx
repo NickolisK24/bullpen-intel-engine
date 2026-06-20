@@ -20,7 +20,7 @@ const STATUS_LABELS = {
 // place of raw contract fields. The underlying ranking_applied / selection_made
 // values are preserved in the API payload, the normalized view model, and the
 // contract tests — they just don't need to read like debug output here.
-const GOVERNANCE_CONTEXT_COPY = 'Context only — not a ranking or selection.'
+const GOVERNANCE_CONTEXT_COPY = 'Context only - bullpen decisions remain with the user.'
 
 // Baseball-facing display labels for the governed trust_status vocabulary.
 // The raw vocabulary values stay untouched in the payload and view model.
@@ -313,7 +313,7 @@ export default function BullpenIntelligencePanel({
             Bullpen Intelligence
           </div>
           <h2 id="bullpen-intelligence-heading" className="mt-1 text-xl font-semibold text-chalk100">
-            Governed Observations
+            Bullpen Observations
           </h2>
           <p
             id="bullpen-intelligence-governance"
@@ -333,7 +333,7 @@ export default function BullpenIntelligencePanel({
 
       <div className="p-4">
         {loading ? (
-          <LoadingPane message="Loading governed bullpen observations..." />
+          <LoadingPane message="Loading bullpen observations..." />
         ) : error ? (
           <ErrorState message="Bullpen observations could not be loaded safely." onRetry={onRetry} />
         ) : !state || state.contractState === 'unavailable' || !state.isContractSafe ? (
@@ -353,7 +353,7 @@ export default function BullpenIntelligencePanel({
                 subtext={state.confidence?.reason}
               />
               <MetadataCell
-                label="Governance"
+                label="Decision Boundary"
                 value="Context Only"
                 subtext={GOVERNANCE_CONTEXT_COPY}
               />
@@ -375,7 +375,7 @@ export default function BullpenIntelligencePanel({
                 {hasObservationLimit && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-dirt bg-field/45 px-3 py-2 font-mono text-[11px] text-chalk500">
                     <span>
-                      Showing {visibleObservations.length} of {observations.length} governed observations.
+                      Showing {visibleObservations.length} of {observations.length} bullpen observations.
                     </span>
                     {hiddenObservationCount > 0 ? (
                       <span className="flex flex-wrap items-center gap-2">

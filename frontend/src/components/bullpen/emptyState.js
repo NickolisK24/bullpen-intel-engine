@@ -27,8 +27,8 @@ export function getBullpenEmptyState({
 
   if (totalLogs > 0 && totalScored === 0) {
     return {
-      title: 'No fatigue scores found',
-      subtitle: 'Game logs are present, but fatigue scores have not been calculated yet.',
+      title: 'No recent workload reads found',
+      subtitle: 'Game logs are present, but recent workload reads have not been calculated yet.',
     }
   }
 

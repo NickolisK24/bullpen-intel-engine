@@ -105,7 +105,7 @@ export default function Bullpen() {
     <div className={`p-4 sm:p-6 lg:p-8 mx-auto ${selectedPitcher ? 'max-w-[100rem]' : 'max-w-7xl'}`}>
       <SectionHeader
         title="Bullpen"
-        subtitle="Team-specific bullpen analysis from latest completed data - current availability, stress, and role context"
+        subtitle="Team-specific bullpen analysis from latest completed data - current availability, recent workload, and role context"
         action={
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex gap-1 bg-chalk/30 p-1 rounded-lg border border-dirt">
@@ -334,7 +334,7 @@ function PitcherView({
         {/* Main table */}
         <div className="min-w-0 flex-1 card overflow-hidden transition-all duration-300">
           {allScores.loading ? (
-            <LoadingPane message="Loading fatigue data..." />
+            <LoadingPane message="Loading recent workload data..." />
           ) : allScores.error ? (
             <ErrorState message={allScores.error} onRetry={allScores.refetch} />
           ) : sorted.length === 0 ? (
@@ -347,8 +347,8 @@ function PitcherView({
                   <tr>
                     <th className={thStyle('name')} onClick={() => setSortBy('name')}>Pitcher {sortBy === 'name' && '↑'}</th>
                     <th className="text-chalk400">Team</th>
-                    <th className={thStyle('score')} onClick={() => setSortBy('score')}>Score {sortBy === 'score' && '↓'}</th>
-                    <th className="text-chalk400 hidden md:table-cell">Fatigue</th>
+                    <th className={thStyle('score')} onClick={() => setSortBy('score')}>Workload {sortBy === 'score' && '↓'}</th>
+                    <th className="text-chalk400 hidden md:table-cell">Recent Load</th>
                     <th className="text-chalk400">Availability</th>
                     <th className={thStyle('pitches')} onClick={() => setSortBy('pitches')}>P/7d {sortBy === 'pitches' && '↓'}</th>
                     <th className={thStyle('rest')} onClick={() => setSortBy('rest')}>Rest {sortBy === 'rest' && '↑'}</th>

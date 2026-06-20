@@ -143,7 +143,7 @@ class TestAvailabilityClassification:
         assert result['availability_status'] == STATUS_MONITOR
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'missing'
-        assert result['reasons'] == ['Missing workload history or fatigue score']
+        assert result['reasons'] == ['Missing recent workload history']
 
     def test_stale_data_is_low_confidence_and_not_current(self, make_log):
         ref = date(2026, 6, 1)

@@ -10,7 +10,7 @@ export const AVAILABILITY_FILTERS = [
 const STATUS_CONFIG = {
   Available: {
     label: 'Available',
-    tone: 'Workload signals are inside normal public-data use ranges.',
+    tone: 'Recent usage leaves this arm in a clean spot for normal bullpen coverage.',
     style: {
       color: '#86efac',
       borderColor: 'rgba(34,197,94,0.38)',
@@ -20,7 +20,7 @@ const STATUS_CONFIG = {
   },
   Monitor: {
     label: 'Monitor',
-    tone: 'Review the workload context before treating this pitcher as fully available.',
+    tone: 'Recent work should be checked before counting on a full late-game lane.',
     style: {
       color: '#fde047',
       borderColor: 'rgba(234,179,8,0.40)',
@@ -30,7 +30,7 @@ const STATUS_CONFIG = {
   },
   Limited: {
     label: 'Limited',
-    tone: 'Recent workload suggests a restricted-use decision should be considered.',
+    tone: 'Recent usage narrows how comfortably this arm can be used.',
     style: {
       color: '#fdba74',
       borderColor: 'rgba(249,115,22,0.42)',
@@ -40,7 +40,7 @@ const STATUS_CONFIG = {
   },
   Avoid: {
     label: 'Avoid',
-    tone: 'Public workload signals show meaningful recent-use risk.',
+    tone: 'Recent usage has tightened the margin enough that this arm should not be treated as a normal option.',
     style: {
       color: '#fca5a5',
       borderColor: 'rgba(239,68,68,0.42)',
@@ -50,7 +50,7 @@ const STATUS_CONFIG = {
   },
   Unavailable: {
     label: 'Unavailable',
-    tone: 'Deterministic workload rules indicate this pitcher should not be counted for normal planning.',
+    tone: "Roster or workload context means this pitcher should not be counted in tonight's bullpen plan.",
     style: {
       color: '#fecaca',
       borderColor: 'rgba(185,28,28,0.54)',
@@ -60,7 +60,7 @@ const STATUS_CONFIG = {
   },
   Unknown: {
     label: 'Unknown',
-    tone: 'Availability status was not returned by the backend.',
+    tone: 'BaseballOS does not have enough current context for a bullpen read.',
     style: {
       color: '#cbd5e1',
       borderColor: 'rgba(148,163,184,0.32)',
@@ -81,7 +81,7 @@ const DATA_STATE_COPY = {
   },
   missing: {
     label: 'No Workload Record',
-    message: 'No workload history or fatigue score is available for this pitcher.',
+    message: 'No recent workload history is available for this pitcher.',
   },
   incomplete: {
     label: 'Incomplete Workload Inputs',
@@ -186,7 +186,7 @@ export function getDataStateView(dataState) {
   const key = String(dataState || 'unknown').toLowerCase()
   return DATA_STATE_COPY[key] || {
     label: capitalizeToken(key),
-    message: 'The backend returned a non-standard workload data state.',
+    message: 'The workload feed returned a state BaseballOS does not normally show.',
   }
 }
 

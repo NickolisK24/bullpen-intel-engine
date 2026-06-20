@@ -13,8 +13,8 @@ def get_availability_backtest():
 @methodology_bp.route('/', methods=['GET'])
 def get_methodology():
     """
-    Returns the documented methodology behind BaseballOS — the fatigue
-    scoring engine, the analytical insights surfaced from the dataset, and
+    Returns the documented methodology behind BaseballOS — the workload
+    scoring read, the analytical insights surfaced from the dataset, and
     the data sources we trust. This is the substantive companion to the
     bullpen and pipeline modules: anyone evaluating the tool should be able
     to read this page and understand exactly how every number on the
@@ -22,14 +22,15 @@ def get_methodology():
     """
     return jsonify({
         'fatigue_engine': {
-            'title':   'Bullpen Fatigue Scoring Engine',
+            'title':   'Bullpen Recent Workload Read',
             'summary': (
-                'A weighted composite model that scores reliever fatigue '
-                'from 0 to 100 using four inputs derived from MLB Stats API '
+                'A weighted composite read that turns recent reliever usage '
+                'into a 0 to 100 workload index using four inputs derived from MLB Stats API '
                 'game logs: pitch count load (35%), rest days (30%), '
                 'appearance frequency (20%), and innings load (15%). '
-                'Each component returns a 0-100 sub-score; the final score '
-                'is the weighted sum, clamped to the [0, 100] range.'
+                'Each component returns a 0-100 sub-read; the final index '
+                'is the weighted sum, clamped to the [0, 100] range, so users see '
+                'whether recent usage is widening or narrowing the manager\'s choices.'
             ),
             'components': [
                 {
@@ -56,9 +57,9 @@ def get_methodology():
                     'name':      'Appearance Frequency',
                     'weight':    '20%',
                     'rationale': (
-                        'Cumulative fatigue builds even on low-pitch '
+                        'Repeated use can narrow bullpen choices even on low-pitch '
                         'appearances. Five appearances in seven days is a '
-                        'red flag regardless of pitch counts. Blends '
+                        'managerial warning regardless of pitch counts. Blends '
                         '7-day and 14-day windows (70/15 weighted).'
                     ),
                 },
@@ -75,8 +76,8 @@ def get_methodology():
             'risk_tiers': [
                 {'level': 'LOW',      'range': '0–24',   'interpretation': 'Fresh and available.'},
                 {'level': 'MODERATE', 'range': '25–49',  'interpretation': 'Some recent use. Monitor.'},
-                {'level': 'HIGH',     'range': '50–80',  'interpretation': 'Fatigued. Use with caution.'},
-                {'level': 'CRITICAL', 'range': '81–100', 'interpretation': 'Rest required.'},
+                {'level': 'HIGH',     'range': '50–80',  'interpretation': 'Heavy recent workload. Use with caution.'},
+                {'level': 'CRITICAL', 'range': '81–100', 'interpretation': 'Recent usage strongly points toward rest.'},
             ],
             'excluded': {
                 'name':      'Leverage Index',
@@ -91,31 +92,31 @@ def get_methodology():
                     'across the four factors we measure reliably. The '
                     'leverage_score column on the FatigueScore model is '
                     'preserved for schema stability but is no longer used '
-                    'in the composite calculation.'
+                    'in the workload calculation.'
                 ),
             },
         },
 
         'insights': {
-            'title':   'Fatigue Score vs. Next-Outing ERA (Exploratory, Secondary)',
+            'title':   'Recent Workload vs. Next-Outing ERA (Exploratory, Secondary)',
             'summary': (
                 'A retrospective, exploratory look across the 2024 and 2025 '
-                'MLB seasons at whether a higher fatigue score going into an '
+                'MLB seasons at whether a higher recent-workload read going into an '
                 'appearance is associated with a worse next-appearance ERA. '
                 'We walked every game log chronologically per pitcher, '
-                'reconstructed the fatigue score they carried into each '
+                'reconstructed the workload read they carried into each '
                 'appearance, and aggregated their next-outing IP and ER by '
                 'risk tier. This is a simple association — not a controlled '
                 'or causal study.'
             ),
             'finding': (
-                'Appearances made at HIGH or CRITICAL fatigue were followed '
+                'Appearances made after HIGH or CRITICAL workload reads were followed '
                 'by a 3.96 next-outing ERA, versus 3.59 after MODERATE-tier '
                 '(rested-baseline) appearances — about a 10% difference. '
                 'This is an observed association across the seasons studied, '
-                'not evidence that fatigue causes runs: the comparison is '
+                'not evidence that heavy workload causes runs: the comparison is '
                 'not adjusted for the factors listed below, and higher-'
-                'fatigue outings skew toward higher-workload (starter-style) '
+                'workload outings skew toward higher-volume (starter-style) '
                 'appearances.'
             ),
             'caveat': (
@@ -132,7 +133,7 @@ def get_methodology():
             # would update these counts.
             'samples': {'LOW': 0, 'MODERATE': 16385, 'HIGH': 14495, 'CRITICAL': 6},
             'measured': [
-                'Fatigue-score tier carried into an appearance',
+                'Recent-workload tier carried into an appearance',
                 'Next-appearance ERA (earned runs × 9 / innings pitched)',
                 'Number of appearances in each tier (sample size)',
             ],

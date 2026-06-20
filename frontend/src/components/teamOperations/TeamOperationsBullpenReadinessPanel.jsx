@@ -40,11 +40,11 @@ const STATE_COPY = {
     tone: 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300',
   },
   degraded: {
-    label: 'Degraded',
+    label: 'Partial Read',
     tone: 'border-amber/40 bg-amber/10 text-amber',
   },
   refused: {
-    label: 'Refused',
+    label: 'Withheld',
     tone: 'border-red-400/40 bg-red-400/10 text-red-300',
   },
   unavailable: {
@@ -104,7 +104,7 @@ function getContractState(view) {
 
 function getSummary(view) {
   if (!view?.isContractSafe) {
-    return 'Team-level readiness context is unavailable because required contract metadata is missing, malformed, or unsafe.'
+    return 'Team-level bullpen context is withheld because required source context is missing or unsafe to show.'
   }
   return (
     view.readinessSummary
@@ -238,9 +238,9 @@ function CompactSnapshot({ view }) {
         subtext={freshness.data_through ? `Data through ${freshness.data_through}` : null}
       />
       <CompactMetric
-        label="Governance"
-        value="Context only - no team ranking or pitcher selection."
-        subtext="Team-level context only"
+        label="Decision Boundary"
+        value="Context only - no bullpen choice is made."
+        subtext="Team-level explanation only"
       />
     </div>
   )
@@ -350,9 +350,9 @@ function ContractWarnings({ view }) {
 
   return (
     <div className="rounded border border-amber/35 bg-amber/10 p-3" role="status" aria-live="polite">
-      <p className="font-mono text-xs uppercase tracking-widest text-amber">Unavailable Contract State</p>
+      <p className="font-mono text-xs uppercase tracking-widest text-amber">Bullpen Read Withheld</p>
       <p className="mt-1 text-sm leading-relaxed text-chalk300">
-        The panel withheld readiness details because the normalized payload did not satisfy the governed internal contract.
+        Readiness details are withheld because required source context is missing, malformed, or unsafe to show.
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
@@ -387,32 +387,32 @@ function buildWorkloadRows(view) {
   const workload = asObject(view.workloadPressure)
   const counts = asObject(workload.counts)
   return [
-    { label: 'State', value: workload.pressure_state || workload.pressure_level || null },
+    { label: 'Workload lane', value: workload.pressure_state || workload.pressure_level || null },
     { label: 'Low', value: workload.low_count ?? counts.low ?? null },
     { label: 'Moderate', value: workload.moderate_count ?? counts.moderate ?? null },
     { label: 'Elevated', value: workload.elevated_count ?? workload.high_count ?? counts.elevated ?? counts.high ?? null },
     { label: 'Unknown', value: workload.unknown_count ?? counts.unknown ?? null },
-    { label: 'Latest Workload', value: workload.latest_workload_date || null },
+    { label: 'Latest workload date', value: workload.latest_workload_date || null },
   ]
 }
 
 function buildCoverageRows(view) {
   return buildRows(view.coverageInventory, [
-    ['Active Pitchers', ['active_pitcher_count', 'active_pitchers']],
-    ['Current Workload Data', ['current_workload_data_count', 'current_workload_present']],
-    ['Missing Workload Data', ['missing_workload_data_count', 'missing_workload']],
-    ['Availability Covered', ['availability_covered_count', 'availability_present']],
-    ['Availability Missing', 'availability_missing_count'],
-    ['Coverage State', 'coverage_state'],
+    ['Active arms', ['active_pitcher_count', 'active_pitchers']],
+    ['Arms with current workload', ['current_workload_data_count', 'current_workload_present']],
+    ['Arms missing workload', ['missing_workload_data_count', 'missing_workload']],
+    ['Arms with availability read', ['availability_covered_count', 'availability_present']],
+    ['Arms missing availability read', 'availability_missing_count'],
+    ['Coverage read', 'coverage_state'],
   ])
 }
 
 function buildHandednessRows(view) {
   return buildRows(view.handednessCoverage, [
-    ['Left Handed', ['left_handed_count', 'left_handed']],
-    ['Right Handed', ['right_handed_count', 'right_handed']],
+    ['Left-handed arms', ['left_handed_count', 'left_handed']],
+    ['Right-handed arms', ['right_handed_count', 'right_handed']],
     ['Unknown', 'unknown_count'],
-    ['Coverage State', 'coverage_state'],
+    ['Handedness read', 'coverage_state'],
     ['Limitations', 'limitations'],
   ])
 }
@@ -420,10 +420,10 @@ function buildHandednessRows(view) {
 function buildTrustRows(view) {
   return buildRows(view.trustMetadata, [
     ['Workload Read', 'confidence'],
-    ['Data State', 'data_state'],
-    ['Source Evidence', 'source_evidence_state'],
-    ['Governance State', 'governance_state'],
-    ['Generated', 'generated_at'],
+    ['Data coverage', 'data_state'],
+    ['Source context', 'source_evidence_state'],
+    ['Display boundary', 'governance_state'],
+    ['Built at', 'generated_at'],
   ])
 }
 
@@ -451,21 +451,21 @@ function buildRefusalRows(view) {
 
 function buildFailClosedRows(view) {
   return buildRows(view.failClosed, [
-    ['Fail Closed', 'failed_closed'],
-    ['State', 'state'],
+    ['Output withheld', 'failed_closed'],
+    ['Withheld state', 'state'],
     ['Reason Codes', 'reason_codes'],
-    ['Critical Failure', 'critical_failure'],
-    ['Safe Partial Output', 'safe_partial_output_allowed'],
+    ['Critical blocker', 'critical_failure'],
+    ['Partial context', 'safe_partial_output_allowed'],
   ])
 }
 
 function buildGovernanceRows(view) {
   const governance = asObject(view.governance)
   return [
-    { label: 'Team ranking', value: governance.rankingApplied === false ? 'Not applied' : displayValue(governance.rankingApplied) },
-    { label: 'Pitcher selection', value: governance.selectionMade === false ? 'Not made' : displayValue(governance.selectionMade) },
-    { label: 'Trust ranking', value: governance.trustRankingApplied === false ? 'Not applied' : displayValue(governance.trustRankingApplied) },
-    { label: 'Trust selection', value: governance.trustSelectionMade === false ? 'Not made' : displayValue(governance.trustSelectionMade) },
+    { label: 'Team order', value: governance.rankingApplied === false ? 'No ordering made' : displayValue(governance.rankingApplied) },
+    { label: 'Pitcher choice', value: governance.selectionMade === false ? 'No pitcher chosen' : displayValue(governance.selectionMade) },
+    { label: 'Trust order', value: governance.trustRankingApplied === false ? 'No ordering made' : displayValue(governance.trustRankingApplied) },
+    { label: 'Trust choice', value: governance.trustSelectionMade === false ? 'No choice made' : displayValue(governance.trustSelectionMade) },
   ]
 }
 
@@ -521,7 +521,7 @@ export default function TeamOperationsBullpenReadinessPanel({
       <div className="card-header gap-3">
         <div>
           <div className="font-mono text-xs uppercase tracking-widest text-chalk400">
-            Team Operations Bullpen Readiness
+            Bullpen Operations Context
           </div>
           <h2 id="team-operations-bullpen-readiness-title" className="mt-1 font-display text-2xl tracking-wider text-chalk100">
             Bullpen Readiness Context
@@ -555,9 +555,9 @@ export default function TeamOperationsBullpenReadinessPanel({
                 </p>
               </div>
               <div className="rounded border border-dirt bg-chalk/30 p-3 text-left sm:min-w-56">
-                <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Governed Output</div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">Decision Boundary</div>
                 <p className="mt-1 text-xs leading-relaxed text-chalk400">
-                  Team-level context only. The user remains responsible for bullpen decisions.
+                  Team-level context only. BaseballOS explains the bullpen shape without choosing an arm.
                 </p>
               </div>
             </div>
@@ -571,20 +571,20 @@ export default function TeamOperationsBullpenReadinessPanel({
             ) : (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <CountGrid
-                  title="Workload Pressure"
+                  title="Workload Concentration"
                   summary={asObject(view.workloadPressure).summary}
                   rows={view.workloadRows}
                 />
                 <CountGrid
-                  title="Availability Distribution"
+                  title="Availability Mix"
                   rows={view.availabilityRows}
                 />
                 <CountGrid
-                  title="Coverage Inventory"
+                  title="Coverage Depth"
                   rows={view.coverageRows}
                 />
                 <CountGrid
-                  title="Handedness Coverage"
+                  title="Left/Right Coverage"
                   rows={view.handednessRows}
                 />
               </div>
@@ -593,7 +593,7 @@ export default function TeamOperationsBullpenReadinessPanel({
 
           <ToggleSection
             title="Context Details"
-            summary="Constraint and coverage details are available on demand."
+            summary="Workload, coverage, and bullpen constraint detail remain available on demand."
             sectionKey="context-details"
             initialExpandedSections={initialExpandedSections}
           >
@@ -603,19 +603,19 @@ export default function TeamOperationsBullpenReadinessPanel({
             </div>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Workload Pressure</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Workload Concentration</h4>
                 <MetricList rows={view.workloadRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Availability Distribution</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Availability Mix</h4>
                 <MetricList rows={view.availabilityRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Coverage Inventory</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Coverage Depth</h4>
                 <MetricList rows={view.coverageRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Handedness Coverage</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Left/Right Coverage</h4>
                 <MetricList rows={view.handednessRows} />
               </div>
             </div>
@@ -638,30 +638,30 @@ export default function TeamOperationsBullpenReadinessPanel({
           </ToggleSection>
 
           <ToggleSection
-            title="Metadata"
-            summary="Trust, freshness, refusal, fail-closed, route, and governance metadata are preserved."
+            title="Source Detail"
+            summary="Freshness, data coverage, refusal, source boundary, route, and decision-boundary detail remain available."
             sectionKey="metadata"
             initialExpandedSections={initialExpandedSections}
           >
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Trust Metadata</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Workload Source Detail</h4>
                 <MetricList rows={view.trustRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness Metadata</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness Detail</h4>
                 <MetricList rows={view.freshnessRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Refusal Metadata</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Withheld Read Detail</h4>
                 <MetricList rows={view.refusalRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Fail-Closed Metadata</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Withheld Source Detail</h4>
                 <MetricList rows={view.failClosedRows} />
               </div>
               <div className="rounded border border-dirt bg-dugout/70 p-3 lg:col-span-2">
-                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Governance Metadata</h4>
+                <h4 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Decision Boundary</h4>
                 <MetricList rows={view.governanceRows} />
               </div>
             </div>

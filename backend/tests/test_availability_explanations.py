@@ -41,8 +41,8 @@ def test_pitch_and_appearance_reasons_use_consistent_window_wording():
 def test_rest_and_fatigue_reasons_read_as_explanations():
     assert rest_reason(0) == 'No rest since last appearance'
     assert rest_reason(1) == 'Only 1 day of rest'
-    assert fatigue_score_reason(55.0) == 'Fatigue score is 55'
-    assert fatigue_score_reason(55.34) == 'Fatigue score is 55.3'
+    assert fatigue_score_reason(55.0) == 'Recent workload is high enough to narrow normal availability'
+    assert fatigue_score_reason(55.34) == 'Recent workload is high enough to narrow normal availability'
 
 
 def test_data_state_reason_and_limitation_wording_is_trust_first(make_log):
@@ -104,7 +104,7 @@ def test_workload_reason_order_is_stable_and_deduplicated(make_log):
         'Back-to-back appearances',
         '3 appearances in 4 days',
         'No rest since last appearance',
-        'Fatigue score is 78.2',
+        'Recent workload is high enough to narrow normal availability',
     ]
 
 
@@ -112,5 +112,5 @@ def test_reason_categories_cover_generated_reason_families():
     assert categorize_reason('42 pitches yesterday') == CATEGORY_PITCH_COUNT
     assert categorize_reason('Back-to-back appearances') == CATEGORY_APPEARANCE_FREQUENCY
     assert categorize_reason('Only 1 day of rest') == CATEGORY_REST
-    assert categorize_reason('Fatigue score is 55') == CATEGORY_FATIGUE
+    assert categorize_reason('Recent workload is high enough to narrow normal availability') == CATEGORY_FATIGUE
     assert categorize_reason(stale_workload_reason(14)) == CATEGORY_DATA_STATE

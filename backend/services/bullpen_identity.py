@@ -357,7 +357,7 @@ def _supporting_traits(identity_key: str, evidence: dict[str, Any]) -> list[dict
         ),
     ]
     if evidence.get('coverage_label'):
-        traits.append(_trait('coverage_safety', f"Coverage Safety reads {evidence['coverage_label']}."))
+        traits.append(_trait('coverage_safety', f"Coverage margin reads {evidence['coverage_label']}."))
 
     identity_trait = {
         IDENTITY_TRUST_CONCENTRATED: 'The primary trusted lane is narrow relative to the full bullpen.',

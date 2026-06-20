@@ -152,7 +152,7 @@ function inventorySummaryText(item) {
     return `Freshness ${displayValue(freshnessState, 'unavailable')} | Workload Read ${displayValue(item.confidence, 'unavailable')}`
   }
 
-  return 'Inventory category reported by the governed contract.'
+  return 'Inventory category from the current bullpen context.'
 }
 
 function inventoryFreshnessRows(item) {
@@ -189,7 +189,7 @@ function candidateGroupSummaryText(group) {
   const refusalReasons = asArray(group.refusal_reasons).map(messageFrom).filter(Boolean)
   if (refusalReasons.length) return refusalReasons[0]
 
-  return 'Neutral group reported by the governed contract.'
+  return 'Neutral group from the current bullpen context.'
 }
 
 function candidateGroupFreshnessRows(group) {
@@ -285,19 +285,19 @@ function failClosedReasonSummary(failClosed, statusMetadata) {
 function failClosedWithheldSummary(failClosed, statusMetadata) {
   return displayValue(
     failClosed.withheld_summary || statusMetadata.withheld_summary,
-    'Bullpen state output is withheld by the current fail-closed state.',
+    'Bullpen state detail is withheld by the current source boundary.',
   )
 }
 
 function failClosedRows(failClosed, statusMetadata, freshness) {
   return [
-    { label: 'Fail-closed state', value: displayValue(failClosed.state || statusMetadata.fail_closed_state) },
-    { label: 'Reason code', value: displayValue(failClosedPrimaryReason(failClosed, statusMetadata)) },
-    { label: 'Freshness failed', value: displayValue(failClosed.freshness_failed ?? statusMetadata.freshness_failed) },
-    { label: 'Trust failed', value: displayValue(failClosed.trust_failed ?? statusMetadata.trust_failed) },
-    { label: 'Partial context safe', value: displayValue(failClosed.partial_context_safe ?? statusMetadata.partial_context_safe) },
+    { label: 'Withheld state', value: displayValue(failClosed.state || statusMetadata.fail_closed_state) },
+    { label: 'Source reason', value: displayValue(failClosedPrimaryReason(failClosed, statusMetadata)) },
+    { label: 'Freshness check', value: displayValue(failClosed.freshness_failed ?? statusMetadata.freshness_failed) },
+    { label: 'Visibility check', value: displayValue(failClosed.trust_failed ?? statusMetadata.trust_failed) },
+    { label: 'Partial context', value: displayValue(failClosed.partial_context_safe ?? statusMetadata.partial_context_safe) },
     { label: 'Source freshness', value: displayValue(freshness.source_freshness_status || statusMetadata.source_freshness_status) },
-    { label: 'Aggregate freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
+    { label: 'Bullpen freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
     { label: 'Synced', value: displayValue(freshness.sync_timestamp || statusMetadata.sync_timestamp) },
   ]
 }
@@ -372,16 +372,16 @@ export function getRecommendationV2BullpenStateView(state = null) {
     diagnosticCount: getDiagnosticCount(state) + (unsafeVisibleLanguage ? 1 : 0),
     governanceRows: [
       {
-        label: 'Ordering',
+        label: 'Team order',
         value: state.governance?.rankingApplied === false
-          ? 'Not applied'
+          ? 'No ordering made'
           : displayValue(state.governance?.rankingApplied, 'missing'),
         safe: state.governance?.rankingApplied === false,
       },
       {
-        label: 'Choice',
+        label: 'Pitcher choice',
         value: state.governance?.selectionMade === false
-          ? 'Not made'
+          ? 'No pitcher chosen'
           : displayValue(state.governance?.selectionMade, 'missing'),
         safe: state.governance?.selectionMade === false,
       },
@@ -395,7 +395,7 @@ export function getRecommendationV2BullpenStateView(state = null) {
     freshnessRows: [
       { label: 'Freshness', value: displayValue(freshness.freshness_state || freshness.state || freshness.state_code) },
       { label: 'Source Freshness', value: displayValue(freshness.source_freshness_status || statusMetadata.source_freshness_status) },
-      { label: 'Aggregate Freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
+      { label: 'Bullpen Freshness', value: displayValue(freshness.aggregate_v2_freshness_status || statusMetadata.aggregate_v2_freshness_status) },
       { label: 'Data Through', value: displayValue(freshness.data_through) },
       { label: 'Synced', value: displayValue(freshness.sync_timestamp) },
       { label: 'Overall Sync', value: displayValue(freshness.overall_sync_status || statusMetadata.overall_sync_status) },
@@ -434,7 +434,7 @@ function MetadataGrid({ title, rows }) {
 function GovernanceRows({ rows }) {
   return (
     <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-governance">
-      <h3 id="recommendation-v2-governance" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Governance</h3>
+      <h3 id="recommendation-v2-governance" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Decision Boundary</h3>
       <div className="v2-governed-panel__metadata-grid gap-2">
         {rows.map((row) => (
           <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-chalk/20 px-3 py-2">
@@ -868,7 +868,7 @@ function CandidateGroups({
               </div>
               <div className="mt-3 grid gap-2">
                 <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-dirt bg-field/50 px-3 py-2">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Ordering</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-chalk600">Source order</span>
                   <span className="v2-governed-panel__text text-right font-mono text-xs text-chalk200">
                     {orderingPolicyLabel(group.ordering)}
                   </span>
@@ -979,7 +979,7 @@ function CandidateGroups({
           })}
         </div>
       ) : (
-        <div className="font-mono text-xs text-chalk500">No neutral groups available from the current contract state.</div>
+        <div className="font-mono text-xs text-chalk500">No neutral groups are available from the current bullpen context.</div>
       )}
     </section>
   )
@@ -1193,9 +1193,9 @@ export default function RecommendationV2BullpenStatePanel({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="font-mono text-xs uppercase tracking-widest text-chalk400">{view.title}</div>
-            <h2 id="recommendation-v2-heading" className={`${compact ? 'text-xl' : 'text-2xl'} mt-1 font-display tracking-wider text-chalk100`}>Bullpen State</h2>
+            <h2 id="recommendation-v2-heading" className={`${compact ? 'text-xl' : 'text-2xl'} mt-1 font-display tracking-wider text-chalk100`}>Bullpen Context</h2>
             <p id="recommendation-v2-description" className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
-              Governed bullpen visibility. This surface summarizes context and evidence only.
+              BaseballOS summarizes team bullpen context and evidence without choosing an arm.
             </p>
           </div>
           <div
@@ -1209,15 +1209,15 @@ export default function RecommendationV2BullpenStatePanel({
 
       <div className={`${compact ? 'space-y-4 p-4' : 'space-y-5 p-4 sm:p-5 lg:p-6'}`}>
         <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {`Bullpen intelligence ${view.statusLabel}. No pitcher is ranked or selected.`}
+          {`Bullpen intelligence ${view.statusLabel}. No pitcher is chosen.`}
         </div>
 
         {view.isUnavailable && (
           <div className="min-w-0 rounded border border-red-500/35 bg-red-500/5 p-4" role="alert" aria-live="assertive">
-            <div className="font-mono text-xs uppercase tracking-widest text-red-300">Contract Unavailable</div>
+            <div className="font-mono text-xs uppercase tracking-widest text-red-300">Bullpen Context Withheld</div>
             <p className="v2-governed-panel__text mt-2 text-sm leading-relaxed text-chalk400">
-              Required metadata is missing, malformed, or outside governed display boundaries.
-              Bullpen state output is withheld from this surface.
+              Required source context is missing, malformed, or outside the display boundary.
+              The bullpen context is withheld from this surface.
             </p>
             {view.diagnosticCount > 0 && (
               <div className="mt-3 font-mono text-xs text-chalk500">
@@ -1249,11 +1249,11 @@ export default function RecommendationV2BullpenStatePanel({
 
         {view.bullpenState && (
           <section className="min-w-0 rounded border border-dirt bg-field/35 p-4" aria-labelledby="recommendation-v2-state">
-            <h3 id="recommendation-v2-state" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">State</h3>
+            <h3 id="recommendation-v2-state" className="mb-3 font-mono text-[10px] uppercase tracking-widest text-chalk600">Current Context</h3>
             <div className="v2-governed-panel__state-grid gap-3">
-              <StatusCell label="Status" value={view.bullpenState.status} />
-              <StatusCell label="Stress" value={view.bullpenState.stress_level} />
-              <StatusCell label="Readiness" value={view.bullpenState.readiness_summary} />
+              <StatusCell label="Availability context" value={view.bullpenState.status} />
+              <StatusCell label="Workload pressure" value={view.bullpenState.stress_level} />
+              <StatusCell label="Usable options" value={view.bullpenState.readiness_summary} />
             </div>
           </section>
         )}
@@ -1262,8 +1262,8 @@ export default function RecommendationV2BullpenStatePanel({
 
         {compact ? (
           <PanelDisclosure
-            title="Evidence And Metadata"
-            summary="Trust, freshness, inventory, neutral groups, team context, explanations, limitations, and refusal details remain available on demand."
+            title="Evidence And Source Detail"
+            summary="Freshness, inventory, team context, explanations, limitations, and withheld-read details remain available on demand."
           >
             {evidenceSections}
           </PanelDisclosure>

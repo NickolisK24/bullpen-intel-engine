@@ -50,7 +50,7 @@ export default function Methodology() {
         onRetry={backtest.refetch}
       />
 
-      {/* ── Fatigue Engine ─────────────────────────────────────────────── */}
+      {/* ── Workload Read ──────────────────────────────────────────────── */}
       {fe && (
         <section
           className="card p-6 animate-fade-up opacity-0"

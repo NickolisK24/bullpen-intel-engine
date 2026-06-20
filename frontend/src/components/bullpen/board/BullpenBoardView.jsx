@@ -105,7 +105,7 @@ function RosterStatusBanner({ summary }) {
       </span>
       <span
         className="font-mono text-xs"
-        title="Pitchers not currently available for bullpen planning due to roster status."
+        title="Pitchers BaseballOS is not counting for the current bullpen plan because of roster context."
       >
         <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
       </span>
@@ -229,7 +229,7 @@ function EligibilityChip({ eligibility }) {
       className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide"
       style={eligibility.tone}
       title={eligibility.reason || eligibility.label}
-      aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
+        aria-label={`${eligibility.label}, workload read ${eligibility.confidenceLabel}`}
     >
       {eligibility.label}
       <span className="opacity-70">· {eligibility.confidenceLabel}</span>
@@ -367,8 +367,8 @@ function PitcherCard({ card, onViewDetails }) {
       )}
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-chalk500">
-        <span title="Fatigue score: 0–100 · higher = heavier recent workload">
-          <span className="text-chalk600">Fatigue</span>{' '}
+        <span title="Recent workload index: 0-100, higher means heavier recent use">
+          <span className="text-chalk600">Recent Load</span>{' '}
           <span className="text-chalk200">{view.fatigueScore != null ? view.fatigueScore : '—'}</span>
         </span>
         <span>
@@ -393,7 +393,7 @@ function PitcherCard({ card, onViewDetails }) {
           className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
           aria-label={`View pitcher details for ${view.name}`}
         >
-          View details →
+          Open pitcher context →
         </button>
       )}
     </div>
@@ -455,7 +455,7 @@ export default function BullpenBoardView({
           Tonight's Bullpen Board{teamName ? ` — ${teamName}` : ''}
         </h2>
         <p className="mt-1 text-xs text-chalk500">
-          Grouped by availability. {totals.total} pitcher
+          Grouped by how recent usage changes tonight's options. {totals.total} pitcher
           {totals.total === 1 ? '' : 's'} shown.
         </p>
       </div>
@@ -467,7 +467,7 @@ export default function BullpenBoardView({
       {totals.isEmpty ? (
         <EmptyState
           title={emptyState?.title || 'No pitchers to show for this team'}
-          subtitle={emptyState?.subtitle || 'No active bullpen options are available under the current roster and freshness filters.'}
+          subtitle={emptyState?.subtitle || 'No active bullpen options are available under the current roster and data-through filters.'}
         />
       ) : (
         <>

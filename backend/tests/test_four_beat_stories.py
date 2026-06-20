@@ -3441,7 +3441,7 @@ def test_content_selective_leads_are_deterministic_and_surface_normalized_fields
     assert stories['LAD']['lead_fields']['clean_trust_count'] >= 2
     assert set(stories['LAD']['lead_fields']['clean_trust_names'])
     assert len({stories['MIA']['title'], stories['AZ']['title'], stories['LAD']['title']}) == 3
-    assert 'HIGH or CRITICAL fatigue' in next(
+    assert 'carrying heavy recent workload' in next(
         beat['text'] for beat in stories['MIA']['beats'] if beat['key'] == 'evidence'
     )
 

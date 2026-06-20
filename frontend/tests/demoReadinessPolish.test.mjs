@@ -80,20 +80,20 @@ test('dashboard hero pill states data provenance plainly', () => {
 
 test('pitcher cards expose a View details affordance when navigation is wired', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard, onSelectPitcher: () => {} }))
-  assert.ok(htmlIncludes(html, 'View details'))
+  assert.ok(htmlIncludes(html, 'Open pitcher context'))
   assert.ok(htmlIncludes(html, 'View pitcher details for Ace Reliever'))
 })
 
 test('pitcher cards omit the View details affordance when no handler is provided', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard }))
-  assert.ok(!htmlIncludes(html, 'View details'))
+  assert.ok(!htmlIncludes(html, 'Open pitcher context'))
 })
 
-// ── Priority 3: fatigue legend ─────────────────────────────────────────────
+// ── Priority 3: workload legend ────────────────────────────────────────────
 
-test('board explains the fatigue score scale', () => {
+test('board explains the recent workload scale', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard }))
-  assert.ok(htmlIncludes(html, 'higher = heavier recent workload'))
+  assert.ok(htmlIncludes(html, 'higher means heavier recent use'))
 })
 
 // ── Priority 4: clarified tab labels ───────────────────────────────────────

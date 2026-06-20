@@ -161,7 +161,7 @@ export default function TeamComparison() {
           <thead>
             <tr>
               <th className={headerCls('team')}      onClick={() => handleSort('team')}>Team{arrow('team')}</th>
-              <th className={`text-right ${headerCls('avg')}`} onClick={() => handleSort('avg')}>Avg Fatigue{arrow('avg')}</th>
+              <th className={`text-right ${headerCls('avg')}`} onClick={() => handleSort('avg')}>Avg Workload{arrow('avg')}</th>
               <th className={`text-right ${headerCls('critical')}`} onClick={() => handleSort('critical')}>CRITICAL{arrow('critical')}</th>
               <th className={`text-right ${headerCls('high')}`}     onClick={() => handleSort('high')}>HIGH{arrow('high')}</th>
               <th className={`text-right ${headerCls('moderate')}`} onClick={() => handleSort('moderate')}>MODERATE{arrow('moderate')}</th>

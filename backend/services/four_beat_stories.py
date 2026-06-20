@@ -279,7 +279,7 @@ SKELETONS = {
     },
     RULE_SUSTAINABILITY_QUESTION: {
         BEAT_SIGNAL: 'The {team_name} bullpen has pitched well this year, but they are leaning on it hard tonight.',
-        'evidence_with_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
+        'evidence_with_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
         'evidence_without_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
         BEAT_MECHANISM: '{sustainability_mechanism_text}',
         'implication_with_clean_trust': '{clean_trust_late_sentence} The question is whether they have to go there before the eighth.',
@@ -297,8 +297,8 @@ SKELETONS = {
 
 LEAD_FRAGMENT_LIBRARY = {
     LEAD_FATIGUE_LOAD: {
-        BEAT_SIGNAL: 'Fatigue is already part of the {team_name} bullpen picture: {high_risk_arm_names} {high_risk_arm_verb} running hot.',
-        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} at HIGH or CRITICAL fatigue.',
+        BEAT_SIGNAL: 'Heavy recent workload is already part of the {team_name} bullpen picture: {high_risk_arm_names} {high_risk_arm_verb} running hot.',
+        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
     },
     LEAD_TRUST_LANE_ABSENCE: {
         BEAT_SIGNAL: 'The {team_name} have clean arms available, but not their usual trusted late-inning group.',
@@ -1400,7 +1400,7 @@ def _team_lead_candidates(record, cluster):
             LEAD_FATIGUE_LOAD,
             1000 + high_risk_count * 20 + gap * 30,
             high_risk_count,
-            'highest HIGH/CRITICAL fatigue count in the same-rule cluster',
+            'highest heavy-workload arm count in the same-rule cluster',
             'max',
         ))
 

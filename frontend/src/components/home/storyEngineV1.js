@@ -1051,7 +1051,7 @@ function continuityFactor(candidate) {
   const evidence = Array.isArray(observation?.evidence) ? observation.evidence : []
   if (evidence.some(item => item?.metadata?.repeated_pattern || item?.metadata?.continuity)) {
     points = Math.max(points, 12)
-    reason = 'Governed evidence marks a repeated pattern.'
+    reason = 'Repeated bullpen evidence marks a developing pattern.'
   }
 
   return factor('narrative_continuity', 'Repeated pattern / narrative continuity', points, reason)

@@ -57,7 +57,7 @@ test('hero states the dashboard is a league-wide / MLB-wide view', () => {
 test('snapshot is scoped to the governed bullpen-eligible set', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen Snapshot'))
-  assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the governed availability set'))
+  assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'))
 })
 
 test('bullpen state is clearly league-wide, not a single team', () => {

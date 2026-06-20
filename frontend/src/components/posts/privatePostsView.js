@@ -305,7 +305,7 @@ export function extractStoryFacts(story) {
     facts.push({
       key: 'high_risk',
       label: 'Watch List',
-      value: `${countLabel(highRiskArmCount, 'HIGH/CRITICAL arm')}${names}`,
+      value: `${countLabel(highRiskArmCount, 'heavy-workload arm')}${names}`,
       source: 'computed.high_risk_arm_count',
     })
   }
@@ -494,7 +494,7 @@ function classifyPostability(story, facts) {
     superlatives.push(`${formatPercent(topShare)} recent workload share at the top of the pen`)
   }
   if (highRiskArmCount >= 3) {
-    superlatives.push(`${highRiskArmCount} HIGH/CRITICAL fatigue arms`)
+    superlatives.push(`${highRiskArmCount} heavy-workload arms`)
   }
   if (availableShare >= 0.75 && cleanOptionCount >= 5) {
     superlatives.push('deep available board with at least five clean options')
@@ -704,12 +704,12 @@ function humanTensionClaim(take) {
 
   if (fatigue) {
     return {
-      hook: `${facts.market} bullpen fatigue jumps out first: ${fatigue}.`,
+      hook: `${facts.market}'s recent bullpen workload jumps out first: ${fatigue}.`,
       meaning: facts.available !== null
         ? `There may still be a late path, but ${availability} leaves very little cushion behind it.`
         : `There may still be a late path, but the cushion behind it looks thin.`,
       team: `${facts.market} fans, this does not read like panic. It reads like a margin problem behind the arms you trust most.`,
-      linkedin: `The point is not that the bullpen is broken; fatigue can turn a normal late-game plan into a thinner operating window.`,
+      linkedin: `The point is not that the bullpen is broken; heavy recent usage can turn a normal late-game plan into a thinner operating window.`,
     }
   }
 
@@ -772,7 +772,7 @@ function discussionQuestion(facts) {
     return `How much do ${facts.cleanOptionCount} clean options matter when none of them read like the obvious late arm?`
   }
   if (facts.highRiskCount > 0) {
-    return `How much room is there behind the trusted names before fatigue starts steering the choices?`
+    return `How much room is there behind the trusted names before recent workload starts steering the choices?`
   }
   if (facts.availableShare !== null && facts.availableShare <= 0.35) {
     return `Would you spend the cleaner lane early, or save it and accept the thinner middle?`

@@ -53,7 +53,7 @@ export function DataTrustView({
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Data & Trust"
-        subtitle="Freshness, workload reads, governance protections, and evidence behind every number"
+        subtitle="Freshness, workload reads, source boundaries, and evidence behind the bullpen picture"
       />
 
       <p className="mb-6 max-w-3xl text-sm leading-relaxed text-chalk400">
@@ -124,9 +124,9 @@ export function DataTrustView({
         />
       </section>
 
-      {/* Scored pitcher inventory */}
-      <section className="mb-6" aria-label="Scored pitcher inventory">
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Scored Pitcher Inventory</h2>
+      {/* Pitcher workload inventory */}
+      <section className="mb-6" aria-label="Pitcher workload inventory">
+        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Pitcher Workload Inventory</h2>
         {overview.staleWithError && (
           <StaleDataNotice
             message="Inventory diagnostics are from the last loaded overview because the latest refresh failed."
@@ -149,7 +149,7 @@ export function DataTrustView({
       />
       {(v2BullpenState.staleWithError || teamOperationsReadiness.staleWithError) && (
         <StaleDataNotice
-          message="Operational readiness detail is from the last loaded governed response because the latest refresh failed."
+          message="Operational readiness detail is from the last loaded bullpen context because the latest refresh failed."
           onRetry={() => {
             if (v2BullpenState.staleWithError) v2BullpenState.refetch()
             if (teamOperationsReadiness.staleWithError) teamOperationsReadiness.refetch()
@@ -158,7 +158,7 @@ export function DataTrustView({
       )}
 
       {/* Secondary exploratory study */}
-      <section className="mb-6" aria-label="Exploratory fatigue insight">
+      <section className="mb-6" aria-label="Exploratory workload insight">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Secondary Exploratory ERA Study</h2>
         <FatigueInsightCard embedded />
       </section>

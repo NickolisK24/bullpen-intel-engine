@@ -25,7 +25,7 @@ export const TEAM_STORY_ARCHETYPES = Object.freeze({
   bridge_dependency: { key: 'bridge_dependency', label: 'Bridge Dependency', family: 'watch', tone: 'watch' },
   usage_shift: { key: 'usage_shift', label: 'Usage Shift', family: 'watch', tone: 'watch' },
   stable_bullpen: { key: 'stable_bullpen', label: 'Stable Bullpen', family: 'balanced', tone: 'balanced' },
-  pressure_building: { key: 'pressure_building', label: 'Pressure Building', family: 'watch', tone: 'watch' },
+  pressure_building: { key: 'pressure_building', label: 'Late-Inning Margin', family: 'watch', tone: 'watch' },
   rested_flexibility: { key: 'rested_flexibility', label: 'Rested Flexibility', family: 'rested', tone: 'rest' },
   data_limited: { key: 'data_limited', label: 'Limited Read', family: 'data_limited', tone: 'data_limited' },
 })
@@ -34,12 +34,12 @@ export const STORY_FRAMING_LINE =
   'This note comes from the workload, roster status, and bullpen-role info already shown here.'
 
 const SHAPE_READ_ORDER = [
-  { key: 'trustAvailability', concept: 'Trust Arm Availability' },
+  { key: 'trustAvailability', concept: 'Late-Inning Trust' },
   { key: 'cleanOptions', concept: 'Clean Options' },
-  { key: 'bullpenPressure', concept: 'Trust-Lane Pressure' },
+  { key: 'bullpenPressure', concept: 'Late-Inning Pressure' },
   { key: 'workloadConcentration', concept: 'Workload Concentration' },
-  { key: 'coverageSafety', concept: 'Coverage Safety' },
-  { key: 'depthSafety', concept: 'Depth Safety' },
+  { key: 'coverageSafety', concept: 'Coverage Margin' },
+  { key: 'depthSafety', concept: 'Depth Margin' },
 ]
 
 const READ_COUNT_PLURALS = {
@@ -410,7 +410,7 @@ function shortShapeExplanation(read) {
   const counts = read?.supportingCounts || {}
   switch (read?.key) {
     case 'trustAvailability':
-      return `Trust Arms: ${compactReadCounts([
+      return `Trusted late-inning arms: ${compactReadCounts([
         { count: counts.cleanTrustArms, label: 'Clean Option' },
         { count: counts.watchTrustArms, label: 'Watch Arm' },
         { count: counts.restRestrictedTrustArms, label: 'Rest-Restricted' },
@@ -422,7 +422,7 @@ function shortShapeExplanation(read) {
       }
       break
     case 'bullpenPressure':
-      return `Trust-lane pressure: ${compactReadCounts([
+      return `Late-inning pressure: ${compactReadCounts([
         { count: counts.watchArmCount, label: 'Watch Arm' },
         { count: counts.restRestrictedCount, label: 'Rest-Restricted' },
         { count: counts.unavailableCount, label: 'Unavailable' },
@@ -436,7 +436,7 @@ function shortShapeExplanation(read) {
       return `Top ${topArms} arms: ${topShare}% of recent relief pitches across ${participants} participating arms.`
     }
     case 'coverageSafety': {
-      const base = `Coverage Arms: ${compactReadCounts([
+      const base = `Middle-inning coverage arms: ${compactReadCounts([
         { count: counts.cleanCoverageArms, label: 'Clean Option' },
         { count: counts.watchCoverageArms, label: 'Watch Arm' },
         { count: counts.restRestrictedCoverageArms, label: 'Rest-Restricted' },
@@ -447,7 +447,7 @@ function shortShapeExplanation(read) {
         : base
     }
     case 'depthSafety':
-      return `Depth Arms: ${compactReadCounts([
+      return `Depth arms: ${compactReadCounts([
         { count: counts.cleanDepthArms, label: 'Clean Option' },
         { count: counts.watchDepthArms, label: 'Watch Arm' },
         { count: counts.restRestrictedDepthArms, label: 'Rest-Restricted' },
@@ -457,6 +457,16 @@ function shortShapeExplanation(read) {
       break
   }
   return read?.explanation || 'Not enough current bullpen data for a confident read.'
+}
+
+function publicShapeLabel(key, label) {
+  const clean = cleanLabel(label)
+  if (!clean) return clean
+  if (key === 'trustAvailability') return clean.replace('Trust Arm Availability', 'Late-Inning Trust')
+  if (key === 'bullpenPressure') return clean.replace('Trust-Lane Pressure', 'Late-Inning Pressure')
+  if (key === 'coverageSafety') return clean.replace('Coverage Safety', 'Coverage Margin')
+  if (key === 'depthSafety') return clean.replace('Depth Safety', 'Depth Margin')
+  return clean
 }
 
 function shapeTone(label) {
@@ -472,12 +482,14 @@ function teamShapeReads(board) {
   return SHAPE_READ_ORDER.map(item => {
     const read = shape.byKey[item.key]
     if (!read) return null
+    const rawLabel = read.label
     return {
       key: item.key,
       concept: item.concept,
-      label: read.label,
+      rawLabel,
+      label: publicShapeLabel(item.key, read.label),
       explanation: shortShapeExplanation(read),
-      tone: shapeTone(read.label),
+      tone: shapeTone(rawLabel),
     }
   }).filter(Boolean)
 }
@@ -712,7 +724,7 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms remain available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.depth_advantage.key:
-      evidence.push(`${depth.availableDepthArms || 0} Depth Arms remain usable or only lightly flagged behind the primary group.`)
+      evidence.push(`${depth.availableDepthArms || 0} depth arms remain usable or only lightly flagged behind the primary group.`)
       evidence.push(`${clean.cleanOptionCount || counts.ready} usable arms are available from ${clean.activeBullpenArms || counts.total} active bullpen arms.`)
       break
     case TEAM_STORY_ARCHETYPES.rested_flexibility.key:
@@ -722,10 +734,10 @@ function evidenceFor(archetypeKey, counts, shape, entries) {
       break
     case TEAM_STORY_ARCHETYPES.thin_margin.key:
       evidence.push(`${counts.needRest} of ${counts.total} ${one(counts.total, 'reliever', 'relievers')} ${one(counts.needRest, 'needs', 'need')} rest after recent work.`)
-      evidence.push(`${readCount(pressure.watchArmCount || counts.watch, 'Watch Arm')} and ${pressure.restRestrictedCount || counts.needRest} ${one(pressure.restRestrictedCount || counts.needRest, 'Rest-Restricted arm', 'Rest-Restricted arms')} are part of the bullpen pressure picture.`)
+      evidence.push(`${readCount(pressure.watchArmCount || counts.watch, 'Watch Arm')} and ${pressure.restRestrictedCount || counts.needRest} ${one(pressure.restRestrictedCount || counts.needRest, 'Rest-Restricted arm', 'Rest-Restricted arms')} are tightening the late-inning margin.`)
       break
     case TEAM_STORY_ARCHETYPES.bridge_dependency.key:
-      evidence.push(`${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'bridge reliever is', 'bridge relievers are')} stressed in the bullpen pressure picture.`)
+      evidence.push(`${number(pressure.stressedBridgeArms)} ${one(number(pressure.stressedBridgeArms), 'bridge reliever is', 'bridge relievers are')} already in a tougher spot before the late-inning handoff.`)
       evidence.push(`${counts.watch + counts.needRest} relievers are on watch or need rest.`)
       break
     case TEAM_STORY_ARCHETYPES.data_limited.key:

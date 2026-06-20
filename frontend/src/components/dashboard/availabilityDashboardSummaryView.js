@@ -78,12 +78,12 @@ function getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability) {
   const notes = Array.isArray(summary?.notes) ? summary.notes : []
   if (limitedByData) {
     return isCurrentAvailability
-      ? 'Some pitchers have stale, missing, failed, or incomplete workload evidence, so availability reads are less certain.'
-      : 'Some scored pitchers have stale, missing, failed, or incomplete workload evidence, so inventory workload reads are less certain.'
+      ? 'Some relievers have stale, missing, failed, or incomplete workload evidence, so the bullpen picture is less certain.'
+      : 'Some pitchers have stale, missing, failed, or incomplete workload evidence, so the depth picture is less certain.'
   }
   return notes[0] || (isCurrentAvailability
-    ? 'Availability summary is based on current-mode classifier output.'
-    : 'Scored pitcher inventory is based on current-mode classifier output.')
+    ? 'This summary translates the latest stored workload into bullpen availability.'
+    : 'This inventory shows how much usable bullpen context BaseballOS has right now.')
 }
 
 function getDominantStatusRow(rows = []) {
@@ -96,27 +96,27 @@ function getDominantStatusRow(rows = []) {
 function getOperationalSummary(rows = [], total = 0, isCurrentAvailability = true) {
   if (total <= 0) {
     return isCurrentAvailability
-      ? 'No classified availability records are available for this summary.'
-      : 'No scored pitcher inventory records are available for this summary.'
+      ? 'No current bullpen availability records are available for this summary.'
+      : 'No pitcher workload records are available for this summary.'
   }
 
   const dominant = getDominantStatusRow(rows)
   if (!dominant || dominant.count <= 0) {
     return isCurrentAvailability
-      ? 'Current availability has no populated status category in this summary.'
-      : 'Scored pitcher inventory has no populated workload status category in this summary.'
+      ? 'The current bullpen picture does not have a populated availability lane yet.'
+      : 'The stored workload picture does not have a populated bullpen lane yet.'
   }
 
   const pct = Math.round((dominant.count / total) * 100)
   if (pct >= 50) {
     return isCurrentAvailability
-      ? `Current availability is concentrated in ${dominant.label} status.`
-      : `Scored pitcher inventory is concentrated in ${dominant.label} workload status.`
+      ? `Most current bullpen arms are in the ${dominant.label} lane.`
+      : `Most stored pitcher workload reads are in the ${dominant.label} lane.`
   }
 
   return isCurrentAvailability
-    ? 'Current availability is distributed across multiple status categories.'
-    : 'Scored pitcher inventory is distributed across multiple workload status categories.'
+    ? 'Current bullpen availability is spread across multiple lanes.'
+    : 'Stored workload reads are spread across multiple bullpen lanes.'
 }
 
 function getModeCopy(mode, isCurrentAvailability) {
@@ -124,34 +124,34 @@ function getModeCopy(mode, isCurrentAvailability) {
     return {
       modeLabel: 'Current availability',
       title: 'Availability Summary',
-      distributionTitle: 'Availability Distribution',
-      distributionAriaLabel: 'Availability distribution',
-      detailsOpenLabel: 'Hide Availability Evidence',
-      detailsClosedLabel: 'View Availability Evidence',
-      totalLabel: 'classified pitchers',
+      distributionTitle: 'Bullpen Availability Mix',
+      distributionAriaLabel: 'Bullpen availability mix',
+      detailsOpenLabel: 'Hide Availability Detail',
+      detailsClosedLabel: 'View Availability Detail',
+      totalLabel: 'pitchers with a current read',
     }
   }
 
   if (mode === SCORED_PITCHER_INVENTORY_MODE) {
     return {
-      modeLabel: 'Scored pitcher inventory',
-      title: 'Scored Pitcher Inventory',
-      distributionTitle: 'Workload Status Distribution',
-      distributionAriaLabel: 'Inventory workload status distribution',
-      detailsOpenLabel: 'Hide Inventory Evidence',
-      detailsClosedLabel: 'View Inventory Evidence',
-      totalLabel: 'scored pitchers',
+      modeLabel: 'Pitcher workload inventory',
+      title: 'Pitcher Workload Inventory',
+      distributionTitle: 'Workload Read Mix',
+      distributionAriaLabel: 'Workload read mix',
+      detailsOpenLabel: 'Hide Inventory Detail',
+      detailsClosedLabel: 'View Inventory Detail',
+      totalLabel: 'pitchers with workload reads',
     }
   }
 
   return {
     modeLabel: 'Non-current workload snapshot',
     title: 'Workload Snapshot',
-    distributionTitle: 'Workload Status Distribution',
-    distributionAriaLabel: 'Workload status distribution',
-    detailsOpenLabel: 'Hide Workload Evidence',
-    detailsClosedLabel: 'View Workload Evidence',
-    totalLabel: 'classified pitchers',
+    distributionTitle: 'Workload Read Mix',
+    distributionAriaLabel: 'Workload read mix',
+    detailsOpenLabel: 'Hide Workload Detail',
+    detailsClosedLabel: 'View Workload Detail',
+    totalLabel: 'pitchers with workload reads',
   }
 }
 

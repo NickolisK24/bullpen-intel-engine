@@ -86,17 +86,17 @@ def test_reason_frequencies_count_repeated_rule_reasons():
             'reasons': ['Only 1 day of rest', '15 pitches yesterday'],
         },
         {
-            'reasons': ['Only 1 day of rest', 'Fatigue score is 55'],
+            'reasons': ['Only 1 day of rest', 'Recent workload is high enough to narrow normal availability'],
         },
         {
-            'reasons': ['Fatigue score is 55'],
+            'reasons': ['Recent workload is high enough to narrow normal availability'],
         },
     ]
 
     counts = reason_frequencies(records)
 
     assert counts['Only 1 day of rest'] == 2
-    assert counts['Fatigue score is 55'] == 2
+    assert counts['Recent workload is high enough to narrow normal availability'] == 2
     assert counts['15 pitches yesterday'] == 1
 
 

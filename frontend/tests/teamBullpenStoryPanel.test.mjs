@@ -434,8 +434,8 @@ test('high trust-lane pressure with deep clean options does not read as thin mar
   assert.match(story.observation, /2 clean Trust Arms; 1 on watch; 1 needs rest/)
   assert.ok(story.evidence.some(item => /6 usable arms remain available from 8 active bullpen arms/.test(item)))
   assert.ok(htmlIncludes(html, 'Deep Clean Options'))
-  assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
-  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
+  assert.ok(htmlIncludes(html, 'Stable Late-Inning Trust'))
+  assert.ok(htmlIncludes(html, 'High Late-Inning Pressure'))
   assert.ok(!htmlIncludes(html, 'Thin Margin'))
   assert.ok(!htmlIncludes(html, 'fewer clean paths'))
 })
@@ -586,12 +586,12 @@ test('the panel renders headline, unlabeled narrative, and the framing line', ()
 test('the panel renders Today’s Bullpen Shape in the required order with explanations', () => {
   const html = render(React.createElement(TeamBullpenStoryPanel, { board: constrainedBoard }))
   const orderedLabels = [
-    'Trust Arm Availability',
+    'Late-Inning Trust',
     'Clean Options',
-    'Trust-Lane Pressure',
+    'Late-Inning Pressure',
     'Workload Concentration',
-    'Coverage Safety',
-    'Depth Safety',
+    'Coverage Margin',
+    'Depth Margin',
   ]
 
   assert.ok(htmlIncludes(html, 'Today’s Bullpen Shape'))
@@ -602,17 +602,17 @@ test('the panel renders Today’s Bullpen Shape in the required order with expla
     assert.ok(index > cursor, `${label} should render after the prior shape row`)
     cursor = index
   }
-  assert.ok(htmlIncludes(html, 'Stable Trust Arm Availability'))
+  assert.ok(htmlIncludes(html, 'Stable Late-Inning Trust'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
+  assert.ok(htmlIncludes(html, 'High Late-Inning Pressure'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Thin Coverage Safety'))
-  assert.ok(htmlIncludes(html, 'Limited Depth Safety'))
-  assert.ok(htmlIncludes(html, 'Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted.'))
+  assert.ok(htmlIncludes(html, 'Thin Coverage Margin'))
+  assert.ok(htmlIncludes(html, 'Limited Depth Margin'))
+  assert.ok(htmlIncludes(html, 'Trusted late-inning arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted.'))
   assert.ok(htmlIncludes(html, '2 Clean Options from 7 active arms.'))
-  assert.ok(htmlIncludes(html, 'Trust-lane pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
+  assert.ok(htmlIncludes(html, 'Late-inning pressure: 2 Watch Arms; 3 Rest-Restricted; 1 Unavailable.'))
   assert.ok(htmlIncludes(html, 'Top 3 arms: 65% of recent relief pitches across 8 participating arms.'))
-  assert.ok(htmlIncludes(html, 'aria-label="Stable Trust Arm Availability. Trust Arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
+  assert.ok(htmlIncludes(html, 'aria-label="Stable Late-Inning Trust. Trusted late-inning arms: 1 Clean Option; 1 Watch Arm; 1 Rest-Restricted."'))
   assert.ok(!htmlIncludes(html, 'BaseballOS Reads'))
   assert.ok(!htmlIncludes(html, 'What these mean'))
   assert.ok(!htmlIncludes(html, 'Recovery Window'))
@@ -660,8 +660,8 @@ test('the mounted panel labels trust-lane pressure separately from overall avail
   }
   const html = render(React.createElement(BullpenBoardView, { board, showStoryPanel: true }))
 
-  assert.ok(htmlIncludes(html, 'Trust-Lane Pressure'))
-  assert.ok(htmlIncludes(html, 'High Trust-Lane Pressure'))
+  assert.ok(htmlIncludes(html, 'Late-Inning Pressure'))
+  assert.ok(htmlIncludes(html, 'High Late-Inning Pressure'))
   assert.ok(htmlIncludes(html, 'Overall Availability: Manageable'))
   assert.ok(!htmlIncludes(html, 'Bullpen Stress: Manageable'))
   assert.ok(!htmlIncludes(html, 'Bullpen Pressure'))

@@ -68,12 +68,12 @@ export function getLandscapeView(landscape) {
       asOfDate,
     },
     columns: [
-      { key: 'constrained', title: 'Most constrained bullpen situations', metric: 'restricted',
-        suffix: 'Avoid / Unavailable', tone: COLUMN_TONE.constrained, entries: mapEntries(landscape.constrained_bullpens) },
-      { key: 'available', title: 'Most available bullpen situations', metric: 'available',
-        suffix: 'Available', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
-      { key: 'monitoring', title: 'Monitoring concentration', metric: 'monitor',
-        suffix: 'in Monitor', tone: COLUMN_TONE.monitoring, entries: mapEntries(landscape.monitoring_concentration) },
+      { key: 'constrained', title: 'Thinnest late-inning margins', metric: 'restricted',
+        suffix: 'needing rest or unavailable', tone: COLUMN_TONE.constrained, entries: mapEntries(landscape.constrained_bullpens) },
+      { key: 'available', title: 'Most room to maneuver', metric: 'available',
+        suffix: 'rested enough to use', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
+      { key: 'monitoring', title: 'Workload watch groups', metric: 'monitor',
+        suffix: 'on watch', tone: COLUMN_TONE.monitoring, entries: mapEntries(landscape.monitoring_concentration) },
     ],
     notes: Array.isArray(landscape.notes) ? landscape.notes : [],
   }
@@ -85,7 +85,7 @@ export function getLandscapeView(landscape) {
 // counts that power the constrained/available/monitoring columns. No rankings,
 // recommendations, predictions, or matchup advice — just plain baseball language.
 export const STORYLINES_FALLBACK =
-  'No notable bullpen storylines available from the current dataset.'
+  'No bullpen story has enough movement in the current data yet.'
 
 const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                      'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
@@ -117,22 +117,22 @@ export function getStorylines(landscape) {
   // the storyline matches what a user would see when scanning that section.
   const topConstrained = constrained[0]
   if (topConstrained && topConstrained.restricted > 0 && storyTeamName(topConstrained)) {
-    items.push(`${storyTeamName(topConstrained)} is carrying a constrained bullpen read today.`)
+    items.push(`${storyTeamName(topConstrained)} has ${topConstrained.restricted} ${topConstrained.restricted === 1 ? 'reliever' : 'relievers'} needing rest or unavailable, narrowing the late-game margin.`)
   }
 
   const topAvailable = available[0]
   if (topAvailable && topAvailable.available > 0 && storyTeamName(topAvailable)) {
-    items.push(`${storyTeamName(topAvailable)} currently has a deep available-reliever group.`)
+    items.push(`${storyTeamName(topAvailable)} has ${topAvailable.available} rested ${topAvailable.available === 1 ? 'reliever' : 'relievers'}, giving the manager more ways through the late innings.`)
   }
 
   const topMonitor = monitoring[0]
   if (topMonitor && topMonitor.monitor > 0 && storyTeamName(topMonitor)) {
-    items.push(`${storyTeamName(topMonitor)} shows a concentrated Monitor-arm read.`)
+    items.push(`${storyTeamName(topMonitor)} has ${topMonitor.monitor} ${topMonitor.monitor === 1 ? 'reliever' : 'relievers'} on watch, so recent work may still be leaning on the same group.`)
   }
 
   const stressedCount = constrained.filter(entry => entry.restricted > 0).length
   if (stressedCount >= 2) {
-    items.push(`${capitalize(countWord(stressedCount))} clubs currently show elevated bullpen stress.`)
+    items.push(`${capitalize(countWord(stressedCount))} clubs have at least one reliever needing rest or unavailable, which can tighten late-game choices.`)
   }
 
   const trimmed = items.slice(0, 4)

@@ -79,19 +79,19 @@ function DetailSection({ title, children, initiallyOpen = false }) {
 function GovernanceStrip({ governance }) {
   const data = asObject(governance)
   const rows = [
-    ['Ranking', data.rankingApplied === false ? 'Not applied' : displayValue(data.rankingApplied)],
-    ['Selection', data.selectionMade === false ? 'Not made' : displayValue(data.selectionMade)],
-    ['Recommendation', data.recommendationMade === false ? 'Not made' : displayValue(data.recommendationMade)],
-    ['Prediction', data.predictionMade === false ? 'Not made' : displayValue(data.predictionMade)],
+    ['Team order', data.rankingApplied === false ? 'No bullpen order made' : displayValue(data.rankingApplied)],
+    ['Pitcher choice', data.selectionMade === false ? 'No pitcher chosen' : displayValue(data.selectionMade)],
+    ['Arm choice', data.recommendationMade === false ? 'No arm chosen' : displayValue(data.recommendationMade)],
+    ['Outcome call', data.predictionMade === false ? 'No outcome call made' : displayValue(data.predictionMade)],
     ['Decision scope', data.decisionScope === 'explanation_only' ? 'Explanation only' : displayValue(data.decisionScope)],
-    ['Advice scope', data.adviceScope === 'none' ? 'No advice' : displayValue(data.adviceScope)],
+    ['Advice scope', data.adviceScope === 'none' ? 'No bullpen advice' : displayValue(data.adviceScope)],
   ]
 
   return (
     <div className="rounded border border-amber/35 bg-amber/10 p-3">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-amber">Explanation only</div>
+      <div className="font-mono text-[10px] uppercase tracking-widest text-amber">Decision boundary</div>
       <p className="mt-1 text-xs leading-relaxed text-chalk400">
-        No ranking, selection, recommendation, or prediction applied.
+        BaseballOS explains the current bullpen read without choosing an arm or calling an outcome.
       </p>
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
         {rows.map(([label, value]) => (
@@ -280,7 +280,7 @@ function ExplanationDetails({ explanationView }) {
         />
       </DetailSection>
 
-      <DetailSection title="Governance">
+      <DetailSection title="Decision Boundary">
         <GovernanceStrip governance={explanationView.governance} />
       </DetailSection>
     </div>

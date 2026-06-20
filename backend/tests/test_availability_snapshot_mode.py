@@ -278,7 +278,7 @@ def test_snapshot_mode_keeps_missing_data_truthful(client):
     assert availability['availability_status'] == 'Monitor'
     assert availability['confidence'] == 'low'
     assert availability['data_state'] == 'missing'
-    assert availability['reasons'] == ['Missing workload history or fatigue score']
+    assert availability['reasons'] == ['Missing recent workload history']
 
 
 def test_snapshot_endpoint_is_admin_gated_and_marks_non_current(client):

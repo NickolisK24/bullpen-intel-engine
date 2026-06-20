@@ -48,7 +48,7 @@ _DATA_STATE_TO_FRESHNESS = {
 }
 
 _NUMERIC_INPUT_EVIDENCE = (
-    ('fatigue_score', 'Fatigue score', 'points'),
+    ('fatigue_score', 'Recent workload index', 'index'),
     ('pitches_yesterday', 'Pitches yesterday', 'pitches'),
     ('pitches_last_3_days', 'Pitches in 3 days', 'pitches'),
     ('pitches_last_5_days', 'Pitches in 5 days', 'pitches'),
@@ -153,7 +153,7 @@ def _trust_reference(confidence: str, data_state: str) -> dict[str, Any]:
         'contract': AVAILABILITY_EXPLANATION_CONTRACT,
         'certification_status': AVAILABILITY_EXPLANATION_CERTIFICATION_STATUS,
         'trust_failure': trust_failure,
-        'summary': 'Trust reflects existing Availability Engine confidence and data-state metadata.',
+        'summary': 'Visibility reflects existing availability confidence and data-state detail.',
     }
 
 
@@ -402,7 +402,7 @@ def build_availability_explanation(
         confidence={
             'level': confidence,
             'summary': (
-                'Explanation confidence mirrors the existing Availability Engine '
+                'Explanation confidence mirrors the existing availability '
                 'confidence value.'
             ),
         },

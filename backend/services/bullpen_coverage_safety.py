@@ -45,10 +45,10 @@ THIN_TRUST_UNAVAILABLE_MIN = 2
 THIN_TRUST_UNAVAILABLE_PCT = 40
 
 MISSING_INPUT_LIMITATION = (
-    'Coverage Safety is a Limited Read because capacity, resource health, or trust hierarchy inputs are missing.'
+    'Coverage margin is a Limited Read because capacity, resource health, or trust hierarchy inputs are missing.'
 )
 UNKNOWN_INPUT_LIMITATION = (
-    'Coverage Safety is a Limited Read because active capacity, resource health, or trust hierarchy is unknown.'
+    'Coverage margin is a Limited Read because active capacity, resource health, or trust hierarchy is unknown.'
 )
 
 
@@ -147,7 +147,7 @@ def _limited_read(evidence):
         LABEL_LIMITED_READ,
         [
             (
-                'Coverage Safety is limited because the current capacity, resource health, '
+                'Coverage margin is limited because the current capacity, resource health, '
                 'or trust hierarchy read is incomplete.'
             )
         ],
@@ -260,7 +260,7 @@ def _apply_environment_context(label, reasons, evidence):
 
 def _explanation(evidence):
     return (
-        f"Coverage Safety combines active capacity ({evidence['capacity_state']}), "
+        f"Coverage margin combines active capacity ({evidence['capacity_state']}), "
         f"resource health ({evidence['resource_health_state']}), and trust structure "
         f"({evidence['trusted_group_size']} trusted-group arms, "
         f"{evidence['top_trust_bucket_available_count']} available in the top trust bucket)."

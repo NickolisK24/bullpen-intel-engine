@@ -102,7 +102,7 @@ export const OBSERVATION_FORBIDDEN_TEXT_TERMS = [
 ]
 
 export const OBSERVATION_EMPTY_COPY =
-  'No governed bullpen observations are available from the current trusted state.'
+  'No bullpen observations have enough trusted movement to show yet.'
 
 export const OBSERVATION_GOVERNANCE_COPY =
-  'Observations are descriptive only and do not rank, select, or recommend pitchers.'
+  'Observations describe bullpen movement and decision context without choosing an arm.'

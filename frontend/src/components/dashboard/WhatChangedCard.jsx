@@ -86,15 +86,15 @@ export function WhatChangedCard({
   if (!hasFollowedTeam) {
     body = (
       <CardStatus>
-        Follow your team to see what changed since their last game.
+        Follow your team to see how its bullpen changed after the last completed game.
       </CardStatus>
     )
   } else if (loading) {
-    body = <CardStatus>Loading what changed since the latest completed game...</CardStatus>
+    body = <CardStatus>Checking how the bullpen moved after the latest completed game...</CardStatus>
   } else if (error) {
     body = (
       <div className="rounded border border-dirt bg-field/50 p-3" role="status" aria-live="polite">
-        <p className="text-sm leading-relaxed text-chalk400">What changed is unavailable right now.</p>
+        <p className="text-sm leading-relaxed text-chalk400">The latest bullpen change read is unavailable right now.</p>
         {onRetry && (
           <button
             type="button"
@@ -109,25 +109,25 @@ export function WhatChangedCard({
   } else if (state === 'stale') {
     body = (
       <CardStatus>
-        Bullpen updates are paused{latestDate ? ` - latest data is from ${latestDate}.` : '.'}
+        Bullpen movement is paused{latestDate ? ` - latest data is from ${latestDate}.` : '.'}
       </CardStatus>
     )
   } else if (state === 'no_baseline') {
     body = (
       <CardStatus>
-        No earlier game to compare yet. Check back after the next game.
+        No earlier completed game is available for comparison yet. Check back after the next game.
       </CardStatus>
     )
   } else if (state === 'no_changes') {
     body = (
       <CardStatus>
-        No meaningful bullpen changes since the last completed game.
+        No meaningful bullpen movement since the last completed game.
       </CardStatus>
     )
   } else if (state === 'changes') {
     body = <ChangesList changes={changes} />
   } else {
-    body = <CardStatus>What changed is not available for this team yet.</CardStatus>
+    body = <CardStatus>The bullpen change read is not available for this team yet.</CardStatus>
   }
 
   return (

@@ -213,7 +213,7 @@ def _limited_read(key, explanation, supporting_counts):
 
 
 def _role_limited_explanation(role_known_count, total, concept):
-    return f'Only {role_known_count} of {total} bullpen arms have clear role labels, so {concept} is a Limited Read.'
+    return f'Only {role_known_count} of {total} bullpen arms have clear role labels, so this part of the bullpen read stays limited.'
 
 
 def _trust_availability(summary):
@@ -284,7 +284,7 @@ def _clean_options(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'cleanOptions',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so Clean Options is a Limited Read.",
+            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so BaseballOS cannot say how many clean options the manager really has.",
             counts,
         )
 
@@ -366,15 +366,15 @@ def _bullpen_pressure(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'bullpenPressure',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so Trust-Lane Pressure is a Limited Read.",
+            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so the late-inning pressure read stays cautious.",
             counts,
         )
 
     explanation = (
         f'Trust Arms show {clean_trust} clean, {restricted_trust} Rest-Restricted, and '
         f'{unavailable_trust} Unavailable; {stressed_bridge} Bridge Arms and {stressed_coverage} '
-        f'Coverage Arms are stressed, alongside {summary["highFatigueArms"]} high-fatigue arms. '
-        'Pressure weighs Trust and Bridge Arm stress above Depth Arm stress.'
+        f'Coverage Arms are stressed, and {summary["highFatigueArms"]} arms are carrying heavy recent workload. '
+        'Late-inning pressure weighs Trust and Bridge Arm stress above Depth Arm stress.'
     )
     if (
         trust_pressure >= TRUST_PRESSURE_HIGH
@@ -443,7 +443,7 @@ def _workload_concentration(workload):
     if total_pitches <= 0 or participant_count <= 0:
         return _limited_read(
             'workloadConcentration',
-            'No recent relief workload was available in the workload window, so Workload Concentration is a Limited Read.',
+            'No recent relief workload was available in the workload window, so BaseballOS cannot tell whether the same arms are carrying the work.',
             counts,
         )
 

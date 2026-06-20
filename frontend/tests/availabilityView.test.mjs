@@ -21,7 +21,7 @@ test('builds availability badge labels from every backend status value', () => {
 
     assert.equal(badge.label, status)
     assert.equal(badge.status, status)
-    assert.match(badge.tone, /workload|signals|rules/i)
+    assert.match(badge.tone, /recent usage|recent work|workload|signals|rules/i)
   }
 })
 
@@ -70,7 +70,7 @@ test('distinguishes missing and failed workload states from stale usage', () => 
   const failed = getDataStateView('failed')
 
   assert.equal(missing.label, 'No Workload Record')
-  assert.match(missing.message, /No workload history or fatigue score/i)
+  assert.match(missing.message, /No recent workload history/i)
   assert.doesNotMatch(missing.message, /fetch failed|freshness window/i)
   assert.equal(failed.label, 'Fetch Failed')
   assert.match(failed.message, /workload fetch failed/i)

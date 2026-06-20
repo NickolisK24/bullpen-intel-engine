@@ -125,12 +125,12 @@ test('Data & Trust page hosts the relocated trust and governance detail', () => 
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
   assert.ok(htmlIncludes(html, 'Freshness'))
-  assert.ok(htmlIncludes(html, 'Scored Pitcher Inventory'))
+  assert.ok(htmlIncludes(html, 'Pitcher Workload Inventory'))
   assert.ok(htmlIncludes(html, 'Secondary Exploratory ERA Study'))
   // The Bullpen Intelligence surface fails closed without a live source, so it
   // is not mounted on the live Trust page until it is wired to live MLB data.
   assert.ok(!htmlIncludes(html, 'Bullpen Intelligence'))
-  assert.ok(!htmlIncludes(html, 'Governed Observations'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Observations'))
 })
 
 test('sidebar navigation includes a Data & Trust destination', () => {

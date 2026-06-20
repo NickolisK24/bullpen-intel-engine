@@ -29,7 +29,7 @@ BASE_LIMITATIONS = [
     'No team-reported availability data available',
 ]
 
-MISSING_WORKLOAD_REASON = 'Missing workload history or fatigue score'
+MISSING_WORKLOAD_REASON = 'Missing recent workload history'
 INCOMPLETE_WORKLOAD_REASON = 'Incomplete workload inputs'
 FETCH_FAILED_WORKLOAD_REASON = 'Recent MLB workload fetch failed'
 MISSING_WORKLOAD_LIMITATION = 'Availability read is unclear because workload inputs are missing'
@@ -38,7 +38,8 @@ FETCH_FAILED_WORKLOAD_LIMITATION = 'Recent usage information is incomplete becau
 # Wording must keep a data-state keyword (stale/missing/incomplete) so
 # categorize_limitation continues to map it to CATEGORY_DATA_STATE.
 STALE_WORKLOAD_LIMITATION = 'Recent usage information is incomplete, so workload data must not be treated as current availability'
-WORKLOAD_FALLBACK_REASON = 'Availability restriction rule matched without a displayable workload input'
+WORKLOAD_FALLBACK_REASON = 'Recent usage narrowed availability, but the source detail is unavailable'
+RECENT_WORKLOAD_REASON = 'Recent workload is high enough to narrow normal availability'
 
 
 REASON_CATALOG = [
@@ -98,9 +99,9 @@ REASON_CATALOG = [
     },
     {
         'category': CATEGORY_FATIGUE,
-        'rule': 'Fatigue score',
-        'template': 'Fatigue score is {score}',
-        'example': 'Fatigue score is 55.3',
+        'rule': 'Recent workload burden',
+        'template': RECENT_WORKLOAD_REASON,
+        'example': RECENT_WORKLOAD_REASON,
     },
     {
         'category': CATEGORY_DATA_STATE,
@@ -171,7 +172,7 @@ def rest_reason(days):
 
 
 def fatigue_score_reason(score):
-    return f'Fatigue score is {_format_number(score)}'
+    return RECENT_WORKLOAD_REASON
 
 
 def stale_workload_reason(active_window_days):
@@ -199,9 +200,9 @@ def categorize_reason(reason):
         return CATEGORY_APPEARANCE_FREQUENCY
     if 'rest' in text:
         return CATEGORY_REST
-    if 'fatigue score' in text:
+    if 'fatigue score' in text or 'recent workload is high enough' in text:
         return CATEGORY_FATIGUE
-    if 'restriction rule' in text:
+    if 'restriction rule' in text or 'source detail is unavailable' in text:
         return CATEGORY_FALLBACK
     return CATEGORY_UNKNOWN
 

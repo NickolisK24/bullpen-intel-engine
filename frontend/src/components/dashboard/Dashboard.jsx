@@ -107,7 +107,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           <InjuryIlContextSection context={injuryIlContext} />
 
           {/* Section 2 — Bullpen Snapshot */}
-          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} bullpen-eligible relievers in the governed availability set`}>
+          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {context.snapshot.map(row => (
                 <div key={row.status} className="card p-4">

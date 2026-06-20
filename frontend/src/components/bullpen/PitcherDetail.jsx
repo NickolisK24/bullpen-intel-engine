@@ -103,7 +103,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             </div>
             <div className="min-w-0">
               <RiskBadge level={cf.risk_level} />
-              <div className="text-chalk400 text-xs font-mono mt-1">Fatigue Score · 0–100</div>
+              <div className="text-chalk400 text-xs font-mono mt-1">Workload Index · 0-100</div>
             </div>
           </div>
 
@@ -146,7 +146,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
 
           {/* Component breakdown — horizontal bars with weights. Sourced from
               the shared four-factor model so weights always match the backend. */}
-          <Divider label="Score Breakdown" />
+          <Divider label="Workload Contributors" />
           <div className="space-y-2.5">
             {FATIGUE_FACTORS.map(({ key, label, scoreField, weight }) => {
               const score = cf[scoreField]
@@ -168,7 +168,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           {/* Radar — component profile */}
           {radarData.length > 0 && (
             <>
-              <Divider label="Fatigue Profile" />
+              <Divider label="Workload Profile" />
               <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart data={radarData}>
@@ -189,7 +189,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
           {/* Trend chart — fatigue_trend from API */}
           {trendData.length > 1 && (
             <>
-              <Divider label="Fatigue Trend" />
+              <Divider label="Workload Trend" />
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trendData} margin={{ top: 8, right: 12, bottom: 0, left: -8 }}>
@@ -224,7 +224,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
                       contentStyle={{ background: '#111418', border: '1px solid #242b35', borderRadius: '6px', fontFamily: 'JetBrains Mono', fontSize: '11px' }}
                       labelStyle={{ color: '#d1dce8' }}
                       itemStyle={{ color: '#f5a623' }}
-                      formatter={(value) => [`${value}`, 'Score']}
+                      formatter={(value) => [`${value}`, 'Workload']}
                     />
                     <Line
                       type="monotone"
@@ -288,7 +288,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
         </div>
       ) : (
         <div className="p-8 text-center text-chalk400 font-mono text-sm">
-          No fatigue data available yet.
+          No recent workload read is available yet.
         </div>
       )}
     </div>
