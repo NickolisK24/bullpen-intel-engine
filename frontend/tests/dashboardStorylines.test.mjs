@@ -47,15 +47,15 @@ test('storylines are derived dynamically from the landscape counts', () => {
   const view = getStorylines(landscape)
   assert.ok(view.hasStorylines)
   assert.ok(view.items.length >= 3 && view.items.length <= 4)
-  assert.ok(view.items.some(item => /Chicago Cubs is carrying a constrained bullpen read today\./.test(item)))
-  assert.ok(view.items.some(item => /Washington Nationals currently has a deep available-reliever group\./.test(item)))
-  assert.ok(view.items.some(item => /Toronto Blue Jays shows a concentrated Monitor-arm read\./.test(item)))
+  assert.ok(view.items.some(item => /Chicago Cubs has 4 relievers needing rest or unavailable, narrowing the late-game margin\./.test(item)))
+  assert.ok(view.items.some(item => /Washington Nationals has 6 rested relievers, giving the manager more ways through the late innings\./.test(item)))
+  assert.ok(view.items.some(item => /Toronto Blue Jays has 4 relievers on watch, so recent work may still be leaning on the same group\./.test(item)))
 })
 
 test('an elevated-stress count storyline appears when multiple clubs are constrained', () => {
   const view = getStorylines(landscape)
   // Two constrained clubs (Cubs, Mets) both carry restricted arms.
-  assert.ok(view.items.some(item => /Two clubs currently show elevated bullpen stress\./.test(item)))
+  assert.ok(view.items.some(item => /Two clubs have at least one reliever needing rest or unavailable, which can tighten late-game choices\./.test(item)))
 })
 
 test('storylines fall back gracefully when no notable situations exist', () => {
@@ -84,13 +84,13 @@ test('zero-count entries do not produce empty or misleading storylines', () => {
 test('the storylines card renders with its title and bullet observations', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Storylines'))
-  assert.ok(htmlIncludes(html, 'Chicago Cubs is carrying a constrained bullpen read today.'))
-  assert.ok(htmlIncludes(html, 'Washington Nationals currently has a deep available-reliever group.'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs has 4 relievers needing rest or unavailable, narrowing the late-game margin.'))
+  assert.ok(htmlIncludes(html, 'Washington Nationals has 6 rested relievers, giving the manager more ways through the late innings.'))
 })
 
 test('the storylines card sits above the individual situation columns', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(html.indexOf('Storylines') < html.indexOf('Most constrained bullpen situations'),
+  assert.ok(html.indexOf('Storylines') < html.indexOf('Thinnest late-inning margins'),
     'storylines should precede the situation columns')
 })
 

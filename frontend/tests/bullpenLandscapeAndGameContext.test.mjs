@@ -56,9 +56,9 @@ const landscape = {
 test('landscape renders title and the three descriptive callout columns', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most constrained bullpen situations'))
-  assert.ok(htmlIncludes(html, 'Most available bullpen situations'))
-  assert.ok(htmlIncludes(html, 'Monitoring concentration'))
+  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most room to maneuver'))
+  assert.ok(htmlIncludes(html, 'Workload watch groups'))
   assert.ok(htmlIncludes(html, 'ACE'))
   assert.ok(htmlIncludes(html, 'BEA'))
   assert.ok(htmlIncludes(html, 'CHC'))
@@ -90,7 +90,7 @@ test('dashboard surfaces the landscape section near the top', () => {
   }
   const html = render(React.createElement(DashboardView, { data }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most constrained bullpen situations'))
+  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
 })
 
 // ── Today's Game Context card ──────────────────────────────────────────────

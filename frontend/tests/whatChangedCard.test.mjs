@@ -67,13 +67,13 @@ test('no followed team prompts without change data', () => {
   const html = renderCard()
 
   assert.ok(htmlIncludes(html, 'What Changed Since Last Game'))
-  assert.ok(htmlIncludes(html, 'Follow your team to see what changed since their last game.'))
+  assert.ok(htmlIncludes(html, 'Follow your team to see how its bullpen changed after the last completed game.'))
 })
 
 test('loading state uses latest completed game language', () => {
   const html = renderCard({ followedTeam: team, loading: true })
 
-  assert.ok(htmlIncludes(html, 'Loading what changed since the latest completed game...'))
+  assert.ok(htmlIncludes(html, 'Checking how the bullpen moved after the latest completed game...'))
 })
 
 test('stale state shows paused workload copy with latest data date', () => {
@@ -90,7 +90,7 @@ test('stale state shows paused workload copy with latest data date', () => {
     }),
   })
 
-  assert.ok(htmlIncludes(html, 'Bullpen updates are paused'))
+  assert.ok(htmlIncludes(html, 'Bullpen movement is paused - latest data is from Jun 6.'))
   assert.ok(htmlIncludes(html, 'Jun 6'))
   assert.ok(!htmlIncludes(html, 'Shift Arm moved'))
 })
@@ -101,7 +101,7 @@ test('no baseline state tells users to check after the next game', () => {
     changes: makeChanges({ state: 'no_baseline', pitcher_changes: [], team_summary: null }),
   })
 
-  assert.ok(htmlIncludes(html, 'No earlier game to compare yet. Check back after the next game.'))
+  assert.ok(htmlIncludes(html, 'No earlier completed game is available for comparison yet. Check back after the next game.'))
 })
 
 test('no changes state renders a quiet empty summary', () => {
@@ -110,7 +110,7 @@ test('no changes state renders a quiet empty summary', () => {
     changes: makeChanges({ state: 'no_changes', pitcher_changes: [], team_summary: null }),
   })
 
-  assert.ok(htmlIncludes(html, 'No meaningful bullpen changes since the last completed game.'))
+  assert.ok(htmlIncludes(html, 'No meaningful bullpen movement since the last completed game.'))
 })
 
 test('changes state renders pitcher summaries without team summary counts', () => {
@@ -162,6 +162,6 @@ test('error state can expose retry control', () => {
     onRetry: () => {},
   })
 
-  assert.ok(htmlIncludes(html, 'What changed is unavailable right now.'))
+  assert.ok(htmlIncludes(html, 'The latest bullpen change read is unavailable right now.'))
   assert.ok(htmlIncludes(html, 'Retry'))
 })
