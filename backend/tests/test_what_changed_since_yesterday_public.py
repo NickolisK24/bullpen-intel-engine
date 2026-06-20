@@ -106,9 +106,130 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'public_summary': (
                 'The bullpen went from 2 rested options to 5, adding three cleaner paths than yesterday.'
             ),
-            'public_context': None,
+            'public_context': (
+                'The Alpha Club bullpen is less boxed into one narrow route than it was yesterday.'
+            ),
         }
     ]
+
+
+def test_public_payload_uses_safe_consequence_context_when_available():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )
+    item = result['items'][0]
+
+    assert item['public_context']
+    assert 'Alpha Club bullpen' in item['public_context']
+    encoded = json.dumps(item).lower()
+    for forbidden in (
+        'consequence_type',
+        'confidence',
+        'significance',
+        'supporting_facts',
+        'raw_score',
+        'score',
+        'identity_label',
+    ):
+        assert forbidden not in encoded
+
+
+def test_public_payload_preserves_card_without_consequence_context_when_absent_or_unsafe():
+    current = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)]
+    prior = [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)]
+    no_consequence = build_public(
+        current,
+        prior,
+        consequence_payload={
+            'teams': [
+                {
+                    'team_id': 1,
+                    'team_name': 'Alpha Club',
+                    'team_abbreviation': 'AAA',
+                    'status': 'available',
+                    'state': 'no_consequences',
+                    'consequence_count': 0,
+                    'consequences': [],
+                }
+            ],
+        },
+    )
+    unsafe_consequence = build_public(
+        current,
+        prior,
+        consequence_payload={
+            'teams': [
+                {
+                    'team_id': 1,
+                    'team_name': 'Alpha Club',
+                    'team_abbreviation': 'AAA',
+                    'status': 'available',
+                    'state': 'consequences_detected',
+                    'consequence_count': 1,
+                    'consequences': [
+                        {
+                            'consequence_type': 'unsafe_test_consequence',
+                            'consequence_summary': 'Unsafe test.',
+                            'consequence_context': 'The manager should use the closer.',
+                            'significance': 'meaningful',
+                            'confidence': 'medium',
+                            'supporting_facts': [
+                                {
+                                    'fact_key': 'rested_options',
+                                    'previous_value': 2,
+                                    'current_value': 5,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    flagged_consequence = build_public(
+        current,
+        prior,
+        consequence_payload={
+            'teams': [
+                {
+                    'team_id': 1,
+                    'team_name': 'Alpha Club',
+                    'team_abbreviation': 'AAA',
+                    'status': 'available',
+                    'state': 'consequences_detected',
+                    'review_flags': ['prediction_language'],
+                    'consequence_count': 1,
+                    'consequences': [
+                        {
+                            'consequence_type': 'more_flexibility',
+                            'consequence_summary': 'The bullpen has more flexibility than yesterday.',
+                            'consequence_context': (
+                                'The Alpha Club bullpen is less boxed into one narrow route than it was yesterday.'
+                            ),
+                            'significance': 'meaningful',
+                            'confidence': 'medium',
+                            'supporting_facts': [
+                                {
+                                    'fact_key': 'rested_options',
+                                    'previous_value': 2,
+                                    'current_value': 5,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert no_consequence['item_count'] == 1
+    assert no_consequence['items'][0]['public_context'] is None
+    assert unsafe_consequence['item_count'] == 1
+    assert unsafe_consequence['items'][0]['public_context'] is None
+    assert flagged_consequence['item_count'] == 1
+    assert flagged_consequence['items'][0]['public_context'] is None
+    assert 'should use' not in json.dumps(unsafe_consequence['items']).lower()
 
 
 def test_public_payload_skips_no_prior_no_change_and_tiny_flagged_changes():
@@ -224,7 +345,9 @@ def test_public_payload_does_not_leak_internal_keys_scores_confidence_or_identit
     for forbidden in (
         'change_type',
         'change_direction',
+        'consequence_type',
         'confidence',
+        'significance',
         'supporting_facts',
         'copy_review_flags',
         'public_copy_generated',
