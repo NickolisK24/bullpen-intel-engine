@@ -633,6 +633,20 @@ def build_team_what_changed_since_yesterday(
         reference_date=reference_date,
         prior_date=prior_date,
     )
+    current_metrics = _metrics(
+        current_item,
+        payload=current_payload,
+        team_key=key,
+    )
+    prior_metrics = _metrics(
+        prior_item,
+        payload=prior_payload,
+        team_key=key,
+    )
+    payload['rested_counts'] = {
+        'yesterday_rested_count': prior_metrics.get('rested_options'),
+        'today_rested_count': current_metrics.get('rested_options'),
+    }
     changes = _team_changes(
         current_item,
         prior_item,

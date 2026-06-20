@@ -141,7 +141,7 @@ class TestDashboardEndpoint:
             'selection_made': False,
             'prediction_applied': False,
             'ordering_basis': 'team_abbreviation_then_team_name',
-            'item_limit': 6,
+            'item_limit': 30,
             'comparison': {
                 'current_data_through': '2026-06-19',
                 'previous_data_through': '2026-06-18',
@@ -153,9 +153,12 @@ class TestDashboardEndpoint:
                     'team_id': 1,
                     'team_name': 'Team 1',
                     'team_abbreviation': 'T1',
-                    'public_headline': 'The Team 1 bullpen has more breathing room today.',
-                    'public_summary': 'The rested count moved from 2 to 5, opening three more ways to cover the game.',
-                    'public_context': None,
+                    'public_headline': 'Team 1 bullpen moved from 2 to 5 rested relievers.',
+                    'public_summary': 'Team 1 has 3 more rested relievers than it had yesterday.',
+                    'public_context': 'The bullpen has more rested relievers than it had yesterday, creating more room for tonight.',
+                    'yesterday_rested_count': 2,
+                    'today_rested_count': 5,
+                    'workload_added': [],
                 },
             ],
             'item_count': 1,
@@ -164,7 +167,7 @@ class TestDashboardEndpoint:
         monkeypatch.setattr(
             bullpen_api,
             'build_what_changed_public_payload',
-            lambda current, prior: public_payload,
+            lambda current, prior, **kwargs: public_payload,
         )
         with client.application.app_context():
             _seed_pitcher('A One', team_id=1, mlb_id=1001)
@@ -175,7 +178,7 @@ class TestDashboardEndpoint:
 
         assert changes == public_payload
         assert changes['capability'] == 'what_changed_since_yesterday_public_v1'
-        assert changes['item_limit'] == 6
+        assert changes['item_limit'] == 30
         for forbidden in (
             'change_type',
             'confidence',
@@ -189,6 +192,52 @@ class TestDashboardEndpoint:
             'ranking language',
         ):
             assert forbidden not in encoded
+
+    def test_dashboard_what_changed_workload_payload_lists_top_relief_pitch_counts(self, client):
+        current = date.today()
+        prior = current - timedelta(days=1)
+        team_id = 7
+
+        with client.application.app_context():
+            seeded = [
+                _seed_pitcher('Relief A', team_id=team_id, mlb_id=7001, days_ago=0, games_started=0),
+                _seed_pitcher('Relief B', team_id=team_id, mlb_id=7002, days_ago=0, games_started=0),
+                _seed_pitcher('Relief C', team_id=team_id, mlb_id=7003, days_ago=0, games_started=0),
+                _seed_pitcher('Relief D', team_id=team_id, mlb_id=7004, days_ago=0, games_started=0),
+                _seed_pitcher('Starter A', team_id=team_id, mlb_id=7005, days_ago=0, games_started=1),
+                _seed_pitcher('Low Pitch Relief', team_id=team_id, mlb_id=7006, days_ago=0, games_started=0),
+            ]
+            pitch_counts = {
+                'Relief A': 22,
+                'Relief B': 31,
+                'Relief C': 18,
+                'Relief D': 27,
+                'Starter A': 48,
+                'Low Pitch Relief': 14,
+            }
+            for pitcher in seeded:
+                log = GameLog.query.filter_by(pitcher_id=pitcher.id).one()
+                log.game_date = current
+                log.pitches_thrown = pitch_counts[pitcher.full_name]
+            db.session.commit()
+
+            payload = bullpen_api._dashboard_what_changed_workload_payload(
+                current,
+                prior,
+                [{'pitcher': pitcher} for pitcher in seeded],
+            )
+
+        team_payload = payload['by_team_id'][str(team_id)]
+
+        assert payload['meaningful_pitch_minimum'] == 15
+        assert payload['item_limit'] == 3
+        assert team_payload['workload_added'] == [
+            {'pitcher_id': seeded[1].id, 'name': 'Relief B', 'pitches': 31},
+            {'pitcher_id': seeded[3].id, 'name': 'Relief D', 'pitches': 27},
+            {'pitcher_id': seeded[0].id, 'name': 'Relief A', 'pitches': 22},
+        ]
+        assert 'Starter A' not in json.dumps(team_payload)
+        assert 'Low Pitch Relief' not in json.dumps(team_payload)
 
     def test_four_beat_story_path_defaults_on(self, client):
         body = client.get('/api/bullpen/dashboard').get_json()
