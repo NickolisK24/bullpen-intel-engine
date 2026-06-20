@@ -72,16 +72,16 @@ export default function Sidebar() {
           <NavLink
             to={preferredHref}
             onClick={() => setOpen(false)}
-            className="mt-3 rounded-lg border border-amber/25 bg-amber/5 px-3 py-3 text-left transition-colors hover:border-amber/40 hover:bg-amber/10"
+            className="mt-3 rounded-lg border border-dirt bg-field/40 px-3 py-2.5 text-left transition-colors hover:border-amber/30 hover:bg-amber/5"
           >
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+            <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
               Following
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-2">
-              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-amber/30 bg-field font-display text-sm tracking-wide text-amber">
+            <div className="mt-1.5 flex min-w-0 items-center gap-2">
+              <span className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded border border-amber/25 bg-amber/5 font-mono text-[10px] tracking-wide text-amber">
                 {preferredTeamShortLabel(preferredTeam).slice(0, 3)}
               </span>
-              <span className="min-w-0 truncate text-sm font-semibold text-chalk100">
+              <span className="min-w-0 truncate text-sm text-chalk200">
                 {preferredTeamLabel(preferredTeam)}
               </span>
             </div>

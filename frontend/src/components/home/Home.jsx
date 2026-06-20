@@ -337,67 +337,78 @@ function WhatChangedSinceYesterday({
   }
 
   return (
-    <section className="mb-8" aria-label="What Changed Since Yesterday">
-      <SectionHeading
-        title="What Changed Since Yesterday"
-        subtitle="Pick one club and see how its bullpen picture moved from the prior window."
-      />
+    <section className="mb-10" aria-label="What Changed Since Yesterday">
+      <div className="overflow-hidden border border-dirt bg-dugout">
+        <div className="flex flex-col gap-4 border-b border-dirt/80 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+              What Changed Since Yesterday
+            </div>
+            <h2 className="mt-1 font-display text-2xl leading-none tracking-wide text-chalk100 sm:text-3xl">
+              {selectedTeam?.teamName || 'Selected bullpen'}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-chalk400">
+              Yesterday, today, who worked, and what it changes for tonight.
+            </p>
+          </div>
 
-      <div className="border border-dirt bg-dugout p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <label className="flex w-full max-w-[20rem] flex-col gap-1 font-mono text-[11px] uppercase tracking-wider text-chalk500 sm:min-w-[14rem] sm:max-w-none">
-            Team Selector
-            <select
-              value={selectedValue}
-              onChange={handleTeamChange}
-              disabled={teamOptions.length === 0}
-              className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="Choose team for What Changed Since Yesterday"
-            >
-              {teamOptions.map(team => (
-                <option key={team.value} value={team.value}>
-                  {team.teamName}{team.teamAbbr ? ` (${team.teamAbbr})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="font-mono text-[11px] text-chalk500">
-            {teamsLoading && teamOptions.length <= items.length
-              ? 'Loading full team list...'
-              : teamsError
-                ? 'Team list unavailable; showing changed teams.'
-                : `${teamOptions.length} teams available`}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex w-full min-w-[14rem] flex-col gap-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 sm:w-auto">
+              Change Team
+              <select
+                value={selectedValue}
+                onChange={handleTeamChange}
+                disabled={teamOptions.length === 0}
+                className="min-h-10 rounded border border-dirt bg-field px-3 py-2 text-sm normal-case tracking-normal text-chalk100 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Choose team for What Changed Since Yesterday"
+              >
+                {teamOptions.map(team => (
+                  <option key={team.value} value={team.value}>
+                    {team.teamName}{team.teamAbbr ? ` (${team.teamAbbr})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="pb-0.5 font-mono text-[11px] text-chalk500 sm:text-right">
+              {teamsLoading && teamOptions.length <= items.length
+                ? 'Loading full team list...'
+                : teamsError
+                  ? 'Team list unavailable; showing changed teams.'
+                  : `${teamOptions.length} teams available`}
+            </div>
           </div>
         </div>
 
-        {selectedItem ? (
-          <SelectedChangePanel item={selectedItem} team={selectedTeam} comparison={changes.comparison} />
-        ) : (
-          <NoSelectedChange team={selectedTeam} comparison={changes.comparison} />
-        )}
+        <div className="p-4 sm:p-5">
+          {selectedItem ? (
+            <SelectedChangePanel item={selectedItem} team={selectedTeam} comparison={changes.comparison} />
+          ) : (
+            <NoSelectedChange team={selectedTeam} comparison={changes.comparison} />
+          )}
 
-        {items.length > 1 && (
-          <details className="mt-4 border-t border-dirt/70 pt-3">
-            <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber">
-              View League-Wide Changes ({items.length})
-            </summary>
-            <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map(item => (
-                <li key={item.key} className="border border-dirt/80 bg-field/50 p-3">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                    {item.teamAbbr || item.teamName}
-                  </div>
-                  <p className="mt-1 text-sm leading-snug text-chalk200">
-                    {restedCountLine(item)}
-                  </p>
-                  <p className="mt-1 text-xs leading-snug text-chalk500">
-                    {workloadAddedLine(item)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
+          {items.length > 1 && (
+            <details className="mt-3">
+              <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber">
+                View League-Wide Changes ({items.length})
+              </summary>
+              <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map(item => (
+                  <li key={item.key} className="border border-dirt/80 bg-field/50 p-3">
+                    <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                      {item.teamAbbr || item.teamName}
+                    </div>
+                    <p className="mt-1 text-sm leading-snug text-chalk200">
+                      {restedCountLine(item)}
+                    </p>
+                    <p className="mt-1 text-xs leading-snug text-chalk500">
+                      {workloadAddedLine(item)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       </div>
     </section>
   )
@@ -418,34 +429,40 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
   }
 
   return (
-    <section className="mb-6" aria-label="My team">
-      <div className="border border-amber/25 bg-dugout p-4 sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded border border-amber/30 bg-amber/10 font-display text-2xl tracking-wide text-amber sm:h-16 sm:w-16">
+    <section className="mb-10" aria-label="My team">
+      <div className="relative overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-5 sm:p-6">
+        <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-60" />
+        <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4 sm:gap-5">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-amber/35 bg-amber/10 font-display text-3xl tracking-wide text-amber shadow-inner sm:h-24 sm:w-24 sm:text-4xl">
               {shortLabel.slice(0, 3)}
             </div>
             <div className="min-w-0">
-              <div className="font-mono text-[10px] uppercase tracking-widest text-amber">
-                My Team
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-amber">
+                  My Team
+                </span>
+                <span className="rounded border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-emerald-300">
+                  Following
+                </span>
               </div>
-              <h2 className="mt-1 break-words font-display text-3xl leading-none tracking-wide text-chalk100 sm:text-4xl">
+              <h2 className="mt-2 break-words font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl">
                 {teamLabel}
               </h2>
-              <p className="mt-1 text-sm leading-relaxed text-chalk300">
+              <p className="mt-2 text-base leading-relaxed text-chalk300">
                 Your bullpen. Tonight.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 sm:items-end">
-            <label className="flex min-w-[12rem] flex-col gap-1 font-mono text-[11px] uppercase tracking-wider text-chalk500">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end lg:flex-col lg:items-end">
+            <label className="flex w-full min-w-[14rem] flex-col gap-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 sm:w-auto">
               Change team
               <select
                 value={selectValue}
                 onChange={handleChange}
                 disabled={!canSwitch}
-                className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-10 rounded border border-dirt bg-field px-3 py-2 text-sm normal-case tracking-normal text-chalk100 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Change preferred team"
               >
                 {!selectValue && <option value="">Choose team</option>}
@@ -458,7 +475,7 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
             </label>
             <Link
               to={boardHref}
-              className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+              className="inline-flex min-h-10 items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
             >
               Open Team Board -&gt;
             </Link>
@@ -578,7 +595,7 @@ function TonightsTeamBullpenPicture({
   const inactiveCount = Number(board?.roster_status?.inactive_context_count || 0)
 
   return (
-    <section className="mb-8" aria-label="Tonight's bullpen picture">
+    <section className="mb-10" aria-label="Tonight's bullpen picture">
       <SectionHeading
         title="Tonight's Bullpen Picture"
         subtitle={`What ${teamLabel} changed, who worked, and how much room the bullpen has tonight.`}
@@ -590,8 +607,8 @@ function TonightsTeamBullpenPicture({
         ) : error ? (
           <p className="font-mono text-xs text-chalk500">Team bullpen picture is unavailable right now.</p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <TeamPictureSlot label="Worked Yesterday" tone="rest">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+            <TeamPictureSlot label="Worked Yesterday" tone="rest" className="xl:col-span-3">
               {workload.length > 0 ? (
                 <ul className="space-y-2">
                   {workload.map(row => (
@@ -615,21 +632,24 @@ function TonightsTeamBullpenPicture({
               value={available}
               detail="relievers usable now"
               tone="rest"
+              className="xl:col-span-3"
             />
             <TeamPictureMetric
               label="On Watch"
               value={monitor}
               detail="relievers to monitor"
               tone="watch"
+              className="xl:col-span-3"
             />
             <TeamPictureMetric
               label="Needing Rest"
               value={needingRest}
               detail="limited, avoid, or unavailable"
               tone="stress"
+              className="xl:col-span-3"
             />
 
-            <TeamPictureSlot label="Bullpen Health" tone={stress.state === 'constrained' || stress.state === 'elevated' ? 'stress' : 'rest'}>
+            <TeamPictureSlot label="Bullpen Health" tone={stress.state === 'constrained' || stress.state === 'elevated' ? 'stress' : 'rest'} className="xl:col-span-4">
               <p className="font-display text-2xl leading-none tracking-wide text-chalk100">
                 {stress.label || 'No Read'}
               </p>
@@ -641,7 +661,7 @@ function TonightsTeamBullpenPicture({
               </p>
             </TeamPictureSlot>
 
-            <TeamPictureSlot label="Why It Matters" tone="rest" className="xl:col-span-3">
+            <TeamPictureSlot label="Why It Matters" tone="rest" className="xl:col-span-8">
               <p className="text-sm leading-relaxed text-chalk100">
                 {selectedChange?.context || selectedChange?.summary || stress.summary || `${teamLabel} has a team bullpen board ready for tonight.`}
               </p>
@@ -649,7 +669,7 @@ function TonightsTeamBullpenPicture({
           </div>
         )}
 
-        <div className="mt-4">
+        <div className="mt-4 border-t border-dirt/70 pt-4">
           <Link
             to={boardHref}
             className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
@@ -668,8 +688,9 @@ function TeamPictureSlot({ label, tone = 'rest', className = '', children }) {
     : tone === 'watch'
       ? 'text-yellow-300'
       : 'text-emerald-300'
+  const spanClass = className.includes('xl:col-span-') ? '' : 'xl:col-span-3'
   return (
-    <div className={`min-w-0 border border-dirt/80 bg-field/50 p-3 ${className}`}>
+    <div className={`min-w-0 border border-dirt/80 bg-field/50 p-4 ${spanClass} ${className}`}>
       <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
         {label}
       </div>
@@ -678,9 +699,9 @@ function TeamPictureSlot({ label, tone = 'rest', className = '', children }) {
   )
 }
 
-function TeamPictureMetric({ label, value, detail, tone }) {
+function TeamPictureMetric({ label, value, detail, tone, className = '' }) {
   return (
-    <TeamPictureSlot label={label} tone={tone}>
+    <TeamPictureSlot label={label} tone={tone} className={className}>
       <p className="font-display text-4xl leading-none tracking-wide text-chalk100">
         {Number.isFinite(value) ? value : '-'}
       </p>
@@ -701,9 +722,13 @@ function ComparisonWindow({ comparison }) {
 }
 
 function SelectedChangePanel({ item, team, comparison }) {
+  const delta = restedCountDelta(item)
+  const changeTone = delta < 0 ? 'text-red-300' : delta > 0 ? 'text-emerald-300' : 'text-chalk300'
+  const changeWord = delta < 0 ? 'fewer' : delta > 0 ? 'more' : 'changed'
+
   return (
-    <div className="mt-4">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div>
+      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
         {item.teamAbbr && (
           <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
             {item.teamAbbr}
@@ -718,23 +743,49 @@ function SelectedChangePanel({ item, team, comparison }) {
         <ComparisonWindow comparison={comparison} />
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[0.8fr_0.8fr_1.3fr_1.3fr]">
-        <RestedCountSlot label="Yesterday" count={item.yesterdayRestedCount} tone="rest" />
-        <RestedCountSlot label="Today" count={item.todayRestedCount} tone="watch" />
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_1.15fr_1.25fr]">
+        <div className="min-w-0 border border-dirt/80 bg-field/60 p-3 sm:p-4">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" />
+            <div className="h-full border-l border-dirt/80" aria-hidden="true" />
+            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" />
+          </div>
+          <div className="mt-4 border-t border-dirt/70 pt-4">
+            <div className="flex items-baseline gap-2">
+              <span className={`font-display text-4xl leading-none tracking-wide ${changeTone}`}>
+                {Number.isFinite(delta) ? Math.abs(delta) : '-'}
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                {Number.isFinite(delta) ? `${changeWord} rested relievers` : 'rested reliever change'}
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm leading-relaxed text-chalk300">
+              {item.summary || restedCountLine(item)}
+            </p>
+          </div>
+        </div>
+
         <WorkloadAddedSlot workload={item.workloadAdded} />
         <WhyItMattersSlot value={item.context || item.summary || item.headline} />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-dirt/70 pt-3">
         <Link
           to={item.href || team?.href || '/bullpen?view=board'}
-          className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+          className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
         >
           Open Team Board -&gt;
         </Link>
       </div>
     </div>
   )
+}
+
+function restedCountDelta(item) {
+  const today = item?.todayRestedCount
+  const yesterday = item?.yesterdayRestedCount
+  if (!Number.isFinite(today) || !Number.isFinite(yesterday)) return null
+  return today - yesterday
 }
 
 function restedRelieverLabel(count) {
@@ -758,10 +809,10 @@ function workloadAddedLine(item) {
   return `${count} ${count === 1 ? 'pitcher' : 'pitchers'} added meaningful workload yesterday`
 }
 
-function RestedCountSlot({ label, count, tone = 'rest' }) {
+function RestedCountInline({ label, count, tone = 'rest' }) {
   const toneClass = tone === 'watch' ? 'text-violet-300' : 'text-emerald-300'
   return (
-    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+    <div className="min-w-0">
       <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
         {label}
       </div>
@@ -776,7 +827,7 @@ function RestedCountSlot({ label, count, tone = 'rest' }) {
 function WorkloadAddedSlot({ workload = [] }) {
   const rows = Array.isArray(workload) ? workload : []
   return (
-    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+    <div className="min-w-0 border border-dirt/80 bg-field/50 p-3 sm:p-4">
       <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
         Workload Added Yesterday
       </div>
@@ -802,11 +853,11 @@ function WorkloadAddedSlot({ workload = [] }) {
 
 function WhyItMattersSlot({ value }) {
   return (
-    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+    <div className="min-w-0 border border-dirt/80 bg-field/50 p-3 sm:p-4">
       <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
         Why It Matters
       </div>
-      <p className="mt-3 break-words text-sm leading-relaxed text-chalk100">
+      <p className="mt-3 break-words text-base leading-relaxed text-chalk100">
         {value}
       </p>
     </div>
