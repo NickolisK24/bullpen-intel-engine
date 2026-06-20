@@ -1,27 +1,15 @@
-import { useCallback, useState } from 'react'
-import {
-  clearFollowedTeamPreference,
-  readFollowedTeamPreference,
-  saveFollowedTeamPreference,
-} from '../utils/followedTeamPreference'
+import { usePreferredTeamPreference } from './usePreferredTeamPreference'
 
-export function useFollowedTeamPreference() {
-  const [followedTeam, setFollowedTeamState] = useState(() => readFollowedTeamPreference())
-
-  const setFollowedTeam = useCallback((team) => {
-    const saved = saveFollowedTeamPreference(team)
-    setFollowedTeamState(saved)
-    return saved
-  }, [])
-
-  const clearFollowedTeam = useCallback(() => {
-    clearFollowedTeamPreference()
-    setFollowedTeamState(null)
-  }, [])
+export function useFollowedTeamPreference(teams = []) {
+  const {
+    preferredTeam,
+    setPreferredTeam,
+    clearPreferredTeam,
+  } = usePreferredTeamPreference(teams)
 
   return {
-    followedTeam,
-    setFollowedTeam,
-    clearFollowedTeam,
+    followedTeam: preferredTeam,
+    setFollowedTeam: setPreferredTeam,
+    clearFollowedTeam: clearPreferredTeam,
   }
 }

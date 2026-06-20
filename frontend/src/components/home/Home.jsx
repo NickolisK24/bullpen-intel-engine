@@ -1,10 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getBullpenDashboard, getTeams } from '../../utils/api'
+import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
+import { getBullpenDashboard, getTeamBullpenBoard, getTeams } from '../../utils/api'
+import {
+  buildPreferredTeamHref,
+  preferredTeamLabel,
+  preferredTeamSelectionValue,
+  preferredTeamShortLabel,
+  readPreferredTeamPreference,
+  savePreferredTeamSelectionValue,
+} from '../../utils/preferredTeam'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
+import {
+  getBoardContextView,
+  getBullpenStressView,
+} from '../bullpen/board/tonightsBullpenBoardView'
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import {
   getHeroStory,
@@ -22,13 +35,36 @@ import {
 export default function Home() {
   const dash = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
+  const teamList = teams.data || []
+  const {
+    preferredTeam,
+    promptDismissed,
+    setPreferredTeam,
+    dismissPrompt,
+  } = usePreferredTeamPreference(teamList)
+  const preferredTeamId = preferredTeam?.team_id ?? null
+  const preferredBoard = useFetch(
+    () => (
+      preferredTeamId == null
+        ? Promise.resolve(null)
+        : getTeamBullpenBoard(preferredTeamId)
+    ),
+    [preferredTeamId],
+  )
 
   return (
     <HomeView
       dashboard={dash.data}
-      teams={teams.data || []}
+      teams={teamList}
       teamsLoading={teams.loading}
       teamsError={teams.error}
+      preferredTeam={preferredTeam}
+      preferredTeamPromptDismissed={promptDismissed}
+      onSelectPreferredTeam={setPreferredTeam}
+      onDismissPreferredTeamPrompt={dismissPrompt}
+      preferredTeamBoard={preferredBoard.data}
+      preferredTeamBoardLoading={preferredTeamId != null && preferredBoard.loading}
+      preferredTeamBoardError={preferredTeamId != null ? preferredBoard.error : null}
       loading={dash.loading}
       error={dash.error}
       staleWithError={dash.staleWithError}
@@ -42,6 +78,13 @@ export function HomeView({
   teams = [],
   teamsLoading = false,
   teamsError = null,
+  preferredTeam = null,
+  preferredTeamPromptDismissed = true,
+  onSelectPreferredTeam = () => {},
+  onDismissPreferredTeamPrompt = () => {},
+  preferredTeamBoard = null,
+  preferredTeamBoardLoading = false,
+  preferredTeamBoardError = null,
   loading = false,
   error = null,
   staleWithError = false,
@@ -52,6 +95,45 @@ export function HomeView({
   const whatChanged = getWhatChangedSinceYesterday(dashboard)
   const watchItems = getTodayWatchItems(dashboard)
   const leagueContext = getLeagueContext(dashboard)
+  const changeItems = Array.isArray(whatChanged?.items) ? whatChanged.items : []
+  const teamOptions = useMemo(
+    () => buildWhatChangedTeamOptions(teams, changeItems),
+    [teams, changeItems],
+  )
+  const selectedValue = selectedWhatChangedTeamValue(teamOptions, changeItems, preferredTeam)
+  const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
+  const selectedItem = selectedWhatChangedItem(changeItems, selectedTeam)
+  const showFirstVisitPicker = !preferredTeam && !preferredTeamPromptDismissed
+
+  const handleSelectTeam = (team) => {
+    if (team) onSelectPreferredTeam(team)
+  }
+
+  const teamBlock = preferredTeam ? (
+    <PreferredTeamHeader
+      team={preferredTeam}
+      teamOptions={teamOptions}
+      selectedValue={selectedValue}
+      onSelectTeam={handleSelectTeam}
+    />
+  ) : showFirstVisitPicker ? (
+    <FirstVisitTeamPicker
+      teamOptions={teamOptions}
+      teamsLoading={teamsLoading}
+      teamsError={teamsError}
+      onSelectTeam={handleSelectTeam}
+      onDismiss={onDismissPreferredTeamPrompt}
+    />
+  ) : null
+
+  const heroSection = (
+    <section className="mb-8" aria-label="What BaseballOS sees today">
+      <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
+        What BaseballOS Sees Today
+      </div>
+      <HeroStory hero={hero} />
+    </section>
+  )
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">
@@ -70,18 +152,32 @@ export function HomeView({
             />
           )}
 
-          <section className="mb-8" aria-label="What BaseballOS sees today">
-            <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
-              What BaseballOS Sees Today
-            </div>
-            <HeroStory hero={hero} />
-          </section>
+          {teamBlock}
+
+          {!preferredTeam && heroSection}
+
           <WhatChangedSinceYesterday
             changes={whatChanged}
-            teams={teams}
+            teamOptions={teamOptions}
+            selectedValue={selectedValue}
+            selectedTeam={selectedTeam}
+            selectedItem={selectedItem}
             teamsLoading={teamsLoading}
             teamsError={teamsError}
+            onSelectTeam={handleSelectTeam}
           />
+          {preferredTeam && (
+            <>
+              <TonightsTeamBullpenPicture
+                team={preferredTeam}
+                board={preferredTeamBoard}
+                loading={preferredTeamBoardLoading}
+                error={preferredTeamBoardError}
+                selectedChange={selectedItem}
+              />
+              {heroSection}
+            </>
+          )}
           <BullpenStories stories={watchItems} showCta={false} />
           <LeagueContext context={leagueContext} />
         </>
@@ -98,36 +194,12 @@ export function HomeView({
   )
 }
 
-const WHAT_CHANGED_TEAM_STORAGE_KEY = 'baseballos.whatChangedTeam'
-
-function getBrowserStorage() {
-  if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage || null
-  } catch {
-    return null
-  }
+export function readWhatChangedTeamSelection(storage) {
+  return preferredTeamSelectionValue(readPreferredTeamPreference(storage)) || null
 }
 
-export function readWhatChangedTeamSelection(storage = getBrowserStorage()) {
-  if (!storage) return null
-  try {
-    const value = storage.getItem(WHAT_CHANGED_TEAM_STORAGE_KEY)
-    return value && typeof value === 'string' ? value : null
-  } catch {
-    return null
-  }
-}
-
-export function saveWhatChangedTeamSelection(value, storage = getBrowserStorage()) {
-  const clean = typeof value === 'string' ? value.trim() : ''
-  if (!clean || !storage) return false
-  try {
-    storage.setItem(WHAT_CHANGED_TEAM_STORAGE_KEY, clean)
-    return true
-  } catch {
-    return false
-  }
+export function saveWhatChangedTeamSelection(value, storage) {
+  return savePreferredTeamSelectionValue(value, storage)
 }
 
 function cleanTeamText(value) {
@@ -226,6 +298,16 @@ function defaultWhatChangedTeamValue(options, items) {
   return withChange?.value || options[0]?.value || ''
 }
 
+function selectedWhatChangedTeamValue(options, items, preferredTeam) {
+  const preferredValue = preferredTeamSelectionValue(preferredTeam)
+  if (preferredValue && options.some(option => option.value === preferredValue)) {
+    return preferredValue
+  }
+  const preferredOption = options.find(option => changeMatchesTeam(preferredTeam, option))
+  if (preferredOption) return preferredOption.value
+  return defaultWhatChangedTeamValue(options, items)
+}
+
 function selectedWhatChangedTeam(options, value) {
   return options.find(option => option.value === value) || null
 }
@@ -234,26 +316,24 @@ function selectedWhatChangedItem(items, option) {
   return items.find(item => changeMatchesTeam(item, option)) || null
 }
 
-function WhatChangedSinceYesterday({ changes, teams = [], teamsLoading = false, teamsError = null }) {
+function WhatChangedSinceYesterday({
+  changes,
+  teamOptions = [],
+  selectedValue = '',
+  selectedTeam = null,
+  selectedItem = null,
+  teamsLoading = false,
+  teamsError = null,
+  onSelectTeam = () => {},
+}) {
   const items = Array.isArray(changes?.items) ? changes.items : []
-  const teamOptions = useMemo(
-    () => buildWhatChangedTeamOptions(teams, items),
-    [teams, items],
-  )
-  const [storedTeamValue, setStoredTeamValue] = useState(() => readWhatChangedTeamSelection())
-  const fallbackValue = defaultWhatChangedTeamValue(teamOptions, items)
-  const selectedValue = teamOptions.some(option => option.value === storedTeamValue)
-    ? storedTeamValue
-    : fallbackValue
-  const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
-  const selectedItem = selectedWhatChangedItem(items, selectedTeam)
 
   if (!changes?.hasChanges || items.length < 1) return null
 
   const handleTeamChange = (event) => {
     const nextValue = event.target.value
-    setStoredTeamValue(nextValue)
-    saveWhatChangedTeamSelection(nextValue)
+    const nextTeam = selectedWhatChangedTeam(teamOptions, nextValue)
+    if (nextTeam) onSelectTeam(nextTeam)
   }
 
   return (
@@ -320,6 +400,292 @@ function WhatChangedSinceYesterday({ changes, teams = [], teamsLoading = false, 
         )}
       </div>
     </section>
+  )
+}
+
+function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSelectTeam = () => {} }) {
+  const teamLabel = preferredTeamLabel(team)
+  const shortLabel = preferredTeamShortLabel(team)
+  const boardHref = buildPreferredTeamHref(team, 'home-my-team')
+  const canSwitch = teamOptions.length > 0
+  const selectValue = teamOptions.some(option => option.value === selectedValue)
+    ? selectedValue
+    : ''
+
+  const handleChange = (event) => {
+    const option = selectedWhatChangedTeam(teamOptions, event.target.value)
+    if (option) onSelectTeam(option)
+  }
+
+  return (
+    <section className="mb-6" aria-label="My team">
+      <div className="border border-amber/25 bg-dugout p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded border border-amber/30 bg-amber/10 font-display text-2xl tracking-wide text-amber sm:h-16 sm:w-16">
+              {shortLabel.slice(0, 3)}
+            </div>
+            <div className="min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-amber">
+                My Team
+              </div>
+              <h2 className="mt-1 break-words font-display text-3xl leading-none tracking-wide text-chalk100 sm:text-4xl">
+                {teamLabel}
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-chalk300">
+                Your bullpen. Tonight.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:items-end">
+            <label className="flex min-w-[12rem] flex-col gap-1 font-mono text-[11px] uppercase tracking-wider text-chalk500">
+              Change team
+              <select
+                value={selectValue}
+                onChange={handleChange}
+                disabled={!canSwitch}
+                className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Change preferred team"
+              >
+                {!selectValue && <option value="">Choose team</option>}
+                {teamOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.teamName}{option.teamAbbr ? ` (${option.teamAbbr})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link
+              to={boardHref}
+              className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+            >
+              Open Team Board -&gt;
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FirstVisitTeamPicker({
+  teamOptions = [],
+  teamsLoading = false,
+  teamsError = null,
+  onSelectTeam = () => {},
+  onDismiss = () => {},
+}) {
+  const [draftValue, setDraftValue] = useState('')
+  const selectedValue = teamOptions.some(option => option.value === draftValue)
+    ? draftValue
+    : teamOptions[0]?.value || ''
+  const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
+
+  const handleConfirm = () => {
+    if (selectedTeam) onSelectTeam(selectedTeam)
+  }
+
+  return (
+    <section className="mb-6" aria-label="Pick your team">
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+              Pick Your Team
+            </div>
+            <h2 className="mt-1 font-display text-2xl tracking-wide text-chalk100">
+              Make Today open around your bullpen
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-chalk400">
+              Choose one club to make What Changed, the team board, and navigation start from that bullpen.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex min-w-[14rem] flex-col gap-1 font-mono text-[11px] uppercase tracking-wider text-chalk500">
+              Team
+              <select
+                value={selectedValue}
+                onChange={(event) => setDraftValue(event.target.value)}
+                disabled={teamOptions.length === 0}
+                className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Choose preferred team"
+              >
+                {teamOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.teamName}{option.teamAbbr ? ` (${option.teamAbbr})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!selectedTeam}
+              className="rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded border border-dirt px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk400 transition-colors hover:border-chalk400 hover:text-chalk200"
+            >
+              Skip for now
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 font-mono text-[11px] text-chalk500">
+          {teamsLoading && teamOptions.length === 0
+            ? 'Loading teams...'
+            : teamsError
+              ? 'Team list unavailable right now.'
+              : `${teamOptions.length} teams available`}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function boardSnapshotCount(board, status) {
+  const context = getBoardContextView(board)
+  const row = context.snapshot.find(item => item.status === status)
+  return Number(row?.count) || 0
+}
+
+function TonightsTeamBullpenPicture({
+  team,
+  board = null,
+  loading = false,
+  error = null,
+  selectedChange = null,
+}) {
+  if (!team) return null
+
+  const teamLabel = preferredTeamLabel(team)
+  const workload = Array.isArray(selectedChange?.workloadAdded) ? selectedChange.workloadAdded : []
+  const boardHref = buildPreferredTeamHref(team, 'home-tonight-picture')
+  const hasBoard = Boolean(board)
+  const stress = getBullpenStressView(board?.stress)
+  const available = hasBoard ? boardSnapshotCount(board, 'Available') : null
+  const monitor = hasBoard ? boardSnapshotCount(board, 'Monitor') : null
+  const limited = hasBoard ? boardSnapshotCount(board, 'Limited') : 0
+  const avoid = hasBoard ? boardSnapshotCount(board, 'Avoid') : 0
+  const unavailable = hasBoard ? boardSnapshotCount(board, 'Unavailable') : 0
+  const needingRest = limited + avoid + unavailable
+  const inactiveCount = Number(board?.roster_status?.inactive_context_count || 0)
+
+  return (
+    <section className="mb-8" aria-label="Tonight's bullpen picture">
+      <SectionHeading
+        title="Tonight's Bullpen Picture"
+        subtitle={`What ${teamLabel} changed, who worked, and how much room the bullpen has tonight.`}
+      />
+
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
+        {loading ? (
+          <p className="font-mono text-xs text-chalk500">Loading {teamLabel} bullpen picture...</p>
+        ) : error ? (
+          <p className="font-mono text-xs text-chalk500">Team bullpen picture is unavailable right now.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <TeamPictureSlot label="Worked Yesterday" tone="rest">
+              {workload.length > 0 ? (
+                <ul className="space-y-2">
+                  {workload.map(row => (
+                    <li key={`${row.pitcherId || row.name}-${row.pitches}`} className="flex min-w-0 items-baseline justify-between gap-3">
+                      <span className="min-w-0 break-words text-sm text-chalk100">{row.name}</span>
+                      <span className="shrink-0 font-mono text-xs text-chalk300">
+                        {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm leading-relaxed text-chalk300">
+                  No meaningful bullpen workload stands out from yesterday.
+                </p>
+              )}
+            </TeamPictureSlot>
+
+            <TeamPictureMetric
+              label="Available Tonight"
+              value={available}
+              detail="relievers usable now"
+              tone="rest"
+            />
+            <TeamPictureMetric
+              label="On Watch"
+              value={monitor}
+              detail="relievers to monitor"
+              tone="watch"
+            />
+            <TeamPictureMetric
+              label="Needing Rest"
+              value={needingRest}
+              detail="limited, avoid, or unavailable"
+              tone="stress"
+            />
+
+            <TeamPictureSlot label="Bullpen Health" tone={stress.state === 'constrained' || stress.state === 'elevated' ? 'stress' : 'rest'}>
+              <p className="font-display text-2xl leading-none tracking-wide text-chalk100">
+                {stress.label || 'No Read'}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-chalk300">
+                {stress.summary || 'No current bullpen health read is available.'}
+              </p>
+              <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-chalk500">
+                {inactiveCount} roster-status context {inactiveCount === 1 ? 'arm' : 'arms'}
+              </p>
+            </TeamPictureSlot>
+
+            <TeamPictureSlot label="Why It Matters" tone="rest" className="xl:col-span-3">
+              <p className="text-sm leading-relaxed text-chalk100">
+                {selectedChange?.context || selectedChange?.summary || stress.summary || `${teamLabel} has a team bullpen board ready for tonight.`}
+              </p>
+            </TeamPictureSlot>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <Link
+            to={boardHref}
+            className="inline-flex rounded border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+          >
+            See full bullpen depth, roles, and usage -&gt;
+          </Link>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TeamPictureSlot({ label, tone = 'rest', className = '', children }) {
+  const toneClass = tone === 'stress'
+    ? 'text-red-300'
+    : tone === 'watch'
+      ? 'text-yellow-300'
+      : 'text-emerald-300'
+  return (
+    <div className={`min-w-0 border border-dirt/80 bg-field/50 p-3 ${className}`}>
+      <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
+        {label}
+      </div>
+      <div className="mt-3">{children}</div>
+    </div>
+  )
+}
+
+function TeamPictureMetric({ label, value, detail, tone }) {
+  return (
+    <TeamPictureSlot label={label} tone={tone}>
+      <p className="font-display text-4xl leading-none tracking-wide text-chalk100">
+        {Number.isFinite(value) ? value : '-'}
+      </p>
+      <p className="mt-1 text-sm leading-relaxed text-chalk300">{detail}</p>
+    </TeamPictureSlot>
   )
 }
 

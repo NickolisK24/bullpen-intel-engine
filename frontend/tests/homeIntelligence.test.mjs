@@ -4,6 +4,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
+import { makeBoard } from './fixtures/bullpenBoardFixtures.mjs'
 
 const server = await createServer({
   root: process.cwd(),
@@ -1004,6 +1005,70 @@ test('what changed since yesterday renders between the flagship and watch list',
   assert.ok(!htmlIncludes(html, 'Top-ranked change'))
   assert.ok(!htmlIncludes(html, '#1 biggest mover'))
   assert.ok(!htmlIncludes(html, '>01<'))
+})
+
+test('preferred team makes Today team-first before league context', () => {
+  const preferredTeam = { team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR' }
+  const board = makeBoard({
+    team: preferredTeam,
+    cardsByStatus: {
+      Available: [
+        { pitcher_id: 1, name: 'Fresh Arm One', availability_status: 'Available' },
+        { pitcher_id: 2, name: 'Fresh Arm Two', availability_status: 'Available' },
+        { pitcher_id: 3, name: 'Fresh Arm Three', availability_status: 'Available' },
+        { pitcher_id: 4, name: 'Fresh Arm Four', availability_status: 'Available' },
+      ],
+      Monitor: [
+        { pitcher_id: 5, name: 'Watch Arm One', availability_status: 'Monitor' },
+        { pitcher_id: 6, name: 'Watch Arm Two', availability_status: 'Monitor' },
+      ],
+      Limited: [
+        { pitcher_id: 7, name: 'Limited Arm', availability_status: 'Limited' },
+      ],
+    },
+  })
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithHomepageChanges(),
+    teams: mlbTeams,
+    preferredTeam,
+    preferredTeamBoard: board,
+  }))
+
+  const myTeamIndex = html.indexOf('My Team')
+  const changedIndex = html.indexOf('What Changed Since Yesterday')
+  const pictureIndex = html.indexOf('Tonight&#x27;s Bullpen Picture')
+  const flagshipIndex = html.indexOf('What BaseballOS Sees Today')
+  const watchIndex = html.indexOf('Three Things To Watch')
+
+  assert.ok(myTeamIndex >= 0, 'preferred team header should render')
+  assert.ok(changedIndex > myTeamIndex, 'What Changed should follow preferred team header')
+  assert.ok(pictureIndex > changedIndex, 'bullpen picture should follow What Changed')
+  assert.ok(flagshipIndex > pictureIndex, 'league flagship should become secondary')
+  assert.ok(watchIndex > flagshipIndex, 'watch list should still render after flagship')
+  assert.ok(htmlIncludes(html, 'Your bullpen. Tonight.'))
+  assert.ok(htmlIncludes(html, 'Spencer Miles'))
+  assert.ok(htmlIncludes(html, 'Available Tonight'))
+  assert.ok(htmlIncludes(html, 'relievers usable now'))
+  assert.ok(htmlIncludes(html, 'Open Team Board'))
+  assert.ok(htmlIncludes(html, 'See full bullpen depth, roles, and usage'))
+})
+
+test('first visit team picker is lightweight and dismissible', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardWithHomepageChanges(),
+    teams: mlbTeams,
+    preferredTeamPromptDismissed: false,
+  }))
+
+  const pickerIndex = html.indexOf('Pick Your Team')
+  const flagshipIndex = html.indexOf('What BaseballOS Sees Today')
+
+  assert.ok(pickerIndex >= 0)
+  assert.ok(flagshipIndex > pickerIndex)
+  assert.ok(htmlIncludes(html, 'Make Today open around your bullpen'))
+  assert.ok(htmlIncludes(html, 'Confirm'))
+  assert.ok(htmlIncludes(html, 'Skip for now'))
+  assert.ok(htmlIncludes(html, '30 teams available'))
 })
 
 test('today league context talks baseball and keeps the vocabulary on the fact labels', () => {

@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import FeedbackLink from './feedback/FeedbackLink'
+import { usePreferredTeamPreference } from '../hooks/usePreferredTeamPreference'
+import {
+  buildPreferredTeamHref,
+  preferredTeamLabel,
+  preferredTeamShortLabel,
+} from '../utils/preferredTeam'
 
 const NAV = [
   { to: '/',            icon: '☀',  label: 'Today'       },
@@ -15,6 +21,8 @@ export default function Sidebar() {
   // Mobile-only collapsible nav. On lg+ the nav is always shown and this
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
+  const { preferredTeam } = usePreferredTeamPreference()
+  const preferredHref = buildPreferredTeamHref(preferredTeam, 'nav-my-team')
 
   return (
     <aside className="w-full lg:w-56 lg:shrink-0 bg-dugout border-b border-dirt lg:border-b-0 lg:border-r flex flex-col lg:min-h-screen lg:sticky lg:top-0">
@@ -60,6 +68,25 @@ export default function Sidebar() {
             )}
           </NavLink>
         ))}
+        {preferredTeam && (
+          <NavLink
+            to={preferredHref}
+            onClick={() => setOpen(false)}
+            className="mt-3 rounded-lg border border-amber/25 bg-amber/5 px-3 py-3 text-left transition-colors hover:border-amber/40 hover:bg-amber/10"
+          >
+            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
+              Following
+            </div>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-amber/30 bg-field font-display text-sm tracking-wide text-amber">
+                {preferredTeamShortLabel(preferredTeam).slice(0, 3)}
+              </span>
+              <span className="min-w-0 truncate text-sm font-semibold text-chalk100">
+                {preferredTeamLabel(preferredTeam)}
+              </span>
+            </div>
+          </NavLink>
+        )}
         <FeedbackLink
           className="nav-item"
           onClick={() => setOpen(false)}
