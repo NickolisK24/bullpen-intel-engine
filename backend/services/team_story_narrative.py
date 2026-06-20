@@ -1147,17 +1147,7 @@ def _middle_sentences(facts: dict[str, Any], archetype: str) -> list[str | None]
 
 
 def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
-    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_BODY:
-        return None
-    options: list[_SentenceBuilder] = [
-        lambda f: "The bullpen workload tells the clearest part of the story here.",
-        lambda f: f"For {_article_team(f)}, the recent innings tell the clearest part.",
-        lambda f: "The recent innings are the cleanest part of the read.",
-        lambda f: "What happened on the mound gives the firmest part of the read.",
-        lambda f: "Recent innings give the clearest clue here.",
-        lambda f: "The innings tell the story better than the roster edges.",
-    ]
-    return _sentence(_choose(facts, 'disclosure:narrative', options))
+    return None
 
 
 def _ending_sentence(facts: dict[str, Any], archetype: str) -> str | None:
@@ -1357,19 +1347,9 @@ def _paragraph(sentences: list[str | None]) -> str | None:
 
 
 def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
-    """Render a short public disclosure note without changing canonical facts."""
+    """Return no public footer sentence for rendered stories."""
 
-    voice = facts.get('observation_voice') or {}
-    voice_applied = isinstance(voice, dict) and bool(voice.get('applied'))
-    if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_FOOTER and not voice_applied:
-        return None
-    options: list[_SentenceBuilder] = [
-        lambda f: "Incomplete roster context keeps this read tied to usage and names.",
-        lambda f: "The source limit keeps the conclusion on usage and availability.",
-        lambda f: "This stops at usage and availability because roster context is incomplete.",
-        lambda f: "The roster gap keeps the story on recent usage and named arms.",
-    ]
-    return _sentence(_choose(facts, 'disclosure:note', options))
+    return None
 
 
 def _observation_voice_paragraphs(facts: dict[str, Any]) -> list[str] | None:

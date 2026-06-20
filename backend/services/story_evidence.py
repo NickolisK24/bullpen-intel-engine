@@ -42,6 +42,35 @@ PUBLIC_SCHEMA_LANGUAGE_DENYLIST = tuple(sorted(set(INTERNAL_PUBLIC_UNSAFE_TERMS 
     'trust hierarchy',
 ))))
 
+INTERNAL_PROCESS_LANGUAGE_DENYLIST = (
+    'source limit',
+    'source limits',
+    'source limitation',
+    'source limitations',
+    'model confidence',
+    'confidence mechanics',
+    'confidence state',
+    'validation state',
+    'available evidence',
+    'available information',
+    'current data limitation',
+    'data acquisition',
+    'data limitation',
+    'narrative construction',
+    'narrative scope',
+    'observation generation',
+    'observation scope',
+    'signal strength',
+    'methodology',
+    'internal reasoning',
+    'roster context',
+    'this read is tied',
+    'this read stays',
+    'read tied',
+    'read stays',
+    'stops at usage',
+)
+
 CONSEQUENCE_MARKERS = (
     'heavier workload concentration',
     'narrower',
@@ -170,6 +199,11 @@ def _closing_language_hits(text: str) -> list[str]:
     return [phrase for phrase in THROAT_CLEARING_CLOSERS if phrase in lower]
 
 
+def _internal_process_language_hits(text: str) -> list[str]:
+    lower = _normalize_text(text)
+    return [phrase for phrase in INTERNAL_PROCESS_LANGUAGE_DENYLIST if phrase in lower]
+
+
 def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     """Validate that a story carries evidence, names, consequence, and clean language."""
 
@@ -178,6 +212,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     generic_hits = _generic_language_hits(text)
     schema_hits = _schema_language_hits(text)
     closing_hits = _closing_language_hits(text)
+    process_hits = _internal_process_language_hits(text)
     voice = _story_voice(story)
     voice_validation = validate_observation_voice(voice) if voice else None
     if voice_validation:
@@ -190,6 +225,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'selected_observation_referenced': _references_selected_observation(text, story),
         'generic_language_absent': not generic_hits,
         'public_schema_language_absent': not schema_hits,
+        'internal_process_language_absent': not process_hits,
         'closing_language_informational': not closing_hits,
         'phrase_diversity': True,
     }
@@ -208,6 +244,7 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'fail_reasons': fail_reasons,
         'generic_language_hits': generic_hits,
         'schema_language_hits': schema_hits,
+        'internal_process_language_hits': process_hits,
         'closing_language_hits': closing_hits,
         'pitcher_names': names,
         'evidence_statement': evidence.get('evidence_statement'),
@@ -340,6 +377,7 @@ __all__ = [
     'VERSION',
     'CONSEQUENCE_MARKERS',
     'GENERIC_LANGUAGE_DENYLIST',
+    'INTERNAL_PROCESS_LANGUAGE_DENYLIST',
     'PUBLIC_SCHEMA_LANGUAGE_DENYLIST',
     'apply_story_evidence_framework',
     'story_public_text',

@@ -36,6 +36,7 @@ from services.four_beat_stories import (
 )
 from services.story_evidence import (
     GENERIC_LANGUAGE_DENYLIST,
+    INTERNAL_PROCESS_LANGUAGE_DENYLIST,
     PUBLIC_SCHEMA_LANGUAGE_DENYLIST,
     apply_story_evidence_framework,
     story_public_text,
@@ -143,6 +144,19 @@ BANNED_CAVEAT_PHRASES = (
     'roster detail is limited',
     'the caveat is simple',
     'this stays tied to usage',
+    'source limit',
+    'source limitation',
+    'roster context',
+    'available evidence',
+    'available information',
+    'narrative scope',
+    'observation scope',
+    'signal strength',
+    'validation state',
+    'confidence state',
+    'this read is tied',
+    'this read stays',
+    'stops at usage',
 )
 
 ENVIRONMENT_INTRO_MARKERS = (
@@ -161,6 +175,25 @@ DISCLOSURE_BODY_MARKERS = (
     'roster edges',
     'on the mound',
     'cleanest part of the picture',
+)
+
+INTERNAL_PROCESS_PUBLIC_MARKERS = (
+    'source limit',
+    'source limitation',
+    'roster context',
+    'model confidence',
+    'available evidence',
+    'available information',
+    'current data limitation',
+    'narrative scope',
+    'observation scope',
+    'signal strength',
+    'validation state',
+    'confidence state',
+    'methodology',
+    'this read is tied',
+    'this read stays',
+    'stops at usage',
 )
 
 
@@ -932,14 +965,11 @@ def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract
     assert facts['watch_question']
     assert facts['confidence'] == 'limited'
     assert facts['disclosure'] == DISCLOSURE_LIMITED_BULLPEN_PICTURE
-    disclosure_note = render_story_disclosure_note(facts)
-    if disclosure_note:
-        assert story['disclosure_note'] == disclosure_note
-    else:
-        assert 'disclosure_note' not in story
-    assert _narrative_has_disclosure_caveat(narrative) or disclosure_note
-    assert not (_narrative_has_disclosure_caveat(narrative) and disclosure_note)
+    assert render_story_disclosure_note(facts) is None
+    assert 'disclosure_note' not in story
+    assert _narrative_has_disclosure_caveat(narrative) is False
     assert narrative.count('\n\n') == 2
+    assert narrative.split('\n\n')[-1] == story['story_voice']['consequence_sentence']
     assert story['team_name'] in narrative
     assert facts['primary_observation'] not in narrative
     assert facts['watch_question'] not in narrative
@@ -1400,7 +1430,7 @@ def _sample_story_facts(
     }
 
 
-def test_renderer_varies_repeated_disclosure_language_deterministically():
+def test_renderer_omits_internal_disclosure_language_deterministically():
     teams = [
         (108, 'Los Angeles Angels', 'LAA'),
         (109, 'Arizona Diamondbacks', 'ARI'),
@@ -1415,27 +1445,22 @@ def test_renderer_varies_repeated_disclosure_language_deterministically():
 
     first = [render_story_narrative(item) for item in facts]
     second = [render_story_narrative(item) for item in facts]
-    disclosure_sentences = [
-        narrative.split('\n\n')[-1].split('. ')[0]
-        for narrative in first
-        if _narrative_has_disclosure_caveat(narrative)
-    ]
     notes = [render_story_disclosure_note(item) for item in facts]
-    present_notes = [note for note in notes if note]
 
     assert first == second
     assert notes == [render_story_disclosure_note(item) for item in facts]
-    assert len(set(disclosure_sentences)) >= 2
-    assert len(set(present_notes)) >= 2
-    assert any(note is None for note in notes)
+    assert notes == [None] * len(facts)
     for narrative, note in zip(first, notes):
+        lower = narrative.lower()
         assert DISCLOSURE_LIMITED_BULLPEN_PICTURE not in narrative
         assert narrative_contains_forbidden_language(narrative) is False
-        assert _narrative_has_disclosure_caveat(narrative) or note
-        assert not (_narrative_has_disclosure_caveat(narrative) and note)
+        assert note is None
+        assert _narrative_has_disclosure_caveat(narrative) is False
+        for marker in INTERNAL_PROCESS_PUBLIC_MARKERS:
+            assert marker not in lower
 
 
-def test_renderer_disclosure_stays_present_without_repeating_footer_language():
+def test_renderer_prefers_strong_endings_over_footer_meta_commentary():
     facts = [
         _sample_story_facts(team_id, team_name, abbr)
         for team_id, team_name, abbr in [
@@ -1451,20 +1476,17 @@ def test_renderer_disclosure_stays_present_without_repeating_footer_language():
         narrative = render_story_narrative(item)
         note = render_story_disclosure_note(item)
         closing = narrative.split('\n\n')[-1]
-        combined = f'{narrative} {note}'.lower()
-        has_body_caveat = _narrative_has_disclosure_caveat(narrative)
+        combined = narrative.lower()
 
-        assert has_body_caveat or note
-        assert not (has_body_caveat and note)
-        if note:
-            assert note not in narrative
-            assert len(note) <= 72
-        else:
-            assert any(marker in closing.lower() for marker in DISCLOSURE_BODY_MARKERS)
+        assert note is None
+        assert _narrative_has_disclosure_caveat(narrative) is False
+        assert closing
         for phrase in AWKWARD_RENDERER_PHRASES:
             assert phrase not in combined
         for phrase in BANNED_CAVEAT_PHRASES:
             assert phrase not in combined
+        for marker in INTERNAL_PROCESS_PUBLIC_MARKERS:
+            assert marker not in combined
 
 
 def test_renderer_uses_mixed_ending_families_across_sample_set():
@@ -2331,6 +2353,37 @@ def test_story_evidence_rejects_schema_language_and_throat_clearing_closers():
     assert 'active capacity' in PUBLIC_SCHEMA_LANGUAGE_DENYLIST
 
 
+def test_story_evidence_rejects_public_internal_process_language():
+    story = {
+        'story_id': 'process:story',
+        'team_id': 908,
+        'team_name': 'Process Club',
+        'team_abbreviation': 'PRC',
+        'title': 'Process Club needs more than the same relief pocket.',
+        'body': '',
+        'narrative': (
+            'Process Arm has handled 70% of Process Club recent relief pitches.\n\n'
+            'That leaves less coverage margin if Process Club needs another clean inning.\n\n'
+            'The source limit keeps the conclusion on usage and availability.'
+        ),
+        'story_evidence': {
+            'pitcher_names': ['Process Arm'],
+            'evidence_statement': 'Process Arm has handled 70% of Process Club recent relief pitches.',
+            'consequence_category': 'less_coverage_margin',
+            'consequence_statement': (
+                'That leaves less coverage margin if Process Club needs another clean inning.'
+            ),
+        },
+    }
+
+    validation = validate_story_evidence(story)
+
+    assert validation['passed'] is False
+    assert 'internal_process_language_absent' in validation['fail_reasons']
+    assert validation['internal_process_language_hits'] == ['source limit']
+    assert 'source limit' in INTERNAL_PROCESS_LANGUAGE_DENYLIST
+
+
 def test_repeated_observation_voice_frames_are_suppressed_across_teams():
     def story(team_id, team_name, abbr, pitcher_name, pct):
         frame = 'The bullpen is not really spreading bullpen work right now; it is leaning on two arms.'
@@ -2401,7 +2454,8 @@ def test_observation_voice_narrative_does_not_expose_internal_labels():
     )
 
     feed = build_four_beat_story_feed(records, logs, reference_date=REF)
-    public_text = story_public_text(feed['items'][0]).lower()
+    story = feed['items'][0]
+    public_text = story_public_text(story).lower()
 
     for internal_label in (
         'observation_voice_layer_v1',
@@ -2421,6 +2475,10 @@ def test_observation_voice_narrative_does_not_expose_internal_labels():
         'trust hierarchy',
     ):
         assert internal_label not in public_text
+    for marker in INTERNAL_PROCESS_PUBLIC_MARKERS:
+        assert marker not in public_text
+    assert 'disclosure_note' not in story
+    assert story['story_evidence_framework']['checks']['internal_process_language_absent'] is True
     assert pitchers
 
 
