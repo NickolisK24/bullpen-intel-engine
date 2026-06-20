@@ -468,6 +468,35 @@ function normalizePublicFact(item) {
   return { label, yesterday, today }
 }
 
+function normalizeRestedCount(value) {
+  if (value == null || value === '') return null
+  const count = Number(value)
+  return Number.isFinite(count) ? count : null
+}
+
+function normalizeWorkloadAdded(item) {
+  const rows = item?.workload_added || item?.workloadAdded
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map(row => {
+      const name = cleanStoryText(row?.name || row?.pitcher_name || row?.pitcherName)
+      const pitches = Number(row?.pitches)
+      if (!name || !Number.isFinite(pitches)) return null
+      return {
+        pitcherId: row?.pitcher_id ?? row?.pitcherId ?? null,
+        name,
+        pitches,
+        innings: row?.innings ?? null,
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => (
+      right.pitches - left.pitches
+      || left.name.localeCompare(right.name)
+    ))
+    .slice(0, 3)
+}
+
 const WHAT_CHANGED_PUBLIC_CAPABILITY = 'what_changed_since_yesterday_public_v1'
 const WHAT_CHANGED_PUBLIC_LIMIT = 6
 const WHAT_CHANGED_PUBLIC_MAX = 30
@@ -492,6 +521,9 @@ function normalizeHomepageChange(item, index) {
     headline,
     summary,
     context,
+    yesterdayRestedCount: normalizeRestedCount(item?.yesterday_rested_count ?? item?.yesterdayRestedCount),
+    todayRestedCount: normalizeRestedCount(item?.today_rested_count ?? item?.todayRestedCount),
+    workloadAdded: normalizeWorkloadAdded(item),
     fact: normalizePublicFact(item),
     href: buildHomeTeamHref({
       team_id: teamId,

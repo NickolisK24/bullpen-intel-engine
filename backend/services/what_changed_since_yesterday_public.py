@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from services.bullpen_identity import IDENTITY_LABELS
-from services.consequence_intelligence import (
-    STATUS_AVAILABLE as CONSEQUENCE_STATUS_AVAILABLE,
-    build_consequence_intelligence_payload,
-)
 from services.what_changed_since_yesterday import (
     STATUS_AVAILABLE,
     build_what_changed_since_yesterday_payload,
@@ -23,76 +17,7 @@ from services.what_changed_since_yesterday_copy import (
 
 CAPABILITY = 'what_changed_since_yesterday_public_v1'
 DEFAULT_PUBLIC_ITEM_LIMIT = 6
-PUBLIC_FACT_LABELS = {
-    'rested_options': 'Rested options',
-    'usable_depth': 'Usable bullpen depth',
-    'resource_health_state': 'Resource picture',
-    'coverage_safety': 'Coverage',
-    'trusted_group_size': 'Trusted group',
-    'identity_key': 'Bullpen shape',
-}
-
-CONSEQUENCE_CONFIDENCE_ALLOWED = {'medium', 'high'}
-CONSEQUENCE_SIGNIFICANCE_ALLOWED = {'meaningful', 'structural'}
-CONSEQUENCE_CONTEXT_MAX_WORDS = 26
-
-RECOMMENDATION_PATTERNS = (
-    'recommend',
-    'recommendation',
-    'should use',
-    'should pitch',
-    'must use',
-    'manager should',
-)
-PREDICTION_PATTERNS = (
-    'predict',
-    'prediction',
-    'projected',
-    'expected to',
-    'likely to',
-    'forecast',
-)
-RANKING_PATTERNS = (
-    'ranking',
-    'ranked',
-    'best reliever',
-    'best bullpen',
-    'worst bullpen',
-    'top-ranked',
-)
-BETTING_PATTERNS = (
-    'bet',
-    'betting',
-    'odds',
-    'wager',
-)
-PROBABILITY_PATTERNS = (
-    'probability',
-    'probable',
-    'percent chance',
-    'chance to',
-    'likelihood',
-)
-RELIEVER_SELECTION_PATTERNS = (
-    'should use',
-    'must use',
-    'manager should',
-    'which reliever',
-    'specific reliever',
-    'use the closer',
-)
-RAW_SCORE_PATTERNS = (
-    'raw_score',
-    'raw score',
-    'score:',
-    'score =',
-)
-CONSEQUENCE_FLAG_FIELDS = (
-    'review_flags',
-    'reviewFlags',
-    'governance_flags',
-    'governanceFlags',
-)
+PUBLIC_WORKLOAD_ADDED_LIMIT = 3
 
 
 def _public_top_change(changes: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -126,26 +51,6 @@ def _team_lookup_key(team_change: dict[str, Any] | None) -> str | None:
     return str(abbr).lower() if abbr else None
 
 
-def _teams_by_key(payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
-    if not isinstance(payload, dict):
-        return {}
-    by_team = payload.get('by_team_id')
-    if isinstance(by_team, dict):
-        return {
-            str(key): value
-            for key, value in by_team.items()
-            if isinstance(value, dict)
-        }
-    teams = payload.get('teams')
-    if isinstance(teams, list):
-        return {
-            str(_team_lookup_key(team)): team
-            for team in teams
-            if isinstance(team, dict) and _team_lookup_key(team) is not None
-        }
-    return {}
-
-
 def _facts(item: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(item, dict):
         return []
@@ -157,173 +62,148 @@ def _facts(item: dict[str, Any] | None) -> list[dict[str, Any]]:
     ]
 
 
-def _plural_count(value: Any, singular: str, plural: str | None = None) -> str | None:
+def _int_value(value: Any) -> int | None:
     try:
-        count = int(value)
+        return int(value)
     except (TypeError, ValueError):
         return None
-    noun = singular if count == 1 else (plural or f'{singular}s')
-    return f'{count} {noun}'
 
 
-def _title_value(value: Any) -> str | None:
-    text = str(value or '').replace('_', ' ').replace('-', ' ').strip()
-    return text.title() if text else None
+def _rested_counts(
+    team_change: dict[str, Any],
+    top_change: dict[str, Any],
+) -> dict[str, int | None]:
+    counts = team_change.get('rested_counts')
+    counts = counts if isinstance(counts, dict) else {}
+    yesterday = _int_value(counts.get('yesterday_rested_count'))
+    today = _int_value(counts.get('today_rested_count'))
+    if yesterday is not None and today is not None:
+        return {
+            'yesterday_rested_count': yesterday,
+            'today_rested_count': today,
+        }
 
-
-def _coverage_value(value: Any) -> str | None:
-    text = str(value or '').replace('Coverage Safety', '').strip()
-    return f'{text.title()} coverage' if text else None
-
-
-def _display_fact_value(fact_key: str, value: Any) -> str | None:
-    if fact_key == 'rested_options':
-        return _plural_count(value, 'rested option')
-    if fact_key == 'usable_depth':
-        return _plural_count(value, 'usable reliever')
-    if fact_key == 'trusted_group_size':
-        return _plural_count(value, 'trusted arm')
-    if fact_key == 'coverage_safety':
-        return _coverage_value(value)
-    if fact_key == 'resource_health_state':
-        text = _title_value(value)
-        return f'{text} resource picture' if text else None
-    if fact_key == 'identity_key':
-        return 'new bullpen shape'
-    return _title_value(value)
-
-
-def _public_fact(change: dict[str, Any]) -> dict[str, str] | None:
-    facts = _facts(change)
-    if not facts:
-        return None
-    fact = facts[0]
-    fact_key = str(fact.get('fact_key') or '').strip()
-    label = PUBLIC_FACT_LABELS.get(fact_key)
-    if not label:
-        return None
-    previous = _display_fact_value(fact_key, fact.get('previous_value'))
-    current = _display_fact_value(fact_key, fact.get('current_value'))
-    if not previous or not current:
-        return None
-    if fact_key == 'identity_key':
-        previous = 'prior bullpen shape'
+    for fact in _facts(top_change):
+        if fact.get('fact_key') != 'rested_options':
+            continue
+        return {
+            'yesterday_rested_count': _int_value(fact.get('previous_value')),
+            'today_rested_count': _int_value(fact.get('current_value')),
+        }
     return {
-        'label': label,
-        'yesterday': previous,
-        'today': current,
+        'yesterday_rested_count': yesterday,
+        'today_rested_count': today,
     }
 
 
-def _fact_matches(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    return (
-        left.get('fact_key') == right.get('fact_key')
-        and left.get('previous_value') == right.get('previous_value')
-        and left.get('current_value') == right.get('current_value')
-    )
+def _workload_by_team(payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    workload = payload.get('what_changed_workload') if isinstance(payload, dict) else {}
+    by_team = workload.get('by_team_id') if isinstance(workload, dict) else {}
+    return {
+        str(key): value
+        for key, value in (by_team if isinstance(by_team, dict) else {}).items()
+        if isinstance(value, dict)
+    }
 
 
-def _consequence_matches_change(
-    consequence: dict[str, Any],
-    change: dict[str, Any],
-) -> bool:
-    consequence_facts = _facts(consequence)
-    change_facts = _facts(change)
-    if not consequence_facts or not change_facts:
-        return False
-    return any(
-        _fact_matches(consequence_fact, change_fact)
-        for consequence_fact in consequence_facts
-        for change_fact in change_facts
-    )
+def _public_workload_added(workload_team: dict[str, Any] | None) -> list[dict[str, Any]]:
+    rows = []
+    source = (workload_team or {}).get('workload_added')
+    for item in source if isinstance(source, list) else []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or item.get('pitcher_name') or '').strip()
+        pitches = _int_value(item.get('pitches'))
+        if not name or pitches is None:
+            continue
+        row = {
+            'pitcher_id': item.get('pitcher_id'),
+            'name': name,
+            'pitches': pitches,
+        }
+        innings = item.get('innings')
+        if innings is not None:
+            row['innings'] = innings
+        rows.append(row)
+    return sorted(
+        rows,
+        key=lambda row: (-int(row.get('pitches') or 0), str(row.get('name') or '').lower()),
+    )[:PUBLIC_WORKLOAD_ADDED_LIMIT]
 
 
-def _word_count(value: str | None) -> int:
-    return len(str(value or '').split())
+def _rested_label(count: int | None) -> str:
+    if count is None:
+        return 'rested relievers'
+    noun = 'reliever' if count == 1 else 'relievers'
+    return f'{count} rested {noun}'
 
 
-def _contains_pattern(text: str, pattern: str) -> bool:
-    lower = text.lower()
-    if pattern.isalpha():
-        return re.search(rf'\b{re.escape(pattern)}\b', lower) is not None
-    return pattern in lower
+def _public_headline(team_name: str, counts: dict[str, int | None]) -> str:
+    yesterday = counts.get('yesterday_rested_count')
+    today = counts.get('today_rested_count')
+    if yesterday is not None and today is not None:
+        return f'{team_name} bullpen moved from {yesterday} to {today} rested relievers.'
+    return f'{team_name} bullpen movement from yesterday.'
 
 
-def _contains_any(text: str, patterns: tuple[str, ...]) -> bool:
-    return any(_contains_pattern(text, pattern) for pattern in patterns)
+def _public_summary(team_name: str, counts: dict[str, int | None]) -> str:
+    yesterday = counts.get('yesterday_rested_count')
+    today = counts.get('today_rested_count')
+    if yesterday is None or today is None:
+        return f'{team_name} has a bullpen change in the current comparison.'
+    if today < yesterday:
+        lost = yesterday - today
+        noun = 'reliever' if lost == 1 else 'relievers'
+        return f'{team_name} has {lost} fewer rested {noun} than it had yesterday.'
+    if today > yesterday:
+        gained = today - yesterday
+        noun = 'reliever' if gained == 1 else 'relievers'
+        return f'{team_name} has {gained} more rested {noun} than it had yesterday.'
+    return f'{team_name} still has {_rested_label(today)} today.'
 
 
-def _identity_label_leaked(text: str) -> bool:
-    lower = text.lower()
-    labels = {str(label).lower() for label in IDENTITY_LABELS.values()}
-    labels.update(str(key).lower() for key in IDENTITY_LABELS)
-    return any(label and label in lower for label in labels)
-
-
-def _has_review_or_governance_flags(item: dict[str, Any]) -> bool:
-    for field in CONSEQUENCE_FLAG_FIELDS:
-        flags = item.get(field)
-        if isinstance(flags, str) and flags.strip():
-            return True
-        if isinstance(flags, (list, tuple, set)) and len(flags) > 0:
-            return True
-    return False
-
-
-def _safe_consequence_context(
-    consequence_team: dict[str, Any] | None,
-    top_change: dict[str, Any],
-) -> str | None:
-    if not isinstance(consequence_team, dict):
-        return None
-    if consequence_team.get('status') != CONSEQUENCE_STATUS_AVAILABLE:
-        return None
-    if _has_review_or_governance_flags(consequence_team):
-        return None
-    consequences = list(consequence_team.get('consequences') or [])
-    if not consequences:
-        return None
-
-    primary = consequences[0]
-    if not isinstance(primary, dict):
-        return None
-    if _has_review_or_governance_flags(primary):
-        return None
-    if not _consequence_matches_change(primary, top_change):
-        return None
-    if str(primary.get('confidence') or '').lower() not in CONSEQUENCE_CONFIDENCE_ALLOWED:
-        return None
-    if str(primary.get('significance') or '').lower() not in CONSEQUENCE_SIGNIFICANCE_ALLOWED:
-        return None
-
-    context = str(primary.get('consequence_context') or '').strip()
-    if not context or _word_count(context) > CONSEQUENCE_CONTEXT_MAX_WORDS:
-        return None
-
-    if _contains_any(context, RECOMMENDATION_PATTERNS):
-        return None
-    if _contains_any(context, PREDICTION_PATTERNS):
-        return None
-    if _contains_any(context, RANKING_PATTERNS):
-        return None
-    if _contains_any(context, BETTING_PATTERNS):
-        return None
-    if _contains_any(context, PROBABILITY_PATTERNS):
-        return None
-    if _contains_any(context, RELIEVER_SELECTION_PATTERNS):
-        return None
-    if _contains_any(context, RAW_SCORE_PATTERNS):
-        return None
-    if _identity_label_leaked(context):
-        return None
-
-    return context
+def _public_why_it_matters(
+    team_name: str,
+    counts: dict[str, int | None],
+    workload_added: list[dict[str, Any]],
+) -> str:
+    yesterday = counts.get('yesterday_rested_count')
+    today = counts.get('today_rested_count')
+    workload_count = len(workload_added)
+    if workload_count > 0 and yesterday is not None and today is not None:
+        noun = 'reliever' if workload_count == 1 else 'relievers'
+        if today < yesterday:
+            return (
+                f'{workload_count} {noun} carried meaningful workload yesterday, '
+                'leaving fewer rested options for tonight.'
+            )
+        if today > yesterday:
+            return (
+                f'{workload_count} {noun} took on meaningful workload yesterday, '
+                f'but {team_name} still has more rested options than it had before.'
+            )
+        return (
+            f'{workload_count} {noun} took on meaningful workload yesterday, '
+            'so tonight depends more on the relievers who did not pitch.'
+        )
+    if yesterday is not None and today is not None:
+        if today < yesterday:
+            return (
+                'The bullpen has fewer rested relievers than it had yesterday, '
+                'leaving less margin for tonight.'
+            )
+        if today > yesterday:
+            return (
+                'The bullpen has more rested relievers than it had yesterday, '
+                'creating more room for tonight.'
+            )
+    return 'No meaningful bullpen movement stands out for this club in the current comparison.'
 
 
 def _public_item(
     team_change: dict[str, Any],
     *,
-    consequence_team: dict[str, Any] | None = None,
+    workload_team: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if team_change.get('status') != STATUS_AVAILABLE:
         return None
@@ -339,17 +219,23 @@ def _public_item(
     )
     if not copy.get('public_copy_generated') or copy.get('copy_review_flags'):
         return None
-    consequence_context = _safe_consequence_context(consequence_team, top_change)
+    team_name = str(team_change.get('team_name') or 'This club').strip()
+    counts = _rested_counts(team_change, top_change)
+    workload_added = _public_workload_added(workload_team)
 
     return {
         'key': f'{_team_key(team_change)}-what-changed',
         'team_id': team_change.get('team_id'),
         'team_name': team_change.get('team_name'),
         'team_abbreviation': team_change.get('team_abbreviation'),
-        'public_headline': copy.get('public_headline'),
-        'public_summary': copy.get('public_summary'),
-        'public_context': consequence_context or copy.get('public_context'),
-        'public_fact': _public_fact(top_change),
+        'public_headline': _public_headline(team_name, counts),
+        'public_summary': _public_summary(team_name, counts),
+        'public_context': _public_why_it_matters(team_name, counts, workload_added),
+        'yesterday_rested_count': counts.get('yesterday_rested_count'),
+        'today_rested_count': counts.get('today_rested_count'),
+        'workload_added': workload_added,
+        '_copy_headline': copy.get('public_headline'),
+        '_copy_summary': copy.get('public_summary'),
         '_copy_review_flags': list(copy.get('copy_review_flags') or []),
     }
 
@@ -389,31 +275,28 @@ def build_what_changed_public_payload(
         current_payload,
         prior_payload,
     )
-    if consequence_payload is None:
-        consequence_payload = build_consequence_intelligence_payload(
-            current_payload,
-            prior_payload,
-            what_changed_payload=changes,
-        )
-    consequence_by_team = _teams_by_key(consequence_payload)
+    # ``consequence_payload`` is retained for compatibility with older tests and
+    # callers. This public surface now explains the change from concrete rested
+    # counts and observed workload instead of consequence prose.
+    workload_by_team = _workload_by_team(current_payload)
     candidate_items = []
     for team_change in changes.get('teams') or []:
         item = _public_item(
             team_change,
-            consequence_team=consequence_by_team.get(str(_team_lookup_key(team_change))),
+            workload_team=workload_by_team.get(str(_team_lookup_key(team_change))),
         )
         if item is None:
             continue
         candidate_items.append(item)
 
-    repeated_headlines = _repeated_values(candidate_items, 'public_headline')
-    repeated_summaries = _repeated_values(candidate_items, 'public_summary')
+    repeated_headlines = _repeated_values(candidate_items, '_copy_headline')
+    repeated_summaries = _repeated_values(candidate_items, '_copy_summary')
     items = []
     for item in candidate_items:
         flags = list(item.get('_copy_review_flags') or [])
-        if item.get('public_headline') in repeated_headlines:
+        if item.get('_copy_headline') in repeated_headlines:
             flags.append(COPY_FLAG_REPEATED_HEADLINE)
-        if item.get('public_summary') in repeated_summaries:
+        if item.get('_copy_summary') in repeated_summaries:
             flags.append(COPY_FLAG_REPEATED_SUMMARY)
         if flags:
             continue

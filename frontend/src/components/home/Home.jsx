@@ -299,7 +299,7 @@ function WhatChangedSinceYesterday({ changes, teams = [], teamsLoading = false, 
         {items.length > 1 && (
           <details className="mt-4 border-t border-dirt/70 pt-3">
             <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber">
-              View League-Wide Changes -&gt;
+              View League-Wide Changes ({items.length})
             </summary>
             <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {items.map(item => (
@@ -307,7 +307,12 @@ function WhatChangedSinceYesterday({ changes, teams = [], teamsLoading = false, 
                   <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
                     {item.teamAbbr || item.teamName}
                   </div>
-                  <p className="mt-1 text-sm leading-snug text-chalk200">{item.headline}</p>
+                  <p className="mt-1 text-sm leading-snug text-chalk200">
+                    {restedCountLine(item)}
+                  </p>
+                  <p className="mt-1 text-xs leading-snug text-chalk500">
+                    {workloadAddedLine(item)}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -330,7 +335,6 @@ function ComparisonWindow({ comparison }) {
 }
 
 function SelectedChangePanel({ item, team, comparison }) {
-  const fact = item.fact || {}
   return (
     <div className="mt-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -349,10 +353,10 @@ function SelectedChangePanel({ item, team, comparison }) {
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[0.8fr_0.8fr_1.3fr_1.3fr]">
-        <ChangeSlot label="Yesterday" value={fact.yesterday || 'Prior bullpen picture'} />
-        <ChangeSlot label="Today" value={fact.today || 'Current bullpen picture'} />
-        <ChangeSlot label="Change" value={item.summary} />
-        <ChangeSlot label="Why It Matters" value={item.context || item.headline} />
+        <RestedCountSlot label="Yesterday" count={item.yesterdayRestedCount} tone="rest" />
+        <RestedCountSlot label="Today" count={item.todayRestedCount} tone="watch" />
+        <WorkloadAddedSlot workload={item.workloadAdded} />
+        <WhyItMattersSlot value={item.context || item.summary || item.headline} />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -367,13 +371,76 @@ function SelectedChangePanel({ item, team, comparison }) {
   )
 }
 
-function ChangeSlot({ label, value }) {
+function restedRelieverLabel(count) {
+  if (!Number.isFinite(count)) return 'rested relievers'
+  return `rested ${count === 1 ? 'reliever' : 'relievers'}`
+}
+
+function restedCountLine(item) {
+  const today = item?.todayRestedCount
+  const yesterday = item?.yesterdayRestedCount
+  if (Number.isFinite(today) && Number.isFinite(yesterday)) {
+    return `${today} rested today, ${yesterday} yesterday`
+  }
+  if (Number.isFinite(today)) return `${today} rested today`
+  return item?.teamName ? `${item.teamName} bullpen moved from yesterday.` : 'Bullpen moved from yesterday.'
+}
+
+function workloadAddedLine(item) {
+  const count = Array.isArray(item?.workloadAdded) ? item.workloadAdded.length : 0
+  if (count < 1) return 'No meaningful workload added yesterday'
+  return `${count} ${count === 1 ? 'pitcher' : 'pitchers'} added meaningful workload yesterday`
+}
+
+function RestedCountSlot({ label, count, tone = 'rest' }) {
+  const toneClass = tone === 'watch' ? 'text-violet-300' : 'text-emerald-300'
   return (
     <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+      <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
         {label}
       </div>
-      <p className="mt-1 break-words text-sm leading-relaxed text-chalk100">
+      <p className="mt-2 font-display text-4xl leading-none tracking-wide text-chalk100">
+        {Number.isFinite(count) ? count : '-'}
+      </p>
+      <p className="mt-1 text-sm leading-relaxed text-chalk200">{restedRelieverLabel(count)}</p>
+    </div>
+  )
+}
+
+function WorkloadAddedSlot({ workload = [] }) {
+  const rows = Array.isArray(workload) ? workload : []
+  return (
+    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
+        Workload Added Yesterday
+      </div>
+      {rows.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {rows.map(row => (
+            <li key={`${row.pitcherId || row.name}-${row.pitches}`} className="flex min-w-0 items-baseline justify-between gap-3 text-sm leading-snug">
+              <span className="min-w-0 break-words text-chalk100">{row.name}</span>
+              <span className="shrink-0 font-mono text-xs text-chalk300">
+                {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 break-words text-sm leading-relaxed text-chalk300">
+          No meaningful bullpen movement stands out for this club in the current comparison.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function WhyItMattersSlot({ value }) {
+  return (
+    <div className="min-w-0 max-w-[20rem] border border-dirt/80 bg-field/50 p-3 sm:max-w-none">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
+        Why It Matters
+      </div>
+      <p className="mt-3 break-words text-sm leading-relaxed text-chalk100">
         {value}
       </p>
     </div>

@@ -125,6 +125,8 @@ MLB_SEASON_MIN = 1876
 MLB_SEASON_MAX = 2100
 RISK_LEVELS = {'LOW', 'MODERATE', 'HIGH', 'CRITICAL'}
 WHAT_CHANGED_PUBLIC_TEAM_LIMIT = 30
+WHAT_CHANGED_MEANINGFUL_WORKLOAD_PITCHES = 15
+WHAT_CHANGED_WORKLOAD_ADDED_LIMIT = 3
 
 FATIGUE_ERA_RESULTS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1313,6 +1315,99 @@ def _merge_limitations(*groups):
     return merged
 
 
+def _dashboard_payload_data_through(payload):
+    freshness = payload.get('freshness') if isinstance(payload, dict) else {}
+    freshness = freshness if isinstance(freshness, dict) else {}
+    return parse_reference_date(
+        freshness.get('data_through')
+        or freshness.get('latest_workload_date')
+        or freshness.get('availability_reference_date')
+        or freshness.get('reference_date')
+    )
+
+
+def _dashboard_what_changed_workload_payload(current_date, prior_date, availability_records):
+    """
+    Public workload evidence for the homepage What Changed card.
+
+    This does not select relievers or recommend usage. It summarizes observed
+    relief workload added between the prior snapshot and the current one.
+    """
+    base = {
+        'capability': 'what_changed_workload_added_v1',
+        'source': 'backend',
+        'selection_made': False,
+        'ranking_applied': False,
+        'meaningful_pitch_minimum': WHAT_CHANGED_MEANINGFUL_WORKLOAD_PITCHES,
+        'item_limit': WHAT_CHANGED_WORKLOAD_ADDED_LIMIT,
+        'current_data_through': current_date.isoformat() if current_date else None,
+        'previous_data_through': prior_date.isoformat() if prior_date else None,
+        'by_team_id': {},
+    }
+    if current_date is None or prior_date is None or prior_date >= current_date:
+        return base
+
+    eligible_pitchers = {}
+    for record in availability_records or []:
+        pitcher = record.get('pitcher') if isinstance(record, dict) else None
+        if pitcher is None or pitcher.id is None or pitcher.team_id is None:
+            continue
+        eligible_pitchers[int(pitcher.id)] = {
+            'pitcher_id': int(pitcher.id),
+            'name': pitcher.full_name,
+            'team_id': int(pitcher.team_id),
+            'team_name': pitcher.team_name,
+            'team_abbreviation': pitcher.team_abbreviation,
+            'pitches': 0,
+            'innings_outs': 0,
+        }
+    if not eligible_pitchers:
+        return base
+
+    rows = (
+        db.session.query(GameLog, Pitcher)
+        .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
+        .filter(GameLog.pitcher_id.in_(list(eligible_pitchers)))
+        .filter(GameLog.game_date > prior_date)
+        .filter(GameLog.game_date <= current_date)
+        .filter(GameLog.game_type == 'R')
+        .filter(GameLog.games_started == 0)
+        .all()
+    )
+    for log, pitcher in rows:
+        item = eligible_pitchers.get(int(pitcher.id))
+        if item is None:
+            continue
+        item['pitches'] += int(log.pitches_thrown or 0)
+        item['innings_outs'] += int(log.innings_pitched_outs or 0)
+
+    by_team = {}
+    for item in eligible_pitchers.values():
+        if item['pitches'] < WHAT_CHANGED_MEANINGFUL_WORKLOAD_PITCHES:
+            continue
+        team_key = str(item['team_id'])
+        team = by_team.setdefault(team_key, {
+            'team_id': item['team_id'],
+            'team_name': item['team_name'],
+            'team_abbreviation': item['team_abbreviation'],
+            'workload_added': [],
+        })
+        team['workload_added'].append({
+            'pitcher_id': item['pitcher_id'],
+            'name': item['name'],
+            'pitches': item['pitches'],
+        })
+
+    for team in by_team.values():
+        team['workload_added'] = sorted(
+            team['workload_added'],
+            key=lambda row: (-int(row.get('pitches') or 0), str(row.get('name') or '').lower()),
+        )[:WHAT_CHANGED_WORKLOAD_ADDED_LIMIT]
+
+    base['by_team_id'] = by_team
+    return base
+
+
 def _eligible_records_for_rows(
     rows,
     availability_by_pitcher,
@@ -2198,6 +2293,12 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
+    previous_data_through = _dashboard_payload_data_through(previous_payload)
+    payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
+        data_through,
+        previous_data_through,
+        availability_records,
+    )
     payload['role_change_detection'] = build_role_change_detection_payload(
         payload,
         _latest_comparable_role_change_payload(
