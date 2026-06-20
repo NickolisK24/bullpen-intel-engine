@@ -36,6 +36,7 @@ from services.four_beat_stories import (
 )
 from services.story_evidence import (
     GENERIC_LANGUAGE_DENYLIST,
+    PUBLIC_SCHEMA_LANGUAGE_DENYLIST,
     apply_story_evidence_framework,
     story_public_text,
     validate_story_evidence,
@@ -46,7 +47,9 @@ from services.story_observation_discovery import (
     story_template_dependency_audit,
 )
 from services.story_observation_voice import (
+    THROAT_CLEARING_CLOSERS,
     build_observation_voice,
+    observation_prose_paths,
     validate_observation_voice,
 )
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
@@ -658,7 +661,9 @@ def test_sustainability_question_fires_only_when_strong_era_and_heavy_workload()
     assert sustainability['can_fire'] is True
     assert sustainability['story']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
     assert '2.75 season ERA' in _story_text(sustainability['story'])
-    assert 'leaning on it hard tonight' in sustainability['story']['title']
+    assert 'leaning on it hard tonight' in sustainability['story']['beats'][0]['text']
+    assert sustainability['story']['title'] == sustainability['story']['story_voice']['headline']
+    assert sustainability['story']['story_prose']['prose_path']
 
     not_strong = evaluate_team_rules(_team_inputs(
         records,
@@ -700,7 +705,9 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
 
     assert hidden['can_fire'] is True
     assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
-    assert "tonight's usable depth is thin" in hidden['story']['title']
+    assert "tonight's usable depth is thin" in hidden['story']['beats'][0]['text']
+    assert hidden['story']['title'] == hidden['story']['story_voice']['headline']
+    assert hidden['story']['story_prose']['prose_path']
     assert '2 of 7 arms Available' in _story_text(hidden['story'])
 
     not_solid = evaluate_team_rules(_team_inputs(
@@ -915,7 +922,9 @@ def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract
     assert story['beats']
     assert story['rule_key'] == RULE_STRESS_TRANSFER
     assert facts['capability'] == STORY_FACT_LAYER_CAPABILITY
-    assert facts['primary_observation'] == story['title']
+    assert facts['primary_observation'] == story['beats'][0]['text']
+    assert facts['public_headline'] == story['title']
+    assert story['title'] == story['story_voice']['headline']
     assert facts['supporting_context']
     assert facts['pressure_source']
     assert facts['workload_pattern']
@@ -2210,9 +2219,116 @@ def test_observation_voice_layer_builds_public_safe_supported_frames():
     assert voice['applied'] is True
     assert voice['validation']['passed'] is True
     assert voice['validation']['checks']['public_language_safe'] is True
-    assert 'not really spreading bullpen work' in voice['human_frame']
+    assert voice['prose_path'] in observation_prose_paths('workload_concentration')
+    assert voice['headline']
+    assert voice['headline_shape'] == f"workload_concentration:{voice['prose_path']}"
+    assert voice['body_shape'] == f"workload_concentration:{voice['prose_path']}"
     assert voice['evidence_sentence'] == selected_observation['text']
     assert voice['consequence_sentence'] == selected_observation['consequence_statement']
+
+
+def test_observation_voice_supports_multiple_prose_paths_for_same_observation():
+    selected_observation = {
+        'observation_id': 'workload_concentration',
+        'observation_type': 'workload_concentration',
+        'text': 'Frame Arm and Bridge Arm have handled 78% of Voice Safety Club recent relief pitches.',
+        'pitcher_names': ['Frame Arm', 'Bridge Arm'],
+        'consequence_category': 'heavier_workload_concentration',
+        'consequence_statement': (
+            'That keeps heavier workload concentration in play if the next tight inning '
+            'has to move back through Frame Arm and Bridge Arm.'
+        ),
+    }
+    voices = [
+        build_observation_voice({
+            'team': {
+                'team_id': 604,
+                'team_name': 'Voice Safety Club',
+                'team_abbreviation': 'VSC',
+            },
+            'selected_observation': selected_observation,
+            'named_pitchers': selected_observation['pitcher_names'],
+            'evidence_statement': selected_observation['text'],
+            'consequence_statement': selected_observation['consequence_statement'],
+            'consequence_category': selected_observation['consequence_category'],
+            'prose_path': prose_path,
+        })
+        for prose_path in observation_prose_paths('workload_concentration')
+    ]
+
+    assert len(voices) >= 4
+    assert all(voice['applied'] for voice in voices)
+    assert all(voice['validation']['passed'] for voice in voices)
+    assert {voice['prose_path'] for voice in voices} == set(observation_prose_paths('workload_concentration'))
+    assert len({voice['headline_shape'] for voice in voices}) == len(voices)
+    assert len({voice['human_frame'] for voice in voices}) == len(voices)
+    assert {voice['evidence_sentence'] for voice in voices} == {selected_observation['text']}
+    assert {voice['consequence_sentence'] for voice in voices} == {
+        selected_observation['consequence_statement']
+    }
+
+
+def test_observation_voice_rejects_empty_or_throat_clearing_closing():
+    selected_text = 'Named Reliever has handled 70% of Closing Club recent relief pitches.'
+    base_voice = {
+        'capability': 'observation_voice_layer_v1',
+        'version': 'test',
+        'observation_type': 'workload_concentration',
+        'selected_observation_text': selected_text,
+        'human_frame': 'Closing Club is carrying a narrow recent workload, with the relief pitches clustered around one arm.',
+        'evidence_sentence': selected_text,
+        'pitcher_names': ['Named Reliever'],
+    }
+
+    empty_validation = validate_observation_voice({
+        **base_voice,
+        'consequence_sentence': '',
+    })
+    throat_validation = validate_observation_voice({
+        **base_voice,
+        'consequence_sentence': 'Usage provides the strongest signal here.',
+    })
+
+    assert empty_validation['passed'] is False
+    assert 'consequence_sentence_present' in empty_validation['fail_reasons']
+    assert 'consequence_sentence_informational' in empty_validation['fail_reasons']
+    assert throat_validation['passed'] is False
+    assert 'consequence_sentence_informational' in throat_validation['fail_reasons']
+    assert throat_validation['closing_language_hits'] == ['usage provides the strongest signal here']
+
+
+def test_story_evidence_rejects_schema_language_and_throat_clearing_closers():
+    story = {
+        'story_id': 'schema:story',
+        'team_id': 907,
+        'team_name': 'Schema Club',
+        'team_abbreviation': 'SCH',
+        'title': 'Schema Club active capacity story.',
+        'body': '',
+        'narrative': (
+            'Schema Arm has handled 70% of Schema Club recent relief pitches.\n\n'
+            'That leaves less coverage margin if Schema Club needs another clean inning.\n\n'
+            'There are still roster questions around the edges.'
+        ),
+        'story_evidence': {
+            'pitcher_names': ['Schema Arm'],
+            'evidence_statement': 'Schema Arm has handled 70% of Schema Club recent relief pitches.',
+            'consequence_category': 'less_coverage_margin',
+            'consequence_statement': (
+                'That leaves less coverage margin if Schema Club needs another clean inning.'
+            ),
+        },
+    }
+
+    validation = validate_story_evidence(story)
+
+    assert validation['passed'] is False
+    assert 'public_schema_language_absent' in validation['fail_reasons']
+    assert 'closing_language_informational' in validation['fail_reasons']
+    assert 'active capacity' in validation['schema_language_hits']
+    assert validation['closing_language_hits'] == ['there are still roster questions around the edges']
+    assert set(THROAT_CLEARING_CLOSERS) >= set(validation['closing_language_hits'])
+    assert 'active capacity' in PUBLIC_SCHEMA_LANGUAGE_DENYLIST
 
 
 def test_repeated_observation_voice_frames_are_suppressed_across_teams():
@@ -2285,18 +2401,26 @@ def test_observation_voice_narrative_does_not_expose_internal_labels():
     )
 
     feed = build_four_beat_story_feed(records, logs, reference_date=REF)
-    narrative = feed['items'][0]['narrative'].lower()
+    public_text = story_public_text(feed['items'][0]).lower()
 
     for internal_label in (
         'observation_voice_layer_v1',
         'observation_discovery_engine_v1',
+        'story_prose_detemplating_v1',
         'selected_observation',
         'human_frame',
         'workload_concentration',
         'ranking_applied',
         'selection_made',
+        'active capacity',
+        'trusted-group breadth',
+        'clean options',
+        'coverage safety',
+        'resource health',
+        'bullpen identity',
+        'trust hierarchy',
     ):
-        assert internal_label not in narrative
+        assert internal_label not in public_text
     assert pitchers
 
 
@@ -2972,11 +3096,42 @@ def test_content_selective_leads_do_not_manufacture_difference_for_near_identica
     ]
     assert stories[0]['lead_dimension'] == stories[1]['lead_dimension']
     assert stories[0]['beats'][0]['skeleton_key'] == stories[1]['beats'][0]['skeleton_key']
-    assert stories[0]['title'].replace(stories[0]['team_name'], '{team_name}') == (
+    assert stories[0]['title'].replace(stories[0]['team_name'], '{team_name}') != (
         stories[1]['title'].replace(stories[1]['team_name'], '{team_name}')
     )
+    assert stories[0]['story_voice']['prose_path'] != stories[1]['story_voice']['prose_path']
     assert any(story['lead_dimension_detail'].get('honest_sameness') for story in stories)
     assert any(story['lead_dimension_detail'].get('feed_wide_honest_sameness') for story in stories)
+
+
+def test_adjacent_similar_story_cards_force_prose_diversification():
+    alpha_pitchers, alpha_records, alpha_logs = _fixture_team(
+        800,
+        'Alpha Similar Club',
+        'ASC',
+        [12, 12, 12, 12, 12, 12],
+    )
+    beta_pitchers, beta_records, beta_logs = _fixture_team(
+        801,
+        'Beta Similar Club',
+        'BSC',
+        [12, 12, 12, 12, 12, 12],
+    )
+    feed = build_four_beat_story_feed(
+        [*alpha_records, *beta_records],
+        _merge_logs(alpha_logs, beta_logs),
+        reference_date=REF,
+    )
+
+    stories = sorted(feed['items'], key=lambda item: item['team_abbreviation'])
+    assert feed['count'] == 2
+    assert {story['story_voice']['observation_type'] for story in stories} == {'flexibility'}
+    assert any(story['story_prose']['adjacent_diversification_applied'] for story in stories)
+    assert len({story['story_voice']['headline_shape'] for story in stories}) == 2
+    assert len({story['story_voice']['body_shape'] for story in stories}) == 2
+    assert len({story['title'].replace(story['team_name'], '{team_name}') for story in stories}) == 2
+    assert all(story['story_evidence_framework']['passed'] for story in stories)
+    assert alpha_pitchers and beta_pitchers
 
 
 def test_feed_wide_distinct_prose_guard_allows_only_honest_sameness():

@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from services.story_observation_voice import validate_observation_voice
+from services.story_observation_voice import (
+    INTERNAL_PUBLIC_UNSAFE_TERMS,
+    THROAT_CLEARING_CLOSERS,
+    validate_observation_voice,
+)
 
 
 CAPABILITY = 'story_evidence_framework_v1'
@@ -27,6 +31,16 @@ GENERIC_LANGUAGE_DENYLIST = (
     'still sits in a workable spot',
     'trusted late-inning options behind the workload',
 )
+
+PUBLIC_SCHEMA_LANGUAGE_DENYLIST = tuple(sorted(set(INTERNAL_PUBLIC_UNSAFE_TERMS + (
+    'active capacity',
+    'trusted-group breadth',
+    'clean options',
+    'coverage safety',
+    'resource health',
+    'bullpen identity',
+    'trust hierarchy',
+))))
 
 CONSEQUENCE_MARKERS = (
     'heavier workload concentration',
@@ -146,22 +160,37 @@ def _generic_language_hits(text: str) -> list[str]:
     return [phrase for phrase in GENERIC_LANGUAGE_DENYLIST if phrase in lower]
 
 
+def _schema_language_hits(text: str) -> list[str]:
+    lower = _normalize_text(text)
+    return [phrase for phrase in PUBLIC_SCHEMA_LANGUAGE_DENYLIST if phrase in lower]
+
+
+def _closing_language_hits(text: str) -> list[str]:
+    lower = _normalize_text(text)
+    return [phrase for phrase in THROAT_CLEARING_CLOSERS if phrase in lower]
+
+
 def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
     """Validate that a story carries evidence, names, consequence, and clean language."""
 
     text = story_public_text(story)
     names = _pitcher_names(story)
     generic_hits = _generic_language_hits(text)
+    schema_hits = _schema_language_hits(text)
+    closing_hits = _closing_language_hits(text)
     voice = _story_voice(story)
     voice_validation = validate_observation_voice(voice) if voice else None
     if voice_validation:
         generic_hits = sorted(set(generic_hits + voice_validation.get('generic_frame_hits', [])))
+        closing_hits = sorted(set(closing_hits + voice_validation.get('closing_language_hits', [])))
     checks = {
         'evidence_presence': _has_measurable_fact(text),
         'name_presence': _has_pitcher_name(text, names),
         'consequence_presence': _has_consequence(text, story),
         'selected_observation_referenced': _references_selected_observation(text, story),
         'generic_language_absent': not generic_hits,
+        'public_schema_language_absent': not schema_hits,
+        'closing_language_informational': not closing_hits,
         'phrase_diversity': True,
     }
     if voice_validation:
@@ -178,6 +207,8 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         'checks': checks,
         'fail_reasons': fail_reasons,
         'generic_language_hits': generic_hits,
+        'schema_language_hits': schema_hits,
+        'closing_language_hits': closing_hits,
         'pitcher_names': names,
         'evidence_statement': evidence.get('evidence_statement'),
         'consequence_category': evidence.get('consequence_category'),
@@ -309,6 +340,7 @@ __all__ = [
     'VERSION',
     'CONSEQUENCE_MARKERS',
     'GENERIC_LANGUAGE_DENYLIST',
+    'PUBLIC_SCHEMA_LANGUAGE_DENYLIST',
     'apply_story_evidence_framework',
     'story_public_text',
     'validate_story_evidence',

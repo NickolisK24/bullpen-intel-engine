@@ -434,6 +434,8 @@ def build_story_facts(
     named_pitchers = selected_observation.get('pitcher_names') or _named_pitchers(inputs, rule_key)
     observation_voice = build_observation_voice({
         'team': _team_identity(inputs),
+        'rule_key': rule_key,
+        'lead_dimension': (lead or {}).get('dimension'),
         'selected_observation': selected_observation,
         'named_pitchers': named_pitchers,
         'evidence_statement': evidence_statement,

@@ -123,7 +123,7 @@ def test_flexible_distribution_identity_uses_broad_usable_lanes():
 
     assert result['identity_key'] == IDENTITY_FLEXIBLE_DISTRIBUTION
     assert result['identity_label'] == 'Flexible Distribution Bullpen'
-    assert 'several usable lanes' in result['identity_summary']
+    assert 'avoid forcing every important inning through the same arms' in result['identity_summary']
 
 
 def test_true_leverage_heavy_identity_requires_anchor_and_narrow_depth():
@@ -174,7 +174,7 @@ def test_resource_strained_identity_keeps_pool_strain_separate_from_coverage():
 
     assert result['identity_key'] == IDENTITY_RESOURCE_STRAINED
     assert result['identity_label'] == 'Resource-Strained Bullpen'
-    assert any('broader resource pool is strained' in trait['text'] for trait in result['supporting_traits'])
+    assert any('broader depth is strained' in trait['text'] for trait in result['supporting_traits'])
 
 
 def test_resource_strain_does_not_overfire_on_healthy_usable_structure():

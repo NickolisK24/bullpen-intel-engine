@@ -21,6 +21,7 @@ from services.availability import (
 from services.pitcher_role_authority import author_role_read_labels
 from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
 from services.story_observation_discovery import story_template_dependency_audit
+from services.story_observation_voice import build_observation_voice, observation_prose_paths
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -36,6 +37,8 @@ from services.workload_concentration import (
 
 CAPABILITY = 'four_beat_story_template_v1'
 VERSION = '2026-06-18.narrative_renderer_v3'
+STORY_PROSE_CAPABILITY = 'story_prose_detemplating_v1'
+STORY_PROSE_VERSION = '2026-06-19'
 FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
@@ -1728,6 +1731,109 @@ def _lead_beat(rule_key, beat_key, lead, slots):
     }
 
 
+def _story_prose_metadata(voice: dict[str, Any], *, adjacent_diversification_applied: bool = False) -> dict[str, Any]:
+    return {
+        'capability': STORY_PROSE_CAPABILITY,
+        'version': STORY_PROSE_VERSION,
+        'applied': bool(voice.get('applied')),
+        'prose_path': voice.get('prose_path'),
+        'observation_type': voice.get('observation_type'),
+        'headline_shape': voice.get('headline_shape'),
+        'body_shape': voice.get('body_shape'),
+        'closing_shape': voice.get('closing_shape'),
+        'adjacent_diversification_applied': adjacent_diversification_applied,
+    }
+
+
+def _apply_story_voice(
+    story: dict[str, Any],
+    voice: dict[str, Any],
+    *,
+    adjacent_diversification_applied: bool = False,
+) -> None:
+    facts = dict(story.get('story_facts') or {})
+    facts['observation_voice'] = voice
+    facts['prose_path'] = voice.get('prose_path')
+    story['story_facts'] = facts
+    story['story_voice'] = voice
+    if voice.get('applied') and voice.get('headline'):
+        story['title'] = voice['headline']
+    story['narrative'] = render_story_narrative(facts)
+    story['story_prose'] = _story_prose_metadata(
+        voice,
+        adjacent_diversification_applied=adjacent_diversification_applied,
+    )
+    story['story_evidence_framework'] = validate_story_evidence(story)
+
+
+def _rebuild_story_voice(story: dict[str, Any], prose_path: str) -> dict[str, Any] | None:
+    facts = dict(story.get('story_facts') or {})
+    if not facts:
+        return None
+    facts['prose_path'] = prose_path
+    voice = build_observation_voice(facts)
+    if not voice.get('applied'):
+        return None
+    return voice
+
+
+def _story_prose_collision_shape(story: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    voice = story.get('story_voice') if isinstance(story.get('story_voice'), dict) else {}
+    return (
+        voice.get('observation_type'),
+        voice.get('headline_shape'),
+        voice.get('body_shape'),
+    )
+
+
+def _next_prose_path(story: dict[str, Any], disallowed_paths: set[str]) -> str | None:
+    voice = story.get('story_voice') if isinstance(story.get('story_voice'), dict) else {}
+    observation_type = voice.get('observation_type')
+    paths = observation_prose_paths(observation_type)
+    if not paths:
+        return None
+    current = voice.get('prose_path')
+    try:
+        start = paths.index(current) + 1
+    except ValueError:
+        start = 0
+    ordered = [paths[(start + offset) % len(paths)] for offset in range(len(paths))]
+    for path in ordered:
+        if path not in disallowed_paths:
+            return path
+    return ordered[0] if ordered else None
+
+
+def diversify_adjacent_story_prose(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Diversify nearby visible cards without changing story selection or evidence."""
+
+    diversified: list[dict[str, Any]] = []
+    for story in stories:
+        current_shape = _story_prose_collision_shape(story)
+        nearby = diversified[-2:]
+        colliding_paths = {
+            ((prior.get('story_voice') or {}).get('prose_path') or '')
+            for prior in nearby
+            if _story_prose_collision_shape(prior) == current_shape
+        }
+        colliding_paths.discard('')
+        if colliding_paths:
+            current_path = (story.get('story_voice') or {}).get('prose_path')
+            if current_path:
+                colliding_paths.add(current_path)
+            next_path = _next_prose_path(story, colliding_paths)
+            if next_path:
+                rebuilt = _rebuild_story_voice(story, next_path)
+                if rebuilt:
+                    _apply_story_voice(
+                        story,
+                        rebuilt,
+                        adjacent_diversification_applied=True,
+                    )
+        diversified.append(story)
+    return diversified
+
+
 def assemble_story(rule_key, inputs, lead=None):
     rule = RULES[rule_key]
     slots = _base_slots(inputs)
@@ -1778,6 +1884,13 @@ def assemble_story(rule_key, inputs, lead=None):
     story_facts = build_story_facts(rule_key, inputs, beats, lead=lead)
     story_context_meta = story_facts.get('bullpen_context_integration') or {}
     story_identity_meta = story_facts.get('story_identity_integration') or {}
+    observation_voice = story_facts.get('observation_voice') or {}
+    public_title = (
+        observation_voice.get('headline')
+        if observation_voice.get('applied') and observation_voice.get('headline')
+        else signal['text'] if signal else rule['label']
+    )
+    story_facts['public_headline'] = public_title
     narrative = render_story_narrative(story_facts)
     story = {
         'story_id': f"{team.get('team_id')}:{rule_key}",
@@ -1789,7 +1902,7 @@ def assemble_story(rule_key, inputs, lead=None):
         'kicker': rule['label'],
         'tone': rule['tone'],
         'category': rule['category'],
-        'title': signal['text'] if signal else rule['label'],
+        'title': public_title,
         'body': body,
         'narrative': narrative,
         'story_facts': story_facts,
@@ -1885,7 +1998,8 @@ def assemble_story(rule_key, inputs, lead=None):
             'consequence_statement': story_facts.get('consequence_statement'),
         },
         'story_observation': story_facts.get('observation_discovery') or {},
-        'story_voice': story_facts.get('observation_voice') or {},
+        'story_voice': observation_voice,
+        'story_prose': _story_prose_metadata(observation_voice),
     }
     if story_facts.get('disclosure'):
         disclosure_note = render_story_disclosure_note(story_facts)
@@ -2050,6 +2164,7 @@ def build_four_beat_story_feed(
         if final_story:
             stories.append(final_story)
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
+    stories = diversify_adjacent_story_prose(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
 
     return {
@@ -2115,6 +2230,7 @@ __all__ = [
     'assemble_story',
     'build_four_beat_story_feed',
     'compute_team_story_inputs',
+    'diversify_adjacent_story_prose',
     'evaluate_team_rules',
     'four_beat_stories_enabled',
     'select_lead_dimensions',

@@ -372,6 +372,10 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     summary = _clean_text(identity.get('identity_summary'))
     if not summary:
         return None
+    public_summary = summary.split(':', 1)[1].strip() if ':' in summary else summary
+    public_summary = _clean_text(public_summary)
+    if not public_summary:
+        return None
     names = _named_pitchers(inputs)
     subject = _join_names(names)
     if not subject:
@@ -381,8 +385,8 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     return _candidate(
         observation_type=OBSERVATION_IDENTITY,
         text=(
-            f'{subject} sit at the front of {_possessive_team(inputs)} bullpen identity, '
-            f'with {clean_option_count} usable relievers behind a {summary.lower()}.'
+            f'{subject} sit at the front of {_possessive_team(inputs)} current relief shape, '
+            f'with {clean_option_count} usable relievers behind it because {public_summary.lower()}.'
         ),
         score=score,
         score_components={
@@ -394,7 +398,7 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         consequence_category='reduced_flexibility',
         consequence_statement=(
             'That reduces flexibility if the game moves away from the relievers who best match '
-            f'{_possessive_team(inputs)} current identity.'
+            f'{_possessive_team(inputs)} current bullpen shape.'
         ),
         source_fields=[
             'capacity_intelligence.bullpen_identity',

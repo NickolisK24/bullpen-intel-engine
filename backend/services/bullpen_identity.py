@@ -311,7 +311,7 @@ def _summary(identity_key: str, evidence: dict[str, Any]) -> str:
         )
     if identity_key == IDENTITY_FLEXIBLE_DISTRIBUTION:
         return (
-            f'{label}: active capacity, clean options, and trusted-group breadth point to a bullpen with several usable lanes.'
+            f'{label}: enough trusted relievers are available to avoid forcing every important inning through the same arms.'
         )
     if identity_key == IDENTITY_LEVERAGE_HEAVY:
         return (
@@ -319,11 +319,11 @@ def _summary(identity_key: str, evidence: dict[str, Any]) -> str:
         )
     if identity_key == IDENTITY_FRAGILE_COVERAGE:
         return (
-            f'{label}: coverage can narrow quickly once the primary trusted group or clean options are stressed.'
+            f'{label}: the path can narrow quickly once the primary trusted group has to cover too much of the game.'
         )
     if identity_key == IDENTITY_RESOURCE_STRAINED:
         return (
-            f'{label}: the active group may still have usable pieces, but the broader resource pool is thinner than normal.'
+            f'{label}: the active group may still have usable pieces, but there is less depth behind it than normal.'
         )
     return 'Existing bullpen intelligence is too incomplete to assign a stable structural identity.'
 
@@ -365,7 +365,7 @@ def _supporting_traits(identity_key: str, evidence: dict[str, Any]) -> list[dict
         IDENTITY_FLEXIBLE_DISTRIBUTION: 'Usable capacity is spread across several structural lanes.',
         IDENTITY_LEVERAGE_HEAVY: 'Leverage arms carry much of the bullpen shape.',
         IDENTITY_FRAGILE_COVERAGE: 'Coverage and clean capacity leave little margin behind the primary group.',
-        IDENTITY_RESOURCE_STRAINED: 'The broader resource pool is strained even if the active layer has usable arms.',
+        IDENTITY_RESOURCE_STRAINED: 'The broader depth is strained even if the active layer has usable arms.',
         IDENTITY_UNKNOWN: 'Required structural context is incomplete.',
     }[identity_key]
     traits.append(_trait('identity_reason', identity_trait))

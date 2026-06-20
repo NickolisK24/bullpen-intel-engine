@@ -71,9 +71,13 @@ INTERNAL_TAXONOMY_TERMS = (
     'confidence score',
     'pressure source',
     'capacity state',
+    'active capacity',
+    'trusted-group breadth',
+    'clean options',
     'resource health',
     'coverage safety',
     'trust hierarchy',
+    'bullpen identity',
     'trust-concentrated bullpen',
     'depth-driven bullpen',
     'flexible distribution bullpen',
@@ -1360,10 +1364,10 @@ def render_story_disclosure_note(facts: dict[str, Any]) -> str | None:
     if _disclosure_channel(facts) != _DISCLOSURE_CHANNEL_FOOTER and not voice_applied:
         return None
     options: list[_SentenceBuilder] = [
-        lambda f: "Usage provides the strongest signal here.",
-        lambda f: "The workload picture is clearer than the roster picture.",
-        lambda f: "There are still roster questions around the edges.",
-        lambda f: "The read is strongest on recent usage.",
+        lambda f: "Incomplete roster context keeps this read tied to usage and names.",
+        lambda f: "The source limit keeps the conclusion on usage and availability.",
+        lambda f: "This stops at usage and availability because roster context is incomplete.",
+        lambda f: "The roster gap keeps the story on recent usage and named arms.",
     ]
     return _sentence(_choose(facts, 'disclosure:note', options))
 
