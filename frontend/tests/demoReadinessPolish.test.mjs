@@ -55,12 +55,12 @@ test('getDataProvenance distinguishes live, sample, and no-data', () => {
 
 test('board banner states the latest completed MLB data date for current data', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: liveBoard }))
-  assert.ok(htmlIncludes(html, 'Built from completed games through Jun 4, 2026'))
+  assert.ok(htmlIncludes(html, 'Updated after completed games through Jun 4, 2026'))
 })
 
 test('board banner flags historical data with the stale caution', () => {
   const html = renderToStaticMarkup(React.createElement(BullpenBoardView, { board: staleBoard }))
-  assert.ok(htmlIncludes(html, 'Built from completed games through'))
+  assert.ok(htmlIncludes(html, 'Updated after completed games through'))
   assert.ok(htmlIncludes(html, 'read with caution'))
 })
 
@@ -72,7 +72,7 @@ test('dashboard hero pill states data provenance plainly', () => {
     freshness: { is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' },
   }
   const html = inRouter(React.createElement(DashboardView, { data }))
-  assert.ok(htmlIncludes(html, 'Built from completed games through Jun 4, 2026'))
+  assert.ok(htmlIncludes(html, 'Updated after completed games through Jun 4, 2026'))
   assert.ok(htmlIncludes(html, 'Last synced:'))
 })
 

@@ -1236,7 +1236,7 @@ test('story title guidelines prefer observations over conclusions', () => {
 
 test('the masthead reports the data window in plain language', () => {
   const masthead = getMastheadView(dashboard, new Date('2026-06-06T12:00:00Z'))
-  assert.ok(/Built from completed games through Jun 5, 2026/.test(masthead.dataLine))
+  assert.ok(/Updated after completed games through Jun 5, 2026/.test(masthead.dataLine))
   assert.ok(masthead.editionDate.includes('2026'))
   const cold = getMastheadView({}, new Date('2026-06-06T12:00:00Z'))
   assert.equal(cold.dataLine, 'Waiting on the first completed games')

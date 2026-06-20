@@ -992,6 +992,8 @@ def _sync_status_freshness_block(status_payload=None):
                 else None
             ),
             'last_successful_sync': status_payload.get('last_successful_sync'),
+            'last_completed_game_refresh': status_payload.get('last_completed_game_refresh'),
+            'last_morning_full_sync': status_payload.get('last_morning_full_sync'),
             'sync_status': status_payload.get('status'),
             'sync_authority': status_payload.get('sync_authority'),
             'freshness_state': freshness.get('freshness_state'),
@@ -1019,6 +1021,8 @@ def _sync_status_freshness_block(status_payload=None):
             'reference_date': None,
             'availability_reference_date': None,
             'last_successful_sync': None,
+            'last_completed_game_refresh': None,
+            'last_morning_full_sync': None,
             'sync_status': None,
             'sync_authority': 'sync_runs',
             'freshness_state': 'metadata_unavailable',

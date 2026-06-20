@@ -113,6 +113,7 @@ def create_app(config_name=None):
     from models.sync_failure import SyncFailure
     from models.dashboard_snapshot import DashboardSnapshot
     from models.availability_backtest_result import AvailabilityBacktestResult
+    from models.postgame_processed_game import PostgameProcessedGame
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

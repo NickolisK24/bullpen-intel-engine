@@ -104,8 +104,8 @@ const comparison = makeComparison(
   },
 )
 
-const expectedLine = 'Built from completed games through Jun 16, 2026'
-const syncAheadLine = 'Built from completed games through Jun 17, 2026'
+const expectedLine = 'Updated after completed games through Jun 16, 2026'
+const syncAheadLine = 'Updated after completed games through Jun 17, 2026'
 
 function assertUsesServedFreshness(surface, html) {
   assert.ok(html.includes(expectedLine), `${surface} did not show served freshness data-through`)

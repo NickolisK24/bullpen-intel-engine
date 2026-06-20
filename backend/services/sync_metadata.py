@@ -43,6 +43,7 @@ SOURCE_SCHEDULED = 'scheduled'
 SOURCE_GITHUB_ACTIONS = 'github_actions'
 
 JOB_DAILY_SYNC = 'daily_sync'
+JOB_POSTGAME_REFRESH = 'postgame_refresh'
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +301,16 @@ def latest_successful_sync_run():
     # for freshness purposes.
     return (
         SyncRun.query
+        .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
+        .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
+        .first()
+    )
+
+
+def latest_successful_run_for_job(job_name):
+    return (
+        SyncRun.query
+        .filter(SyncRun.job_name == job_name)
         .filter(SyncRun.status.in_(SUCCESSFUL_STATUSES))
         .order_by(SyncRun.completed_at.desc(), SyncRun.started_at.desc(), SyncRun.id.desc())
         .first()
@@ -567,6 +578,15 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         last_successful_sync = None
         last_successful_sync_run = None
 
+    try:
+        postgame_run = latest_successful_run_for_job(JOB_POSTGAME_REFRESH)
+        daily_run = latest_successful_run_for_job(JOB_DAILY_SYNC)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning('Could not read job-specific sync metadata: %s', exc)
+        postgame_run = None
+        daily_run = None
+
     availability_reference_date = (
         product_availability_reference_date_from_metadata(metadata)
         if last_successful_sync
@@ -580,6 +600,22 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         'metadata_source': metadata_source,
         'last_sync': last_sync,
         'last_successful_sync': last_successful_sync,
+        'last_completed_game_refresh': (
+            _iso(postgame_run.completed_at or postgame_run.started_at)
+            if postgame_run is not None
+            else None
+        ),
+        'last_completed_game_refresh_run': (
+            postgame_run.to_dict() if postgame_run is not None else None
+        ),
+        'last_morning_full_sync': (
+            _iso(daily_run.completed_at or daily_run.started_at)
+            if daily_run is not None
+            else None
+        ),
+        'last_morning_full_sync_run': (
+            daily_run.to_dict() if daily_run is not None else None
+        ),
         'pitchers_updated': pitchers_updated,
         'new_logs_added': new_logs_added,
         'errors': errors,

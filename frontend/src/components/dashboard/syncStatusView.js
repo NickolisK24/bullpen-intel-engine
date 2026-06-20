@@ -20,13 +20,20 @@ export const fmtDataDate = (ymd) => {
 
 export const completedGamesDataLine = (ymd) => {
   const formatted = fmtDataDate(ymd)
-  return formatted ? `Built from completed games through ${formatted}` : null
+  return formatted ? `Updated after completed games through ${formatted}` : null
 }
 
 const failedStatuses = new Set(['failed', 'error'])
 const successfulStatuses = new Set(['success', 'ok'])
 const staleStates = new Set(['stale', 'historical'])
 const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
+
+const successfulSyncLabel = (data) => {
+  const jobName = data?.last_successful_sync_run?.job_name || data?.sync?.job_name
+  if (jobName === 'postgame_refresh') return 'Last completed-game refresh'
+  if (jobName === 'daily_sync') return 'Morning full sync'
+  return 'Last synced'
+}
 
 export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
   const status = data?.status
@@ -84,7 +91,7 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
         : limited
           ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : { color: '#d1dce8' },
-      syncLabel: 'Last synced',
+      syncLabel: successfulSyncLabel(data),
       syncValue: fmtSyncDate(successfulSync),
       dataLabel: dataThrough ? 'Data coverage' : null,
       dataValue: dataThrough,

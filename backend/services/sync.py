@@ -13,16 +13,19 @@ import logging
 import os
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import desc
 
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
+from models.postgame_processed_game import PostgameProcessedGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import sync_metadata
+from services.availability_reference_date import PRODUCT_TIMEZONE
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
 from services.roster_status_sync import sync_roster_statuses
@@ -37,6 +40,15 @@ from utils.games_started import parse_games_started
 
 logger = logging.getLogger(__name__)
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
+POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
+POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
+FINAL_GAME_STATUS_CODES = frozenset({'F', 'O', 'FR', 'FT'})
+FINAL_GAME_DETAILED_STATES = frozenset({
+    'final',
+    'game over',
+    'completed early',
+    'final: tied',
+})
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -50,6 +62,299 @@ def _ensure_logs_dir():
 def _season_for(ref: date) -> int:
     """MLB seasons run roughly Feb–Nov. Use the calendar year of ref."""
     return ref.year
+
+
+def postgame_schedule_date(now: datetime | None = None) -> date:
+    """
+    Resolve the MLB schedule date a postgame refresh should inspect.
+
+    Evening GitHub Actions runs are UTC, while most MLB games complete late in
+    the Eastern time window. Before the morning boundary, keep checking the
+    prior baseball date so 1-3 AM ET cleanup runs do not accidentally scan the
+    next empty slate.
+    """
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    try:
+        product_timezone = ZoneInfo(PRODUCT_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        product_timezone = timezone.utc
+    local = current.astimezone(product_timezone)
+    if local.hour < POSTGAME_EARLY_MORNING_CUTOFF_HOUR:
+        return local.date() - timedelta(days=1)
+    return local.date()
+
+
+def _status_value(game: dict, key: str):
+    status = game.get('status') or {}
+    return status.get(key)
+
+
+def is_completed_game(game: dict) -> bool:
+    """Return True for MLB schedule games that are final/completed."""
+    if not (game or {}).get('gamePk'):
+        return False
+    status_code = str(_status_value(game, 'statusCode') or '').upper()
+    detailed_state = str(_status_value(game, 'detailedState') or '').strip().lower()
+    abstract_state = str(_status_value(game, 'abstractGameState') or '').strip().lower()
+    return (
+        status_code in FINAL_GAME_STATUS_CODES
+        or abstract_state == 'final'
+        or detailed_state in FINAL_GAME_DETAILED_STATES
+        or detailed_state.startswith('final')
+    )
+
+
+def completed_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
+    games = mlb_client.get_schedule(
+        start_date=schedule_date.isoformat(),
+        end_date=schedule_date.isoformat(),
+    )
+    return [game for game in (games or []) if is_completed_game(game)]
+
+
+def _game_pk(game: dict):
+    return (game or {}).get('gamePk')
+
+
+def _game_team(game: dict, side: str) -> dict:
+    return (((game or {}).get('teams') or {}).get(side) or {}).get('team') or {}
+
+
+def _game_team_id(game: dict, side: str):
+    return _game_team(game, side).get('id')
+
+
+def _game_team_name(game: dict, side: str):
+    return _game_team(game, side).get('name')
+
+
+def _game_date(game: dict, fallback: date) -> date:
+    raw = (game or {}).get('officialDate') or str((game or {}).get('gameDate') or '')[:10]
+    try:
+        return date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _unprocessed_completed_games(games: list[dict]) -> tuple[list[dict], int]:
+    game_pks = [pk for pk in (_game_pk(game) for game in games) if pk]
+    if not game_pks:
+        return [], 0
+    processed_pks = {
+        row[0]
+        for row in (
+            db.session.query(PostgameProcessedGame.mlb_game_pk)
+            .filter(PostgameProcessedGame.mlb_game_pk.in_(game_pks))
+            .all()
+        )
+    }
+    pending = [game for game in games if _game_pk(game) not in processed_pks]
+    return pending, len(game_pks) - len(pending)
+
+
+def _int_stat(stats: dict, key: str, default: int = 0) -> int:
+    try:
+        return int(stats.get(key, default) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _positive_stat(stats: dict, key: str) -> bool:
+    return _int_stat(stats, key) > 0
+
+
+def _pitcher_order_by_side(boxscore: dict) -> dict[str, list[int]]:
+    teams = (boxscore or {}).get('teams') or {}
+    return {
+        side: list(((teams.get(side) or {}).get('pitchers') or []))
+        for side in ('home', 'away')
+    }
+
+
+def _extract_pitching_lines_from_boxscore(boxscore: dict) -> list[dict]:
+    pitchers = []
+    for side in ('home', 'away'):
+        team_data = ((boxscore or {}).get('teams') or {}).get(side) or {}
+        team_info = team_data.get('team') or {}
+        player_data = team_data.get('players') or {}
+        for pitcher_id in team_data.get('pitchers') or []:
+            player = player_data.get(f'ID{pitcher_id}') or {}
+            stats = ((player.get('stats') or {}).get('pitching') or {})
+            if stats:
+                pitchers.append({
+                    'player_id': pitcher_id,
+                    'name': (player.get('person') or {}).get('fullName'),
+                    'team': team_info.get('name'),
+                    'team_id': team_info.get('id'),
+                    'stats': stats,
+                    'side': side,
+                })
+    return pitchers
+
+
+def _line_games_started(line: dict, pitcher_order: dict[str, list[int]]) -> int:
+    stats = line.get('stats') or {}
+    parsed = parse_games_started(stats.get('gamesStarted'))
+    if parsed is not None:
+        return parsed
+    side_pitchers = pitcher_order.get(line.get('side')) or []
+    return 1 if side_pitchers and side_pitchers[0] == line.get('player_id') else 0
+
+
+def _opponent_for_line(game: dict, line: dict, team_abbr_map: dict) -> tuple[str | None, str | None]:
+    opponent_side = 'away' if line.get('side') == 'home' else 'home'
+    opponent_id = _game_team_id(game, opponent_side)
+    return _game_team_name(game, opponent_side), team_abbr_map.get(opponent_id)
+
+
+def _ingest_boxscore_pitching_line(
+    pitcher,
+    line: dict,
+    game: dict,
+    *,
+    game_date: date,
+    team_abbr_map: dict,
+    pitcher_order: dict[str, list[int]],
+) -> bool:
+    game_pk = _game_pk(game)
+    if not game_pk:
+        return False
+
+    existing = GameLog.query.filter_by(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+    ).first()
+    if existing:
+        return False
+
+    stats = line.get('stats') or {}
+    opponent, opponent_abbreviation = _opponent_for_line(game, line, team_abbr_map)
+    innings_pitched_outs = validate_innings_outs(
+        parse_mlb_innings_to_outs(stats.get('inningsPitched', '0.0'))
+    )
+    log = GameLog(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        game_type=(game or {}).get('gameType', 'R'),
+        opponent=opponent,
+        opponent_abbreviation=opponent_abbreviation,
+        games_started=_line_games_started(line, pitcher_order),
+        innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
+        innings_pitched_outs=innings_pitched_outs,
+        pitches_thrown=_int_stat(stats, 'numberOfPitches'),
+        strikes=_int_stat(stats, 'strikes'),
+        hits_allowed=_int_stat(stats, 'hits'),
+        runs_allowed=_int_stat(stats, 'runs'),
+        earned_runs=_int_stat(stats, 'earnedRuns'),
+        walks=_int_stat(stats, 'baseOnBalls'),
+        strikeouts=_int_stat(stats, 'strikeOuts'),
+        home_runs_allowed=_int_stat(stats, 'homeRuns'),
+        save_situation=_positive_stat(stats, 'saveOpportunities'),
+        hold=_positive_stat(stats, 'holds'),
+        blown_save=_positive_stat(stats, 'blownSaves'),
+        win=_positive_stat(stats, 'wins'),
+        loss=_positive_stat(stats, 'losses'),
+        save=_positive_stat(stats, 'saves'),
+    )
+    for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
+        raw_li = stats.get(li_key)
+        if raw_li is not None:
+            try:
+                log.leverage_index = float(raw_li)
+            except (TypeError, ValueError):
+                pass
+            break
+    db.session.add(log)
+    return True
+
+
+def process_completed_game_for_postgame_refresh(
+    game: dict,
+    *,
+    schedule_date: date,
+    sync_run_id=None,
+) -> dict:
+    game_pk = _game_pk(game)
+    if not game_pk:
+        return {
+            'game_pk': None,
+            'logs_added': 0,
+            'pitchers_touched': 0,
+            'skipped': True,
+            'reason': 'missing_game_pk',
+        }
+
+    existing_marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).first()
+    if existing_marker is not None:
+        return {
+            'game_pk': game_pk,
+            'logs_added': 0,
+            'pitchers_touched': 0,
+            'skipped': True,
+            'reason': 'already_processed',
+        }
+
+    boxscore = mlb_client.get_game_boxscore(game_pk)
+    pitching_lines = _extract_pitching_lines_from_boxscore(boxscore)
+    pitcher_order = _pitcher_order_by_side(boxscore)
+    player_ids = [line.get('player_id') for line in pitching_lines if line.get('player_id')]
+    local_pitchers = {
+        pitcher.mlb_id: pitcher
+        for pitcher in (
+            Pitcher.query
+            .filter(Pitcher.active == True)
+            .filter(Pitcher.mlb_id.in_(player_ids or [-1]))
+            .all()
+        )
+    }
+    team_abbr_map = dict(
+        db.session.query(Pitcher.team_id, Pitcher.team_abbreviation)
+        .filter(Pitcher.team_abbreviation.isnot(None))
+        .distinct()
+        .all()
+    )
+    game_date = _game_date(game, schedule_date)
+    logs_added = 0
+    touched_pitcher_ids = set()
+    for line in pitching_lines:
+        pitcher = local_pitchers.get(line.get('player_id'))
+        if pitcher is None:
+            continue
+        if _ingest_boxscore_pitching_line(
+            pitcher,
+            line,
+            game,
+            game_date=game_date,
+            team_abbr_map=team_abbr_map,
+            pitcher_order=pitcher_order,
+        ):
+            logs_added += 1
+            touched_pitcher_ids.add(pitcher.id)
+
+    marker = PostgameProcessedGame(
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        game_type=(game or {}).get('gameType'),
+        home_team_id=_game_team_id(game, 'home'),
+        away_team_id=_game_team_id(game, 'away'),
+        final_state=_status_value(game, 'detailedState'),
+        logs_added=logs_added,
+        pitchers_touched=len(touched_pitcher_ids),
+        sync_run_id=sync_run_id,
+    )
+    db.session.add(marker)
+    db.session.flush()
+
+    return {
+        'game_pk': game_pk,
+        'logs_added': logs_added,
+        'pitchers_touched': len(touched_pitcher_ids),
+        'skipped': False,
+        'reason': None,
+    }
 
 
 def sync_recent_logs(
@@ -381,6 +686,7 @@ def complete_sync_run_with_snapshot(
     source=sync_metadata.SOURCE_MANUAL,
     started_at=None,
     snapshot_source='sync_completion',
+    job_name=sync_metadata.JOB_DAILY_SYNC,
 ):
     from services import dashboard_snapshot as dashboard_snapshot_service
 
@@ -404,6 +710,7 @@ def complete_sync_run_with_snapshot(
             error_message=error_message,
             source=source,
             started_at=started_at,
+            job_name=job_name,
             stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
             commit=False,
             rollback_before=False,
@@ -436,10 +743,214 @@ def complete_sync_run_with_snapshot(
             error_message=str(exc),
             source=source,
             started_at=started_at,
+            job_name=job_name,
             stage=sync_metadata.STAGE_FAILED,
             failed_stage=sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
         )
         raise
+
+
+def run_postgame_refresh(
+    app,
+    schedule_date: date | None = None,
+    source: str = sync_metadata.SOURCE_GITHUB_ACTIONS,
+):
+    """
+    Lightweight completed-game refresh.
+
+    This job checks one MLB schedule date, finds completed games not yet marked
+    as processed, fetches only those games' boxscores, and ingests pitching
+    lines for tracked active pitchers. It leaves the full morning sync path
+    intact: no roster refresh, no full-league game-log sweep.
+    """
+    _ensure_logs_dir()
+    log_file = _STATUS_DIR / 'postgame_refresh.log'
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s  %(levelname)-7s  %(message)s'
+    ))
+    run_logger = logging.getLogger('baseballos.postgame_refresh')
+    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file)
+               for h in run_logger.handlers):
+        run_logger.addHandler(file_handler)
+    run_logger.setLevel(logging.INFO)
+
+    started_at = datetime.now(timezone.utc)
+    schedule_date = schedule_date or postgame_schedule_date(started_at)
+    sync_run_id = None
+    status = {
+        'last_sync': started_at.isoformat(),
+        'status': sync_metadata.STATUS_SUCCESS,
+        'job_name': sync_metadata.JOB_POSTGAME_REFRESH,
+        'schedule_date': schedule_date.isoformat(),
+        'completed_games_found': 0,
+        'newly_completed_games': 0,
+        'games_already_processed': 0,
+        'games_processed': 0,
+        'new_logs_added': 0,
+        'pitchers_touched': 0,
+        'pitchers_updated': 0,
+        'errors': 0,
+        'records_failed': 0,
+        'message': '',
+    }
+    run_logger.info('── Postgame refresh starting (schedule_date=%s) ──', schedule_date)
+
+    try:
+        with app.app_context():
+            sync_run_id = sync_metadata.start_sync_run(
+                source=source,
+                started_at=started_at.replace(tzinfo=None),
+                job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+            )
+            mlb_client.metrics.reset()
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
+
+            completed_games = completed_games_for_postgame_refresh(schedule_date)
+            unprocessed_games, already_processed = _unprocessed_completed_games(completed_games)
+            status['completed_games_found'] = len(completed_games)
+            status['newly_completed_games'] = len(unprocessed_games)
+            status['games_already_processed'] = already_processed
+            run_logger.info(
+                'Found %s completed game(s); %s already processed, %s pending.',
+                len(completed_games),
+                already_processed,
+                len(unprocessed_games),
+            )
+
+            for game in unprocessed_games:
+                game_pk = _game_pk(game)
+                try:
+                    result = process_completed_game_for_postgame_refresh(
+                        game,
+                        schedule_date=schedule_date,
+                        sync_run_id=sync_run_id,
+                    )
+                    db.session.commit()
+                    if result.get('skipped'):
+                        continue
+                    status['games_processed'] += 1
+                    status['new_logs_added'] += result['logs_added']
+                    status['pitchers_touched'] += result['pitchers_touched']
+                    run_logger.info(
+                        'Processed completed game %s: %s log(s), %s pitcher(s).',
+                        game_pk,
+                        result['logs_added'],
+                        result['pitchers_touched'],
+                    )
+                except Exception as exc:
+                    db.session.rollback()
+                    status['errors'] += 1
+                    status['records_failed'] += 1
+                    dead_letter.record_failure(
+                        POSTGAME_GAME_FAILURE_ENTITY_TYPE,
+                        exc,
+                        entity_ref=game_pk,
+                        payload={
+                            'game_pk': game_pk,
+                            'schedule_date': schedule_date.isoformat(),
+                            'status': game.get('status') if isinstance(game, dict) else None,
+                        },
+                        sync_run_id=sync_run_id,
+                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    )
+                    db.session.commit()
+                    run_logger.warning('Postgame processing failed for game_pk=%s: %s', game_pk, exc)
+
+            if status['new_logs_added'] > 0:
+                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
+                pitchers_updated = recalculate_all_fatigue()
+                status['pitchers_updated'] = pitchers_updated
+                run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+
+            if status['records_failed']:
+                status['status'] = (
+                    sync_metadata.STATUS_FAILED
+                    if status['games_processed'] == 0 and status['newly_completed_games'] > 0
+                    else sync_metadata.STATUS_PARTIAL
+                )
+                status['message'] = (
+                    f"{status['records_failed']} completed game(s) could not be processed."
+                )
+            elif status['new_logs_added'] > 0:
+                status['message'] = 'Updated after completed games.'
+            elif status['newly_completed_games'] == 0:
+                status['message'] = 'No newly completed games to process.'
+            else:
+                status['message'] = 'Completed games were checked; no tracked pitcher workload changed.'
+
+            api_metrics = mlb_client.metrics.snapshot()
+            if status['new_logs_added'] > 0:
+                completed_run, snapshot = complete_sync_run_with_snapshot(
+                    sync_run_id,
+                    final_status=status['status'],
+                    records_processed=status['new_logs_added'],
+                    records_failed=status['records_failed'],
+                    new_logs_added=status['new_logs_added'],
+                    pitchers_updated=status['pitchers_updated'],
+                    errors=status['errors'],
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=status['message'] or None,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    snapshot_source='postgame_refresh',
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                )
+                status['dashboard_snapshot_id'] = snapshot.id
+            else:
+                sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=status['status'],
+                    records_processed=0,
+                    records_failed=status['records_failed'],
+                    new_logs_added=0,
+                    pitchers_updated=0,
+                    errors=status['errors'],
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=status['message'] or None,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    stage=(
+                        sync_metadata.STAGE_FAILED
+                        if status['status'] == sync_metadata.STATUS_FAILED
+                        else sync_metadata.STAGE_PUBLISHED
+                    ),
+                )
+    except Exception as e:
+        status['status'] = sync_metadata.STATUS_FAILED
+        status['message'] = str(e)
+        status['errors'] = max(1, status.get('errors', 0))
+        run_logger.exception('Postgame refresh failed: %s', e)
+        try:
+            api_metrics = mlb_client.metrics.snapshot()
+        except Exception:
+            api_metrics = {'api_calls': 0, 'retries': 0}
+        with app.app_context():
+            existing_run = db.session.get(SyncRun, sync_run_id) if sync_run_id else None
+            if existing_run is None or existing_run.status != sync_metadata.STATUS_FAILED:
+                sync_metadata.finish_sync_run(
+                    sync_run_id,
+                    status=sync_metadata.STATUS_FAILED,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    errors=status['errors'],
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=str(e),
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    stage=sync_metadata.STAGE_FAILED,
+                    failed_stage=existing_run.stage if existing_run is not None else None,
+                )
+
+    status['finished_at'] = datetime.now(timezone.utc).isoformat()
+    write_status(status)
+    run_logger.info('── Postgame refresh finished: %s ──', status['status'])
+    run_logger.removeHandler(file_handler)
+    file_handler.close()
+    return status
 
 
 def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_SCHEDULED):
