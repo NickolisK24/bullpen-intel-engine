@@ -19,6 +19,7 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.pitcher_role_authority import author_role_read_labels
+from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -316,7 +317,7 @@ LEAD_FRAGMENT_LIBRARY = {
         BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_DEEP_INTACT: {
-        BEAT_SIGNAL: 'The {team_name} still have trusted late-inning options behind the workload.',
+        BEAT_SIGNAL: 'The {team_name} still have multiple clean late-inning answers tonight.',
         BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} fully clean trusted late-inning options, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_CONCENTRATION_SHAPE: {
@@ -616,6 +617,35 @@ def _clean_options(records, logs_by_pitcher, reference_date):
     return clean, clean_trust
 
 
+def _top_workload_options(records, workload):
+    pitch_by_pitcher = (workload or {}).get('pitch_by_pitcher') or {}
+    if not pitch_by_pitcher:
+        return []
+    names_by_id = {}
+    for record in records:
+        pitcher = record.get('pitcher')
+        pitcher_id = _value(pitcher, 'id')
+        name = _value(pitcher, 'full_name')
+        if pitcher_id is not None and name:
+            names_by_id[pitcher_id] = name
+    options = [
+        {
+            'pitcher_id': pitcher_id,
+            'name': names_by_id[pitcher_id],
+            'recent_relief_pitches': pitches,
+        }
+        for pitcher_id, pitches in pitch_by_pitcher.items()
+        if pitcher_id in names_by_id and (pitches or 0) > 0
+    ]
+    options.sort(key=lambda item: (
+        -(item.get('recent_relief_pitches') or 0),
+        item.get('name') or '',
+        item.get('pitcher_id') or 0,
+    ))
+    count = max(3, int((workload or {}).get('top_arm_count') or 0))
+    return options[:count]
+
+
 def compute_team_story_inputs(team_inputs):
     workload = _workload_summary(team_inputs)
     availability = _availability_summary(team_inputs.records)
@@ -633,6 +663,7 @@ def compute_team_story_inputs(team_inputs):
     high_risk_options = _high_risk_options(team_inputs.records)
     high_risk = len(high_risk_options)
     roster_unavailable = _roster_unavailable_count(team_inputs.records)
+    top_workload = _top_workload_options(team_inputs.records, workload)
 
     concentration = (
         workload['total_pitches'] > 0
@@ -682,6 +713,7 @@ def compute_team_story_inputs(team_inputs):
         'season_era': season_era,
         'clean_options': clean,
         'clean_trust_options': clean_trust,
+        'top_workload_options': top_workload,
         'high_risk_arms': high_risk,
         'high_risk_arm_options': high_risk_options,
         'roster_unavailable_arms': roster_unavailable,
@@ -705,8 +737,10 @@ def _base_slots(inputs):
     season_era = inputs['season_era']
     clean_options = inputs['clean_options']
     clean_trust = inputs['clean_trust_options']
+    top_workload = inputs.get('top_workload_options') or []
     clean_trust_names = _join_names([item['name'] for item in clean_trust])
     clean_trust_verb = 'is' if len(clean_trust) == 1 else 'are'
+    top_workload_names = _join_names([item['name'] for item in top_workload])
     high_risk = inputs['high_risk_arms']
     high_risk_options = inputs.get('high_risk_arm_options') or []
     high_risk_names = _join_names([item['name'] for item in high_risk_options])
@@ -740,6 +774,7 @@ def _base_slots(inputs):
         'clean_trust_count': len(clean_trust),
         'clean_trust_names': clean_trust_names,
         'clean_trust_verb': clean_trust_verb,
+        'top_workload_names': top_workload_names,
         'clean_trust_late_route_clause': _story_phrase(
             'clean_trust_late_route_clause',
             inputs,
@@ -1775,6 +1810,10 @@ def assemble_story(rule_key, inputs, lead=None):
                 item['name'] for item in inputs['clean_trust_options']
                 if item.get('name')
             ],
+            'top_workload_names': [
+                item['name'] for item in inputs.get('top_workload_options') or []
+                if item.get('name')
+            ],
         },
         'slot_sources': {
             'workload': 'game_logs.relief_pitches',
@@ -1830,13 +1869,28 @@ def assemble_story(rule_key, inputs, lead=None):
                 item['name'] for item in inputs['clean_trust_options']
                 if item.get('name')
             ],
+            'top_workload_names': [
+                item['name'] for item in inputs.get('top_workload_options') or []
+                if item.get('name')
+            ],
             'clean_option_count': len(inputs['clean_options']),
+        },
+        'story_evidence': {
+            'capability': story_facts.get('evidence_capability'),
+            'version': story_facts.get('evidence_version'),
+            'pitcher_names': story_facts.get('named_pitchers') or [],
+            'evidence_statement': story_facts.get('evidence_statement'),
+            'consequence_category': story_facts.get('consequence_category'),
+            'consequence_statement': story_facts.get('consequence_statement'),
         },
     }
     if story_facts.get('disclosure'):
         disclosure_note = render_story_disclosure_note(story_facts)
         if disclosure_note:
             story['disclosure_note'] = disclosure_note
+    story['story_evidence_framework'] = validate_story_evidence(story)
+    if not story['story_evidence_framework']['passed']:
+        return None
     return story
 
 
@@ -1989,8 +2043,11 @@ def build_four_beat_story_feed(
     for record in story_records:
         story = record['story']
         lead = selected_leads.get((story.get('team_id'), story.get('rule_key')))
-        stories.append(assemble_story(story['rule_key'], record['inputs'], lead=lead))
+        final_story = assemble_story(story['rule_key'], record['inputs'], lead=lead)
+        if final_story:
+            stories.append(final_story)
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
+    stories, evidence_suppressed = apply_story_evidence_framework(stories)
 
     return {
         'capability': CAPABILITY,
@@ -2017,6 +2074,13 @@ def build_four_beat_story_feed(
         'items': stories,
         'count': len(stories),
         'suppressed_count': max(len(team_inputs) - len({story['team_id'] for story in stories}), 0),
+        'story_evidence_framework': {
+            'capability': 'story_evidence_framework_v1',
+            'version': '2026-06-19',
+            'published_count': len(stories),
+            'suppressed_count': len(evidence_suppressed),
+        },
+        'suppressed_stories': evidence_suppressed,
         'evaluations': [
             {
                 'team': team_eval['team'],

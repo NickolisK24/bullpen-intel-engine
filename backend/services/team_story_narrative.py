@@ -844,7 +844,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
         SITUATION_LATE_INNINGS_STABLE_MIDDLE_TESTED: [
             lambda f: f"{_sentence_start(possessive)} late innings still have shape, which gives the staff somewhere to land while the middle of the game does more work.",
             lambda f: f"For {article}, the finish still looks familiar; the bigger test is how much has to happen before that point.",
-            lambda f: f"{_sentence_start(possessive)} back end still gives the night structure, even while the bridge into it asks for more.",
+            lambda f: f"{_sentence_start(possessive)} late innings still have anchors, even while the bridge into them asks for more.",
         ],
         SITUATION_FULL_BOARD_CLOSE_GAME_QUESTIONS: [
             lambda f: f"{_sentence_start(article)} can find arms for the game; the harder question is which ones fit once the score gets tight.",
@@ -874,7 +874,7 @@ def _opening_sentence(facts: dict[str, Any], archetype: str) -> str:
         SITUATION_DEPTH_STRAIN_HIDDEN_BY_TOP_END: [
             lambda f: f"{_sentence_start(possessive)} late innings can still look normal while the group behind them takes on more of the night.",
             lambda f: f"For {article}, the top of the bullpen still gives the game a shape; the tighter part is everything needed before that.",
-            lambda f: f"{_sentence_start(possessive)} back end still steadies the picture, but the lead-in to it is carrying more weight.",
+            lambda f: f"{_sentence_start(possessive)} late innings can still look familiar, but the lead-in to them is carrying more weight.",
         ],
         SITUATION_WORKLOAD_SPREAD_TRUST_UNEVEN: [
             lambda f: f"{_sentence_start(possessive)} work has moved through enough arms, but not every option carries the same close-game comfort.",
@@ -944,7 +944,7 @@ def _contextual_middle_observation(
         ],
         ('top_structure_with_resource_strain', 'wide_routes'): [
             lambda f: "That width matters because the finish still has structure even while the group behind it is working harder.",
-            lambda f: "The back end still looks normal, which makes the broader workload easier to absorb.",
+            lambda f: "The late innings still look familiar, which makes the broader workload easier to absorb.",
             lambda f: "The late innings have not lost their shape, and that is what keeps the wider usage from feeling loose.",
         ],
         ('top_structure_with_resource_strain', 'stacked_pressures'): [
@@ -1025,7 +1025,7 @@ def _situation_middle_observation(
             lambda f: "The bullpen still has answers; they just keep coming from the same few names.",
         ],
         SITUATION_ENOUGH_BODIES_NOT_ENOUGH_COMFORT: [
-            lambda f: "There are bodies for the night; the comfort starts dropping after the first few names.",
+            lambda f: "The staff can cover innings, but leverage narrows the usable part of the board quickly.",
             lambda f: "The staff can find a pitcher, but the game gets harder once it moves past the first few choices.",
             lambda f: "That is where a normal-looking list can turn into a tougher in-game problem after the first few choices.",
         ],
@@ -1149,7 +1149,7 @@ def _disclosure_sentence(facts: dict[str, Any]) -> str | None:
         lambda f: "The bullpen workload tells the clearest part of the story here.",
         lambda f: f"For {_article_team(f)}, the recent innings tell the clearest part.",
         lambda f: "The recent innings are the cleanest part of the read.",
-        lambda f: "What happened on the mound is the cleanest part of the picture.",
+        lambda f: "What happened on the mound gives the firmest part of the read.",
         lambda f: "Recent innings give the clearest clue here.",
         lambda f: "The innings tell the story better than the roster edges.",
     ]
@@ -1370,10 +1370,14 @@ def render_story_narrative(facts: dict[str, Any]) -> str:
     """Render a natural two-to-three paragraph baseball story."""
 
     archetype = select_story_archetype(facts)
-    opening = _paragraph([_opening_sentence(facts, archetype)])
+    opening = _paragraph([
+        facts.get('evidence_statement'),
+        _opening_sentence(facts, archetype),
+    ])
     middle = _paragraph(_middle_sentences(facts, archetype))
     closing = _paragraph([
         _disclosure_sentence(facts),
+        facts.get('consequence_statement'),
         _ending_sentence(facts, archetype),
     ])
 

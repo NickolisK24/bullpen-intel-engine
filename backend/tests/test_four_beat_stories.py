@@ -34,6 +34,12 @@ from services.four_beat_stories import (
     evaluate_team_rules,
     four_beat_stories_enabled,
 )
+from services.story_evidence import (
+    GENERIC_LANGUAGE_DENYLIST,
+    apply_story_evidence_framework,
+    story_public_text,
+    validate_story_evidence,
+)
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
@@ -286,7 +292,7 @@ def _ranked_era(team_id=1, *, era=2.75, rank=5, total=30, strong=True, solid=Tru
 
 
 def _thin_concentrated_team_inputs(**kwargs):
-    pitchers = [_pitcher(idx, f'Context Arm {idx}') for idx in range(1, 6)]
+    pitchers = [_pitcher(idx, f'Relief Arm {idx}') for idx in range(1, 6)]
     records = [
         _record(pitchers[0], STATUS_AVAILABLE),
         _record(pitchers[1], STATUS_AVAILABLE),
@@ -2018,6 +2024,117 @@ def test_story_narrative_output_is_deterministic():
         for item in second['items']
     ]
     assert pitchers
+
+
+def test_story_evidence_framework_surfaces_fact_name_and_consequence_in_narrative():
+    pitchers, records, logs = _fixture_team(
+        501,
+        'Evidence Club',
+        'EVC',
+        [45, 35, 25, 5, 5],
+        available_count=2,
+        trust_indices=(0, 1),
+    )
+
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+
+    assert feed['count'] == 1
+    story = feed['items'][0]
+    evidence = story['story_evidence']
+    narrative = story['narrative']
+    validation = validate_story_evidence(story)
+
+    assert validation['passed'] is True
+    assert story['story_evidence_framework']['passed'] is True
+    assert evidence['evidence_statement'] in narrative
+    assert evidence['consequence_statement'] in narrative
+    assert any(name in narrative for name in evidence['pitcher_names'])
+    assert re.search(r'\d', narrative)
+    assert story_public_text(story).startswith(story['title'])
+    assert pitchers
+
+
+def test_story_evidence_framework_fail_closed_for_invalid_story():
+    story = {
+        'story_id': 'bad:story',
+        'team_id': 1,
+        'team_name': 'Bad Story Club',
+        'team_abbreviation': 'BAD',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'title': 'The bullpen picture is changing.',
+        'narrative': 'The shape of the picture is changing. It still sits in a workable spot.',
+        'story_evidence': {
+            'pitcher_names': ['Named Reliever'],
+            'evidence_statement': None,
+            'consequence_statement': None,
+            'consequence_category': None,
+        },
+    }
+
+    published, suppressed = apply_story_evidence_framework([story])
+
+    assert published == []
+    assert suppressed == [{
+        'team_id': 1,
+        'team_name': 'Bad Story Club',
+        'team_abbreviation': 'BAD',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'story_id': 'bad:story',
+        'reasons': [
+            'evidence_presence',
+            'name_presence',
+            'consequence_presence',
+            'generic_language_absent',
+        ],
+    }]
+    assert set(GENERIC_LANGUAGE_DENYLIST) & {
+        'shape of the picture',
+        'still sits in a workable spot',
+    }
+
+
+def test_story_evidence_framework_suppresses_exact_repeated_constructions():
+    def story(team_id, team_name, abbr, pitcher_name, pct):
+        evidence_statement = (
+            f'{pitcher_name} has handled {pct}% of recent relief pitches for {team_name}.'
+        )
+        consequence_statement = 'That leaves less coverage margin if the game needs another clean inning.'
+        return {
+            'story_id': f'{team_id}:story',
+            'team_id': team_id,
+            'team_name': team_name,
+            'team_abbreviation': abbr,
+            'rule_key': RULE_STRESS_TRANSFER,
+            'title': f'{team_name} bullpen workload is concentrated.',
+            'narrative': (
+                f'{evidence_statement} The bullpen has a copied opening sentence.\n\n'
+                f'{consequence_statement}'
+            ),
+            'story_evidence': {
+                'pitcher_names': [pitcher_name],
+                'evidence_statement': evidence_statement,
+                'consequence_statement': consequence_statement,
+                'consequence_category': 'less_coverage_margin',
+            },
+        }
+
+    published, suppressed = apply_story_evidence_framework([
+        story(1, 'First Club', 'FST', 'First Reliever', 71),
+        story(2, 'Second Club', 'SND', 'Second Reliever', 64),
+    ])
+
+    assert [item['team_abbreviation'] for item in published] == ['FST']
+    assert suppressed == [{
+        'team_id': 2,
+        'team_name': 'Second Club',
+        'team_abbreviation': 'SND',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'story_id': '2:story',
+        'reasons': [
+            'duplicate_consequence_construction',
+            'duplicate_opening_construction',
+        ],
+    }]
 
 
 def test_bullpen_stability_passes_through_computed_data_without_new_claims():

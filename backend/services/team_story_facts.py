@@ -10,6 +10,8 @@ from services.story_context_integration import build_story_context_integration
 
 CAPABILITY = 'story_fact_layer_v1'
 VERSION = '2026-06-18'
+EVIDENCE_CAPABILITY = 'story_evidence_framework_v1'
+EVIDENCE_VERSION = '2026-06-19'
 
 BEAT_SIGNAL = 'signal'
 BEAT_EVIDENCE = 'evidence'
@@ -80,6 +82,50 @@ def _decimal(value: Any) -> str:
 
 def _plural(count: int, singular: str, plural: str | None = None) -> str:
     return singular if count == 1 else (plural or f'{singular}s')
+
+
+def _join_names(names: list[str], limit: int = 2) -> str:
+    cleaned: list[str] = []
+    for name in names:
+        text = _clean_text(name)
+        if text and text not in cleaned:
+            cleaned.append(text)
+    names = cleaned[:limit]
+    if not names:
+        return ''
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f'{names[0]} and {names[1]}'
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def _names_from_options(options: Any) -> list[str]:
+    if not isinstance(options, list):
+        return []
+    return [
+        _clean_text(item.get('name'))
+        for item in options
+        if isinstance(item, dict) and _clean_text(item.get('name'))
+    ]
+
+
+def _named_pitchers(inputs: dict[str, Any], rule_key: str | None = None) -> list[str]:
+    ordered: list[str] = []
+    option_sets = []
+    if rule_key == RULE_SUSTAINABILITY_QUESTION:
+        option_sets.append(inputs.get('high_risk_arm_options'))
+    option_sets.extend([
+        inputs.get('top_workload_options'),
+        inputs.get('clean_trust_options'),
+        inputs.get('high_risk_arm_options'),
+        inputs.get('clean_options'),
+    ])
+    for options in option_sets:
+        for name in _names_from_options(options):
+            if name not in ordered:
+                ordered.append(name)
+    return ordered
 
 
 def _beat_by_key(beats: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
@@ -241,6 +287,111 @@ def _watch_question(rule_key: str, lead: dict[str, Any] | None) -> str:
     return 'The thing to watch next is whether the recent usage pattern changes after the next completed game.'
 
 
+def _evidence_statement(rule_key: str, inputs: dict[str, Any], lead: dict[str, Any] | None) -> str | None:
+    workload = inputs.get('workload') or {}
+    availability = inputs.get('availability') or {}
+    season_era = inputs.get('season_era') or {}
+    team = _team_identity(inputs)
+    team_name = _clean_text(team.get('team_name'))
+    pitcher_names = _named_pitchers(inputs, rule_key)
+    subject = _join_names(pitcher_names)
+    if not subject:
+        return None
+    verb = 'is' if len(pitcher_names[:2]) == 1 else 'are'
+    top_arms = _count(workload.get('top_arm_count'))
+    top_share = _pct(workload.get('top_share'))
+    participants = _count(workload.get('participant_count'))
+    per_arm = _decimal(workload.get('per_arm_pitches'))
+    available = _count(availability.get('available'))
+    total = _count(availability.get('total'))
+    era = season_era.get('era')
+    era_text = f' behind a {era:.2f} season ERA' if isinstance(era, (int, float)) else ''
+    dimension = (lead or {}).get('dimension')
+
+    if top_share >= 60 and top_arms > 0:
+        return (
+            f'{subject} {verb} part of the top {top_arms} {team_name} relievers '
+            f'who have handled {top_share}% of recent relief pitches.'
+        )
+    if participants >= 6:
+        return (
+            f'{subject} {verb} part of a {participants}-reliever {team_name} workload spread '
+            f'averaging {per_arm} pitches per participating arm.'
+        )
+    if total > 0 and dimension in {LEAD_AVAILABILITY_THIN, LEAD_AVAILABILITY_DEEP}:
+        return (
+            f'{subject} {verb} in the current {team_name} bullpen mix while '
+            f'{available} of {total} relievers are available.'
+        )
+    if rule_key in {RULE_SUSTAINABILITY_QUESTION, RULE_HIDDEN_CAPACITY_LOSS} and era_text:
+        if participants > 0:
+            return (
+                f'{subject} {verb} in the current {team_name} relief mix{era_text}, '
+                f'with recent usage at {per_arm} pitches per participating reliever.'
+            )
+        return (
+            f'{subject} {verb} in the current {team_name} relief mix{era_text}, '
+            f'with {available} of {total} relievers available.'
+        )
+    if total > 0:
+        return (
+            f'{subject} {verb} in the current {team_name} bullpen mix while '
+            f'{available} of {total} relievers are available.'
+        )
+    return None
+
+
+def _consequence_category(rule_key: str, lead: dict[str, Any] | None) -> str:
+    dimension = (lead or {}).get('dimension')
+    if rule_key == RULE_PRESSURE_DISTRIBUTION or dimension in {
+        LEAD_WORKLOAD_LIGHT,
+        LEAD_PARTICIPATION_BROAD,
+        LEAD_AVAILABILITY_DEEP,
+        LEAD_DEEP_INTACT,
+    }:
+        return 'more_stable_bullpen_shape'
+    if rule_key == RULE_SUSTAINABILITY_QUESTION or dimension in {
+        LEAD_FATIGUE_LOAD,
+        LEAD_WORKLOAD_HIGH,
+        LEAD_CONCENTRATION_SHAPE,
+        LEAD_PARTICIPATION_NARROW,
+    }:
+        return 'heavier_workload_concentration'
+    if rule_key == RULE_HIDDEN_CAPACITY_LOSS or dimension in {
+        LEAD_AVAILABILITY_THIN,
+        LEAD_TRUST_LANE_ABSENCE,
+        LEAD_TRUST_LANE_SHALLOW,
+    }:
+        return 'reduced_flexibility'
+    return 'less_coverage_margin'
+
+
+def _consequence_statement(rule_key: str, inputs: dict[str, Any], lead: dict[str, Any] | None) -> str:
+    category = _consequence_category(rule_key, lead)
+    team = _team_identity(inputs)
+    team_name = _clean_text(team.get('team_name'))
+    names = _join_names(_named_pitchers(inputs, rule_key))
+    if category == 'more_stable_bullpen_shape':
+        return (
+            f'For {team_name}, that creates a more stable bullpen shape because the staff is not forced '
+            'back to one narrow group.'
+        )
+    if category == 'heavier_workload_concentration':
+        return (
+            'That keeps heavier workload concentration in play if the next tight inning '
+            f'has to move back through {names or "the same group"}.'
+        )
+    if category == 'reduced_flexibility':
+        return (
+            'That reduces flexibility if the game needs one more clean inning before '
+            f'the late plan reaches {names or "the trusted group"}.'
+        )
+    return (
+        'That leaves less coverage margin if the next close inning has to move beyond '
+        f'{names or "the first group"}.'
+    )
+
+
 def _disclosure(inputs: dict[str, Any], context_items: list[dict[str, Any]]) -> str | None:
     if any(item.get('source_limitations_present') or item.get('disclosure_limitations') for item in context_items):
         return DISCLOSURE_LIMITED_BULLPEN_PICTURE
@@ -270,7 +421,13 @@ def build_story_facts(
     facts = {
         'capability': CAPABILITY,
         'version': VERSION,
+        'evidence_capability': EVIDENCE_CAPABILITY,
+        'evidence_version': EVIDENCE_VERSION,
         'team': _team_identity(inputs),
+        'named_pitchers': _named_pitchers(inputs, rule_key),
+        'evidence_statement': _evidence_statement(rule_key, inputs, lead),
+        'consequence_category': _consequence_category(rule_key, lead),
+        'consequence_statement': _consequence_statement(rule_key, inputs, lead),
         'primary_observation': _beat_text(beats, BEAT_SIGNAL),
         'supporting_context': _supporting_context(rule_key, inputs),
         'pressure_source': _pressure_source(rule_key, lead),
