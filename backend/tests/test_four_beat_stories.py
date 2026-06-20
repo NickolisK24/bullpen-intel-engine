@@ -49,6 +49,7 @@ from services.story_observation_discovery import (
     differentiate_observation_inventory,
     discover_story_observations,
     generate_observation_candidates,
+    rank_observation_candidates,
     story_template_dependency_audit,
 )
 from services.story_observation_voice import (
@@ -120,7 +121,7 @@ STABILITY_CONTEXT_MARKERS = (
     'moving in and out of the picture',
     'not looked exactly the same',
     'innings have been moving around',
-    'bullpen mix has been shifting',
+    'bullpen usage has moved across different relievers',
 )
 
 AWKWARD_RENDERER_PHRASES = (
@@ -139,6 +140,12 @@ AWKWARD_RENDERER_PHRASES = (
     'the workload trail explains',
     'the usage trail explains',
     'the run-prevention line gives',
+    'current relief shape is easy to see',
+    'relief shape starts there',
+    'changed bullpen mix',
+    'bullpen mix has been shifting',
+    'the bullpen is under pressure',
+    'limited flexibility',
 )
 
 BANNED_CAVEAT_PHRASES = (
@@ -2181,6 +2188,26 @@ def test_observation_discovery_generates_ranked_candidates_before_story_generati
     assert pitchers
 
 
+def test_observation_ranking_prefers_change_over_static_identity_on_ties():
+    ranked = rank_observation_candidates([
+        {
+            'observation_id': 'identity',
+            'observation_type': 'identity',
+            'text': 'Static identity candidate with 6 usable relievers.',
+            'score': 70,
+        },
+        {
+            'observation_id': 'change',
+            'observation_type': 'change',
+            'text': 'Change candidate with 2 recently reintroduced relievers.',
+            'score': 70,
+        },
+    ])
+
+    assert [candidate['observation_type'] for candidate in ranked] == ['change', 'identity']
+    assert [candidate['rank'] for candidate in ranked] == [1, 2]
+
+
 def test_observation_marketplace_generates_inventory_before_feed_assignment():
     pitchers, records, logs = _fixture_team(
         606,
@@ -2652,6 +2679,87 @@ def test_observation_voice_layer_builds_public_safe_supported_frames():
     assert voice['body_shape'] == f"workload_concentration:{voice['prose_path']}"
     assert voice['evidence_sentence'] == selected_observation['text']
     assert voice['consequence_sentence'] == selected_observation['consequence_statement']
+
+
+def test_observation_voice_avoids_generic_identity_and_change_phrases():
+    weak_phrases = (
+        'current relief shape is easy to see',
+        'relief shape starts there',
+        'current relief shape',
+        'changed bullpen mix',
+        'bullpen mix has been shifting',
+        'the bullpen is under pressure',
+        'limited flexibility',
+        'current usage read',
+    )
+    identity = {
+        'observation_id': 'identity',
+        'observation_type': 'identity',
+        'text': (
+            'Frame Arm and Bridge Arm sit at the front of Voice Identity Club bullpen, '
+            'with 6 usable relievers behind them.'
+        ),
+        'pitcher_names': ['Frame Arm', 'Bridge Arm'],
+        'consequence_category': 'more_stable_bullpen_shape',
+        'consequence_statement': (
+            'That gives Voice Identity Club a front group while still leaving the manager '
+            'more than one path through the late innings.'
+        ),
+    }
+    change = {
+        'observation_id': 'change',
+        'observation_type': 'change',
+        'text': (
+            'Voice Change Club has 2 recently reintroduced relievers, but Frame Arm and '
+            'Bridge Arm still anchor the current late-game route.'
+        ),
+        'pitcher_names': ['Frame Arm', 'Bridge Arm'],
+        'consequence_category': 'more_stable_bullpen_shape',
+        'consequence_statement': (
+            'For Voice Change Club, that gives the manager one more way to cover innings '
+            'without moving the leverage center away from the familiar group.'
+        ),
+    }
+
+    for selected_observation, team_name, prose_paths in (
+        (identity, 'Voice Identity Club', ('current_mix', 'named_dependency', 'alternatives_short')),
+        (change, 'Voice Change Club', ('current_mix', 'named_dependency', 'game_route')),
+    ):
+        for prose_path in prose_paths:
+            voice = build_observation_voice({
+                'team': {
+                    'team_id': 610,
+                    'team_name': team_name,
+                    'team_abbreviation': 'VOC',
+                },
+                'selected_observation': selected_observation,
+                'named_pitchers': selected_observation['pitcher_names'],
+                'evidence_statement': selected_observation['text'],
+                'consequence_statement': selected_observation['consequence_statement'],
+                'consequence_category': selected_observation['consequence_category'],
+                'forced_prose_path': prose_path,
+            })
+            public_text = ' '.join(
+                piece for piece in (
+                    voice['headline'],
+                    voice['human_frame'],
+                    voice['evidence_sentence'],
+                    voice['consequence_sentence'],
+                )
+                if piece
+            ).lower()
+
+            assert voice['applied'] is True
+            assert voice['validation']['passed'] is True
+            for phrase in weak_phrases:
+                assert phrase not in public_text
+            assert any(marker in public_text for marker in (
+                'late innings',
+                'late-game route',
+                'manager',
+                'leverage center',
+                'usable relievers',
+            ))
 
 
 def test_observation_voice_supports_multiple_prose_paths_for_same_observation():

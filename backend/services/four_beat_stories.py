@@ -148,7 +148,7 @@ PHRASE_VARIANTS = {
         'A few different relievers have been moving in and out of the picture lately.',
         'The bullpen group has not looked exactly the same from week to week.',
         'The innings have been moving around lately.',
-        'The bullpen mix has been shifting lately.',
+        'Recent bullpen usage has moved across different relievers lately.',
     ),
     'environment_intro': (
         'This is not one clean issue.',
@@ -168,7 +168,7 @@ PHRASE_VARIANTS = {
     'environment_stability_label': (
         'the group has not looked the same lately',
         'a few different relievers have been moving through the picture',
-        'the bullpen mix has been shifting lately',
+        'recent bullpen usage has moved across different relievers',
     ),
     'sustainability_mechanism': (
         "The results are not the issue; the cost of every clean inning is a little higher tonight.",

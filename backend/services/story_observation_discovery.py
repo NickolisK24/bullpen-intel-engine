@@ -27,8 +27,8 @@ OBSERVATION_TYPE_ORDER = {
     OBSERVATION_FLEXIBILITY: 2,
     OBSERVATION_TRUST_SHAPE: 3,
     OBSERVATION_RUN_PREVENTION_STRESS: 4,
-    OBSERVATION_IDENTITY: 5,
-    OBSERVATION_CHANGE: 6,
+    OBSERVATION_CHANGE: 5,
+    OBSERVATION_IDENTITY: 6,
 }
 
 
@@ -429,7 +429,7 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     return _candidate(
         observation_type=OBSERVATION_IDENTITY,
         text=(
-            f'{subject} sit at the front of {_possessive_team(inputs)} current relief shape, '
+            f'{subject} sit at the front of {_possessive_team(inputs)} bullpen, '
             f'with {clean_option_count} usable relievers behind it because {public_summary.lower()}.'
         ),
         score=score,
@@ -462,7 +462,7 @@ def _change_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         observation_type=OBSERVATION_CHANGE,
         text=(
             f'{_team_name(inputs)} {_team_have_verb(inputs)} {changed} recently reintroduced {_plural(changed, "reliever")}, '
-            f'but {subject} still anchor the current usage read.'
+            f'but {subject} still anchor the current late-game route.'
         ),
         score=score,
         score_components={
@@ -472,8 +472,8 @@ def _change_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         pitcher_names=names,
         consequence_category='more_stable_bullpen_shape',
         consequence_statement=(
-            f'For {_team_name(inputs)}, that creates a more stable bullpen shape if those returned arms '
-            'can keep the night from collapsing back to one narrow group.'
+            f'For {_team_name(inputs)}, that gives the manager one more way to cover innings '
+            'without moving the leverage center away from the familiar group.'
         ),
         source_fields=[
             'bullpen_stability.new_or_reintroduced_arm_count',

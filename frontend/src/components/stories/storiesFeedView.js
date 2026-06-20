@@ -15,13 +15,13 @@ export const STORY_FILTERS = [
     key: 'stressed',
     label: 'Pressure',
     activeLabel: 'Pressure Stories',
-    description: "Pens where recent work is narrowing the manager's late-game choices.",
+    description: 'Pens where recent work is narrowing late-game choices for the manager.',
   },
   {
     key: 'rested',
     label: 'Rest',
     activeLabel: 'Rest Stories',
-    description: "Pens where rested options are widening the manager's choices.",
+    description: 'Pens where rested options are widening choices for the manager.',
   },
   {
     key: 'watch',

@@ -94,6 +94,12 @@ GENERIC_FRAME_DENYLIST = (
     'tells the story',
     'remains part of the equation',
     'still sits in a workable spot',
+    'current relief shape is easy to see',
+    'relief shape starts there',
+    'changed bullpen mix',
+    'bullpen mix has been shifting',
+    'the bullpen is under pressure',
+    'limited flexibility',
 )
 
 INTERNAL_PUBLIC_UNSAFE_TERMS = (
@@ -542,35 +548,35 @@ def polish_selected_observation(
         if stable:
             variants = {
                 PROSE_PATH_DEPENDENCY: (
-                    f'{subject} sit at the front of {possessive} current relief shape with {clean_option_count} usable relievers behind them.',
+                    f'{subject} give {team} a defined first group with {clean_option_count} usable relievers behind them.',
                     category,
-                    f'That gives {team} a front group without making every important inning depend on one lane.',
+                    f'That gives {team} a front group while still leaving the manager more than one path through the late innings.',
                 ),
                 PROSE_PATH_ALTERNATIVES: (
-                    f'{team} can still turn beyond {subject}, with {clean_option_count} usable relievers in the current relief shape.',
+                    f'{team} can still turn beyond {subject}, with {clean_option_count} usable relievers available behind the first group.',
                     category,
-                    'The shape starts with those names, but it does not end there.',
+                    'The late-game path is defined, but it does not end with one lane.',
                 ),
                 PROSE_PATH_CURRENT_MIX: (
-                    f'{subject} sit at the front of {possessive} current relief shape, with {clean_option_count} usable relievers behind them because {summary.lower()}.',
+                    f'{subject} sit at the front of {possessive} bullpen, with {clean_option_count} usable relievers behind them because {summary.lower()}.',
                     category,
-                    'The bullpen has a defined front without forcing every close inning through the same lane.',
+                    'The bullpen has a defined first group without forcing every close inning through the same lane.',
                 ),
             }
         else:
             variants = {
                 PROSE_PATH_DEPENDENCY: (
-                    f'{subject} sit at the front of {possessive} current relief shape with {clean_option_count} usable relievers behind them.',
+                    f'{subject} give {team} a defined first group, but only {clean_option_count} usable relievers sit behind them.',
                     category,
-                    f'The shape gets thinner once the game moves beyond {short_subject}.',
+                    f'The manager has less room once the game moves beyond {short_subject}.',
                 ),
                 PROSE_PATH_ALTERNATIVES: (
-                    f'{team} can turn beyond {subject}, but only {clean_option_count} usable relievers sit behind the front of the current relief shape.',
+                    f'{team} can turn beyond {subject}, but only {clean_option_count} usable relievers sit behind the first group.',
                     category,
-                    'That leaves less room if the game moves away from the first lane.',
+                    'That leaves less room if the game moves away from the first late-game lane.',
                 ),
                 PROSE_PATH_CURRENT_MIX: (
-                    f'{subject} sit at the front of {possessive} current relief shape, with {clean_option_count} usable relievers behind them.',
+                    f'{subject} sit at the front of {possessive} bullpen, with {clean_option_count} usable relievers behind them.',
                     category,
                     f'That reduces flexibility if the game moves away from {short_subject}.',
                 ),
@@ -581,12 +587,12 @@ def polish_selected_observation(
         arm_word = _plural(changed, 'reliever')
         variants = {
             PROSE_PATH_DEPENDENCY: (
-                f'{team} {_team_has_verb(facts)} {changed} recently reintroduced {arm_word} back in the mix, but {subject} still anchor the current usage read.',
+                f'{team} {_team_has_verb(facts)} {changed} recently reintroduced {arm_word} back into the bullpen, but {subject} still anchor the current late-game route.',
                 'more_stable_bullpen_shape',
                 _variant(facts, selected, prose_path, (
                     'The mix has changed, but the leverage path still starts with the same names.',
-                    'The new piece changes the group, not the first place the story points.',
-                    'The usage read is still anchored by the familiar names despite the added arm.',
+                    'The new piece changes the group, not the first late-game turn.',
+                    'The bullpen route is still anchored by the familiar names despite the added arm.',
                 )),
             ),
             PROSE_PATH_GAME_ROUTE: (
@@ -599,12 +605,12 @@ def polish_selected_observation(
                 )),
             ),
             PROSE_PATH_CURRENT_MIX: (
-                f'{team} {_team_has_verb(facts)} {changed} recently reintroduced {arm_word}, but {subject} still anchor the current usage read.',
+                f'{team} {_team_has_verb(facts)} {changed} recently reintroduced {arm_word}, but {subject} still anchor the current late-game route.',
                 'more_stable_bullpen_shape',
                 _variant(facts, selected, prose_path, (
-                    'The current mix is different, but the first meaningful read still comes back to the familiar group.',
-                    'The roster movement matters less than who still sits at the center of the usage read.',
-                    'The change adds texture without moving the current bullpen identity away from the same anchors.',
+                    'The current mix is different, but the late-game center still comes back to the familiar group.',
+                    'The roster movement matters less than who still sits at the center of the leverage route.',
+                    'The change adds depth without moving the leverage center away from the same anchors.',
                 )),
             ),
         }
@@ -735,17 +741,17 @@ def _headline(facts: dict[str, Any], selected: dict[str, Any], names: list[str],
 
     if observation_type == OBSERVATION_IDENTITY:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
-            return _sentence(f'{possessive} relief shape starts with {subject}')
+            return _sentence(f'{subject} define {possessive} first bullpen group')
         if prose_path == PROSE_PATH_ALTERNATIVES and subject:
-            return _sentence(f'{team} can still turn beyond {subject}, but the relief shape starts there')
-        return _sentence(f'{possessive} current relief shape is easy to see')
+            return _sentence(f'{team} has options beyond {subject}, but the bullpen path starts with that first group')
+        return _sentence(f'{possessive} bullpen is organized around a clear first group')
 
     if observation_type == OBSERVATION_CHANGE:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
-            return _sentence(f'{subject} {_names_verb(names, "is", "are")} holding together {possessive} changed bullpen mix')
+            return _sentence(f'{subject} still anchor {possessive} bullpen leverage route after the mix changed')
         if prose_path == PROSE_PATH_GAME_ROUTE and subject:
             return _sentence(f'{possessive} next close route still runs through {subject}')
-        return _sentence(f'{possessive} bullpen mix has shifted around familiar names')
+        return _sentence(f'{possessive} bullpen mix changed without moving the leverage center')
 
     return None
 
@@ -870,27 +876,27 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
     if observation_type == OBSERVATION_IDENTITY:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
-                f'{subject} sit at the front of {_possessive_team(facts)} current relief shape'
+                f'{subject} sit at the front of {_possessive_team(facts)} bullpen plan'
             )
         if prose_path == PROSE_PATH_ALTERNATIVES and subject:
             return _sentence(
-                f'{team} can still turn beyond {subject}, but the current relief shape starts there'
+                f'{team} can still turn beyond {subject}, but the bullpen path starts with that first group'
             )
         return _sentence(
-            f'{_possessive_team(facts)} current relief shape is visible through {count_text} named {name_text}'
+            f'{_possessive_team(facts)} bullpen is organized around {count_text} named {name_text}'
         )
 
     if observation_type == OBSERVATION_CHANGE:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
-                f'{subject} {_names_verb(names, "is", "are")} holding together {_possessive_team(facts)} changed bullpen mix'
+                f'{subject} still anchor {_possessive_team(facts)} bullpen leverage route after the mix changed'
             )
         if prose_path == PROSE_PATH_GAME_ROUTE and subject:
             return _sentence(
                 f'The next close route for {team} still runs through {subject} even after the mix changed'
             )
         return _sentence(
-            f'{_possessive_team(facts)} bullpen mix has changed, but the current story still comes back to {count_text} {name_text}'
+            f'{_possessive_team(facts)} bullpen mix has changed, but the current late-game route still comes back to {count_text} {name_text}'
         )
 
     return None

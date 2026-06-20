@@ -30,6 +30,12 @@ GENERIC_LANGUAGE_DENYLIST = (
     'remains part of the equation',
     'still sits in a workable spot',
     'trusted late-inning options behind the workload',
+    'current relief shape is easy to see',
+    'relief shape starts there',
+    'changed bullpen mix',
+    'bullpen mix has been shifting',
+    'the bullpen is under pressure',
+    'limited flexibility',
 )
 
 PUBLIC_SCHEMA_LANGUAGE_DENYLIST = tuple(sorted(set(INTERNAL_PUBLIC_UNSAFE_TERMS + (
