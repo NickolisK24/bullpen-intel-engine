@@ -5,7 +5,6 @@ import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import SeasonBanner from './SeasonBanner'
 import BullpenLandscape from './BullpenLandscape'
 import DashboardOrientation from './DashboardOrientation'
-import FollowMyTeam from './FollowMyTeam'
 import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
@@ -88,8 +87,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
 
       {/* Orientation layer — what BaseballOS is + what to do next (always shown) */}
       <DashboardOrientation />
-
-      <FollowMyTeam />
 
       {loading && !data ? (
         <LoadingPane message="Loading bullpen overview..." />
