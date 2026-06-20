@@ -424,7 +424,7 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
                 value={selectValue}
                 onChange={handleChange}
                 disabled={!canSwitch}
-                className="min-h-7 rounded border border-dirt/80 bg-field/30 px-2 py-0.5 text-[11px] normal-case tracking-normal text-chalk500 outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="baseballos-select min-h-7 rounded border border-dirt/80 px-2 py-0.5 text-[11px] normal-case tracking-normal outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Change preferred team"
               >
                 {!selectValue && <option value="">Choose team</option>}
@@ -488,7 +488,7 @@ function FirstVisitTeamPicker({
                 value={selectedValue}
                 onChange={(event) => setDraftValue(event.target.value)}
                 disabled={teamOptions.length === 0}
-                className="rounded border border-dirt bg-field px-3 py-2 text-xs normal-case tracking-normal text-chalk200 outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
+                className="baseballos-select rounded border border-dirt px-3 py-2 text-xs normal-case tracking-normal outline-none transition-colors hover:border-chalk500 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Choose preferred team"
               >
                 {teamOptions.map(option => (

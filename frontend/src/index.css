@@ -201,6 +201,21 @@
     @apply bg-chalk border border-dirt rounded px-2 py-1 font-mono text-xs text-chalk200;
   }
 
+  .baseballos-select {
+    @apply border-dirt bg-dugout text-chalk100;
+    color-scheme: dark;
+  }
+  .baseballos-select option {
+    @apply bg-dugout text-chalk100;
+  }
+  .baseballos-select option:hover,
+  .baseballos-select option:focus {
+    @apply bg-chalk text-chalk100;
+  }
+  .baseballos-select option:checked {
+    @apply bg-amber text-field;
+  }
+
   /* ── Risk badges ── */
   .badge-low      { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-pine/20 text-emerald-400 border border-pine/40; }
   .badge-moderate { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-warning/20 text-yellow-400 border border-warning/40; }
