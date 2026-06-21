@@ -13,7 +13,15 @@ from services.story_observation_voice import (
 
 
 CAPABILITY = 'story_evidence_framework_v1'
-VERSION = '2026-06-19'
+VERSION = '2026-06-21'
+
+# Headline -> first-body-sentence redundancy guard. The headline sets the frame;
+# if body sentence 1 restates it, the card wastes its most valuable line. The
+# four-beat body should open on the evidence beat instead. This is report-only:
+# it scores the headline/opener pair and flags a near-duplicate, but does not
+# gate the story. A token overlap at or above this fraction reads as a
+# restatement; openers that lead on the evidence sit well below it.
+HEADLINE_OPENER_REDUNDANCY_MAX = 0.6
 
 GENERIC_LANGUAGE_DENYLIST = (
     'the bullpen picture remains stable',
@@ -177,6 +185,51 @@ def story_public_text(story: dict[str, Any]) -> str:
     return _clean_text(' '.join(_clean_text(piece) for piece in pieces if _clean_text(piece)))
 
 
+def _content_tokens(value: Any) -> set[str]:
+    return {token for token in _normalize_text(value).split() if token}
+
+
+def headline_opener_overlap(headline: Any, opener: Any) -> float:
+    """Normalized lexical overlap (token Jaccard) between two sentences.
+
+    1.0 means identical wording; 0.0 means no shared tokens. Reuses the scorer's
+    existing text normalization, so it adds no new dependency. This is the same
+    normalized lexical-overlap heuristic used to judge restated copy elsewhere.
+    """
+    headline_tokens = _content_tokens(headline)
+    opener_tokens = _content_tokens(opener)
+    if not headline_tokens or not opener_tokens:
+        return 0.0
+    shared = headline_tokens & opener_tokens
+    union = headline_tokens | opener_tokens
+    return len(shared) / len(union)
+
+
+def _first_body_sentence(story: dict[str, Any]) -> str:
+    narrative = _clean_text(story.get('narrative')) or _clean_text(story.get('body'))
+    sentences = _sentences(narrative)
+    return sentences[0] if sentences else ''
+
+
+def headline_opener_redundancy(story: dict[str, Any]) -> dict[str, Any]:
+    """Score whether body sentence 1 restates the headline.
+
+    Report-only regression guard for the headline -> first-body-sentence echo.
+    ``redundant`` is the failing signal: a near-duplicate opener fails this
+    check, while an opener that leads on the evidence beat passes.
+    """
+    headline = _clean_text(story.get('title'))
+    opener = _first_body_sentence(story)
+    overlap = headline_opener_overlap(headline, opener)
+    return {
+        'headline': headline,
+        'opener': opener,
+        'overlap': round(overlap, 3),
+        'threshold': HEADLINE_OPENER_REDUNDANCY_MAX,
+        'redundant': bool(headline and opener and overlap >= HEADLINE_OPENER_REDUNDANCY_MAX),
+    }
+
+
 def _has_measurable_fact(text: str) -> bool:
     return bool(_MEASURABLE_FACT_RE.search(text or ''))
 
@@ -280,12 +333,18 @@ def validate_story_evidence(story: dict[str, Any]) -> dict[str, Any]:
         })
     fail_reasons = [key for key, passed in checks.items() if not passed]
     evidence = _story_evidence(story)
+    # Report-only regression guard: score the headline -> body-sentence-1 pair
+    # and flag a near-duplicate. Surfaced for review but intentionally excluded
+    # from `checks`/`fail_reasons`/`passed`, so it does not gate or suppress.
+    headline_opener = headline_opener_redundancy(story)
     return {
         'capability': CAPABILITY,
         'version': VERSION,
         'passed': not fail_reasons,
         'checks': checks,
         'fail_reasons': fail_reasons,
+        'headline_opener': headline_opener,
+        'headline_restates_opener': headline_opener['redundant'],
         'generic_language_hits': generic_hits,
         'schema_language_hits': schema_hits,
         'internal_process_language_hits': process_hits,
@@ -421,9 +480,12 @@ __all__ = [
     'VERSION',
     'CONSEQUENCE_MARKERS',
     'GENERIC_LANGUAGE_DENYLIST',
+    'HEADLINE_OPENER_REDUNDANCY_MAX',
     'INTERNAL_PROCESS_LANGUAGE_DENYLIST',
     'PUBLIC_SCHEMA_LANGUAGE_DENYLIST',
     'apply_story_evidence_framework',
+    'headline_opener_overlap',
+    'headline_opener_redundancy',
     'story_public_text',
     'validate_story_evidence',
 ]

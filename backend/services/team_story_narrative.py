@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 
 CAPABILITY = 'team_story_narrative_renderer_v3'
-VERSION = '2026-06-18.v3'
+VERSION = '2026-06-21.v3'
 
 ARCHETYPE_WORKLOAD_CONCENTRATION = 'workload_concentration'
 ARCHETYPE_THIN_TRUSTED_GROUP = 'thin_trusted_group'
@@ -1359,8 +1359,12 @@ def _observation_voice_paragraphs(facts: dict[str, Any]) -> list[str] | None:
     validation = voice.get('validation') or {}
     if not voice.get('applied') or not validation.get('passed'):
         return None
+    # The headline already carries the human_frame's framing. Emitting the frame
+    # as the first body line made body sentence 1 restate the headline, wasting
+    # the most valuable line in the card. Open the body on the evidence beat
+    # (named arms + the number) instead; the frame stays in the voice payload and
+    # the headline keeps doing the framing job.
     paragraphs = [
-        _paragraph([voice.get('human_frame')]),
         _paragraph([voice.get('evidence_sentence')]),
         _paragraph([voice.get('consequence_sentence')]),
     ]
