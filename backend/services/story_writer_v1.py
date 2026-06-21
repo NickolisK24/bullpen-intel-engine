@@ -51,6 +51,17 @@ BANNED_TERMS = (
     'confidence score',
 )
 
+ROBOTIC_TERMS = (
+    'context indicates',
+    'observation type',
+    'constraint facts',
+    'baseline facts',
+    'optionality band',
+    'depth pressure band',
+    'the frame shows',
+    'the frame marks',
+)
+
 
 def _dict(value):
     return value if isinstance(value, dict) else {}
@@ -80,6 +91,13 @@ def _team(frame):
         or _clean_text(_dict(_dict(frame).get('story_frame')).get('team_name'))
         or 'This bullpen'
     )
+
+
+def _possessive(value):
+    text = _clean_text(value)
+    if not text:
+        return 'This bullpen'
+    return f"{text}'" if text.lower().endswith('s') else f"{text}'s"
 
 
 def _fmt(value, *, suffix=''):
@@ -149,6 +167,11 @@ def _has_banned_language(text):
     return any(term in lower for term in BANNED_TERMS)
 
 
+def _has_robotic_language(text):
+    lower = _clean_text(text).lower()
+    return any(term in lower for term in ROBOTIC_TERMS)
+
+
 def _all_output_text(output):
     sections = _dict(output.get('written_observation'))
     return ' '.join(_clean_text(value) for value in sections.values() if value)
@@ -157,8 +180,9 @@ def _all_output_text(output):
 def validate_written_observation(output):
     text = _all_output_text(output)
     return {
-        'passed': bool(text) and not _has_banned_language(text),
+        'passed': bool(text) and not _has_banned_language(text) and not _has_robotic_language(text),
         'contains_banned_language': _has_banned_language(text),
+        'contains_robotic_language': _has_robotic_language(text),
         'has_text': bool(text),
     }
 
@@ -180,9 +204,9 @@ def _rotation_pressure(frame):
 
     return _sections(
         headline=(
-            f"{team}'s rotation is handing more of the game to the bullpen"
+            f"{_possessive(team)} rotation is handing more of the game to the bullpen"
             if _present(avg_7)
-            else f"{team}'s bullpen story starts with the rotation"
+            else f"{_possessive(team)} bullpen is carrying earlier innings"
         ),
         observation_paragraph=_paragraph(
             (
@@ -214,13 +238,13 @@ def _rotation_pressure(frame):
                 if _present(coverage) else None
             ),
             (
-                f"That is the workload created when the starter-to-bullpen handoff arrives earlier"
+                f"The bridge is thinner when the starter-to-bullpen handoff arrives earlier"
                 if _present(coverage) or _present(early_rate) else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the constraint is how many middle innings the bullpen has to absorb"
+                f"If similar game conditions occur, the forward constraint is how many middle innings the bullpen has to absorb"
                 if _present(constraint.get('bullpen_coverage_ip_7d')) or _present(coverage) else None
             ),
         ),
@@ -247,8 +271,8 @@ def _concentration_pressure(frame):
 
     return _sections(
         headline=(
-            f"{team}'s bullpen is running through {names}"
-            if names else f"{team}'s bullpen work is concentrated"
+            f"{_possessive(team)} bullpen is running through {names}"
+            if names else f"{_possessive(team)} bullpen work is concentrated"
         ),
         observation_paragraph=_paragraph(
             (
@@ -272,17 +296,17 @@ def _concentration_pressure(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The rotation context is part of the frame: starter length is down {_fmt(abs(trend))} innings against the 14-day mark"
+                f"Starter length is down {_fmt(abs(trend))} innings against the 14-day mark"
                 if _present(trend) and trend < 0 else None
             ),
             (
-                f"The optionality layer shows {_fmt(paths)} practical close-game paths"
+                f"The bullpen has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
                 if _present(paths) else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If the game shape repeats, the structural constraint remains the same core: {core}"
+                f"If the game shape repeats, the route still runs through the same core: {core}"
                 if core else None
             ),
         ),
@@ -308,16 +332,16 @@ def _optionality_strength(frame):
 
     return _sections(
         headline=(
-            f"{team}'s bullpen has multiple usable routes"
-            if _present(paths) else f"{team}'s bullpen optionality is showing"
+            f"{_possessive(team)} bullpen has multiple usable routes"
+            if _present(paths) else f"{_possessive(team)} bullpen has usable routes"
         ),
         observation_paragraph=_paragraph(
             (
-                f"The frame shows {_fmt(paths)} practical close-game paths"
+                f"The bullpen has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
                 if _present(paths) else None
             ),
             (
-                f"The optionality band is {band}"
+                f"That leaves the route {band}"
                 if _present(band) else None
             ),
         ),
@@ -333,21 +357,21 @@ def _optionality_strength(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The supporting layer adds {_fmt(secondary_count)} secondary {_count_word(secondary_count, 'option')}"
+                f"Coverage is also coming from {_fmt(secondary_count)} secondary {_count_word(secondary_count, 'option')}"
                 if _present(secondary_count) and secondary_count > 0 else None
             ),
             (
-                f"The concentration context reads {concentration}"
+                f"The workload pattern is {concentration}"
                 if _present(concentration) else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the constraint is not one arm; it is how the staff chooses among the available paths"
+                f"If similar game conditions occur, the forward constraint is choosing among the available paths rather than finding one arm"
                 if _present(paths) else None
             ),
             (
-                f"The frame also keeps {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')} out of that route count"
+                f"The route count keeps {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')} out of the clean picture"
                 if _present(unavailable) else None
             ),
         ),
@@ -372,16 +396,16 @@ def _stable_core(frame):
 
     return _sections(
         headline=(
-            f"{team}'s bullpen core has held together"
-            if current else f"{team}'s bullpen core is stable"
+            f"{_possessive(team)} bullpen core has held together"
+            if current else f"{_possessive(team)} bullpen core is stable"
         ),
         observation_paragraph=_paragraph(
             (
-                f"The current operational core is {current}"
+                f"The current core is {current}"
                 if current else None
             ),
             (
-                f"The frame marks that group as {observed.get('stability_band')}"
+                f"The same core is still carrying the main bullpen route"
                 if _present(observed.get('stability_band')) else None
             ),
         ),
@@ -401,13 +425,13 @@ def _stable_core(frame):
                 if _present(stability) else None
             ),
             (
-                f"The concentration context reads {concentration}"
+                f"The workload pattern is {concentration}"
                 if _present(concentration) else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the structural constraint is still built around a {_fmt(core_size)}-arm core"
+                f"If similar game conditions occur, the forward constraint is still built around a {_fmt(core_size)}-arm core"
                 if _present(core_size) else None
             ),
         ),
@@ -433,12 +457,12 @@ def _core_transition(frame):
 
     return _sections(
         headline=(
-            f"{team}'s bullpen core is changing"
-            if _present(changes) else f"{team}'s bullpen core is in transition"
+            f"{_possessive(team)} bullpen core is changing"
+            if _present(changes) else f"{_possessive(team)} bullpen core is in transition"
         ),
         observation_paragraph=_paragraph(
             (
-                f"The frame shows {_fmt(changes)} core {_count_word(changes, 'change')}"
+                f"The bullpen has {_fmt(changes)} core {_count_word(changes, 'change')}"
                 if _present(changes) else None
             ),
             (
@@ -458,17 +482,17 @@ def _core_transition(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The new core members are {new_members}"
+                f"The current route now includes {new_members}"
                 if new_members else None
             ),
             (
-                f"The departed core members are {departed}"
+                f"The prior route no longer includes {departed}"
                 if departed else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the constraint is a relief mix with {_fmt(retention)} retained {_count_word(retention, 'member')} from the prior core"
+                f"If similar game conditions occur, the forward constraint is a relief mix with {_fmt(retention)} retained {_count_word(retention, 'member')} from the prior core"
                 if _present(retention) else None
             ),
         ),
@@ -494,16 +518,16 @@ def _depth_pressure(frame):
 
     return _sections(
         headline=(
-            f"{team}'s bullpen depth is under pressure"
-            if _present(inactive) else f"{team}'s bullpen depth is part of the story"
+            f"{_possessive(team)} bullpen depth is under pressure"
+            if _present(inactive) else f"{_possessive(team)} bullpen depth is part of the story"
         ),
         observation_paragraph=_paragraph(
             (
-                f"The frame shows {_fmt(inactive)} inactive bullpen {_count_word(inactive, 'arm')}"
+                f"There are {_fmt(inactive)} bullpen {_count_word(inactive, 'arm')} outside the active route"
                 if _present(inactive) else None
             ),
             (
-                f"The depth pressure band is {depth_band}"
+                f"That makes the depth picture {depth_band}"
                 if _present(depth_band) else None
             ),
         ),
@@ -515,7 +539,7 @@ def _depth_pressure(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The inactive group includes {_fmt(il_count)} IL {_count_word(il_count, 'arm')}"
+                f"The depth loss includes {_fmt(il_count)} IL {_count_word(il_count, 'arm')}"
                 if _present(il_count) else None
             ),
             (
@@ -525,11 +549,11 @@ def _depth_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the constraint is a bullpen board with {_fmt(paths)} practical close-game paths"
+                f"If similar game conditions occur, the forward constraint is a bullpen board with {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
                 if _present(paths) else None
             ),
             (
-                f"The optionality layer reads {optionality}"
+                f"The available route is {optionality}"
                 if _present(optionality) else None
             ),
         ),
@@ -645,6 +669,7 @@ def build_story_writer_v1(*, construction_payloads=None, team_contexts=None, tea
 __all__ = [
     'BANNED_TERMS',
     'CAPABILITY',
+    'ROBOTIC_TERMS',
     'SECTION_KEYS',
     'VERSION',
     'build_story_writer_v1',

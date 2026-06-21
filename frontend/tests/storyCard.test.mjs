@@ -29,6 +29,15 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (props) => renderToStaticMarkup(React.createElement(StoryCard, props))
 
+const STORY_TYPE_LABELS = {
+  rotation_pressure: 'Rotation pressure',
+  concentration_pressure: 'Concentration pressure',
+  optionality_strength: 'Optionality strength',
+  stable_core: 'Stable core',
+  core_transition: 'Core transition',
+  depth_pressure: 'Depth pressure',
+}
+
 function storyPayload(overrides = {}) {
   return {
     capability: 'story_intelligence_api_v1',
@@ -45,7 +54,7 @@ function storyPayload(overrides = {}) {
     headline: "Kansas City's bullpen is running through three arms",
     observation: 'The top group has handled 94% of recent bullpen workload.',
     baseline: 'The league comparison is 58% for top-three bullpen workload.',
-    cause: 'The rotation context has created more innings for the relief group.',
+    cause: 'Shorter starts have created more innings for the relief group.',
     constraint: 'If the same game shape repeats, the structure still points back to the same core group.',
     freshness: {
       data_through: '2026-06-20',
@@ -64,15 +73,15 @@ function storyPayload(overrides = {}) {
 test('StoryCard renders a successful deterministic bullpen story note', () => {
   const html = render({ story: storyPayload() })
 
-  assert.ok(htmlIncludes(html, 'Bullpen Story'))
+  assert.ok(htmlIncludes(html, 'Bullpen Note'))
   assert.ok(htmlIncludes(html, "Kansas City&#x27;s bullpen is running through three arms"))
   assert.ok(htmlIncludes(html, 'Concentration pressure'))
   assert.ok(htmlIncludes(html, 'Data through Jun 20, 2026'))
-  assert.ok(htmlIncludes(html, 'Deterministic BaseballOS note'))
-  assert.ok(htmlIncludes(html, 'What happened'))
-  assert.ok(htmlIncludes(html, 'Baseline'))
+  assert.ok(htmlIncludes(html, 'Written from BaseballOS data'))
+  assert.ok(htmlIncludes(html, 'What changed'))
+  assert.ok(htmlIncludes(html, 'Comparison point'))
   assert.ok(htmlIncludes(html, 'Why it happened'))
-  assert.ok(htmlIncludes(html, 'Constraint'))
+  assert.ok(htmlIncludes(html, 'What it creates'))
   assert.ok(htmlIncludes(html, 'The top group has handled 94% of recent bullpen workload.'))
   assert.equal(storyCardHasBannedLanguage(html), false)
 })
@@ -86,6 +95,7 @@ test('StoryCard keeps internal API field names and engine terminology out of the
     'construction_frame',
     'trust_metadata',
     'external_generation_used',
+    'deterministic',
     'observation engine',
     'construction engine',
     'writer',
@@ -111,8 +121,8 @@ test('StoryCard renders a trust-first neutral state', () => {
     }),
   })
 
-  assert.ok(htmlIncludes(html, 'No bullpen story note available'))
-  assert.ok(htmlIncludes(html, 'does not have a strong enough bullpen story signal'))
+  assert.ok(htmlIncludes(html, 'Story note is quiet right now'))
+  assert.ok(htmlIncludes(html, 'holding this note until the bullpen context has a clear enough signal'))
   assert.equal(storyCardHasBannedLanguage(html), false)
 })
 
@@ -120,9 +130,10 @@ test('StoryCard handles loading and error states cleanly', () => {
   const loadingHtml = render({ loading: true })
   const errorHtml = render({ error: 'API 500', onRetry: () => {} })
 
-  assert.ok(htmlIncludes(loadingHtml, 'Loading bullpen story note'))
-  assert.ok(htmlIncludes(errorHtml, 'Story note unavailable'))
-  assert.ok(htmlIncludes(errorHtml, 'Retry story note'))
+  assert.ok(htmlIncludes(loadingHtml, 'Checking the team story note'))
+  assert.ok(htmlIncludes(errorHtml, 'Story note paused'))
+  assert.ok(htmlIncludes(errorHtml, 'bullpen board is still available'))
+  assert.ok(htmlIncludes(errorHtml, 'Retry note'))
   assert.ok(!htmlIncludes(errorHtml, 'API 500'))
 })
 
@@ -135,9 +146,31 @@ test('StoryCard degrades gracefully when optional paragraphs are missing', () =>
   const view = getStoryCardView(story)
 
   assert.equal(view.paragraphs.map(item => item.key).join(','), 'observation,constraint')
-  assert.ok(htmlIncludes(html, 'What happened'))
-  assert.ok(htmlIncludes(html, 'Constraint'))
-  assert.ok(!htmlIncludes(html, '<div class="font-mono text-[10px] uppercase tracking-widest text-chalk600">Baseline</div>'))
+  assert.ok(htmlIncludes(html, 'What changed'))
+  assert.ok(htmlIncludes(html, 'What it creates'))
+  assert.ok(!htmlIncludes(html, 'Comparison point'))
+})
+
+test('StoryCard renders every V1 story type with the analyst-note sections', () => {
+  for (const [storyType, label] of Object.entries(STORY_TYPE_LABELS)) {
+    const html = render({
+      story: storyPayload({
+        story_type: storyType,
+        headline: `${label} is shaping this bullpen`,
+        observation: `${label} changed the bullpen route.`,
+        baseline: 'The comparison point stays visible.',
+        cause: 'The cause is tied to how the innings are being covered.',
+        constraint: 'The resulting constraint stays tied to the bullpen route.',
+      }),
+    })
+
+    assert.ok(htmlIncludes(html, label))
+    assert.ok(htmlIncludes(html, 'What changed'))
+    assert.ok(htmlIncludes(html, 'Comparison point'))
+    assert.ok(htmlIncludes(html, 'Why it happened'))
+    assert.ok(htmlIncludes(html, 'What it creates'))
+    assert.equal(storyCardHasBannedLanguage(html), false)
+  }
 })
 
 test('getTeamStory calls the Story Intelligence API V1 team endpoint', async (t) => {

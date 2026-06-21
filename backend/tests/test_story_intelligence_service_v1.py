@@ -195,7 +195,7 @@ def test_service_selection_uses_deterministic_product_order():
 
     assert_story_contract(result, TYPE_DEPTH_PRESSURE)
     assert result['observation_count'] >= 3
-    assert '4 inactive bullpen arms' in written_text(result)
+    assert '4 bullpen arms outside the active route' in written_text(result)
 
 
 def test_neutral_state_when_no_observations_exist():

@@ -10,6 +10,7 @@ from services.story_observation_engine import (
 from services.story_writer_v1 import (
     BANNED_TERMS,
     CAPABILITY,
+    ROBOTIC_TERMS,
     SECTION_KEYS,
     build_story_writer_v1,
     write_story_frame,
@@ -135,6 +136,25 @@ def assert_no_banned_language(output):
         assert term not in text
 
 
+def assert_no_robotic_language(output):
+    text = written_text(output).lower()
+    for term in ROBOTIC_TERMS:
+        assert term not in text
+
+
+def assert_quality_sections(output):
+    written = output['written_observation']
+    assert written['headline']
+    assert written['observation_paragraph']
+    assert written['baseline_paragraph']
+    assert written['cause_paragraph']
+    assert written['constraint_paragraph']
+    assert_no_banned_language(output)
+    assert_no_robotic_language(output)
+    assert output['validation']['contains_banned_language'] is False
+    assert output['validation']['contains_robotic_language'] is False
+
+
 def test_writer_outputs_rotation_pressure_observation():
     frame = frame_for(team_context(rotation={
         'rotation_avg_ip_7d': 4.1,
@@ -149,10 +169,13 @@ def test_writer_outputs_rotation_pressure_observation():
     assert_writer_shape(output, TYPE_ROTATION_PRESSURE)
     text = written_text(output)
     assert 'Kansas City Royals' in text
+    assert "Royals's" not in text
+    assert "Royals' rotation" in text
     assert '4.1 innings' in text
     assert '5.4 starter innings' in text
     assert '4.9 innings per game' in text
     assert output['written_observation']['constraint_paragraph'].startswith('If similar game conditions occur')
+    assert_quality_sections(output)
 
 
 def test_writer_outputs_concentration_pressure_observation():
@@ -180,6 +203,8 @@ def test_writer_outputs_concentration_pressure_observation():
     assert '58%' in text
     assert '36 percentage points' in text
     assert 'current operational core' not in text.lower()
+    assert 'route still runs through the same core' in text
+    assert_quality_sections(output)
 
 
 def test_writer_outputs_optionality_strength_observation():
@@ -199,6 +224,8 @@ def test_writer_outputs_optionality_strength_observation():
     assert '6 practical close-game paths' in text
     assert '7 available arms' in text
     assert '2 clean workload options' in text
+    assert 'available paths rather than finding one arm' in text
+    assert_quality_sections(output)
 
 
 def test_writer_outputs_stable_core_observation():
@@ -219,6 +246,7 @@ def test_writer_outputs_stable_core_observation():
     assert 'First Arm, Second Arm, and Third Arm' in text
     assert '100%' in text
     assert '3-arm core' in text
+    assert_quality_sections(output)
 
 
 def test_writer_outputs_core_transition_observation():
@@ -241,6 +269,8 @@ def test_writer_outputs_core_transition_observation():
     assert '3 core changes' in text
     assert 'Fifth Arm, Sixth Arm, and Seventh Arm' in text
     assert '0 retained members' in text
+    assert 'current route now includes' in text
+    assert_quality_sections(output)
 
 
 def test_writer_outputs_depth_pressure_observation():
@@ -259,9 +289,10 @@ def test_writer_outputs_depth_pressure_observation():
     assert_writer_shape(output, TYPE_DEPTH_PRESSURE)
     text = written_text(output)
     assert 'depth is under pressure' in text
-    assert '4 inactive bullpen arms' in text
+    assert '4 bullpen arms outside the active route' in text
     assert '3 IL arms' in text
     assert '1 non-IL inactive arm' in text
+    assert_quality_sections(output)
 
 
 def test_writer_is_deterministic_for_same_frame():
@@ -307,7 +338,9 @@ def test_writer_banned_language_does_not_appear_in_written_text():
     output = write_story_frame(frame)
 
     assert_no_banned_language(output)
+    assert_no_robotic_language(output)
     assert output['validation']['contains_banned_language'] is False
+    assert output['validation']['contains_robotic_language'] is False
 
 
 def test_missing_optional_frame_fields_degrade_gracefully():

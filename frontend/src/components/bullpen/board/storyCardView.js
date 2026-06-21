@@ -36,17 +36,17 @@ function dataThroughLabel(freshness) {
 
 function trustLabel(trustMetadata) {
   if (trustMetadata.external_generation_used === false) {
-    return 'Deterministic BaseballOS note'
+    return 'Written from BaseballOS data'
   }
   return null
 }
 
 function paragraphs(story) {
   return [
-    { key: 'observation', label: 'What happened', text: cleanText(story.observation) },
-    { key: 'baseline', label: 'Baseline', text: cleanText(story.baseline) },
+    { key: 'observation', label: 'What changed', text: cleanText(story.observation) },
+    { key: 'baseline', label: 'Comparison point', text: cleanText(story.baseline) },
     { key: 'cause', label: 'Why it happened', text: cleanText(story.cause) },
-    { key: 'constraint', label: 'Constraint', text: cleanText(story.constraint) },
+    { key: 'constraint', label: 'What it creates', text: cleanText(story.constraint) },
   ].filter(item => item.text)
 }
 
@@ -67,7 +67,7 @@ export function getStoryCardView(story) {
     return {
       hasPayload: Boolean(story),
       available: false,
-      title: 'No bullpen story note available',
+      title: 'Story note is quiet right now',
       message: neutralMessage(payload.neutral_reason),
       storyType,
       meta,
@@ -89,12 +89,12 @@ export function getStoryCardView(story) {
 export function neutralMessage(reason) {
   const key = cleanText(reason)
   if (key === 'no_story_observations') {
-    return 'BaseballOS does not have a strong enough bullpen story signal for this team right now.'
+    return 'BaseballOS is holding this note until the bullpen context has a clear enough signal.'
   }
   if (key === 'no_valid_story_frame') {
-    return 'BaseballOS has context for this team, but not enough complete story evidence to write a note safely.'
+    return 'BaseballOS has team context here, but not enough complete evidence to write the note safely.'
   }
-  return 'BaseballOS is holding this story surface neutral until enough trusted context is available.'
+  return 'BaseballOS is keeping this note neutral until enough trusted context is available.'
 }
 
 export function storyCardHasBannedLanguage(html) {
@@ -109,6 +109,15 @@ export function storyCardHasBannedLanguage(html) {
     'ranked',
     'ranking',
     'best option',
+    'context indicates',
+    'observation type',
+    'constraint facts',
+    'baseline facts',
+    'optionality band',
+    'depth pressure band',
+    'the frame shows',
+    'the frame marks',
+    'deterministic',
     'manager should',
     'should use',
   ].some(term => text.includes(term))

@@ -3,7 +3,7 @@ import { getStoryCardView } from './storyCardView'
 function MetaPill({ children }) {
   if (!children) return null
   return (
-    <span className="rounded border border-dirt bg-field/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+    <span className="rounded border border-dirt bg-field/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-chalk500">
       {children}
     </span>
   )
@@ -31,8 +31,8 @@ export default function StoryCard({
   if (loading) {
     return (
       <StoryShell tone="neutral">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Bullpen Story</div>
-        <p className="mt-2 font-mono text-xs text-chalk500">Loading bullpen story note...</p>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Bullpen Note</div>
+        <p className="mt-2 font-mono text-xs text-chalk500">Checking the team story note...</p>
       </StoryShell>
     )
   }
@@ -40,10 +40,10 @@ export default function StoryCard({
   if (error) {
     return (
       <StoryShell tone="error">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Story</div>
-        <h3 className="mt-2 font-display text-xl tracking-wide text-chalk100">Story note unavailable</h3>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Note</div>
+        <h3 className="mt-2 font-display text-xl tracking-wide text-chalk100">Story note paused</h3>
         <p className="mt-2 text-sm leading-relaxed text-chalk400">
-          BaseballOS could not load this team story note right now.
+          The bullpen board is still available; BaseballOS is holding this note until it can load cleanly.
         </p>
         {typeof onRetry === 'function' && (
           <button
@@ -51,7 +51,7 @@ export default function StoryCard({
             onClick={onRetry}
             className="mt-3 rounded border border-dirt bg-dugout px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
           >
-            Retry story note
+            Retry note
           </button>
         )}
       </StoryShell>
@@ -64,7 +64,7 @@ export default function StoryCard({
     return (
       <StoryShell tone="neutral">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Bullpen Story</div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">Bullpen Note</div>
           <div className="flex flex-wrap gap-1.5">
             {view.meta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
           </div>
@@ -78,7 +78,7 @@ export default function StoryCard({
   return (
     <StoryShell>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Story</div>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">Bullpen Note</div>
         <div className="flex flex-wrap gap-1.5">
           {view.meta.map(item => <MetaPill key={item}>{item}</MetaPill>)}
         </div>
