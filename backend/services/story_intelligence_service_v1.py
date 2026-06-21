@@ -32,13 +32,24 @@ VERSION = '2026-06-21.v1'
 SOURCE = 'backend'
 
 SERVICE_OBSERVATION_ORDER = (
-    TYPE_DEPTH_PRESSURE,
     TYPE_ROTATION_PRESSURE,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
-    TYPE_STABLE_CORE,
     TYPE_OPTIONALITY_STRENGTH,
+    TYPE_STABLE_CORE,
+    TYPE_DEPTH_PRESSURE,
 )
+
+SERVICE_SEVERITY_ORDER = {
+    'high': 3,
+    'medium': 2,
+    'low': 1,
+}
+
+SERVICE_OBSERVATION_PRIORITY = {
+    observation_type: index
+    for index, observation_type in enumerate(SERVICE_OBSERVATION_ORDER)
+}
 
 SUPPORTING_CONTEXT_KEYS = (
     'rotation_context',
@@ -105,7 +116,7 @@ def _freshness(team_context, as_of_date=None):
 
 def _trust_metadata():
     return {
-        'service_resolution': 'deterministic_first_valid_observation',
+        'service_resolution': 'deterministic_severity_then_context_specific_observation',
         'service_observation_order': list(SERVICE_OBSERVATION_ORDER),
         'external_generation_used': False,
         'new_metrics_created': False,
@@ -138,30 +149,41 @@ def _valid_frame(frame):
     return bool(frame) and frame.get('construction_confidence') != CONFIDENCE_LOW
 
 
+def _candidate_selection_key(candidate):
+    observation = _dict(_dict(candidate).get('selected_observation'))
+    observation_type = observation.get('type')
+    return (
+        -SERVICE_SEVERITY_ORDER.get(observation.get('severity'), 0),
+        SERVICE_OBSERVATION_PRIORITY.get(observation_type, len(SERVICE_OBSERVATION_ORDER)),
+        str(observation_type or ''),
+    )
+
+
 def select_service_story_candidate(observations, story_frames):
-    """Return the first valid service story candidate by deterministic order."""
+    """Return the strongest valid service story candidate deterministically."""
     rows = [
         observation
         for observation in _list(observations)
         if isinstance(observation, dict)
     ]
     frames = _frame_by_type(story_frames)
-    for observation_type in SERVICE_OBSERVATION_ORDER:
-        for observation in rows:
-            if observation.get('type') != observation_type:
-                continue
-            frame = frames.get(observation_type)
-            if not _valid_frame(frame):
-                continue
-            writer_output = write_story_frame(frame)
-            if _dict(writer_output.get('validation')).get('passed') is not True:
-                continue
-            return {
-                'selected_observation': deepcopy(observation),
-                'construction_frame': deepcopy(frame),
-                'writer_output': writer_output,
-            }
-    return None
+    candidates = []
+    for observation in rows:
+        observation_type = observation.get('type')
+        frame = frames.get(observation_type)
+        if not _valid_frame(frame):
+            continue
+        writer_output = write_story_frame(frame)
+        if _dict(writer_output.get('validation')).get('passed') is not True:
+            continue
+        candidates.append({
+            'selected_observation': deepcopy(observation),
+            'construction_frame': deepcopy(frame),
+            'writer_output': writer_output,
+        })
+    if not candidates:
+        return None
+    return sorted(candidates, key=_candidate_selection_key)[0]
 
 
 def _base_payload(team_id, as_of_date, team_context, observation_payload, construction_payload):
@@ -299,6 +321,7 @@ __all__ = [
     'NEUTRAL_NO_OBSERVATIONS',
     'NEUTRAL_NO_VALID_FRAME',
     'SERVICE_OBSERVATION_ORDER',
+    'SERVICE_SEVERITY_ORDER',
     'STATE_NEUTRAL',
     'STATE_STORY_AVAILABLE',
     'VERSION',

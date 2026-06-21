@@ -243,6 +243,23 @@ def _story_type_counts(teams):
     return counts
 
 
+def _story_type_distribution(story_type_counts):
+    total = sum(story_type_counts.values())
+    if not total:
+        return []
+    return [
+        {
+            'story_type': story_type,
+            'count': count,
+            'share_of_story_states': round((count / total) * 100, 1),
+        }
+        for story_type, count in sorted(
+            story_type_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+
+
 def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=None, limit=None):
     """
     Build an internal Story Intelligence QA preview.
@@ -272,6 +289,7 @@ def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=N
         _preview_team(team)
         for team in _list(_dict(service_payload).get('teams'))
     ]
+    story_type_counts = _story_type_counts(teams)
     return {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -279,7 +297,8 @@ def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=N
         'as_of_date': _iso(as_of_date) or _dict(service_payload).get('as_of_date'),
         'team_count': len(teams),
         'state_counts': _state_counts(teams),
-        'story_type_counts': _story_type_counts(teams),
+        'story_type_counts': story_type_counts,
+        'story_type_distribution': _story_type_distribution(story_type_counts),
         'teams': teams,
         'limitations': [*LIMITATIONS, *_list(_dict(service_payload).get('limitations'))],
     }

@@ -12,6 +12,7 @@ from services.story_intelligence_service_v1 import (
 )
 from services.story_observation_engine import (
     TYPE_CONCENTRATION_PRESSURE,
+    TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_ROTATION_PRESSURE,
 )
@@ -165,7 +166,7 @@ def test_build_team_story_runs_full_pipeline_from_context_fetch(monkeypatch):
     assert_no_banned_language(result)
 
 
-def test_service_selection_uses_deterministic_product_order():
+def test_depth_pressure_does_not_automatically_override_specific_active_story():
     context = team_context(
         rotation={
             'rotation_avg_ip_7d': 4.4,
@@ -193,9 +194,63 @@ def test_service_selection_uses_deterministic_product_order():
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_DEPTH_PRESSURE)
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE)
     assert result['observation_count'] >= 3
+    assert "Royals' rotation" in written_text(result)
+
+
+def test_severe_depth_pressure_can_still_win_over_weaker_active_story():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.9,
+            'rotation_avg_ip_14d': 5.5,
+            'rotation_ip_trend': -0.6,
+            'early_bullpen_entry_rate': 45.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 72.0,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE)
     assert '4 bullpen arms outside the active route' in written_text(result)
+
+
+def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure():
+    context = team_context(
+        stability={
+            'stability_band': 'rebuilding',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 0,
+            'core_stability_pct': 0,
+            'core_change_count': 3,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION)
+    assert 'core is changing' in written_text(result)
 
 
 def test_neutral_state_when_no_observations_exist():

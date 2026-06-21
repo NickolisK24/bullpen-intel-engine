@@ -10,6 +10,7 @@ from services.story_audit_preview_v1 import (
 )
 from services.story_observation_engine import (
     TYPE_CONCENTRATION_PRESSURE,
+    TYPE_DEPTH_PRESSURE,
     TYPE_ROTATION_PRESSURE,
 )
 
@@ -122,6 +123,11 @@ def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypat
         'needs_review': 0,
     }
     assert result['story_type_counts'] == {TYPE_CONCENTRATION_PRESSURE: 1}
+    assert result['story_type_distribution'] == [{
+        'story_type': TYPE_CONCENTRATION_PRESSURE,
+        'count': 1,
+        'share_of_story_states': 100.0,
+    }]
 
     story = result['teams'][0]
     assert story['state'] == STATE_STORY
@@ -144,6 +150,39 @@ def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypat
     assert neutral['neutral_reason'] == 'no_story_observations'
     assert neutral['validation_flags']['missing_required_sections'] == []
     assert neutral['validation_flags']['awkward_phrasing'] == []
+
+
+def test_audit_reports_story_type_distribution_summary(monkeypatch):
+    teams = [
+        story_payload(team_id=1, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        story_payload(team_id=2, selected_observation={'type': TYPE_ROTATION_PRESSURE}),
+        story_payload(team_id=3, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        neutral_payload(team_id=4),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1, 2, 3, 4])
+
+    assert result['story_type_counts'] == {
+        TYPE_DEPTH_PRESSURE: 2,
+        TYPE_ROTATION_PRESSURE: 1,
+    }
+    assert result['story_type_distribution'] == [
+        {
+            'story_type': TYPE_DEPTH_PRESSURE,
+            'count': 2,
+            'share_of_story_states': 66.7,
+        },
+        {
+            'story_type': TYPE_ROTATION_PRESSURE,
+            'count': 1,
+            'share_of_story_states': 33.3,
+        },
+    ]
 
 
 def test_audit_uses_default_team_ids_when_no_scope_is_supplied(monkeypatch):
