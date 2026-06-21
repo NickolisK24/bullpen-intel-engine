@@ -46,7 +46,7 @@ from typing import Any
 
 
 CAPABILITY = 'story_quality_scorer_v1'
-VERSION = '2026-06-21.v1'
+VERSION = '2026-06-21.v2'
 SOURCE = 'backend'
 
 SOURCE_FOUR_BEAT = 'four_beat_story'
@@ -147,6 +147,40 @@ DEFAULT_CAUSE_PATTERNS = (
     r'\boptioned\b',
     r'\bfresh arm\b',
     r'\bnew arm\b',
+)
+
+# Rule 2 (divergence frame) - the most common interpretive move the generator
+# makes: contrast a strong surface results metric against a concentrated
+# underlying workload ("strong ERA, but the workload is still tight"). It counts
+# as interpretive lift only when BOTH dimensions are present and joined by a
+# contrastive turn - a workload-only restatement (no results dimension) stays
+# circular and still fails.
+DEFAULT_DIVERGENCE_RESULTS_TERMS = (
+    r'\bera\b',
+    r'\brun prevention\b',
+    r'\bresults\b',
+    r'\bscoreboard\b',
+)
+DEFAULT_DIVERGENCE_WORKLOAD_TERMS = (
+    r'\bpitches per\b',
+    r'\bper participating reliever\b',
+    r'\bper reliever\b',
+    r'-pitch\b',
+    r'\bworkload\b',
+    r'%\s+of\b',
+    r'\btaking\s+\d+\s?%',
+    r'\btight\b',
+    r'\bnarrow\b',
+    r'\bpocket\b',
+    r'\bconcentrated\b',
+)
+DEFAULT_DIVERGENCE_CONTRAST_TERMS = (
+    r'\bbut\b',
+    r'\bstill\b',
+    r'\btighter\b',
+    r'\bnot as broad\b',
+    r'\bunderneath\b',
+    r'\bthan\b.*\b(?:shows?|suggests?|deserves?|alone)\b',
 )
 
 # Rule 4A - forward constraint clause (where the next game structurally routes).
@@ -259,6 +293,9 @@ class StoryQualityConfig:
     rule_weights: dict = field(default_factory=lambda: dict(DEFAULT_RULE_WEIGHTS))
     forecast_terms: tuple = DEFAULT_FORECAST_TERMS
     cause_patterns: tuple = DEFAULT_CAUSE_PATTERNS
+    divergence_results_terms: tuple = DEFAULT_DIVERGENCE_RESULTS_TERMS
+    divergence_workload_terms: tuple = DEFAULT_DIVERGENCE_WORKLOAD_TERMS
+    divergence_contrast_terms: tuple = DEFAULT_DIVERGENCE_CONTRAST_TERMS
     forward_constraint_patterns: tuple = DEFAULT_FORWARD_CONSTRAINT_PATTERNS
     baseline_anchor_patterns: tuple = tuple(_BASELINE_ANCHOR_PATTERNS)
 
@@ -480,18 +517,65 @@ def _rule_named_arms(view: StoryView, config: StoryQualityConfig, ctx: dict) -> 
     )
 
 
+def _proximity_windows(sentences) -> list:
+    """Each sentence, plus each adjacent pair, so a contrast that spans a
+    sentence boundary still reads as "near" without matching across the whole
+    document."""
+    windows = []
+    for index, sentence in enumerate(sentences):
+        windows.append(sentence)
+        if index + 1 < len(sentences):
+            windows.append(f'{sentence} {sentences[index + 1]}')
+    return windows
+
+
+def _divergence_results_label(match) -> str:
+    term = _clean_text(match.group(0))
+    return term.upper() if term.lower() == 'era' else term
+
+
+def _has_divergence_frame(sentences_lower, ctx: dict):
+    """Return the matched results term when a sentence (or adjacent pair)
+    contrasts a results metric against a workload-concentration metric; else
+    None. Requires BOTH dimensions plus a contrastive turn, so a workload-only
+    restatement (no results dimension) cannot earn divergence credit."""
+    for window in _proximity_windows(sentences_lower):
+        results_hit = _any_match(ctx['divergence_results_patterns'], window)
+        if not results_hit:
+            continue
+        if not _any_match(ctx['divergence_workload_patterns'], window):
+            continue
+        if not _any_match(ctx['divergence_contrast_patterns'], window):
+            continue
+        return results_hit
+    return None
+
+
 def _rule_stated_cause(view: StoryView, config: StoryQualityConfig, ctx: dict) -> dict:
-    patterns = ctx['cause_patterns']
-    match = _any_match(patterns, ctx['full_text_lower'])
+    # Pattern 1 (unchanged): a keyword upstream cause - short starts, game shape,
+    # or a roster move.
+    match = _any_match(ctx['cause_patterns'], ctx['full_text_lower'])
     if match:
         return _rule(
             RULE_STATED_CAUSE, True,
             f"upstream cause cited (\"{_clean_text(match.group(0))}\")",
+            pattern='upstream_cause',
+        )
+    # Pattern 2 (new): metric-divergence framing - a results metric contrasted
+    # against a concentrated workload. Two dimensions, not a circular restate.
+    divergence = _has_divergence_frame(ctx['sentences_lower'], ctx)
+    if divergence:
+        return _rule(
+            RULE_STATED_CAUSE, True,
+            f'metric-divergence frame ({_divergence_results_label(divergence)} vs. workload)',
+            pattern='divergence',
         )
     return _rule(
         RULE_STATED_CAUSE, False,
-        'no upstream cause (does not tie the shape to short starts, game shape, '
-        'or a roster move; restating "concentrated" is circular)',
+        'no upstream cause or metric-divergence frame (does not tie the shape to '
+        'short starts, game shape, a roster move, or a results-vs-workload '
+        'contrast; restating "concentrated" is circular)',
+        pattern=None,
     )
 
 
@@ -613,11 +697,15 @@ def score_story_view(view: StoryView, config: StoryQualityConfig | None = None) 
     ]
     ctx = {
         'full_text_lower': full_text_lower,
+        'sentences_lower': [sentence.lower() for sentence in view.sentences],
         'strip_terms': strip_terms,
         'forecast_scan_text': _strip_names(view.full_text, strip_terms).lower(),
         'names_present': _names_present(view.full_text, view.reliever_set),
         'has_workload_figure': has_workload_figure,
         'cause_patterns': _compile(config.cause_patterns),
+        'divergence_results_patterns': _compile(config.divergence_results_terms),
+        'divergence_workload_patterns': _compile(config.divergence_workload_terms),
+        'divergence_contrast_patterns': _compile(config.divergence_contrast_terms),
         'forward_constraint_patterns': _compile(config.forward_constraint_patterns),
         'forecast_terms': _compile(config.forecast_terms),
         'baseline_anchor_patterns': _compile(config.baseline_anchor_patterns),

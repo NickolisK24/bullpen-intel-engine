@@ -17,6 +17,7 @@ from services.story_quality import (
     RULE_NAMED_ARMS,
     RULE_NO_REDUNDANT_RESTATEMENT,
     RULE_STATED_CAUSE,
+    VERSION,
     StoryQualityConfig,
     apply_story_quality_gate,
     build_story_quality_debug_dump,
@@ -429,11 +430,13 @@ def test_enforcement_holds_hard_fail_regardless_of_threshold():
 # ── Config tunability ─────────────────────────────────────────────────────────
 
 def test_threshold_is_configurable():
+    # White Sox scores 40 - unambiguously below a strict threshold and above a
+    # lenient one (independent of the stated_cause widening).
     strict = StoryQualityConfig(gate_enabled=True, gate_threshold=100.0)
-    published, held, _ = apply_story_quality_gate([detroit_story()], strict)
-    assert published == []  # Detroit is < 100 and is held under a strict threshold
+    published, held, _ = apply_story_quality_gate([white_sox_story()], strict)
+    assert published == []  # held under a strict threshold
     lenient = StoryQualityConfig(gate_enabled=True, gate_threshold=20.0)
-    published2, held2, _ = apply_story_quality_gate([detroit_story()], lenient)
+    published2, held2, _ = apply_story_quality_gate([white_sox_story()], lenient)
     assert len(published2) == 1
 
 
@@ -521,3 +524,294 @@ def test_four_beat_view_assembles_voice_triple():
     body = view.body_text.lower()
     assert 'dependency point' in body
     assert 'center of' in body
+
+
+# ── Fix #1: metric-divergence framing (stated_cause widening) ──────────────────
+#
+# Real narratives from the report-only 30-team snapshot (data through 2026-06-20).
+# Divergence = a results metric (ERA / run prevention / results) contrasted
+# against a concentrated workload. It must earn stated_cause; a workload-only
+# restatement must not. "Before" behavior is simulated by disabling the
+# divergence recognizer via config (empty results terms).
+
+_DIVERGENCE_OFF = StoryQualityConfig(divergence_results_terms=())
+
+
+def _snapshot_four_beat(*, story_id, team_id, team_name, team_abbr, names,
+                        title, human_frame, evidence, consequence, narrative,
+                        category='heavier_workload_concentration',
+                        rule_key='sustainability_question'):
+    return {
+        'story_id': story_id,
+        'rule_key': rule_key,
+        'team_id': team_id,
+        'team_name': team_name,
+        'team_abbreviation': team_abbr,
+        'title': title,
+        'story_voice': {
+            'observation_type': 'run_prevention_stress',
+            'pitcher_names': list(names),
+            'human_frame': human_frame,
+            'evidence_sentence': evidence,
+            'consequence_sentence': consequence,
+        },
+        'story_evidence': {
+            'pitcher_names': list(names),
+            'evidence_statement': evidence,
+            'consequence_statement': consequence,
+            'consequence_category': category,
+        },
+        'narrative': narrative,
+        'lead_fields': {'top_workload_names': list(names)},
+        'computed': {'top_workload_names': list(names)},
+    }
+
+
+def san_diego_story():  # 135 — divergence (ERA vs. pitches-per)
+    return _snapshot_four_beat(
+        story_id='135:sustainability_question',
+        team_id=135, team_name='San Diego Padres', team_abbr='SD',
+        names=['Robert Suarez', 'Jeremiah Estrada'],
+        title="San Diego's ERA is steadier than the workload",
+        human_frame=(
+            "San Diego Padres' run prevention has held up, but the workload is "
+            "tighter than the ERA alone shows."
+        ),
+        evidence=(
+            "Robert Suarez and Jeremiah Estrada have kept San Diego Padres' run "
+            "prevention strong with a 2.24 ERA, but the recent workload is still "
+            "31.2 pitches per participating reliever."
+        ),
+        consequence=(
+            "The ERA is carrying a steadier public read than the recent workload "
+            "shape deserves."
+        ),
+        narrative="San Diego's relief work keeps landing in the same place.",
+    )
+
+
+def miami_story():  # 146 — divergence (ERA vs. workload, "not as broad")
+    return _snapshot_four_beat(
+        story_id='146:sustainability_question',
+        team_id=146, team_name='Miami Marlins', team_abbr='MIA',
+        names=['Cade Gibson', 'John King', 'Tyler Zuber'],
+        title="Miami's run prevention rides a narrow workload",
+        human_frame=(
+            "Miami Marlins have good run prevention and a workload still "
+            "concentrated around the same relief pocket."
+        ),
+        evidence=(
+            "Miami Marlins have a 2.92 bullpen ERA, but Cade Gibson, John King, "
+            "and Tyler Zuber remain tied to a 32.4-pitch recent workload per "
+            "participating reliever."
+        ),
+        consequence=(
+            "The run prevention is real, but the workload underneath is not as broad."
+        ),
+        narrative="Miami's results still look good on the surface.",
+    )
+
+
+def detroit_divergence_story():  # 116 — divergence (ERA vs. route/pitches-per)
+    return _snapshot_four_beat(
+        story_id='116:sustainability_question',
+        team_id=116, team_name='Detroit Tigers', team_abbr='DET',
+        names=['Kyle Finnegan', 'Tyler Holton', 'Will Vest'],
+        title="Detroit's ERA outruns the route underneath it",
+        human_frame=(
+            "If tonight gets tight, Detroit Tigers' strong ERA may still have to "
+            "pass through Kyle Finnegan and Tyler Holton."
+        ),
+        evidence=(
+            "A 1.93 season ERA gives Detroit Tigers results, but the recent route "
+            "still runs through Kyle Finnegan, Tyler Holton, and Will Vest at 26 "
+            "pitches per participating reliever."
+        ),
+        consequence=(
+            "A close game can still ask the same pocket of arms to carry the leverage."
+        ),
+        narrative="Detroit's results still look clean in the box score.",
+    )
+
+
+def chicago_white_sox_story():  # 145 — workload only (must stay circular/fail, score 20)
+    return _snapshot_four_beat(
+        story_id='145:stress_transfer',
+        team_id=145, team_name='Chicago White Sox', team_abbr='CWS',
+        names=['Joe Rock', 'Trevor Richards', 'Chris Murphy'],
+        title='The dependency point in the relief workload',
+        human_frame=(
+            "Joe Rock, Trevor Richards, and Chris Murphy are the dependency point "
+            "in Chicago White Sox's recent relief workload."
+        ),
+        evidence=(
+            "Joe Rock, Trevor Richards, and Chris Murphy are the center of Chicago "
+            "White Sox's recent relief workload, taking 69% of the pitches."
+        ),
+        consequence=(
+            "The workload shape gives the first group less distance from another "
+            "leverage pocket."
+        ),
+        narrative="Chicago White Sox's relief work keeps landing on the same names.",
+        rule_key='stress_transfer',
+    )
+
+
+def continuity_109_note():  # single-sentence workload restatement (must stay failing)
+    return {
+        'team_id': 109,
+        'team_name': 'Arizona Diamondbacks',
+        'team_abbreviation': 'AZ',
+        'continuity_note': (
+            'The same core relievers have carried 85% of the bullpen work over the '
+            'last 10 days.'
+        ),
+        'continuity': {
+            'type': 'workload_concentration',
+            'window_days': 10,
+            'evidence': {'core_arm_appearance_share': 0.85},
+        },
+    }
+
+
+def toronto_upstream_story():  # 141 — passes via reintroduction (regression guard)
+    return _snapshot_four_beat(
+        story_id='141:pressure_distribution',
+        team_id=141, team_name='Toronto Blue Jays', team_abbr='TOR',
+        names=['Jeff Hoffman', 'Chad Green'],
+        title="Toronto's mix changed without moving the center",
+        human_frame=(
+            "Toronto Blue Jays have one recently reintroduced reliever back into "
+            "the bullpen, but Jeff Hoffman and Chad Green still anchor the current "
+            "late-game route."
+        ),
+        evidence=(
+            "Toronto Blue Jays reintroduced one reliever, but Jeff Hoffman and "
+            "Chad Green still anchor the late-game route."
+        ),
+        consequence=(
+            "If the next close route tightens, it still runs through Jeff Hoffman "
+            "and Chad Green."
+        ),
+        narrative="Toronto's bullpen has looked steadier lately.",
+        category='more_stable_bullpen_shape',
+        rule_key='pressure_distribution',
+    )
+
+
+# Must NOW PASS stated_cause via divergence (were false negatives):
+
+def test_san_diego_divergence_now_passes():
+    before = score_four_beat_story(san_diego_story(), _DIVERGENCE_OFF)
+    after = score_four_beat_story(san_diego_story())
+    assert not before['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['detail']['pattern'] == 'divergence'
+    assert 'metric-divergence' in after['rules'][RULE_STATED_CAUSE]['reason']
+    assert before['score'] == 40.0 and after['score'] == 60.0
+
+
+def test_miami_divergence_now_passes():
+    before = score_four_beat_story(miami_story(), _DIVERGENCE_OFF)
+    after = score_four_beat_story(miami_story())
+    assert not before['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['detail']['pattern'] == 'divergence'
+    assert before['score'] == 60.0 and after['score'] == 80.0
+
+
+def test_detroit_divergence_now_passes():
+    before = score_four_beat_story(detroit_divergence_story(), _DIVERGENCE_OFF)
+    after = score_four_beat_story(detroit_divergence_story())
+    assert not before['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['passed']
+    assert after['rules'][RULE_STATED_CAUSE]['detail']['pattern'] == 'divergence'
+    assert before['score'] == 60.0 and after['score'] == 80.0
+
+
+# Must STILL FAIL stated_cause (the two-dimensions boundary):
+
+def test_chicago_white_sox_stays_circular_and_score_20():
+    before = score_four_beat_story(chicago_white_sox_story(), _DIVERGENCE_OFF)
+    after = score_four_beat_story(chicago_white_sox_story())
+    assert not before['rules'][RULE_STATED_CAUSE]['passed']
+    assert not after['rules'][RULE_STATED_CAUSE]['passed']
+    # Workload-only restatement earns no divergence credit; card stays at 20.
+    assert before['score'] == 20.0 and after['score'] == 20.0
+
+
+def test_continuity_85_pct_stays_failing():
+    before = score_continuity_note(continuity_109_note(), _DIVERGENCE_OFF)
+    after = score_continuity_note(continuity_109_note())
+    assert not before['rules'][RULE_STATED_CAUSE]['passed']
+    assert not after['rules'][RULE_STATED_CAUSE]['passed']
+    assert before['score'] == after['score']
+
+
+# Must remain UNCHANGED (upstream cause; reason stays upstream, not divergence):
+
+def test_toronto_unchanged_via_upstream_cause():
+    after = score_four_beat_story(toronto_upstream_story())
+    cause = after['rules'][RULE_STATED_CAUSE]
+    assert cause['passed']
+    assert cause['detail']['pattern'] == 'upstream_cause'
+    assert 'upstream cause cited' in cause['reason']
+    # Disabling divergence must not change Toronto (it passes via upstream).
+    before = score_four_beat_story(toronto_upstream_story(), _DIVERGENCE_OFF)
+    assert before['rules'][RULE_STATED_CAUSE]['passed']
+    assert before['rules'][RULE_STATED_CAUSE]['detail']['pattern'] == 'upstream_cause'
+
+
+def test_divergence_requires_two_contrasted_dimensions():
+    # A results+workload contrast passes; stripping the results dimension fails.
+    story = miami_story()
+    assert score_four_beat_story(story)['rules'][RULE_STATED_CAUSE]['passed']
+    workload_only = miami_story()
+    # Remove every results-dimension token, leaving only workload restatement.
+    for field in ('human_frame', 'evidence_sentence', 'consequence_sentence'):
+        text = workload_only['story_voice'][field]
+        text = text.replace('run prevention', 'usage').replace('ERA', 'usage')
+        workload_only['story_voice'][field] = text
+    ev = workload_only['story_evidence']
+    ev['evidence_statement'] = ev['evidence_statement'].replace('ERA', 'usage')
+    ev['consequence_statement'] = ev['consequence_statement'].replace(
+        'run prevention', 'usage'
+    )
+    workload_only['narrative'] = workload_only['narrative'].replace('results', 'usage')
+    assert not score_four_beat_story(workload_only)['rules'][RULE_STATED_CAUSE]['passed']
+
+
+def test_scorer_version_bumped():
+    assert VERSION == '2026-06-21.v2'
+
+
+def test_divergence_snapshot_average_rises():
+    """Before/after over the snapshot cards: the three divergence flips lift the
+    average and shift the rules-passed distribution upward; CWS/continuity hold."""
+    four_beat = [
+        san_diego_story(),
+        miami_story(),
+        detroit_divergence_story(),
+        chicago_white_sox_story(),
+        toronto_upstream_story(),
+    ]
+    note = continuity_109_note()
+
+    before = [score_four_beat_story(s, _DIVERGENCE_OFF) for s in four_beat]
+    before.append(score_continuity_note(note, _DIVERGENCE_OFF))
+    after = [score_four_beat_story(s) for s in four_beat]
+    after.append(score_continuity_note(note))
+
+    before_summary = summarize_scorecards(before, _DIVERGENCE_OFF)
+    after_summary = summarize_scorecards(after, DEFAULT_STORY_QUALITY_CONFIG)
+
+    assert after_summary['average_score'] > before_summary['average_score']
+    # Exactly three stories gained a rule (SD, MIA, DET); the rest are unchanged.
+    gained = sum(
+        1 for b, a in zip(before, after) if a['rules_passed'] == b['rules_passed'] + 1
+    )
+    assert gained == 3
+    unchanged = sum(
+        1 for b, a in zip(before, after) if a['rules_passed'] == b['rules_passed']
+    )
+    assert unchanged == len(after) - 3
