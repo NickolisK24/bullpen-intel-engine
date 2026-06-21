@@ -68,6 +68,24 @@ def test_same_beat_can_render_multiple_approved_sentence_forms():
         assert contains_banned_public_language(output) is False
 
 
+def test_voice_library_keeps_best_story_curiosity_forms_available():
+    route_forms = approved_sentence_forms(BEAT_ROUTE_CHANGE)
+    coverage_forms = approved_sentence_forms(BEAT_COVERAGE_PRESSURE)
+    sustainability_forms = approved_sentence_forms(BEAT_SUSTAINABILITY_QUESTION)
+
+    assert 'The next close game still points toward {names}' in route_forms
+    assert 'The game keeps arriving at the bullpen sooner than the baseline' in coverage_forms
+    assert 'The workload continues to land in the same pocket' in sustainability_forms
+
+
+def test_depth_constraint_voice_forms_can_use_named_pressure_points():
+    forms = approved_sentence_forms(BEAT_DEPTH_CONSTRAINT)
+
+    assert any('{names}' in form and 'pressure point' in form for form in forms)
+    assert any('{names}' in form and 'late-game map' in form for form in forms)
+    assert any('{names}' in form and 'roster count' in form for form in forms)
+
+
 def test_voice_library_deny_lists_cover_requested_editorial_terms():
     for phrase in (
         'sit at the front of',
@@ -76,6 +94,10 @@ def test_voice_library_deny_lists_cover_requested_editorial_terms():
         'route count',
         'named names',
         'usable relievers',
+        'still have multiple ways to cover a close game',
+        'not boxed into one relief lane',
+        'less room behind the trusted late plan',
+        'relief read',
     ):
         assert phrase in DENIED_PUBLIC_PHRASES
 

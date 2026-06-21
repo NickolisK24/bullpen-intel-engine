@@ -32,6 +32,10 @@ DENIED_PUBLIC_PHRASES = (
     'the second is',
     'named names',
     'usable relievers',
+    'still have multiple ways to cover a close game',
+    'not boxed into one relief lane',
+    'less room behind the trusted late plan',
+    'relief read',
 )
 
 BANNED_PUBLIC_LANGUAGE = (
@@ -97,6 +101,10 @@ VOICE_LIBRARY = {
             'The active roster does not give {team} the same number of trusted turns',
             "{possessive} depth is thinner than the roster count first suggests",
             'The practical bullpen picture is smaller than the list of names',
+            '{names} become the pressure point in a thinner late bridge',
+            'The late-game map narrows around {names}',
+            'A bullpen-heavy game would find {names} before it finds depth',
+            'The roster count hides how quickly the game gets back to {names}',
         ),
     },
     BEAT_SUSTAINABILITY_QUESTION: {

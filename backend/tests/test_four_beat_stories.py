@@ -56,6 +56,7 @@ from services.story_observation_voice import (
     THROAT_CLEARING_CLOSERS,
     build_observation_voice,
     observation_prose_paths,
+    polish_selected_observation,
     validate_observation_voice,
 )
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
@@ -794,8 +795,9 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
 
     assert hidden['can_fire'] is True
     assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
-    assert 'roster' in hidden['story']['beats'][0]['text'].lower()
-    assert 'late' in hidden['story']['beats'][0]['text'].lower()
+    signal_text = hidden['story']['beats'][0]['text'].lower()
+    assert any(marker in signal_text for marker in ('roster', 'available names', 'depth'))
+    assert any(marker in signal_text for marker in ('late', 'trusted paths'))
     assert hidden['story']['title'] == hidden['story']['story_voice']['headline']
     assert hidden['story']['story_prose']['prose_path']
     assert '2 of 7 arms available' in _story_text(hidden['story'])
@@ -2762,6 +2764,99 @@ def test_observation_voice_avoids_generic_identity_and_change_phrases():
                 'leverage center',
                 'usable relievers',
             ))
+
+
+def test_best_vs_average_polish_reduces_generic_depth_and_flexibility_language():
+    weak_phrases = (
+        'still have multiple ways to cover a close game',
+        'not boxed into one relief lane',
+        'less room behind the trusted late plan',
+        'relief read',
+        'late bridge is narrow tonight',
+    )
+    names = ['Frame Arm', 'Bridge Arm', 'Pocket Arm']
+    base_facts = {
+        'team': {
+            'team_id': 611,
+            'team_name': 'Editorial Club',
+            'team_abbreviation': 'EDT',
+        },
+        'story_inputs': {
+            'workload': {
+                'participant_count': 8,
+                'top_share': 0.64,
+                'per_arm_pitches': 21.5,
+            },
+            'availability': {
+                'available': 7,
+                'total': 9,
+            },
+            'season_era': {
+                'era': 2.77,
+            },
+            'clean_options': [{}, {}, {}, {}, {}, {}, {}],
+            'clean_trust_options': [],
+        },
+        'named_pitchers': names,
+    }
+    flexibility = {
+        'observation_id': 'flexibility',
+        'observation_type': 'flexibility',
+        'text': (
+            'Editorial Club has spread recent bullpen work across 8 relievers and '
+            'still has 7 of 9 relievers available, led by Frame Arm, Bridge Arm, and Pocket Arm.'
+        ),
+        'pitcher_names': names,
+        'consequence_category': 'more_stable_bullpen_shape',
+        'consequence_statement': (
+            'That leaves the staff with room to cover a tight inning without forcing one lane.'
+        ),
+    }
+    trust_shape = {
+        'observation_id': 'trust_shape',
+        'observation_type': 'trust_shape',
+        'text': (
+            'Frame Arm, Bridge Arm, and Pocket Arm are carrying the named part of '
+            "Editorial Club's relief read while only 0 trusted late-inning options are available."
+        ),
+        'pitcher_names': names,
+        'consequence_category': 'reduced_flexibility',
+        'consequence_statement': (
+            'That leaves fewer comfortable pivots if the game needs one more covered inning before Frame Arm and Bridge Arm.'
+        ),
+    }
+
+    cases = (
+        (flexibility, 'depth_room'),
+        (flexibility, 'workload_concentration'),
+        (trust_shape, 'depth_room'),
+    )
+
+    for selected, prose_path in cases:
+        polished = polish_selected_observation(base_facts, selected, prose_path)
+        voice = build_observation_voice({
+            **base_facts,
+            'selected_observation': polished,
+            'forced_prose_path': prose_path,
+        })
+        public_text = ' '.join(
+            piece for piece in (
+                voice['headline'],
+                voice['human_frame'],
+                polished.get('text'),
+                polished.get('consequence_statement'),
+            )
+            if piece
+        ).lower()
+
+        assert voice['applied'] is True
+        assert voice['validation']['passed'] is True
+        assert any(name.lower() in public_text for name in names)
+        assert re.search(r'\d', public_text) or 'no trusted' in public_text
+        assert any(marker in public_text for marker in ('if the game', 'tight inning'))
+        assert any(marker in public_text for marker in ('named', 'pressure point', 'relief lane'))
+        for phrase in weak_phrases:
+            assert phrase not in public_text
 
 
 def test_observation_voice_supports_multiple_prose_paths_for_same_observation():
