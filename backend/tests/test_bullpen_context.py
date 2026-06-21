@@ -29,6 +29,16 @@ ROTATION_CONTEXT_KEYS = {
     'delta_ip',
     'trend',
     'windows',
+    'rotation_avg_ip_7d',
+    'rotation_avg_ip_14d',
+    'rotation_ip_trend',
+    'early_bullpen_entry_rate',
+    'bullpen_coverage_ip_7d',
+    'rotation_games_analyzed_7d',
+    'rotation_games_analyzed_14d',
+    'rotation_games_excluded_14d',
+    'rotation_early_bullpen_entry_games_14d',
+    'rotation_context_layer',
     'start_classification_state',
     'unknown_start_rows',
     'unknown_start_row_share',
@@ -126,6 +136,16 @@ def test_no_data_team_returns_normalized_rotation_context_shape(client):
     assert rotation['delta_ip'] is None
     assert rotation['trend'] == 'insufficient_data'
     assert rotation['windows'] is None
+    assert rotation['rotation_avg_ip_7d'] is None
+    assert rotation['rotation_avg_ip_14d'] is None
+    assert rotation['rotation_ip_trend'] is None
+    assert rotation['early_bullpen_entry_rate'] is None
+    assert rotation['bullpen_coverage_ip_7d'] is None
+    assert rotation['rotation_games_analyzed_7d'] == 0
+    assert rotation['rotation_games_analyzed_14d'] == 0
+    assert rotation['rotation_games_excluded_14d'] == 0
+    assert rotation['rotation_early_bullpen_entry_games_14d'] == 0
+    assert rotation['rotation_context_layer'] is None
     assert rotation['start_classification_state'] == 'complete'
     assert rotation['unknown_start_rows'] == 0
     assert rotation['unknown_start_row_share'] == 0.0
@@ -176,6 +196,14 @@ def test_shorter_starter_outings_detected(client):
     assert rotation['starter_avg_ip_last_7'] == 4.5
     assert rotation['starter_avg_ip_prev_7'] == 6.3
     assert rotation['trend'] == 'shorter_outings'
+    assert rotation['rotation_avg_ip_7d'] == 4.5
+    assert rotation['rotation_avg_ip_14d'] == 5.4
+    assert rotation['rotation_ip_trend'] == -0.9
+    assert rotation['early_bullpen_entry_rate'] == 50.0
+    assert rotation['bullpen_coverage_ip_7d'] is None
+    assert rotation['rotation_games_analyzed_7d'] == 2
+    assert rotation['rotation_games_analyzed_14d'] == 4
+    assert rotation['rotation_context_layer']['capability'] == 'rotation_context_v1'
 
 
 def test_longer_starter_outings_detected(client):
