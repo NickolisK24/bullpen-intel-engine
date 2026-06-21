@@ -33,6 +33,10 @@ from services.bullpen_optionality_context import (
 )
 from services.bullpen_population import usage_logs_by_pitcher
 from services.rotation_context import build_rotation_context
+from services.role_stability_context import (
+    build_role_stability_context,
+    empty_role_stability_context,
+)
 
 
 BULLPEN_CONTEXT_SAMPLE_CAP = 5
@@ -394,6 +398,18 @@ def _empty_bullpen_optionality_context():
     return empty_bullpen_optionality_context()
 
 
+def _role_stability_context(team_id, reference_date):
+    start_date = reference_date - timedelta(days=(BULLPEN_CONCENTRATION_WINDOW_DAYS * 2) - 1)
+    return build_role_stability_context(
+        _team_logs(team_id, start_date, reference_date),
+        reference_date=reference_date,
+    )
+
+
+def _empty_role_stability_context():
+    return empty_role_stability_context()
+
+
 def _availability_context():
     return {
         'context_available': False,
@@ -434,6 +450,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
             'usage_demand_context': _empty_usage_demand_context(),
             'bullpen_concentration_context': _empty_bullpen_concentration_context(),
             'bullpen_optionality_context': _empty_bullpen_optionality_context(),
+            'role_stability_context': _empty_role_stability_context(),
             'availability_context': _availability_context(),
             'limitations': [*CONTEXT_LIMITATIONS, NO_GAME_LOG_CONTEXT_LIMITATION],
         }
@@ -451,6 +468,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
         'usage_demand_context': _usage_demand_context(last_logs, prev_logs, windows),
         'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
         'bullpen_optionality_context': _bullpen_optionality_context(team_id, ref),
+        'role_stability_context': _role_stability_context(team_id, ref),
         'availability_context': _availability_context(),
         'limitations': _context_limitations(last_logs, prev_logs),
     }
