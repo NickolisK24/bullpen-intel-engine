@@ -29,6 +29,22 @@ const {
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (props) => renderToStaticMarkup(React.createElement(StoryCard, props))
+const OLD_PUBLIC_LABELS = [
+  'Depth Pressure',
+  'Bullpen Route Change',
+  'Starter Coverage Pressure',
+  'Workload Concentration',
+  'Clean Options',
+  'Stable Bullpen Core',
+]
+const OLD_INTERNAL_TYPES = [
+  'depth_pressure',
+  'core_transition',
+  'rotation_pressure',
+  'concentration_pressure',
+  'optionality_strength',
+  'stable_core',
+]
 
 function storyPayload(overrides = {}) {
   return {
@@ -42,7 +58,7 @@ function storyPayload(overrides = {}) {
     state: 'story_available',
     story_available: true,
     neutral_reason: null,
-    story_type: 'concentration_pressure',
+    story_type: 'sustainability_question',
     headline: "Kansas City's bullpen is running through three arms",
     observation: 'The top group has handled 94% of recent bullpen workload.',
     baseline: 'The league comparison is 58% for top-three bullpen workload.',
@@ -67,8 +83,8 @@ test('StoryCard renders a successful deterministic bullpen story note', () => {
 
   assert.ok(htmlIncludes(html, 'Bullpen Note'))
   assert.ok(htmlIncludes(html, "Kansas City&#x27;s bullpen is running through three arms"))
-  assert.ok(htmlIncludes(html, 'Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Recent work is collecting around a small group.'))
+  assert.ok(htmlIncludes(html, 'Sustainability Question'))
+  assert.ok(htmlIncludes(html, 'Whether the current usage pattern can keep functioning.'))
   assert.ok(htmlIncludes(html, 'Data through Jun 20, 2026'))
   assert.ok(htmlIncludes(html, 'Written from BaseballOS data'))
   assert.ok(htmlIncludes(html, 'What changed'))
@@ -144,7 +160,17 @@ test('StoryCard degrades gracefully when optional paragraphs are missing', () =>
   assert.ok(!htmlIncludes(html, 'Comparison point'))
 })
 
-test('StoryCard renders every V1 story type with user-friendly labels and helper text', () => {
+test('StoryCard renders only the four public beat labels with helper text', () => {
+  assert.deepEqual(
+    Object.keys(STORY_TYPE_DISPLAY).sort(),
+    [
+      'coverage_pressure',
+      'depth_constraint',
+      'route_change',
+      'sustainability_question',
+    ],
+  )
+
   for (const [storyType, display] of Object.entries(STORY_TYPE_DISPLAY)) {
     const html = render({
       story: storyPayload({
@@ -168,6 +194,25 @@ test('StoryCard renders every V1 story type with user-friendly labels and helper
     assert.ok(htmlIncludes(html, 'Why it happened'))
     assert.ok(htmlIncludes(html, 'What it creates'))
     assert.equal(storyCardHasBannedLanguage(html), false)
+  }
+})
+
+test('StoryCard does not display old public labels or raw internal story types', () => {
+  for (const oldType of OLD_INTERNAL_TYPES) {
+    const html = render({
+      story: storyPayload({
+        story_type: oldType,
+        headline: 'The bullpen note uses the fallback label',
+      }),
+    })
+    const view = getStoryCardView(storyPayload({ story_type: oldType }))
+
+    assert.equal(view.storyType, 'Bullpen story')
+    assert.equal(view.storyTypeHelper, null)
+    assert.equal(html.includes(oldType), false, oldType)
+    for (const label of OLD_PUBLIC_LABELS) {
+      assert.equal(htmlIncludes(html, label), false, label)
+    }
   }
 })
 

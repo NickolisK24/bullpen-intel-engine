@@ -201,7 +201,6 @@ def _preview_team(service_payload):
     sections = _sections(payload) if story_available else {
         key: None for key in SECTION_MAP
     }
-    selected = _dict(payload.get('selected_observation'))
     flags = _validation_flags(payload, sections, story_available=story_available)
     return {
         'team_id': payload.get('team_id'),
@@ -210,7 +209,7 @@ def _preview_team(service_payload):
         'state': STATE_STORY if story_available else STATE_NEUTRAL,
         'service_state': payload.get('state'),
         'story_available': story_available,
-        'story_type': selected.get('type') if story_available else None,
+        'story_type': payload.get('story_type') if story_available else None,
         'headline': sections.get('headline'),
         'sections': sections,
         'freshness': deepcopy(_dict(payload.get('freshness'))),

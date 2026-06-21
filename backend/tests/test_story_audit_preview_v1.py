@@ -8,6 +8,11 @@ from services.story_audit_preview_v1 import (
     STATE_STORY,
     build_story_audit_preview,
 )
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_SUSTAINABILITY_QUESTION,
+)
 from services.story_observation_engine import (
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_DEPTH_PRESSURE,
@@ -23,6 +28,7 @@ def story_payload(**overrides):
         'as_of_date': '2026-06-20',
         'state': 'story_available',
         'story_available': True,
+        'story_type': BEAT_SUSTAINABILITY_QUESTION,
         'neutral_reason': None,
         'selected_observation': {
             'type': TYPE_CONCENTRATION_PRESSURE,
@@ -122,16 +128,16 @@ def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypat
         STATE_NEUTRAL: 1,
         'needs_review': 0,
     }
-    assert result['story_type_counts'] == {TYPE_CONCENTRATION_PRESSURE: 1}
+    assert result['story_type_counts'] == {BEAT_SUSTAINABILITY_QUESTION: 1}
     assert result['story_type_distribution'] == [{
-        'story_type': TYPE_CONCENTRATION_PRESSURE,
+        'story_type': BEAT_SUSTAINABILITY_QUESTION,
         'count': 1,
         'share_of_story_states': 100.0,
     }]
 
     story = result['teams'][0]
     assert story['state'] == STATE_STORY
-    assert story['story_type'] == TYPE_CONCENTRATION_PRESSURE
+    assert story['story_type'] == BEAT_SUSTAINABILITY_QUESTION
     assert story['headline'].startswith('Kansas City Royals')
     assert set(story['sections']) == {
         'headline',
@@ -154,9 +160,9 @@ def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypat
 
 def test_audit_reports_story_type_distribution_summary(monkeypatch):
     teams = [
-        story_payload(team_id=1, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
-        story_payload(team_id=2, selected_observation={'type': TYPE_ROTATION_PRESSURE}),
-        story_payload(team_id=3, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        story_payload(team_id=1, story_type=BEAT_DEPTH_CONSTRAINT, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        story_payload(team_id=2, story_type=BEAT_COVERAGE_PRESSURE, selected_observation={'type': TYPE_ROTATION_PRESSURE}),
+        story_payload(team_id=3, story_type=BEAT_DEPTH_CONSTRAINT, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
         neutral_payload(team_id=4),
     ]
     monkeypatch.setattr(
@@ -168,17 +174,17 @@ def test_audit_reports_story_type_distribution_summary(monkeypatch):
     result = build_story_audit_preview(team_ids=[1, 2, 3, 4])
 
     assert result['story_type_counts'] == {
-        TYPE_DEPTH_PRESSURE: 2,
-        TYPE_ROTATION_PRESSURE: 1,
+        BEAT_DEPTH_CONSTRAINT: 2,
+        BEAT_COVERAGE_PRESSURE: 1,
     }
     assert result['story_type_distribution'] == [
         {
-            'story_type': TYPE_DEPTH_PRESSURE,
+            'story_type': BEAT_DEPTH_CONSTRAINT,
             'count': 2,
             'share_of_story_states': 66.7,
         },
         {
-            'story_type': TYPE_ROTATION_PRESSURE,
+            'story_type': BEAT_COVERAGE_PRESSURE,
             'count': 1,
             'share_of_story_states': 33.3,
         },
@@ -227,6 +233,7 @@ def test_audit_passes_supplied_contexts_through_service(monkeypatch):
 
 def test_internal_and_banned_language_flags_work(monkeypatch):
     unsafe = story_payload(
+        story_type=BEAT_COVERAGE_PRESSURE,
         selected_observation={'type': TYPE_ROTATION_PRESSURE},
         written_story={
             'headline': 'Context indicates this bullpen has a ranking problem',
@@ -254,7 +261,7 @@ def test_internal_and_banned_language_flags_work(monkeypatch):
     flags = result['teams'][0]['validation_flags']
 
     assert result['state_counts']['needs_review'] == 1
-    assert result['story_type_counts'] == {TYPE_ROTATION_PRESSURE: 1}
+    assert result['story_type_counts'] == {BEAT_COVERAGE_PRESSURE: 1}
     assert flags['has_internal_terms'] is True
     assert flags['has_banned_language'] is True
     assert flags['needs_review'] is True

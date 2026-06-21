@@ -10,11 +10,20 @@ from services.story_intelligence_service_v1 import (
     build_story_intelligence_service_v1,
     build_team_story,
 )
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+    observation_public_beat_map,
+)
 from services.story_observation_engine import (
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
+    TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
+    TYPE_STABLE_CORE,
 )
 from services.story_writer_v1 import BANNED_TERMS, SECTION_KEYS
 
@@ -116,12 +125,24 @@ def written_text(result):
     )
 
 
-def assert_story_contract(result, observation_type):
+PUBLIC_BEATS = {
+    BEAT_ROUTE_CHANGE,
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_SUSTAINABILITY_QUESTION,
+}
+
+
+def assert_story_contract(result, observation_type, public_story_type=None):
     assert result['capability'] == CAPABILITY
     assert result['state'] == STATE_STORY_AVAILABLE
     assert result['story_available'] is True
     assert result['selected_observation']['type'] == observation_type
     assert result['construction_frame']['observation_type'] == observation_type
+    assert result['story_type'] == (public_story_type or observation_public_beat_map()[observation_type])
+    assert result['story_type'] in PUBLIC_BEATS
+    assert result['story_type'] != observation_type
+    assert result['public_story_beat']['internal_observation_type'] == observation_type
     assert tuple(result['written_story'].keys()) == SECTION_KEYS
     assert result['writer_output']['validation']['passed'] is True
     assert set(result['supporting_context']) == {
@@ -137,6 +158,13 @@ def assert_no_banned_language(result):
     text = written_text(result).lower()
     for term in BANNED_TERMS:
         assert term not in text
+    for term in ['will win', 'expected to win', 'projected', 'probability', 'odds', 'lock', 'guaranteed']:
+        assert term not in text
+
+
+def assert_forward_clause(result):
+    constraint = (result.get('written_story') or {}).get('constraint_paragraph') or ''
+    assert constraint.startswith('If '), constraint
 
 
 def test_build_team_story_runs_full_pipeline_from_context_fetch(monkeypatch):
@@ -163,6 +191,8 @@ def test_build_team_story_runs_full_pipeline_from_context_fetch(monkeypatch):
     assert result['team_name'] == 'Kansas City Royals'
     assert result['freshness']['data_through'] == '2026-06-20'
     assert '94%' in written_text(result)
+    assert result['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    assert_forward_clause(result)
     assert_no_banned_language(result)
 
 
@@ -194,9 +224,10 @@ def test_depth_pressure_does_not_automatically_override_specific_active_story():
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_ROTATION_PRESSURE)
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
     assert result['observation_count'] >= 3
-    assert "Royals' rotation" in written_text(result)
+    assert 'Starter length is down 1.4 innings against the 14-day mark' in written_text(result)
+    assert_forward_clause(result)
 
 
 def test_severe_depth_pressure_can_still_win_over_weaker_active_story():
@@ -222,8 +253,9 @@ def test_severe_depth_pressure_can_still_win_over_weaker_active_story():
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_DEPTH_PRESSURE)
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
     assert '4 bullpen arms outside the active route' in written_text(result)
+    assert_forward_clause(result)
 
 
 def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure():
@@ -249,8 +281,9 @@ def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure()
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_CORE_TRANSITION)
-    assert 'core is changing' in written_text(result)
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    assert 'The roster changed while the route held around Fifth Arm, Sixth Arm, and Seventh Arm.' in written_text(result)
+    assert_forward_clause(result)
 
 
 def test_neutral_state_when_no_observations_exist():
@@ -264,6 +297,8 @@ def test_neutral_state_when_no_observations_exist():
     assert result['construction_frame'] is None
     assert result['written_story'] is None
     assert result['writer_output'] is None
+    assert result['story_type'] is None
+    assert result['public_story_beat'] is None
     assert NEUTRAL_NO_OBSERVATIONS in result['limitations']
 
 
@@ -284,7 +319,7 @@ def test_incomplete_context_keeps_valid_story_with_limitations():
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE)
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_SUSTAINABILITY_QUESTION)
     assert result['construction_frame']['construction_confidence'] == 'medium'
     assert set(result['limitations']) >= {
         'missing_league_baseline',
@@ -323,7 +358,7 @@ def test_service_does_not_mutate_context_or_state_change_flags():
     result = build_team_story(118, team_context=context)
 
     assert context == original
-    assert_story_contract(result, TYPE_ROTATION_PRESSURE)
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
     assert result['trust_metadata']['external_generation_used'] is False
     assert result['trust_metadata']['new_metrics_created'] is False
     assert result['trust_metadata']['context_formula_changes'] is False
@@ -349,3 +384,94 @@ def test_engine_payload_wraps_multiple_team_story_contracts():
     assert result['teams'][0]['state'] == STATE_STORY_AVAILABLE
     assert result['teams'][1]['state'] == STATE_NEUTRAL
     assert result['teams'][0]['selected_observation']['type'] == TYPE_CONCENTRATION_PRESSURE
+    assert result['teams'][0]['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+
+
+def test_every_internal_observation_maps_to_one_public_beat():
+    mapping = observation_public_beat_map()
+
+    assert set(mapping) == {
+        TYPE_ROTATION_PRESSURE,
+        TYPE_CONCENTRATION_PRESSURE,
+        TYPE_OPTIONALITY_STRENGTH,
+        TYPE_STABLE_CORE,
+        TYPE_CORE_TRANSITION,
+        TYPE_DEPTH_PRESSURE,
+    }
+    assert set(mapping.values()) <= PUBLIC_BEATS
+    assert mapping[TYPE_CORE_TRANSITION] == BEAT_ROUTE_CHANGE
+    assert mapping[TYPE_STABLE_CORE] == BEAT_ROUTE_CHANGE
+    assert mapping[TYPE_ROTATION_PRESSURE] == BEAT_COVERAGE_PRESSURE
+    assert mapping[TYPE_DEPTH_PRESSURE] == BEAT_DEPTH_CONSTRAINT
+    assert mapping[TYPE_CONCENTRATION_PRESSURE] == BEAT_SUSTAINABILITY_QUESTION
+    assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_SUSTAINABILITY_QUESTION
+
+
+def test_concentration_with_short_start_cause_maps_to_coverage_pressure():
+    result = build_team_story(118, team_context=team_context(
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 88.0,
+        },
+        rotation={
+            'rotation_avg_ip_7d': 4.4,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.4,
+            'early_bullpen_entry_rate': 50.0,
+            'bullpen_coverage_ip_7d': 4.8,
+        },
+    ))
+
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert 'Starter length is down 1.4 innings against the 14-day mark' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_public_story_type_never_exposes_internal_observation_snake_case():
+    internal_types = {
+        TYPE_ROTATION_PRESSURE,
+        TYPE_CONCENTRATION_PRESSURE,
+        TYPE_OPTIONALITY_STRENGTH,
+        TYPE_STABLE_CORE,
+        TYPE_CORE_TRANSITION,
+        TYPE_DEPTH_PRESSURE,
+    }
+    result = build_team_story(118, team_context=team_context(
+        concentration={'concentration_band': 'narrow', 'top_three_workload_share_10d': 91.0},
+    ))
+
+    assert result['story_type'] in PUBLIC_BEATS
+    assert result['story_type'] not in internal_types
+    assert result['selected_observation']['type'] in internal_types
+    assert result['public_story_beat']['internal_observation_type'] == result['selected_observation']['type']
+
+
+def test_story_names_arms_and_keeps_baseline_when_evidence_exists():
+    result = build_team_story(118, team_context=team_context(
+        concentration={'concentration_band': 'narrow', 'top_three_workload_share_10d': 91.0},
+    ))
+    text = written_text(result)
+
+    assert 'First Arm, Second Arm, and Third Arm' in text
+    assert result['written_story']['baseline_paragraph']
+    assert 'league comparison' in result['written_story']['baseline_paragraph']
+    assert_forward_clause(result)
+    assert_no_banned_language(result)
+
+
+def test_depth_constraint_names_inactive_arms_when_present():
+    result = build_team_story(118, team_context=team_context(
+        injury={
+            'depth_pressure_band': 'heavy',
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+            'inactive_bullpen_arms': [{'name': 'Inactive Arm'}, {'name': 'Depth Arm'}],
+        },
+        rotation={'rotation_ip_trend': 0.0, 'early_bullpen_entry_rate': 10.0},
+        concentration={'concentration_band': 'normal'},
+    ))
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
+    assert 'Inactive Arm' in written_text(result)
+    assert_forward_clause(result)

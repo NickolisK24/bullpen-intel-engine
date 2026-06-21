@@ -329,6 +329,8 @@ def _optionality_strength(frame):
     available = observed.get('available_arms_count') or baseline.get('available_arms_count')
     clean_count = observed.get('clean_workload_options_count')
     secondary_count = observed.get('secondary_options_count')
+    clean_names = _join_names(cause.get('clean_workload_options'))
+    secondary_names = _join_names(cause.get('secondary_options'))
     concentration = interpretation.get('concentration_band')
     unavailable = constraint.get('unavailable_arms_count')
 
@@ -358,6 +360,14 @@ def _optionality_strength(frame):
             ),
         ),
         cause_paragraph=_paragraph(
+            (
+                f"The clean paths include {clean_names}"
+                if clean_names else None
+            ),
+            (
+                f"The secondary paths include {secondary_names}"
+                if secondary_names else None
+            ),
             (
                 f"Coverage is also coming from {_fmt(secondary_count)} secondary {_count_word(secondary_count, 'option')}"
                 if _present(secondary_count) and secondary_count > 0 else None
@@ -515,6 +525,7 @@ def _depth_pressure(frame):
     active = baseline.get('active_bullpen_arms_count') or constraint.get('active_bullpen_arms_count')
     il_count = cause.get('il_bullpen_arms_count')
     non_il = cause.get('non_il_inactive_bullpen_arms_count')
+    inactive_names = _join_names(cause.get('inactive_bullpen_arms'))
     paths = interpretation.get('practical_close_game_paths_count')
     optionality = interpretation.get('optionality_band')
 
@@ -540,6 +551,10 @@ def _depth_pressure(frame):
             ),
         ),
         cause_paragraph=_paragraph(
+            (
+                f"The inactive group includes {inactive_names}"
+                if inactive_names else None
+            ),
             (
                 f"The depth loss includes {_fmt(il_count)} IL {_count_word(il_count, 'arm')}"
                 if _present(il_count) else None

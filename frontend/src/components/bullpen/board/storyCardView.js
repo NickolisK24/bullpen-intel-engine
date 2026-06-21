@@ -1,29 +1,21 @@
 import { fmtDataDate } from '../../dashboard/syncStatusView'
 
 export const STORY_TYPE_DISPLAY = {
-  depth_pressure: {
-    label: 'Depth Pressure',
-    helper: 'Unavailable depth is narrowing the bullpen.',
+  route_change: {
+    label: 'Route Change',
+    helper: 'Who is handling the important outs now.',
   },
-  core_transition: {
-    label: 'Bullpen Route Change',
-    helper: 'The trusted relief path has shifted.',
+  coverage_pressure: {
+    label: 'Coverage Pressure',
+    helper: 'Why the bullpen is carrying extra innings.',
   },
-  rotation_pressure: {
-    label: 'Starter Coverage Pressure',
-    helper: 'Shorter starts are pushing more innings to the bullpen.',
+  depth_constraint: {
+    label: 'Depth Constraint',
+    helper: 'Why the practical path is thinner than the roster suggests.',
   },
-  concentration_pressure: {
-    label: 'Workload Concentration',
-    helper: 'Recent work is collecting around a small group.',
-  },
-  optionality_strength: {
-    label: 'Clean Options',
-    helper: 'The club has multiple usable paths tonight.',
-  },
-  stable_core: {
-    label: 'Stable Bullpen Core',
-    helper: 'The same arms continue to carry the route.',
+  sustainability_question: {
+    label: 'Sustainability Question',
+    helper: 'Whether the current usage pattern can keep functioning.',
   },
 }
 

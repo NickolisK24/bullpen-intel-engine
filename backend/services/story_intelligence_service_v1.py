@@ -24,7 +24,8 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     build_team_story_observation_payload,
 )
-from services.story_writer_v1 import write_story_frame
+from services.story_four_beat_interpreter_v1 import interpret_story_candidate
+from services.story_writer_v1 import validate_written_observation, write_story_frame
 
 
 CAPABILITY = 'story_intelligence_service_v1'
@@ -152,8 +153,10 @@ def _valid_frame(frame):
 def _candidate_selection_key(candidate):
     observation = _dict(_dict(candidate).get('selected_observation'))
     observation_type = observation.get('type')
+    public_story = _dict(candidate.get('public_story'))
     return (
         -SERVICE_SEVERITY_ORDER.get(observation.get('severity'), 0),
+        -int(public_story.get('evidence_completeness') or 0),
         SERVICE_OBSERVATION_PRIORITY.get(observation_type, len(SERVICE_OBSERVATION_ORDER)),
         str(observation_type or ''),
     )
@@ -176,10 +179,24 @@ def select_service_story_candidate(observations, story_frames):
         writer_output = write_story_frame(frame)
         if _dict(writer_output.get('validation')).get('passed') is not True:
             continue
+        candidate = {
+            'selected_observation': deepcopy(observation),
+            'construction_frame': deepcopy(frame),
+            'writer_output': writer_output,
+        }
+        public_story = interpret_story_candidate(candidate)
+        if public_story.get('suppressed') is True:
+            continue
+        writer_output = deepcopy(writer_output)
+        writer_output['written_observation'] = deepcopy(public_story.get('written_story') or {})
+        writer_output['validation'] = validate_written_observation(writer_output)
+        if _dict(writer_output.get('validation')).get('passed') is not True:
+            continue
         candidates.append({
             'selected_observation': deepcopy(observation),
             'construction_frame': deepcopy(frame),
             'writer_output': writer_output,
+            'public_story': public_story,
         })
     if not candidates:
         return None
@@ -205,6 +222,9 @@ def _base_payload(team_id, as_of_date, team_context, observation_payload, constr
         'construction_frame': None,
         'written_story': None,
         'writer_output': None,
+        'story_type': None,
+        'story_type_label': None,
+        'public_story_beat': None,
         'supporting_context': _supporting_context(team_context),
         'freshness': _freshness(team_context, as_of_date=as_of_date),
         'trust_metadata': _trust_metadata(),
@@ -266,6 +286,7 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
 
     writer_output = _dict(candidate.get('writer_output'))
     construction_frame = _dict(candidate.get('construction_frame'))
+    public_story = _dict(candidate.get('public_story'))
     payload.update({
         'state': STATE_STORY_AVAILABLE,
         'story_available': True,
@@ -273,6 +294,13 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
         'construction_frame': construction_frame,
         'written_story': deepcopy(writer_output.get('written_observation')),
         'writer_output': writer_output,
+        'story_type': public_story.get('story_type'),
+        'story_type_label': public_story.get('story_type_label'),
+        'public_story_beat': {
+            key: deepcopy(value)
+            for key, value in public_story.items()
+            if key not in {'written_story'}
+        },
         'supporting_context': _supporting_context(context, construction_frame),
         'limitations': _combined_limitations(
             payload['limitations'],

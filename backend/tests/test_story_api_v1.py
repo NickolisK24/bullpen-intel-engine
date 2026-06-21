@@ -6,6 +6,7 @@ from flask import Flask
 
 import api.bullpen as bullpen_api
 from api.bullpen import bullpen_bp
+from services.story_four_beat_interpreter_v1 import BEAT_SUSTAINABILITY_QUESTION
 from services.story_observation_engine import TYPE_CONCENTRATION_PRESSURE
 
 
@@ -138,7 +139,8 @@ def test_story_route_returns_valid_story_contract(client, monkeypatch):
     assert body['capability'] == 'story_intelligence_api_v1'
     assert body['contract_state'] == 'available'
     assert body['story_available'] is True
-    assert body['story_type'] == TYPE_CONCENTRATION_PRESSURE
+    assert body['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    assert body['story_type'] != TYPE_CONCENTRATION_PRESSURE
     assert body['headline'].startswith('Kansas City Royals')
     assert body['observation'] == 'The top group has handled 94% of the bullpen workload.'
     assert body['freshness']['data_through'] == '2026-06-20'
@@ -219,5 +221,6 @@ def test_story_route_schema_is_stable_for_missing_optional_story_sections(client
     assert body['baseline'] is None
     assert body['cause'] is None
     assert body['constraint'] is not None
+    assert body['story_type'] == BEAT_SUSTAINABILITY_QUESTION
     assert body['selected_observation']['type'] == TYPE_CONCENTRATION_PRESSURE
     assert body['construction_frame']['observation_type'] == TYPE_CONCENTRATION_PRESSURE

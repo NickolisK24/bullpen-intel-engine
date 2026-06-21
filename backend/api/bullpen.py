@@ -108,6 +108,7 @@ from services.story_continuity import (
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
+from services.story_four_beat_interpreter_v1 import public_beat_for_observation
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -1736,9 +1737,11 @@ def _story_api_payload(service_payload):
     written = payload.get('written_story') or {}
     selected = payload.get('selected_observation') or {}
     frame = payload.get('construction_frame') or {}
+    internal_story_type = selected.get('type') or frame.get('observation_type')
     story_type = (
-        selected.get('type')
-        or frame.get('observation_type')
+        payload.get('story_type')
+        or (payload.get('public_story_beat') or {}).get('story_type')
+        or public_beat_for_observation(internal_story_type, frame=frame)
     )
     story_available = bool(payload.get('story_available') is True)
     return {
