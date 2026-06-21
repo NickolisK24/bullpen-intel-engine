@@ -22,6 +22,7 @@ from services.story_intelligence_service_v1 import (
     build_story_intelligence_service_v1,
 )
 from services.story_writer_v1 import BANNED_TERMS, ROBOTIC_TERMS
+from services.story_voice_library_v1 import DENIED_PUBLIC_PHRASES
 from utils.db import db
 
 
@@ -72,18 +73,24 @@ RAW_OBJECT_LITERAL_TERMS = (
 )
 
 DATABASE_DIFF_TERMS = (
+    *DENIED_PUBLIC_PHRASES,
     'core changes',
     'depth picture',
     'forward constraint is',
     'bullpen board',
     'stability rate',
+    'active list',
+    'available route',
+    'outside the active route',
+    'per participating reliever',
+    'per participating arm',
 )
 
 FORWARD_CLAUSE_TERMS = (
     'if ',
     'route points back',
-    'fewer clean ways',
-    'practical path remains',
+    'fewer ways',
+    'late-inning choices',
     'same game shape returns',
     'game shape repeats',
     'workload pattern holds',

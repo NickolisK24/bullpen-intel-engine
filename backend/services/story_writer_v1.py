@@ -22,6 +22,14 @@ from services.story_observation_engine import (
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
 )
+from services.story_voice_library_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+    DENIED_PUBLIC_PHRASES,
+    render_voice_line,
+)
 
 
 CAPABILITY = 'story_writer_v1'
@@ -61,6 +69,7 @@ ROBOTIC_TERMS = (
     'forward constraint is',
     'the frame shows',
     'the frame marks',
+    *DENIED_PUBLIC_PHRASES,
 )
 
 
@@ -188,6 +197,23 @@ def _count_word(value, singular, plural=None):
     return singular if value == 1 else plural
 
 
+def _voice_opening(frame, beat, *, names=None, extra_parts=()):
+    team = _team(frame)
+    return render_voice_line(
+        beat,
+        stable_parts=(
+            _dict(frame).get('team_id'),
+            _dict(frame).get('team_abbreviation'),
+            _dict(frame).get('observation_type'),
+            _clean_text(names),
+            *tuple(extra_parts or ()),
+        ),
+        team=team,
+        possessive=_possessive(team),
+        names=names or 'the bullpen',
+    )
+
+
 def _has_banned_language(text):
     lower = _clean_text(text).lower()
     return any(term in lower for term in BANNED_TERMS)
@@ -230,11 +256,7 @@ def _rotation_pressure(frame):
     short_starts = _present(avg_7) and _present(avg_14) and avg_7 < avg_14
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} rotation is handing more of the game to the bullpen"
-            if _present(avg_7)
-            else f"{_possessive(team)} bullpen is carrying earlier innings"
-        ),
+        headline=_voice_opening(frame, BEAT_COVERAGE_PRESSURE, extra_parts=(avg_7, avg_14, trend)),
         observation_paragraph=_paragraph(
             (
                 f"The starters are averaging {_fmt(avg_7)} innings over the last week"
@@ -275,7 +297,7 @@ def _rotation_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If short starts continue, the bullpen has fewer clean ways to spread the innings"
+                f"If short starts continue, the bullpen has fewer ways to spread the middle innings"
                 if _present(constraint.get('bullpen_coverage_ip_7d')) or _present(coverage) else None
             ),
         ),
@@ -305,13 +327,15 @@ def _concentration_pressure(frame):
     short_starts = _present(trend) and trend < 0
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} bullpen is running through {names}"
-            if names else f"{_possessive(team)} bullpen work is concentrated"
+        headline=_voice_opening(
+            frame,
+            BEAT_SUSTAINABILITY_QUESTION,
+            names=names or route_names or 'the same relievers',
+            extra_parts=(share, band, paths),
         ),
         observation_paragraph=_paragraph(
             (
-                "The bullpen is functioning, but it is functioning through a narrow route"
+                "The bullpen is functioning, but the meaningful innings are bunching around a smaller group"
                 if narrow_route else None
             ),
             (
@@ -347,11 +371,11 @@ def _concentration_pressure(frame):
                 if _present(trend) and trend < 0 else None
             ),
             (
-                f"The same arms are carrying the usable path: {route_names}"
+                f"The same arms are carrying the meaningful work: {route_names}"
                 if route_names else None
             ),
             (
-                f"The bullpen has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
+                f"The bullpen has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
                 if _present(paths) else None
             ),
         ),
@@ -382,19 +406,22 @@ def _optionality_strength(frame):
     secondary_names = _join_names(cause.get('secondary_options'))
     concentration = interpretation.get('concentration_band')
     unavailable = constraint.get('unavailable_arms_count')
+    has_unavailable = _present(unavailable) and unavailable > 0
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} bullpen has multiple usable routes"
-            if _present(paths) else f"{_possessive(team)} bullpen has usable routes"
+        headline=_voice_opening(
+            frame,
+            BEAT_SUSTAINABILITY_QUESTION if not has_unavailable else BEAT_DEPTH_CONSTRAINT,
+            names=clean_names or secondary_names or 'the late relievers',
+            extra_parts=(paths, band, unavailable),
         ),
         observation_paragraph=_paragraph(
             (
-                f"The bullpen has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
+                f"The bullpen has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
                 if _present(paths) else None
             ),
             (
-                f"That leaves the route {band}"
+                f"That leaves the late-game map {band}"
                 if _present(band) else None
             ),
         ),
@@ -404,17 +431,17 @@ def _optionality_strength(frame):
                 if _present(available) else None
             ),
             (
-                f"There are {_fmt(clean_count)} clean workload {_count_word(clean_count, 'option')}"
+                f"There are {_fmt(clean_count)} low-workload late-inning {_count_word(clean_count, 'choice', 'choices')}"
                 if _present(clean_count) and clean_count > 0 else None
             ),
         ),
         cause_paragraph=_paragraph(
             (
-                f"The clean paths include {clean_names}"
+                f"The clearest late-inning choices include {clean_names}"
                 if clean_names else None
             ),
             (
-                f"The secondary paths include {secondary_names}"
+                f"The secondary choices include {secondary_names}"
                 if secondary_names else None
             ),
             (
@@ -428,12 +455,12 @@ def _optionality_strength(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If the same game shape returns, the club can choose among the available paths rather than force one route"
+                f"If the same game shape returns, the club can choose among multiple late-inning options rather than force one route"
                 if _present(paths) else None
             ),
             (
-                f"The route count keeps {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')} out of the clean picture"
-                if _present(unavailable) else None
+                f"The current plan has to work around {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')}"
+                if has_unavailable else None
             ),
         ),
     )
@@ -460,9 +487,11 @@ def _stable_core(frame):
     core_size = constraint.get('current_core_size')
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} bullpen core has held together"
-            if current else f"{_possessive(team)} bullpen core is stable"
+        headline=_voice_opening(
+            frame,
+            BEAT_ROUTE_CHANGE,
+            names=current or 'the current late group',
+            extra_parts=(previous, retention, stability),
         ),
         observation_paragraph=_paragraph(
             (
@@ -529,9 +558,11 @@ def _core_transition(frame):
     )
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} bullpen core is changing"
-            if _present(changes) else f"{_possessive(team)} bullpen core is in transition"
+        headline=_voice_opening(
+            frame,
+            BEAT_ROUTE_CHANGE,
+            names=current or new_members or 'the current late group',
+            extra_parts=(previous, changes, retention),
         ),
         observation_paragraph=_paragraph(
             (
@@ -595,23 +626,29 @@ def _depth_pressure(frame):
     optionality = interpretation.get('optionality_band')
 
     return _sections(
-        headline=(
-            f"{_possessive(team)} bullpen has fewer practical paths than the active list suggests"
-            if _present(inactive) else f"{_possessive(team)} bullpen depth is part of the story"
+        headline=_voice_opening(
+            frame,
+            BEAT_DEPTH_CONSTRAINT,
+            names=inactive_names or 'the relief group',
+            extra_parts=(inactive, active, depth_band),
         ),
         observation_paragraph=_paragraph(
             (
-                f"There are {_fmt(inactive)} bullpen {_count_word(inactive, 'arm')} outside the active route"
-                if _present(inactive) else None
+                f"For {team}, the roster shows {_fmt(active)} bullpen {_count_word(active, 'arm')}, but {_fmt(inactive)} {_count_word(inactive, 'reliever')} are not part of the current game plan"
+                if _present(inactive) and _present(active) else None
             ),
             (
-                f"That leaves the practical path {depth_band}"
+                f"For {team}, {_fmt(inactive)} bullpen {_count_word(inactive, 'reliever')} are not part of the current game plan"
+                if _present(inactive) and not _present(active) else None
+            ),
+            (
+                f"That leaves the late-inning depth {depth_band}"
                 if _present(depth_band) else None
             ),
         ),
         baseline_paragraph=_paragraph(
             (
-                f"The active list still shows {_fmt(active)} bullpen {_count_word(active, 'arm')}"
+                f"The roster baseline still shows {_fmt(active)} bullpen {_count_word(active, 'arm')}"
                 if _present(active) else None
             ),
         ),
@@ -631,15 +668,15 @@ def _depth_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If the roster stays this thin, the practical path remains smaller than the active list suggests"
+                f"If the roster stays this thin, the manager has fewer ways to cover the late innings than the roster count suggests"
                 if _present(paths) or _present(inactive) else None
             ),
             (
-                f"The current route has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
+                f"The current plan has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
                 if _present(paths) else None
             ),
             (
-                f"The available route is {optionality}"
+                f"The available late-inning map is {optionality}"
                 if _present(optionality) else None
             ),
         ),

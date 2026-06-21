@@ -317,8 +317,8 @@ def _trust_shape_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     if clean_trust_count >= 2:
         score = 57 + clean_trust_count * 5
         text = (
-            f'{subject} give {_team_name(inputs)} {clean_trust_count} clean trusted '
-            f'late-inning options among {clean_option_count} usable relievers.'
+            f'{subject} give {_team_name(inputs)} {clean_trust_count} trusted '
+            f'late-inning options among {clean_option_count} available relievers.'
         )
         category = 'more_stable_bullpen_shape'
         consequence = (
@@ -329,12 +329,12 @@ def _trust_shape_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
         score = 58 + max(0, 2 - clean_trust_count) * 7
         text = (
             f'{subject} are carrying the named part of {_possessive_team(inputs)} relief read '
-            f'while only {clean_trust_count} clean trusted late-inning {_plural(clean_trust_count, "option")} '
+            f'while only {clean_trust_count} trusted late-inning {_plural(clean_trust_count, "option")} '
             f'{_count_is_verb(clean_trust_count)} available.'
         )
         category = 'reduced_flexibility'
         consequence = (
-            'That reduces flexibility if the game needs one more clean inning before '
+            'That reduces flexibility if the game needs one more covered inning before '
             f'the late plan reaches {_join_names(names, limit=2) or "the trusted group"}.'
         )
     return _candidate(
@@ -374,7 +374,7 @@ def _run_prevention_stress_observation(inputs: dict[str, Any]) -> dict[str, Any]
         observation_type=OBSERVATION_RUN_PREVENTION_STRESS,
         text=(
             f'{subject} remain central to {_possessive_team(inputs)} bullpen with a {era:.2f} season ERA, '
-            f'but recent usage is {per_arm} pitches per participating reliever.'
+            f'but recent usage is {per_arm} pitches for each reliever used recently.'
         ),
         score=score,
         score_components={
@@ -429,8 +429,8 @@ def _identity_observation(inputs: dict[str, Any]) -> dict[str, Any] | None:
     return _candidate(
         observation_type=OBSERVATION_IDENTITY,
         text=(
-            f'{subject} sit at the front of {_possessive_team(inputs)} bullpen, '
-            f'with {clean_option_count} usable relievers behind it because {public_summary.lower()}.'
+            f'{subject} remain central to {_possessive_team(inputs)} bullpen plan, '
+            f'with {clean_option_count} available relievers if the game moves beyond that first call because {public_summary.lower()}.'
         ),
         score=score,
         score_components={

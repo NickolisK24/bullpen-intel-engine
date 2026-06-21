@@ -16,6 +16,7 @@ from services.story_writer_v1 import (
     write_story_frame,
     write_team_story_frames,
 )
+from services.story_voice_library_v1 import contains_denied_public_phrase
 
 
 def team_context(
@@ -140,6 +141,7 @@ def assert_no_robotic_language(output):
     text = written_text(output).lower()
     for term in ROBOTIC_TERMS:
         assert term not in text
+    assert contains_denied_public_phrase(text) is False
 
 
 def assert_quality_sections(output):
@@ -168,9 +170,7 @@ def test_writer_outputs_rotation_pressure_observation():
 
     assert_writer_shape(output, TYPE_ROTATION_PRESSURE)
     text = written_text(output)
-    assert 'Kansas City Royals' in text
     assert "Royals's" not in text
-    assert "Royals' rotation" in text
     assert '4.1 innings' in text
     assert '5.4 starter innings' in text
     assert 'starters are not covering as many innings as the recent baseline' in text.lower()
@@ -204,8 +204,8 @@ def test_writer_outputs_concentration_pressure_observation():
     assert '94%' in text
     assert '58%' in text
     assert '36 percentage points' in text
-    assert 'functioning through a narrow route' in text
-    assert 'The same arms are carrying the usable path' in text
+    assert 'meaningful innings are bunching around a smaller group' in text
+    assert 'The same arms are carrying the meaningful work' in text
     assert 'If this pattern continues, the margin for spreading the work stays thin' in text
     assert 'current operational core' not in text.lower()
     assert_quality_sections(output)
@@ -224,11 +224,12 @@ def test_writer_outputs_optionality_strength_observation():
 
     assert_writer_shape(output, TYPE_OPTIONALITY_STRENGTH)
     text = written_text(output)
-    assert 'multiple usable routes' in text
-    assert '6 practical close-game paths' in text
+    assert '6 close-game choices' in text
     assert '7 available arms' in text
-    assert '2 clean workload options' in text
-    assert 'available paths rather than force one route' in text
+    assert '2 clean workload options' not in text
+    assert '2 low-workload late-inning choices' in text
+    assert 'clearest late-inning choices include Clean One and Clean Two' in text
+    assert 'multiple late-inning options rather than force one route' in text
     assert_quality_sections(output)
 
 
@@ -246,7 +247,6 @@ def test_writer_outputs_stable_core_observation():
 
     assert_writer_shape(output, TYPE_STABLE_CORE)
     text = written_text(output)
-    assert 'held together' in text
     assert 'First Arm, Second Arm, and Third Arm' in text
     assert '100%' in text
     assert 'route points back through First Arm, Second Arm, and Third Arm' in text
@@ -269,7 +269,6 @@ def test_writer_outputs_core_transition_observation():
 
     assert_writer_shape(output, TYPE_CORE_TRANSITION)
     text = written_text(output)
-    assert 'core is changing' in text
     assert '3-spot change from the prior route' in text
     assert 'Fifth Arm, Sixth Arm, and Seventh Arm' in text
     assert '0 arms from that baseline' in text
@@ -293,12 +292,12 @@ def test_writer_outputs_depth_pressure_observation():
 
     assert_writer_shape(output, TYPE_DEPTH_PRESSURE)
     text = written_text(output)
-    assert 'fewer practical paths than the active list suggests' in text
-    assert '4 bullpen arms outside the active route' in text
+    assert 'For Kansas City Royals, the roster shows 7 bullpen arms, but 4 relievers are not part of the current game plan' in text
     assert 'Inactive Arm' in text
     assert "{'name':" not in text
     assert '3 IL arms' in text
     assert '1 non-IL inactive arm' in text
+    assert 'fewer ways to cover the late innings than the roster count suggests' in text
     assert_quality_sections(output)
 
 
@@ -325,7 +324,7 @@ def test_writer_handles_sox_team_possessives_from_real_audit():
         output = write_story_frame(frame)
         text = written_text(output)
 
-        assert expected in text
+        assert "Sox'" in text or team_name in text
         assert "Sox's" not in text
         assert_quality_sections(output)
 
@@ -337,6 +336,35 @@ def test_writer_is_deterministic_for_same_frame():
     second = write_story_frame(frame)
 
     assert first == second
+
+
+def test_writer_varies_openings_inside_same_public_archetype_without_randomness():
+    first_outputs = []
+    second_outputs = []
+    for team_id in range(100, 130):
+        frame = frame_for(
+            team_context(
+                team_id=team_id,
+                team_name=f'Voice Team {team_id}',
+                team_abbreviation=f'V{team_id}',
+                stability={
+                    'stability_band': 'stable',
+                    'current_operational_core': ['First Arm', 'Second Arm'],
+                    'previous_operational_core': ['First Arm', 'Second Arm'],
+                    'core_retention_count': 2,
+                    'core_stability_pct': 100,
+                    'core_change_count': 0,
+                },
+            ),
+            TYPE_STABLE_CORE,
+        )
+        first_outputs.append(write_story_frame(frame)['written_observation']['headline'])
+        second_outputs.append(write_story_frame(frame)['written_observation']['headline'])
+
+    assert first_outputs == second_outputs
+    assert len(set(first_outputs)) >= 5
+    for headline in first_outputs:
+        assert contains_denied_public_phrase(headline) is False
 
 
 def test_writer_does_not_invent_unavailable_facts():
@@ -406,7 +434,9 @@ def test_missing_optional_frame_fields_degrade_gracefully():
     assert_writer_shape(output, TYPE_OPTIONALITY_STRENGTH)
     assert output['written_observation']['baseline_paragraph'] is None
     assert output['written_observation']['cause_paragraph'] is None
-    assert '6 practical close-game paths' in written_text(output)
+    text = written_text(output)
+    assert '6 close-game choices' in text
+    assert '0 unavailable arms' not in text
 
 
 def test_team_and_engine_writer_payloads():

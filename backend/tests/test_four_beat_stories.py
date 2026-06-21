@@ -87,26 +87,26 @@ from services.team_bullpen_shape import build_team_bullpen_shape
 REF = date(2026, 6, 16)
 
 CAPACITY_CONTEXT_MARKERS = (
-    'fewer usable arms',
+    'fewer available relievers',
     'bullpen room',
     'bullpen looks thinner',
     'available group is smaller',
     'fewer places to turn',
-    'less usable depth',
-    'short on usable arms',
-    'already short on usable arms',
+    'less late-inning depth',
+    'short on available relievers',
+    'already short on available relievers',
     'available group is already thin',
     'repeat innings',
     'heavy innings keep finding',
 )
 
 CAPACITY_FALLBACK_MARKERS = (
-    'fewer usable arms',
+    'fewer available relievers',
     'bullpen room',
     'bullpen looks thinner',
     'available group is smaller',
     'fewer places to turn',
-    'less usable depth',
+    'less late-inning depth',
 )
 
 ROTATION_CONTEXT_MARKERS = (
@@ -750,7 +750,7 @@ def test_sustainability_question_fires_only_when_strong_era_and_heavy_workload()
     assert sustainability['can_fire'] is True
     assert sustainability['story']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
     assert '2.75 season ERA' in _story_text(sustainability['story'])
-    assert 'leaning on it hard tonight' in sustainability['story']['beats'][0]['text']
+    assert 'workload' in sustainability['story']['beats'][0]['text'].lower()
     assert sustainability['story']['title'] == sustainability['story']['story_voice']['headline']
     assert sustainability['story']['story_prose']['prose_path']
 
@@ -794,10 +794,11 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
 
     assert hidden['can_fire'] is True
     assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
-    assert "tonight's usable depth is thin" in hidden['story']['beats'][0]['text']
+    assert 'roster' in hidden['story']['beats'][0]['text'].lower()
+    assert 'late' in hidden['story']['beats'][0]['text'].lower()
     assert hidden['story']['title'] == hidden['story']['story_voice']['headline']
     assert hidden['story']['story_prose']['prose_path']
-    assert '2 of 7 arms Available' in _story_text(hidden['story'])
+    assert '2 of 7 arms available' in _story_text(hidden['story'])
 
     not_solid = evaluate_team_rules(_team_inputs(
         records,

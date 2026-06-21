@@ -307,8 +307,8 @@ def test_sustainability_question_wins_when_usage_concentration_is_strongest():
     assert evidence['practical_close_game_paths_count'] == 2
     assert evidence['repeated_route_core_arms'] == ['First Arm', 'Second Arm', 'Third Arm']
     assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
-    assert 'functioning through a narrow route' in written_text(result)
-    assert 'The same arms are carrying the usable path' in written_text(result)
+    assert 'meaningful innings are bunching around a smaller group' in written_text(result)
+    assert 'The same arms are carrying the meaningful work' in written_text(result)
     assert 'If this pattern continues, the margin for spreading the work stays thin' in written_text(result)
     assert result['written_story']['baseline_paragraph']
     assert result['written_story']['cause_paragraph']
@@ -447,7 +447,7 @@ def test_severe_depth_pressure_can_still_win_over_weaker_active_story():
     result = build_team_story(118, team_context=context)
 
     assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
-    assert '4 bullpen arms outside the active route' in written_text(result)
+    assert '4 relievers are not part of the current game plan' in written_text(result)
     assert_forward_clause(result)
 
 
@@ -503,7 +503,8 @@ def test_route_change_can_explain_roster_change_with_held_route():
     result = build_team_story(118, team_context=context)
 
     assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
-    assert 'The roster changed while the route still runs through First Arm, Second Arm, and Third Arm.' in written_text(result)
+    assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
+    assert 'route points back through First Arm, Second Arm, and Third Arm' in written_text(result)
     assert_forward_clause(result)
 
 

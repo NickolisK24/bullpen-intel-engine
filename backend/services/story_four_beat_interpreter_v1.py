@@ -18,6 +18,7 @@ from services.story_observation_engine import (
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
 )
+from services.story_voice_library_v1 import render_voice_line
 
 
 CAPABILITY = 'story_four_beat_interpreter_v1'
@@ -42,7 +43,7 @@ PUBLIC_BEATS = {
     BEAT_DEPTH_CONSTRAINT: {
         'key': BEAT_DEPTH_CONSTRAINT,
         'label': 'Depth Constraint',
-        'question_answered': 'Why does the bullpen have fewer practical paths than the roster suggests?',
+        'question_answered': 'Why does the bullpen have fewer late-inning choices than the roster suggests?',
     },
     BEAT_SUSTAINABILITY_QUESTION: {
         'key': BEAT_SUSTAINABILITY_QUESTION,
@@ -168,8 +169,8 @@ def _has_forward_clause(text):
         lower.startswith('if ')
         or ' if ' in lower
         or 'current route points back to' in lower
-        or 'practical constraint is' in lower
-        or 'fewer clean ways to' in lower
+        or 'fewer ways to' in lower
+        or 'late-inning choices' in lower
     )
 
 
@@ -244,13 +245,13 @@ def _default_forward_clause(beat, frame, names):
             return f'If the next game tightens, the route points back through {name_text}.'
         return 'If the next game tightens, the route points back through the current core.'
     if beat == BEAT_COVERAGE_PRESSURE:
-        return 'If the short starts continue, the bullpen has fewer clean ways to spread the innings.'
+        return 'If the short starts continue, the bullpen has fewer ways to spread the middle innings.'
     if beat == BEAT_DEPTH_CONSTRAINT:
-        return 'If the roster stays this thin, the practical path remains smaller than the active list suggests.'
+        return 'If the roster stays this thin, the manager has fewer ways to cover the late innings than the roster count suggests.'
     if beat == BEAT_SUSTAINABILITY_QUESTION:
         if name_text:
             return f'If this workload pattern holds, the route remains narrow around {name_text}.'
-        return 'If this workload pattern holds, the bullpen has fewer clean ways to spread the innings.'
+        return 'If this workload pattern holds, the bullpen has fewer ways to spread the late innings.'
     return None
 
 
@@ -270,7 +271,24 @@ def _route_change_headline(frame, written_story):
         names = _join_names(current)
         if retention is not None and retention <= 0:
             return f'The route has changed, now running through {names}.'
-        return f'The roster changed while the route still runs through {names}.'
+        library_headline = render_voice_line(
+            BEAT_ROUTE_CHANGE,
+            stable_parts=(
+                _dict(frame).get('team_id'),
+                _dict(frame).get('team_abbreviation'),
+                names,
+                _join_names(previous),
+                retention,
+            ),
+            team=_dict(frame).get('team_name') or 'This bullpen',
+            possessive=(
+                f"{_dict(frame).get('team_name')}'"
+                if _clean_text(_dict(frame).get('team_name')).lower().endswith('s')
+                else f"{_dict(frame).get('team_name')}'s"
+            ) if _clean_text(_dict(frame).get('team_name')) else 'This bullpen',
+            names=names,
+        )
+        return library_headline or f'The roster changed while the route still runs through {names}.'
     return _dict(written_story).get('headline')
 
 
