@@ -26,6 +26,10 @@ from services.story_observation_voice import (
     observation_prose_paths,
     polish_selected_observation,
 )
+from services.story_quality import (
+    DEFAULT_STORY_QUALITY_CONFIG,
+    apply_story_quality_gate,
+)
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -2256,6 +2260,7 @@ def build_four_beat_story_feed(
     rotation_support_by_team=None,
     bullpen_stability_by_team=None,
     bullpen_environment_by_team=None,
+    story_quality_config=None,
 ):
     team_inputs = _team_inputs_from_records(
         availability_records,
@@ -2310,6 +2315,14 @@ def build_four_beat_story_feed(
     stories, feed_order_diversification_count = diversify_feed_story_order(stories)
     stories = diversify_adjacent_story_prose(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
+    # Story Quality contract: score every surviving story against the five-rule
+    # rubric and, only when enforcement is enabled in config, hold the weak ones
+    # out of the feed. With the default (report-only) config nothing is held and
+    # `stories` is unchanged, so feed behavior matches a build without the gate.
+    stories, quality_held, quality_summary = apply_story_quality_gate(
+        stories,
+        story_quality_config or DEFAULT_STORY_QUALITY_CONFIG,
+    )
     assigned_family_counts = observation_differentiation.get('final_family_counts') or {}
     published_family_counts = _published_observation_family_counts(
         stories,
@@ -2349,6 +2362,8 @@ def build_four_beat_story_feed(
             'published_count': len(stories),
             'suppressed_count': len(evidence_suppressed),
         },
+        'story_quality': quality_summary,
+        'story_quality_held': quality_held,
         'observation_differentiation': {
             **observation_differentiation,
             'assigned_family_counts': assigned_family_counts,

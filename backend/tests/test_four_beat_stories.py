@@ -59,6 +59,7 @@ from services.story_observation_voice import (
     validate_observation_voice,
 )
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
+from services.story_quality import StoryQualityConfig
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
     DISCLOSURE_LIMITED_BULLPEN_PICTURE,
@@ -3836,3 +3837,65 @@ def test_feature_flag_defaults_on():
     assert four_beat_stories_enabled({}) is True
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': False}) is False
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': True}) is True
+
+
+# ─── Story Quality contract wiring (report-only default, opt-in enforcement) ───
+
+def test_story_quality_runs_report_only_by_default():
+    _pitchers, records, logs = _fixture_team(
+        141,
+        'Toronto Blue Jays',
+        'TOR',
+        [38, 34, 29, 11, 9, 8, 6],
+    )
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+
+    # Summary present and report-only; nothing held; default gate disabled.
+    summary = feed['story_quality']
+    assert summary['mode'] == 'report_only'
+    assert summary['gate_enabled'] is False
+    assert feed['story_quality_held'] == []
+    # Every published item carries its rule-by-rule scorecard.
+    for item in feed['items']:
+        card = item['story_quality']
+        assert set(card['rules']) == {
+            'named_arms',
+            'stated_cause',
+            'baseline_anchor',
+            'forward_constraint',
+            'no_redundant_restatement',
+        }
+        assert isinstance(card['score'], float)
+
+
+def test_story_quality_report_only_does_not_drop_stories():
+    _pitchers, records, logs = _fixture_team(
+        141, 'Toronto Blue Jays', 'TOR', [38, 34, 29, 11, 9, 8, 6],
+    )
+    baseline = build_four_beat_story_feed(records, logs, reference_date=REF)
+    # A strict threshold in *report-only* mode must still publish everything.
+    report_only_strict = build_four_beat_story_feed(
+        records, logs, reference_date=REF,
+        story_quality_config=StoryQualityConfig(gate_enabled=False, gate_threshold=100.0),
+    )
+    assert [i['story_id'] for i in report_only_strict['items']] == [
+        i['story_id'] for i in baseline['items']
+    ]
+    assert report_only_strict['story_quality_held'] == []
+
+
+def test_story_quality_enforcement_can_hold_below_threshold():
+    _pitchers, records, logs = _fixture_team(
+        141, 'Toronto Blue Jays', 'TOR', [38, 34, 29, 11, 9, 8, 6],
+    )
+    # An impossible threshold with enforcement on holds every story, proving the
+    # gate is wired and removes held stories from the published feed.
+    feed = build_four_beat_story_feed(
+        records, logs, reference_date=REF,
+        story_quality_config=StoryQualityConfig(gate_enabled=True, gate_threshold=100.1),
+    )
+    assert feed['items'] == []
+    assert len(feed['story_quality_held']) >= 1
+    assert feed['story_quality']['mode'] == 'enforcing'
+    held = feed['story_quality_held'][0]
+    assert 'fail_reasons' in held and 'score' in held
