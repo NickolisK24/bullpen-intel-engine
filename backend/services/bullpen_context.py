@@ -18,6 +18,7 @@ from utils.games_started import (
     is_start,
 )
 from utils.innings import log_innings_decimal
+from services.rotation_context import build_rotation_context
 
 
 BULLPEN_CONTEXT_SAMPLE_CAP = 5
@@ -201,6 +202,10 @@ def _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches
 
 def _rotation_context(last_logs, prev_logs, windows):
     all_logs = [*(last_logs or []), *(prev_logs or [])]
+    layer1 = build_rotation_context(
+        all_logs,
+        reference_date=windows['last_7']['end_date'] if windows else None,
+    )
     signal = _start_signal_fields(all_logs)
     last_starts = _starter_logs(last_logs)
     prev_starts = _starter_logs(prev_logs)
@@ -221,6 +226,16 @@ def _rotation_context(last_logs, prev_logs, windows):
         'delta_ip': delta,
         'trend': trend,
         'windows': _serialize_windows(windows),
+        'rotation_avg_ip_7d': layer1['rotation_avg_ip_7d'],
+        'rotation_avg_ip_14d': layer1['rotation_avg_ip_14d'],
+        'rotation_ip_trend': layer1['rotation_ip_trend'],
+        'early_bullpen_entry_rate': layer1['early_bullpen_entry_rate'],
+        'bullpen_coverage_ip_7d': layer1['bullpen_coverage_ip_7d'],
+        'rotation_games_analyzed_7d': layer1['games_analyzed_7d'],
+        'rotation_games_analyzed_14d': layer1['games_analyzed_14d'],
+        'rotation_games_excluded_14d': layer1['games_excluded_14d'],
+        'rotation_early_bullpen_entry_games_14d': layer1['early_bullpen_entry_games_14d'],
+        'rotation_context_layer': layer1,
         **signal,
     }
 
@@ -237,6 +252,16 @@ def _empty_rotation_context(windows=None):
         'delta_ip': None,
         'trend': 'insufficient_data',
         'windows': _serialize_windows(windows),
+        'rotation_avg_ip_7d': None,
+        'rotation_avg_ip_14d': None,
+        'rotation_ip_trend': None,
+        'early_bullpen_entry_rate': None,
+        'bullpen_coverage_ip_7d': None,
+        'rotation_games_analyzed_7d': 0,
+        'rotation_games_analyzed_14d': 0,
+        'rotation_games_excluded_14d': 0,
+        'rotation_early_bullpen_entry_games_14d': 0,
+        'rotation_context_layer': None,
         'start_classification_state': 'complete',
         'unknown_start_rows': 0,
         'unknown_start_row_share': 0.0,
