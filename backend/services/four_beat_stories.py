@@ -19,7 +19,11 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.pitcher_role_authority import author_role_read_labels
-from services.story_evidence import apply_story_evidence_framework, validate_story_evidence
+from services.story_evidence import (
+    apply_story_evidence_framework,
+    headline_opener_overlap,
+    validate_story_evidence,
+)
 from services.story_observation_discovery import select_feed_observations, story_template_dependency_audit
 from services.story_observation_voice import (
     build_observation_voice,
@@ -1876,6 +1880,91 @@ def diversify_adjacent_story_prose(stories: list[dict[str, Any]]) -> list[dict[s
     return diversified
 
 
+# Two cards on one page sharing a headline template is the most visible form of
+# reuse. Detect collisions with the scorer's normalized token-overlap heuristic
+# (after stripping team identity, so two teams on the same template still
+# collide) and rotate the later card to an alternate headline.
+HEADLINE_DEDUPE_OVERLAP_MIN = 0.6
+
+
+def _headline_identity_tokens(story: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    for value in (story.get('team_name'), story.get('team_abbreviation')):
+        for word in str(value or '').lower().replace("'", ' ').split():
+            cleaned = ''.join(char for char in word if char.isalnum())
+            if cleaned:
+                tokens.add(cleaned)
+    return tokens
+
+
+def _headline_dedupe_signature(title: Any, story: dict[str, Any]) -> str:
+    team_tokens = _headline_identity_tokens(story)
+    words = []
+    for word in str(title or '').lower().replace("'", ' ').split():
+        cleaned = ''.join(char for char in word if char.isalnum())
+        if cleaned and cleaned not in team_tokens:
+            words.append(cleaned)
+    return ' '.join(words)
+
+
+def _headline_signature_collides(signature: str, assigned: list[str]) -> bool:
+    if not signature:
+        return False
+    return any(
+        headline_opener_overlap(signature, existing) >= HEADLINE_DEDUPE_OVERLAP_MIN
+        for existing in assigned
+        if existing
+    )
+
+
+def dedupe_feed_headlines(stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ensure no two cards on one page share a headline.
+
+    Headlines are generated per story with no view of the rest of the feed, so
+    two teams on the same observation type and prose path render the same
+    template. Resolve at the feed layer: the first card in feed order keeps its
+    headline, and a later collision rotates to the next prose path whose headline
+    is free. Deterministic for a given team set.
+    """
+    assigned: list[str] = []
+    for story in stories:
+        signature = _headline_dedupe_signature(story.get('title'), story)
+        if not _headline_signature_collides(signature, assigned):
+            assigned.append(signature)
+            continue
+
+        original_title = story.get('title')
+        disallowed: set[str] = set()
+        current_path = (story.get('story_voice') or {}).get('prose_path')
+        if current_path:
+            disallowed.add(current_path)
+
+        resolved_signature = None
+        while True:
+            next_path = _next_prose_path(story, disallowed)
+            if not next_path or next_path in disallowed:
+                break
+            disallowed.add(next_path)
+            rebuilt = _rebuild_story_voice(story, next_path)
+            if not rebuilt:
+                continue
+            rebuilt_voice, rebuilt_facts = rebuilt
+            candidate_signature = _headline_dedupe_signature(rebuilt_voice.get('headline'), story)
+            if not _headline_signature_collides(candidate_signature, assigned):
+                _apply_story_voice(story, rebuilt_voice, facts_override=rebuilt_facts)
+                story['headline_dedupe'] = {
+                    'applied': True,
+                    'reason': 'feed_headline_collision',
+                    'original_title': original_title,
+                    'resolved_prose_path': next_path,
+                }
+                resolved_signature = candidate_signature
+                break
+
+        assigned.append(resolved_signature or signature)
+    return stories
+
+
 def assemble_story(
     rule_key,
     inputs,
@@ -2309,6 +2398,7 @@ def build_four_beat_story_feed(
     stories.sort(key=lambda story: (-story['strength'], story['team_name'] or '', story['rule_key']))
     stories, feed_order_diversification_count = diversify_feed_story_order(stories)
     stories = diversify_adjacent_story_prose(stories)
+    stories = dedupe_feed_headlines(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
     assigned_family_counts = observation_differentiation.get('final_family_counts') or {}
     published_family_counts = _published_observation_family_counts(
@@ -2393,6 +2483,7 @@ __all__ = [
     'assemble_story',
     'build_four_beat_story_feed',
     'compute_team_story_inputs',
+    'dedupe_feed_headlines',
     'diversify_feed_story_order',
     'diversify_adjacent_story_prose',
     'evaluate_team_rules',
