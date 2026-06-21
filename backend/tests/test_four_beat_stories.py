@@ -1,5 +1,6 @@
 import inspect
 import re
+from collections import Counter
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -28,9 +29,12 @@ from services.four_beat_stories import (
     RULE_STRESS_TRANSFER,
     RULE_SUSTAINABILITY_QUESTION,
     TeamInputs,
+    _apply_story_voice,
+    _rebuild_story_voice,
     assemble_story,
     build_four_beat_story_feed,
     compute_team_story_inputs,
+    dedupe_feed_headlines,
     diversify_feed_story_order,
     evaluate_team_rules,
     four_beat_stories_enabled,
@@ -56,8 +60,10 @@ from services.story_observation_discovery import (
     story_template_dependency_audit,
 )
 from services.story_observation_voice import (
+    DIVERGENCE_CONSEQUENCE_VARIANTS,
     THROAT_CLEARING_CLOSERS,
     build_observation_voice,
+    classify_divergence_consequence_shape,
     observation_prose_paths,
     polish_selected_observation,
     validate_observation_voice,
@@ -2478,6 +2484,139 @@ def test_editorial_polish_diversifies_evidence_consequence_and_adjacent_families
     assert len(evidence_shapes) >= 4
     assert len(consequence_shapes) >= 4
     assert len(run_prevention_consequence_shapes) >= 2
+
+
+# Real divergence (strong surface stat, narrower workload underneath) teams.
+_DIVERGENCE_FEED_TEAMS = (
+    (116, 'Detroit Tigers', 'DET', 1.79),
+    (135, 'San Diego Padres', 'SD', 2.34),
+    (117, 'Houston Astros', 'HOU', 2.93),
+    (114, 'Cleveland Guardians', 'CLE', 2.51),
+    (146, 'Miami Marlins', 'MIA', 2.72),
+)
+
+# Forecast/prediction/betting words the divergence close must never use; it keeps
+# constraint framing ("if the next game tightens...") only.
+_FORECAST_LEXICON = (
+    'will', 'would', 'likely', 'expect', 'expects', 'expected', 'probably',
+    'odds', 'chance', 'chances', 'bet', 'bets', 'betting', 'going to',
+    'should', 'projected', 'projection', 'forecast', 'predict', 'predicts',
+    'may', 'might',
+)
+
+
+def _has_forecast_language(text):
+    lowered = (text or '').lower()
+    return [
+        word for word in _FORECAST_LEXICON
+        if re.search(rf'\b{re.escape(word)}\b', lowered)
+    ]
+
+
+def _run_prevention_stress_story(team_id, team_name, abbr, era, *, force_prose_path=None):
+    _pitchers, records, logs = _fixture_team(
+        team_id, team_name, abbr, [50, 42, 30, 6, 4],
+        available_count=4, high_risk_indices=(0, 1), trust_indices=(0, 1),
+    )
+    team_inputs = _team_inputs(
+        records, logs,
+        team={'team_id': team_id, 'team_name': team_name, 'team_abbreviation': abbr},
+        season_era_by_team=_ranked_era(team_id, era=era, rank=2, strong=True, solid=True),
+    )
+    inputs = compute_team_story_inputs(team_inputs)
+    discovery = discover_story_observations(RULE_SUSTAINABILITY_QUESTION, inputs)
+    candidate = next(
+        (item for item in discovery['candidates'] if item['observation_type'] == 'run_prevention_stress'),
+        None,
+    )
+    assert candidate is not None, team_name
+    story = assemble_story(
+        RULE_SUSTAINABILITY_QUESTION, inputs, selected_observation_override=candidate,
+    )
+    if force_prose_path:
+        rebuilt = _rebuild_story_voice(story, force_prose_path)
+        assert rebuilt is not None, (team_name, force_prose_path)
+        voice, facts = rebuilt
+        _apply_story_voice(story, voice, facts_override=facts)
+    return story
+
+
+def test_divergence_consequence_stems_vary_across_a_feed():
+    shapes = []
+    for team_id, team_name, abbr, era in _DIVERGENCE_FEED_TEAMS:
+        story = _run_prevention_stress_story(team_id, team_name, abbr, era)
+        assert (
+            story['story_observation']['selected_observation']['observation_type']
+            == 'run_prevention_stress'
+        )
+        shapes.append(
+            classify_divergence_consequence_shape(story['story_evidence']['consequence_statement'])
+        )
+
+    counts = Counter(shapes)
+    # The page cannot fill with one pivot: at most one semicolon and one ", but".
+    assert counts['semicolon'] <= 1
+    assert counts['but'] <= 1
+    # And the close varies its grammar across the feed.
+    assert len(set(shapes)) >= 3
+
+
+def test_divergence_consequence_pool_passes_forward_constraint_lexicon():
+    short_subject = 'Frame Arm and Bridge Arm'
+    for _shape, template in DIVERGENCE_CONSEQUENCE_VARIANTS:
+        rendered = template.format(short_subject=short_subject, era_text='2.41')
+        assert _has_forecast_language(rendered) == [], rendered
+
+    # Same guard on the lines the real feed teams actually render.
+    for team_id, team_name, abbr, era in _DIVERGENCE_FEED_TEAMS:
+        story = _run_prevention_stress_story(team_id, team_name, abbr, era)
+        consequence = story['story_evidence']['consequence_statement']
+        assert _has_forecast_language(consequence) == [], (team_name, consequence)
+
+
+def test_divergence_consequence_pool_has_at_most_one_semicolon_and_one_but():
+    shapes = [shape for shape, _template in DIVERGENCE_CONSEQUENCE_VARIANTS]
+    assert shapes.count('semicolon') <= 1
+    assert shapes.count('but') <= 1
+    assert len(set(shapes)) >= 5
+
+
+# Houston (103) and Detroit (104) hash to the same name-less voice-library
+# headline on the game_route path, so both render the identical line — a real
+# two-team collision on one page for the de-dup to resolve.
+_HEADLINE_COLLISION_HOU = (103, 'Houston Astros', 'HOU', 2.93)
+_HEADLINE_COLLISION_DET = (104, 'Detroit Tigers', 'DET', 1.79)
+
+
+def _collision_feed():
+    houston = _run_prevention_stress_story(*_HEADLINE_COLLISION_HOU, force_prose_path='game_route')
+    detroit = _run_prevention_stress_story(*_HEADLINE_COLLISION_DET, force_prose_path='game_route')
+    return [houston, detroit]
+
+
+def test_feed_dedupes_identical_divergence_headlines():
+    feed = _collision_feed()
+    # Same headline, two teams, on one page — the collision the de-dup must fix.
+    assert feed[0]['title'] == feed[1]['title']
+
+    feed = dedupe_feed_headlines(feed)
+
+    assert feed[0]['title'] != feed[1]['title']
+    # First in feed order keeps the primary; the later collision is rotated.
+    assert feed[0].get('headline_dedupe') is None
+    assert feed[1]['headline_dedupe']['applied'] is True
+    assert feed[1]['headline_dedupe']['reason'] == 'feed_headline_collision'
+    # De-duping the headline must not make it echo the body (prior-fix guard).
+    for story in feed:
+        assert validate_story_evidence(story)['headline_restates_opener'] is False
+
+
+def test_feed_headline_dedupe_is_deterministic():
+    def resolved_titles():
+        feed = dedupe_feed_headlines(_collision_feed())
+        return [story['title'] for story in feed]
+
+    assert resolved_titles() == resolved_titles()
 
 
 def test_feed_order_diversification_preserves_large_quality_gap():

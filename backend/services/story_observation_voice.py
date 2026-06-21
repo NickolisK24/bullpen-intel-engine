@@ -280,6 +280,95 @@ def _variant(
     return options[index]
 
 
+# Divergence (strong surface stat, narrower workload underneath) consequence
+# stems. Every entry says the same thing; they differ in GRAMMAR so a feed of
+# divergence cards does not close on one repeated pivot. At most one semicolon
+# form and one ", but" form so a page cannot fill with either. None use
+# forecast/prediction language (no will/likely/expect/odds) — constraint
+# framing only, so each passes the forward-constraint banned lexicon.
+DIVERGENCE_SHAPE_WORKLOAD_LEAD = 'workload_lead'
+DIVERGENCE_SHAPE_SEMICOLON = 'semicolon'
+DIVERGENCE_SHAPE_CONDITIONAL = 'conditional'
+DIVERGENCE_SHAPE_BUT = 'but'
+DIVERGENCE_SHAPE_COMPARATIVE = 'comparative'
+DIVERGENCE_SHAPE_TWO_SENTENCE = 'two_sentence'
+
+DIVERGENCE_CONSEQUENCE_VARIANTS = (
+    (
+        DIVERGENCE_SHAPE_WORKLOAD_LEAD,
+        'The workload still runs through {short_subject}, even with the ERA where it is.',
+    ),
+    (
+        DIVERGENCE_SHAPE_SEMICOLON,
+        'The results hold up; the narrower part is who handles the high-leverage innings.',
+    ),
+    (
+        DIVERGENCE_SHAPE_CONDITIONAL,
+        'If the next game tightens, the strong results still have to come through {short_subject}.',
+    ),
+    (
+        DIVERGENCE_SHAPE_BUT,
+        'The run prevention is real, but the recent innings keep landing on {short_subject}.',
+    ),
+    (
+        DIVERGENCE_SHAPE_COMPARATIVE,
+        'Good results sit on top of a thinner workload pattern than the {era_text} ERA suggests.',
+    ),
+    (
+        DIVERGENCE_SHAPE_TWO_SENTENCE,
+        'The ERA holds the public read. The recent innings still lean on {short_subject}.',
+    ),
+)
+
+
+def _divergence_consequence_index(facts, selected, prose_path) -> int:
+    return _stable_index([
+        _team_name(facts),
+        (facts.get('team') or {}).get('team_id'),
+        selected.get('observation_type'),
+        selected.get('observation_id'),
+        prose_path,
+    ], len(DIVERGENCE_CONSEQUENCE_VARIANTS))
+
+
+def _divergence_consequence(facts, selected, prose_path, *, short_subject, era_text) -> str:
+    """Select a divergence closing stem deterministically per story.
+
+    Keyed off the same team/observation identity the rest of the engine uses, so
+    output is stable for a given card but varied across the feed.
+    """
+    _shape, template = DIVERGENCE_CONSEQUENCE_VARIANTS[
+        _divergence_consequence_index(facts, selected, prose_path)
+    ]
+    return template.format(short_subject=short_subject, era_text=era_text)
+
+
+def classify_divergence_consequence_shape(value: Any) -> str:
+    """Classify a divergence closing line by grammatical shape.
+
+    Used to confirm a feed of divergence cards does not collapse onto one
+    repeated pivot. Derives the shape from the rendered text so it works on any
+    closing line, not only ones built from the pool above.
+    """
+    text = _clean_text(value)
+    if not text:
+        return 'empty'
+    lower = text.lower()
+    if ';' in text:
+        return DIVERGENCE_SHAPE_SEMICOLON
+    if lower.startswith('if '):
+        return DIVERGENCE_SHAPE_CONDITIONAL
+    if ', but ' in lower:
+        return DIVERGENCE_SHAPE_BUT
+    # A second full sentence (internal sentence break) reads differently than a
+    # single clause, so treat it as its own shape before the comparative check.
+    if re.search(r'[.!?]\s+[A-Z]', text):
+        return DIVERGENCE_SHAPE_TWO_SENTENCE
+    if ' than ' in lower:
+        return DIVERGENCE_SHAPE_COMPARATIVE
+    return DIVERGENCE_SHAPE_WORKLOAD_LEAD
+
+
 def _voice_beat_for_observation(observation_type: str | None) -> str | None:
     return {
         OBSERVATION_CHANGE: VOICE_BEAT_ROUTE_CHANGE,
@@ -558,46 +647,26 @@ def polish_selected_observation(
             category = 'reduced_flexibility'
 
     elif subject and observation_type == OBSERVATION_RUN_PREVENTION_STRESS and era_text:
-        variants = {
-            PROSE_PATH_DEPENDENCY: (
+        evidence_variants = {
+            PROSE_PATH_DEPENDENCY:
                 f'{possessive} {era_text} bullpen ERA still leans heavily on {subject}, with recent usage at {per_arm} pitches for each reliever used recently.',
-                'heavier_workload_concentration',
-                f'The next tight inning still points back toward {short_subject} rather than a wider group.',
-            ),
-            PROSE_PATH_WORKLOAD: (
+            PROSE_PATH_WORKLOAD:
                 f'{team} {_team_has_verb(facts)} a {era_text} bullpen ERA, but {subject} remain tied to a {per_arm}-pitch recent workload for each reliever used recently.',
-                'heavier_workload_concentration',
-                _variant(facts, selected, prose_path, (
-                    'The bullpen remains effective, but fewer relievers are sharing the burden.',
-                    'The ERA says stable; the workload says the same arms are still doing more of the carrying.',
-                    'The run prevention is real, but the workload underneath is not as broad.',
-                )),
-            ),
-            PROSE_PATH_GAME_ROUTE: (
+            PROSE_PATH_GAME_ROUTE:
                 f'A {era_text} season ERA gives {team} results, but the recent route still runs through {subject} at {per_arm} pitches for each reliever used recently.',
-                'heavier_workload_concentration',
-                _variant(facts, selected, prose_path, (
-                    'A close game can still ask the same pocket of arms to carry the leverage.',
-                    'The results are strong, but the next leverage pocket may still return to the same arms.',
-                    'The ERA gives the staff cover, while the workload keeps the pressure on the front group.',
-                )),
-            ),
-            PROSE_PATH_ALTERNATIVES: (
+            PROSE_PATH_ALTERNATIVES:
                 f'{possessive} run prevention is strong at a {era_text} ERA, but recent usage still averages {per_arm} pitches for each reliever used recently around {subject}.',
-                'heavier_workload_concentration',
-                'If the game tightens again, the same arms still matter more than the ERA line first suggests.',
-            ),
-            PROSE_PATH_RESULTS_MISMATCH: (
+            PROSE_PATH_RESULTS_MISMATCH:
                 f'{subject} have kept {possessive} run prevention strong with a {era_text} ERA, but the recent workload is still {per_arm} pitches for each reliever used recently.',
-                'heavier_workload_concentration',
-                _variant(facts, selected, prose_path, (
-                    'The results look stable, but the workload underneath is narrower than the ERA alone shows.',
-                    'The ERA is carrying a steadier public read than the recent workload shape deserves.',
-                    'The scoreboard result is clean; the bullpen structure underneath is tighter.',
-                )),
-            ),
         }
-        evidence, category, consequence = variants.get(prose_path, variants[PROSE_PATH_RESULTS_MISMATCH])
+        evidence = evidence_variants.get(prose_path, evidence_variants[PROSE_PATH_RESULTS_MISMATCH])
+        category = 'heavier_workload_concentration'
+        # Close on a structurally varied stem so a feed of divergence cards does
+        # not repeat one pivot. The evidence above keeps the prose-path framing;
+        # the stem is selected from the shared pool, deterministic per story.
+        consequence = _divergence_consequence(
+            facts, selected, prose_path, short_subject=short_subject, era_text=era_text,
+        )
 
     elif subject and observation_type == OBSERVATION_IDENTITY:
         summary = _identity_public_summary(facts)
@@ -1196,11 +1265,13 @@ def build_observation_voice(facts: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     'CAPABILITY',
     'VERSION',
+    'DIVERGENCE_CONSEQUENCE_VARIANTS',
     'GENERIC_FRAME_DENYLIST',
     'INTERNAL_PUBLIC_UNSAFE_TERMS',
     'PROSE_PATHS_BY_OBSERVATION',
     'THROAT_CLEARING_CLOSERS',
     'build_observation_voice',
+    'classify_divergence_consequence_shape',
     'observation_prose_paths',
     'polish_selected_observation',
     'select_observation_prose_path',
