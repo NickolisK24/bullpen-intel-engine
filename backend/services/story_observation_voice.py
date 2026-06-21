@@ -14,6 +14,14 @@ from services.story_observation_discovery import (
     OBSERVATION_TRUST_SHAPE,
     OBSERVATION_WORKLOAD_CONCENTRATION,
 )
+from services.story_voice_library_v1 import (
+    BEAT_COVERAGE_PRESSURE as VOICE_BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT as VOICE_BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE as VOICE_BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION as VOICE_BEAT_SUSTAINABILITY_QUESTION,
+    DENIED_PUBLIC_PHRASES,
+    render_voice_line,
+)
 
 
 CAPABILITY = 'observation_voice_layer_v1'
@@ -81,6 +89,7 @@ THROAT_CLEARING_CLOSERS = (
 )
 
 GENERIC_FRAME_DENYLIST = (
+    *DENIED_PUBLIC_PHRASES,
     'the bullpen picture remains stable',
     'bullpen picture remains stable',
     'the back end gives the night structure',
@@ -360,6 +369,48 @@ def classify_divergence_consequence_shape(value: Any) -> str:
     return DIVERGENCE_SHAPE_WORKLOAD_LEAD
 
 
+def _voice_beat_for_observation(observation_type: str | None) -> str | None:
+    return {
+        OBSERVATION_CHANGE: VOICE_BEAT_ROUTE_CHANGE,
+        OBSERVATION_IDENTITY: VOICE_BEAT_ROUTE_CHANGE,
+        OBSERVATION_FLEXIBILITY: VOICE_BEAT_ROUTE_CHANGE,
+        OBSERVATION_RESOURCE_CONSTRAINT: VOICE_BEAT_DEPTH_CONSTRAINT,
+        OBSERVATION_TRUST_SHAPE: VOICE_BEAT_DEPTH_CONSTRAINT,
+        OBSERVATION_RUN_PREVENTION_STRESS: VOICE_BEAT_COVERAGE_PRESSURE,
+        OBSERVATION_WORKLOAD_CONCENTRATION: VOICE_BEAT_SUSTAINABILITY_QUESTION,
+    }.get(observation_type)
+
+
+def _voice_library_line(
+    facts: dict[str, Any],
+    selected: dict[str, Any],
+    prose_path: str | None,
+    *,
+    beat: str | None = None,
+    names: str | None = None,
+) -> str | None:
+    beat = beat or _voice_beat_for_observation(selected.get('observation_type'))
+    if not beat:
+        return None
+    team = _team_name(facts)
+    return render_voice_line(
+        beat,
+        stable_parts=(
+            (facts.get('team') or {}).get('team_id'),
+            (facts.get('team') or {}).get('team_abbreviation'),
+            selected.get('observation_type'),
+            selected.get('observation_id'),
+            facts.get('rule_key'),
+            facts.get('lead_dimension'),
+            prose_path,
+            names,
+        ),
+        team=team,
+        possessive=_possessive_team(facts),
+        names=names or 'the same relievers',
+    )
+
+
 def _team_inputs(facts: dict[str, Any]) -> dict[str, Any]:
     inputs = facts.get('story_inputs')
     return inputs if isinstance(inputs, dict) else {}
@@ -507,7 +558,7 @@ def polish_selected_observation(
             PROSE_PATH_AVAILABLE_LAYER: (
                 f'{subject} sit in {possessive} current bullpen picture while only {availability_text} tonight.',
                 'less_coverage_margin',
-                'The usable layer is thin enough that one more leverage pocket matters.',
+                'The bullpen layer is thin enough that one more leverage pocket matters.',
             ),
         }
         evidence, category, consequence = variants.get(prose_path, variants[PROSE_PATH_AVAILABLE_LAYER])
@@ -535,18 +586,18 @@ def polish_selected_observation(
                 )),
             ),
             PROSE_PATH_WORKLOAD: (
-                f'Recent {team} bullpen work has reached {participants} relievers while {subject} remain part of an available group of {available}.',
+                f'Recent {team} bullpen work has reached {participants} relievers, with {subject} still giving the staff named late-inning places to turn inside an available group of {available}.',
                 'more_stable_bullpen_shape',
                 _variant(facts, selected, prose_path, (
-                    'The workload is broad enough to keep different hands in play.',
+                    'The workload is broad, and the useful part is that a tight inning still has named places to go.',
                     'That spread keeps the bullpen from turning into a one-lane plan.',
                     'The recent distribution gives the staff more ways to absorb another close inning.',
                 )),
             ),
             PROSE_PATH_DEPTH_ROOM: (
-                f'{team} {_team_has_verb(facts)} spread recent bullpen work across {participants} relievers and still {_team_has_verb(facts)} {availability_count_text}, led by {subject}.',
+                f'{short_subject} headline the {team} bullpen after recent work spread across {participants} relievers, with {availability_count_text}.',
                 'more_stable_bullpen_shape',
-                'That leaves the staff with room to cover a tight inning without forcing one lane.',
+                'That gives the manager named lanes to choose from before a tight inning collapses to one route.',
             ),
         }
         evidence, category, consequence = variants.get(prose_path, variants[PROSE_PATH_DEPTH_ROOM])
@@ -556,50 +607,57 @@ def polish_selected_observation(
         if stable:
             variants = {
                 PROSE_PATH_LATE_BRIDGE: (
-                    f'{subject} give {team} {clean_trust_count} trusted late-inning choices among {clean_option_count} usable relievers.',
+                    f'{subject} give {team} {clean_trust_count} trusted late-inning choices among {clean_option_count} available relievers.',
                     'more_stable_bullpen_shape',
                     'That keeps the late bridge from depending on one reliever.',
                 ),
                 PROSE_PATH_DEPENDENCY: (
-                    f'{subject} give {team} {clean_trust_count} trusted late-inning choices among {clean_option_count} usable relievers.',
+                    f'{subject} give {team} {clean_trust_count} trusted late-inning choices among {clean_option_count} available relievers.',
                     'more_stable_bullpen_shape',
                     'That keeps the late bridge from depending on one reliever.',
                 ),
                 PROSE_PATH_ALTERNATIVES: (
-                    f'{team} {_team_has_verb(facts)} {clean_option_count} usable relievers, with {subject} among the trusted late-inning choices.',
+                    f'{team} {_team_has_verb(facts)} {clean_option_count} available relievers, with {subject} among the trusted late-inning choices.',
                     'more_stable_bullpen_shape',
                     'The staff has more than one landing spot before the game reaches the finish.',
                 ),
                 PROSE_PATH_DEPTH_ROOM: (
-                    f'{subject} sit inside a {clean_option_count}-reliever usable layer for {team}.',
+                    f'{subject} sit inside a {clean_option_count}-reliever available layer for {team}.',
                     'more_stable_bullpen_shape',
                     'That gives the bullpen room to move through the late innings.',
                 ),
             }
             evidence, category, consequence = variants.get(prose_path, variants[PROSE_PATH_LATE_BRIDGE])
         else:
+            trust_phrase = (
+                '0 trusted late-inning choices are available'
+                if clean_trust_count == 0
+                else (
+                    'only one trusted late-inning choice is available'
+                    if clean_trust_count == 1
+                    else f'only {clean_trust_count} trusted late-inning choices are available'
+                )
+            )
             evidence = (
-                f'{subject} are carrying the named part of {possessive} relief read while only '
-                f'{clean_trust_count} trusted late-inning {_plural(clean_trust_count, "option")} '
-                f'{"is" if clean_trust_count == 1 else "are"} available.'
+                f'{subject} are carrying the named part of {possessive} bullpen picture while {trust_phrase}.'
             )
             consequence = (
-                f'That leaves fewer comfortable pivots if the game needs one more clean inning before {short_subject}.'
+                f'That leaves fewer pivots if the game needs one more covered inning before {short_subject}.'
             )
             category = 'reduced_flexibility'
 
     elif subject and observation_type == OBSERVATION_RUN_PREVENTION_STRESS and era_text:
         evidence_variants = {
             PROSE_PATH_DEPENDENCY:
-                f'{possessive} {era_text} bullpen ERA still leans heavily on {subject}, with recent usage at {per_arm} pitches per participating reliever.',
+                f'{possessive} {era_text} bullpen ERA still leans heavily on {subject}, with recent usage at {per_arm} pitches for each reliever used recently.',
             PROSE_PATH_WORKLOAD:
-                f'{team} {_team_has_verb(facts)} a {era_text} bullpen ERA, but {subject} remain tied to a {per_arm}-pitch recent workload per participating reliever.',
+                f'{team} {_team_has_verb(facts)} a {era_text} bullpen ERA, but {subject} remain tied to a {per_arm}-pitch recent workload for each reliever used recently.',
             PROSE_PATH_GAME_ROUTE:
-                f'A {era_text} season ERA gives {team} results, but the recent route still runs through {subject} at {per_arm} pitches per participating reliever.',
+                f'A {era_text} season ERA gives {team} results, but the recent route still runs through {subject} at {per_arm} pitches for each reliever used recently.',
             PROSE_PATH_ALTERNATIVES:
-                f'{possessive} run prevention is strong at a {era_text} ERA, but recent usage still averages {per_arm} pitches per participating reliever around {subject}.',
+                f'{possessive} run prevention is strong at a {era_text} ERA, but recent usage still averages {per_arm} pitches for each reliever used recently around {subject}.',
             PROSE_PATH_RESULTS_MISMATCH:
-                f'{subject} have kept {possessive} run prevention strong with a {era_text} ERA, but the recent workload is still {per_arm} pitches per participating reliever.',
+                f'{subject} have kept {possessive} run prevention strong with a {era_text} ERA, but the recent workload is still {per_arm} pitches for each reliever used recently.',
         }
         evidence = evidence_variants.get(prose_path, evidence_variants[PROSE_PATH_RESULTS_MISMATCH])
         category = 'heavier_workload_concentration'
@@ -614,38 +672,45 @@ def polish_selected_observation(
         summary = _identity_public_summary(facts)
         stable = _identity_stable_shape(summary, clean_option_count)
         category = 'more_stable_bullpen_shape' if stable else 'reduced_flexibility'
+        library_line = _voice_library_line(
+            facts,
+            selected,
+            prose_path,
+            beat=VOICE_BEAT_ROUTE_CHANGE,
+            names=subject,
+        ) or f'{subject} remain central to {possessive} bullpen plan'
         if stable:
             variants = {
                 PROSE_PATH_DEPENDENCY: (
-                    f'{subject} give {team} a defined first group with {clean_option_count} usable relievers behind them.',
+                    f'{library_line}, with {clean_option_count} available relievers if the game needs more than that.',
                     category,
                     f'That gives {team} a front group while still leaving the manager more than one path through the late innings.',
                 ),
                 PROSE_PATH_ALTERNATIVES: (
-                    f'{team} can still turn beyond {subject}, with {clean_option_count} usable relievers available behind the first group.',
+                    f'{team} can still turn beyond {subject}, with {clean_option_count} available relievers behind the first call.',
                     category,
                     'The late-game path is defined, but it does not end with one lane.',
                 ),
                 PROSE_PATH_CURRENT_MIX: (
-                    f'{subject} sit at the front of {possessive} bullpen, with {clean_option_count} usable relievers behind them because {summary.lower()}.',
+                    f'{library_line}, with {clean_option_count} available relievers because {summary.lower()}.',
                     category,
-                    'The bullpen has a defined first group without forcing every close inning through the same lane.',
+                    'The bullpen has a clear first call without forcing every close inning through the same lane.',
                 ),
             }
         else:
             variants = {
                 PROSE_PATH_DEPENDENCY: (
-                    f'{subject} give {team} a defined first group, but only {clean_option_count} usable relievers sit behind them.',
+                    f'{library_line}, but only {clean_option_count} available relievers sit behind the first call.',
                     category,
                     f'The manager has less room once the game moves beyond {short_subject}.',
                 ),
                 PROSE_PATH_ALTERNATIVES: (
-                    f'{team} can turn beyond {subject}, but only {clean_option_count} usable relievers sit behind the first group.',
+                    f'{team} can turn beyond {subject}, but only {clean_option_count} available relievers sit behind the first call.',
                     category,
                     'That leaves less room if the game moves away from the first late-game lane.',
                 ),
                 PROSE_PATH_CURRENT_MIX: (
-                    f'{subject} sit at the front of {possessive} bullpen, with {clean_option_count} usable relievers behind them.',
+                    f'{library_line}, with {clean_option_count} available relievers behind the first call.',
                     category,
                     f'That reduces flexibility if the game moves away from {short_subject}.',
                 ),
@@ -749,6 +814,7 @@ def _headline(facts: dict[str, Any], selected: dict[str, Any], names: list[str],
     observation_type = selected.get('observation_type')
     team = _team_name(facts)
     subject = _join_names(names)
+    short_subject = _join_names(names, limit=2)
     possessive = _possessive_team(facts)
 
     if observation_type == OBSERVATION_WORKLOAD_CONCENTRATION:
@@ -767,16 +833,24 @@ def _headline(facts: dict[str, Any], selected: dict[str, Any], names: list[str],
             return _sentence(f'{team} {_team_has_verb(facts)} fewer alternatives if the game moves past the first group')
         if prose_path == PROSE_PATH_GAME_ROUTE:
             return _sentence(f'A bullpen-heavy game could press {team} past the first available group')
-        return _sentence(f'{possessive} usable bullpen layer is thin')
+        if subject:
+            return _sentence(f'{short_subject} are the pressure point in a thinner bullpen layer')
+        return _sentence(f'{possessive} bullpen layer is thin enough to create pressure')
 
     if observation_type == OBSERVATION_FLEXIBILITY:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
-            return _sentence(f'{subject} give {team} more than one late path')
+            return _sentence(f'{short_subject} keep {team} from leaning on one late-inning lane')
         if prose_path == PROSE_PATH_GAME_ROUTE:
-            return _sentence(f'{team} can cover a close game through more than one route')
+            if subject:
+                return _sentence(f'A close game can still move through {short_subject} before the lane narrows')
+            return _sentence(f'{team} still {_team_has_verb(facts)} more than one lane if the game tightens')
         if prose_path == PROSE_PATH_WORKLOAD:
-            return _sentence(f'{team} is not boxed into one relief lane')
-        return _sentence(f'{team} still {_team_has_verb(facts)} multiple ways to cover a close game')
+            if subject:
+                return _sentence(f'{short_subject} keep {team} from narrowing to one relief lane')
+            return _sentence(f'{team} still {_team_has_verb(facts)} more than one relief lane if the game tightens')
+        if subject:
+            return _sentence(f'{short_subject} give {team} more than one answer if the game tightens')
+        return _sentence(f'{team} still {_team_has_verb(facts)} more than one late-inning answer if the game tightens')
 
     if observation_type == OBSERVATION_TRUST_SHAPE:
         stable = selected.get('consequence_category') == 'more_stable_bullpen_shape'
@@ -790,14 +864,29 @@ def _headline(facts: dict[str, Any], selected: dict[str, Any], names: list[str],
         if prose_path == PROSE_PATH_DEPTH_ROOM:
             return _sentence(
                 f'{team} {_team_has_verb(facts)} room to move through the late innings'
-                if stable else f'{team} {_team_has_verb(facts)} less room behind the trusted late plan'
+                if stable else (
+                    f'{short_subject} are the pressure point before {possessive} late bridge settles'
+                    if subject else f'{possessive} late bridge has fewer pivots before it settles'
+                )
             )
         return _sentence(
             f'{possessive} late bridge has multiple landing spots'
-            if stable else f'{possessive} late bridge is narrow tonight'
+            if stable else (
+                f'{short_subject} are the pressure point in a thin late bridge'
+                if subject else f'{possessive} late bridge is thin before the final turn'
+            )
         )
 
     if observation_type == OBSERVATION_RUN_PREVENTION_STRESS:
+        library_line = _voice_library_line(
+            facts,
+            selected,
+            prose_path,
+            beat=VOICE_BEAT_COVERAGE_PRESSURE,
+            names=subject,
+        )
+        if library_line:
+            return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(f'{subject} {_names_verb(names, "is", "are")} carrying more than the ERA shows')
         if prose_path == PROSE_PATH_WORKLOAD:
@@ -809,17 +898,35 @@ def _headline(facts: dict[str, Any], selected: dict[str, Any], names: list[str],
         return _sentence(f'{possessive} ERA is strong, but the workload is tighter')
 
     if observation_type == OBSERVATION_IDENTITY:
+        if subject:
+            library_line = _voice_library_line(
+                facts,
+                selected,
+                prose_path,
+                beat=VOICE_BEAT_ROUTE_CHANGE,
+                names=subject,
+            )
+            if library_line:
+                return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
-            return _sentence(f'{subject} define {possessive} first bullpen group')
+            return _sentence(f'{subject} remain central to {possessive} bullpen plan')
         if prose_path == PROSE_PATH_ALTERNATIVES and subject:
             return _sentence(f'{team} has options beyond {subject}, but the bullpen path starts with that first group')
         return _sentence(f'{possessive} bullpen is organized around a clear first group')
 
     if observation_type == OBSERVATION_CHANGE:
+        if subject:
+            library_line = _voice_library_line(
+                facts,
+                selected,
+                prose_path,
+                beat=VOICE_BEAT_ROUTE_CHANGE,
+                names=subject,
+            )
+            if library_line:
+                return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(f'{subject} still anchor {possessive} bullpen leverage route after the mix changed')
-        if prose_path == PROSE_PATH_GAME_ROUTE and subject:
-            return _sentence(f'{possessive} next close route still runs through {subject}')
         return _sentence(f'{possessive} bullpen mix changed without moving the leverage center')
 
     return None
@@ -833,6 +940,7 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
     arm_text = _plural(count, 'arm')
     name_text = _plural(count, 'name')
     subject = _join_names(names)
+    short_subject = _join_names(names, limit=2)
 
     if observation_type == OBSERVATION_WORKLOAD_CONCENTRATION:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
@@ -866,25 +974,38 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
             return _sentence(
                 f'A bullpen-heavy game could push {team} past the first available group quickly'
             )
+        if subject:
+            return _sentence(
+                f'{short_subject} are the pressure point in a thinner bullpen layer'
+            )
         return _sentence(
-            f'{_possessive_team(facts)} usable bullpen layer is thin enough that each available arm matters'
+            f'{_possessive_team(facts)} bullpen layer is thin enough that each available arm matters'
         )
 
     if observation_type == OBSERVATION_FLEXIBILITY:
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
-                f'{subject} give {team} multiple relief paths instead of a single late-game hinge'
+                f'{short_subject} give {team} multiple late-inning paths instead of a single relief hinge'
             )
         if prose_path == PROSE_PATH_GAME_ROUTE:
+            if subject:
+                return _sentence(
+                    f'A close game can still move through {short_subject} before {_possessive_team(facts)} bullpen narrows into one lane'
+                )
             return _sentence(
                 f'A close game can still take more than one route through {_possessive_team(facts)} bullpen'
             )
         if prose_path == PROSE_PATH_WORKLOAD:
             return _sentence(
-                f'The work is spread enough for {team} to keep different relief hands in play'
+                f'{short_subject} keep {team} from narrowing a tight inning to one relief lane'
+                if subject else f'{team} still {_team_has_verb(facts)} more than one relief lane if the game tightens'
+            )
+        if subject:
+            return _sentence(
+                f'{short_subject} give {team} named relief lanes before a tight game narrows'
             )
         return _sentence(
-            f'{team} still {_team_has_verb(facts)} enough available depth to avoid one narrow relief route'
+            f'{team} still {_team_has_verb(facts)} more than one late-inning lane if the game tightens'
         )
 
     if observation_type == OBSERVATION_TRUST_SHAPE:
@@ -910,17 +1031,28 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
             )
         if prose_path == PROSE_PATH_ALTERNATIVES:
             return _sentence(
-                f'{team} {_team_has_verb(facts)} fewer trusted pivots if the game needs one more clean inning'
+                f'{team} {_team_has_verb(facts)} fewer trusted pivots if the game needs one more covered inning'
             )
         if prose_path == PROSE_PATH_DEPTH_ROOM:
             return _sentence(
-                f'{team} {_team_has_verb(facts)} less room behind the trusted late plan than the roster sheet first suggests'
+                f'{short_subject} are the pressure point before {_possessive_team(facts)} late bridge settles'
+                if subject else f'{_possessive_team(facts)} late bridge has fewer pivots than the roster sheet first suggests'
             )
         return _sentence(
-            f'{_possessive_team(facts)} bridge into the late innings is narrower than the roster sheet first suggests'
+            f'{short_subject} are the pressure point in a thin late bridge'
+            if subject else f'{_possessive_team(facts)} bridge into the late innings is thinner than the roster sheet first suggests'
         )
 
     if observation_type == OBSERVATION_RUN_PREVENTION_STRESS:
+        library_line = _voice_library_line(
+            facts,
+            selected,
+            prose_path,
+            beat=VOICE_BEAT_COVERAGE_PRESSURE,
+            names=subject,
+        )
+        if library_line:
+            return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
                 f'{subject} {_names_verb(names, "is", "are")} carrying more of '
@@ -943,9 +1075,19 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
         )
 
     if observation_type == OBSERVATION_IDENTITY:
+        if subject:
+            library_line = _voice_library_line(
+                facts,
+                selected,
+                prose_path,
+                beat=VOICE_BEAT_ROUTE_CHANGE,
+                names=subject,
+            )
+            if library_line:
+                return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
-                f'{subject} sit at the front of {_possessive_team(facts)} bullpen plan'
+                f'{subject} remain central to {_possessive_team(facts)} bullpen plan'
             )
         if prose_path == PROSE_PATH_ALTERNATIVES and subject:
             return _sentence(
@@ -956,6 +1098,16 @@ def _voice_frame(facts: dict[str, Any], selected: dict[str, Any], names: list[st
         )
 
     if observation_type == OBSERVATION_CHANGE:
+        if subject:
+            library_line = _voice_library_line(
+                facts,
+                selected,
+                prose_path,
+                beat=VOICE_BEAT_ROUTE_CHANGE,
+                names=subject,
+            )
+            if library_line:
+                return _sentence(library_line)
         if prose_path == PROSE_PATH_DEPENDENCY and subject:
             return _sentence(
                 f'{subject} still anchor {_possessive_team(facts)} bullpen leverage route after the mix changed'
@@ -982,24 +1134,24 @@ def _frame_support_groups(observation_type: str | None) -> tuple[tuple[str, ...]
             ('bullpen', 'reliever', 'relief'),
         ),
         OBSERVATION_FLEXIBILITY: (
-            ('path', 'paths', 'ways', 'room', 'route', 'spread'),
+            ('path', 'paths', 'ways', 'room', 'route', 'spread', 'lane', 'lanes'),
             ('close game', 'game', 'inning', 'relief'),
         ),
         OBSERVATION_TRUST_SHAPE: (
-            ('bridge', 'late innings', 'comfortable', 'trusted', 'pivots', 'lane'),
+            ('bridge', 'late innings', 'comfortable', 'trusted', 'pivots', 'lane', 'pressure point'),
             ('late', 'inning', 'finish', 'game'),
         ),
         OBSERVATION_RUN_PREVENTION_STRESS: (
-            ('run prevention', 'results', 'era'),
-            ('workload', 'usage', 'underneath', 'carrying', 'relief pocket', 'pass through'),
+            ('run prevention', 'results', 'era', 'pitching staff', 'surface result', 'bullpen line', 'bullpen', 'starter', 'recent starts', 'game'),
+            ('workload', 'usage', 'underneath', 'carrying', 'relief pocket', 'pass through', 'middle innings', 'coverage', 'innings', 'earlier', 'burden', 'sooner', 'baseline', 'asking more'),
         ),
         OBSERVATION_IDENTITY: (
-            ('shape', 'visible', 'named', 'front', 'starts'),
-            ('bullpen', 'arms', 'names', 'relief'),
+            ('shape', 'visible', 'named', 'front', 'starts', 'late innings', 'leverage', 'route', 'hinge', 'first call', 'first names', 'reaches for', 'roster movement', 'late-game center', 'late-game', 'close game', 'points toward'),
+            ('bullpen', 'arms', 'names', 'relief', 'game', 'plan', 'route', 'innings', 'answers', 'center', 'points toward'),
         ),
         OBSERVATION_CHANGE: (
-            ('changed', 'moved', 'mix'),
-            ('current', 'story', 'names', 'route', 'holding', 'bullpen'),
+            ('changed', 'moved', 'mix', 'roster movement', 'late innings', 'leverage', 'route', 'hinge', 'first call', 'first names', 'reaches for', 'late-game', 'close game', 'clearest', 'points toward'),
+            ('current', 'story', 'names', 'route', 'holding', 'bullpen', 'game', 'plan', 'innings', 'answers', 'center'),
         ),
     }.get(observation_type, ())
 

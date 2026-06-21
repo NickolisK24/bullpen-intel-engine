@@ -30,6 +30,17 @@ from services.story_observation_voice import (
     observation_prose_paths,
     polish_selected_observation,
 )
+from services.story_quality import (
+    DEFAULT_STORY_QUALITY_CONFIG,
+    apply_story_quality_gate,
+)
+from services.story_voice_library_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+    render_voice_line,
+)
 from services.team_story_facts import build_story_facts
 from services.team_story_narrative import render_story_disclosure_note, render_story_narrative
 from services.workload_concentration import (
@@ -129,21 +140,21 @@ LEAD_DIMENSION_TIE_BREAK_ORDER = (
 
 PHRASE_VARIANTS = {
     'capacity_context_fallback': (
-        "They're working with fewer usable arms than a normal night.",
+        "They're working with fewer available relievers than a normal night.",
         "There isn't as much bullpen room as there usually is.",
         'The bullpen looks thinner than it normally does.',
         'The available group is smaller than usual.',
         'There are fewer places to turn tonight than there normally would be.',
-        'The bullpen is carrying less usable depth than usual.',
+        'The bullpen is carrying less late-inning depth than usual.',
     ),
     'capacity_context_standard': (
-        'The work is landing on the same arms while the bullpen is already short on usable arms.',
+        'The work is landing on the same arms while the bullpen is already short on available relievers.',
         'The same relievers are taking the ball while the available group is already thin.',
         'A smaller bullpen makes those repeat innings harder to spread around.',
         'The bullpen is already thin, and the heavy innings keep finding the same arms.',
     ),
     'rotation_context': (
-        'The bullpen has been carrying more of the workload lately, which makes every clean inning a little harder to replace.',
+        'The bullpen has been carrying more of the workload lately, which makes every covered inning a little harder to replace.',
         'Extra outs have been finding their way to the bullpen lately.',
         'The bullpen has been covering more of the game than usual.',
         'More of the game has been landing on the pen lately.',
@@ -160,7 +171,7 @@ PHRASE_VARIANTS = {
         'It is not just one part of the pen.',
     ),
     'environment_capacity_label': (
-        'the bullpen is short on usable arms',
+        'the bullpen is short on available relievers',
         'there are fewer places to turn than usual',
         'the available group is smaller than normal',
     ),
@@ -175,11 +186,11 @@ PHRASE_VARIANTS = {
         'recent bullpen usage has moved across different relievers',
     ),
     'sustainability_mechanism': (
-        "The results are not the issue; the cost of every clean inning is a little higher tonight.",
+        "The results are not the issue; the cost of every covered inning is a little higher tonight.",
         "The challenge isn't getting outs. It's replacing them.",
         'The results have held up. The margin has gotten thinner.',
         "They're still getting outs, but the margin inside the game is tighter.",
-        'Every clean inning carries a little more weight tonight.',
+        'Every covered inning carries a little more weight tonight.',
         'The bullpen is still effective, but there is less room for mistakes.',
     ),
     'clean_trust_late_route_clause': (
@@ -268,69 +279,69 @@ RULES = {
 
 SKELETONS = {
     RULE_STRESS_TRANSFER: {
-        BEAT_SIGNAL: "The {team_name} are running tonight's bullpen through a smaller group.",
-        BEAT_EVIDENCE: 'The top {top_arm_count} arms have taken {top_share_pct}% of recent relief pitches ({concentration_descriptor}), and {available_count} of {total_bullpen_arms} bullpen arms are Available.',
-        BEAT_MECHANISM: 'That usually leaves the next close innings pointed back toward the same usable arms.',
-        'implication_with_clean_trust': 'Tonight, {clean_trust_late_route_clause}; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean behind them.',
-        'implication_without_clean_trust': 'Tonight, none of the usual trusted late arms are fully clean; {clean_option_count} of {total_bullpen_arms} usable arms sit outside that group.',
+        BEAT_SIGNAL: '{sustainability_question_opening}.',
+        BEAT_EVIDENCE: 'The top {top_arm_count} arms have taken {top_share_pct}% of recent relief pitches ({concentration_descriptor}), and {available_count} of {total_bullpen_arms} bullpen arms are available.',
+        BEAT_MECHANISM: 'That usually leaves the next close innings pointed back toward the same relievers.',
+        'implication_with_clean_trust': 'Tonight, {clean_trust_late_route_clause}; {clean_option_count} of {total_bullpen_arms} bullpen arms are rested if the game needs more than that.',
+        'implication_without_clean_trust': 'Tonight, none of the usual trusted late arms are rested; {clean_option_count} of {total_bullpen_arms} available relievers sit outside that group.',
     },
     RULE_PRESSURE_DISTRIBUTION: {
-        BEAT_SIGNAL: 'The {team_name} bullpen work is spread out tonight.',
+        BEAT_SIGNAL: '{route_change_opening}.',
         BEAT_EVIDENCE: '{participant_count} arms shared the last {window_days} days of relief work, averaging {per_arm_pitches} pitches each.',
         BEAT_MECHANISM: 'When recent work is light and spread out, the manager has more ways through the late innings.',
-        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} fully clean, with {clean_option_count} of {total_bullpen_arms} bullpen arms clean behind them.',
-        'implication_without_clean_trust': 'Tonight, the usable arms are outside the usual trusted late-inning group; {clean_option_count} of {total_bullpen_arms} bullpen arms are clean.',
+        'implication_with_clean_trust': 'Tonight, {clean_trust_names} {clean_trust_verb} rested, with {clean_option_count} of {total_bullpen_arms} bullpen arms available if the game needs more than that.',
+        'implication_without_clean_trust': 'Tonight, the available relievers are outside the usual trusted late-inning group; {clean_option_count} of {total_bullpen_arms} bullpen arms are rested.',
     },
     RULE_SUSTAINABILITY_QUESTION: {
-        BEAT_SIGNAL: 'The {team_name} bullpen has pitched well this year, but they are leaning on it hard tonight.',
-        'evidence_with_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
-        'evidence_without_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm over the last {window_days} days.',
+        BEAT_SIGNAL: '{coverage_pressure_opening}.',
+        'evidence_with_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches for each reliever used recently with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
+        'evidence_without_high_risk': 'This bullpen has still run a {season_era} season ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches for each reliever used recently over the last {window_days} days.',
         BEAT_MECHANISM: '{sustainability_mechanism_text}',
         'implication_with_clean_trust': '{clean_trust_late_sentence} The question is whether they have to go there before the eighth.',
-        'implication_without_clean_trust': 'Tonight, there is no fully clean trusted late-inning arm; the question is whether {clean_option_count} usable arms can handle leverage without dragging the same group back in.',
+        'implication_without_clean_trust': 'Tonight, there is no rested trusted late-inning arm; the question is whether {clean_option_count} available relievers can handle leverage without dragging the same group back in.',
     },
     RULE_HIDDEN_CAPACITY_LOSS: {
-        BEAT_SIGNAL: "The {team_name} results are solid, but tonight's usable depth is thin.",
-        'evidence_with_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available and {roster_unavailable_count} {roster_unavailable_word} off the active roster.',
-        'evidence_without_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available tonight.',
+        BEAT_SIGNAL: '{depth_constraint_opening}.',
+        'evidence_with_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms available and {roster_unavailable_count} {roster_unavailable_word} off the active roster.',
+        'evidence_without_roster_gap': 'This bullpen has a {season_era} season ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms available tonight.',
         BEAT_MECHANISM: 'That does not make the results fake; it means there is less margin if tonight turns into a bullpen game.',
-        'implication_with_clean_trust': '{clean_trust_late_sentence} The question is what happens if the game needs one more clean inning before then.',
-        'implication_without_clean_trust': 'Tonight, the usable arms sit outside the usual trusted late-inning group; the question is what happens if the game needs one more clean inning.',
+        'implication_with_clean_trust': '{clean_trust_late_sentence} The question is what happens if the game needs one more covered inning before then.',
+        'implication_without_clean_trust': 'Tonight, the available relievers sit outside the usual trusted late-inning group; the question is what happens if the game needs one more covered inning.',
     },
 }
 
 LEAD_FRAGMENT_LIBRARY = {
     LEAD_FATIGUE_LOAD: {
         BEAT_SIGNAL: 'Heavy recent workload is already part of the {team_name} bullpen picture: {high_risk_arm_names} {high_risk_arm_verb} running hot.',
-        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches per participating arm with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
+        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, but recent workload is {per_arm_pitches} pitches for each reliever used recently with {high_risk_arm_count} {high_risk_arm_word} carrying heavy recent workload.',
     },
     LEAD_TRUST_LANE_ABSENCE: {
-        BEAT_SIGNAL: 'The {team_name} have clean arms available, but not their usual trusted late-inning group.',
-        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {clean_option_count} usable arms and zero clean trusted late-inning arms.',
+        BEAT_SIGNAL: 'The {team_name} have rested arms available, but not their usual trusted late-inning group.',
+        BEAT_EVIDENCE: 'This group has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {clean_option_count} available relievers and zero rested trusted late-inning arms.',
     },
     LEAD_TRUST_LANE_SHALLOW: {
         BEAT_SIGNAL: 'The {team_name} have room tonight, but the trusted late-inning group is thin.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the only fully clean trusted late-inning option, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} the only rested trusted late-inning option, with {clean_option_count} available relievers and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_WORKLOAD_HIGH: {
         BEAT_SIGNAL: 'The {team_name} have pitched well, but the recent workload is the loud part.',
-        BEAT_EVIDENCE: 'Recent workload is {per_arm_pitches} pitches per participating arm over the last {window_days} days, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: 'Recent workload is {per_arm_pitches} pitches for each reliever used recently over the last {window_days} days, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_WORKLOAD_LIGHT: {
         BEAT_SIGNAL: 'The {team_name} have room because the recent work stayed light and spread out.',
-        BEAT_EVIDENCE: '{participant_count} arms shared the last {window_days} days of relief work at {per_arm_pitches} pitches per participating arm, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{participant_count} arms shared the last {window_days} days of relief work at {per_arm_pitches} pitches for each reliever used recently, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_AVAILABILITY_THIN: {
-        BEAT_SIGNAL: 'The {team_name} are short on clean depth tonight.',
-        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available tonight, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_SIGNAL: 'The {team_name} are short on rested depth tonight.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are available tonight, with {clean_option_count} available relievers and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_AVAILABILITY_DEEP: {
         BEAT_SIGNAL: 'The {team_name} have real bullpen room tonight.',
-        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are Available, with {clean_option_count} usable arms and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{available_count} of {total_bullpen_arms} bullpen arms are available, with {clean_option_count} available relievers and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_DEEP_INTACT: {
-        BEAT_SIGNAL: 'The {team_name} still have multiple clean late-inning answers tonight.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} fully clean trusted late-inning options, with {available_count} of {total_bullpen_arms} bullpen arms Available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_SIGNAL: 'The {team_name} still have multiple rested late-inning answers tonight.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} rested trusted late-inning options, with {available_count} of {total_bullpen_arms} bullpen arms available and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_CONCENTRATION_SHAPE: {
         BEAT_SIGNAL: '{workload_concentration_signal}',
@@ -338,15 +349,15 @@ LEAD_FRAGMENT_LIBRARY = {
     },
     LEAD_PARTICIPATION_NARROW: {
         BEAT_SIGNAL: 'The {team_name} have shared the work, but not across a deep group.',
-        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work at {per_arm_pitches} pitches per participating arm, with a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work at {per_arm_pitches} pitches for each reliever used recently, with a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_PARTICIPATION_BROAD: {
         BEAT_SIGNAL: 'The {team_name} have used more than one corner of the pen.',
-        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work, with {per_arm_pitches} pitches per participating arm and a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{participant_count} arms shared recent relief work, with {per_arm_pitches} pitches for each reliever used recently and a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
     LEAD_ERA_ELITE: {
         BEAT_SIGNAL: 'The {team_name} have run prevention working in their favor tonight.',
-        BEAT_EVIDENCE: 'This bullpen has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms Available.',
+        BEAT_EVIDENCE: 'This bullpen has run a {season_era} ERA, {era_rank_ordinal} among current pens, with {available_count} of {total_bullpen_arms} arms available.',
     },
     LEAD_ERA_ORDINARY: {
         BEAT_SIGNAL: 'The {team_name} are rested, but the edge is depth more than run prevention.',
@@ -354,7 +365,7 @@ LEAD_FRAGMENT_LIBRARY = {
     },
     LEAD_TRUST_LANE_DEPTH: {
         BEAT_SIGNAL: 'The {team_name} still have multiple trusted late-inning options tonight.',
-        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} clean trusted late-inning options, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
+        BEAT_EVIDENCE: '{clean_trust_names} {clean_trust_verb} rested trusted late-inning options, and this group has run a {season_era} ERA, {era_rank_ordinal} among current pens.',
     },
 }
 
@@ -380,6 +391,24 @@ def four_beat_stories_enabled(config=None):
     if config is not None:
         return _truthy(config.get(FEATURE_FLAG, True))
     return _truthy(os.environ.get(FEATURE_FLAG, 'true'))
+
+
+def _voice_opening(beat: str, inputs: dict[str, Any], *, names: str | None = None, extra_parts=()):
+    team = inputs.get('team') or {}
+    team_name = team.get('team_name') or 'This bullpen'
+    possessive = f"{team_name}'" if str(team_name).lower().endswith('s') else f"{team_name}'s"
+    return render_voice_line(
+        beat,
+        stable_parts=(
+            team.get('team_id'),
+            team.get('team_abbreviation'),
+            names,
+            *tuple(extra_parts or ()),
+        ),
+        team=team_name,
+        possessive=possessive,
+        names=names or 'the same relievers',
+    )
 
 
 def _value(obj, name, default=None):
@@ -757,6 +786,7 @@ def _base_slots(inputs):
     high_risk_options = inputs.get('high_risk_arm_options') or []
     high_risk_names = _join_names([item['name'] for item in high_risk_options])
     roster_unavailable = inputs['roster_unavailable_arms']
+    voice_names = clean_trust_names or top_workload_names or high_risk_names or 'the same relievers'
     return {
         'team_name': team.get('team_name'),
         'team_abbreviation': team.get('team_abbreviation'),
@@ -787,6 +817,30 @@ def _base_slots(inputs):
         'clean_trust_names': clean_trust_names,
         'clean_trust_verb': clean_trust_verb,
         'top_workload_names': top_workload_names,
+        'route_change_opening': _voice_opening(
+            BEAT_ROUTE_CHANGE,
+            inputs,
+            names=voice_names,
+            extra_parts=(len(clean_trust), len(clean_options), workload['participant_count']),
+        ),
+        'coverage_pressure_opening': _voice_opening(
+            BEAT_COVERAGE_PRESSURE,
+            inputs,
+            names=voice_names,
+            extra_parts=(workload['per_arm_pitches'], high_risk, season_era.get('rank')),
+        ),
+        'depth_constraint_opening': _voice_opening(
+            BEAT_DEPTH_CONSTRAINT,
+            inputs,
+            names=voice_names,
+            extra_parts=(availability['available'], availability['total'], roster_unavailable),
+        ),
+        'sustainability_question_opening': _voice_opening(
+            BEAT_SUSTAINABILITY_QUESTION,
+            inputs,
+            names=voice_names,
+            extra_parts=(workload['top_share'], workload['per_arm_pitches'], high_risk),
+        ),
         'clean_trust_late_route_clause': _story_phrase(
             'clean_trust_late_route_clause',
             inputs,
@@ -2345,6 +2399,7 @@ def build_four_beat_story_feed(
     rotation_support_by_team=None,
     bullpen_stability_by_team=None,
     bullpen_environment_by_team=None,
+    story_quality_config=None,
 ):
     team_inputs = _team_inputs_from_records(
         availability_records,
@@ -2400,6 +2455,14 @@ def build_four_beat_story_feed(
     stories = diversify_adjacent_story_prose(stories)
     stories = dedupe_feed_headlines(stories)
     stories, evidence_suppressed = apply_story_evidence_framework(stories)
+    # Story Quality contract: score every surviving story against the five-rule
+    # rubric and, only when enforcement is enabled in config, hold the weak ones
+    # out of the feed. With the default (report-only) config nothing is held and
+    # `stories` is unchanged, so feed behavior matches a build without the gate.
+    stories, quality_held, quality_summary = apply_story_quality_gate(
+        stories,
+        story_quality_config or DEFAULT_STORY_QUALITY_CONFIG,
+    )
     assigned_family_counts = observation_differentiation.get('final_family_counts') or {}
     published_family_counts = _published_observation_family_counts(
         stories,
@@ -2439,6 +2502,8 @@ def build_four_beat_story_feed(
             'published_count': len(stories),
             'suppressed_count': len(evidence_suppressed),
         },
+        'story_quality': quality_summary,
+        'story_quality_held': quality_held,
         'observation_differentiation': {
             **observation_differentiation,
             'assigned_family_counts': assigned_family_counts,

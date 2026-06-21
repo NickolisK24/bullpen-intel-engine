@@ -94,12 +94,21 @@ from services.narrative_memory import (
     build_team_workload_concentration_continuity,
 )
 from services.narrative_memory_story import build_dashboard_story_continuity
+from services.story_quality import (
+    StoryQualityConfig,
+    build_story_quality_debug_dump,
+    score_continuity_payload,
+)
 from services.pitcher_role import ROLE_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
 from services.story_continuity import (
     LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
     build_story_continuity_payload,
 )
+from services.story_intelligence_service_v1 import (
+    build_team_story as build_story_intelligence_team_story,
+)
+from services.story_four_beat_interpreter_v1 import public_beat_for_observation
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -1710,6 +1719,71 @@ def get_team_changes(team_id):
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))
 
 
+def _story_as_of_date_from_request():
+    raw = request.args.get('as_of_date')
+    if raw in (None, ''):
+        return None, None
+    parsed = parse_reference_date(raw)
+    if parsed is None:
+        return None, QueryParamError(
+            'as_of_date',
+            'as_of_date must be an ISO date in YYYY-MM-DD format.',
+        )
+    return parsed, None
+
+
+def _story_api_payload(service_payload):
+    payload = service_payload or {}
+    written = payload.get('written_story') or {}
+    selected = payload.get('selected_observation') or {}
+    frame = payload.get('construction_frame') or {}
+    internal_story_type = selected.get('type') or frame.get('observation_type')
+    story_type = (
+        payload.get('story_type')
+        or (payload.get('public_story_beat') or {}).get('story_type')
+        or public_beat_for_observation(internal_story_type, frame=frame)
+    )
+    story_available = bool(payload.get('story_available') is True)
+    return {
+        'capability': 'story_intelligence_api_v1',
+        'contract': 'story_intelligence_api_v1',
+        'contract_state': 'available' if story_available else 'neutral',
+        'team_id': payload.get('team_id'),
+        'team_name': payload.get('team_name'),
+        'team_abbreviation': payload.get('team_abbreviation'),
+        'as_of_date': payload.get('as_of_date'),
+        'state': payload.get('state'),
+        'story_available': story_available,
+        'neutral_reason': payload.get('neutral_reason'),
+        'story_type': story_type,
+        'headline': written.get('headline'),
+        'observation': written.get('observation_paragraph'),
+        'baseline': written.get('baseline_paragraph'),
+        'cause': written.get('cause_paragraph'),
+        'constraint': written.get('constraint_paragraph'),
+        'freshness': payload.get('freshness') or {},
+        'trust_metadata': payload.get('trust_metadata') or {},
+        'supporting_context': payload.get('supporting_context') or {},
+        'selected_observation': selected or None,
+        'construction_frame': frame or None,
+        'limitations': list(payload.get('limitations') or []),
+    }
+
+
+@bullpen_bp.route('/teams/<int:team_id>/story', methods=['GET'])
+def get_team_story(team_id):
+    if team_id < 1:
+        return query_param_error_response(
+            QueryParamError('team_id', 'team_id must be at least 1.')
+        )
+    as_of_date, error = _story_as_of_date_from_request()
+    if error:
+        return query_param_error_response(error)
+    return jsonify(_story_api_payload(
+        build_story_intelligence_team_story(team_id, as_of_date=as_of_date)
+    ))
+
+
 @bullpen_bp.route('/teams/compare', methods=['GET'])
 def compare_team_bullpens():
     """
@@ -2085,6 +2159,42 @@ def get_bullpen_context_diagnostic():
     ))
 
 
+# ─── Story Quality diagnostic (read-only) ─────────────────────────────────────
+
+@bullpen_bp.route('/story-quality/diagnostic', methods=['GET'])
+def get_story_quality_diagnostic():
+    """
+    Internal/read-only Story Quality contract diagnostic.
+
+    Dumps, per team, each generated four-beat story plus its full rule-by-rule
+    quality scorecard (and the narrative-memory flagship-note summary), so the
+    *why* of a pass/fail is inspectable without re-running generation. The gate
+    runs in whatever mode config sets (report-only by default); this route never
+    changes feed behavior or holds anything.
+
+    Optional query params:
+      - team_id: scope the dump to one team.
+    """
+    team_id, team_error = _optional_int_arg('team_id')
+    if team_error:
+        return _diagnostic_error(team_error)
+
+    payload = build_bullpen_dashboard_payload()
+    feed = payload.get('four_beat_stories') or {}
+    continuity = payload.get('continuity') or {}
+    dump = build_story_quality_debug_dump(feed, team_id=team_id)
+
+    continuity_teams = continuity.get('teams') or {}
+    if team_id is not None:
+        team_note = continuity_teams.get(str(team_id)) or {}
+        dump['continuity_scorecard'] = team_note.get('story_quality')
+    dump['continuity_quality_summary'] = continuity.get('story_quality')
+    dump['generated_at'] = datetime.now(timezone.utc).isoformat()
+    dump['ranking_applied'] = False
+    dump['selection_made'] = False
+    return jsonify(dump)
+
+
 # ─── Role Authority diagnostic (read-only) ────────────────────────────────────
 
 @bullpen_bp.route('/role-authority/diagnostic', methods=['GET'])
@@ -2217,7 +2327,11 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         reference_date=reference_date,
         freshness=freshness,
     )
-    continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
+    story_quality_config = StoryQualityConfig.from_app_config(current_app.config)
+    continuity = score_continuity_payload(
+        build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape)),
+        story_quality_config,
+    )
     context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
     injury_il_context = build_injury_il_context_payload(
         pitchers=[pitcher for _score, pitcher in latest_rows],
@@ -2308,6 +2422,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             rotation_support_by_team=rotation_support_by_team,
             bullpen_stability_by_team=bullpen_stability_by_team,
             bullpen_environment_by_team=bullpen_environment_by_team,
+            story_quality_config=story_quality_config,
         )
     data_through = parse_reference_date(
         freshness.get('data_through')

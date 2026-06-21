@@ -1,0 +1,333 @@
+{
+  "boundaries": {
+    "availability_changes": false,
+    "context_layer_formula_changes": false,
+    "fatigue_changes": false,
+    "new_engines": false,
+    "new_routes": false,
+    "new_ui": false,
+    "scoring_changes": false,
+    "story_selection_logic_changes": false,
+    "trust_calculation_changes": false
+  },
+  "capability": "story_intelligence_real_audit_polish_v1",
+  "data_scope": "local available team/story data",
+  "fixes_applied": [
+    "Story Writer V1 treats team names ending in Sox as plural possessives.",
+    "Story audit preview flags future Red Sox/White Sox apostrophe-s wording as awkward_phrasing=sox_possessive.",
+    "Regression tests cover writer output and audit flag detection."
+  ],
+  "initial_audit_summary": {
+    "state_counts": {
+      "needs_review": 0,
+      "neutral": 0,
+      "story": 30
+    },
+    "story_type_counts": {
+      "depth_pressure": 30
+    },
+    "team_count": 30,
+    "validation_flags": "no banned/internal/missing-section flags in initial audit"
+  },
+  "initial_findings": [
+    {
+      "description": "Real depth-pressure headlines rendered plural Sox team names with apostrophe-s.",
+      "examples": [
+        {
+          "before": "Boston Red Sox's bullpen depth is under pressure",
+          "team_id": 111,
+          "team_name": "Boston Red Sox"
+        },
+        {
+          "before": "Chicago White Sox's bullpen depth is under pressure",
+          "team_id": 145,
+          "team_name": "Chicago White Sox"
+        }
+      ],
+      "issue": "awkward_sox_possessive"
+    }
+  ],
+  "post_polish_preview_digest": [
+    {
+      "headline": "Los Angeles Angels' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 108,
+      "team_name": "Los Angeles Angels"
+    },
+    {
+      "headline": "Arizona Diamondbacks' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "headline": "Baltimore Orioles' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "headline": "Boston Red Sox' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    },
+    {
+      "headline": "Chicago Cubs' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 112,
+      "team_name": "Chicago Cubs"
+    },
+    {
+      "headline": "Cincinnati Reds' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 113,
+      "team_name": "Cincinnati Reds"
+    },
+    {
+      "headline": "Cleveland Guardians' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 114,
+      "team_name": "Cleveland Guardians"
+    },
+    {
+      "headline": "Colorado Rockies' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 115,
+      "team_name": "Colorado Rockies"
+    },
+    {
+      "headline": "Detroit Tigers' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "headline": "Houston Astros' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    {
+      "headline": "Kansas City Royals' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 118,
+      "team_name": "Kansas City Royals"
+    },
+    {
+      "headline": "Los Angeles Dodgers' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 119,
+      "team_name": "Los Angeles Dodgers"
+    },
+    {
+      "headline": "Washington Nationals' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 120,
+      "team_name": "Washington Nationals"
+    },
+    {
+      "headline": "New York Mets' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "headline": "Athletics' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "headline": "Pittsburgh Pirates' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 134,
+      "team_name": "Pittsburgh Pirates"
+    },
+    {
+      "headline": "San Diego Padres' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    },
+    {
+      "headline": "Seattle Mariners' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 136,
+      "team_name": "Seattle Mariners"
+    },
+    {
+      "headline": "San Francisco Giants' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 137,
+      "team_name": "San Francisco Giants"
+    },
+    {
+      "headline": "St. Louis Cardinals' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 138,
+      "team_name": "St. Louis Cardinals"
+    },
+    {
+      "headline": "Tampa Bay Rays' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 139,
+      "team_name": "Tampa Bay Rays"
+    },
+    {
+      "headline": "Texas Rangers' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 140,
+      "team_name": "Texas Rangers"
+    },
+    {
+      "headline": "Toronto Blue Jays' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 141,
+      "team_name": "Toronto Blue Jays"
+    },
+    {
+      "headline": "Minnesota Twins' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 142,
+      "team_name": "Minnesota Twins"
+    },
+    {
+      "headline": "Philadelphia Phillies' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 143,
+      "team_name": "Philadelphia Phillies"
+    },
+    {
+      "headline": "Atlanta Braves' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "headline": "Chicago White Sox' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
+    },
+    {
+      "headline": "Miami Marlins' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 146,
+      "team_name": "Miami Marlins"
+    },
+    {
+      "headline": "New York Yankees' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 147,
+      "team_name": "New York Yankees"
+    },
+    {
+      "headline": "Milwaukee Brewers' bullpen depth is under pressure",
+      "needs_review": false,
+      "state": "story",
+      "story_type": "depth_pressure",
+      "team_id": 158,
+      "team_name": "Milwaukee Brewers"
+    }
+  ],
+  "post_polish_sox_check": [
+    {
+      "headline": "Boston Red Sox' bullpen depth is under pressure",
+      "team_id": 111,
+      "team_name": "Boston Red Sox",
+      "validation_flags": {
+        "awkward_empty_sections": [],
+        "awkward_phrasing": [],
+        "has_banned_language": false,
+        "has_internal_terms": false,
+        "missing_required_sections": [],
+        "needs_review": false
+      }
+    },
+    {
+      "headline": "Chicago White Sox' bullpen depth is under pressure",
+      "team_id": 145,
+      "team_name": "Chicago White Sox",
+      "validation_flags": {
+        "awkward_empty_sections": [],
+        "awkward_phrasing": [],
+        "has_banned_language": false,
+        "has_internal_terms": false,
+        "missing_required_sections": [],
+        "needs_review": false
+      }
+    }
+  ],
+  "post_polish_summary": {
+    "needs_review_team_ids": [],
+    "state_counts": {
+      "needs_review": 0,
+      "neutral": 0,
+      "story": 30
+    },
+    "story_type_counts": {
+      "depth_pressure": 30
+    },
+    "team_count": 30
+  },
+  "source_helper": "story_audit_preview_v1"
+}

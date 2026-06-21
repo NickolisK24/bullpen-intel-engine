@@ -65,9 +65,11 @@ from services.story_observation_voice import (
     build_observation_voice,
     classify_divergence_consequence_shape,
     observation_prose_paths,
+    polish_selected_observation,
     validate_observation_voice,
 )
 from services.story_identity_integration import CAPABILITY as STORY_IDENTITY_CAPABILITY
+from services.story_quality import StoryQualityConfig
 from services.team_story_facts import (
     CAPABILITY as STORY_FACT_LAYER_CAPABILITY,
     DISCLOSURE_LIMITED_BULLPEN_PICTURE,
@@ -95,26 +97,26 @@ from services.team_bullpen_shape import build_team_bullpen_shape
 REF = date(2026, 6, 16)
 
 CAPACITY_CONTEXT_MARKERS = (
-    'fewer usable arms',
+    'fewer available relievers',
     'bullpen room',
     'bullpen looks thinner',
     'available group is smaller',
     'fewer places to turn',
-    'less usable depth',
-    'short on usable arms',
-    'already short on usable arms',
+    'less late-inning depth',
+    'short on available relievers',
+    'already short on available relievers',
     'available group is already thin',
     'repeat innings',
     'heavy innings keep finding',
 )
 
 CAPACITY_FALLBACK_MARKERS = (
-    'fewer usable arms',
+    'fewer available relievers',
     'bullpen room',
     'bullpen looks thinner',
     'available group is smaller',
     'fewer places to turn',
-    'less usable depth',
+    'less late-inning depth',
 )
 
 ROTATION_CONTEXT_MARKERS = (
@@ -758,7 +760,7 @@ def test_sustainability_question_fires_only_when_strong_era_and_heavy_workload()
     assert sustainability['can_fire'] is True
     assert sustainability['story']['rule_key'] == RULE_SUSTAINABILITY_QUESTION
     assert '2.75 season ERA' in _story_text(sustainability['story'])
-    assert 'leaning on it hard tonight' in sustainability['story']['beats'][0]['text']
+    assert 'workload' in sustainability['story']['beats'][0]['text'].lower()
     assert sustainability['story']['title'] == sustainability['story']['story_voice']['headline']
     assert sustainability['story']['story_prose']['prose_path']
 
@@ -802,10 +804,12 @@ def test_hidden_capacity_loss_fires_only_when_solid_era_and_depleted_depth():
 
     assert hidden['can_fire'] is True
     assert hidden['story']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
-    assert "tonight's usable depth is thin" in hidden['story']['beats'][0]['text']
+    signal_text = hidden['story']['beats'][0]['text'].lower()
+    assert any(marker in signal_text for marker in ('roster', 'available names', 'depth'))
+    assert any(marker in signal_text for marker in ('late', 'trusted paths'))
     assert hidden['story']['title'] == hidden['story']['story_voice']['headline']
     assert hidden['story']['story_prose']['prose_path']
-    assert '2 of 7 arms Available' in _story_text(hidden['story'])
+    assert '2 of 7 arms available' in _story_text(hidden['story'])
 
     not_solid = evaluate_team_rules(_team_inputs(
         records,
@@ -2577,15 +2581,25 @@ def test_divergence_consequence_pool_has_at_most_one_semicolon_and_one_but():
     assert len(set(shapes)) >= 5
 
 
+# Houston (103) and Detroit (104) hash to the same name-less voice-library
+# headline on the game_route path, so both render the identical line — a real
+# two-team collision on one page for the de-dup to resolve.
+_HEADLINE_COLLISION_HOU = (103, 'Houston Astros', 'HOU', 2.93)
+_HEADLINE_COLLISION_DET = (104, 'Detroit Tigers', 'DET', 1.79)
+
+
+def _collision_feed():
+    houston = _run_prevention_stress_story(*_HEADLINE_COLLISION_HOU, force_prose_path='game_route')
+    detroit = _run_prevention_stress_story(*_HEADLINE_COLLISION_DET, force_prose_path='game_route')
+    return [houston, detroit]
+
+
 def test_feed_dedupes_identical_divergence_headlines():
-    detroit = _run_prevention_stress_story(116, 'Detroit Tigers', 'DET', 1.79, force_prose_path='game_route')
-    houston = _run_prevention_stress_story(117, 'Houston Astros', 'HOU', 2.93, force_prose_path='game_route')
+    feed = _collision_feed()
+    # Same headline, two teams, on one page — the collision the de-dup must fix.
+    assert feed[0]['title'] == feed[1]['title']
 
-    # Both render the same "next tight inning" template before de-dup.
-    assert 'next tight inning may find the same relief pocket' in detroit['title'].lower()
-    assert 'next tight inning may find the same relief pocket' in houston['title'].lower()
-
-    feed = dedupe_feed_headlines([detroit, houston])
+    feed = dedupe_feed_headlines(feed)
 
     assert feed[0]['title'] != feed[1]['title']
     # First in feed order keeps the primary; the later collision is rotated.
@@ -2599,9 +2613,7 @@ def test_feed_dedupes_identical_divergence_headlines():
 
 def test_feed_headline_dedupe_is_deterministic():
     def resolved_titles():
-        detroit = _run_prevention_stress_story(116, 'Detroit Tigers', 'DET', 1.79, force_prose_path='game_route')
-        houston = _run_prevention_stress_story(117, 'Houston Astros', 'HOU', 2.93, force_prose_path='game_route')
-        feed = dedupe_feed_headlines([detroit, houston])
+        feed = dedupe_feed_headlines(_collision_feed())
         return [story['title'] for story in feed]
 
     assert resolved_titles() == resolved_titles()
@@ -3099,6 +3111,99 @@ def test_observation_voice_avoids_generic_identity_and_change_phrases():
                 'leverage center',
                 'usable relievers',
             ))
+
+
+def test_best_vs_average_polish_reduces_generic_depth_and_flexibility_language():
+    weak_phrases = (
+        'still have multiple ways to cover a close game',
+        'not boxed into one relief lane',
+        'less room behind the trusted late plan',
+        'relief read',
+        'late bridge is narrow tonight',
+    )
+    names = ['Frame Arm', 'Bridge Arm', 'Pocket Arm']
+    base_facts = {
+        'team': {
+            'team_id': 611,
+            'team_name': 'Editorial Club',
+            'team_abbreviation': 'EDT',
+        },
+        'story_inputs': {
+            'workload': {
+                'participant_count': 8,
+                'top_share': 0.64,
+                'per_arm_pitches': 21.5,
+            },
+            'availability': {
+                'available': 7,
+                'total': 9,
+            },
+            'season_era': {
+                'era': 2.77,
+            },
+            'clean_options': [{}, {}, {}, {}, {}, {}, {}],
+            'clean_trust_options': [],
+        },
+        'named_pitchers': names,
+    }
+    flexibility = {
+        'observation_id': 'flexibility',
+        'observation_type': 'flexibility',
+        'text': (
+            'Editorial Club has spread recent bullpen work across 8 relievers and '
+            'still has 7 of 9 relievers available, led by Frame Arm, Bridge Arm, and Pocket Arm.'
+        ),
+        'pitcher_names': names,
+        'consequence_category': 'more_stable_bullpen_shape',
+        'consequence_statement': (
+            'That leaves the staff with room to cover a tight inning without forcing one lane.'
+        ),
+    }
+    trust_shape = {
+        'observation_id': 'trust_shape',
+        'observation_type': 'trust_shape',
+        'text': (
+            'Frame Arm, Bridge Arm, and Pocket Arm are carrying the named part of '
+            "Editorial Club's relief read while only 0 trusted late-inning options are available."
+        ),
+        'pitcher_names': names,
+        'consequence_category': 'reduced_flexibility',
+        'consequence_statement': (
+            'That leaves fewer comfortable pivots if the game needs one more covered inning before Frame Arm and Bridge Arm.'
+        ),
+    }
+
+    cases = (
+        (flexibility, 'depth_room'),
+        (flexibility, 'workload_concentration'),
+        (trust_shape, 'depth_room'),
+    )
+
+    for selected, prose_path in cases:
+        polished = polish_selected_observation(base_facts, selected, prose_path)
+        voice = build_observation_voice({
+            **base_facts,
+            'selected_observation': polished,
+            'forced_prose_path': prose_path,
+        })
+        public_text = ' '.join(
+            piece for piece in (
+                voice['headline'],
+                voice['human_frame'],
+                polished.get('text'),
+                polished.get('consequence_statement'),
+            )
+            if piece
+        ).lower()
+
+        assert voice['applied'] is True
+        assert voice['validation']['passed'] is True
+        assert any(name.lower() in public_text for name in names)
+        assert re.search(r'\d', public_text) or 'no trusted' in public_text
+        assert any(marker in public_text for marker in ('if the game', 'tight inning'))
+        assert any(marker in public_text for marker in ('named', 'pressure point', 'relief lane'))
+        for phrase in weak_phrases:
+            assert phrase not in public_text
 
 
 def test_observation_voice_supports_multiple_prose_paths_for_same_observation():
@@ -4175,3 +4280,65 @@ def test_feature_flag_defaults_on():
     assert four_beat_stories_enabled({}) is True
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': False}) is False
     assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': True}) is True
+
+
+# ─── Story Quality contract wiring (report-only default, opt-in enforcement) ───
+
+def test_story_quality_runs_report_only_by_default():
+    _pitchers, records, logs = _fixture_team(
+        141,
+        'Toronto Blue Jays',
+        'TOR',
+        [38, 34, 29, 11, 9, 8, 6],
+    )
+    feed = build_four_beat_story_feed(records, logs, reference_date=REF)
+
+    # Summary present and report-only; nothing held; default gate disabled.
+    summary = feed['story_quality']
+    assert summary['mode'] == 'report_only'
+    assert summary['gate_enabled'] is False
+    assert feed['story_quality_held'] == []
+    # Every published item carries its rule-by-rule scorecard.
+    for item in feed['items']:
+        card = item['story_quality']
+        assert set(card['rules']) == {
+            'named_arms',
+            'stated_cause',
+            'baseline_anchor',
+            'forward_constraint',
+            'no_redundant_restatement',
+        }
+        assert isinstance(card['score'], float)
+
+
+def test_story_quality_report_only_does_not_drop_stories():
+    _pitchers, records, logs = _fixture_team(
+        141, 'Toronto Blue Jays', 'TOR', [38, 34, 29, 11, 9, 8, 6],
+    )
+    baseline = build_four_beat_story_feed(records, logs, reference_date=REF)
+    # A strict threshold in *report-only* mode must still publish everything.
+    report_only_strict = build_four_beat_story_feed(
+        records, logs, reference_date=REF,
+        story_quality_config=StoryQualityConfig(gate_enabled=False, gate_threshold=100.0),
+    )
+    assert [i['story_id'] for i in report_only_strict['items']] == [
+        i['story_id'] for i in baseline['items']
+    ]
+    assert report_only_strict['story_quality_held'] == []
+
+
+def test_story_quality_enforcement_can_hold_below_threshold():
+    _pitchers, records, logs = _fixture_team(
+        141, 'Toronto Blue Jays', 'TOR', [38, 34, 29, 11, 9, 8, 6],
+    )
+    # An impossible threshold with enforcement on holds every story, proving the
+    # gate is wired and removes held stories from the published feed.
+    feed = build_four_beat_story_feed(
+        records, logs, reference_date=REF,
+        story_quality_config=StoryQualityConfig(gate_enabled=True, gate_threshold=100.1),
+    )
+    assert feed['items'] == []
+    assert len(feed['story_quality_held']) >= 1
+    assert feed['story_quality']['mode'] == 'enforcing'
+    held = feed['story_quality_held'][0]
+    assert 'fail_reasons' in held and 'score' in held
