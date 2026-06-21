@@ -32,6 +32,7 @@ from services.bullpen_optionality_context import (
     empty_bullpen_optionality_context,
 )
 from services.bullpen_population import usage_logs_by_pitcher
+from services.injury_context import build_injury_context, empty_injury_context
 from services.rotation_context import build_rotation_context
 from services.role_stability_context import (
     build_role_stability_context,
@@ -141,6 +142,15 @@ def _team_identity(team_id):
         'team_name': row.team_name,
         'team_abbreviation': row.team_abbreviation,
     }
+
+
+def _team_pitchers(team_id):
+    return (
+        Pitcher.query
+        .filter(Pitcher.team_id == team_id)
+        .order_by(Pitcher.full_name)
+        .all()
+    )
 
 
 def _team_logs(team_id, start_date, end_date):
@@ -410,6 +420,25 @@ def _empty_role_stability_context():
     return empty_role_stability_context()
 
 
+def _injury_context(team_id, reference_date):
+    pitchers = _team_pitchers(team_id)
+    logs_by_pitcher = usage_logs_by_pitcher(
+        [pitcher.id for pitcher in pitchers],
+        include_stale=False,
+        reference_date=reference_date,
+    )
+    return build_injury_context(
+        pitchers,
+        active_records=_optionality_records(team_id, reference_date),
+        logs_by_pitcher=logs_by_pitcher,
+        reference_date=reference_date,
+    )
+
+
+def _empty_injury_context():
+    return empty_injury_context()
+
+
 def _availability_context():
     return {
         'context_available': False,
@@ -451,6 +480,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
             'bullpen_concentration_context': _empty_bullpen_concentration_context(),
             'bullpen_optionality_context': _empty_bullpen_optionality_context(),
             'role_stability_context': _empty_role_stability_context(),
+            'injury_context': _empty_injury_context(),
             'availability_context': _availability_context(),
             'limitations': [*CONTEXT_LIMITATIONS, NO_GAME_LOG_CONTEXT_LIMITATION],
         }
@@ -469,6 +499,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
         'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
         'bullpen_optionality_context': _bullpen_optionality_context(team_id, ref),
         'role_stability_context': _role_stability_context(team_id, ref),
+        'injury_context': _injury_context(team_id, ref),
         'availability_context': _availability_context(),
         'limitations': _context_limitations(last_logs, prev_logs),
     }

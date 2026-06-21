@@ -13,7 +13,7 @@ from services.bullpen_context import (
     BULLPEN_CONTEXT_SAMPLE_CAP,
     build_team_bullpen_context,
 )
-from services.roster_status import STATUS_ACTIVE
+from services.roster_status import STATUS_ACTIVE, STATUS_IL_15, STATUS_OPTIONED
 from utils.db import db
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
 from utils.time import utc_now_naive
@@ -146,6 +146,28 @@ ROLE_STABILITY_CONTEXT_KEYS = {
     'limitations',
 }
 
+INJURY_CONTEXT_KEYS = {
+    'capability',
+    'version',
+    'source',
+    'context_available',
+    'reference_date',
+    'active_bullpen_arms_count',
+    'inactive_bullpen_arms_count',
+    'il_bullpen_arms_count',
+    'non_il_inactive_bullpen_arms_count',
+    'inactive_bullpen_share',
+    'depth_pressure_band',
+    'injury_context_confidence',
+    'inactive_bullpen_arms',
+    'injury_context_summary_inputs',
+    'excluded_position_player_count',
+    'excluded_starting_pitcher_count',
+    'role_uncertain_inactive_count',
+    'unknown_roster_status_count',
+    'limitations',
+}
+
 
 @pytest.fixture
 def client():
@@ -216,6 +238,7 @@ def _assert_normalized_context_shapes(result):
     assert set(result['bullpen_concentration_context']) == BULLPEN_CONCENTRATION_CONTEXT_KEYS
     assert set(result['bullpen_optionality_context']) == BULLPEN_OPTIONALITY_CONTEXT_KEYS
     assert set(result['role_stability_context']) == ROLE_STABILITY_CONTEXT_KEYS
+    assert set(result['injury_context']) == INJURY_CONTEXT_KEYS
 
 
 def test_no_data_team_returns_normalized_rotation_context_shape(client):
@@ -359,6 +382,36 @@ def test_no_data_team_returns_normalized_role_stability_context_shape(client):
         'stability_pct': None,
         'change_count': 0,
         'band': 'insufficient_data',
+    }
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
+def test_no_data_team_returns_normalized_injury_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(134, 13401)
+
+        context = build_team_bullpen_context(134)
+
+    injury = context['injury_context']
+    assert set(injury) == INJURY_CONTEXT_KEYS
+    assert injury['context_available'] is False
+    assert injury['reference_date'] is None
+    assert injury['active_bullpen_arms_count'] == 0
+    assert injury['inactive_bullpen_arms_count'] == 0
+    assert injury['il_bullpen_arms_count'] == 0
+    assert injury['non_il_inactive_bullpen_arms_count'] == 0
+    assert injury['inactive_bullpen_share'] is None
+    assert injury['depth_pressure_band'] == 'insufficient_data'
+    assert injury['injury_context_confidence'] == 'low'
+    assert injury['inactive_bullpen_arms'] == []
+    assert injury['injury_context_summary_inputs'] == {
+        'active_count': 0,
+        'inactive_count': 0,
+        'il_count': 0,
+        'non_il_inactive_count': 0,
+        'inactive_share': None,
+        'depth_pressure_band': 'insufficient_data',
+        'confidence': 'low',
     }
     assert 'No stored game-log context was found for this team.' in context['limitations']
 
@@ -594,6 +647,77 @@ def test_role_stability_context_is_wired_with_twenty_day_workload_window(client)
     assert stability['stability_band'] == 'stable'
 
 
+def test_injury_context_is_wired_from_roster_status_and_current_availability(client):
+    with client.application.app_context():
+        active_one = _seed_pitcher(
+            135, 'Active One', 13501, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        active_two = _seed_pitcher(
+            135, 'Active Two', 13502, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        inactive_il = _seed_pitcher(
+            135, 'Inactive IL Arm', 13503, position='RP', roster_status=STATUS_IL_15,
+        )
+        inactive_optioned = _seed_pitcher(
+            135,
+            'Inactive Optioned Arm',
+            13504,
+            position='RP',
+            roster_status=STATUS_OPTIONED,
+        )
+        inactive_starter = _seed_pitcher(
+            135, 'Inactive Starter', 13505, position='P', roster_status=STATUS_IL_15,
+        )
+        position_player = _seed_pitcher(
+            135, 'Inactive First Baseman', 13506, position='1B', roster_status=STATUS_IL_15,
+        )
+        for idx, pitcher in enumerate([active_one, active_two], start=1):
+            _seed_log(pitcher, idx, 135000 + idx, innings=1.0, pitches=12)
+            _seed_score(pitcher, raw_score=10.0)
+        _seed_log(inactive_starter, 1, 135010, innings=6.0, pitches=82, games_started=1)
+        _seed_log(inactive_starter, 6, 135011, innings=6.0, pitches=84, games_started=1)
+
+        context = build_team_bullpen_context(135, reference_date=REF)
+
+    injury = context['injury_context']
+    _assert_normalized_context_shapes(context)
+    assert injury['context_available'] is True
+    assert injury['active_bullpen_arms_count'] == 2
+    assert injury['inactive_bullpen_arms_count'] == 2
+    assert injury['il_bullpen_arms_count'] == 1
+    assert injury['non_il_inactive_bullpen_arms_count'] == 1
+    assert injury['inactive_bullpen_share'] == 50.0
+    assert injury['depth_pressure_band'] == 'moderate'
+    assert injury['injury_context_confidence'] == 'high'
+    assert injury['excluded_starting_pitcher_count'] == 1
+    assert injury['excluded_position_player_count'] == 1
+    assert injury['inactive_bullpen_arms'] == [
+        {
+            'player_id': 13503,
+            'name': 'Inactive IL Arm',
+            'status': '15-Day IL',
+            'status_type': 'IL',
+            'is_on_active_roster': False,
+        },
+        {
+            'player_id': 13504,
+            'name': 'Inactive Optioned Arm',
+            'status': 'Optioned',
+            'status_type': 'NON_IL_INACTIVE',
+            'is_on_active_roster': False,
+        },
+    ]
+    assert injury['injury_context_summary_inputs'] == {
+        'active_count': 2,
+        'inactive_count': 2,
+        'il_count': 1,
+        'non_il_inactive_count': 1,
+        'inactive_share': 50.0,
+        'depth_pressure_band': 'moderate',
+        'confidence': 'high',
+    }
+
+
 def test_league_sample_is_capped(client):
     with client.application.app_context():
         for offset in range(BULLPEN_CONTEXT_SAMPLE_CAP + 2):
@@ -626,6 +750,7 @@ def test_data_backed_and_no_data_contracts_have_the_same_shape(client):
     assert set(no_data['bullpen_concentration_context']) == set(data_backed['bullpen_concentration_context'])
     assert set(no_data['bullpen_optionality_context']) == set(data_backed['bullpen_optionality_context'])
     assert set(no_data['role_stability_context']) == set(data_backed['role_stability_context'])
+    assert set(no_data['injury_context']) == set(data_backed['injury_context'])
 
 
 def test_diagnostic_route_team_mode_returns_evidence_contract(client):
@@ -654,6 +779,7 @@ def test_diagnostic_route_team_mode_returns_evidence_contract(client):
     assert result['bullpen_concentration_context']['capability'] == 'bullpen_concentration_context_v1'
     assert result['bullpen_optionality_context']['capability'] == 'bullpen_optionality_context_v1'
     assert result['role_stability_context']['capability'] == 'role_stability_context_v1'
+    assert result['injury_context']['capability'] == 'injury_context_v1'
     assert result['availability_context'] == {
         'context_available': False,
         'reason': 'not_implemented',
