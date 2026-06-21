@@ -48,6 +48,41 @@ INTERNAL_TERMS = (
     'story_writer',
 )
 
+RAW_INTERNAL_OBSERVATION_TYPES = (
+    'rotation_pressure',
+    'concentration_pressure',
+    'optionality_strength',
+    'stable_core',
+    'core_transition',
+    'depth_pressure',
+)
+
+RAW_OBJECT_LITERAL_TERMS = (
+    "{'",
+    '{"',
+    'player_id',
+    'status_type',
+    'is_on_active_roster',
+)
+
+DATABASE_DIFF_TERMS = (
+    'core changes',
+    'depth picture',
+    'forward constraint is',
+    'bullpen board',
+    'stability rate',
+)
+
+FORWARD_CLAUSE_TERMS = (
+    'if ',
+    'route points back',
+    'fewer clean ways',
+    'practical path remains',
+    'same game shape returns',
+    'game shape repeats',
+    'workload pattern holds',
+)
+
 AWKWARD_EMPTY_VALUES = {
     'n/a',
     'na',
@@ -90,6 +125,15 @@ def _iso(value):
 def _text_has_any(text, terms):
     lower = _clean_text(text).lower()
     return any(term in lower for term in terms)
+
+
+def _matched_terms(text, terms):
+    lower = _clean_text(text).lower()
+    return [
+        term
+        for term in terms
+        if term in lower
+    ]
 
 
 def _default_team_ids(limit=None):
@@ -164,6 +208,16 @@ def _awkward_phrasing(text):
     ]
 
 
+def _constraint_has_forward_clause(sections):
+    constraint = _clean_text(_dict(sections).get('constraint'))
+    if not constraint:
+        return False
+    lower = constraint.lower()
+    if lower.startswith('if '):
+        return True
+    return any(term in lower for term in FORWARD_CLAUSE_TERMS)
+
+
 def _validation_flags(service_payload, sections, *, story_available):
     text = _visible_text(sections)
     writer_validation = _dict(_dict(service_payload).get('writer_output')).get('validation')
@@ -183,14 +237,35 @@ def _validation_flags(service_payload, sections, *, story_available):
         text,
         INTERNAL_TERMS,
     )
+    raw_internal_terms = _matched_terms(text, RAW_INTERNAL_OBSERVATION_TYPES)
+    raw_object_terms = _matched_terms(text, RAW_OBJECT_LITERAL_TERMS)
+    database_diff_terms = _matched_terms(text, DATABASE_DIFF_TERMS)
+    missing_forward_clause = (
+        story_available
+        and 'constraint' not in missing
+        and not _constraint_has_forward_clause(sections)
+    )
     return {
         'has_internal_terms': has_internal,
         'has_banned_language': has_banned,
+        'raw_internal_observation_terms': raw_internal_terms,
+        'has_raw_object_literal': bool(raw_object_terms),
+        'raw_object_terms': raw_object_terms,
+        'database_diff_terms': database_diff_terms,
+        'missing_forward_constraint_clause': missing_forward_clause,
         'missing_required_sections': missing,
         'awkward_empty_sections': awkward,
         'awkward_phrasing': awkward_phrasing,
         'needs_review': bool(
-            has_internal or has_banned or missing or awkward or awkward_phrasing
+            has_internal
+            or has_banned
+            or raw_internal_terms
+            or raw_object_terms
+            or database_diff_terms
+            or missing_forward_clause
+            or missing
+            or awkward
+            or awkward_phrasing
         ),
     }
 
@@ -306,6 +381,9 @@ def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=N
 __all__ = [
     'CAPABILITY',
     'INTERNAL_TERMS',
+    'DATABASE_DIFF_TERMS',
+    'RAW_INTERNAL_OBSERVATION_TYPES',
+    'RAW_OBJECT_LITERAL_TERMS',
     'SECTION_MAP',
     'STATE_NEUTRAL',
     'STATE_STORY',

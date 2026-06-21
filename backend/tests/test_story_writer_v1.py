@@ -174,7 +174,7 @@ def test_writer_outputs_rotation_pressure_observation():
     assert '4.1 innings' in text
     assert '5.4 starter innings' in text
     assert '4.9 innings per game' in text
-    assert output['written_observation']['constraint_paragraph'].startswith('If similar game conditions occur')
+    assert output['written_observation']['constraint_paragraph'].startswith('If short starts continue')
     assert_quality_sections(output)
 
 
@@ -224,7 +224,7 @@ def test_writer_outputs_optionality_strength_observation():
     assert '6 practical close-game paths' in text
     assert '7 available arms' in text
     assert '2 clean workload options' in text
-    assert 'available paths rather than finding one arm' in text
+    assert 'available paths rather than force one route' in text
     assert_quality_sections(output)
 
 
@@ -245,7 +245,7 @@ def test_writer_outputs_stable_core_observation():
     assert 'held together' in text
     assert 'First Arm, Second Arm, and Third Arm' in text
     assert '100%' in text
-    assert '3-arm core' in text
+    assert 'route points back through First Arm, Second Arm, and Third Arm' in text
     assert_quality_sections(output)
 
 
@@ -266,10 +266,11 @@ def test_writer_outputs_core_transition_observation():
     assert_writer_shape(output, TYPE_CORE_TRANSITION)
     text = written_text(output)
     assert 'core is changing' in text
-    assert '3 core changes' in text
+    assert '3-spot change from the prior route' in text
     assert 'Fifth Arm, Sixth Arm, and Seventh Arm' in text
-    assert '0 retained members' in text
-    assert 'current route now includes' in text
+    assert '0 arms from that baseline' in text
+    assert 'The added arms are' in text
+    assert 'route points back through Fifth Arm, Sixth Arm, and Seventh Arm' in text
     assert_quality_sections(output)
 
 
@@ -288,8 +289,10 @@ def test_writer_outputs_depth_pressure_observation():
 
     assert_writer_shape(output, TYPE_DEPTH_PRESSURE)
     text = written_text(output)
-    assert 'depth is under pressure' in text
+    assert 'fewer practical paths than the active list suggests' in text
     assert '4 bullpen arms outside the active route' in text
+    assert 'Inactive Arm' in text
+    assert "{'name':" not in text
     assert '3 IL arms' in text
     assert '1 non-IL inactive arm' in text
     assert_quality_sections(output)

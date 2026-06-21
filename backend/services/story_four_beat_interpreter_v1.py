@@ -255,11 +255,22 @@ def _default_forward_clause(beat, frame, names):
 
 
 def _route_change_headline(frame, written_story):
-    current = _candidate_names(frame)
+    current = (
+        _names_from(_facts(frame, 'headline_facts').get('current_operational_core'))
+        or _names_from(_facts(frame, 'cause_facts').get('current_operational_core'))
+        or _candidate_names(frame)
+    )
     previous = _names_from(_facts(frame, 'baseline_facts').get('previous_operational_core'))
+    retention = (
+        _number(_facts(frame, 'interpretation_facts').get('core_retention_count'))
+        if _present(_facts(frame, 'interpretation_facts').get('core_retention_count'))
+        else _number(_facts(frame, 'constraint_facts').get('core_retention_count'))
+    )
     if current and previous:
         names = _join_names(current)
-        return f'The roster changed while the route held around {names}.'
+        if retention is not None and retention <= 0:
+            return f'The route has changed, now running through {names}.'
+        return f'The roster changed while the route still runs through {names}.'
     return _dict(written_story).get('headline')
 
 

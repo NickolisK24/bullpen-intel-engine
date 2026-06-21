@@ -1,0 +1,161 @@
+import json
+from datetime import datetime, timezone
+
+from services.four_beat_real_quality_audit import (
+    CAPABILITY,
+    PUBLIC_BEATS,
+    build_four_beat_real_quality_audit,
+    write_json_report,
+)
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+)
+
+
+def team_payload(
+    *,
+    team_id=118,
+    team_name='Kansas City Royals',
+    story_type=BEAT_SUSTAINABILITY_QUESTION,
+    state='story',
+    flags=None,
+):
+    sections = {
+        'headline': f"{team_name}' bullpen has a story",
+        'observation': 'The current route is visible.',
+        'baseline': 'The comparison point is visible.',
+        'cause': 'The cause is visible.',
+        'constraint': 'If the game shape repeats, the route still has an operational constraint.',
+    }
+    return {
+        'team_id': team_id,
+        'team_name': team_name,
+        'team_abbreviation': team_name[:3].upper(),
+        'state': state,
+        'story_type': story_type if state == 'story' else None,
+        'headline': sections['headline'] if state == 'story' else None,
+        'sections': sections if state == 'story' else {
+            key: None for key in sections
+        },
+        'validation_flags': flags or {
+            'has_internal_terms': False,
+            'has_banned_language': False,
+            'raw_internal_observation_terms': [],
+            'has_raw_object_literal': False,
+            'raw_object_terms': [],
+            'database_diff_terms': [],
+            'missing_forward_constraint_clause': False,
+            'missing_required_sections': [],
+            'awkward_empty_sections': [],
+            'awkward_phrasing': [],
+            'needs_review': False,
+        },
+    }
+
+
+def audit_preview(teams):
+    counts = {}
+    for team in teams:
+        story_type = team.get('story_type')
+        if story_type:
+            counts[story_type] = counts.get(story_type, 0) + 1
+    return {
+        'capability': 'story_intelligence_audit_preview_v1',
+        'team_count': len(teams),
+        'state_counts': {
+            'story': sum(1 for team in teams if team.get('state') == 'story'),
+            'neutral': sum(1 for team in teams if team.get('state') == 'neutral'),
+            'needs_review': sum(
+                1
+                for team in teams
+                if team.get('validation_flags', {}).get('needs_review')
+            ),
+        },
+        'story_type_counts': counts,
+        'teams': teams,
+    }
+
+
+def test_four_beat_quality_audit_summarizes_distribution_and_examples():
+    flagged = team_payload(
+        team_id=1,
+        team_name='Flagged Team',
+        story_type=BEAT_ROUTE_CHANGE,
+        flags={
+            'has_internal_terms': False,
+            'has_banned_language': False,
+            'raw_internal_observation_terms': ['core_transition'],
+            'has_raw_object_literal': True,
+            'raw_object_terms': ['player_id'],
+            'database_diff_terms': ['core changes'],
+            'missing_forward_constraint_clause': True,
+            'missing_required_sections': [],
+            'awkward_empty_sections': [],
+            'awkward_phrasing': [],
+            'needs_review': True,
+        },
+    )
+    clean = team_payload(
+        team_id=2,
+        team_name='Clean Team',
+        story_type=BEAT_DEPTH_CONSTRAINT,
+    )
+    neutral = team_payload(
+        team_id=3,
+        team_name='Neutral Team',
+        state='neutral',
+    )
+
+    report = build_four_beat_real_quality_audit(
+        audit_preview([flagged, clean, neutral]),
+        generated_at=datetime(2026, 6, 21, tzinfo=timezone.utc),
+        expected_team_count=3,
+        initial_audit_summary={'team_count': 3},
+        initial_findings=['raw object text leaked into depth stories'],
+        fixes_applied=['normalized writer name rendering'],
+    )
+
+    assert report['capability'] == CAPABILITY
+    assert report['complete_team_count'] is True
+    assert report['public_story_types_allowed'] == list(PUBLIC_BEATS)
+    assert report['calculation_boundaries']['scoring_changes'] is False
+    assert report['calculation_boundaries']['context_layer_formula_changes'] is False
+    assert report['initial_audit_summary'] == {'team_count': 3}
+    assert report['initial_findings'] == ['raw object text leaked into depth stories']
+    assert report['fixes_applied'] == ['normalized writer name rendering']
+
+    summary = report['post_fix_summary']
+    assert summary['team_count'] == 3
+    assert summary['neutral_count'] == 1
+    assert summary['needs_review_count'] == 1
+    assert summary['beat_distribution'] == [
+        {'story_type': BEAT_ROUTE_CHANGE, 'count': 1, 'share_of_story_states': 50.0},
+        {'story_type': BEAT_COVERAGE_PRESSURE, 'count': 0, 'share_of_story_states': 0.0},
+        {'story_type': BEAT_DEPTH_CONSTRAINT, 'count': 1, 'share_of_story_states': 50.0},
+        {'story_type': BEAT_SUSTAINABILITY_QUESTION, 'count': 0, 'share_of_story_states': 0.0},
+    ]
+    assert summary['flagged_issue_counts']['team_flag_counts']['has_raw_object_literal'] == 1
+    assert summary['flagged_issue_counts']['term_counts']['database_diff_terms'] == {'core changes': 1}
+    assert report['worst_story_outputs'][0]['team_name'] == 'Flagged Team'
+    assert report['strongest_story_outputs'][0]['team_name'] == 'Clean Team'
+
+
+def test_four_beat_quality_audit_reports_unexpected_public_story_types(tmp_path):
+    report = build_four_beat_real_quality_audit(
+        audit_preview([
+            team_payload(story_type='depth_pressure'),
+        ]),
+        expected_team_count=1,
+    )
+
+    assert report['unexpected_story_type_count'] == 1
+    assert report['post_fix_summary']['unexpected_story_types'] == ['depth_pressure']
+
+    output = write_json_report(report, tmp_path / 'audit.json')
+    written = json.loads(output.read_text(encoding='utf-8'))
+
+    assert written['capability'] == CAPABILITY
+    assert written['unexpected_story_type_count'] == 1

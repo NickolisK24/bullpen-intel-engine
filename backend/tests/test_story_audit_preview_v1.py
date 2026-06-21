@@ -11,10 +11,12 @@ from services.story_audit_preview_v1 import (
 from services.story_four_beat_interpreter_v1 import (
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
 )
 from services.story_observation_engine import (
     TYPE_CONCENTRATION_PRESSURE,
+    TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_ROTATION_PRESSURE,
 )
@@ -289,6 +291,35 @@ def test_awkward_sox_possessive_is_flagged_from_real_audit_finding(monkeypatch):
     flags = result['teams'][0]['validation_flags']
 
     assert flags['awkward_phrasing'] == ['sox_possessive']
+    assert flags['needs_review'] is True
+
+
+def test_real_quality_flags_catch_raw_objects_internal_types_and_diff_phrasing(monkeypatch):
+    unsafe = story_payload(
+        story_type=BEAT_ROUTE_CHANGE,
+        selected_observation={'type': TYPE_CORE_TRANSITION},
+        written_story={
+            'headline': 'The route changed through core_transition evidence',
+            'observation_paragraph': 'The bullpen has 3 core changes.',
+            'baseline_paragraph': 'The comparison point is present.',
+            'cause_paragraph': "The inactive group includes {'player_id': 1, 'name': 'Leaked Arm'}.",
+            'constraint_paragraph': 'The available route is flexible.',
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([unsafe]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert result['state_counts']['needs_review'] == 1
+    assert flags['raw_internal_observation_terms'] == ['core_transition']
+    assert flags['has_raw_object_literal'] is True
+    assert 'core changes' in flags['database_diff_terms']
+    assert flags['missing_forward_constraint_clause'] is True
     assert flags['needs_review'] is True
 
 

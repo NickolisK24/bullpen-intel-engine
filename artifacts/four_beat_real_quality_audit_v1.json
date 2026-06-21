@@ -1,0 +1,273 @@
+{
+  "audit_preview_capability": "story_intelligence_audit_preview_v1",
+  "calculation_boundaries": {
+    "availability_changes": false,
+    "context_layer_formula_changes": false,
+    "fatigue_changes": false,
+    "llm_integration_added": false,
+    "prediction_system_added": false,
+    "scoring_changes": false,
+    "trust_changes": false
+  },
+  "capability": "four_beat_real_quality_audit_v1",
+  "complete_team_count": true,
+  "expected_team_count": 30,
+  "fixes_applied": [
+    "Normalized writer name rendering so dict-backed arm rows print names only.",
+    "Rewrote route, coverage, optionality, stable-core, core-transition, and depth constraints into current-state operational clauses.",
+    "Refined route-change headlines to distinguish true route changes from roster changes where the route still holds.",
+    "Expanded audit preview flags for raw object leaks, internal observation terms, database-diff phrasing, and missing forward clauses."
+  ],
+  "generated_at": "2026-06-21T16:33:47.099517+00:00",
+  "initial_audit_summary": {
+    "state_counts": {
+      "needs_review": 0,
+      "neutral": 0,
+      "story": 30
+    },
+    "story_type_counts": {
+      "depth_constraint": 17,
+      "route_change": 12,
+      "sustainability_question": 1
+    },
+    "story_type_distribution": [
+      {
+        "count": 17,
+        "share_of_story_states": 56.7,
+        "story_type": "depth_constraint"
+      },
+      {
+        "count": 12,
+        "share_of_story_states": 40.0,
+        "story_type": "route_change"
+      },
+      {
+        "count": 1,
+        "share_of_story_states": 3.3,
+        "story_type": "sustainability_question"
+      }
+    ],
+    "team_count": 30
+  },
+  "initial_findings": [
+    "Depth stories rendered inactive pitcher dictionaries instead of arm names.",
+    "Route-change copy used database-diff phrasing such as core changes and mismatched held-route language.",
+    "Forward clauses used mechanical audit language instead of operational constraints."
+  ],
+  "payload_source": "live_story_audit_preview",
+  "post_fix_summary": {
+    "beat_distribution": [
+      {
+        "count": 12,
+        "share_of_story_states": 40.0,
+        "story_type": "route_change"
+      },
+      {
+        "count": 0,
+        "share_of_story_states": 0.0,
+        "story_type": "coverage_pressure"
+      },
+      {
+        "count": 17,
+        "share_of_story_states": 56.7,
+        "story_type": "depth_constraint"
+      },
+      {
+        "count": 1,
+        "share_of_story_states": 3.3,
+        "story_type": "sustainability_question"
+      }
+    ],
+    "flagged_issue_counts": {
+      "team_flag_counts": {},
+      "term_counts": {}
+    },
+    "needs_review_count": 0,
+    "neutral_count": 0,
+    "repetition_summary": {
+      "repeated_headline_count": 0,
+      "repeated_headlines": {},
+      "repeated_story_text_count": 0
+    },
+    "story_count": 30,
+    "team_count": 30,
+    "unexpected_story_types": []
+  },
+  "prediction_applied": false,
+  "public_story_types_allowed": [
+    "route_change",
+    "coverage_pressure",
+    "depth_constraint",
+    "sustainability_question"
+  ],
+  "ranking_applied": false,
+  "selection_made": false,
+  "source": "backend",
+  "strongest_story_outputs": [
+    {
+      "headline": "The route has changed, now running through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Drey Jameson, Philip Abner, and Kade Strowd. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Paul Sewald, Kevin Ginkel, and Taylor Clarke. The arms moving out of that route are Drey Jameson, Philip Abner, and Kade Strowd.",
+        "constraint": "If the next game tightens, the route points back through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+        "headline": "The route has changed, now running through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+        "observation": "The important-outs route now runs through Paul Sewald, Kevin Ginkel, and Taylor Clarke. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "headline": "Athletics' bullpen has fewer practical paths than the active list suggests",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The active list still shows 8 bullpen arms.",
+        "cause": "The inactive group includes Braden Nett, Brady Basso, Brooks Kriske, and Chen Zhong-Ao Zhuang. The depth loss includes 4 IL arms. It also includes 7 non-IL inactive arms.",
+        "constraint": "If the roster stays this thin, the practical path remains smaller than the active list suggests. The current route has 3 practical close-game paths. The available route is narrow.",
+        "headline": "Athletics' bullpen has fewer practical paths than the active list suggests",
+        "observation": "There are 11 bullpen arms outside the active route. That leaves the practical path heavy."
+      },
+      "story_type": "depth_constraint",
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are JR Ritchie, Anthony Molina, and Carlos Carrasco. The arms moving out of that route are Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez.",
+        "constraint": "If the next game tightens, the route points back through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "observation": "The important-outs route now runs through JR Ritchie, Anthony Molina, and Carlos Carrasco. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "headline": "The route has changed, now running through Yennier Cano, Tyler Wells, and Rico Garcia.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Albert Su\u00e1rez, Keegan Akin, and Anthony Nunez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Yennier Cano, Tyler Wells, and Rico Garcia. The arms moving out of that route are Albert Su\u00e1rez, Keegan Akin, and Anthony Nunez.",
+        "constraint": "If the next game tightens, the route points back through Yennier Cano, Tyler Wells, and Rico Garcia.",
+        "headline": "The route has changed, now running through Yennier Cano, Tyler Wells, and Rico Garcia.",
+        "observation": "The important-outs route now runs through Yennier Cano, Tyler Wells, and Rico Garcia. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "headline": "Boston Red Sox' bullpen has fewer practical paths than the active list suggests",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The active list still shows 9 bullpen arms.",
+        "cause": "The inactive group includes Alec Gamboa, Eduardo Rivera, Garrett Crochet, and Jack Anderson. The depth loss includes 6 IL arms. It also includes 7 non-IL inactive arms.",
+        "constraint": "If the roster stays this thin, the practical path remains smaller than the active list suggests. The current route has 5 practical close-game paths. The available route is flexible.",
+        "headline": "Boston Red Sox' bullpen has fewer practical paths than the active list suggests",
+        "observation": "There are 13 bullpen arms outside the active route. That leaves the practical path heavy."
+      },
+      "story_type": "depth_constraint",
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    }
+  ],
+  "team_count": 30,
+  "unexpected_story_type_count": 0,
+  "version": "2026-06-21.v1",
+  "worst_story_outputs": [
+    {
+      "headline": "Colorado Rockies' bullpen has multiple usable routes",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The active board includes 4 available arms. There are 4 clean workload options.",
+        "cause": "The clean paths include Blas Casta\u00f1o, Juan Mejia, Victor Vodnik, and Zach Agnos. The secondary paths include Antonio Senzatela, Brennan Bernardino, Jaden Hill, and Jimmy Herget. Coverage is also coming from 4 secondary options. The workload pattern is balanced.",
+        "constraint": "If the same game shape returns, the club can choose among the available paths rather than force one route. The route count keeps 0 unavailable arms out of the clean picture.",
+        "headline": "Colorado Rockies' bullpen has multiple usable routes",
+        "observation": "The bullpen has 6 practical close-game paths. That leaves the route deep."
+      },
+      "story_type": "sustainability_question",
+      "team_abbreviation": "COL",
+      "team_id": 115,
+      "team_name": "Colorado Rockies"
+    },
+    {
+      "headline": "The route has changed, now running through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Sean Manaea, David Peterson, and Jonathan Pintaro. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Cionel P\u00e9rez, Austin Warren, and Devin Williams. The arms moving out of that route are Sean Manaea, David Peterson, and Jonathan Pintaro.",
+        "constraint": "If the next game tightens, the route points back through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+        "headline": "The route has changed, now running through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+        "observation": "The important-outs route now runs through Cionel P\u00e9rez, Austin Warren, and Devin Williams. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are JR Ritchie, Anthony Molina, and Carlos Carrasco. The arms moving out of that route are Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez.",
+        "constraint": "If the next game tightens, the route points back through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "observation": "The important-outs route now runs through JR Ritchie, Anthony Molina, and Carlos Carrasco. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "headline": "The route has changed, now running through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Ty Madden, Drew Anderson, and Drew Sommers. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Tyler Holton, Kyle Finnegan, and Jacob Waguespack. The arms moving out of that route are Ty Madden, Drew Anderson, and Drew Sommers.",
+        "constraint": "If the next game tightens, the route points back through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+        "headline": "The route has changed, now running through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+        "observation": "The important-outs route now runs through Tyler Holton, Kyle Finnegan, and Jacob Waguespack. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "headline": "The route has changed, now running through Lucas Giolito, Griffin Canning, and Jason Adam.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Adrian Morejon, Ron Marinaccio, and Mason Miller. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Lucas Giolito, Griffin Canning, and Jason Adam. The arms moving out of that route are Adrian Morejon, Ron Marinaccio, and Mason Miller.",
+        "constraint": "If the next game tightens, the route points back through Lucas Giolito, Griffin Canning, and Jason Adam.",
+        "headline": "The route has changed, now running through Lucas Giolito, Griffin Canning, and Jason Adam.",
+        "observation": "The important-outs route now runs through Lucas Giolito, Griffin Canning, and Jason Adam. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    }
+  ]
+}

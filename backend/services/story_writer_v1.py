@@ -58,6 +58,7 @@ ROBOTIC_TERMS = (
     'baseline facts',
     'optionality band',
     'depth pressure band',
+    'forward constraint is',
     'the frame shows',
     'the frame marks',
 )
@@ -112,8 +113,24 @@ def _fmt(value, *, suffix=''):
     return f'{text}{suffix}'
 
 
-def _join_names(names):
-    names = [_clean_text(name) for name in _list(names) if _clean_text(name)]
+def _name_from_row(row):
+    if isinstance(row, str):
+        return _clean_text(row)
+    return _clean_text(_dict(row).get('name'))
+
+
+def _join_names(names, *, limit=None):
+    rows = []
+    for row in _list(names):
+        name = _name_from_row(row)
+        if name and name not in rows:
+            rows.append(name)
+    names = rows
+    if limit is not None:
+        try:
+            names = names[:int(limit)]
+        except (TypeError, ValueError):
+            pass
     if not names:
         return None
     if len(names) == 1:
@@ -246,7 +263,7 @@ def _rotation_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the forward constraint is how many middle innings the bullpen has to absorb"
+                f"If short starts continue, the bullpen has fewer clean ways to spread the innings"
                 if _present(constraint.get('bullpen_coverage_ip_7d')) or _present(coverage) else None
             ),
         ),
@@ -379,7 +396,7 @@ def _optionality_strength(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the forward constraint is choosing among the available paths rather than finding one arm"
+                f"If the same game shape returns, the club can choose among the available paths rather than force one route"
                 if _present(paths) else None
             ),
             (
@@ -401,7 +418,11 @@ def _stable_core(frame):
 
     current = _join_names(headline.get('current_operational_core') or cause.get('current_operational_core'))
     previous = _join_names(baseline.get('previous_operational_core'))
-    retention = observed.get('core_retention_count') or cause.get('core_retention_count')
+    retention = (
+        observed.get('core_retention_count')
+        if _present(observed.get('core_retention_count'))
+        else cause.get('core_retention_count')
+    )
     stability = observed.get('core_stability_pct')
     concentration = interpretation.get('concentration_band')
     core_size = constraint.get('current_core_size')
@@ -433,7 +454,7 @@ def _stable_core(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The stability rate is {_fmt(stability, suffix='%')}"
+                f"The current group carried {_fmt(stability, suffix='%')} of the route overlap"
                 if _present(stability) else None
             ),
             (
@@ -443,8 +464,12 @@ def _stable_core(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the forward constraint is still built around a {_fmt(core_size)}-arm core"
-                if _present(core_size) else None
+                f"If the next game tightens, the route points back through {current}"
+                if current else None
+            ),
+            (
+                f"If the next game tightens, the route points back through the {_fmt(core_size)}-arm core"
+                if not current and _present(core_size) else None
             ),
         ),
     )
@@ -465,7 +490,11 @@ def _core_transition(frame):
     departed = _join_names(cause.get('departed_core_members'))
     changes = headline.get('core_change_count') or observed.get('core_change_count')
     stability = observed.get('core_stability_pct') or interpretation.get('core_stability_pct')
-    retention = interpretation.get('core_retention_count') or constraint.get('core_retention_count')
+    retention = (
+        interpretation.get('core_retention_count')
+        if _present(interpretation.get('core_retention_count'))
+        else constraint.get('core_retention_count')
+    )
 
     return _sections(
         headline=(
@@ -474,38 +503,42 @@ def _core_transition(frame):
         ),
         observation_paragraph=_paragraph(
             (
-                f"The bullpen has {_fmt(changes)} core {_count_word(changes, 'change')}"
-                if _present(changes) else None
+                f"The important-outs route now runs through {current}"
+                if current else None
             ),
             (
-                f"The current core is {current}"
-                if current else None
+                f"That is a {_fmt(changes)}-spot change from the prior route"
+                if _present(changes) else None
             ),
         ),
         baseline_paragraph=_paragraph(
             (
-                f"The previous core was {previous}"
+                f"The comparison point is the previous route: {previous}"
                 if previous else None
             ),
             (
-                f"The stability rate is {_fmt(stability, suffix='%')}"
-                if _present(stability) else None
+                f"The current route retained {_fmt(retention)} {_count_word(retention, 'arm')} from that baseline"
+                if _present(retention) else None
             ),
         ),
         cause_paragraph=_paragraph(
             (
-                f"The current route now includes {new_members}"
+                f"The added arms are {new_members}"
                 if new_members else None
             ),
             (
-                f"The prior route no longer includes {departed}"
+                f"The arms moving out of that route are {departed}"
                 if departed else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the forward constraint is a relief mix with {_fmt(retention)} retained {_count_word(retention, 'member')} from the prior core"
-                if _present(retention) else None
+                f"If the next game tightens, the route points back through {current}"
+                if current else None
+            ),
+            (
+                f"If the next game tightens, the bullpen is working with {_fmt(retention)} retained {_count_word(retention, 'arm')} from the prior core"
+                if not current and _present(retention) else None
             ),
         ),
     )
@@ -525,13 +558,13 @@ def _depth_pressure(frame):
     active = baseline.get('active_bullpen_arms_count') or constraint.get('active_bullpen_arms_count')
     il_count = cause.get('il_bullpen_arms_count')
     non_il = cause.get('non_il_inactive_bullpen_arms_count')
-    inactive_names = _join_names(cause.get('inactive_bullpen_arms'))
+    inactive_names = _join_names(cause.get('inactive_bullpen_arms'), limit=4)
     paths = interpretation.get('practical_close_game_paths_count')
     optionality = interpretation.get('optionality_band')
 
     return _sections(
         headline=(
-            f"{_possessive(team)} bullpen depth is under pressure"
+            f"{_possessive(team)} bullpen has fewer practical paths than the active list suggests"
             if _present(inactive) else f"{_possessive(team)} bullpen depth is part of the story"
         ),
         observation_paragraph=_paragraph(
@@ -540,13 +573,13 @@ def _depth_pressure(frame):
                 if _present(inactive) else None
             ),
             (
-                f"That makes the depth picture {depth_band}"
+                f"That leaves the practical path {depth_band}"
                 if _present(depth_band) else None
             ),
         ),
         baseline_paragraph=_paragraph(
             (
-                f"The active bullpen count is {_fmt(active)} {_count_word(active, 'arm')}"
+                f"The active list still shows {_fmt(active)} bullpen {_count_word(active, 'arm')}"
                 if _present(active) else None
             ),
         ),
@@ -566,7 +599,11 @@ def _depth_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If similar game conditions occur, the forward constraint is a bullpen board with {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
+                f"If the roster stays this thin, the practical path remains smaller than the active list suggests"
+                if _present(paths) or _present(inactive) else None
+            ),
+            (
+                f"The current route has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
                 if _present(paths) else None
             ),
             (

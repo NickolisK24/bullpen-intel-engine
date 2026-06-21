@@ -282,7 +282,35 @@ def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure()
     result = build_team_story(118, team_context=context)
 
     assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
-    assert 'The roster changed while the route held around Fifth Arm, Sixth Arm, and Seventh Arm.' in written_text(result)
+    assert 'The route has changed, now running through Fifth Arm, Sixth Arm, and Seventh Arm.' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_route_change_can_explain_roster_change_with_held_route():
+    context = team_context(
+        stability={
+            'stability_band': 'transitioning',
+            'current_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Fourth Arm'],
+            'new_core_members': ['Third Arm'],
+            'departed_core_members': ['Fourth Arm'],
+            'core_retention_count': 2,
+            'core_stability_pct': 67,
+            'core_change_count': 1,
+        },
+        injury={
+            'depth_pressure_band': 'light',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 1,
+            'il_bullpen_arms_count': 1,
+            'non_il_inactive_bullpen_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    assert 'The roster changed while the route still runs through First Arm, Second Arm, and Third Arm.' in written_text(result)
     assert_forward_clause(result)
 
 
@@ -474,4 +502,5 @@ def test_depth_constraint_names_inactive_arms_when_present():
 
     assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
     assert 'Inactive Arm' in written_text(result)
+    assert "{'name':" not in written_text(result)
     assert_forward_clause(result)
