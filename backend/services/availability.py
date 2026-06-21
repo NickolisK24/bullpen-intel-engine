@@ -25,6 +25,7 @@ from services.availability_explanations import (
     rest_reason,
     stale_workload_reason,
 )
+from services.workload_appearance import workload_appearance_logs
 
 
 ACTIVE_WINDOW_DAYS = 14
@@ -105,7 +106,7 @@ def _has_back_to_back(appearance_dates):
 
 
 def _derive_inputs(score, game_logs, reference_date, latest_game_date, freshness_state):
-    logs = list(game_logs or [])
+    logs = workload_appearance_logs(game_logs)
     yesterday = reference_date - timedelta(days=1)
     start_3 = reference_date - timedelta(days=2)
     start_5 = reference_date - timedelta(days=4)
@@ -264,14 +265,15 @@ def classify_availability(
         Dict safe to embed in API responses.
     """
     ref = reference_date or product_current_date()
-    logs = list(game_logs or [])
+    raw_logs = list(game_logs or [])
+    logs = workload_appearance_logs(raw_logs)
     if latest_game_date is None and logs:
         latest_game_date = max(
             (log.game_date for log in logs if getattr(log, 'game_date', None) is not None),
             default=None,
         )
 
-    data_state = _data_state(ref, latest_game_date, score, logs, active_window_days)
+    data_state = _data_state(ref, latest_game_date, score, raw_logs, active_window_days)
     inputs = _derive_inputs(score, logs, ref, latest_game_date, data_state)
     limitations = list(BASE_LIMITATIONS)
 

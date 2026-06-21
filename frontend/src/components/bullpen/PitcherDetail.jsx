@@ -4,10 +4,11 @@ import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
 import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
 import {
-  appearanceDetailLabel,
-  latestAppearanceFromLogs,
+  isWorkloadAppearance,
+  latestWorkloadAppearanceFromLogs,
   normalizeAppearance,
   platformDateFromFreshness,
+  workloadAppearanceDetailLabel,
 } from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
@@ -53,12 +54,17 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     roster_status: rosterStatus,
     freshness,
     last_appearance: lastAppearance,
+    last_workload_appearance: lastWorkloadAppearance,
     recent_logs,
     fatigue_trend,
   } = data || {}
   const platformDate = platformDateFromFreshness(freshness)
-  const mostRecentAppearance = normalizeAppearance(lastAppearance) || latestAppearanceFromLogs(recent_logs)
-  const mostRecentAppearanceLabel = appearanceDetailLabel(mostRecentAppearance, platformDate)
+  const workloadAppearance = isWorkloadAppearance(lastWorkloadAppearance)
+    ? normalizeAppearance(lastWorkloadAppearance)
+    : null
+  const legacyAppearance = isWorkloadAppearance(lastAppearance) ? normalizeAppearance(lastAppearance) : null
+  const mostRecentAppearance = workloadAppearance || legacyAppearance || latestWorkloadAppearanceFromLogs(recent_logs)
+  const mostRecentAppearanceLabel = workloadAppearanceDetailLabel(mostRecentAppearance, platformDate)
 
   // Radar — component breakdown. Driven by the shared four-factor model so
   // it always matches the backend (no Leverage Index — see fatigueModel.js).
@@ -136,7 +142,7 @@ export default function PitcherDetail({ pitcherId, onClose }) {
 
           {mostRecentAppearanceLabel && (
             <div className="rounded border border-dirt bg-field/50 p-3">
-              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Most Recent Appearance</div>
+              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Most Recent Workload Appearance</div>
               <div className="mt-1 font-mono text-sm font-semibold text-chalk200">{mostRecentAppearanceLabel}</div>
             </div>
           )}

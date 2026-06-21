@@ -27,6 +27,7 @@ from services.bullpen_stress import build_bullpen_stress
 from services.pitcher_public_labels import build_pitcher_labels
 from services.team_bullpen_shape import build_team_bullpen_shape
 from services.bullpen_visibility import default_visible_contract, summarize_visibility
+from services.workload_appearance import pitch_count_workload_logs
 
 
 # Canonical group order: least-restricted to most-restricted. This is a fixed
@@ -67,12 +68,9 @@ GROUP_META = {
 CAPABILITY = 'tonights_bullpen_board'
 
 
-def last_appearance_from_logs(logs):
-    """Return the latest appearance date and pitch count from existing logs."""
-    rows = [
-        log for log in (logs or [])
-        if getattr(log, 'game_date', None) is not None
-    ]
+def last_workload_appearance_from_logs(logs):
+    """Return the latest positive-pitch workload appearance from raw logs."""
+    rows = pitch_count_workload_logs(logs)
     if not rows:
         return None
 
@@ -86,6 +84,11 @@ def last_appearance_from_logs(logs):
         'game_date': latest_date.isoformat(),
         'pitches': pitches,
     }
+
+
+def last_appearance_from_logs(logs):
+    """Backward-compatible alias for workload appearance summaries."""
+    return last_workload_appearance_from_logs(logs)
 
 
 # ── Team context (Board V2) ────────────────────────────────────────────────
@@ -301,6 +304,7 @@ def build_card(
     visibility=None,
     pitcher_labels=None,
     last_appearance=None,
+    last_workload_appearance=None,
 ):
     """Build a single display card from existing availability output."""
     availability = availability or {}
@@ -311,6 +315,12 @@ def build_card(
         except (TypeError, ValueError):
             score = None
 
+    workload_appearance = (
+        last_workload_appearance
+        if last_workload_appearance is not None
+        else last_appearance
+    )
+
     return {
         'pitcher_id': pitcher_id,
         'name': name,
@@ -318,7 +328,8 @@ def build_card(
         'fatigue_score': score,
         'confidence': availability.get('confidence'),
         'short_reason': short_reason_for(availability),
-        'last_appearance': last_appearance,
+        'last_appearance': workload_appearance,
+        'last_workload_appearance': workload_appearance,
         'data_state': availability.get('data_state'),
         'reasons': list(availability.get('reasons') or []),
         'limitations': list(availability.get('limitations') or []),
@@ -416,6 +427,7 @@ def build_board_payload(
             visibility=record.get('visibility'),
             pitcher_labels=record.get('pitcher_labels'),
             last_appearance=record.get('last_appearance'),
+            last_workload_appearance=record.get('last_workload_appearance'),
         )
         for record in records
     ]

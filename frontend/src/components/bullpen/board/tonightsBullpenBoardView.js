@@ -5,9 +5,10 @@ import {
 } from '../availabilityView'
 import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import {
-  compactAppearanceLabel,
+  compactWorkloadAppearanceLabel,
   dayAwareAppearanceReason,
   dayAwareAppearanceReasons,
+  isWorkloadAppearance,
   platformDateFromFreshness,
 } from '../../../utils/appearanceLanguage'
 import { getPitcherLabels } from '../../../utils/pitcherLabels'
@@ -369,8 +370,13 @@ export function getBoardCardView(card, freshness = null) {
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
   const showDataNote = dataState && !['fresh', 'unknown'].includes(dataState)
   const platformDate = platformDateFromFreshness(freshness)
-  const lastAppearance = card?.last_appearance || card?.lastAppearance || null
-  const lastAppearanceLabel = compactAppearanceLabel(lastAppearance, platformDate)
+  const lastAppearance = [
+    card?.last_workload_appearance,
+    card?.lastWorkloadAppearance,
+    card?.last_appearance,
+    card?.lastAppearance,
+  ].find(isWorkloadAppearance) || null
+  const lastAppearanceLabel = compactWorkloadAppearanceLabel(lastAppearance, platformDate)
   return {
     pitcherId: card?.pitcher_id,
     name: card?.name || '—',

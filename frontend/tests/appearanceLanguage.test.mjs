@@ -5,9 +5,12 @@ import {
   appearanceDetailLabel,
   appearancePitchReason,
   compactAppearanceLabel,
+  compactWorkloadAppearanceLabel,
   dayAwareAppearanceReason,
+  latestWorkloadAppearanceFromLogs,
   platformDateFromFreshness,
   relativeAppearanceLabel,
+  workloadAppearanceDetailLabel,
 } from '../src/utils/appearanceLanguage.js'
 
 test('appearance date equal to current platform date renders today', () => {
@@ -44,6 +47,7 @@ test('same-day evening resync uses data-through date instead of next availabilit
   const freshness = {
     data_through: '2026-06-20',
     latest_workload_date: '2026-06-20',
+    last_successful_sync: '2026-06-21T03:03:00Z',
     availability_reference_date: '2026-06-21',
   }
   const platformDate = platformDateFromFreshness(freshness)
@@ -56,4 +60,47 @@ test('same-day evening resync uses data-through date instead of next availabilit
   assert.equal(platformDate, '2026-06-20')
   assert.equal(rewritten, '15 pitches today')
   assert.notEqual(rewritten, '15 pitches yesterday')
+})
+
+test('workload labels use compact workload language for valid appearances', () => {
+  const platformDate = '2026-06-20'
+
+  assert.equal(
+    compactWorkloadAppearanceLabel({ game_date: '2026-06-20', pitches: 15 }, platformDate),
+    'Last workload: Today (15 pitches)',
+  )
+  assert.equal(
+    compactWorkloadAppearanceLabel({ game_date: '2026-06-19', pitches: 21 }, platformDate),
+    'Last workload: Yesterday (21 pitches)',
+  )
+  assert.equal(
+    compactWorkloadAppearanceLabel({ game_date: '2026-06-17', pitches: 14 }, platformDate),
+    'Last workload: Jun 17 (14 pitches)',
+  )
+  assert.equal(
+    workloadAppearanceDetailLabel({ game_date: '2026-06-17', pitches: 14 }, platformDate),
+    'Jun 17 • 14 pitches',
+  )
+})
+
+test('latest workload appearance skips newer zero-pitch raw rows', () => {
+  const logs = [
+    {
+      game_date: '2026-06-19',
+      innings_pitched: 0.0,
+      innings_pitched_outs: 0,
+      pitches_thrown: 0,
+    },
+    {
+      game_date: '2026-06-17',
+      innings_pitched: 1.0,
+      innings_pitched_outs: 3,
+      pitches_thrown: 14,
+    },
+  ]
+
+  assert.deepEqual(latestWorkloadAppearanceFromLogs(logs), {
+    gameDate: '2026-06-17',
+    pitches: 14,
+  })
 })

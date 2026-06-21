@@ -40,6 +40,12 @@ function numericPitchCount(value) {
   return Number.isFinite(count) ? count : null
 }
 
+function numericValue(value) {
+  if (value == null || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 export function platformDateFromFreshness(freshness) {
   const source = freshness || {}
   return (
@@ -72,13 +78,46 @@ export function normalizeAppearance(input) {
       ?? input.pitches_thrown
       ?? input.pitchesThrown,
     ),
+    inningsPitched: numericValue(
+      input.innings_pitched
+      ?? input.inningsPitched,
+    ),
+    inningsPitchedOuts: numericValue(
+      input.innings_pitched_outs
+      ?? input.inningsPitchedOuts,
+    ),
   }
+}
+
+export function isWorkloadAppearance(input) {
+  const normalized = normalizeAppearance(input)
+  return Boolean(normalized && normalized.pitches > 0)
 }
 
 export function latestAppearanceFromLogs(logs) {
   const appearances = (Array.isArray(logs) ? logs : [])
     .map(normalizeAppearance)
     .filter(Boolean)
+
+  if (!appearances.length) return null
+
+  const latest = appearances.reduce((winner, item) => (
+    baseballDay(item.gameDate).time > baseballDay(winner.gameDate).time ? item : winner
+  ))
+  const pitches = appearances
+    .filter(item => baseballDay(item.gameDate).time === baseballDay(latest.gameDate).time)
+    .reduce((sum, item) => sum + (item.pitches || 0), 0)
+
+  return {
+    gameDate: latest.gameDate,
+    pitches,
+  }
+}
+
+export function latestWorkloadAppearanceFromLogs(logs) {
+  const appearances = (Array.isArray(logs) ? logs : [])
+    .map(normalizeAppearance)
+    .filter(item => item && item.pitches > 0)
 
   if (!appearances.length) return null
 
@@ -135,6 +174,21 @@ export function compactAppearanceLabel(appearance, platformDate) {
   return `Last appearance: ${subject} (${normalized.pitches})`
 }
 
+export function compactWorkloadAppearanceLabel(appearance, platformDate) {
+  const normalized = normalizeAppearance(appearance)
+  if (!normalized || normalized.pitches == null || normalized.pitches <= 0) return null
+
+  const diff = baseballDayDiff(normalized.gameDate, platformDate)
+  const subject = diff === 0
+    ? 'Today'
+    : diff === 1
+      ? 'Yesterday'
+      : displayBaseballDate(normalized.gameDate)
+
+  if (!subject) return null
+  return `Last workload: ${subject} (${normalized.pitches} ${pitchNoun(normalized.pitches)})`
+}
+
 export function appearanceDetailLabel(appearance, platformDate) {
   const normalized = normalizeAppearance(appearance)
   if (!normalized || normalized.pitches == null) return null
@@ -142,6 +196,12 @@ export function appearanceDetailLabel(appearance, platformDate) {
   const dateLabel = appearanceDisplayDate(normalized.gameDate, platformDate)
   if (!dateLabel) return null
   return `${dateLabel} • ${normalized.pitches} ${pitchNoun(normalized.pitches)}`
+}
+
+export function workloadAppearanceDetailLabel(appearance, platformDate) {
+  const normalized = normalizeAppearance(appearance)
+  if (!normalized || normalized.pitches == null || normalized.pitches <= 0) return null
+  return appearanceDetailLabel(normalized, platformDate)
 }
 
 export function appearancePitchReason(count, appearanceDate, platformDate) {
