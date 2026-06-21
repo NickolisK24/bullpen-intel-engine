@@ -37,9 +37,12 @@ from services.four_beat_stories import (
 )
 from services.story_evidence import (
     GENERIC_LANGUAGE_DENYLIST,
+    HEADLINE_OPENER_REDUNDANCY_MAX,
     INTERNAL_PROCESS_LANGUAGE_DENYLIST,
     PUBLIC_SCHEMA_LANGUAGE_DENYLIST,
     apply_story_evidence_framework,
+    headline_opener_overlap,
+    headline_opener_redundancy,
     story_public_text,
     validate_story_evidence,
 )
@@ -1027,8 +1030,12 @@ def test_story_fact_layer_and_narrative_are_added_without_breaking_beat_contract
     assert render_story_disclosure_note(facts) is None
     assert 'disclosure_note' not in story
     assert _narrative_has_disclosure_caveat(narrative) is False
-    assert narrative.count('\n\n') == 2
+    # The body opens on the evidence beat and no longer restates the headline,
+    # so it is two paragraphs (evidence, consequence) rather than three.
+    assert narrative.count('\n\n') == 1
+    assert narrative.split('\n\n')[0] == story['story_voice']['evidence_sentence']
     assert narrative.split('\n\n')[-1] == story['story_voice']['consequence_sentence']
+    assert story['story_voice']['human_frame'] not in narrative
     assert story['team_name'] in narrative
     assert facts['primary_observation'] not in narrative
     assert facts['watch_question'] not in narrative
@@ -1097,7 +1104,7 @@ def test_story_context_adds_resource_pool_context_without_state_labels():
         )
     )
     assert story['story_voice']['applied'] is True
-    assert story['story_voice']['human_frame'] in narrative
+    assert story['story_voice']['human_frame'] not in narrative
     assert story['story_voice']['evidence_sentence'] in narrative
     assert story['story_voice']['consequence_sentence'] in narrative
     assert narrative_contains_forbidden_language(narrative) is False
@@ -1166,7 +1173,7 @@ def test_story_context_adds_clean_trusted_lane_context_when_narrow():
         )
     )
     assert story['story_voice']['applied'] is True
-    assert story['story_voice']['human_frame'] in narrative
+    assert story['story_voice']['human_frame'] not in narrative
     assert story['story_voice']['evidence_sentence'] in narrative
     assert story['story_voice']['consequence_sentence'] in narrative
     assert 'clean trusted lane' not in lower
@@ -1229,16 +1236,18 @@ def test_story_context_replaces_generic_middle_instead_of_appending_explanation(
         compute_team_story_inputs(team_inputs),
     )
     paragraphs = [item.strip() for item in story['narrative'].split('\n\n')]
-    middle = paragraphs[1].lower()
+    # The body opens on the evidence beat instead of restating the headline, so
+    # the evidence sentence is now paragraph 0 (the old generic "middle").
+    opening = paragraphs[0].lower()
 
-    assert len(paragraphs) == 3
+    assert len(paragraphs) == 2
     assert story['story_voice']['applied'] is True
-    assert paragraphs[0] == story['story_voice']['human_frame']
-    assert paragraphs[1] == story['story_voice']['evidence_sentence']
-    assert paragraphs[2] == story['story_voice']['consequence_sentence']
-    assert 'there is room to maneuver because' not in middle
-    assert 'flexibility shows up when' not in middle
-    assert middle.count('.') <= 3
+    assert story['story_voice']['human_frame'] not in story['narrative']
+    assert paragraphs[0] == story['story_voice']['evidence_sentence']
+    assert paragraphs[1] == story['story_voice']['consequence_sentence']
+    assert 'there is room to maneuver because' not in opening
+    assert 'flexibility shows up when' not in opening
+    assert opening.count('.') <= 3
 
 
 def test_identity_story_texture_metadata_stays_available_without_public_label_leak():
@@ -1259,7 +1268,7 @@ def test_identity_story_texture_metadata_stays_available_without_public_label_le
     assert story['story_facts']['story_identity_integration'] == integration
     assert story['slot_sources']['story_identity_integration'] == 'bullpen_identity_v1'
     assert story['story_voice']['applied'] is True
-    assert story['story_voice']['human_frame'] in narrative
+    assert story['story_voice']['human_frame'] not in narrative
     assert integration['text'] not in narrative
     for label in IDENTITY_LABELS.values():
         assert label not in narrative
@@ -2590,14 +2599,15 @@ def test_observation_led_story_references_selected_observation_directly():
     assert story['story_facts']['evidence_statement'] == selected['text']
     assert story['story_evidence']['evidence_statement'] == selected['text']
     assert voice['applied'] is True
-    assert voice['human_frame'] == paragraphs[0]
-    assert paragraphs[1] == selected['text']
+    # The body opens on the evidence (selected observation), not the frame.
+    assert voice['human_frame'] not in story['narrative']
+    assert paragraphs[0] == selected['text']
     assert selected['text'] in story['narrative']
     assert story['story_evidence_framework']['checks']['selected_observation_referenced'] is True
     assert pitchers
 
 
-def test_observation_voice_layer_adds_supported_frame_before_evidence():
+def test_observation_voice_body_opens_on_evidence_without_restating_headline():
     pitchers, records, logs = _fixture_team(
         603,
         'Voice Club',
@@ -2617,15 +2627,213 @@ def test_observation_voice_layer_adds_supported_frame_before_evidence():
     assert voice['capability'] == 'observation_voice_layer_v1'
     assert voice['applied'] is True
     assert voice['validation']['passed'] is True
+    # The frame is still generated and validated, but it is the headline's job
+    # now; the body must not echo it as body sentence 1.
     assert voice['validation']['checks']['human_frame_supported'] is True
-    assert voice['human_frame'] == narrative.split('\n\n')[0]
+    assert voice['human_frame'] not in narrative
+    assert story['title'] == voice['headline']
+    # The body opens on the evidence beat: named arms + the number.
+    assert narrative.split('\n\n')[0] == voice['evidence_sentence']
     assert voice['evidence_sentence'] == selected['text']
-    assert voice['evidence_sentence'] in narrative
     assert voice['consequence_sentence'] in narrative
     assert evidence['evidence_statement'] == selected['text']
-    assert any(name in narrative for name in evidence['pitcher_names'])
-    assert re.search(r'\d', narrative)
+    assert any(name in narrative.split('\n\n')[0] for name in evidence['pitcher_names'])
+    assert re.search(r'\d', narrative.split('\n\n')[0])
     assert pitchers
+
+
+def _voice_card(team_id, team_name, abbr, observation_type, category, text, names, consequence):
+    selected_observation = {
+        'observation_id': observation_type,
+        'observation_type': observation_type,
+        'text': text,
+        'pitcher_names': names,
+        'consequence_category': category,
+        'consequence_statement': consequence,
+    }
+    facts = {
+        'team': {'team_id': team_id, 'team_name': team_name, 'team_abbreviation': abbr},
+        'selected_observation': selected_observation,
+        'named_pitchers': names,
+        'evidence_statement': text,
+        'consequence_statement': consequence,
+        'consequence_category': category,
+    }
+    voice = build_observation_voice(facts)
+    facts['observation_voice'] = voice
+    narrative = render_story_narrative(facts)
+    story = {
+        'story_id': f'{team_id}:{observation_type}',
+        'team_id': team_id,
+        'team_name': team_name,
+        'team_abbreviation': abbr,
+        'rule_key': RULE_STRESS_TRANSFER,
+        'title': voice['headline'],
+        'body': narrative,
+        'narrative': narrative,
+        'story_voice': voice,
+        'story_observation': {'selected_observation': selected_observation},
+        'story_evidence': {
+            'pitcher_names': names,
+            'evidence_statement': text,
+            'consequence_category': category,
+            'consequence_statement': consequence,
+        },
+    }
+    return voice, narrative, story
+
+
+# Real cards from the live feed (Detroit, Miami, Houston). Each must read with
+# the body opening on the evidence beat, never restating the headline.
+_LIVE_FEED_CARDS = (
+    (
+        910,
+        'Detroit Tigers',
+        'DET',
+        'run_prevention_stress',
+        'heavier_workload_concentration',
+        (
+            'Will Vest, Kyle Finnegan, and Tyler Holton have handled 64% of '
+            'Detroit Tigers recent relief pitches behind a 1.79 bullpen ERA.'
+        ),
+        ['Will Vest', 'Kyle Finnegan', 'Tyler Holton'],
+        (
+            'That keeps heavier workload concentration in play if the next tight '
+            'inning runs back through Will Vest, Kyle Finnegan, and Tyler Holton.'
+        ),
+    ),
+    (
+        911,
+        'Miami Marlins',
+        'MIA',
+        'resource_constraint',
+        'less_coverage_margin',
+        (
+            'Tanner Scott and A.J. Puk are 2 of 4 usable Miami Marlins relief '
+            'arms after the recent starter handoff.'
+        ),
+        ['Tanner Scott', 'A.J. Puk'],
+        'That leaves less coverage margin if Miami Marlins need another clean inning.',
+    ),
+    (
+        912,
+        'Houston Astros',
+        'HOU',
+        'run_prevention_stress',
+        'heavier_workload_concentration',
+        (
+            'Bryan Abreu and Josh Hader have handled 71% of Houston Astros '
+            'recent relief pitches behind a 2.93 bullpen ERA.'
+        ),
+        ['Bryan Abreu', 'Josh Hader'],
+        (
+            'That keeps heavier workload concentration in play if the next tight '
+            'inning runs back through Bryan Abreu and Josh Hader.'
+        ),
+    ),
+)
+
+
+def test_live_feed_cards_open_on_evidence_not_a_restated_headline():
+    for team_id, team_name, abbr, observation_type, category, text, names, consequence in _LIVE_FEED_CARDS:
+        voice, narrative, story = _voice_card(
+            team_id, team_name, abbr, observation_type, category, text, names, consequence,
+        )
+        opener = narrative.split('\n\n')[0]
+
+        assert voice['applied'] is True, team_name
+        assert voice['validation']['passed'] is True, team_name
+        # The headline keeps the frame; the body must not echo it as sentence 1.
+        assert voice['human_frame'] not in narrative, team_name
+        # The body opens on the evidence beat (named arms + the number).
+        assert opener == voice['evidence_sentence'] == text, team_name
+        assert any(name in opener for name in names), team_name
+        assert re.search(r'\d', opener), team_name
+        # The opener is not a restatement of the headline.
+        assert headline_opener_redundancy(story)['redundant'] is False, team_name
+        validation = validate_story_evidence(story)
+        assert validation['passed'] is True, team_name
+        assert validation['headline_restates_opener'] is False, team_name
+
+
+def test_headline_opener_detector_fails_a_body_that_restates_the_headline():
+    # The exact live-feed problem: headline and body sentence 1 are identical.
+    headline = 'The run prevention remains steady while the innings burden grows.'
+    evidence_statement = (
+        "Detroit Tigers' 1.79 bullpen ERA still leans heavily on Will Vest, "
+        'Kyle Finnegan, and Tyler Holton.'
+    )
+    consequence_statement = (
+        'That keeps heavier workload concentration in play if the next tight '
+        'inning runs back through Will Vest, Kyle Finnegan, and Tyler Holton.'
+    )
+    story = {
+        'story_id': '913:restatement',
+        'team_id': 913,
+        'team_name': 'Detroit Tigers',
+        'team_abbreviation': 'DET',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'title': headline,
+        'narrative': (
+            f'{headline}\n\n{evidence_statement}\n\n{consequence_statement}'
+        ),
+        'story_observation': {'selected_observation': {'text': evidence_statement}},
+        'story_evidence': {
+            'pitcher_names': ['Will Vest', 'Kyle Finnegan', 'Tyler Holton'],
+            'evidence_statement': evidence_statement,
+            'consequence_category': 'heavier_workload_concentration',
+            'consequence_statement': consequence_statement,
+        },
+    }
+
+    detector = headline_opener_redundancy(story)
+    assert detector['redundant'] is True
+    assert detector['overlap'] >= HEADLINE_OPENER_REDUNDANCY_MAX
+    assert headline_opener_overlap(headline, headline) == 1.0
+
+    validation = validate_story_evidence(story)
+    assert validation['headline_restates_opener'] is True
+    assert validation['headline_opener']['redundant'] is True
+    # Report-only: it scores and flags the echo but does not gate the story.
+    assert validation['passed'] is True
+    assert 'headline_restates_opener' not in validation['fail_reasons']
+
+
+def test_headline_opener_detector_passes_when_opener_leads_on_evidence():
+    # Same headline as the failing fixture, but body sentence 1 is the evidence.
+    headline = 'The run prevention remains steady while the innings burden grows.'
+    evidence_statement = (
+        "Detroit Tigers' 1.79 bullpen ERA still leans heavily on Will Vest, "
+        'Kyle Finnegan, and Tyler Holton.'
+    )
+    consequence_statement = (
+        'That keeps heavier workload concentration in play if the next tight '
+        'inning runs back through Will Vest, Kyle Finnegan, and Tyler Holton.'
+    )
+    story = {
+        'story_id': '914:evidence_opener',
+        'team_id': 914,
+        'team_name': 'Detroit Tigers',
+        'team_abbreviation': 'DET',
+        'rule_key': RULE_STRESS_TRANSFER,
+        'title': headline,
+        'narrative': f'{evidence_statement}\n\n{consequence_statement}',
+        'story_observation': {'selected_observation': {'text': evidence_statement}},
+        'story_evidence': {
+            'pitcher_names': ['Will Vest', 'Kyle Finnegan', 'Tyler Holton'],
+            'evidence_statement': evidence_statement,
+            'consequence_category': 'heavier_workload_concentration',
+            'consequence_statement': consequence_statement,
+        },
+    }
+
+    detector = headline_opener_redundancy(story)
+    assert detector['redundant'] is False
+    assert detector['overlap'] < HEADLINE_OPENER_REDUNDANCY_MAX
+
+    validation = validate_story_evidence(story)
+    assert validation['passed'] is True
+    assert validation['headline_restates_opener'] is False
 
 
 def test_observation_voice_layer_rejects_empty_fluff_frame():
