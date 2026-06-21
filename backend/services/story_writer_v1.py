@@ -1,0 +1,654 @@
+"""Story Writer V1.
+
+Deterministic backend writer for Story Construction Engine frames. It converts
+structured facts into BaseballOS-style written observations without external
+text generation, public routes, predictions, rankings, betting language, or
+scoring changes.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from services.story_construction_engine import (
+    build_story_construction_engine_v1,
+    construct_team_story_frames,
+)
+from services.story_observation_engine import (
+    TYPE_CONCENTRATION_PRESSURE,
+    TYPE_CORE_TRANSITION,
+    TYPE_DEPTH_PRESSURE,
+    TYPE_OPTIONALITY_STRENGTH,
+    TYPE_ROTATION_PRESSURE,
+    TYPE_STABLE_CORE,
+)
+
+
+CAPABILITY = 'story_writer_v1'
+VERSION = '2026-06-21.v1'
+SOURCE = 'backend'
+
+SECTION_KEYS = (
+    'headline',
+    'observation_paragraph',
+    'baseline_paragraph',
+    'cause_paragraph',
+    'constraint_paragraph',
+)
+
+BANNED_TERMS = (
+    'bet',
+    'betting',
+    'odds',
+    'probability',
+    'projection',
+    'projected',
+    'predict',
+    'prediction',
+    'rank',
+    'ranking',
+    'score',
+    'confidence score',
+)
+
+
+def _dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value):
+    return value if isinstance(value, list) else []
+
+
+def _present(value):
+    if value is None:
+        return False
+    if value == '':
+        return False
+    if isinstance(value, (list, dict)) and not value:
+        return False
+    return True
+
+
+def _clean_text(value):
+    return ' '.join(str(value or '').strip().split())
+
+
+def _team(frame):
+    return (
+        _clean_text(_dict(frame).get('team_name'))
+        or _clean_text(_dict(_dict(frame).get('story_frame')).get('team_name'))
+        or 'This bullpen'
+    )
+
+
+def _fmt(value, *, suffix=''):
+    if value is None:
+        return None
+    if isinstance(value, float):
+        text = f'{value:.1f}'.rstrip('0').rstrip('.')
+    else:
+        text = str(value)
+    return f'{text}{suffix}'
+
+
+def _join_names(names):
+    names = [_clean_text(name) for name in _list(names) if _clean_text(name)]
+    if not names:
+        return None
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f'{names[0]} and {names[1]}'
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def _sentence(text):
+    text = _clean_text(text)
+    if not text:
+        return None
+    if text[-1] not in '.!?':
+        text = f'{text}.'
+    return text
+
+
+def _paragraph(*sentences):
+    rows = []
+    seen = set()
+    for sentence in sentences:
+        sentence = _sentence(sentence)
+        if not sentence:
+            continue
+        key = sentence.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(sentence)
+    return ' '.join(rows) if rows else None
+
+
+def _sections(**values):
+    return {key: values.get(key) for key in SECTION_KEYS}
+
+
+def _frame_sections(frame):
+    return _dict(_dict(frame).get('story_frame'))
+
+
+def _facts(frame, key):
+    return _dict(_frame_sections(frame).get(key))
+
+
+def _count_word(value, singular, plural=None):
+    plural = plural or f'{singular}s'
+    return singular if value == 1 else plural
+
+
+def _has_banned_language(text):
+    lower = _clean_text(text).lower()
+    return any(term in lower for term in BANNED_TERMS)
+
+
+def _all_output_text(output):
+    sections = _dict(output.get('written_observation'))
+    return ' '.join(_clean_text(value) for value in sections.values() if value)
+
+
+def validate_written_observation(output):
+    text = _all_output_text(output)
+    return {
+        'passed': bool(text) and not _has_banned_language(text),
+        'contains_banned_language': _has_banned_language(text),
+        'has_text': bool(text),
+    }
+
+
+def _rotation_pressure(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    avg_7 = headline.get('rotation_avg_ip_7d') or observed.get('rotation_avg_ip_7d')
+    avg_14 = headline.get('rotation_avg_ip_14d') or observed.get('rotation_avg_ip_14d')
+    trend = headline.get('rotation_ip_trend') or observed.get('rotation_ip_trend')
+    early_rate = observed.get('early_bullpen_entry_rate')
+    coverage = cause.get('bullpen_coverage_ip_7d') or interpretation.get('bullpen_coverage_ip_7d')
+
+    return _sections(
+        headline=(
+            f"{team}'s rotation is handing more of the game to the bullpen"
+            if _present(avg_7)
+            else f"{team}'s bullpen story starts with the rotation"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The starters are averaging {_fmt(avg_7)} innings over the last week"
+                if _present(avg_7) else None
+            ),
+            (
+                f"That recent starter length is down {_fmt(abs(trend))} innings from the two-week mark"
+                if _present(trend) and trend < 0 else None
+            ),
+            (
+                f"The bullpen has entered before the sixth in {_fmt(early_rate, suffix='%')} of recent games"
+                if _present(early_rate) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The comparison point is {_fmt(avg_14)} starter innings over the full 14-day window"
+                if _present(avg_14) else None
+            ),
+            (
+                f"The current seven-day handoff is {_fmt(avg_7)} innings"
+                if _present(avg_7) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The bullpen coverage burden is {_fmt(coverage)} innings per game over the last week"
+                if _present(coverage) else None
+            ),
+            (
+                f"That is the workload created when the starter-to-bullpen handoff arrives earlier"
+                if _present(coverage) or _present(early_rate) else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If similar game conditions occur, the constraint is how many middle innings the bullpen has to absorb"
+                if _present(constraint.get('bullpen_coverage_ip_7d')) or _present(coverage) else None
+            ),
+        ),
+    )
+
+
+def _concentration_pressure(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    names = _join_names(headline.get('top_three_relievers'))
+    share = headline.get('top_three_workload_share_10d') or observed.get('top_three_workload_share_10d')
+    league = baseline.get('league_top_three_workload_share_10d')
+    delta = baseline.get('top_three_share_delta_vs_league')
+    total = observed.get('bullpen_workload_total_10d')
+    trend = cause.get('rotation_ip_trend')
+    paths = interpretation.get('practical_close_game_paths_count')
+    core = _join_names(constraint.get('current_operational_core'))
+
+    return _sections(
+        headline=(
+            f"{team}'s bullpen is running through {names}"
+            if names else f"{team}'s bullpen work is concentrated"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The top group has handled {_fmt(share, suffix='%')} of the bullpen workload"
+                if _present(share) else None
+            ),
+            (
+                f"That comes inside a {_fmt(total)}-pitch bullpen window"
+                if _present(total) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The league comparison is {_fmt(league, suffix='%')} for top-three bullpen workload"
+                if _present(league) else None
+            ),
+            (
+                f"That puts this bullpen {_fmt(delta)} percentage points above that baseline"
+                if _present(delta) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The rotation context is part of the frame: starter length is down {_fmt(abs(trend))} innings against the 14-day mark"
+                if _present(trend) and trend < 0 else None
+            ),
+            (
+                f"The optionality layer shows {_fmt(paths)} practical close-game paths"
+                if _present(paths) else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If the game shape repeats, the structural constraint remains the same core: {core}"
+                if core else None
+            ),
+        ),
+    )
+
+
+def _optionality_strength(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    paths = headline.get('practical_close_game_paths_count') or observed.get('practical_close_game_paths_count')
+    band = headline.get('optionality_band') or observed.get('optionality_band')
+    available = observed.get('available_arms_count') or baseline.get('available_arms_count')
+    clean_count = observed.get('clean_workload_options_count')
+    secondary_count = observed.get('secondary_options_count')
+    concentration = interpretation.get('concentration_band')
+    unavailable = constraint.get('unavailable_arms_count')
+
+    return _sections(
+        headline=(
+            f"{team}'s bullpen has multiple usable routes"
+            if _present(paths) else f"{team}'s bullpen optionality is showing"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The frame shows {_fmt(paths)} practical close-game paths"
+                if _present(paths) else None
+            ),
+            (
+                f"The optionality band is {band}"
+                if _present(band) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The active board includes {_fmt(available)} available {_count_word(available, 'arm')}"
+                if _present(available) else None
+            ),
+            (
+                f"There are {_fmt(clean_count)} clean workload {_count_word(clean_count, 'option')}"
+                if _present(clean_count) and clean_count > 0 else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The supporting layer adds {_fmt(secondary_count)} secondary {_count_word(secondary_count, 'option')}"
+                if _present(secondary_count) and secondary_count > 0 else None
+            ),
+            (
+                f"The concentration context reads {concentration}"
+                if _present(concentration) else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If similar game conditions occur, the constraint is not one arm; it is how the staff chooses among the available paths"
+                if _present(paths) else None
+            ),
+            (
+                f"The frame also keeps {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')} out of that route count"
+                if _present(unavailable) else None
+            ),
+        ),
+    )
+
+
+def _stable_core(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    current = _join_names(headline.get('current_operational_core') or cause.get('current_operational_core'))
+    previous = _join_names(baseline.get('previous_operational_core'))
+    retention = observed.get('core_retention_count') or cause.get('core_retention_count')
+    stability = observed.get('core_stability_pct')
+    concentration = interpretation.get('concentration_band')
+    core_size = constraint.get('current_core_size')
+
+    return _sections(
+        headline=(
+            f"{team}'s bullpen core has held together"
+            if current else f"{team}'s bullpen core is stable"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The current operational core is {current}"
+                if current else None
+            ),
+            (
+                f"The frame marks that group as {observed.get('stability_band')}"
+                if _present(observed.get('stability_band')) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The previous core was {previous}"
+                if previous else None
+            ),
+            (
+                f"The current group retained {_fmt(retention)} {_count_word(retention, 'member')} from that baseline"
+                if _present(retention) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The stability rate is {_fmt(stability, suffix='%')}"
+                if _present(stability) else None
+            ),
+            (
+                f"The concentration context reads {concentration}"
+                if _present(concentration) else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If similar game conditions occur, the structural constraint is still built around a {_fmt(core_size)}-arm core"
+                if _present(core_size) else None
+            ),
+        ),
+    )
+
+
+def _core_transition(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    current = _join_names(headline.get('current_operational_core') or cause.get('current_operational_core'))
+    previous = _join_names(baseline.get('previous_operational_core'))
+    new_members = _join_names(headline.get('new_core_members') or cause.get('new_core_members'))
+    departed = _join_names(cause.get('departed_core_members'))
+    changes = headline.get('core_change_count') or observed.get('core_change_count')
+    stability = observed.get('core_stability_pct') or interpretation.get('core_stability_pct')
+    retention = interpretation.get('core_retention_count') or constraint.get('core_retention_count')
+
+    return _sections(
+        headline=(
+            f"{team}'s bullpen core is changing"
+            if _present(changes) else f"{team}'s bullpen core is in transition"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The frame shows {_fmt(changes)} core {_count_word(changes, 'change')}"
+                if _present(changes) else None
+            ),
+            (
+                f"The current core is {current}"
+                if current else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The previous core was {previous}"
+                if previous else None
+            ),
+            (
+                f"The stability rate is {_fmt(stability, suffix='%')}"
+                if _present(stability) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The new core members are {new_members}"
+                if new_members else None
+            ),
+            (
+                f"The departed core members are {departed}"
+                if departed else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If similar game conditions occur, the constraint is a relief mix with {_fmt(retention)} retained {_count_word(retention, 'member')} from the prior core"
+                if _present(retention) else None
+            ),
+        ),
+    )
+
+
+def _depth_pressure(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    inactive = headline.get('inactive_bullpen_arms_count') or observed.get('inactive_bullpen_arms_count')
+    depth_band = headline.get('depth_pressure_band') or observed.get('depth_pressure_band')
+    active = baseline.get('active_bullpen_arms_count') or constraint.get('active_bullpen_arms_count')
+    il_count = cause.get('il_bullpen_arms_count')
+    non_il = cause.get('non_il_inactive_bullpen_arms_count')
+    paths = interpretation.get('practical_close_game_paths_count')
+    optionality = interpretation.get('optionality_band')
+
+    return _sections(
+        headline=(
+            f"{team}'s bullpen depth is under pressure"
+            if _present(inactive) else f"{team}'s bullpen depth is part of the story"
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The frame shows {_fmt(inactive)} inactive bullpen {_count_word(inactive, 'arm')}"
+                if _present(inactive) else None
+            ),
+            (
+                f"The depth pressure band is {depth_band}"
+                if _present(depth_band) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The active bullpen count is {_fmt(active)} {_count_word(active, 'arm')}"
+                if _present(active) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The inactive group includes {_fmt(il_count)} IL {_count_word(il_count, 'arm')}"
+                if _present(il_count) else None
+            ),
+            (
+                f"It also includes {_fmt(non_il)} non-IL inactive {_count_word(non_il, 'arm')}"
+                if _present(non_il) else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If similar game conditions occur, the constraint is a bullpen board with {_fmt(paths)} practical close-game paths"
+                if _present(paths) else None
+            ),
+            (
+                f"The optionality layer reads {optionality}"
+                if _present(optionality) else None
+            ),
+        ),
+    )
+
+
+WRITERS = {
+    TYPE_ROTATION_PRESSURE: _rotation_pressure,
+    TYPE_CONCENTRATION_PRESSURE: _concentration_pressure,
+    TYPE_OPTIONALITY_STRENGTH: _optionality_strength,
+    TYPE_STABLE_CORE: _stable_core,
+    TYPE_CORE_TRANSITION: _core_transition,
+    TYPE_DEPTH_PRESSURE: _depth_pressure,
+}
+
+
+def write_story_frame(frame):
+    """Write one deterministic BaseballOS observation from one construction frame."""
+    frame = _dict(frame)
+    observation_type = frame.get('observation_type')
+    writer = WRITERS.get(observation_type)
+    written = writer(frame) if writer else _sections()
+    output = {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'source': SOURCE,
+        'team_id': frame.get('team_id'),
+        'team_name': frame.get('team_name'),
+        'team_abbreviation': frame.get('team_abbreviation'),
+        'observation_type': observation_type,
+        'severity': frame.get('severity'),
+        'written_observation': written,
+        'source_frame': frame,
+        'limitations': list(frame.get('limitations') or []),
+    }
+    output['validation'] = validate_written_observation(output)
+    return output
+
+
+def write_team_story_frames(construction_payload):
+    """Write deterministic observations for every frame in one team payload."""
+    construction_payload = _dict(construction_payload)
+    written = [
+        write_story_frame(frame)
+        for frame in _list(construction_payload.get('story_frames'))
+    ]
+    strongest = _dict(construction_payload.get('strongest_story_frame'))
+    strongest_type = strongest.get('observation_type')
+    strongest_written = next(
+        (
+            item for item in written
+            if item.get('observation_type') == strongest_type
+        ),
+        None,
+    )
+    return {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'source': SOURCE,
+        'team_id': construction_payload.get('team_id'),
+        'team_name': construction_payload.get('team_name'),
+        'team_abbreviation': construction_payload.get('team_abbreviation'),
+        'reference_date': construction_payload.get('reference_date'),
+        'data_through_date': construction_payload.get('data_through_date'),
+        'written_count': len(written),
+        'written_observations': written,
+        'strongest_written_observation': strongest_written,
+        'limitations': list(construction_payload.get('limitations') or []),
+    }
+
+
+def build_story_writer_v1(*, construction_payloads=None, team_contexts=None, team_ids=None, reference_date=None):
+    """Build deterministic written observations from construction frames."""
+    if construction_payloads is None:
+        if team_contexts is not None:
+            construction_payloads = [
+                construct_team_story_frames(team_context)
+                for team_context in _list(team_contexts)
+            ]
+        else:
+            construction_payloads = (
+                build_story_construction_engine_v1(
+                    team_ids=team_ids or [],
+                    reference_date=reference_date,
+                ).get('teams')
+                or []
+            )
+
+    teams = [
+        write_team_story_frames(payload)
+        for payload in _list(construction_payloads)
+    ]
+    return {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'source': SOURCE,
+        'reference_date': (
+            reference_date.isoformat()
+            if hasattr(reference_date, 'isoformat')
+            else reference_date
+        ),
+        'team_count': len(teams),
+        'teams': teams,
+        'limitations': [
+            'deterministic_templates_only',
+            'facts_limited_to_story_construction_frame',
+            'no_external_generation',
+            'no_engine_state_changes',
+        ],
+    }
+
+
+__all__ = [
+    'BANNED_TERMS',
+    'CAPABILITY',
+    'SECTION_KEYS',
+    'VERSION',
+    'build_story_writer_v1',
+    'validate_written_observation',
+    'write_story_frame',
+    'write_team_story_frames',
+]
