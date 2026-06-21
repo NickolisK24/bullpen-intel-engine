@@ -100,6 +100,9 @@ from services.story_continuity import (
     LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
     build_story_continuity_payload,
 )
+from services.story_intelligence_service_v1 import (
+    build_team_story as build_story_intelligence_team_story,
+)
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -1708,6 +1711,69 @@ def get_team_changes(team_id):
     """
     freshness = _board_freshness_block()
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))
+
+
+def _story_as_of_date_from_request():
+    raw = request.args.get('as_of_date')
+    if raw in (None, ''):
+        return None, None
+    parsed = parse_reference_date(raw)
+    if parsed is None:
+        return None, QueryParamError(
+            'as_of_date',
+            'as_of_date must be an ISO date in YYYY-MM-DD format.',
+        )
+    return parsed, None
+
+
+def _story_api_payload(service_payload):
+    payload = service_payload or {}
+    written = payload.get('written_story') or {}
+    selected = payload.get('selected_observation') or {}
+    frame = payload.get('construction_frame') or {}
+    story_type = (
+        selected.get('type')
+        or frame.get('observation_type')
+    )
+    story_available = bool(payload.get('story_available') is True)
+    return {
+        'capability': 'story_intelligence_api_v1',
+        'contract': 'story_intelligence_api_v1',
+        'contract_state': 'available' if story_available else 'neutral',
+        'team_id': payload.get('team_id'),
+        'team_name': payload.get('team_name'),
+        'team_abbreviation': payload.get('team_abbreviation'),
+        'as_of_date': payload.get('as_of_date'),
+        'state': payload.get('state'),
+        'story_available': story_available,
+        'neutral_reason': payload.get('neutral_reason'),
+        'story_type': story_type,
+        'headline': written.get('headline'),
+        'observation': written.get('observation_paragraph'),
+        'baseline': written.get('baseline_paragraph'),
+        'cause': written.get('cause_paragraph'),
+        'constraint': written.get('constraint_paragraph'),
+        'freshness': payload.get('freshness') or {},
+        'trust_metadata': payload.get('trust_metadata') or {},
+        'supporting_context': payload.get('supporting_context') or {},
+        'selected_observation': selected or None,
+        'construction_frame': frame or None,
+        'limitations': list(payload.get('limitations') or []),
+    }
+
+
+@bullpen_bp.route('/teams/<int:team_id>/story', methods=['GET'])
+def get_team_story(team_id):
+    if team_id < 1:
+        return query_param_error_response(
+            QueryParamError('team_id', 'team_id must be at least 1.')
+        )
+    as_of_date, error = _story_as_of_date_from_request()
+    if error:
+        return query_param_error_response(error)
+    return jsonify(_story_api_payload(
+        build_story_intelligence_team_story(team_id, as_of_date=as_of_date)
+    ))
 
 
 @bullpen_bp.route('/teams/compare', methods=['GET'])
