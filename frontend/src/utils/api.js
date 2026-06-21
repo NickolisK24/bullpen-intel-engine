@@ -617,6 +617,10 @@ export const getTeamBullpenBoard = (teamId, params = {}) => {
   const q = new URLSearchParams(params).toString()
   return request(`/bullpen/teams/${teamId}/board${q ? `?${q}` : ''}`)
 }
+// Story Intelligence API V1 - one deterministic team bullpen story.
+export const getTeamStory = (teamId, params = {}) => {
+  return request(`/bullpen/teams/${teamId}/story${buildQuery(params)}`)
+}
 // What Changed Since Last Game — followed-team change summary.
 // Descriptive only (no ranking/selection/recommendation).
 export const getTeamChanges = (teamId) => request(`/bullpen/teams/${teamId}/changes`)

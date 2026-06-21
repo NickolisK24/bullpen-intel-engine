@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../../hooks/usePreferredTeamPreference'
-import { getTeamBullpenBoard, getTeamGameContext } from '../../../utils/api'
+import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
+import StoryCard from './StoryCard'
 import PitcherDetail from '../PitcherDetail'
 import {
   BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
@@ -99,6 +100,10 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
     () => (selectedTeam == null ? Promise.resolve(null) : getTeamGameContext(selectedTeam)),
     [selectedTeam],
   )
+  const story = useFetch(
+    () => (selectedTeam == null ? Promise.resolve(null) : getTeamStory(selectedTeam)),
+    [selectedTeam],
+  )
   const filteredBoard = filterBoardForViewMode(board.data, boardViewMode)
   const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
 
@@ -169,6 +174,12 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
+            <StoryCard
+              story={story.data}
+              loading={story.loading}
+              error={story.error}
+              onRetry={story.refetch}
+            />
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
