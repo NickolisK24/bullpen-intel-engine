@@ -30,6 +30,7 @@ from datetime import date, timedelta
 from models.fatigue_score import FatigueScore
 from utils.db import db
 from utils.innings import sum_log_innings_decimal
+from services.workload_appearance import workload_appearance_logs
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -171,9 +172,11 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
     seven_days_ago    = ref - timedelta(days=7)
     fourteen_days_ago = ref - timedelta(days=14)
 
-    logs_7  = [g for g in game_logs if g.game_date >= seven_days_ago  and g.game_date <= ref]
-    logs_14 = [g for g in game_logs if g.game_date >= fourteen_days_ago and g.game_date <= ref]
-    last_log = game_logs[0] if game_logs else None
+    workload_logs = workload_appearance_logs(game_logs)
+
+    logs_7  = [g for g in workload_logs if g.game_date >= seven_days_ago  and g.game_date <= ref]
+    logs_14 = [g for g in workload_logs if g.game_date >= fourteen_days_ago and g.game_date <= ref]
+    last_log = workload_logs[0] if workload_logs else None
 
     days_since_last = None
     if last_log:

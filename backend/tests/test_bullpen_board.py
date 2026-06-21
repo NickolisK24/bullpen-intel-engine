@@ -11,6 +11,7 @@ limitations, freshness) the Availability Engine already produces.
 """
 
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -23,6 +24,8 @@ from services.bullpen_board import (
     build_board_payload,
     build_card,
     group_cards,
+    last_appearance_from_logs,
+    last_workload_appearance_from_logs,
     short_reason_for,
 )
 from services.bullpen_stability import (
@@ -145,18 +148,46 @@ class TestGrouping:
 
 
 class TestCard:
+    def test_last_appearance_from_logs_sums_latest_game_date(self):
+        latest = date(2026, 6, 20)
+        logs = [
+            SimpleNamespace(game_date=latest - timedelta(days=1), pitches_thrown=30),
+            SimpleNamespace(game_date=latest, pitches_thrown=10),
+            SimpleNamespace(game_date=latest, pitches_thrown=5),
+        ]
+
+        assert last_appearance_from_logs(logs) == {
+            'game_date': '2026-06-20',
+            'pitches': 15,
+        }
+
+    def test_last_workload_appearance_skips_latest_zero_pitch_row(self):
+        latest = date(2026, 6, 20)
+        logs = [
+            SimpleNamespace(game_date=latest, pitches_thrown=0, innings_pitched_outs=0),
+            SimpleNamespace(game_date=latest - timedelta(days=3), pitches_thrown=14, innings_pitched_outs=3),
+        ]
+
+        assert last_workload_appearance_from_logs(logs) == {
+            'game_date': '2026-06-17',
+            'pitches': 14,
+        }
+
     def test_card_preserves_trust_metadata(self):
+        last_appearance = {'game_date': '2026-06-20', 'pitches': 15}
         card = build_card('A', 7, 63.4, availability(
             'Limited',
             confidence='medium',
             reasons=['29 pitches yesterday', '3 appearances in 5 days'],
             limitations=['No injury information available', 'No team-reported availability'],
-        ))
+        ), last_appearance=last_appearance)
         assert card['confidence'] == 'medium'
         assert card['data_state'] == 'fresh'
         assert card['reasons'] == ['29 pitches yesterday', '3 appearances in 5 days']
         assert 'No injury information available' in card['limitations']
         assert card['fatigue_score'] == 63.4
+        assert card['last_appearance'] == last_appearance
+        assert card['last_workload_appearance'] == last_appearance
 
     def test_card_handles_missing_score(self):
         card = build_card('A', 7, None, availability('Monitor', data_state='missing'))
@@ -1110,7 +1141,49 @@ class TestBoardEndpoint:
         assert response.status_code == 200
         assert body['pitcher']['id'] == pitcher_id
         assert body['roster_status']['status'] == STATUS_ACTIVE
+        assert 'freshness' in body
+        assert body['last_appearance'] == {
+            'game_date': (date.today() - timedelta(days=1)).isoformat(),
+            'pitches': 12,
+        }
         assert body['availability']['availability_status']
+
+    def test_pitcher_detail_keeps_raw_zero_row_out_of_workload_summary(self, client):
+        with client.application.app_context():
+            pitcher = _seed_pitcher(
+                'Taylor Clarke Test',
+                team_id=118,
+                team_abbr='KC',
+                mlb_id=11844,
+                innings=[0.0, 1.0],
+                days_ago=[1, 3],
+                roster_status=STATUS_ACTIVE,
+            )
+            zero_row = (
+                GameLog.query
+                .filter_by(pitcher_id=pitcher.id)
+                .order_by(GameLog.game_date.desc())
+                .first()
+            )
+            zero_row.pitches_thrown = 0
+            zero_row.innings_pitched = 0.0
+            zero_row.innings_pitched_outs = 0
+            db.session.commit()
+            pitcher_id = pitcher.id
+            raw_zero_date = zero_row.game_date.isoformat()
+
+        response = client.get(f'/api/bullpen/fatigue/{pitcher_id}')
+        body = response.get_json()
+
+        assert response.status_code == 200
+        assert body['last_workload_appearance'] == {
+            'game_date': (date.today() - timedelta(days=3)).isoformat(),
+            'pitches': 12,
+        }
+        assert body['last_appearance'] == body['last_workload_appearance']
+        assert body['recent_logs'][0]['game_date'] == raw_zero_date
+        assert body['recent_logs'][0]['innings_pitched_outs'] == 0
+        assert body['recent_logs'][0]['pitches_thrown'] == 0
 
     def test_default_bullpen_filtering_is_league_wide_not_reds_only(self, client):
         with client.application.app_context():

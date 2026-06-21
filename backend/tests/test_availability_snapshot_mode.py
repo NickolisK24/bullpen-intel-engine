@@ -17,6 +17,7 @@ from services.availability_snapshot import (
     SNAPSHOT_WARNING,
     availability_mode_metadata,
     classify_latest_fatigue_rows,
+    latest_game_date_for,
     latest_fatigue_rows,
 )
 from utils.auth import ADMIN_TOKEN_HEADER
@@ -208,6 +209,37 @@ def test_snapshot_mode_uses_latest_workload_date_and_non_current_metadata(client
         'is_current_availability': False,
         'warning': SNAPSHOT_WARNING,
     }
+
+
+def test_latest_workload_snapshot_ignores_newer_zero_pitch_rows(client):
+    with client.application.app_context():
+        raw_latest = date.today() - timedelta(days=1)
+        pitcher = _add_pitcher(
+            'Zero Pitch Snapshot Row',
+            latest_game_date=raw_latest,
+            raw_score=20.0,
+            log_pitches=[0, 14],
+        )
+        zero_row = (
+            GameLog.query
+            .filter_by(pitcher_id=pitcher.id, pitches_thrown=0)
+            .first()
+        )
+        zero_row.innings_pitched = 0.0
+        zero_row.innings_pitched_outs = 0
+        db.session.commit()
+        latest_workload_date = latest_game_date_for(pitcher.id)
+
+        records = classify_latest_fatigue_rows(
+            latest_fatigue_rows(),
+            reference_date=date.today(),
+            mode=LATEST_WORKLOAD_SNAPSHOT_MODE,
+        )
+
+    expected_workload_date = raw_latest - timedelta(days=1)
+    assert latest_workload_date == expected_workload_date
+    assert records[0]['evaluation_date'] == expected_workload_date
+    assert records[0]['availability']['inputs']['latest_game_date'] == expected_workload_date.isoformat()
 
 
 def test_snapshot_mode_produces_mixed_workload_statuses_from_sample_data(client):

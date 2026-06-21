@@ -42,7 +42,12 @@ from services.availability_population import (
     availability_with_eligibility,
     current_availability_records,
 )
-from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
+from services.bullpen_board import (
+    BOARD_GROUP_ORDER,
+    build_board_payload,
+    build_team_context,
+    last_workload_appearance_from_logs,
+)
 from services.bullpen_capacity import (
     build_league_capacity_payload,
     build_team_bullpen_capacity,
@@ -494,12 +499,17 @@ def get_pitcher_fatigue(pitcher_id):
     roster_status = with_recent_inactive_roster_audit(roster_status, logs, reference_date)
     availability = apply_roster_status_to_availability(workload_signal, roster_status)
 
+    last_workload_appearance = last_workload_appearance_from_logs(logs)
+
     return jsonify({
         'pitcher':         pitcher.to_dict(),
         'current_fatigue': latest.to_dict() if latest else None,
         'availability':    availability,
         'workload_signal': workload_signal,
         'roster_status':   roster_status,
+        'freshness':       freshness,
+        'last_appearance': last_workload_appearance,
+        'last_workload_appearance': last_workload_appearance,
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [s.to_dict() for s in history],
     })
@@ -1458,11 +1468,14 @@ def _eligible_records_for_rows(
             'roster_status': context['roster_status'],
         }
         role, labels = author_role_read_labels(role_record, logs_by_pitcher, ref)
+        last_workload_appearance = last_workload_appearance_from_logs(context['logs'])
         records.append({
             'name': pitcher.full_name,
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability,
+            'last_appearance': last_workload_appearance,
+            'last_workload_appearance': last_workload_appearance,
             'role': role,
             'pitcher_labels': labels,
             'eligibility': context['eligibility'],
@@ -1505,11 +1518,16 @@ def _board_records_from_authority_records(authority_records, reference_date=None
         if pitcher is None or score is None:
             continue
         role, labels = author_role_read_labels(record, logs_by_pitcher, ref)
+        last_workload_appearance = last_workload_appearance_from_logs(
+            logs_by_pitcher.get(pitcher.id, [])
+        )
         board_records.append({
             'name': pitcher.full_name,
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score,
             'availability': record.get('availability'),
+            'last_appearance': last_workload_appearance,
+            'last_workload_appearance': last_workload_appearance,
             'role': role,
             'pitcher_labels': labels,
             'eligibility': record.get('eligibility'),

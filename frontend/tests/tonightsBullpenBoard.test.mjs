@@ -132,15 +132,39 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'Larry Limited'))
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
-  assert.ok(htmlIncludes(html, '29 pitches yesterday'))   // short reason
+  assert.ok(htmlIncludes(html, 'Last workload: Today (18 pitches)'))
+  assert.ok(htmlIncludes(html, 'Last workload: Yesterday (29 pitches)'))
+  assert.ok(htmlIncludes(html, 'Last workload: May 30 (42 pitches)'))
+  assert.ok(!htmlIncludes(html, '18 pitches yesterday'))
   assert.ok(htmlIncludes(html, 'Recent Load'))
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
 })
 
+test('compact card skips zero-pitch rows for last workload context', () => {
+  const cardView = view.getBoardCardView({
+    pitcher_id: 44,
+    name: 'Taylor Clarke',
+    availability_status: 'Available',
+    fatigue_score: 12,
+    confidence: 'high',
+    short_reason: '0 pitches yesterday',
+    last_workload_appearance: { game_date: '2026-06-19', pitches: 0 },
+    last_appearance: { game_date: '2026-06-17', pitches: 14 },
+  }, {
+    data_through: '2026-06-20',
+  })
+
+  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Jun 17 (14 pitches)')
+  assert.equal(cardView.shortReason, 'Last workload: Jun 17 (14 pitches)')
+  assert.notEqual(cardView.shortReason, 'Last workload: Yesterday (0 pitches)')
+})
+
 test('Why? disclosure surfaces engine reasons and limitations', () => {
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'Why?'))
+  assert.ok(htmlIncludes(html, '18 pitches today'))
+  assert.ok(htmlIncludes(html, '29 pitches yesterday'))
   assert.ok(htmlIncludes(html, '3 appearances in 5 days'))           // a reason
   assert.ok(htmlIncludes(html, 'No injury information available'))   // a limitation
 })

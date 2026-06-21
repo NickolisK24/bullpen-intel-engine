@@ -9,7 +9,7 @@ admin/development validation and threshold review.
 from collections import defaultdict
 from datetime import timedelta
 
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
@@ -169,6 +169,7 @@ def latest_game_date_for(pitcher_id):
     return (
         db.session.query(db.func.max(GameLog.game_date))
         .filter(GameLog.pitcher_id == pitcher_id)
+        .filter(or_(GameLog.pitches_thrown > 0, GameLog.innings_pitched_outs > 0))
         .scalar()
     )
 
@@ -184,6 +185,7 @@ def latest_game_dates_for(pitcher_ids):
             db.func.max(GameLog.game_date),
         )
         .filter(GameLog.pitcher_id.in_(pitcher_ids))
+        .filter(or_(GameLog.pitches_thrown > 0, GameLog.innings_pitched_outs > 0))
         .group_by(GameLog.pitcher_id)
         .all()
     )

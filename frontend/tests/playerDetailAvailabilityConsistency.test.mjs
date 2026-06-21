@@ -112,6 +112,40 @@ test('player detail summary leaves active pitcher final availability aligned wit
   assert.ok(htmlIncludes(html, 'Active MLB'))
 })
 
+test('final availability reasons use day-aware appearance wording', () => {
+  const html = renderSummary({
+    availability: {
+      availability_status: 'Monitor',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: ['15 pitches yesterday'],
+      limitations: ['No injury information available'],
+      roster_status: {
+        status: 'ACTIVE',
+        label: 'Active MLB',
+        confidence: 'high',
+        is_authoritative: true,
+        is_inactive_context: false,
+      },
+    },
+    workloadSignal: {
+      availability_status: 'Monitor',
+      confidence: 'medium',
+      data_state: 'fresh',
+      reasons: ['15 pitches yesterday'],
+      limitations: ['No injury information available'],
+    },
+    freshness: {
+      data_through: '2026-06-20',
+      availability_reference_date: '2026-06-21',
+    },
+    lastAppearance: { game_date: '2026-06-20', pitches: 15 },
+  })
+
+  assert.ok(htmlIncludes(html, '15 pitches today'))
+  assert.equal(htmlIncludes(html, '15 pitches yesterday'), false)
+})
+
 test('PitcherDetail passes final availability workload signal and roster status to the summary', async () => {
   const source = await readFile(
     new URL('../src/components/bullpen/PitcherDetail.jsx', import.meta.url),
@@ -120,6 +154,14 @@ test('PitcherDetail passes final availability workload signal and roster status 
 
   assert.ok(source.includes('workload_signal: workloadSignal'))
   assert.ok(source.includes('roster_status: rosterStatus'))
+  assert.ok(source.includes('freshness'))
+  assert.ok(source.includes('last_appearance: lastAppearance'))
+  assert.ok(source.includes('last_workload_appearance: lastWorkloadAppearance'))
+  assert.ok(source.includes('latestWorkloadAppearanceFromLogs(recent_logs)'))
+  assert.ok(source.includes('Most Recent Workload Appearance'))
+  assert.ok(source.includes('recent_logs.slice(0, 8).map(log =>'))
   assert.ok(source.includes('workloadSignal={workloadSignal}'))
   assert.ok(source.includes('rosterStatus={rosterStatus}'))
+  assert.ok(source.includes('freshness={freshness}'))
+  assert.ok(source.includes('lastAppearance={mostRecentAppearance}'))
 })

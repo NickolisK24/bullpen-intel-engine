@@ -106,6 +106,26 @@ class TestAvailabilityClassification:
         assert '3 appearances in 4 days' in result['reasons']
         assert result['inputs']['three_in_four'] is True
 
+    def test_zero_pitch_rows_do_not_drive_workload_availability(self, make_log):
+        ref = date(2026, 6, 1)
+        logs = [
+            make_log(ref - timedelta(days=1), pitches_thrown=0, innings_pitched=0.0, innings_pitched_outs=0),
+            make_log(ref - timedelta(days=3), pitches_thrown=14, innings_pitched=1.0),
+        ]
+
+        result = classify_availability(
+            score=ScoreStub(raw_score=20.0),
+            game_logs=logs,
+            reference_date=ref,
+            latest_game_date=None,
+        )
+
+        assert result['availability_status'] == STATUS_AVAILABLE
+        assert result['inputs']['days_rest'] == 3
+        assert result['inputs']['appearances_last_5_days'] == 1
+        assert result['inputs']['pitches_last_5_days'] == 14
+        assert result['reasons'] == []
+
     @pytest.mark.parametrize(
         ('three_day_pitches', 'expected_status'),
         [
