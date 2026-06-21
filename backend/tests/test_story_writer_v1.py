@@ -295,6 +295,34 @@ def test_writer_outputs_depth_pressure_observation():
     assert_quality_sections(output)
 
 
+def test_writer_handles_sox_team_possessives_from_real_audit():
+    teams = [
+        ('Boston Red Sox', "Boston Red Sox' bullpen"),
+        ('Chicago White Sox', "Chicago White Sox' bullpen"),
+    ]
+    for team_name, expected in teams:
+        frame = frame_for(
+            team_context(
+                team_name=team_name,
+                injury={
+                    'depth_pressure_band': 'heavy',
+                    'active_bullpen_arms_count': 9,
+                    'inactive_bullpen_arms_count': 13,
+                    'il_bullpen_arms_count': 6,
+                    'non_il_inactive_bullpen_arms_count': 7,
+                },
+            ),
+            TYPE_DEPTH_PRESSURE,
+        )
+
+        output = write_story_frame(frame)
+        text = written_text(output)
+
+        assert expected in text
+        assert "Sox's" not in text
+        assert_quality_sections(output)
+
+
 def test_writer_is_deterministic_for_same_frame():
     frame = frame_for(team_context(concentration={'concentration_band': 'narrow'}), TYPE_CONCENTRATION_PRESSURE)
 

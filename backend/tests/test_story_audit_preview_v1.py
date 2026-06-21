@@ -143,6 +143,7 @@ def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypat
     assert neutral['headline'] is None
     assert neutral['neutral_reason'] == 'no_story_observations'
     assert neutral['validation_flags']['missing_required_sections'] == []
+    assert neutral['validation_flags']['awkward_phrasing'] == []
 
 
 def test_audit_uses_default_team_ids_when_no_scope_is_supplied(monkeypatch):
@@ -217,6 +218,31 @@ def test_internal_and_banned_language_flags_work(monkeypatch):
     assert result['story_type_counts'] == {TYPE_ROTATION_PRESSURE: 1}
     assert flags['has_internal_terms'] is True
     assert flags['has_banned_language'] is True
+    assert flags['needs_review'] is True
+
+
+def test_awkward_sox_possessive_is_flagged_from_real_audit_finding(monkeypatch):
+    awkward = story_payload(
+        team_id=111,
+        team_name='Boston Red Sox',
+        written_story={
+            'headline': "Boston Red Sox's bullpen depth is under pressure",
+            'observation_paragraph': 'There are 13 bullpen arms outside the active route.',
+            'baseline_paragraph': 'The active bullpen count is 9 arms.',
+            'cause_paragraph': 'The depth loss includes 6 IL arms.',
+            'constraint_paragraph': 'The available route is flexible.',
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([awkward]),
+    )
+
+    result = build_story_audit_preview(team_ids=[111])
+    flags = result['teams'][0]['validation_flags']
+
+    assert flags['awkward_phrasing'] == ['sox_possessive']
     assert flags['needs_review'] is True
 
 

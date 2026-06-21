@@ -9,6 +9,7 @@ writer output, scoring, public routes, or UI behavior.
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 
 from models.pitcher import Pitcher
 from services.story_intelligence_service_v1 import (
@@ -55,6 +56,10 @@ AWKWARD_EMPTY_VALUES = {
     'not available',
     'unavailable',
 }
+
+AWKWARD_PHRASE_PATTERNS = (
+    ('sox_possessive', re.compile(r"\b(?:red|white)\s+sox's\b", re.IGNORECASE)),
+)
 
 LIMITATIONS = [
     'Internal QA preview only.',
@@ -150,6 +155,15 @@ def _awkward_empty_sections(service_payload, sections, *, story_available):
     return awkward
 
 
+def _awkward_phrasing(text):
+    cleaned = _clean_text(text)
+    return [
+        code
+        for code, pattern in AWKWARD_PHRASE_PATTERNS
+        if pattern.search(cleaned)
+    ]
+
+
 def _validation_flags(service_payload, sections, *, story_available):
     text = _visible_text(sections)
     writer_validation = _dict(_dict(service_payload).get('writer_output')).get('validation')
@@ -160,6 +174,7 @@ def _validation_flags(service_payload, sections, *, story_available):
         sections,
         story_available=story_available,
     )
+    awkward_phrasing = _awkward_phrasing(text) if story_available else []
     has_banned = bool(writer_validation.get('contains_banned_language')) or _text_has_any(
         text,
         BANNED_TERMS,
@@ -173,7 +188,10 @@ def _validation_flags(service_payload, sections, *, story_available):
         'has_banned_language': has_banned,
         'missing_required_sections': missing,
         'awkward_empty_sections': awkward,
-        'needs_review': bool(has_internal or has_banned or missing or awkward),
+        'awkward_phrasing': awkward_phrasing,
+        'needs_review': bool(
+            has_internal or has_banned or missing or awkward or awkward_phrasing
+        ),
     }
 
 

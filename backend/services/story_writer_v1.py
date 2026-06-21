@@ -97,6 +97,8 @@ def _possessive(value):
     text = _clean_text(value)
     if not text:
         return 'This bullpen'
+    if text.lower().endswith('sox'):
+        return f"{text}'"
     return f"{text}'" if text.lower().endswith('s') else f"{text}'s"
 
 
