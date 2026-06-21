@@ -172,6 +172,36 @@ def _number(value):
         return None
 
 
+def _coalesce(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _present(value):
+    if value is None or value == '':
+        return False
+    if isinstance(value, (list, dict)) and not value:
+        return False
+    return True
+
+
+def _name_from_row(row):
+    if isinstance(row, str):
+        return ' '.join(row.strip().split())
+    return ' '.join(str(_dict(row).get('name') or '').strip().split())
+
+
+def _names_from(value):
+    names = []
+    for row in _list(value):
+        name = _name_from_row(row)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def _story_frame(frame):
     return _dict(_dict(frame).get('story_frame'))
 
@@ -217,6 +247,170 @@ def _selection_strength_for_coverage(frame):
     )
 
 
+def _coverage_selection_reasons(frame):
+    observed = _facts(frame, 'observation_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    trend = _number(_coalesce(
+        observed.get('rotation_ip_trend'),
+        cause.get('rotation_ip_trend'),
+    ))
+    early_rate = _number(_coalesce(
+        observed.get('early_bullpen_entry_rate'),
+        cause.get('early_bullpen_entry_rate'),
+    ))
+    coverage = _number(
+        _coalesce(
+            cause.get('bullpen_coverage_ip_7d'),
+            interpretation.get('bullpen_coverage_ip_7d'),
+        )
+    )
+    reasons = []
+    if trend is not None and trend <= -0.5:
+        reasons.append('short_start_trend')
+    if early_rate is not None and early_rate >= 40.0:
+        reasons.append('early_bullpen_entry_pressure')
+    if coverage is not None and coverage >= 4.0:
+        reasons.append('bullpen_coverage_load')
+    return reasons
+
+
+def _sustainability_evidence(frame, public_story=None):
+    observed = _facts(frame, 'observation_facts')
+    headline = _facts(frame, 'headline_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+    evidence_package = _dict(_dict(public_story).get('evidence_package'))
+
+    share = _coalesce(
+        observed.get('top_three_workload_share_10d'),
+        headline.get('top_three_workload_share_10d'),
+        interpretation.get('top_three_workload_share_10d'),
+    )
+    band = _coalesce(
+        observed.get('concentration_band'),
+        interpretation.get('concentration_band'),
+        headline.get('concentration_band'),
+    )
+    paths = _coalesce(
+        interpretation.get('practical_close_game_paths_count'),
+        observed.get('practical_close_game_paths_count'),
+        headline.get('practical_close_game_paths_count'),
+    )
+    clean_count = _coalesce(
+        constraint.get('clean_workload_options_count'),
+        observed.get('clean_workload_options_count'),
+        cause.get('clean_workload_option_count'),
+    )
+    optionality = _coalesce(
+        interpretation.get('optionality_band'),
+        observed.get('optionality_band'),
+        headline.get('optionality_band'),
+    )
+    core_arms = _names_from(constraint.get('current_operational_core'))
+    top_arms = (
+        _names_from(headline.get('top_three_relievers'))
+        or _names_from(constraint.get('top_three_relievers_10d'))
+    )
+    route_arms = core_arms or top_arms
+
+    share_number = _number(share)
+    paths_number = _number(paths)
+    clean_number = _number(clean_count)
+    concentration_elevated = (
+        band == 'narrow'
+        or (share_number is not None and share_number >= 75.0)
+    )
+    optionality_limited = (
+        (paths_number is not None and paths_number <= 3)
+        or (clean_number is not None and clean_number <= 1)
+    )
+    named_arms_available = bool(route_arms)
+    forward_route_can_name_arms = bool(route_arms)
+    has_baseline = (
+        evidence_package.get('has_baseline')
+        if 'has_baseline' in evidence_package
+        else _present(baseline.get('league_top_three_workload_share_10d'))
+    )
+    has_cause = (
+        evidence_package.get('has_cause')
+        if 'has_cause' in evidence_package
+        else (
+            _present(cause.get('rotation_ip_trend'))
+            or _present(paths)
+            or _present(clean_count)
+        )
+    )
+    has_forward_constraint = (
+        evidence_package.get('has_forward_constraint')
+        if 'has_forward_constraint' in evidence_package
+        else forward_route_can_name_arms
+    )
+
+    suppression_reasons = []
+    if not concentration_elevated:
+        suppression_reasons.append('insufficient_concentration')
+    if not optionality_limited:
+        suppression_reasons.append('insufficient_optionality_constraint')
+    if not named_arms_available:
+        suppression_reasons.append('missing_named_arms')
+    if not forward_route_can_name_arms:
+        suppression_reasons.append('missing_forward_route_names')
+    if not has_baseline:
+        suppression_reasons.append('missing_baseline')
+    if not has_cause:
+        suppression_reasons.append('missing_cause')
+
+    evidence_present = (
+        concentration_elevated
+        and optionality_limited
+        and named_arms_available
+        and forward_route_can_name_arms
+    )
+    return {
+        'sustainability_evidence_present': evidence_present,
+        'top_three_workload_share_10d': share,
+        'concentration_band': band,
+        'clean_workload_options_count': clean_count,
+        'practical_close_game_paths_count': paths,
+        'repeated_route_core_arms': route_arms,
+        'top_three_relievers': top_arms,
+        'optionality_band': optionality,
+        'rotation_pressure': {
+            'rotation_avg_ip_7d': _coalesce(
+                cause.get('rotation_avg_ip_7d'),
+                observed.get('rotation_avg_ip_7d'),
+            ),
+            'rotation_avg_ip_14d': _coalesce(
+                cause.get('rotation_avg_ip_14d'),
+                observed.get('rotation_avg_ip_14d'),
+            ),
+            'rotation_ip_trend': _coalesce(
+                cause.get('rotation_ip_trend'),
+                observed.get('rotation_ip_trend'),
+            ),
+            'early_bullpen_entry_rate': _coalesce(
+                cause.get('early_bullpen_entry_rate'),
+                observed.get('early_bullpen_entry_rate'),
+            ),
+            'bullpen_coverage_ip_7d': _coalesce(
+                cause.get('bullpen_coverage_ip_7d'),
+                interpretation.get('bullpen_coverage_ip_7d'),
+            ),
+        },
+        'has_named_arms': named_arms_available,
+        'has_baseline': bool(has_baseline),
+        'has_cause': bool(has_cause),
+        'has_forward_constraint': bool(has_forward_constraint),
+        'concentration_meaningfully_elevated': concentration_elevated,
+        'optionality_constraint_limited': optionality_limited,
+        'forward_route_can_name_arms': forward_route_can_name_arms,
+        'suppression_reasons': suppression_reasons,
+    }
+
+
 def _selection_strength_for_sustainability(frame):
     observed = _facts(frame, 'observation_facts')
     interpretation = _facts(frame, 'interpretation_facts')
@@ -255,6 +449,26 @@ def _selection_strength_for_sustainability(frame):
     return strength
 
 
+def _sustainability_selection_reasons(frame, public_story=None):
+    evidence = _sustainability_evidence(frame, public_story=public_story)
+    reasons = []
+    if evidence.get('concentration_meaningfully_elevated'):
+        reasons.append('elevated_top_three_workload_share')
+    if evidence.get('optionality_constraint_limited'):
+        if _number(evidence.get('practical_close_game_paths_count')) is not None:
+            reasons.append('limited_practical_paths')
+        if _number(evidence.get('clean_workload_options_count')) is not None:
+            reasons.append('limited_clean_options')
+    if evidence.get('has_named_arms'):
+        reasons.append('named_route_arms_available')
+    rotation = _dict(evidence.get('rotation_pressure'))
+    trend = _number(rotation.get('rotation_ip_trend'))
+    early_rate = _number(rotation.get('early_bullpen_entry_rate'))
+    if (trend is not None and trend < 0) or (early_rate is not None and early_rate >= 40.0):
+        reasons.append('rotation_pressure_context')
+    return reasons
+
+
 def _selection_strength_for_depth(frame):
     observed = _facts(frame, 'observation_facts')
     interpretation = _facts(frame, 'interpretation_facts')
@@ -281,6 +495,23 @@ def _selection_strength_for_depth(frame):
     return strength
 
 
+def _depth_selection_reasons(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    reasons = []
+    if observed.get('depth_pressure_band') in {'moderate', 'heavy'}:
+        reasons.append('inactive_depth_pressure')
+    inactive = _number(observed.get('inactive_bullpen_arms_count'))
+    if inactive is not None and inactive >= 7.0:
+        reasons.append('large_inactive_group')
+    paths = _number(interpretation.get('practical_close_game_paths_count'))
+    if paths is not None and paths <= 3:
+        reasons.append('practical_paths_narrowed')
+    if interpretation.get('optionality_band') in {'thin', 'narrow'}:
+        reasons.append('optionality_constraint')
+    return reasons
+
+
 def _selection_strength_for_route(frame):
     observed = _facts(frame, 'observation_facts')
     interpretation = _facts(frame, 'interpretation_facts')
@@ -299,25 +530,66 @@ def _selection_strength_for_route(frame):
     return strength
 
 
+def _route_selection_reasons(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    reasons = []
+    band = observed.get('stability_band') or interpretation.get('stability_band')
+    if band in {'transitioning', 'rebuilding'}:
+        reasons.append('operational_core_changed')
+    changes = _number(observed.get('core_change_count'))
+    if changes is not None and changes >= 2:
+        reasons.append('multiple_core_changes')
+    retention = _number(interpretation.get('core_retention_count'))
+    if retention is not None and retention <= 0:
+        reasons.append('no_core_retention')
+    return reasons
+
+
 def _candidate_selection_profile(candidate):
     public_story = _dict(candidate.get('public_story'))
     frame = _dict(candidate.get('construction_frame'))
     story_type = public_story.get('story_type')
+    sustainability_evidence = None
     if story_type == BEAT_COVERAGE_PRESSURE:
         strength = _selection_strength_for_coverage(frame)
+        reasons = _coverage_selection_reasons(frame)
     elif story_type == BEAT_SUSTAINABILITY_QUESTION:
         strength = _selection_strength_for_sustainability(frame)
+        sustainability_evidence = _sustainability_evidence(
+            frame,
+            public_story=public_story,
+        )
+        reasons = _sustainability_selection_reasons(frame, public_story=public_story)
     elif story_type == BEAT_DEPTH_CONSTRAINT:
         strength = _selection_strength_for_depth(frame)
+        reasons = _depth_selection_reasons(frame)
     elif story_type == BEAT_ROUTE_CHANGE:
         strength = _selection_strength_for_route(frame)
+        reasons = _route_selection_reasons(frame)
     else:
         strength = 0
-    return {
+        reasons = []
+    profile = {
         'story_type': story_type,
         'selection_strength': strength,
         'evidence_completeness': int(public_story.get('evidence_completeness') or 0),
+        'selection_reasons': reasons,
     }
+    if sustainability_evidence is not None:
+        profile['sustainability_evidence'] = sustainability_evidence
+    return profile
+
+
+def _candidate_is_publicly_selectable(candidate):
+    public_story = _dict(candidate.get('public_story'))
+    selected = _dict(candidate.get('selected_observation'))
+    profile = _dict(candidate.get('selection_profile'))
+    return not (
+        public_story.get('story_type') == BEAT_SUSTAINABILITY_QUESTION
+        and selected.get('type') == TYPE_OPTIONALITY_STRENGTH
+        and int(profile.get('selection_strength') or 0) <= 0
+    )
 
 
 def _candidate_selection_key(candidate):
@@ -374,23 +646,31 @@ def select_service_story_candidate(observations, story_frames):
             'writer_output': writer_output,
             'public_story': public_story,
         })
-        candidates.append({
+        candidate = {
             'selected_observation': deepcopy(observation),
             'construction_frame': deepcopy(frame),
             'writer_output': writer_output,
             'public_story': public_story,
             'selection_profile': selection_profile,
-        })
+        }
+        if not _candidate_is_publicly_selectable(candidate):
+            continue
+        candidates.append(candidate)
     if not candidates:
         return None
     selected = sorted(candidates, key=_candidate_selection_key)[0]
     selected['candidate_profiles'] = [
         {
+            'selected': candidate is selected,
+            'selection_rank': rank + 1,
             'observation_type': _dict(candidate.get('selected_observation')).get('type'),
             'severity': _dict(candidate.get('selected_observation')).get('severity'),
+            'evidence_package': deepcopy(
+                _dict(_dict(candidate.get('public_story')).get('evidence_package'))
+            ),
             **_dict(candidate.get('selection_profile')),
         }
-        for candidate in sorted(candidates, key=_candidate_selection_key)
+        for rank, candidate in enumerate(sorted(candidates, key=_candidate_selection_key))
     ]
     return selected
 

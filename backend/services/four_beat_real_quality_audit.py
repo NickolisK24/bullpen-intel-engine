@@ -231,6 +231,54 @@ def _repetition_summary(teams):
     }
 
 
+def _sustainability_summary(teams):
+    reason_counts = Counter()
+    evidence_teams = []
+    candidate_count = 0
+    evidence_present_count = 0
+    selected_count = 0
+    for team in teams:
+        diagnostics = _dict(team.get('sustainability_diagnostics'))
+        if diagnostics.get('candidate_present'):
+            candidate_count += 1
+        if diagnostics.get('sustainability_evidence_present'):
+            evidence_present_count += 1
+            evidence_teams.append({
+                'team_id': team.get('team_id'),
+                'team_name': team.get('team_name'),
+                'team_abbreviation': team.get('team_abbreviation'),
+            })
+        if team.get('story_type') == BEAT_SUSTAINABILITY_QUESTION:
+            selected_count += 1
+        reason_counts.update(_list(diagnostics.get('suppression_reasons')))
+
+    return {
+        'candidate_count': candidate_count,
+        'evidence_present_count': evidence_present_count,
+        'selected_count': selected_count,
+        'suppressed_by_reason': {
+            reason: reason_counts[reason]
+            for reason in sorted(reason_counts)
+        },
+        'teams_with_sustainability_evidence': evidence_teams,
+    }
+
+
+def _team_selection_audit(teams):
+    rows = []
+    for team in teams:
+        rows.append({
+            'team_id': team.get('team_id'),
+            'team_name': team.get('team_name'),
+            'team_abbreviation': team.get('team_abbreviation'),
+            'state': team.get('state'),
+            'selected_beat': team.get('story_type'),
+            'eligible_beats': list(_list(team.get('eligible_beats'))),
+            'sustainability_diagnostics': _dict(team.get('sustainability_diagnostics')),
+        })
+    return rows
+
+
 def build_four_beat_real_quality_audit(
     audit_preview,
     *,
@@ -260,6 +308,7 @@ def build_four_beat_real_quality_audit(
         'selection_balance_flags': list(_list(audit_preview.get('selection_balance_flags'))),
         'flagged_issue_counts': issue_counts,
         'repetition_summary': _repetition_summary(story_teams),
+        'sustainability_summary': _sustainability_summary(teams),
     }
 
     return {
@@ -290,6 +339,7 @@ def build_four_beat_real_quality_audit(
         'initial_findings': list(initial_findings or []),
         'fixes_applied': list(fixes_applied or []),
         'post_fix_summary': post_fix_summary,
+        'team_selection_audit': _team_selection_audit(teams),
         'worst_story_outputs': _worst_examples(story_teams),
         'strongest_story_outputs': _strongest_examples(story_teams),
     }

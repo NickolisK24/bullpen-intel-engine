@@ -380,6 +380,9 @@ def test_selection_balance_flags_when_competitive_beat_evidence_is_never_selecte
                         'story_type': BEAT_SUSTAINABILITY_QUESTION,
                         'selection_strength': 8,
                         'evidence_completeness': 5,
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': True,
+                        },
                     },
                 ],
             },
@@ -402,6 +405,205 @@ def test_selection_balance_flags_when_competitive_beat_evidence_is_never_selecte
             'code': 'sustainability_evidence_present_but_never_selected',
             'candidate_team_count': 1,
         },
+    ]
+
+
+def test_audit_explains_sustainability_selection_and_suppression(monkeypatch):
+    teams = [
+        story_payload(
+            team_id=1,
+            story_type=BEAT_DEPTH_CONSTRAINT,
+            selected_observation={'type': TYPE_DEPTH_PRESSURE},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 9,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'selected': True,
+                        'selection_rank': 1,
+                        'observation_type': TYPE_DEPTH_PRESSURE,
+                        'severity': 'high',
+                        'story_type': BEAT_DEPTH_CONSTRAINT,
+                        'selection_strength': 9,
+                        'evidence_completeness': 5,
+                        'selection_reasons': ['inactive_depth_pressure'],
+                    },
+                    {
+                        'selected': False,
+                        'selection_rank': 2,
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'severity': 'high',
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 7,
+                        'evidence_completeness': 5,
+                        'selection_reasons': [
+                            'elevated_top_three_workload_share',
+                            'limited_practical_paths',
+                            'named_route_arms_available',
+                        ],
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': True,
+                            'top_three_workload_share_10d': 88.0,
+                            'concentration_band': 'narrow',
+                            'clean_workload_options_count': 1,
+                            'practical_close_game_paths_count': 2,
+                            'repeated_route_core_arms': ['First Arm', 'Second Arm'],
+                            'optionality_band': 'thin',
+                            'rotation_pressure': {'rotation_ip_trend': 0.1},
+                            'has_named_arms': True,
+                            'has_baseline': True,
+                            'has_cause': True,
+                            'has_forward_constraint': True,
+                            'suppression_reasons': [],
+                        },
+                    },
+                ],
+            },
+        ),
+        story_payload(
+            team_id=2,
+            story_type=BEAT_ROUTE_CHANGE,
+            selected_observation={'type': TYPE_CORE_TRANSITION},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_ROUTE_CHANGE,
+                    'selection_strength': 7,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'selected': True,
+                        'selection_rank': 1,
+                        'observation_type': TYPE_CORE_TRANSITION,
+                        'severity': 'high',
+                        'story_type': BEAT_ROUTE_CHANGE,
+                        'selection_strength': 7,
+                        'evidence_completeness': 5,
+                        'selection_reasons': ['operational_core_changed'],
+                    },
+                    {
+                        'selected': False,
+                        'selection_rank': 2,
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'severity': 'medium',
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 3,
+                        'evidence_completeness': 3,
+                        'selection_reasons': ['elevated_top_three_workload_share'],
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': False,
+                            'top_three_workload_share_10d': 76.0,
+                            'concentration_band': 'concentrated',
+                            'clean_workload_options_count': 3,
+                            'practical_close_game_paths_count': 5,
+                            'repeated_route_core_arms': ['First Arm', 'Second Arm'],
+                            'optionality_band': 'deep',
+                            'rotation_pressure': {},
+                            'has_named_arms': True,
+                            'has_baseline': True,
+                            'has_cause': True,
+                            'has_forward_constraint': True,
+                            'suppression_reasons': ['insufficient_optionality_constraint'],
+                        },
+                    },
+                ],
+            },
+        ),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1, 2])
+
+    first = result['teams'][0]
+    assert first['eligible_beats'][0]['story_type'] == BEAT_DEPTH_CONSTRAINT
+    assert first['eligible_beats'][0]['selection_outcome'] == 'selected'
+    diagnostics = first['sustainability_diagnostics']
+    assert diagnostics['candidate_present'] is True
+    assert diagnostics['sustainability_evidence_present'] is True
+    assert diagnostics['top_three_workload_share_10d'] == 88.0
+    assert diagnostics['repeated_route_core_arms'] == ['First Arm', 'Second Arm']
+    assert diagnostics['suppression_reasons'] == ['stronger_depth_constraint']
+
+    second = result['teams'][1]['sustainability_diagnostics']
+    assert second['sustainability_evidence_present'] is False
+    assert second['suppression_reasons'] == [
+        'insufficient_optionality_constraint',
+        'stronger_route_change',
+    ]
+
+
+def test_audit_explains_absent_sustainability_candidate_from_context(monkeypatch):
+    team = story_payload(
+        team_id=1,
+        story_type=BEAT_DEPTH_CONSTRAINT,
+        selected_observation={'type': TYPE_DEPTH_PRESSURE},
+        selection_metadata={
+            'selected_profile': {
+                'story_type': BEAT_DEPTH_CONSTRAINT,
+                'selection_strength': 6,
+                'evidence_completeness': 5,
+            },
+            'candidate_profiles': [
+                {
+                    'selected': True,
+                    'selection_rank': 1,
+                    'observation_type': TYPE_DEPTH_PRESSURE,
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 6,
+                    'evidence_completeness': 5,
+                    'selection_reasons': ['inactive_depth_pressure'],
+                },
+            ],
+        },
+        supporting_context={
+            'bullpen_concentration_context': {
+                'concentration_band': 'normal',
+                'top_three_workload_share_10d': 61.0,
+                'league_top_three_workload_share_10d': 58.0,
+                'top_three_relievers_10d': [
+                    {'name': 'First Arm'},
+                    {'name': 'Second Arm'},
+                ],
+            },
+            'bullpen_optionality_context': {
+                'optionality_band': 'deep',
+                'practical_close_game_paths_count': 6,
+                'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            },
+            'role_stability_context': {
+                'current_operational_core': ['First Arm', 'Second Arm'],
+            },
+            'rotation_context': {
+                'rotation_ip_trend': 0.1,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([team]),
+    )
+
+    result = build_story_audit_preview(team_ids=[1])
+    diagnostics = result['teams'][0]['sustainability_diagnostics']
+
+    assert diagnostics['candidate_present'] is False
+    assert diagnostics['top_three_workload_share_10d'] == 61.0
+    assert diagnostics['concentration_band'] == 'normal'
+    assert diagnostics['practical_close_game_paths_count'] == 6
+    assert diagnostics['repeated_route_core_arms'] == ['First Arm', 'Second Arm']
+    assert diagnostics['sustainability_evidence_present'] is False
+    assert diagnostics['suppression_reasons'] == [
+        'insufficient_concentration',
+        'insufficient_optionality_constraint',
+        'no_sustainability_candidate',
     ]
 
 

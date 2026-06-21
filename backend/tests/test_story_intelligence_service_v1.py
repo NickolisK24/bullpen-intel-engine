@@ -300,7 +300,126 @@ def test_sustainability_question_wins_when_usage_concentration_is_strongest():
 
     assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_SUSTAINABILITY_QUESTION)
     assert result['selection_metadata']['selected_profile']['selection_strength'] >= 8
+    evidence = result['selection_metadata']['selected_profile']['sustainability_evidence']
+    assert evidence['sustainability_evidence_present'] is True
+    assert evidence['top_three_workload_share_10d'] == 94.0
+    assert evidence['concentration_band'] == 'narrow'
+    assert evidence['practical_close_game_paths_count'] == 2
+    assert evidence['repeated_route_core_arms'] == ['First Arm', 'Second Arm', 'Third Arm']
     assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
+    assert 'functioning through a narrow route' in written_text(result)
+    assert 'The same arms are carrying the usable path' in written_text(result)
+    assert 'If this pattern continues, the margin for spreading the work stays thin' in written_text(result)
+    assert result['written_story']['baseline_paragraph']
+    assert result['written_story']['cause_paragraph']
+    assert result['written_story']['observation_paragraph']
+    assert_forward_clause(result)
+
+
+def test_positive_optionality_alone_does_not_create_sustainability_story():
+    context = team_context(
+        optionality={
+            'optionality_band': 'deep',
+            'practical_close_game_paths_count': 6,
+            'available_arms_count': 7,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            'secondary_options': [{'name': 'Secondary One'}],
+            'limited_arms_count': 0,
+            'avoid_arms_count': 0,
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['state'] == STATE_NEUTRAL
+    assert result['story_available'] is False
+    assert result['neutral_reason'] == NEUTRAL_NO_VALID_FRAME
+
+
+def test_sustainability_loses_to_severe_depth_when_depth_is_clearer_constraint():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 78.0,
+            'top_three_share_delta_vs_league': 20.0,
+        },
+        optionality={
+            'optionality_band': 'thin',
+            'practical_close_game_paths_count': 2,
+            'available_arms_count': 3,
+            'clean_workload_options': [{'name': 'Clean Arm'}],
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 5,
+            'inactive_bullpen_arms_count': 12,
+            'il_bullpen_arms_count': 7,
+            'non_il_inactive_bullpen_arms_count': 5,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
+    profiles = result['selection_metadata']['candidate_profiles']
+    sustainability = next(
+        profile for profile in profiles
+        if profile['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    )
+    selected = result['selection_metadata']['selected_profile']
+    assert selected['story_type'] == BEAT_DEPTH_CONSTRAINT
+    assert selected['selection_strength'] > sustainability['selection_strength']
+    assert_forward_clause(result)
+
+
+def test_sustainability_loses_to_true_route_change_when_core_movement_is_clearer():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 76.0,
+            'top_three_share_delta_vs_league': 18.0,
+        },
+        optionality={
+            'optionality_band': 'deep',
+            'practical_close_game_paths_count': 5,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+        },
+        stability={
+            'stability_band': 'rebuilding',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 0,
+            'core_stability_pct': 0,
+            'core_change_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    profiles = result['selection_metadata']['candidate_profiles']
+    sustainability = next(
+        profile for profile in profiles
+        if profile['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    )
+    selected = result['selection_metadata']['selected_profile']
+    assert selected['story_type'] == BEAT_ROUTE_CHANGE
+    assert selected['selection_strength'] > sustainability['selection_strength']
     assert_forward_clause(result)
 
 

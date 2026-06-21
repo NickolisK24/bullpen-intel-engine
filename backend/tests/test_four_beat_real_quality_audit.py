@@ -22,6 +22,8 @@ def team_payload(
     story_type=BEAT_SUSTAINABILITY_QUESTION,
     state='story',
     flags=None,
+    eligible_beats=None,
+    sustainability_diagnostics=None,
 ):
     sections = {
         'headline': f"{team_name}' bullpen has a story",
@@ -52,6 +54,13 @@ def team_payload(
             'awkward_empty_sections': [],
             'awkward_phrasing': [],
             'needs_review': False,
+        },
+        'eligible_beats': eligible_beats or [],
+        'sustainability_diagnostics': sustainability_diagnostics or {
+            'candidate_present': False,
+            'selected': story_type == BEAT_SUSTAINABILITY_QUESTION and state == 'story',
+            'sustainability_evidence_present': False,
+            'suppression_reasons': ['no_sustainability_candidate'],
         },
     }
 
@@ -139,8 +148,67 @@ def test_four_beat_quality_audit_summarizes_distribution_and_examples():
     ]
     assert summary['flagged_issue_counts']['team_flag_counts']['has_raw_object_literal'] == 1
     assert summary['flagged_issue_counts']['term_counts']['database_diff_terms'] == {'core changes': 1}
+    assert summary['sustainability_summary']['selected_count'] == 0
     assert report['worst_story_outputs'][0]['team_name'] == 'Flagged Team'
     assert report['strongest_story_outputs'][0]['team_name'] == 'Clean Team'
+
+
+def test_four_beat_quality_audit_includes_sustainability_selection_audit():
+    depth_team = team_payload(
+        team_id=1,
+        team_name='Depth Team',
+        story_type=BEAT_DEPTH_CONSTRAINT,
+        eligible_beats=[
+            {
+                'story_type': BEAT_DEPTH_CONSTRAINT,
+                'selection_strength': 9,
+                'selected': True,
+                'selection_outcome': 'selected',
+            },
+            {
+                'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                'selection_strength': 7,
+                'selected': False,
+                'selection_outcome': 'not_selected_lower_selection_strength',
+            },
+        ],
+        sustainability_diagnostics={
+            'candidate_present': True,
+            'selected': False,
+            'selection_strength': 7,
+            'sustainability_evidence_present': True,
+            'top_three_workload_share_10d': 88.0,
+            'concentration_band': 'narrow',
+            'clean_workload_options_count': 1,
+            'practical_close_game_paths_count': 2,
+            'repeated_route_core_arms': ['First Arm', 'Second Arm'],
+            'optionality_band': 'thin',
+            'rotation_pressure': {'rotation_ip_trend': 0.1},
+            'has_named_arms': True,
+            'has_baseline': True,
+            'has_cause': True,
+            'has_forward_constraint': True,
+            'missing_baseline_or_cause': False,
+            'suppression_reasons': ['stronger_depth_constraint'],
+        },
+    )
+
+    report = build_four_beat_real_quality_audit(
+        audit_preview([depth_team]),
+        expected_team_count=1,
+    )
+
+    summary = report['post_fix_summary']['sustainability_summary']
+    assert summary['candidate_count'] == 1
+    assert summary['evidence_present_count'] == 1
+    assert summary['selected_count'] == 0
+    assert summary['suppressed_by_reason'] == {'stronger_depth_constraint': 1}
+    assert summary['teams_with_sustainability_evidence'][0]['team_name'] == 'Depth Team'
+
+    team_audit = report['team_selection_audit'][0]
+    assert team_audit['selected_beat'] == BEAT_DEPTH_CONSTRAINT
+    assert team_audit['eligible_beats'][1]['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    assert team_audit['sustainability_diagnostics']['top_three_workload_share_10d'] == 88.0
 
 
 def test_four_beat_quality_audit_reports_unexpected_public_story_types(tmp_path):

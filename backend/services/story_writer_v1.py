@@ -113,6 +113,13 @@ def _fmt(value, *, suffix=''):
     return f'{text}{suffix}'
 
 
+def _lte(value, threshold):
+    try:
+        return float(value) <= threshold
+    except (TypeError, ValueError):
+        return False
+
+
 def _name_from_row(row):
     if isinstance(row, str):
         return _clean_text(row)
@@ -292,6 +299,9 @@ def _concentration_pressure(frame):
     trend = cause.get('rotation_ip_trend')
     paths = interpretation.get('practical_close_game_paths_count')
     core = _join_names(constraint.get('current_operational_core'))
+    route_names = core or names
+    band = observed.get('concentration_band') or interpretation.get('concentration_band')
+    narrow_route = band in {'narrow', 'concentrated'} or _lte(paths, 3)
     short_starts = _present(trend) and trend < 0
 
     return _sections(
@@ -301,8 +311,16 @@ def _concentration_pressure(frame):
         ),
         observation_paragraph=_paragraph(
             (
+                "The bullpen is functioning, but it is functioning through a narrow route"
+                if narrow_route else None
+            ),
+            (
+                f"{names} have handled {_fmt(share, suffix='%')} of the bullpen workload"
+                if names and _present(share) else None
+            ),
+            (
                 f"The top group has handled {_fmt(share, suffix='%')} of the bullpen workload"
-                if _present(share) else None
+                if _present(share) and not names else None
             ),
             (
                 f"That comes inside a {_fmt(total)}-pitch bullpen window"
@@ -329,14 +347,18 @@ def _concentration_pressure(frame):
                 if _present(trend) and trend < 0 else None
             ),
             (
+                f"The same arms are carrying the usable path: {route_names}"
+                if route_names else None
+            ),
+            (
                 f"The bullpen has {_fmt(paths)} practical close-game {_count_word(paths, 'path')}"
                 if _present(paths) else None
             ),
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If the game shape repeats, the route still runs through the same core: {core}"
-                if core else None
+                f"If this pattern continues, the margin for spreading the work stays thin around {route_names}"
+                if route_names else None
             ),
         ),
     )

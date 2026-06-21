@@ -14,6 +14,8 @@ import re
 from models.pitcher import Pitcher
 from services.story_four_beat_interpreter_v1 import (
     BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
 )
 from services.story_intelligence_service_v1 import (
@@ -131,6 +133,36 @@ def _clean_text(value):
     return ' '.join(str(value or '').strip().split())
 
 
+def _number(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _name_from_row(row):
+    if isinstance(row, str):
+        return _clean_text(row)
+    return _clean_text(_dict(row).get('name'))
+
+
+def _names_from(value):
+    names = []
+    for row in _list(value):
+        name = _name_from_row(row)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _count_or_none(value):
+    if isinstance(value, list):
+        return len(value)
+    return value
+
+
 def _iso(value):
     return value.isoformat() if hasattr(value, 'isoformat') else value
 
@@ -240,6 +272,216 @@ def _candidate_profiles_from_team(team):
     return _list(metadata.get('candidate_profiles'))
 
 
+def _selected_profile_from_payload(service_payload):
+    return _dict(_selection_metadata(service_payload).get('selected_profile'))
+
+
+def _selection_outcome(profile, selected_profile):
+    profile = _dict(profile)
+    selected_profile = _dict(selected_profile)
+    if profile.get('selected') is True:
+        return 'selected'
+    strength = int(profile.get('selection_strength') or 0)
+    selected_strength = int(selected_profile.get('selection_strength') or 0)
+    if strength <= 0:
+        return 'not_selected_no_competitive_evidence'
+    if selected_strength > strength:
+        return 'not_selected_lower_selection_strength'
+    if selected_strength == strength:
+        return 'not_selected_tiebreak_or_evidence_completeness'
+    return 'not_selected_after_service_sort'
+
+
+def _eligible_beats(service_payload):
+    selected = _selected_profile_from_payload(service_payload)
+    rows = []
+    for profile in _candidate_profiles_from_team(service_payload):
+        profile = _dict(profile)
+        rows.append({
+            'story_type': profile.get('story_type'),
+            'observation_type': profile.get('observation_type'),
+            'severity': profile.get('severity'),
+            'selection_rank': profile.get('selection_rank'),
+            'selection_strength': int(profile.get('selection_strength') or 0),
+            'evidence_completeness': int(profile.get('evidence_completeness') or 0),
+            'selection_reasons': list(_list(profile.get('selection_reasons'))),
+            'selected': profile.get('selected') is True,
+            'selection_outcome': _selection_outcome(profile, selected),
+        })
+    return rows
+
+
+def _sustainability_profile(service_payload):
+    candidates = [
+        _dict(profile)
+        for profile in _candidate_profiles_from_team(service_payload)
+        if _dict(profile).get('story_type') == BEAT_SUSTAINABILITY_QUESTION
+    ]
+    if not candidates:
+        return {}
+    return sorted(
+        candidates,
+        key=lambda profile: (
+            int(profile.get('selection_rank') or 999),
+            -int(profile.get('selection_strength') or 0),
+        ),
+    )[0]
+
+
+def _append_unique(rows, value):
+    if value and value not in rows:
+        rows.append(value)
+
+
+def _context_sustainability_evidence(service_payload):
+    context = _dict(_dict(service_payload).get('supporting_context'))
+    concentration = _dict(context.get('bullpen_concentration_context'))
+    optionality = _dict(context.get('bullpen_optionality_context'))
+    stability = _dict(context.get('role_stability_context'))
+    rotation = _dict(context.get('rotation_context'))
+
+    share = concentration.get('top_three_workload_share_10d')
+    band = concentration.get('concentration_band')
+    clean_count = _count_or_none(optionality.get('clean_workload_options'))
+    paths = optionality.get('practical_close_game_paths_count')
+    route_arms = (
+        _names_from(stability.get('current_operational_core'))
+        or _names_from(concentration.get('top_three_relievers_10d'))
+    )
+    share_number = _number(share)
+    paths_number = _number(paths)
+    clean_number = _number(clean_count)
+    concentration_elevated = (
+        band == 'narrow'
+        or (share_number is not None and share_number >= 75.0)
+    )
+    optionality_limited = (
+        (paths_number is not None and paths_number <= 3)
+        or (clean_number is not None and clean_number <= 1)
+    )
+    has_baseline = bool(concentration.get('league_top_three_workload_share_10d'))
+    has_cause = (
+        rotation.get('rotation_ip_trend') is not None
+        or paths is not None
+        or clean_count is not None
+    )
+    has_named_arms = bool(route_arms)
+    has_forward_constraint = bool(route_arms)
+
+    suppression_reasons = []
+    if not concentration_elevated:
+        suppression_reasons.append('insufficient_concentration')
+    if not optionality_limited:
+        suppression_reasons.append('insufficient_optionality_constraint')
+    if not has_named_arms:
+        suppression_reasons.append('missing_named_arms')
+    if not has_forward_constraint:
+        suppression_reasons.append('missing_forward_route_names')
+    if not has_baseline:
+        suppression_reasons.append('missing_baseline')
+    if not has_cause:
+        suppression_reasons.append('missing_cause')
+
+    evidence_present = (
+        concentration_elevated
+        and optionality_limited
+        and has_named_arms
+        and has_forward_constraint
+    )
+    return {
+        'sustainability_evidence_present': evidence_present,
+        'top_three_workload_share_10d': share,
+        'concentration_band': band,
+        'clean_workload_options_count': clean_count,
+        'practical_close_game_paths_count': paths,
+        'repeated_route_core_arms': route_arms,
+        'optionality_band': optionality.get('optionality_band'),
+        'rotation_pressure': {
+            'rotation_avg_ip_7d': rotation.get('rotation_avg_ip_7d'),
+            'rotation_avg_ip_14d': rotation.get('rotation_avg_ip_14d'),
+            'rotation_ip_trend': rotation.get('rotation_ip_trend'),
+            'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+            'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+        },
+        'has_named_arms': has_named_arms,
+        'has_baseline': has_baseline,
+        'has_cause': has_cause,
+        'has_forward_constraint': has_forward_constraint,
+        'suppression_reasons': suppression_reasons,
+        'source': 'supporting_context',
+    }
+
+
+def _sustainability_suppression_reasons(profile, service_payload, evidence=None):
+    profile = _dict(profile)
+    evidence = _dict(evidence) or _dict(profile.get('sustainability_evidence'))
+    reasons = list(_list(evidence.get('suppression_reasons')))
+    if not profile:
+        _append_unique(reasons, 'no_sustainability_candidate')
+        return reasons
+
+    selected_beat = _dict(service_payload).get('story_type')
+    selected = _selected_profile_from_payload(service_payload)
+    if selected_beat == BEAT_SUSTAINABILITY_QUESTION or profile.get('selected') is True:
+        return reasons
+
+    selected_strength = int(selected.get('selection_strength') or 0)
+    strength = int(profile.get('selection_strength') or 0)
+    if selected_strength >= strength:
+        if selected_beat == BEAT_DEPTH_CONSTRAINT:
+            _append_unique(reasons, 'stronger_depth_constraint')
+        elif selected_beat == BEAT_ROUTE_CHANGE:
+            _append_unique(reasons, 'stronger_route_change')
+        elif selected_beat == BEAT_COVERAGE_PRESSURE:
+            _append_unique(reasons, 'stronger_coverage_pressure')
+        else:
+            _append_unique(reasons, 'stronger_selected_beat')
+    return reasons
+
+
+def _sustainability_diagnostics(service_payload):
+    payload = _dict(service_payload)
+    profile = _sustainability_profile(payload)
+    evidence = _dict(profile.get('sustainability_evidence')) or _context_sustainability_evidence(payload)
+    rotation_pressure = _dict(evidence.get('rotation_pressure'))
+    return {
+        'candidate_present': bool(profile),
+        'selected': payload.get('story_type') == BEAT_SUSTAINABILITY_QUESTION,
+        'selection_strength': (
+            int(profile.get('selection_strength') or 0)
+            if profile else 0
+        ),
+        'selection_reasons': list(_list(profile.get('selection_reasons'))),
+        'selection_outcome': (
+            _selection_outcome(profile, _selected_profile_from_payload(payload))
+            if profile else 'not_selected_no_candidate'
+        ),
+        'sustainability_evidence_present': bool(
+            evidence.get('sustainability_evidence_present')
+        ),
+        'top_three_workload_share_10d': evidence.get('top_three_workload_share_10d'),
+        'concentration_band': evidence.get('concentration_band'),
+        'clean_workload_options_count': evidence.get('clean_workload_options_count'),
+        'practical_close_game_paths_count': evidence.get('practical_close_game_paths_count'),
+        'repeated_route_core_arms': list(_list(evidence.get('repeated_route_core_arms'))),
+        'optionality_band': evidence.get('optionality_band'),
+        'rotation_pressure': rotation_pressure,
+        'has_named_arms': bool(evidence.get('has_named_arms')),
+        'has_baseline': bool(evidence.get('has_baseline')),
+        'has_cause': bool(evidence.get('has_cause')),
+        'has_forward_constraint': bool(evidence.get('has_forward_constraint')),
+        'missing_baseline_or_cause': bool(
+            'missing_baseline' in _list(evidence.get('suppression_reasons'))
+            or 'missing_cause' in _list(evidence.get('suppression_reasons'))
+        ),
+        'suppression_reasons': _sustainability_suppression_reasons(
+            profile,
+            payload,
+            evidence=evidence,
+        ),
+    }
+
+
 def _short_start_cause_omitted(service_payload, sections):
     payload = _dict(service_payload)
     if payload.get('story_type') != BEAT_COVERAGE_PRESSURE:
@@ -329,6 +571,8 @@ def _preview_team(service_payload):
         'freshness': deepcopy(_dict(payload.get('freshness'))),
         'trust_metadata': deepcopy(_dict(payload.get('trust_metadata'))),
         'selection_metadata': deepcopy(_dict(payload.get('selection_metadata'))),
+        'eligible_beats': _eligible_beats(payload),
+        'sustainability_diagnostics': _sustainability_diagnostics(payload),
         'neutral_reason': payload.get('neutral_reason') if not story_available else None,
         'validation_flags': flags,
         'limitations': list(_list(payload.get('limitations'))),
@@ -381,6 +625,12 @@ def _strong_candidate_count(teams, story_type):
         if any(
             _dict(profile).get('story_type') == story_type
             and int(_dict(profile).get('selection_strength') or 0) >= COMPETITIVE_SELECTION_STRENGTH
+            and (
+                story_type != BEAT_SUSTAINABILITY_QUESTION
+                or _dict(_dict(profile).get('sustainability_evidence')).get(
+                    'sustainability_evidence_present'
+                ) is True
+            )
             for profile in _candidate_profiles_from_team(team)
         )
     )

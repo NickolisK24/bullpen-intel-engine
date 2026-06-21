@@ -204,8 +204,10 @@ def test_writer_outputs_concentration_pressure_observation():
     assert '94%' in text
     assert '58%' in text
     assert '36 percentage points' in text
+    assert 'functioning through a narrow route' in text
+    assert 'The same arms are carrying the usable path' in text
+    assert 'If this pattern continues, the margin for spreading the work stays thin' in text
     assert 'current operational core' not in text.lower()
-    assert 'route still runs through the same core' in text
     assert_quality_sections(output)
 
 
