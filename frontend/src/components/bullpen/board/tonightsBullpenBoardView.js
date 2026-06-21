@@ -4,6 +4,12 @@ import {
   getDataStateView,
 } from '../availabilityView'
 import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
+import {
+  compactAppearanceLabel,
+  dayAwareAppearanceReason,
+  dayAwareAppearanceReasons,
+  platformDateFromFreshness,
+} from '../../../utils/appearanceLanguage'
 import { getPitcherLabels } from '../../../utils/pitcherLabels'
 
 // Canonical group order, mirrored from the backend. Used only as a fallback
@@ -358,10 +364,13 @@ export function getRolesSummaryView(roles) {
   }
 }
 
-export function getBoardCardView(card) {
+export function getBoardCardView(card, freshness = null) {
   const badge = getAvailabilityBadgeView(card?.availability_status)
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
   const showDataNote = dataState && !['fresh', 'unknown'].includes(dataState)
+  const platformDate = platformDateFromFreshness(freshness)
+  const lastAppearance = card?.last_appearance || card?.lastAppearance || null
+  const lastAppearanceLabel = compactAppearanceLabel(lastAppearance, platformDate)
   return {
     pitcherId: card?.pitcher_id,
     name: card?.name || '—',
@@ -369,10 +378,12 @@ export function getBoardCardView(card) {
     badge,
     fatigueScore: card?.fatigue_score != null ? Math.round(card.fatigue_score) : null,
     confidenceLabel: formatConfidence(card?.confidence),
-    shortReason: card?.short_reason || null,
+    shortReason: lastAppearanceLabel || dayAwareAppearanceReason(card?.short_reason, lastAppearance, platformDate) || null,
+    lastAppearance,
+    lastAppearanceLabel,
     dataState,
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
-    reasons: Array.isArray(card?.reasons) ? card.reasons : [],
+    reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, platformDate),
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     pitcherLabels: getPitcherLabels(card),
     role: getRoleView(card?.role),

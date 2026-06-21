@@ -330,8 +330,8 @@ function PitcherLabelKey() {
   )
 }
 
-function PitcherCard({ card, onViewDetails }) {
-  const view = getBoardCardView(card)
+function PitcherCard({ card, freshness, onViewDetails }) {
+  const view = getBoardCardView(card, freshness)
   const canView = typeof onViewDetails === 'function' && view.pitcherId != null
   return (
     <div className="rounded-lg border border-dirt bg-field/60 p-3">
@@ -400,7 +400,7 @@ function PitcherCard({ card, onViewDetails }) {
   )
 }
 
-function BoardGroup({ group, onViewDetails }) {
+function BoardGroup({ group, freshness, onViewDetails }) {
   return (
     <section className="card overflow-hidden" aria-label={`${group.label} group`}>
       <header className="border-b border-dirt bg-chalk/20 px-4 py-3">
@@ -421,7 +421,7 @@ function BoardGroup({ group, onViewDetails }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {group.pitchers.map(card => (
-              <PitcherCard key={card.pitcher_id ?? card.name} card={card} onViewDetails={onViewDetails} />
+              <PitcherCard key={card.pitcher_id ?? card.name} card={card} freshness={freshness} onViewDetails={onViewDetails} />
             ))}
           </div>
         )}
@@ -474,7 +474,7 @@ export default function BullpenBoardView({
           <PitcherLabelKey />
           <div className="grid gap-5 xl:grid-cols-2">
             {groups.map(group => (
-              <BoardGroup key={group.status} group={group} onViewDetails={onSelectPitcher} />
+              <BoardGroup key={group.status} group={group} freshness={board?.freshness} onViewDetails={onSelectPitcher} />
             ))}
           </div>
         </>

@@ -67,6 +67,27 @@ GROUP_META = {
 CAPABILITY = 'tonights_bullpen_board'
 
 
+def last_appearance_from_logs(logs):
+    """Return the latest appearance date and pitch count from existing logs."""
+    rows = [
+        log for log in (logs or [])
+        if getattr(log, 'game_date', None) is not None
+    ]
+    if not rows:
+        return None
+
+    latest_date = max(log.game_date for log in rows)
+    pitches = sum(
+        int(getattr(log, 'pitches_thrown', 0) or 0)
+        for log in rows
+        if log.game_date == latest_date
+    )
+    return {
+        'game_date': latest_date.isoformat(),
+        'pitches': pitches,
+    }
+
+
 # ── Team context (Board V2) ────────────────────────────────────────────────
 #
 # Deterministic, transparent team-level context derived ONLY from the group
@@ -279,6 +300,7 @@ def build_card(
     roster_status=None,
     visibility=None,
     pitcher_labels=None,
+    last_appearance=None,
 ):
     """Build a single display card from existing availability output."""
     availability = availability or {}
@@ -296,6 +318,7 @@ def build_card(
         'fatigue_score': score,
         'confidence': availability.get('confidence'),
         'short_reason': short_reason_for(availability),
+        'last_appearance': last_appearance,
         'data_state': availability.get('data_state'),
         'reasons': list(availability.get('reasons') or []),
         'limitations': list(availability.get('limitations') or []),
@@ -392,6 +415,7 @@ def build_board_payload(
             roster_status=record.get('roster_status'),
             visibility=record.get('visibility'),
             pitcher_labels=record.get('pitcher_labels'),
+            last_appearance=record.get('last_appearance'),
         )
         for record in records
     ]

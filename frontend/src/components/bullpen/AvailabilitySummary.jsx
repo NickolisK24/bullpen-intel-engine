@@ -1,5 +1,9 @@
 import AvailabilityBadge from './AvailabilityBadge'
 import { getAvailabilitySummary, getRosterStatusSummary } from './availabilityView'
+import {
+  dayAwareAppearanceReasons,
+  platformDateFromFreshness,
+} from '../../utils/appearanceLanguage'
 
 function FactList({ items, emptyText, variant = 'reason' }) {
   if (!items.length) {
@@ -31,8 +35,12 @@ export default function AvailabilitySummary({
   availability,
   workloadSignal = null,
   rosterStatus = null,
+  freshness = null,
+  lastAppearance = null,
 }) {
   const summary = getAvailabilitySummary(availability)
+  const platformDate = platformDateFromFreshness(freshness)
+  const reasons = dayAwareAppearanceReasons(summary.reasons, lastAppearance, platformDate)
   const workloadSummary = workloadSignal ? getAvailabilitySummary(workloadSignal) : null
   const resolvedRosterStatus = getRosterStatusSummary(
     rosterStatus || availability?.roster_status,
@@ -96,7 +104,7 @@ export default function AvailabilitySummary({
             <div className="mt-0.5 text-chalk600 text-[10px] font-mono">Roster and workload signals behind this final status.</div>
           </div>
           <FactList
-            items={summary.reasons}
+            items={reasons}
             emptyText="No workload restriction reasons were reported by the backend."
           />
         </div>

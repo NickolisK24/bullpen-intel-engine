@@ -42,7 +42,12 @@ from services.availability_population import (
     availability_with_eligibility,
     current_availability_records,
 )
-from services.bullpen_board import BOARD_GROUP_ORDER, build_board_payload, build_team_context
+from services.bullpen_board import (
+    BOARD_GROUP_ORDER,
+    build_board_payload,
+    build_team_context,
+    last_appearance_from_logs,
+)
 from services.bullpen_capacity import (
     build_league_capacity_payload,
     build_team_bullpen_capacity,
@@ -500,6 +505,8 @@ def get_pitcher_fatigue(pitcher_id):
         'availability':    availability,
         'workload_signal': workload_signal,
         'roster_status':   roster_status,
+        'freshness':       freshness,
+        'last_appearance': last_appearance_from_logs(logs),
         'recent_logs':     [log.to_dict() for log in logs],
         'fatigue_trend':   [s.to_dict() for s in history],
     })
@@ -1463,6 +1470,7 @@ def _eligible_records_for_rows(
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score if score else None,
             'availability': availability,
+            'last_appearance': last_appearance_from_logs(context['logs']),
             'role': role,
             'pitcher_labels': labels,
             'eligibility': context['eligibility'],
@@ -1510,6 +1518,7 @@ def _board_records_from_authority_records(authority_records, reference_date=None
             'pitcher_id': pitcher.id,
             'fatigue_score': score.raw_score,
             'availability': record.get('availability'),
+            'last_appearance': last_appearance_from_logs(logs_by_pitcher.get(pitcher.id, [])),
             'role': role,
             'pitcher_labels': labels,
             'eligibility': record.get('eligibility'),

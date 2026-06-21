@@ -132,7 +132,10 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'Larry Limited'))
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
-  assert.ok(htmlIncludes(html, '29 pitches yesterday'))   // short reason
+  assert.ok(htmlIncludes(html, 'Last appearance: Today (18)'))
+  assert.ok(htmlIncludes(html, 'Last appearance: Yesterday (29)'))
+  assert.ok(htmlIncludes(html, 'Last appearance: May 30 (42)'))
+  assert.ok(!htmlIncludes(html, '18 pitches yesterday'))
   assert.ok(htmlIncludes(html, 'Recent Load'))
   assert.ok(htmlIncludes(html, 'Workload Read'))
   assert.ok(htmlIncludes(html, 'Limited Read'))           // confidence formatted
@@ -141,6 +144,8 @@ test('renders pitcher cards with name, status, fatigue, confidence and short rea
 test('Why? disclosure surfaces engine reasons and limitations', () => {
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'Why?'))
+  assert.ok(htmlIncludes(html, '18 pitches today'))
+  assert.ok(htmlIncludes(html, '29 pitches yesterday'))
   assert.ok(htmlIncludes(html, '3 appearances in 5 days'))           // a reason
   assert.ok(htmlIncludes(html, 'No injury information available'))   // a limitation
 })

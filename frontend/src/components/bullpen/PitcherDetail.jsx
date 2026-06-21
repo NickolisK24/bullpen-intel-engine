@@ -3,6 +3,12 @@ import { getAvailabilityExplanation, getPitcherFatigue } from '../../utils/api'
 import { LoadingPane, ErrorState, FatigueBar, RiskBadge, Divider } from '../UI'
 import { fmtIP, fmtDate, riskColor } from '../../utils/formatters'
 import { FATIGUE_FACTORS, RISK_BLURB } from '../../utils/fatigueModel'
+import {
+  appearanceDetailLabel,
+  latestAppearanceFromLogs,
+  normalizeAppearance,
+  platformDateFromFreshness,
+} from '../../utils/appearanceLanguage'
 import AvailabilitySummary from './AvailabilitySummary'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import {
@@ -45,9 +51,14 @@ export default function PitcherDetail({ pitcherId, onClose }) {
     availability,
     workload_signal: workloadSignal,
     roster_status: rosterStatus,
+    freshness,
+    last_appearance: lastAppearance,
     recent_logs,
     fatigue_trend,
   } = data || {}
+  const platformDate = platformDateFromFreshness(freshness)
+  const mostRecentAppearance = normalizeAppearance(lastAppearance) || latestAppearanceFromLogs(recent_logs)
+  const mostRecentAppearanceLabel = appearanceDetailLabel(mostRecentAppearance, platformDate)
 
   // Radar — component breakdown. Driven by the shared four-factor model so
   // it always matches the backend (no Leverage Index — see fatigueModel.js).
@@ -119,7 +130,16 @@ export default function PitcherDetail({ pitcherId, onClose }) {
             availability={availability}
             workloadSignal={workloadSignal}
             rosterStatus={rosterStatus}
+            freshness={freshness}
+            lastAppearance={mostRecentAppearance}
           />
+
+          {mostRecentAppearanceLabel && (
+            <div className="rounded border border-dirt bg-field/50 p-3">
+              <div className="text-chalk600 text-[10px] font-mono uppercase tracking-wider">Most Recent Appearance</div>
+              <div className="mt-1 font-mono text-sm font-semibold text-chalk200">{mostRecentAppearanceLabel}</div>
+            </div>
+          )}
 
           <ExplanationDisclosure
             buttonLabel="Why this availability?"

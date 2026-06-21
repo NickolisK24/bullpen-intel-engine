@@ -11,6 +11,7 @@ limitations, freshness) the Availability Engine already produces.
 """
 
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -23,6 +24,7 @@ from services.bullpen_board import (
     build_board_payload,
     build_card,
     group_cards,
+    last_appearance_from_logs,
     short_reason_for,
 )
 from services.bullpen_stability import (
@@ -145,18 +147,33 @@ class TestGrouping:
 
 
 class TestCard:
+    def test_last_appearance_from_logs_sums_latest_game_date(self):
+        latest = date(2026, 6, 20)
+        logs = [
+            SimpleNamespace(game_date=latest - timedelta(days=1), pitches_thrown=30),
+            SimpleNamespace(game_date=latest, pitches_thrown=10),
+            SimpleNamespace(game_date=latest, pitches_thrown=5),
+        ]
+
+        assert last_appearance_from_logs(logs) == {
+            'game_date': '2026-06-20',
+            'pitches': 15,
+        }
+
     def test_card_preserves_trust_metadata(self):
+        last_appearance = {'game_date': '2026-06-20', 'pitches': 15}
         card = build_card('A', 7, 63.4, availability(
             'Limited',
             confidence='medium',
             reasons=['29 pitches yesterday', '3 appearances in 5 days'],
             limitations=['No injury information available', 'No team-reported availability'],
-        ))
+        ), last_appearance=last_appearance)
         assert card['confidence'] == 'medium'
         assert card['data_state'] == 'fresh'
         assert card['reasons'] == ['29 pitches yesterday', '3 appearances in 5 days']
         assert 'No injury information available' in card['limitations']
         assert card['fatigue_score'] == 63.4
+        assert card['last_appearance'] == last_appearance
 
     def test_card_handles_missing_score(self):
         card = build_card('A', 7, None, availability('Monitor', data_state='missing'))
@@ -1110,6 +1127,11 @@ class TestBoardEndpoint:
         assert response.status_code == 200
         assert body['pitcher']['id'] == pitcher_id
         assert body['roster_status']['status'] == STATUS_ACTIVE
+        assert 'freshness' in body
+        assert body['last_appearance'] == {
+            'game_date': (date.today() - timedelta(days=1)).isoformat(),
+            'pitches': 12,
+        }
         assert body['availability']['availability_status']
 
     def test_default_bullpen_filtering_is_league_wide_not_reds_only(self, client):
