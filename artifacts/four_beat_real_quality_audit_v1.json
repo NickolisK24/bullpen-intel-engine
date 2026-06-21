@@ -13,12 +13,13 @@
   "complete_team_count": true,
   "expected_team_count": 30,
   "fixes_applied": [
-    "Normalized writer name rendering so dict-backed arm rows print names only.",
-    "Rewrote route, coverage, optionality, stable-core, core-transition, and depth constraints into current-state operational clauses.",
-    "Refined route-change headlines to distinguish true route changes from roster changes where the route still holds.",
-    "Expanded audit preview flags for raw object leaks, internal observation terms, database-diff phrasing, and missing forward clauses."
+    "Added deterministic public beat selection strength ahead of generic severity and evidence completeness tie-breakers.",
+    "Promoted coverage_pressure only when short-start, early-entry, and coverage-burden evidence is strong.",
+    "Limited sustainability strength to concentration-driven workload evidence with narrow practical paths.",
+    "Added audit preview balance flags for competitive coverage or sustainability evidence that is never selected.",
+    "Updated writer cause copy so coverage stories explicitly state short-start pressure."
   ],
-  "generated_at": "2026-06-21T16:33:47.099517+00:00",
+  "generated_at": "2026-06-21T16:47:02.470071+00:00",
   "initial_audit_summary": {
     "state_counts": {
       "needs_review": 0,
@@ -45,14 +46,19 @@
         "count": 1,
         "share_of_story_states": 3.3,
         "story_type": "sustainability_question"
+      },
+      {
+        "count": 0,
+        "share_of_story_states": 0.0,
+        "story_type": "coverage_pressure"
       }
     ],
     "team_count": 30
   },
   "initial_findings": [
-    "Depth stories rendered inactive pitcher dictionaries instead of arm names.",
-    "Route-change copy used database-diff phrasing such as core changes and mismatched held-route language.",
-    "Forward clauses used mechanical audit language instead of operational constraints."
+    "Coverage-pressure candidates existed in real outputs but no coverage_pressure story was selected.",
+    "Selection favored high-severity depth or route objects over stronger short-start explanations.",
+    "Sustainability needed a route to win when concentrated usage and narrow practical paths were the clearest explanation."
   ],
   "payload_source": "live_story_audit_preview",
   "post_fix_summary": {
@@ -63,8 +69,8 @@
         "story_type": "route_change"
       },
       {
-        "count": 0,
-        "share_of_story_states": 0.0,
+        "count": 1,
+        "share_of_story_states": 3.3,
         "story_type": "coverage_pressure"
       },
       {
@@ -73,8 +79,8 @@
         "story_type": "depth_constraint"
       },
       {
-        "count": 1,
-        "share_of_story_states": 3.3,
+        "count": 0,
+        "share_of_story_states": 0.0,
         "story_type": "sustainability_question"
       }
     ],
@@ -89,6 +95,7 @@
       "repeated_headlines": {},
       "repeated_story_text_count": 0
     },
+    "selection_balance_flags": [],
     "story_count": 30,
     "team_count": 30,
     "unexpected_story_types": []
@@ -190,20 +197,20 @@
   "version": "2026-06-21.v1",
   "worst_story_outputs": [
     {
-      "headline": "Colorado Rockies' bullpen has multiple usable routes",
+      "headline": "Chicago White Sox' rotation is handing more of the game to the bullpen",
       "review_basis": "longest_clean_output_no_post_fix_flags",
       "review_flags": [],
       "sections": {
-        "baseline": "The active board includes 4 available arms. There are 4 clean workload options.",
-        "cause": "The clean paths include Blas Casta\u00f1o, Juan Mejia, Victor Vodnik, and Zach Agnos. The secondary paths include Antonio Senzatela, Brennan Bernardino, Jaden Hill, and Jimmy Herget. Coverage is also coming from 4 secondary options. The workload pattern is balanced.",
-        "constraint": "If the same game shape returns, the club can choose among the available paths rather than force one route. The route count keeps 0 unavailable arms out of the clean picture.",
-        "headline": "Colorado Rockies' bullpen has multiple usable routes",
-        "observation": "The bullpen has 6 practical close-game paths. That leaves the route deep."
+        "baseline": "The comparison point is 2.8 starter innings over the full 14-day window. The current seven-day handoff is 2.4 innings.",
+        "cause": "The starters are not covering as many innings as the recent baseline. Shorter starts are pushing 5.7 bullpen innings per game into the relief group. The rotation has been handing the game to the bullpen earlier.",
+        "constraint": "If short starts continue, the bullpen has fewer clean ways to spread the innings.",
+        "headline": "Chicago White Sox' rotation is handing more of the game to the bullpen",
+        "observation": "The starters are averaging 2.4 innings over the last week. That recent starter length is down 0.4 innings from the two-week mark. The bullpen has entered before the sixth in 81.8% of recent games."
       },
-      "story_type": "sustainability_question",
-      "team_abbreviation": "COL",
-      "team_id": 115,
-      "team_name": "Colorado Rockies"
+      "story_type": "coverage_pressure",
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
     },
     {
       "headline": "The route has changed, now running through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",

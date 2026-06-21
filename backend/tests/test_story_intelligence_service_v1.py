@@ -224,9 +224,83 @@ def test_depth_pressure_does_not_automatically_override_specific_active_story():
 
     result = build_team_story(118, team_context=context)
 
-    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
     assert result['observation_count'] >= 3
-    assert 'Starter length is down 1.4 innings against the 14-day mark' in written_text(result)
+    assert 'The starters are not covering as many innings as the recent baseline' in written_text(result)
+    assert 'Shorter starts are pushing 4.8 bullpen innings per game into the relief group' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_coverage_pressure_wins_over_depth_and_route_when_short_starts_are_strongest():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 2.4,
+            'rotation_avg_ip_14d': 3.0,
+            'rotation_ip_trend': -0.6,
+            'early_bullpen_entry_rate': 82.0,
+            'bullpen_coverage_ip_7d': 5.7,
+        },
+        stability={
+            'stability_band': 'transitioning',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm'],
+            'core_retention_count': 1,
+            'core_stability_pct': 33,
+            'core_change_count': 2,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 6,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert result['selection_metadata']['selected_profile']['selection_strength'] >= 7
+    assert 'The rotation has been handing the game to the bullpen earlier' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_sustainability_question_wins_when_usage_concentration_is_strongest():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+            'bullpen_coverage_ip_7d': 3.0,
+        },
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 94.0,
+            'top_three_share_delta_vs_league': 36.0,
+        },
+        optionality={
+            'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 2,
+            'available_arms_count': 3,
+            'clean_workload_options': [{'name': 'Clean Arm'}],
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 6,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_SUSTAINABILITY_QUESTION)
+    assert result['selection_metadata']['selected_profile']['selection_strength'] >= 8
+    assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
     assert_forward_clause(result)
 
 
@@ -435,7 +509,7 @@ def test_every_internal_observation_maps_to_one_public_beat():
     assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_SUSTAINABILITY_QUESTION
 
 
-def test_concentration_with_short_start_cause_maps_to_coverage_pressure():
+def test_short_start_cause_maps_to_coverage_pressure():
     result = build_team_story(118, team_context=team_context(
         concentration={
             'concentration_band': 'narrow',
@@ -450,8 +524,8 @@ def test_concentration_with_short_start_cause_maps_to_coverage_pressure():
         },
     ))
 
-    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
-    assert 'Starter length is down 1.4 innings against the 14-day mark' in written_text(result)
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert 'The starters are not covering as many innings as the recent baseline' in written_text(result)
     assert_forward_clause(result)
 
 

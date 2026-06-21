@@ -24,7 +24,13 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     build_team_story_observation_payload,
 )
-from services.story_four_beat_interpreter_v1 import interpret_story_candidate
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+    interpret_story_candidate,
+)
 from services.story_writer_v1 import validate_written_observation, write_story_frame
 
 
@@ -50,6 +56,13 @@ SERVICE_SEVERITY_ORDER = {
 SERVICE_OBSERVATION_PRIORITY = {
     observation_type: index
     for index, observation_type in enumerate(SERVICE_OBSERVATION_ORDER)
+}
+
+PUBLIC_BEAT_TIEBREAK_PRIORITY = {
+    BEAT_COVERAGE_PRESSURE: 0,
+    BEAT_SUSTAINABILITY_QUESTION: 1,
+    BEAT_ROUTE_CHANGE: 2,
+    BEAT_DEPTH_CONSTRAINT: 3,
 }
 
 SUPPORTING_CONTEXT_KEYS = (
@@ -117,7 +130,7 @@ def _freshness(team_context, as_of_date=None):
 
 def _trust_metadata():
     return {
-        'service_resolution': 'deterministic_severity_then_context_specific_observation',
+        'service_resolution': 'deterministic_public_beat_strength_then_context_specific_observation',
         'service_observation_order': list(SERVICE_OBSERVATION_ORDER),
         'external_generation_used': False,
         'new_metrics_created': False,
@@ -150,13 +163,176 @@ def _valid_frame(frame):
     return bool(frame) and frame.get('construction_confidence') != CONFIDENCE_LOW
 
 
+def _number(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _story_frame(frame):
+    return _dict(_dict(frame).get('story_frame'))
+
+
+def _facts(frame, key):
+    return _dict(_story_frame(frame).get(key))
+
+
+def _strength_step(value, thresholds):
+    number = _number(value)
+    if number is None:
+        return 0
+    for threshold, strength in thresholds:
+        if number >= threshold:
+            return strength
+    return 0
+
+
+def _negative_strength_step(value, thresholds):
+    number = _number(value)
+    if number is None:
+        return 0
+    for threshold, strength in thresholds:
+        if number <= threshold:
+            return strength
+    return 0
+
+
+def _selection_strength_for_coverage(frame):
+    observed = _facts(frame, 'observation_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    trend = observed.get('rotation_ip_trend') or cause.get('rotation_ip_trend')
+    early_rate = observed.get('early_bullpen_entry_rate') or cause.get('early_bullpen_entry_rate')
+    coverage = (
+        cause.get('bullpen_coverage_ip_7d')
+        or interpretation.get('bullpen_coverage_ip_7d')
+    )
+    return (
+        _negative_strength_step(trend, ((-1.0, 2), (-0.5, 1)))
+        + _strength_step(early_rate, ((70.0, 4), (60.0, 3), (50.0, 2), (40.0, 1)))
+        + _strength_step(coverage, ((5.0, 3), (4.5, 2), (4.0, 1)))
+    )
+
+
+def _selection_strength_for_sustainability(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+    if observed.get('type') != TYPE_CONCENTRATION_PRESSURE:
+        return 0
+    share = (
+        observed.get('top_three_workload_share_10d')
+        or interpretation.get('top_three_workload_share_10d')
+    )
+    band = (
+        observed.get('concentration_band')
+        or interpretation.get('concentration_band')
+    )
+    paths = (
+        interpretation.get('practical_close_game_paths_count')
+        or observed.get('practical_close_game_paths_count')
+    )
+    clean_count = (
+        constraint.get('clean_workload_options_count')
+        or observed.get('clean_workload_options_count')
+    )
+    current_core = _list(constraint.get('current_operational_core'))
+
+    strength = _strength_step(share, ((90.0, 4), (85.0, 3), (75.0, 2), (70.0, 1)))
+    if band == 'narrow':
+        strength += 2
+    elif band == 'concentrated':
+        strength += 1
+    if _number(paths) is not None and _number(paths) <= 3:
+        strength += 1
+    if _number(clean_count) is not None and _number(clean_count) <= 1:
+        strength += 2
+    if current_core:
+        strength += 1
+    return strength
+
+
+def _selection_strength_for_depth(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    band = observed.get('depth_pressure_band')
+    inactive = observed.get('inactive_bullpen_arms_count')
+    paths = interpretation.get('practical_close_game_paths_count')
+    optionality = interpretation.get('optionality_band')
+
+    strength = 0
+    if band == 'heavy':
+        strength += 3
+    elif band == 'moderate':
+        strength += 1
+    strength += _strength_step(inactive, ((12.0, 2), (7.0, 1)))
+    paths_number = _number(paths)
+    if paths_number is not None and paths_number <= 2:
+        strength += 2
+    elif paths_number is not None and paths_number <= 3:
+        strength += 1
+    if optionality == 'thin':
+        strength += 2
+    elif optionality == 'narrow':
+        strength += 1
+    return strength
+
+
+def _selection_strength_for_route(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    band = observed.get('stability_band') or interpretation.get('stability_band')
+    changes = observed.get('core_change_count')
+    retention = interpretation.get('core_retention_count')
+
+    strength = 0
+    if band == 'rebuilding':
+        strength += 4
+    elif band == 'transitioning':
+        strength += 2
+    strength += _strength_step(changes, ((3.0, 2), (2.0, 1)))
+    if _number(retention) is not None and _number(retention) <= 0:
+        strength += 1
+    return strength
+
+
+def _candidate_selection_profile(candidate):
+    public_story = _dict(candidate.get('public_story'))
+    frame = _dict(candidate.get('construction_frame'))
+    story_type = public_story.get('story_type')
+    if story_type == BEAT_COVERAGE_PRESSURE:
+        strength = _selection_strength_for_coverage(frame)
+    elif story_type == BEAT_SUSTAINABILITY_QUESTION:
+        strength = _selection_strength_for_sustainability(frame)
+    elif story_type == BEAT_DEPTH_CONSTRAINT:
+        strength = _selection_strength_for_depth(frame)
+    elif story_type == BEAT_ROUTE_CHANGE:
+        strength = _selection_strength_for_route(frame)
+    else:
+        strength = 0
+    return {
+        'story_type': story_type,
+        'selection_strength': strength,
+        'evidence_completeness': int(public_story.get('evidence_completeness') or 0),
+    }
+
+
 def _candidate_selection_key(candidate):
     observation = _dict(_dict(candidate).get('selected_observation'))
     observation_type = observation.get('type')
     public_story = _dict(candidate.get('public_story'))
+    profile = _dict(candidate.get('selection_profile')) or _candidate_selection_profile(candidate)
     return (
+        -int(profile.get('selection_strength') or 0),
         -SERVICE_SEVERITY_ORDER.get(observation.get('severity'), 0),
-        -int(public_story.get('evidence_completeness') or 0),
+        PUBLIC_BEAT_TIEBREAK_PRIORITY.get(
+            public_story.get('story_type'),
+            len(PUBLIC_BEAT_TIEBREAK_PRIORITY),
+        ),
+        -int(profile.get('evidence_completeness') or public_story.get('evidence_completeness') or 0),
         SERVICE_OBSERVATION_PRIORITY.get(observation_type, len(SERVICE_OBSERVATION_ORDER)),
         str(observation_type or ''),
     )
@@ -192,15 +368,31 @@ def select_service_story_candidate(observations, story_frames):
         writer_output['validation'] = validate_written_observation(writer_output)
         if _dict(writer_output.get('validation')).get('passed') is not True:
             continue
+        selection_profile = _candidate_selection_profile({
+            'selected_observation': observation,
+            'construction_frame': frame,
+            'writer_output': writer_output,
+            'public_story': public_story,
+        })
         candidates.append({
             'selected_observation': deepcopy(observation),
             'construction_frame': deepcopy(frame),
             'writer_output': writer_output,
             'public_story': public_story,
+            'selection_profile': selection_profile,
         })
     if not candidates:
         return None
-    return sorted(candidates, key=_candidate_selection_key)[0]
+    selected = sorted(candidates, key=_candidate_selection_key)[0]
+    selected['candidate_profiles'] = [
+        {
+            'observation_type': _dict(candidate.get('selected_observation')).get('type'),
+            'severity': _dict(candidate.get('selected_observation')).get('severity'),
+            **_dict(candidate.get('selection_profile')),
+        }
+        for candidate in sorted(candidates, key=_candidate_selection_key)
+    ]
+    return selected
 
 
 def _base_payload(team_id, as_of_date, team_context, observation_payload, construction_payload):
@@ -225,6 +417,7 @@ def _base_payload(team_id, as_of_date, team_context, observation_payload, constr
         'story_type': None,
         'story_type_label': None,
         'public_story_beat': None,
+        'selection_metadata': None,
         'supporting_context': _supporting_context(team_context),
         'freshness': _freshness(team_context, as_of_date=as_of_date),
         'trust_metadata': _trust_metadata(),
@@ -300,6 +493,10 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
             key: deepcopy(value)
             for key, value in public_story.items()
             if key not in {'written_story'}
+        },
+        'selection_metadata': {
+            'selected_profile': deepcopy(candidate.get('selection_profile')),
+            'candidate_profiles': deepcopy(candidate.get('candidate_profiles') or []),
         },
         'supporting_context': _supporting_context(context, construction_frame),
         'limitations': _combined_limitations(

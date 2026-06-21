@@ -220,6 +220,7 @@ def _rotation_pressure(frame):
     trend = headline.get('rotation_ip_trend') or observed.get('rotation_ip_trend')
     early_rate = observed.get('early_bullpen_entry_rate')
     coverage = cause.get('bullpen_coverage_ip_7d') or interpretation.get('bullpen_coverage_ip_7d')
+    short_starts = _present(avg_7) and _present(avg_14) and avg_7 < avg_14
 
     return _sections(
         headline=(
@@ -253,12 +254,16 @@ def _rotation_pressure(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The bullpen coverage burden is {_fmt(coverage)} innings per game over the last week"
+                f"The starters are not covering as many innings as the recent baseline"
+                if short_starts else None
+            ),
+            (
+                f"Shorter starts are pushing {_fmt(coverage)} bullpen innings per game into the relief group"
                 if _present(coverage) else None
             ),
             (
-                f"The bridge is thinner when the starter-to-bullpen handoff arrives earlier"
-                if _present(coverage) or _present(early_rate) else None
+                f"The rotation has been handing the game to the bullpen earlier"
+                if _present(early_rate) and early_rate >= 40.0 else None
             ),
         ),
         constraint_paragraph=_paragraph(
@@ -287,6 +292,7 @@ def _concentration_pressure(frame):
     trend = cause.get('rotation_ip_trend')
     paths = interpretation.get('practical_close_game_paths_count')
     core = _join_names(constraint.get('current_operational_core'))
+    short_starts = _present(trend) and trend < 0
 
     return _sections(
         headline=(
@@ -314,6 +320,10 @@ def _concentration_pressure(frame):
             ),
         ),
         cause_paragraph=_paragraph(
+            (
+                f"The starters are not covering as many innings as the recent baseline"
+                if short_starts else None
+            ),
             (
                 f"Starter length is down {_fmt(abs(trend))} innings against the 14-day mark"
                 if _present(trend) and trend < 0 else None

@@ -37,6 +37,7 @@ BOOL_FLAG_KEYS = (
     'has_banned_language',
     'has_raw_object_literal',
     'missing_forward_constraint_clause',
+    'short_start_cause_omitted',
     'needs_review',
 )
 
@@ -256,6 +257,7 @@ def build_four_beat_real_quality_audit(
         'needs_review_count': int(state_counts.get('needs_review') or 0),
         'beat_distribution': _beat_distribution(audit_preview),
         'unexpected_story_types': unexpected_types,
+        'selection_balance_flags': list(_list(audit_preview.get('selection_balance_flags'))),
         'flagged_issue_counts': issue_counts,
         'repetition_summary': _repetition_summary(story_teams),
     }

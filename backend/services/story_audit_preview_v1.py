@@ -12,6 +12,10 @@ from copy import deepcopy
 import re
 
 from models.pitcher import Pitcher
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_SUSTAINABILITY_QUESTION,
+)
 from services.story_intelligence_service_v1 import (
     build_story_intelligence_service_v1,
 )
@@ -82,6 +86,15 @@ FORWARD_CLAUSE_TERMS = (
     'game shape repeats',
     'workload pattern holds',
 )
+
+SHORT_START_CAUSE_TERMS = (
+    'shorter starts',
+    'starters are not covering',
+    'starter length is down',
+    'handing the game to the bullpen earlier',
+)
+
+COMPETITIVE_SELECTION_STRENGTH = 5
 
 AWKWARD_EMPTY_VALUES = {
     'n/a',
@@ -218,6 +231,26 @@ def _constraint_has_forward_clause(sections):
     return any(term in lower for term in FORWARD_CLAUSE_TERMS)
 
 
+def _selection_metadata(service_payload):
+    return _dict(_dict(service_payload).get('selection_metadata'))
+
+
+def _candidate_profiles_from_team(team):
+    metadata = _dict(team.get('selection_metadata'))
+    return _list(metadata.get('candidate_profiles'))
+
+
+def _short_start_cause_omitted(service_payload, sections):
+    payload = _dict(service_payload)
+    if payload.get('story_type') != BEAT_COVERAGE_PRESSURE:
+        return False
+    selected = _dict(_selection_metadata(payload).get('selected_profile'))
+    if int(selected.get('selection_strength') or 0) <= 0:
+        return False
+    cause = _clean_text(_dict(sections).get('cause')).lower()
+    return not any(term in cause for term in SHORT_START_CAUSE_TERMS)
+
+
 def _validation_flags(service_payload, sections, *, story_available):
     text = _visible_text(sections)
     writer_validation = _dict(_dict(service_payload).get('writer_output')).get('validation')
@@ -245,6 +278,10 @@ def _validation_flags(service_payload, sections, *, story_available):
         and 'constraint' not in missing
         and not _constraint_has_forward_clause(sections)
     )
+    short_start_cause_omitted = (
+        story_available
+        and _short_start_cause_omitted(service_payload, sections)
+    )
     return {
         'has_internal_terms': has_internal,
         'has_banned_language': has_banned,
@@ -253,6 +290,7 @@ def _validation_flags(service_payload, sections, *, story_available):
         'raw_object_terms': raw_object_terms,
         'database_diff_terms': database_diff_terms,
         'missing_forward_constraint_clause': missing_forward_clause,
+        'short_start_cause_omitted': short_start_cause_omitted,
         'missing_required_sections': missing,
         'awkward_empty_sections': awkward,
         'awkward_phrasing': awkward_phrasing,
@@ -263,6 +301,7 @@ def _validation_flags(service_payload, sections, *, story_available):
             or raw_object_terms
             or database_diff_terms
             or missing_forward_clause
+            or short_start_cause_omitted
             or missing
             or awkward
             or awkward_phrasing
@@ -289,6 +328,7 @@ def _preview_team(service_payload):
         'sections': sections,
         'freshness': deepcopy(_dict(payload.get('freshness'))),
         'trust_metadata': deepcopy(_dict(payload.get('trust_metadata'))),
+        'selection_metadata': deepcopy(_dict(payload.get('selection_metadata'))),
         'neutral_reason': payload.get('neutral_reason') if not story_available else None,
         'validation_flags': flags,
         'limitations': list(_list(payload.get('limitations'))),
@@ -334,6 +374,35 @@ def _story_type_distribution(story_type_counts):
     ]
 
 
+def _strong_candidate_count(teams, story_type):
+    return sum(
+        1
+        for team in teams
+        if any(
+            _dict(profile).get('story_type') == story_type
+            and int(_dict(profile).get('selection_strength') or 0) >= COMPETITIVE_SELECTION_STRENGTH
+            for profile in _candidate_profiles_from_team(team)
+        )
+    )
+
+
+def _selection_balance_flags(teams, story_type_counts):
+    flags = []
+    coverage_candidates = _strong_candidate_count(teams, BEAT_COVERAGE_PRESSURE)
+    sustainability_candidates = _strong_candidate_count(teams, BEAT_SUSTAINABILITY_QUESTION)
+    if coverage_candidates > 0 and not story_type_counts.get(BEAT_COVERAGE_PRESSURE):
+        flags.append({
+            'code': 'coverage_evidence_present_but_never_selected',
+            'candidate_team_count': coverage_candidates,
+        })
+    if sustainability_candidates > 0 and not story_type_counts.get(BEAT_SUSTAINABILITY_QUESTION):
+        flags.append({
+            'code': 'sustainability_evidence_present_but_never_selected',
+            'candidate_team_count': sustainability_candidates,
+        })
+    return flags
+
+
 def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=None, limit=None):
     """
     Build an internal Story Intelligence QA preview.
@@ -373,6 +442,7 @@ def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=N
         'state_counts': _state_counts(teams),
         'story_type_counts': story_type_counts,
         'story_type_distribution': _story_type_distribution(story_type_counts),
+        'selection_balance_flags': _selection_balance_flags(teams, story_type_counts),
         'teams': teams,
         'limitations': [*LIMITATIONS, *_list(_dict(service_payload).get('limitations'))],
     }

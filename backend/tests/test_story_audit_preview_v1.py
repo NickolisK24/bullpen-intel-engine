@@ -323,6 +323,88 @@ def test_real_quality_flags_catch_raw_objects_internal_types_and_diff_phrasing(m
     assert flags['needs_review'] is True
 
 
+def test_short_start_cause_omission_is_flagged_for_coverage_story(monkeypatch):
+    unsafe = story_payload(
+        story_type=BEAT_COVERAGE_PRESSURE,
+        selected_observation={'type': TYPE_ROTATION_PRESSURE},
+        written_story={
+            'headline': 'The bullpen is covering extra innings',
+            'observation_paragraph': 'The starters are averaging 4.1 innings over the last week.',
+            'baseline_paragraph': 'The comparison point is 5.4 starter innings over the full 14-day window.',
+            'cause_paragraph': 'The cause is present but vague.',
+            'constraint_paragraph': 'If short starts continue, the bullpen has fewer clean ways to spread the innings.',
+        },
+        selection_metadata={
+            'selected_profile': {
+                'story_type': BEAT_COVERAGE_PRESSURE,
+                'selection_strength': 7,
+                'evidence_completeness': 4,
+            },
+            'candidate_profiles': [],
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([unsafe]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert flags['short_start_cause_omitted'] is True
+    assert flags['needs_review'] is True
+
+
+def test_selection_balance_flags_when_competitive_beat_evidence_is_never_selected(monkeypatch):
+    teams = [
+        story_payload(
+            team_id=1,
+            story_type=BEAT_DEPTH_CONSTRAINT,
+            selected_observation={'type': TYPE_DEPTH_PRESSURE},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 6,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'observation_type': TYPE_ROTATION_PRESSURE,
+                        'story_type': BEAT_COVERAGE_PRESSURE,
+                        'selection_strength': 7,
+                        'evidence_completeness': 4,
+                    },
+                    {
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 8,
+                        'evidence_completeness': 5,
+                    },
+                ],
+            },
+        ),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1])
+
+    assert result['selection_balance_flags'] == [
+        {
+            'code': 'coverage_evidence_present_but_never_selected',
+            'candidate_team_count': 1,
+        },
+        {
+            'code': 'sustainability_evidence_present_but_never_selected',
+            'candidate_team_count': 1,
+        },
+    ]
+
+
 def test_missing_and_awkward_story_sections_are_detected(monkeypatch):
     incomplete = story_payload(
         written_story={

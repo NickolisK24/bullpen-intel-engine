@@ -173,7 +173,9 @@ def test_writer_outputs_rotation_pressure_observation():
     assert "Royals' rotation" in text
     assert '4.1 innings' in text
     assert '5.4 starter innings' in text
-    assert '4.9 innings per game' in text
+    assert 'starters are not covering as many innings as the recent baseline' in text.lower()
+    assert '4.9 bullpen innings per game' in text
+    assert 'handing the game to the bullpen earlier' in text
     assert output['written_observation']['constraint_paragraph'].startswith('If short starts continue')
     assert_quality_sections(output)
 
