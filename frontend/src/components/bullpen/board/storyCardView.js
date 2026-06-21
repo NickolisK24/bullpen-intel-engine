@@ -1,12 +1,30 @@
 import { fmtDataDate } from '../../dashboard/syncStatusView'
 
-const STORY_TYPE_LABELS = {
-  rotation_pressure: 'Rotation pressure',
-  concentration_pressure: 'Concentration pressure',
-  optionality_strength: 'Optionality strength',
-  stable_core: 'Stable core',
-  core_transition: 'Core transition',
-  depth_pressure: 'Depth pressure',
+export const STORY_TYPE_DISPLAY = {
+  depth_pressure: {
+    label: 'Depth Pressure',
+    helper: 'Unavailable depth is narrowing the bullpen.',
+  },
+  core_transition: {
+    label: 'Bullpen Route Change',
+    helper: 'The trusted relief path has shifted.',
+  },
+  rotation_pressure: {
+    label: 'Starter Coverage Pressure',
+    helper: 'Shorter starts are pushing more innings to the bullpen.',
+  },
+  concentration_pressure: {
+    label: 'Workload Concentration',
+    helper: 'Recent work is collecting around a small group.',
+  },
+  optionality_strength: {
+    label: 'Clean Options',
+    helper: 'The club has multiple usable paths tonight.',
+  },
+  stable_core: {
+    label: 'Stable Bullpen Core',
+    helper: 'The same arms continue to carry the route.',
+  },
 }
 
 function asObject(value) {
@@ -20,12 +38,12 @@ function cleanText(value) {
 function labelFromKey(value, fallback = 'Bullpen story') {
   const raw = cleanText(value)
   if (!raw) return fallback
-  if (STORY_TYPE_LABELS[raw]) return STORY_TYPE_LABELS[raw]
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, char => char.toUpperCase())
+  return STORY_TYPE_DISPLAY[raw]?.label || fallback
+}
+
+function helperFromKey(value) {
+  const raw = cleanText(value)
+  return STORY_TYPE_DISPLAY[raw]?.helper || null
 }
 
 function dataThroughLabel(freshness) {
@@ -57,6 +75,7 @@ export function getStoryCardView(story) {
   const available = payload.story_available === true
   const headline = cleanText(payload.headline)
   const storyType = labelFromKey(payload.story_type)
+  const storyTypeHelper = helperFromKey(payload.story_type)
   const meta = [
     storyType,
     dataThroughLabel(freshness),
@@ -70,6 +89,7 @@ export function getStoryCardView(story) {
       title: 'Story note is quiet right now',
       message: neutralMessage(payload.neutral_reason),
       storyType,
+      storyTypeHelper: null,
       meta,
       paragraphs: [],
     }
@@ -81,6 +101,7 @@ export function getStoryCardView(story) {
     title: headline || 'Bullpen story note',
     message: '',
     storyType,
+    storyTypeHelper,
     meta,
     paragraphs: paragraphs(payload),
   }
