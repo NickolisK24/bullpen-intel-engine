@@ -64,6 +64,32 @@ USAGE_DEMAND_CONTEXT_KEYS = {
     'windows',
 }
 
+BULLPEN_CONCENTRATION_CONTEXT_KEYS = {
+    'capability',
+    'version',
+    'source',
+    'reference_date',
+    'window_days',
+    'window_start_10d',
+    'window_end_10d',
+    'top_three_workload_share_10d',
+    'league_top_three_workload_share_10d',
+    'top_three_share_delta_vs_league',
+    'bullpen_workload_total_10d',
+    'concentration_band',
+    'top_three_relievers_10d',
+    'qualifying_reliever_count_10d',
+    'bullpen_workload_appearances_10d',
+    'league_team_count_10d',
+    'excluded_starting_workload_rows_10d',
+    'unknown_role_rows_excluded_10d',
+    'zero_pitch_artifact_rows_excluded_10d',
+    'non_pitch_workload_rows_excluded_10d',
+    'rows_without_pitcher_id_10d',
+    'excluded_row_reasons',
+    'limitations',
+}
+
 
 @pytest.fixture
 def client():
@@ -117,6 +143,7 @@ def _seed_team_identity(team_id, mlb_id):
 def _assert_normalized_context_shapes(result):
     assert set(result['rotation_context']) == ROTATION_CONTEXT_KEYS
     assert set(result['usage_demand_context']) == USAGE_DEMAND_CONTEXT_KEYS
+    assert set(result['bullpen_concentration_context']) == BULLPEN_CONCENTRATION_CONTEXT_KEYS
 
 
 def test_no_data_team_returns_normalized_rotation_context_shape(client):
@@ -176,6 +203,30 @@ def test_no_data_team_returns_normalized_usage_demand_context_shape(client):
     assert demand['unknown_start_row_share'] == 0.0
     assert demand['trend'] == 'insufficient_data'
     assert demand['windows'] is None
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
+def test_no_data_team_returns_normalized_bullpen_concentration_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(126, 12601)
+
+        context = build_team_bullpen_context(126)
+
+    concentration = context['bullpen_concentration_context']
+    assert set(concentration) == BULLPEN_CONCENTRATION_CONTEXT_KEYS
+    assert concentration['reference_date'] is None
+    assert concentration['window_start_10d'] is None
+    assert concentration['window_end_10d'] is None
+    assert concentration['top_three_workload_share_10d'] is None
+    assert concentration['league_top_three_workload_share_10d'] is None
+    assert concentration['top_three_share_delta_vs_league'] is None
+    assert concentration['bullpen_workload_total_10d'] == 0
+    assert concentration['concentration_band'] == 'insufficient_data'
+    assert concentration['top_three_relievers_10d'] == []
+    assert concentration['qualifying_reliever_count_10d'] == 0
+    assert concentration['bullpen_workload_appearances_10d'] == 0
+    assert concentration['league_team_count_10d'] == 0
+    assert concentration['excluded_row_reasons'] == {}
     assert 'No stored game-log context was found for this team.' in context['limitations']
 
 
@@ -285,6 +336,38 @@ def test_falling_bullpen_demand_detected(client):
     assert demand['trend'] == 'decreasing_demand'
 
 
+def test_bullpen_concentration_context_is_wired_with_league_baseline(client):
+    with client.application.app_context():
+        team_one = [
+            _seed_pitcher(127, f'Context One Reliever {idx}', 12700 + idx)
+            for idx in range(1, 7)
+        ]
+        team_two = [
+            _seed_pitcher(128, f'Context Two Reliever {idx}', 12800 + idx)
+            for idx in range(1, 5)
+        ]
+        for idx, pitches in enumerate([40, 40, 40, 30, 30, 20], start=1):
+            _seed_log(team_one[idx - 1], idx % 4, 127000 + idx, innings=1.0, pitches=pitches)
+        for idx, pitches in enumerate([80, 60, 40, 20], start=1):
+            _seed_log(team_two[idx - 1], idx % 4, 128000 + idx, innings=1.0, pitches=pitches)
+
+        context = build_team_bullpen_context(128, reference_date=REF)
+
+    concentration = context['bullpen_concentration_context']
+    _assert_normalized_context_shapes(context)
+    assert concentration['top_three_workload_share_10d'] == 90.0
+    assert concentration['league_top_three_workload_share_10d'] == 75.0
+    assert concentration['top_three_share_delta_vs_league'] == 15.0
+    assert concentration['bullpen_workload_total_10d'] == 200
+    assert concentration['concentration_band'] == 'narrow'
+    assert concentration['league_team_count_10d'] == 2
+    assert [row['player_id'] for row in concentration['top_three_relievers_10d']] == [
+        12801,
+        12802,
+        12803,
+    ]
+
+
 def test_league_sample_is_capped(client):
     with client.application.app_context():
         for offset in range(BULLPEN_CONTEXT_SAMPLE_CAP + 2):
@@ -314,6 +397,7 @@ def test_data_backed_and_no_data_contracts_have_the_same_shape(client):
 
     assert set(no_data['rotation_context']) == set(data_backed['rotation_context'])
     assert set(no_data['usage_demand_context']) == set(data_backed['usage_demand_context'])
+    assert set(no_data['bullpen_concentration_context']) == set(data_backed['bullpen_concentration_context'])
 
 
 def test_diagnostic_route_team_mode_returns_evidence_contract(client):
@@ -339,6 +423,7 @@ def test_diagnostic_route_team_mode_returns_evidence_contract(client):
     assert result['team_id'] == 130
     assert result['rotation_context']['evidence_type'] == 'starter_innings_pitched'
     assert result['usage_demand_context']['evidence_type'] == 'bullpen_appearance_and_pitch_volume'
+    assert result['bullpen_concentration_context']['capability'] == 'bullpen_concentration_context_v1'
     assert result['availability_context'] == {
         'context_available': False,
         'reason': 'not_implemented',

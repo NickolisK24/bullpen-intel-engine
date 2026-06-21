@@ -18,6 +18,12 @@ from utils.games_started import (
     is_start,
 )
 from utils.innings import log_innings_decimal
+from services.bullpen_concentration_context import (
+    BULLPEN_CONCENTRATION_WINDOW_DAYS,
+    build_bullpen_concentration_context,
+    build_league_bullpen_concentration_baseline,
+    empty_bullpen_concentration_context,
+)
 from services.rotation_context import build_rotation_context
 
 
@@ -131,6 +137,19 @@ def _team_logs(team_id, start_date, end_date):
         .join(Pitcher, GameLog.pitcher_id == Pitcher.id)
         .filter(
             Pitcher.team_id == team_id,
+            GameLog.game_date >= start_date,
+            GameLog.game_date <= end_date,
+        )
+        .all()
+    )
+
+
+def _league_logs(start_date, end_date):
+    return (
+        GameLog.query
+        .join(Pitcher, GameLog.pitcher_id == Pitcher.id)
+        .filter(
+            Pitcher.team_id.isnot(None),
             GameLog.game_date >= start_date,
             GameLog.game_date <= end_date,
         )
@@ -321,6 +340,23 @@ def _empty_usage_demand_context(windows=None):
     }
 
 
+def _bullpen_concentration_context(team_logs, reference_date):
+    window_start = reference_date - timedelta(days=BULLPEN_CONCENTRATION_WINDOW_DAYS - 1)
+    league_baseline = build_league_bullpen_concentration_baseline(
+        _league_logs(window_start, reference_date),
+        reference_date=reference_date,
+    )
+    return build_bullpen_concentration_context(
+        team_logs,
+        reference_date=reference_date,
+        league_baseline=league_baseline,
+    )
+
+
+def _empty_bullpen_concentration_context():
+    return empty_bullpen_concentration_context()
+
+
 def _availability_context():
     return {
         'context_available': False,
@@ -359,12 +395,14 @@ def build_team_bullpen_context(team_id, reference_date=None):
             'data_through_date': None,
             'rotation_context': _empty_rotation_context(),
             'usage_demand_context': _empty_usage_demand_context(),
+            'bullpen_concentration_context': _empty_bullpen_concentration_context(),
             'availability_context': _availability_context(),
             'limitations': [*CONTEXT_LIMITATIONS, NO_GAME_LOG_CONTEXT_LIMITATION],
         }
 
     last_logs = _team_logs(team_id, windows['last_7']['start_date'], windows['last_7']['end_date'])
     prev_logs = _team_logs(team_id, windows['prev_7']['start_date'], windows['prev_7']['end_date'])
+    all_logs = [*last_logs, *prev_logs]
 
     return {
         'team_id': team_id,
@@ -373,6 +411,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
         'data_through_date': _iso(ref),
         'rotation_context': _rotation_context(last_logs, prev_logs, windows),
         'usage_demand_context': _usage_demand_context(last_logs, prev_logs, windows),
+        'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
         'availability_context': _availability_context(),
         'limitations': _context_limitations(last_logs, prev_logs),
     }
