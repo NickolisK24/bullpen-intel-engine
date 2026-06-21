@@ -110,6 +110,24 @@ class Config:
         os.environ.get('FOUR_BEAT_STORIES_ENABLED', 'true').lower()
         in ('1', 'true', 'yes', 'on')
     )
+
+    # ── Story Quality contract (scoring + gating) ────────────────────────────
+    # The Story Quality scorer always runs and annotates every generated story
+    # with a rule-by-rule scorecard. Enforcement is opt-in and fail-open: with
+    # STORY_QUALITY_GATE_ENABLED off (the default) the scorer is *report-only* —
+    # it scores and annotates but never holds a story out of the feed, so feed
+    # behavior is byte-for-byte identical to a build without the contract.
+    # When enabled, stories scoring below STORY_QUALITY_GATE_THRESHOLD (a 0-100
+    # quality score) are held out of the published feed into a separate held
+    # list (never silently dropped). The threshold lives in config, not code.
+    STORY_QUALITY_GATE_ENABLED = (
+        os.environ.get('STORY_QUALITY_GATE_ENABLED', 'false').lower()
+        in ('1', 'true', 'yes', 'on')
+    )
+    STORY_QUALITY_GATE_THRESHOLD = float(
+        os.environ.get('STORY_QUALITY_GATE_THRESHOLD', '60')
+    )
+
     DEBUG = False
     TESTING = False
 
