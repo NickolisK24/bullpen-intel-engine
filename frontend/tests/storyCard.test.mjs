@@ -18,6 +18,7 @@ after(async () => {
 
 const { default: StoryCard } = await server.ssrLoadModule('/src/components/bullpen/board/StoryCard.jsx')
 const {
+  STORY_TYPE_DISPLAY,
   getStoryCardView,
   storyCardHasBannedLanguage,
 } = await server.ssrLoadModule('/src/components/bullpen/board/storyCardView.js')
@@ -28,15 +29,6 @@ const {
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (props) => renderToStaticMarkup(React.createElement(StoryCard, props))
-
-const STORY_TYPE_LABELS = {
-  rotation_pressure: 'Rotation pressure',
-  concentration_pressure: 'Concentration pressure',
-  optionality_strength: 'Optionality strength',
-  stable_core: 'Stable core',
-  core_transition: 'Core transition',
-  depth_pressure: 'Depth pressure',
-}
 
 function storyPayload(overrides = {}) {
   return {
@@ -75,7 +67,8 @@ test('StoryCard renders a successful deterministic bullpen story note', () => {
 
   assert.ok(htmlIncludes(html, 'Bullpen Note'))
   assert.ok(htmlIncludes(html, "Kansas City&#x27;s bullpen is running through three arms"))
-  assert.ok(htmlIncludes(html, 'Concentration pressure'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Recent work is collecting around a small group.'))
   assert.ok(htmlIncludes(html, 'Data through Jun 20, 2026'))
   assert.ok(htmlIncludes(html, 'Written from BaseballOS data'))
   assert.ok(htmlIncludes(html, 'What changed'))
@@ -151,20 +144,25 @@ test('StoryCard degrades gracefully when optional paragraphs are missing', () =>
   assert.ok(!htmlIncludes(html, 'Comparison point'))
 })
 
-test('StoryCard renders every V1 story type with the analyst-note sections', () => {
-  for (const [storyType, label] of Object.entries(STORY_TYPE_LABELS)) {
+test('StoryCard renders every V1 story type with user-friendly labels and helper text', () => {
+  for (const [storyType, display] of Object.entries(STORY_TYPE_DISPLAY)) {
     const html = render({
       story: storyPayload({
         story_type: storyType,
-        headline: `${label} is shaping this bullpen`,
-        observation: `${label} changed the bullpen route.`,
+        headline: `${display.label} is shaping this bullpen`,
+        observation: `${display.label} changed the bullpen route.`,
         baseline: 'The comparison point stays visible.',
         cause: 'The cause is tied to how the innings are being covered.',
         constraint: 'The resulting constraint stays tied to the bullpen route.',
       }),
     })
+    const view = getStoryCardView(storyPayload({ story_type: storyType }))
 
-    assert.ok(htmlIncludes(html, label))
+    assert.equal(view.storyType, display.label)
+    assert.equal(view.storyTypeHelper, display.helper)
+    assert.ok(htmlIncludes(html, display.label))
+    assert.ok(htmlIncludes(html, display.helper))
+    assert.equal(html.includes(storyType), false, storyType)
     assert.ok(htmlIncludes(html, 'What changed'))
     assert.ok(htmlIncludes(html, 'Comparison point'))
     assert.ok(htmlIncludes(html, 'Why it happened'))

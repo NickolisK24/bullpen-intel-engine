@@ -88,6 +88,12 @@ export default function StoryCard({
         {view.title}
       </h3>
 
+      {view.storyTypeHelper && (
+        <p className="mt-2 max-w-3xl text-xs leading-relaxed text-chalk500">
+          {view.storyTypeHelper}
+        </p>
+      )}
+
       {view.paragraphs.length > 0 && (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {view.paragraphs.map(item => (
