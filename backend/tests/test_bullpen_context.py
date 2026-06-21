@@ -114,6 +114,38 @@ BULLPEN_OPTIONALITY_CONTEXT_KEYS = {
     'limitations',
 }
 
+ROLE_STABILITY_CONTEXT_KEYS = {
+    'capability',
+    'version',
+    'source',
+    'context_available',
+    'reference_date',
+    'current_window_start_10d',
+    'current_window_end_10d',
+    'previous_window_start_10d',
+    'previous_window_end_10d',
+    'current_operational_core',
+    'previous_operational_core',
+    'core_retention_count',
+    'core_stability_pct',
+    'core_change_count',
+    'stability_band',
+    'new_core_members',
+    'departed_core_members',
+    'role_stability_summary_inputs',
+    'current_core_size',
+    'previous_core_size',
+    'current_workload_total_10d',
+    'previous_workload_total_10d',
+    'excluded_starting_workload_rows_20d',
+    'unknown_role_rows_excluded_20d',
+    'zero_pitch_artifact_rows_excluded_20d',
+    'non_pitch_workload_rows_excluded_20d',
+    'rows_without_pitcher_id_20d',
+    'excluded_row_reasons',
+    'limitations',
+}
+
 
 @pytest.fixture
 def client():
@@ -183,6 +215,7 @@ def _assert_normalized_context_shapes(result):
     assert set(result['usage_demand_context']) == USAGE_DEMAND_CONTEXT_KEYS
     assert set(result['bullpen_concentration_context']) == BULLPEN_CONCENTRATION_CONTEXT_KEYS
     assert set(result['bullpen_optionality_context']) == BULLPEN_OPTIONALITY_CONTEXT_KEYS
+    assert set(result['role_stability_context']) == ROLE_STABILITY_CONTEXT_KEYS
 
 
 def test_no_data_team_returns_normalized_rotation_context_shape(client):
@@ -292,6 +325,39 @@ def test_no_data_team_returns_normalized_bullpen_optionality_context_shape(clien
         'secondary_count': 0,
         'restricted_count': 0,
         'practical_paths': 0,
+        'band': 'insufficient_data',
+    }
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
+def test_no_data_team_returns_normalized_role_stability_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(132, 13201)
+
+        context = build_team_bullpen_context(132)
+
+    stability = context['role_stability_context']
+    assert set(stability) == ROLE_STABILITY_CONTEXT_KEYS
+    assert stability['context_available'] is False
+    assert stability['reference_date'] is None
+    assert stability['current_window_start_10d'] is None
+    assert stability['current_window_end_10d'] is None
+    assert stability['previous_window_start_10d'] is None
+    assert stability['previous_window_end_10d'] is None
+    assert stability['current_operational_core'] == []
+    assert stability['previous_operational_core'] == []
+    assert stability['core_retention_count'] == 0
+    assert stability['core_stability_pct'] is None
+    assert stability['core_change_count'] == 0
+    assert stability['stability_band'] == 'insufficient_data'
+    assert stability['new_core_members'] == []
+    assert stability['departed_core_members'] == []
+    assert stability['role_stability_summary_inputs'] == {
+        'current_core': [],
+        'previous_core': [],
+        'retention_count': 0,
+        'stability_pct': None,
+        'change_count': 0,
         'band': 'insufficient_data',
     }
     assert 'No stored game-log context was found for this team.' in context['limitations']
@@ -488,6 +554,46 @@ def test_bullpen_optionality_context_is_wired_from_current_availability(client):
     }]
 
 
+def test_role_stability_context_is_wired_with_twenty_day_workload_window(client):
+    with client.application.app_context():
+        pitchers = [
+            _seed_pitcher(133, f'Stability Reliever {idx}', 13300 + idx)
+            for idx in range(1, 6)
+        ]
+        for idx, pitches in enumerate([50, 40, 30, 10], start=1):
+            _seed_log(pitchers[idx - 1], idx, 133000 + idx, innings=1.0, pitches=pitches)
+        for idx, pitches in enumerate([45, 35, 25, 10], start=1):
+            _seed_log(
+                pitchers[idx - 1],
+                idx + 14,
+                133100 + idx,
+                innings=1.0,
+                pitches=pitches,
+            )
+
+        context = build_team_bullpen_context(133, reference_date=REF)
+
+    stability = context['role_stability_context']
+    _assert_normalized_context_shapes(context)
+    assert stability['context_available'] is True
+    assert stability['current_window_start_10d'] == '2026-05-30'
+    assert stability['previous_window_start_10d'] == '2026-05-20'
+    assert stability['current_operational_core'] == [
+        'Stability Reliever 1',
+        'Stability Reliever 2',
+        'Stability Reliever 3',
+    ]
+    assert stability['previous_operational_core'] == [
+        'Stability Reliever 1',
+        'Stability Reliever 2',
+        'Stability Reliever 3',
+    ]
+    assert stability['core_retention_count'] == 3
+    assert stability['core_stability_pct'] == 100
+    assert stability['core_change_count'] == 0
+    assert stability['stability_band'] == 'stable'
+
+
 def test_league_sample_is_capped(client):
     with client.application.app_context():
         for offset in range(BULLPEN_CONTEXT_SAMPLE_CAP + 2):
@@ -519,6 +625,7 @@ def test_data_backed_and_no_data_contracts_have_the_same_shape(client):
     assert set(no_data['usage_demand_context']) == set(data_backed['usage_demand_context'])
     assert set(no_data['bullpen_concentration_context']) == set(data_backed['bullpen_concentration_context'])
     assert set(no_data['bullpen_optionality_context']) == set(data_backed['bullpen_optionality_context'])
+    assert set(no_data['role_stability_context']) == set(data_backed['role_stability_context'])
 
 
 def test_diagnostic_route_team_mode_returns_evidence_contract(client):
@@ -546,6 +653,7 @@ def test_diagnostic_route_team_mode_returns_evidence_contract(client):
     assert result['usage_demand_context']['evidence_type'] == 'bullpen_appearance_and_pitch_volume'
     assert result['bullpen_concentration_context']['capability'] == 'bullpen_concentration_context_v1'
     assert result['bullpen_optionality_context']['capability'] == 'bullpen_optionality_context_v1'
+    assert result['role_stability_context']['capability'] == 'role_stability_context_v1'
     assert result['availability_context'] == {
         'context_available': False,
         'reason': 'not_implemented',
