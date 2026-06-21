@@ -5,6 +5,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 from api.bullpen import bullpen_bp
+from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 import models.prospect  # noqa: F401
@@ -12,8 +13,10 @@ from services.bullpen_context import (
     BULLPEN_CONTEXT_SAMPLE_CAP,
     build_team_bullpen_context,
 )
+from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from utils.innings import outs_to_decimal_innings, parse_mlb_innings_to_outs
+from utils.time import utc_now_naive
 
 
 REF = date(2026, 6, 8)
@@ -90,6 +93,27 @@ BULLPEN_CONCENTRATION_CONTEXT_KEYS = {
     'limitations',
 }
 
+BULLPEN_OPTIONALITY_CONTEXT_KEYS = {
+    'capability',
+    'version',
+    'source',
+    'context_available',
+    'reference_date',
+    'available_arms_count',
+    'monitor_arms_count',
+    'restricted_arms_count',
+    'limited_arms_count',
+    'avoid_arms_count',
+    'unavailable_arms_count',
+    'unknown_status_count',
+    'clean_workload_options',
+    'secondary_options',
+    'practical_close_game_paths_count',
+    'optionality_band',
+    'optionality_summary_inputs',
+    'limitations',
+}
+
 
 @pytest.fixture
 def client():
@@ -107,13 +131,17 @@ def client():
             drop_test_schema(app)
 
 
-def _seed_pitcher(team_id, name, mlb_id):
+def _seed_pitcher(team_id, name, mlb_id, position='P', roster_status=None):
     pitcher = Pitcher(
         mlb_id=mlb_id,
         full_name=name,
         team_id=team_id,
         team_name=f'Team {team_id}',
         team_abbreviation=f'T{team_id}',
+        position=position,
+        roster_status=roster_status,
+        roster_status_source='test_fixture' if roster_status else None,
+        roster_status_updated_at=utc_now_naive() if roster_status else None,
         active=True,
     )
     db.session.add(pitcher)
@@ -136,6 +164,16 @@ def _seed_log(pitcher, days_ago, game_pk, innings, pitches=15, games_started=0):
     db.session.commit()
 
 
+def _seed_score(pitcher, raw_score=10.0, risk_level='LOW'):
+    db.session.add(FatigueScore(
+        pitcher_id=pitcher.id,
+        calculated_at=utc_now_naive(),
+        raw_score=raw_score,
+        risk_level=risk_level,
+    ))
+    db.session.commit()
+
+
 def _seed_team_identity(team_id, mlb_id):
     return _seed_pitcher(team_id, f'Team {team_id} Pitcher', mlb_id)
 
@@ -144,6 +182,7 @@ def _assert_normalized_context_shapes(result):
     assert set(result['rotation_context']) == ROTATION_CONTEXT_KEYS
     assert set(result['usage_demand_context']) == USAGE_DEMAND_CONTEXT_KEYS
     assert set(result['bullpen_concentration_context']) == BULLPEN_CONCENTRATION_CONTEXT_KEYS
+    assert set(result['bullpen_optionality_context']) == BULLPEN_OPTIONALITY_CONTEXT_KEYS
 
 
 def test_no_data_team_returns_normalized_rotation_context_shape(client):
@@ -227,6 +266,34 @@ def test_no_data_team_returns_normalized_bullpen_concentration_context_shape(cli
     assert concentration['bullpen_workload_appearances_10d'] == 0
     assert concentration['league_team_count_10d'] == 0
     assert concentration['excluded_row_reasons'] == {}
+    assert 'No stored game-log context was found for this team.' in context['limitations']
+
+
+def test_no_data_team_returns_normalized_bullpen_optionality_context_shape(client):
+    with client.application.app_context():
+        _seed_team_identity(131, 13101)
+
+        context = build_team_bullpen_context(131)
+
+    optionality = context['bullpen_optionality_context']
+    assert set(optionality) == BULLPEN_OPTIONALITY_CONTEXT_KEYS
+    assert optionality['context_available'] is False
+    assert optionality['reference_date'] is None
+    assert optionality['available_arms_count'] == 0
+    assert optionality['monitor_arms_count'] == 0
+    assert optionality['restricted_arms_count'] == 0
+    assert optionality['clean_workload_options'] == []
+    assert optionality['secondary_options'] == []
+    assert optionality['practical_close_game_paths_count'] == 0
+    assert optionality['optionality_band'] == 'insufficient_data'
+    assert optionality['optionality_summary_inputs'] == {
+        'available_count': 0,
+        'clean_count': 0,
+        'secondary_count': 0,
+        'restricted_count': 0,
+        'practical_paths': 0,
+        'band': 'insufficient_data',
+    }
     assert 'No stored game-log context was found for this team.' in context['limitations']
 
 
@@ -368,6 +435,59 @@ def test_bullpen_concentration_context_is_wired_with_league_baseline(client):
     ]
 
 
+def test_bullpen_optionality_context_is_wired_from_current_availability(client):
+    with client.application.app_context():
+        clean_one = _seed_pitcher(
+            129, 'Clean One', 12901, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        clean_two = _seed_pitcher(
+            129, 'Clean Two', 12902, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        monitor = _seed_pitcher(
+            129, 'Monitor Arm', 12903, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        limited = _seed_pitcher(
+            129, 'Limited Arm', 12904, position='RP', roster_status=STATUS_ACTIVE,
+        )
+        _seed_log(clean_one, 2, 129001, innings=1.0, pitches=12)
+        _seed_log(clean_two, 3, 129002, innings=1.0, pitches=10)
+        _seed_log(monitor, 1, 129003, innings=1.0, pitches=18)
+        _seed_log(limited, 2, 129004, innings=1.0, pitches=10)
+        for pitcher in (clean_one, clean_two, monitor):
+            _seed_score(pitcher, raw_score=10.0)
+        _seed_score(limited, raw_score=65.0, risk_level='HIGH')
+
+        context = build_team_bullpen_context(129, reference_date=REF)
+
+    optionality = context['bullpen_optionality_context']
+    _assert_normalized_context_shapes(context)
+    assert optionality['context_available'] is True
+    assert optionality['available_arms_count'] == 2
+    assert optionality['monitor_arms_count'] == 1
+    assert optionality['restricted_arms_count'] == 1
+    assert optionality['limited_arms_count'] == 1
+    assert optionality['practical_close_game_paths_count'] == 2
+    assert optionality['optionality_band'] == 'thin'
+    assert optionality['optionality_summary_inputs'] == {
+        'available_count': 2,
+        'clean_count': 2,
+        'secondary_count': 1,
+        'restricted_count': 1,
+        'practical_paths': 2,
+        'band': 'thin',
+    }
+    assert [option['player_id'] for option in optionality['clean_workload_options']] == [
+        12901,
+        12902,
+    ]
+    assert optionality['secondary_options'] == [{
+        'player_id': 12903,
+        'name': 'Monitor Arm',
+        'availability': 'Monitor',
+        'reason': '18 pitches yesterday',
+    }]
+
+
 def test_league_sample_is_capped(client):
     with client.application.app_context():
         for offset in range(BULLPEN_CONTEXT_SAMPLE_CAP + 2):
@@ -398,6 +518,7 @@ def test_data_backed_and_no_data_contracts_have_the_same_shape(client):
     assert set(no_data['rotation_context']) == set(data_backed['rotation_context'])
     assert set(no_data['usage_demand_context']) == set(data_backed['usage_demand_context'])
     assert set(no_data['bullpen_concentration_context']) == set(data_backed['bullpen_concentration_context'])
+    assert set(no_data['bullpen_optionality_context']) == set(data_backed['bullpen_optionality_context'])
 
 
 def test_diagnostic_route_team_mode_returns_evidence_contract(client):
@@ -424,6 +545,7 @@ def test_diagnostic_route_team_mode_returns_evidence_contract(client):
     assert result['rotation_context']['evidence_type'] == 'starter_innings_pitched'
     assert result['usage_demand_context']['evidence_type'] == 'bullpen_appearance_and_pitch_volume'
     assert result['bullpen_concentration_context']['capability'] == 'bullpen_concentration_context_v1'
+    assert result['bullpen_optionality_context']['capability'] == 'bullpen_optionality_context_v1'
     assert result['availability_context'] == {
         'context_available': False,
         'reason': 'not_implemented',

@@ -24,6 +24,14 @@ from services.bullpen_concentration_context import (
     build_league_bullpen_concentration_baseline,
     empty_bullpen_concentration_context,
 )
+from services.availability import ACTIVE_WINDOW_DAYS
+from services.availability_population import current_availability_records
+from services.availability_snapshot import latest_fatigue_rows
+from services.bullpen_optionality_context import (
+    build_bullpen_optionality_context,
+    empty_bullpen_optionality_context,
+)
+from services.bullpen_population import usage_logs_by_pitcher
 from services.rotation_context import build_rotation_context
 
 
@@ -357,6 +365,35 @@ def _empty_bullpen_concentration_context():
     return empty_bullpen_concentration_context()
 
 
+def _optionality_records(team_id, reference_date):
+    rows = latest_fatigue_rows(team_id=team_id)
+    return current_availability_records(rows, reference_date=reference_date)
+
+
+def _bullpen_optionality_context(team_id, reference_date):
+    records = _optionality_records(team_id, reference_date)
+    pitcher_ids = [
+        record['pitcher'].id
+        for record in records
+        if record.get('pitcher') is not None
+    ]
+    logs_by_pitcher = usage_logs_by_pitcher(
+        pitcher_ids,
+        days=ACTIVE_WINDOW_DAYS,
+        include_stale=False,
+        reference_date=reference_date,
+    )
+    return build_bullpen_optionality_context(
+        records,
+        logs_by_pitcher=logs_by_pitcher,
+        reference_date=reference_date,
+    )
+
+
+def _empty_bullpen_optionality_context():
+    return empty_bullpen_optionality_context()
+
+
 def _availability_context():
     return {
         'context_available': False,
@@ -396,6 +433,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
             'rotation_context': _empty_rotation_context(),
             'usage_demand_context': _empty_usage_demand_context(),
             'bullpen_concentration_context': _empty_bullpen_concentration_context(),
+            'bullpen_optionality_context': _empty_bullpen_optionality_context(),
             'availability_context': _availability_context(),
             'limitations': [*CONTEXT_LIMITATIONS, NO_GAME_LOG_CONTEXT_LIMITATION],
         }
@@ -412,6 +450,7 @@ def build_team_bullpen_context(team_id, reference_date=None):
         'rotation_context': _rotation_context(last_logs, prev_logs, windows),
         'usage_demand_context': _usage_demand_context(last_logs, prev_logs, windows),
         'bullpen_concentration_context': _bullpen_concentration_context(all_logs, ref),
+        'bullpen_optionality_context': _bullpen_optionality_context(team_id, ref),
         'availability_context': _availability_context(),
         'limitations': _context_limitations(last_logs, prev_logs),
     }
