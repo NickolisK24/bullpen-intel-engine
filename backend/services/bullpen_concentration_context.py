@@ -13,6 +13,8 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from services.availability_reference_date import product_current_date
+from services.baseline_distribution import build_distribution
+from services.baseline_engine import interpret_value
 from services.workload_appearance import (
     is_pitch_count_workload_log,
     is_workload_appearance_log,
@@ -148,6 +150,7 @@ def _empty_context(ref, window_start, league_baseline=None):
             'league_top_three_workload_share_10d'
         ),
         'top_three_share_delta_vs_league': None,
+        'baseline_read': _baseline_read(None, league_baseline),
         'bullpen_workload_total_10d': 0,
         'concentration_band': CONCENTRATION_INSUFFICIENT_DATA,
         'top_three_relievers_10d': [],
@@ -194,6 +197,23 @@ def _league_baseline_value(league_baseline):
     if isinstance(league_baseline, dict):
         return league_baseline.get('league_top_three_workload_share_10d')
     return league_baseline
+
+
+def _league_baseline_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('top_three_workload_share_distribution_10d')
+    return None
+
+
+def _baseline_read(top_three_share, league_baseline):
+    # Distribution-aware league read for the top-three workload share. The shared
+    # baseline engine owns the interpretation; this only feeds it the team value
+    # and the 10-day league distribution, in the same percentage units.
+    return interpret_value(
+        'top_share',
+        top_three_share,
+        _league_baseline_distribution(league_baseline),
+    )
 
 
 def build_bullpen_concentration_context(
@@ -300,6 +320,7 @@ def build_bullpen_concentration_context(
         'top_three_workload_share_10d': top_three_share,
         'league_top_three_workload_share_10d': league_value,
         'top_three_share_delta_vs_league': _delta(top_three_share, league_value),
+        'baseline_read': _baseline_read(top_three_share, league_baseline),
         'bullpen_workload_total_10d': total_workload,
         'concentration_band': concentration_band(top_three_share),
         'top_three_relievers_10d': [
@@ -348,6 +369,7 @@ def build_league_bullpen_concentration_baseline(logs, *, reference_date=None):
     return {
         'league_top_three_workload_share_10d': league_share,
         'league_team_count_10d': len(shares),
+        'top_three_workload_share_distribution_10d': build_distribution(shares),
     }
 
 

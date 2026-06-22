@@ -78,6 +78,7 @@ BULLPEN_CONCENTRATION_CONTEXT_KEYS = {
     'top_three_workload_share_10d',
     'league_top_three_workload_share_10d',
     'top_three_share_delta_vs_league',
+    'baseline_read',
     'bullpen_workload_total_10d',
     'concentration_band',
     'top_three_relievers_10d',
