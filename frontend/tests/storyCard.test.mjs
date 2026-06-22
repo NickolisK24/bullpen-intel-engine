@@ -275,13 +275,14 @@ test('StoryCard does not frame the positive availability_depth story as a warnin
   assert.ok(htmlIncludes(html, 'More Options'))
 })
 
-test('Phase 4B.1 leaves TeamBullpenStoryPanel mounted on the board (no migration)', () => {
+test('Phase 4B.6 retires TeamBullpenStoryPanel from the board (one story surface)', () => {
   const board = readFileSync(
     new URL('../src/components/bullpen/board/BullpenBoardView.jsx', import.meta.url),
     'utf8',
   )
-  assert.ok(board.includes('import TeamBullpenStoryPanel'))
-  assert.ok(board.includes('<TeamBullpenStoryPanel'))
+  // The legacy panel is gone; the canonical StoryCard is the only story surface.
+  assert.equal(board.includes('TeamBullpenStoryPanel'), false)
+  assert.equal(board.includes('showStoryPanel'), false)
 })
 
 test('StoryCard does not display old public labels or raw internal story types', () => {
