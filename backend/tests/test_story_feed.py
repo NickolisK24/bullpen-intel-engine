@@ -8,6 +8,12 @@ context is required.
 from datetime import date
 
 from services.story_feed import (
+    CONTINUITY_CHANGED,
+    CONTINUITY_NEW,
+    CONTINUITY_ONGOING,
+    CONTINUITY_RESOLVED,
+    CONTINUITY_UNAVAILABLE,
+    CONTINUITY_UNCHANGED,
     DAY_LOW_STORY,
     DAY_NO_STORY,
     DAY_NORMAL,
@@ -26,10 +32,23 @@ from services.story_feed import (
     SOURCE_ENGINE,
     build_canonical_story_feed,
     build_league_context,
+    build_story_continuity,
     canonical_story_from_service_payload,
     classify_story_day,
     story_id_for,
 )
+
+
+def _item(team_id, *, available=True, story_type='coverage_pressure', headline='Headline', date='2026-06-22'):
+    """Minimal canonical-story shape for continuity tests."""
+    return {
+        'story_id': f'{team_id}:{date}',
+        'team_id': team_id,
+        'story_available': available,
+        'story_type': story_type if available else None,
+        'headline': headline if available else None,
+        'date': date,
+    }
 
 # Public-facing copy must never contain prediction/betting/ranking language.
 _FORBIDDEN_LEAGUE_TERMS = (
@@ -397,3 +416,108 @@ class TestLeagueContext:
         assert evidence['rest_story_count'] == 1
         assert evidence['watch_story_count'] == 1
         assert _no_forbidden_language(context)
+
+
+class TestStoryContinuity:
+    def test_new_when_no_prior(self):
+        cont = build_story_continuity(_item(1), None)
+        assert cont['state'] == CONTINUITY_NEW
+        assert cont['reason'] == 'no_prior_canonical_story'
+        assert cont['compared'] is False
+
+    def test_new_when_prior_was_suppressed(self):
+        cont = build_story_continuity(_item(1), _item(1, available=False))
+        assert cont['state'] == CONTINUITY_NEW
+        assert cont['reason'] == 'prior_story_was_suppressed'
+
+    def test_ongoing_same_type_different_headline(self):
+        prior = _item(1, story_type='coverage_pressure', headline='Old', date='2026-06-21')
+        cont = build_story_continuity(
+            _item(1, story_type='coverage_pressure', headline='New'), prior)
+        assert cont['state'] == CONTINUITY_ONGOING
+        assert cont['reason'] == 'story_type_persisted'
+        assert cont['previous_story_id'] == '1:2026-06-21'
+        assert cont['previous_story_type'] == 'coverage_pressure'
+        assert cont['changed_since'] == '2026-06-21'
+
+    def test_unchanged_same_type_same_headline(self):
+        prior = _item(1, story_type='coverage_pressure', headline='Same', date='2026-06-21')
+        cont = build_story_continuity(
+            _item(1, story_type='coverage_pressure', headline='Same'), prior)
+        assert cont['state'] == CONTINUITY_UNCHANGED
+        assert cont['reason'] == 'story_unchanged'
+
+    def test_changed_when_story_type_changes(self):
+        prior = _item(1, story_type='coverage_pressure', date='2026-06-21')
+        cont = build_story_continuity(_item(1, story_type='depth_constraint'), prior)
+        assert cont['state'] == CONTINUITY_CHANGED
+        assert cont['reason'] == 'story_type_changed'
+        assert cont['evidence']['story_type_changed'] is True
+
+    def test_resolved_when_prior_published_today_suppressed(self):
+        prior = _item(1, story_type='coverage_pressure', date='2026-06-21')
+        cont = build_story_continuity(_item(1, available=False), prior)
+        assert cont['state'] == CONTINUITY_RESOLVED
+        assert cont['reason'] == 'prior_story_no_longer_publishes'
+
+    def test_unavailable_when_both_suppressed(self):
+        cont = build_story_continuity(_item(1, available=False), _item(1, available=False))
+        assert cont['state'] == CONTINUITY_UNAVAILABLE
+        assert cont['reason'] == 'no_publishable_story_today'
+
+    def test_unavailable_when_no_prior_and_suppressed(self):
+        cont = build_story_continuity(_item(1, available=False), None)
+        assert cont['state'] == CONTINUITY_UNAVAILABLE
+        assert cont['reason'] == 'no_prior_canonical_story'
+
+    def test_suppressed_story_never_claims_continuation(self):
+        # A suppressed story is never ongoing/unchanged/changed.
+        cont = build_story_continuity(_item(1, available=False), _item(1, story_type='coverage_pressure'))
+        assert cont['state'] in (CONTINUITY_RESOLVED, CONTINUITY_UNAVAILABLE)
+        assert cont['evidence']['today_publishable'] is False
+
+    def test_deterministic(self):
+        prior = _item(1, story_type='coverage_pressure', headline='X', date='2026-06-21')
+        today = _item(1, story_type='coverage_pressure', headline='Y')
+        assert build_story_continuity(today, prior) == build_story_continuity(today, prior)
+
+    def test_feed_items_have_continuity_new_without_prior(self):
+        feed = build_canonical_story_feed(
+            [_descriptor(1)],
+            as_of_date=AS_OF,
+            story_builder=_builder({1: _available_payload(1)}),
+        )
+        assert feed['items'][0]['continuity']['state'] == CONTINUITY_NEW
+
+    def test_feed_continuity_ongoing_with_prior(self):
+        prior = [_item(1, story_type='coverage_pressure', headline='Yesterday headline', date='2026-06-21')]
+        feed = build_canonical_story_feed(
+            [_descriptor(1)],
+            as_of_date=AS_OF,
+            story_builder=_builder({1: _available_payload(1)}),  # coverage_pressure
+            prior_stories=prior,
+        )
+        cont = feed['items'][0]['continuity']
+        assert cont['state'] == CONTINUITY_ONGOING
+        assert cont['previous_story_id'] == '1:2026-06-21'
+
+    def test_feed_continuity_resolved_when_today_suppressed(self):
+        prior = [_item(2, story_type='coverage_pressure', headline='Yesterday', date='2026-06-21')]
+        feed = build_canonical_story_feed(
+            [_descriptor(2)],
+            as_of_date=AS_OF,
+            story_builder=_builder({2: _neutral_payload(2)}),
+            prior_stories=prior,
+        )
+        assert feed['items'][0]['continuity']['state'] == CONTINUITY_RESOLVED
+
+    def test_league_context_has_continuity(self):
+        feed = build_canonical_story_feed(
+            [_descriptor(1)],
+            as_of_date=AS_OF,
+            story_builder=_builder({1: _available_payload(1)}),
+            prior_league_context={'mode': 'broadly_stable', 'as_of_date': '2026-06-21'},
+        )
+        cont = feed['league_context']['continuity']
+        assert cont['state'] in ('new', 'unchanged', 'changed')
+        assert cont['previous_mode'] == 'broadly_stable'

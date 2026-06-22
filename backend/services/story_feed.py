@@ -117,6 +117,25 @@ LEAGUE_CONTEXT_LIMITATIONS = (
     'day_over_day_availability_trend_optional_and_not_fabricated',
 )
 
+# ── Story continuity ─────────────────────────────────────────────────────────
+# Continuity is keyed to canonical story identity (team + date via story_id) and
+# compares today's canonical story with the prior snapshot's canonical story for
+# the same team. The core state (new / changed / resolved / unavailable / a
+# continuing state) depends only on structured fields (story_type + whether the
+# story published), so it is stable against prose rewording. The unchanged vs
+# ongoing split uses the deterministic, engine-authored headline as a secondary
+# signal only.
+CONTINUITY_NEW = 'new'
+CONTINUITY_ONGOING = 'ongoing'
+CONTINUITY_CHANGED = 'changed'
+CONTINUITY_UNCHANGED = 'unchanged'
+CONTINUITY_RESOLVED = 'resolved'
+CONTINUITY_UNAVAILABLE = 'unavailable'
+
+LEAGUE_CONTINUITY_NEW = 'new'
+LEAGUE_CONTINUITY_UNCHANGED = 'unchanged'
+LEAGUE_CONTINUITY_CHANGED = 'changed'
+
 # The four authored paragraphs, mapped to public-safe beat labels. Labels mirror
 # the existing Team Board StoryCard so a future UI can render either source.
 _BEAT_DEFS = (
@@ -279,6 +298,8 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'share_summary': None,
         'source_engine': SOURCE_ENGINE,
         'quality_status': QUALITY_SUPPRESSED,
+        # Populated at feed assembly, which has the prior-snapshot context.
+        'continuity': None,
     }
 
     if not story_available:
@@ -418,7 +439,7 @@ def _select_league_mode(
     )
 
 
-def build_league_context(items, *, league_signal=None, as_of_date=None) -> dict:
+def build_league_context(items, *, league_signal=None, as_of_date=None, prior_league_context=None) -> dict:
     """Build the league-context section for the canonical feed.
 
     Describes today's league-wide bullpen environment from real counts (the
@@ -485,7 +506,86 @@ def build_league_context(items, *, league_signal=None, as_of_date=None) -> dict:
         'generated': generated,
         'quality_status': QUALITY_PUBLISHED if generated else QUALITY_NEUTRAL,
         'as_of_date': _date_str(as_of_date),
+        'continuity': _league_continuity(mode, prior_league_context),
         'limitations': list(LEAGUE_CONTEXT_LIMITATIONS),
+    }
+
+
+def _league_continuity(today_mode, prior_league_context=None) -> dict:
+    """Continuity for the league read: did today's league mode change from prior?"""
+    prior = prior_league_context if isinstance(prior_league_context, dict) else None
+    prior_mode = prior.get('mode') if prior else None
+    prior_date = prior.get('as_of_date') if prior else None
+    if prior is None:
+        state, reason = LEAGUE_CONTINUITY_NEW, 'no_prior_league_context'
+    elif today_mode == prior_mode:
+        state, reason = LEAGUE_CONTINUITY_UNCHANGED, 'league_mode_persisted'
+    else:
+        state, reason = LEAGUE_CONTINUITY_CHANGED, 'league_mode_changed'
+    return {
+        'state': state,
+        'reason': reason,
+        'previous_mode': prior_mode,
+        'changed_since': prior_date,
+    }
+
+
+def build_story_continuity(today_item, prior_item=None) -> dict:
+    """Continuity state for one canonical story vs the prior snapshot's story.
+
+    Keyed to canonical/team identity. The core state (new / changed / resolved /
+    unavailable / a continuing state) depends only on story_type and whether the
+    story published, so it is stable against prose rewording. The unchanged vs
+    ongoing split uses the deterministic engine headline as a secondary signal.
+    """
+    today = _dict(today_item)
+    prior = prior_item if isinstance(prior_item, dict) else None
+    today_pub = today.get('story_available') is True
+    prior_pub = bool(prior and prior.get('story_available') is True)
+
+    today_type = today.get('story_type')
+    previous_story_id = prior.get('story_id') if prior else None
+    previous_story_type = prior.get('story_type') if prior else None
+    previous_headline = prior.get('headline') if prior else None
+    previous_date = prior.get('date') if prior else None
+
+    if today_pub:
+        if prior is None:
+            state, reason = CONTINUITY_NEW, 'no_prior_canonical_story'
+        elif not prior_pub:
+            state, reason = CONTINUITY_NEW, 'prior_story_was_suppressed'
+        elif today_type != previous_story_type:
+            state, reason = CONTINUITY_CHANGED, 'story_type_changed'
+        elif _clean(today.get('headline')) and _clean(today.get('headline')) == _clean(previous_headline):
+            state, reason = CONTINUITY_UNCHANGED, 'story_unchanged'
+        else:
+            state, reason = CONTINUITY_ONGOING, 'story_type_persisted'
+    else:
+        if prior_pub:
+            state, reason = CONTINUITY_RESOLVED, 'prior_story_no_longer_publishes'
+        elif prior is None:
+            state, reason = CONTINUITY_UNAVAILABLE, 'no_prior_canonical_story'
+        else:
+            state, reason = CONTINUITY_UNAVAILABLE, 'no_publishable_story_today'
+
+    story_type_changed = (
+        today_type != previous_story_type if (today_pub and prior_pub) else None
+    )
+
+    return {
+        'state': state,
+        'reason': reason,
+        'previous_story_id': previous_story_id,
+        'previous_story_type': previous_story_type,
+        'previous_headline': previous_headline,
+        'changed_since': previous_date,
+        'compared': prior is not None,
+        'evidence': {
+            'today_publishable': today_pub,
+            'prior_publishable': prior_pub,
+            'prior_present': prior is not None,
+            'story_type_changed': story_type_changed,
+        },
     }
 
 
@@ -496,6 +596,8 @@ def build_canonical_story_feed(
     story_builder: Callable | None = None,
     freshness=None,
     league_signal=None,
+    prior_stories=None,
+    prior_league_context=None,
 ) -> dict:
     """Build the canonical league-wide story feed.
 
@@ -528,6 +630,15 @@ def build_canonical_story_feed(
             )
         )
 
+    # Attach continuity by comparing each story to the prior snapshot's canonical
+    # story for the same team. Both published and suppressed items get a state.
+    prior_index: dict = {}
+    for prior in prior_stories or []:
+        if isinstance(prior, dict) and prior.get('team_id') is not None:
+            prior_index.setdefault(prior['team_id'], prior)
+    for story in items:
+        story['continuity'] = build_story_continuity(story, prior_index.get(story.get('team_id')))
+
     available = [story for story in items if story['story_available']]
     suppressed = [story for story in items if not story['story_available']]
     suppression_reasons: dict[str, int] = {}
@@ -552,6 +663,7 @@ def build_canonical_story_feed(
             available + suppressed,
             league_signal=league_signal,
             as_of_date=as_of_date,
+            prior_league_context=prior_league_context,
         ),
     }
 
@@ -567,9 +679,16 @@ __all__ = [
     'LEAGUE_CONTEXT_CAPABILITY',
     'POSITIVE_BEAT_LIMITATION',
     'POSITIVE_OBSERVATION_TYPES',
+    'CONTINUITY_NEW',
+    'CONTINUITY_ONGOING',
+    'CONTINUITY_CHANGED',
+    'CONTINUITY_UNCHANGED',
+    'CONTINUITY_RESOLVED',
+    'CONTINUITY_UNAVAILABLE',
     'story_id_for',
     'canonical_story_from_service_payload',
     'build_canonical_story_feed',
     'build_league_context',
+    'build_story_continuity',
     'classify_story_day',
 ]

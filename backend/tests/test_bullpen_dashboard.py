@@ -228,6 +228,12 @@ class TestDashboardEndpoint:
         assert league['mode']
         assert league['day_class']
         assert league['quality_status'] in ('published', 'neutral')
+        assert league['continuity']['state'] in ('new', 'unchanged', 'changed')
+
+        # Continuity metadata is present on every canonical item.
+        for item in stories['items']:
+            assert 'continuity' in item
+            assert item['continuity']['state']
 
         # Legacy story fields remain untouched (additive change only).
         assert 'four_beat_stories' in body

@@ -1945,6 +1945,23 @@ def _canonical_league_signal(landscape, availability_records):
     }
 
 
+def _canonical_prior_story_items(previous_payload):
+    """Prior snapshot's canonical story items, the baseline for continuity.
+
+    Returns an empty list when the prior snapshot predates the canonical feed,
+    so continuity falls back to a truthful "no prior story" read.
+    """
+    stories = (previous_payload or {}).get('stories') or {}
+    items = stories.get('items')
+    return items if isinstance(items, list) else []
+
+
+def _canonical_prior_league_context(previous_payload):
+    stories = (previous_payload or {}).get('stories') or {}
+    context = stories.get('league_context')
+    return context if isinstance(context, dict) else None
+
+
 def _diagnostic_team_exists(team_id):
     return (
         db.session.query(Pitcher.id)
@@ -2484,16 +2501,8 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             bullpen_environment_by_team=bullpen_environment_by_team,
             story_quality_config=story_quality_config,
         )
-    # Canonical story feed (Phase 1, additive). Wraps Story Intelligence V1 per
-    # team into the forward-facing canonical contract. Legacy story fields above
-    # are untouched; this is a parallel, non-breaking key.
-    payload['stories'] = build_canonical_story_feed(
-        _canonical_story_team_descriptors(payload, landscape),
-        as_of_date=reference_date,
-        story_builder=build_story_intelligence_team_story,
-        freshness=freshness,
-        league_signal=_canonical_league_signal(landscape, availability_records),
-    )
+    # Prior dashboard snapshot — the comparison baseline for canonical story
+    # continuity and the "what changed" surfaces. Fetched once and reused below.
     data_through = parse_reference_date(
         freshness.get('data_through')
         or freshness.get('latest_workload_date')
@@ -2501,6 +2510,19 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
     previous_data_through = _dashboard_payload_data_through(previous_payload)
+
+    # Canonical story feed (additive). Wraps Story Intelligence V1 per team into
+    # the forward-facing canonical contract, with continuity keyed to the prior
+    # snapshot's canonical stories. Legacy story fields above are untouched.
+    payload['stories'] = build_canonical_story_feed(
+        _canonical_story_team_descriptors(payload, landscape),
+        as_of_date=reference_date,
+        story_builder=build_story_intelligence_team_story,
+        freshness=freshness,
+        league_signal=_canonical_league_signal(landscape, availability_records),
+        prior_stories=_canonical_prior_story_items(previous_payload),
+        prior_league_context=_canonical_prior_league_context(previous_payload),
+    )
     payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
         data_through,
         previous_data_through,
