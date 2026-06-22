@@ -15,20 +15,17 @@ import {
   STORY_FILTERS,
   filterStoryFeed,
   getActiveStoryFilterLabel,
-  getFourBeatStoryFeed,
   getFeedEmptyState,
   getFilterCounts,
   getStoryFilterOption,
   normalizeStoryFilter,
 } from './storiesFeedView'
 import {
-  canonicalStoriesPageEnabled,
   getCanonicalStoryFeed,
-  hasUsableCanonicalStoriesFeed,
 } from './storiesCanonicalFeedView'
 
 // BaseballOS Stories — the browseable bullpen intelligence feed. This page
-// renders backend-authored four-beat stories as the product feed.
+// renders the canonical backend story feed (dashboard.stories) as the product feed.
 export default function Stories() {
   const dash = useFetch(getBullpenDashboard)
 
@@ -48,16 +45,15 @@ export function StoriesView({
   loading = false,
   error = null,
   staleWithError = false,
-  canonicalStoriesEnabled = canonicalStoriesPageEnabled(),
   onRetry,
   initialFilter = 'all',
 }) {
   const [filter, setFilter] = useState(initialFilter)
   const masthead = getMastheadView(dashboard)
-  // Canonical backend stories power the feed only when the flag is on and the
-  // payload is well-formed; otherwise Stories keeps its legacy Four-Beat feed.
-  const useCanonicalStories = canonicalStoriesEnabled && hasUsableCanonicalStoriesFeed(dashboard)
-  const feed = useCanonicalStories ? getCanonicalStoryFeed(dashboard) : getFourBeatStoryFeed(dashboard)
+  // Stories renders the canonical backend story feed (dashboard.stories). The
+  // canonical adapter returns a safe { hasStories, items, fallback } shape for an
+  // empty, missing, or malformed payload, so the feed and its filters never break.
+  const feed = getCanonicalStoryFeed(dashboard)
   const counts = getFilterCounts(feed.items)
   const activeFilter = normalizeStoryFilter(filter)
   const activeOption = getStoryFilterOption(activeFilter)
