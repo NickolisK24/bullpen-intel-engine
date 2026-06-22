@@ -10,23 +10,8 @@
 // from the canonical payload; only short status labels and count facts are
 // derived from structured fields.
 
-export const CANONICAL_HOME_FLAG = 'VITE_USE_CANONICAL_HOME_STORIES'
-
 export const CANONICAL_HOME_STORIES_FALLBACK =
   'A quiet day in the bullpens — no standout stories this morning. Check back after tonight’s games.'
-
-// Read the feature flag. Default is safe (off): only an explicit truthy value
-// enables canonical Home stories. `env` is injectable for tests.
-export function canonicalHomeStoriesEnabled(env) {
-  let source = env
-  if (source == null) {
-    source = typeof import.meta !== 'undefined' ? import.meta.env : undefined
-  }
-  const raw = (source || {})[CANONICAL_HOME_FLAG]
-  if (raw === true) return true
-  const value = String(raw == null ? '' : raw).trim().toLowerCase()
-  return value === 'true' || value === '1' || value === 'on' || value === 'yes'
-}
 
 function canonicalFeed(dashboard) {
   const feed = dashboard?.stories

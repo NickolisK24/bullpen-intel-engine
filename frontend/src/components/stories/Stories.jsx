@@ -8,7 +8,7 @@ import { SectionHeading, StoryDisclosureNote } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
-} from '../home/homeIntelligenceView'
+} from '../home/homePresentationView'
 import TeamShareButton from '../share/TeamShareButton'
 import {
   DEFAULT_STORY_FILTER,

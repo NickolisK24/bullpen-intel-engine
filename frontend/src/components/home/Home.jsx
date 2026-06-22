@@ -20,19 +20,13 @@ import {
 } from '../bullpen/board/tonightsBullpenBoardView'
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import {
-  getHeroStory,
-  getLeagueContext,
   getMastheadView,
-  getTodayWatchItems,
-  getWhatChangedSinceYesterday,
   homeTone,
-} from './homeIntelligenceView'
+} from './homePresentationView'
 import {
-  canonicalHomeStoriesEnabled,
   getCanonicalHeroStory,
   getCanonicalHomeStories,
   getCanonicalLeagueContext,
-  hasUsableCanonicalStories,
 } from './homeCanonicalStoriesView'
 
 // The Morning Bullpen Report — BaseballOS's story-led front page. Curated,
@@ -95,25 +89,18 @@ export function HomeView({
   loading = false,
   error = null,
   staleWithError = false,
-  canonicalStoriesEnabled = canonicalHomeStoriesEnabled(),
   onRetry,
 }) {
   const masthead = getMastheadView(dashboard)
-  // Canonical backend stories power the story surfaces only when the flag is on
-  // and the payload is well-formed; otherwise Home keeps its legacy behavior.
-  const useCanonicalStories = canonicalStoriesEnabled && hasUsableCanonicalStories(dashboard)
-  const hero = useCanonicalStories ? getCanonicalHeroStory(dashboard) : getHeroStory(dashboard)
-  const whatChanged = getWhatChangedSinceYesterday(dashboard)
-  const watchItems = useCanonicalStories ? getCanonicalHomeStories(dashboard) : getTodayWatchItems(dashboard)
-  const leagueContext = useCanonicalStories ? getCanonicalLeagueContext(dashboard) : getLeagueContext(dashboard)
-  const changeItems = Array.isArray(whatChanged?.items) ? whatChanged.items : []
-  const teamOptions = useMemo(
-    () => buildWhatChangedTeamOptions(teams, changeItems),
-    [teams, changeItems],
-  )
-  const selectedValue = selectedWhatChangedTeamValue(teamOptions, changeItems, preferredTeam)
+  // The story surfaces read the canonical backend feed (dashboard.stories). The
+  // canonical adapters return safe neutral reads for an empty, missing, or
+  // malformed payload, so Home never blanks on a quiet morning.
+  const hero = getCanonicalHeroStory(dashboard)
+  const watchItems = getCanonicalHomeStories(dashboard)
+  const leagueContext = getCanonicalLeagueContext(dashboard)
+  const teamOptions = useMemo(() => buildWhatChangedTeamOptions(teams), [teams])
+  const selectedValue = selectedWhatChangedTeamValue(teamOptions, [], preferredTeam)
   const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
-  const selectedItem = selectedWhatChangedItem(changeItems, selectedTeam)
   const showFirstVisitPicker = !preferredTeam && !preferredTeamPromptDismissed
 
   const handleSelectTeam = (team) => {
@@ -167,11 +154,6 @@ export function HomeView({
 
           {!preferredTeam && heroSection}
 
-          <WhatChangedSinceYesterday
-            changes={whatChanged}
-            selectedTeam={selectedTeam}
-            selectedItem={selectedItem}
-          />
           {preferredTeam && (
             <>
               <TonightsTeamBullpenPicture
@@ -184,7 +166,7 @@ export function HomeView({
             </>
           )}
           <BullpenStories stories={watchItems} showCta={false} />
-          <LeagueContext context={leagueContext} changes={whatChanged} />
+          <LeagueContext context={leagueContext} />
         </>
       )}
 
@@ -315,75 +297,6 @@ function selectedWhatChangedTeamValue(options, items, preferredTeam) {
 
 function selectedWhatChangedTeam(options, value) {
   return options.find(option => option.value === value) || null
-}
-
-function selectedWhatChangedItem(items, option) {
-  return items.find(item => changeMatchesTeam(item, option)) || null
-}
-
-function WhatChangedSinceYesterday({
-  changes,
-  selectedTeam = null,
-  selectedItem = null,
-}) {
-  const items = Array.isArray(changes?.items) ? changes.items : []
-
-  if (!changes?.hasChanges || items.length < 1) return null
-
-  return (
-    <section className="mb-7" aria-label="What Changed Since Yesterday">
-      <div className="overflow-hidden border border-dirt bg-dugout">
-        <div className="flex flex-col gap-3 border-b border-dirt/70 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
-              What Changed Since Yesterday
-            </div>
-            <h2 className="mt-1 font-display text-3xl leading-none tracking-wide text-chalk100">
-              Tonight's shift
-            </h2>
-          </div>
-          {selectedTeam && (
-            <div className="min-w-0">
-              <p className="max-w-xl text-sm leading-relaxed text-chalk400">
-                {selectedTeam.teamName} tonight, with yesterday's workload and today's rested options underneath.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 sm:p-5">
-          {selectedItem ? (
-            <SelectedChangePanel item={selectedItem} team={selectedTeam} comparison={changes.comparison} />
-          ) : (
-            <NoSelectedChange team={selectedTeam} comparison={changes.comparison} />
-          )}
-
-          {items.length > 1 && (
-            <details className="mt-3">
-              <summary className="cursor-pointer list-none font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:text-amber">
-                View League-Wide Changes ({items.length})
-              </summary>
-              <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {items.map(item => (
-                  <li key={item.key} className="border border-dirt/80 bg-field/50 p-3">
-                    <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                      {item.teamAbbr || item.teamName}
-                    </div>
-                    <p className="mt-1 text-sm leading-snug text-chalk200">
-                      {restedCountLine(item)}
-                    </p>
-                    <p className="mt-1 text-xs leading-snug text-chalk500">
-                      {workloadAddedLine(item)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
-      </div>
-    </section>
-  )
 }
 
 function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSelectTeam = () => {} }) {
@@ -677,194 +590,11 @@ function TeamPictureMetric({ label, value, detail, tone, className = '', surface
   )
 }
 
-function ComparisonWindow({ comparison }) {
-  const previous = comparison?.previous_data_through
-  const current = comparison?.current_data_through
-  if (!previous || !current) return null
-  return (
-    <span className="rounded border border-dirt bg-field/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-      {previous} -&gt; {current}
-    </span>
-  )
-}
-
-function SelectedChangePanel({ item, team, comparison }) {
-  const delta = restedCountDelta(item)
-  const changeTone = delta < 0 ? 'text-red-300' : delta > 0 ? 'text-emerald-300' : 'text-chalk300'
-  const changeWord = delta < 0 ? 'fewer' : delta > 0 ? 'more' : 'changed'
-  const consequence = item.context || item.summary || item.headline
-  const supportingLine = item.summary || restedCountLine(item)
-
-  return (
-    <div>
-      <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2">
-        {item.teamAbbr && (
-          <span className="shrink-0 rounded border border-amber/30 bg-amber/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-amber">
-            {item.teamAbbr}
-          </span>
-        )}
-        <ComparisonWindow comparison={comparison} />
-      </div>
-
-      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
-        <div className="min-w-0 border-l-2 border-amber/60 bg-field/35 px-4 py-4 sm:px-5">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-amber">
-            Why It Matters
-          </div>
-          <p className="mt-3 max-w-3xl break-words text-xl leading-relaxed text-chalk100 sm:text-2xl">
-            {consequence}
-          </p>
-          {supportingLine && supportingLine !== consequence && (
-            <p className="mt-4 max-w-2xl break-words border-t border-dirt/60 pt-3 text-sm leading-relaxed text-chalk400">
-              {supportingLine}
-            </p>
-          )}
-        </div>
-
-        <RestedChangeFeature delta={delta} changeTone={changeTone} changeWord={changeWord} />
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 border-t border-dirt/60 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.75fr)]">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Evidence
-          </div>
-          <div className="mt-3 grid max-w-sm grid-cols-2 items-start divide-x divide-dirt/60">
-            <RestedCountInline label="Yesterday" count={item.yesterdayRestedCount} tone="rest" compact />
-            <RestedCountInline label="Today" count={item.todayRestedCount} tone="watch" compact />
-          </div>
-        </div>
-        <WorkloadAddedSlot workload={item.workloadAdded} />
-      </div>
-
-      <div className="mt-4 flex justify-end">
-        <Link
-          to={item.href || team?.href || '/bullpen?view=board'}
-          className="inline-flex min-h-8 shrink-0 items-center rounded border border-dirt bg-field/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk400 transition-colors hover:border-amber/40 hover:text-amber"
-        >
-          Open Team Board -&gt;
-        </Link>
-      </div>
-    </div>
-  )
-}
-
 function restedCountDelta(item) {
   const today = item?.todayRestedCount
   const yesterday = item?.yesterdayRestedCount
   if (!Number.isFinite(today) || !Number.isFinite(yesterday)) return null
   return today - yesterday
-}
-
-function restedRelieverLabel(count) {
-  if (!Number.isFinite(count)) return 'rested relievers'
-  return `rested ${count === 1 ? 'reliever' : 'relievers'}`
-}
-
-function restedCountLine(item) {
-  const today = item?.todayRestedCount
-  const yesterday = item?.yesterdayRestedCount
-  if (Number.isFinite(today) && Number.isFinite(yesterday)) {
-    return `${today} rested today, ${yesterday} yesterday`
-  }
-  if (Number.isFinite(today)) return `${today} rested today`
-  return item?.teamName ? `${item.teamName} bullpen moved from yesterday.` : 'Bullpen moved from yesterday.'
-}
-
-function workloadAddedLine(item) {
-  const count = Array.isArray(item?.workloadAdded) ? item.workloadAdded.length : 0
-  if (count < 1) return 'No meaningful workload added yesterday'
-  return `${count} ${count === 1 ? 'pitcher' : 'pitchers'} added meaningful workload yesterday`
-}
-
-function RestedCountInline({ label, count, tone = 'rest', compact = false }) {
-  const toneClass = tone === 'watch' ? 'text-violet-300' : 'text-emerald-300'
-  return (
-    <div className="min-w-0 px-3 first:pl-0">
-      <div className={`font-mono text-[10px] uppercase tracking-widest ${toneClass}`}>
-        {label}
-      </div>
-      <p className={`${compact ? 'mt-1 text-3xl' : 'mt-1.5 text-4xl'} font-display leading-none tracking-wide text-chalk100`}>
-        {Number.isFinite(count) ? count : '-'}
-      </p>
-      <p className={`${compact ? 'text-xs' : 'text-sm'} mt-1 leading-relaxed text-chalk300`}>{restedRelieverLabel(count)}</p>
-    </div>
-  )
-}
-
-function RestedChangeFeature({ delta, changeTone, changeWord }) {
-  const labelTone = delta < 0
-    ? 'text-red-300'
-    : delta > 0
-      ? 'text-emerald-300'
-      : 'text-chalk300'
-  return (
-    <div className="flex min-h-full min-w-0 flex-col justify-center border border-amber/25 bg-amber/10 p-4">
-      <div className={`font-mono text-[10px] uppercase tracking-widest ${labelTone}`}>
-        Change
-      </div>
-      <p className={`mt-2 font-display text-6xl leading-none tracking-wide ${changeTone}`}>
-        {Number.isFinite(delta) ? `${delta > 0 ? '+' : delta < 0 ? '-' : ''}${Math.abs(delta)}` : '-'}
-      </p>
-      <p className="mt-2 text-sm leading-relaxed text-chalk200">
-        {Number.isFinite(delta) ? `${changeWord} rested relievers` : 'rested reliever change'}
-      </p>
-    </div>
-  )
-}
-
-function WorkloadAddedSlot({ workload = [] }) {
-  const rows = Array.isArray(workload) ? workload : []
-  return (
-    <div className="min-w-0 border border-dirt/70 bg-field/35 p-3">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-emerald-300">
-        Workload Added Yesterday
-      </div>
-      {rows.length > 0 ? (
-        <ul className="mt-3 space-y-2">
-          {rows.map(row => (
-            <li key={`${row.pitcherId || row.name}-${row.pitches}`} className="flex min-w-0 items-baseline justify-between gap-3 text-sm leading-snug">
-              <span className="min-w-0 break-words text-chalk100">{row.name}</span>
-              <span className="shrink-0 font-mono text-xs text-chalk300">
-                {row.pitches} {row.pitches === 1 ? 'pitch' : 'pitches'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 break-words text-sm leading-relaxed text-chalk300">
-          No meaningful bullpen movement stands out for this club in the current comparison.
-        </p>
-      )}
-    </div>
-  )
-}
-
-function NoSelectedChange({ team, comparison }) {
-  return (
-    <div className="mt-4 border border-dirt/80 bg-field/50 p-4" role="status" aria-live="polite">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-          Showing
-        </span>
-        <h3 className="font-display text-2xl leading-none tracking-wide text-chalk100">
-          {team?.teamName || 'Selected team'}
-        </h3>
-        <ComparisonWindow comparison={comparison} />
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-chalk300">
-        No meaningful bullpen movement stands out for this club in the current comparison.
-      </p>
-      {team?.href && (
-        <Link
-          to={team.href}
-          className="mt-4 inline-flex rounded border border-dirt bg-dugout px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"
-        >
-          Open Team Board -&gt;
-        </Link>
-      )}
-    </div>
-  )
 }
 
 function Masthead({ masthead }) {

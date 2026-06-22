@@ -113,13 +113,34 @@ const dashboard = {
   freshness: { data_through: '2026-06-05', last_successful_sync: '2026-06-06T08:00:00Z', is_current: true, sync_status: 'success' },
 }
 
-test('today stays light: exactly one concept chip, on the hero', () => {
-  const html = render(React.createElement(HomeView, { dashboard }))
-  // Count chips by their unique tooltip marker so the visible label and its
-  // own title attribute are not double-counted.
-  const chips = (html.match(/title="High Bullpen Pressure:/g) || []).length
-  assert.equal(chips, 1, 'the hero carries one pressure chip; story cards on Today stay untagged')
-  assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
+test('today stays light: canonical story cards do not splatter concept-read tooltips', () => {
+  const canonicalDashboard = {
+    ...dashboard,
+    stories: {
+      capability: 'baseballos_canonical_story_v1',
+      items: [
+        {
+          story_id: '158:2026-06-06', team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL',
+          date: '2026-06-06', story_available: true, suppression_reason: null,
+          story_type: 'coverage_pressure', category: 'stressed', tone: 'stress',
+          headline: 'The Milwaukee Brewers are carrying real late-inning workload.',
+          narrative: 'Observation sentence.\n\nBaseline sentence.\n\nCause sentence.',
+          beats: [
+            { key: 'observation', label: 'What changed', text: 'Observation sentence.' },
+            { key: 'constraint', label: 'What it creates', text: 'Constraint sentence.' },
+          ],
+          continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+        },
+      ],
+      league_context: { headline: 'League read.', summary: 'League summary.', evidence: {} },
+    },
+  }
+  const html = render(React.createElement(HomeView, { dashboard: canonicalDashboard }))
+  // Canonical stories carry no landscape concept reads, so the read-tooltip
+  // marker never appears — Today stays light without per-card concept tags.
+  const chips = (html.match(/Bullpen Pressure:/g) || []).length
+  assert.equal(chips, 0, 'canonical story cards stay untagged by concept reads')
+  assert.ok(htmlIncludes(html, 'The Milwaukee Brewers are carrying real late-inning workload.'))
 })
 
 test('stories feed cards render unlabeled narrative instead of compact concept tags', () => {
