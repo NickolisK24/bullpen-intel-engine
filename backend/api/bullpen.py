@@ -81,19 +81,12 @@ from services.bullpen_population import (
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
-from services.four_beat_stories import build_four_beat_story_feed
 from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
     build_team_pitcher_usage_trend_continuity,
     build_team_workload_concentration_continuity,
-)
-from services.narrative_memory_story import build_dashboard_story_continuity
-from services.story_quality import (
-    StoryQualityConfig,
-    build_story_quality_debug_dump,
-    score_continuity_payload,
 )
 from services.pitcher_role import ROLE_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
@@ -1865,19 +1858,6 @@ def _max_data_through(results):
     return max(dates) if dates else None
 
 
-def _dashboard_continuity_team_ids(landscape):
-    team_ids = []
-    seen = set()
-    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
-        for entry in (landscape or {}).get(key) or []:
-            team_id = entry.get('team_id')
-            if team_id is None or team_id in seen:
-                continue
-            seen.add(team_id)
-            team_ids.append(team_id)
-    return team_ids
-
-
 def _canonical_story_team_descriptors(landscape):
     """Ordered team descriptors for the canonical story feed.
 
@@ -2214,42 +2194,6 @@ def get_bullpen_context_diagnostic():
     ))
 
 
-# ─── Story Quality diagnostic (read-only) ─────────────────────────────────────
-
-@bullpen_bp.route('/story-quality/diagnostic', methods=['GET'])
-def get_story_quality_diagnostic():
-    """
-    Internal/read-only Story Quality contract diagnostic.
-
-    Dumps, per team, each generated four-beat story plus its full rule-by-rule
-    quality scorecard (and the narrative-memory flagship-note summary), so the
-    *why* of a pass/fail is inspectable without re-running generation. The gate
-    runs in whatever mode config sets (report-only by default); this route never
-    changes feed behavior or holds anything.
-
-    Optional query params:
-      - team_id: scope the dump to one team.
-    """
-    team_id, team_error = _optional_int_arg('team_id')
-    if team_error:
-        return _diagnostic_error(team_error)
-
-    payload = build_bullpen_dashboard_payload(include_story_quality_debug=True)
-    feed = payload.get('four_beat_stories') or {}
-    continuity = payload.get('continuity') or {}
-    dump = build_story_quality_debug_dump(feed, team_id=team_id)
-
-    continuity_teams = continuity.get('teams') or {}
-    if team_id is not None:
-        team_note = continuity_teams.get(str(team_id)) or {}
-        dump['continuity_scorecard'] = team_note.get('story_quality')
-    dump['continuity_quality_summary'] = continuity.get('story_quality')
-    dump['generated_at'] = datetime.now(timezone.utc).isoformat()
-    dump['ranking_applied'] = False
-    dump['selection_made'] = False
-    return jsonify(dump)
-
-
 # ─── Role Authority diagnostic (read-only) ────────────────────────────────────
 
 @bullpen_bp.route('/role-authority/diagnostic', methods=['GET'])
@@ -2332,7 +2276,7 @@ def get_stats_overview():
     })
 
 
-def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_story_quality_debug=False):
+def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     """
     League-wide bullpen overview for the landing dashboard.
 
@@ -2382,7 +2326,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_st
         reference_date=reference_date,
         freshness=freshness,
     )
-    story_quality_config = StoryQualityConfig.from_app_config(current_app.config)
     injury_il_context = build_injury_il_context_payload(
         pitchers=[pitcher for _score, pitcher in latest_rows],
         availability_records=availability_records,
@@ -2459,27 +2402,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_st
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
     }
-    # The legacy four-beat feed and the legacy dashboard continuity payload are
-    # retired from the product dashboard payload. They are still built on demand
-    # for the read-only Story Quality diagnostic, which opts in explicitly; no
-    # product surface consumes them.
-    if include_story_quality_debug:
-        payload['four_beat_stories'] = build_four_beat_story_feed(
-            availability_records=availability_records,
-            logs_by_pitcher=logs_by_pitcher,
-            reference_date=reference_date,
-            freshness=freshness,
-            season_era=season_era,
-            capacity_by_team=capacity_by_team,
-            rotation_support_by_team=rotation_support_by_team,
-            bullpen_stability_by_team=bullpen_stability_by_team,
-            bullpen_environment_by_team=bullpen_environment_by_team,
-            story_quality_config=story_quality_config,
-        )
-        payload['continuity'] = score_continuity_payload(
-            build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape)),
-            story_quality_config,
-        )
     # Prior dashboard snapshot — the comparison baseline for canonical story
     # continuity and the "what changed" surfaces. Fetched once and reused below.
     data_through = parse_reference_date(
