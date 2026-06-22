@@ -134,6 +134,102 @@ class TestDashboardEndpoint:
         # Freshness/data-through is present for the hero.
         assert 'data_through' in body['freshness']
 
+    def test_dashboard_includes_canonical_stories_and_keeps_legacy(self, client, monkeypatch):
+        # Canonical contract keys every story item must carry.
+        required_keys = {
+            'story_id', 'team_id', 'team_name', 'date', 'story_available',
+            'suppression_reason', 'story_type', 'category', 'tone', 'headline',
+            'narrative', 'beats', 'evidence', 'freshness', 'trust_metadata',
+            'limitations', 'share_ready', 'share_title', 'share_summary',
+            'source_engine', 'quality_status',
+        }
+
+        def fake_story_builder(team_id, as_of_date=None):
+            if team_id == 1:
+                return {
+                    'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1',
+                    'as_of_date': '2026-06-22',
+                    'story_available': True,
+                    'story_type': 'coverage_pressure',
+                    'story_type_label': 'Coverage Pressure',
+                    'selected_observation': {'type': 'rotation_pressure', 'severity': 'high'},
+                    'construction_frame': {'observation_type': 'rotation_pressure'},
+                    'public_story_beat': {
+                        'story_type': 'coverage_pressure',
+                        'story_type_label': 'Coverage Pressure',
+                    },
+                    'written_story': {
+                        'headline': 'Team 1 leans on its setup arms',
+                        'observation_paragraph': 'Observation text.',
+                        'baseline_paragraph': 'Baseline text.',
+                        'cause_paragraph': 'Cause text.',
+                        'constraint_paragraph': 'Constraint text.',
+                    },
+                    'freshness': {'data_through': '2026-06-21'},
+                    'trust_metadata': {'external_generation_used': False},
+                    'limitations': [],
+                }
+            return {
+                'team_id': team_id, 'team_name': f'Team {team_id}',
+                'team_abbreviation': f'T{team_id}',
+                'as_of_date': '2026-06-22',
+                'story_available': False,
+                'neutral_reason': 'no_story_observations',
+                'freshness': {}, 'trust_metadata': {}, 'limitations': [],
+            }
+
+        monkeypatch.setattr(bullpen_api, 'build_story_intelligence_team_story', fake_story_builder)
+        monkeypatch.setattr(
+            bullpen_api,
+            '_canonical_story_team_descriptors',
+            lambda payload, landscape: [
+                {'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1'},
+                {'team_id': 2, 'team_name': 'Team 2', 'team_abbreviation': 'T2'},
+            ],
+        )
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=7001)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        # Canonical feed is present and shaped.
+        stories = body['stories']
+        assert stories['capability'] == 'baseballos_canonical_story_v1'
+        assert stories['source_engine'] == 'story_intelligence_service_v1'
+        assert stories['available_count'] == 1
+        assert stories['suppressed_count'] == 1
+        assert stories['suppression_reasons'] == {'no_story_observations': 1}
+        assert len(stories['items']) == 2
+        for item in stories['items']:
+            assert required_keys.issubset(item.keys())
+
+        # Available story first, with mapped content and a stable team+date id.
+        available = stories['items'][0]
+        assert available['team_id'] == 1
+        assert available['story_available'] is True
+        assert available['headline'] == 'Team 1 leans on its setup arms'
+        assert available['narrative'].startswith('Observation text.')
+        assert available['tone'] == 'stress'
+        assert available['category'] == 'stressed'
+        assert available['quality_status'] == 'published'
+        assert available['story_id'] == f"1:{available['date']}"
+
+        # Suppressed team carries a reason and no fabricated story.
+        suppressed = stories['items'][1]
+        assert suppressed['team_id'] == 2
+        assert suppressed['story_available'] is False
+        assert suppressed['suppression_reason'] == 'no_story_observations'
+        assert suppressed['quality_status'] == 'suppressed'
+        assert suppressed['headline'] is None
+
+        # Legacy story fields remain untouched (additive change only).
+        assert 'four_beat_stories' in body
+        assert 'story_context' in body
+        assert 'continuity' in body
+        # Governance posture unchanged.
+        assert body['ranking_applied'] is False
+        assert body['selection_made'] is False
+
     def test_dashboard_surfaces_public_what_changed_payload(self, client, monkeypatch):
         public_payload = {
             'capability': 'what_changed_since_yesterday_public_v1',

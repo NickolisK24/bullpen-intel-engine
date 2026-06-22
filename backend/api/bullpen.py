@@ -109,6 +109,7 @@ from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
 from services.story_four_beat_interpreter_v1 import public_beat_for_observation
+from services.story_feed import build_canonical_story_feed
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -1885,6 +1886,43 @@ def _dashboard_continuity_team_ids(landscape):
     return team_ids
 
 
+def _canonical_story_team_descriptors(payload, landscape):
+    """Ordered team descriptors for the canonical story feed.
+
+    Mirrors the four-beat feed's team set and order for compatibility, falling
+    back to the landscape teams when no four-beat feed is present.
+    """
+    descriptors = []
+    seen = set()
+
+    feed = (payload or {}).get('four_beat_stories') or {}
+    for item in feed.get('items') or []:
+        team_id = item.get('team_id')
+        if team_id is None or team_id in seen:
+            continue
+        seen.add(team_id)
+        descriptors.append({
+            'team_id': team_id,
+            'team_name': item.get('team_name'),
+            'team_abbreviation': item.get('team_abbreviation'),
+        })
+    if descriptors:
+        return descriptors
+
+    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
+        for entry in (landscape or {}).get(key) or []:
+            team_id = entry.get('team_id')
+            if team_id is None or team_id in seen:
+                continue
+            seen.add(team_id)
+            descriptors.append({
+                'team_id': team_id,
+                'team_name': entry.get('team_name'),
+                'team_abbreviation': entry.get('team_abbreviation'),
+            })
+    return descriptors
+
+
 def _diagnostic_team_exists(team_id):
     return (
         db.session.query(Pitcher.id)
@@ -2424,6 +2462,15 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             bullpen_environment_by_team=bullpen_environment_by_team,
             story_quality_config=story_quality_config,
         )
+    # Canonical story feed (Phase 1, additive). Wraps Story Intelligence V1 per
+    # team into the forward-facing canonical contract. Legacy story fields above
+    # are untouched; this is a parallel, non-breaking key.
+    payload['stories'] = build_canonical_story_feed(
+        _canonical_story_team_descriptors(payload, landscape),
+        as_of_date=reference_date,
+        story_builder=build_story_intelligence_team_story,
+        freshness=freshness,
+    )
     data_through = parse_reference_date(
         freshness.get('data_through')
         or freshness.get('latest_workload_date')
