@@ -11,12 +11,14 @@ from copy import deepcopy
 from typing import Any
 
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_voice_library_v1 import render_voice_line
 
@@ -29,6 +31,8 @@ BEAT_COVERAGE_PRESSURE = 'coverage_pressure'
 BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
 BEAT_AVAILABILITY_DEPTH = 'availability_depth'
+BEAT_TRUST_LANE = 'trust_lane'
+BEAT_BRIDGE = 'bridge'
 
 PUBLIC_BEATS = {
     BEAT_ROUTE_CHANGE: {
@@ -56,6 +60,16 @@ PUBLIC_BEATS = {
         'label': 'Availability Depth',
         'question_answered': 'How many rested, usable late-inning options does the bullpen have to work with?',
     },
+    BEAT_TRUST_LANE: {
+        'key': BEAT_TRUST_LANE,
+        'label': 'Trust Lane',
+        'question_answered': 'How many rested, trusted arms does the late-game plan actually lean on?',
+    },
+    BEAT_BRIDGE: {
+        'key': BEAT_BRIDGE,
+        'label': 'Bridge Instability',
+        'question_answered': 'How fragile is the path from the starter to the trusted late-game arms?',
+    },
 }
 
 # Positive depth/rest reads keep a positive beat. A genuine constraint is a
@@ -69,6 +83,8 @@ BASE_OBSERVATION_BEAT_MAP = {
     TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
     TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
     TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
+    TYPE_TRUST_LANE_PRESSURE: BEAT_TRUST_LANE,
+    TYPE_BRIDGE_INSTABILITY: BEAT_BRIDGE,
 }
 
 PUBLIC_BANNED_TERMS = (
@@ -235,6 +251,8 @@ def observation_public_beat_map():
         TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
         TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
         TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
+        TYPE_TRUST_LANE_PRESSURE: BEAT_TRUST_LANE,
+        TYPE_BRIDGE_INSTABILITY: BEAT_BRIDGE,
     }
 
 
@@ -256,6 +274,14 @@ def _default_forward_clause(beat, frame, names):
         if name_text:
             return f'If the game stays close, the manager can spread the late innings beyond {name_text} alone.'
         return 'If the game stays close, the bullpen has room to spread the late innings across several rested arms.'
+    if beat == BEAT_TRUST_LANE:
+        if name_text:
+            return f'If the game tightens, the trusted late-game lane runs back through {name_text}, thinner than the available arm count suggests.'
+        return 'If the game tightens, the trusted late-game lane stays thinner than the available arm count suggests.'
+    if beat == BEAT_BRIDGE:
+        if name_text:
+            return f'If the starters keep exiting early, the path to {name_text} runs through a fragile middle, thinner than the settled late group suggests.'
+        return 'If the starters keep exiting early, the path to the late group runs through a fragile middle, thinner than the settled late arms suggest.'
     return None
 
 
@@ -377,10 +403,12 @@ def interpret_story_candidate(candidate):
 
 __all__ = [
     'BEAT_AVAILABILITY_DEPTH',
+    'BEAT_BRIDGE',
     'BEAT_COVERAGE_PRESSURE',
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',
     'BEAT_SUSTAINABILITY_QUESTION',
+    'BEAT_TRUST_LANE',
     'CAPABILITY',
     'PUBLIC_BEATS',
     'VERSION',

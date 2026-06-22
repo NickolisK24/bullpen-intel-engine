@@ -21,6 +21,11 @@ import {
   getStoryFilterOption,
   normalizeStoryFilter,
 } from './storiesFeedView'
+import {
+  canonicalStoriesPageEnabled,
+  getCanonicalStoryFeed,
+  hasUsableCanonicalStoriesFeed,
+} from './storiesCanonicalFeedView'
 
 // BaseballOS Stories — the browseable bullpen intelligence feed. This page
 // renders backend-authored four-beat stories as the product feed.
@@ -43,12 +48,16 @@ export function StoriesView({
   loading = false,
   error = null,
   staleWithError = false,
+  canonicalStoriesEnabled = canonicalStoriesPageEnabled(),
   onRetry,
   initialFilter = 'all',
 }) {
   const [filter, setFilter] = useState(initialFilter)
   const masthead = getMastheadView(dashboard)
-  const feed = getFourBeatStoryFeed(dashboard)
+  // Canonical backend stories power the feed only when the flag is on and the
+  // payload is well-formed; otherwise Stories keeps its legacy Four-Beat feed.
+  const useCanonicalStories = canonicalStoriesEnabled && hasUsableCanonicalStoriesFeed(dashboard)
+  const feed = useCanonicalStories ? getCanonicalStoryFeed(dashboard) : getFourBeatStoryFeed(dashboard)
   const counts = getFilterCounts(feed.items)
   const activeFilter = normalizeStoryFilter(filter)
   const activeOption = getStoryFilterOption(activeFilter)

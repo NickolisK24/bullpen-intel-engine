@@ -160,14 +160,17 @@ test('StoryCard degrades gracefully when optional paragraphs are missing', () =>
   assert.ok(!htmlIncludes(html, 'Comparison point'))
 })
 
-test('StoryCard renders only the four public beat labels with helper text', () => {
+test('StoryCard renders the public beat labels with helper text', () => {
   assert.deepEqual(
     Object.keys(STORY_TYPE_DISPLAY).sort(),
     [
+      'availability_depth',
+      'bridge',
       'coverage_pressure',
       'depth_constraint',
       'route_change',
       'sustainability_question',
+      'trust_lane',
     ],
   )
 
@@ -195,6 +198,90 @@ test('StoryCard renders only the four public beat labels with helper text', () =
     assert.ok(htmlIncludes(html, 'What it creates'))
     assert.equal(storyCardHasBannedLanguage(html), false)
   }
+})
+
+test('StoryCard labels the availability_depth positive beat as More Options', () => {
+  const story = storyPayload({
+    story_type: 'availability_depth',
+    headline: 'The Royals bullpen has more rested options than most clubs today',
+    observation: 'Seven relievers come in rested enough to use.',
+    baseline: 'That is a deeper available board than the league norm.',
+    cause: 'Recent relief work has been spread across the group.',
+    constraint: 'If the game stays close, the manager can spread the late innings across several rested arms.',
+  })
+  const view = getStoryCardView(story)
+  const html = render({ story })
+
+  assert.equal(view.storyType, 'More Options')
+  assert.equal(view.storyTypeHelper, 'How much rested late-inning depth the bullpen has to work with.')
+  assert.notEqual(view.storyType, 'Bullpen story') // no longer the generic fallback
+  assert.ok(htmlIncludes(html, 'More Options'))
+  assert.ok(htmlIncludes(html, 'The Royals bullpen has more rested options than most clubs today'))
+  assert.equal(html.includes('availability_depth'), false) // internal type not leaked
+  assert.equal(storyCardHasBannedLanguage(html), false)
+})
+
+test('StoryCard labels the trust_lane beat as Trust Lane', () => {
+  const story = storyPayload({
+    story_type: 'trust_lane',
+    headline: 'The Royals have arms available but a thin trusted late-game lane',
+    observation: 'The active board lists six available arms, but only one comes in clean.',
+    baseline: 'That is a wider board than the trusted late-inning lane.',
+    cause: 'Most of the available arms are pitching through recent workload.',
+    constraint: 'If the game tightens, the late-game plan leans back on a short list of arms.',
+  })
+  const view = getStoryCardView(story)
+  const html = render({ story })
+
+  assert.equal(view.storyType, 'Trust Lane')
+  assert.equal(view.storyTypeHelper, 'How few rested, trusted arms the late-game plan really leans on.')
+  assert.notEqual(view.storyType, 'Bullpen story') // not the generic fallback
+  assert.ok(htmlIncludes(html, 'Trust Lane'))
+  assert.equal(html.includes('trust_lane'), false) // internal type not leaked
+  assert.equal(storyCardHasBannedLanguage(html), false)
+})
+
+test('StoryCard labels the bridge beat as Bridge Instability', () => {
+  const story = storyPayload({
+    story_type: 'bridge',
+    headline: 'The Royals are settled at the back but fragile in the bridge',
+    observation: 'The late-game core is settled, but the bullpen reaches it through volatile middle arms.',
+    baseline: 'That is a thin handoff against a stable late group.',
+    cause: 'The starters keep handing off early.',
+    constraint: 'If the starters keep exiting early, the path to the late arms runs through a fragile middle.',
+  })
+  const view = getStoryCardView(story)
+  const html = render({ story })
+
+  assert.equal(view.storyType, 'Bridge Instability')
+  assert.equal(view.storyTypeHelper, 'How fragile the path is from the starter to the trusted late-game arms.')
+  assert.notEqual(view.storyType, 'Bullpen story') // not the generic fallback
+  assert.ok(htmlIncludes(html, 'Bridge Instability'))
+  assert.equal(html.includes('bridge_instability'), false) // internal type not leaked
+  assert.equal(storyCardHasBannedLanguage(html), false)
+})
+
+test('StoryCard does not frame the positive availability_depth story as a warning', () => {
+  const html = render({ story: storyPayload({ story_type: 'availability_depth', headline: 'More rested options today' }) })
+
+  // Renders the neutral available shell (not the error/paused state) and shows
+  // no pressure/constraint label for this positive beat.
+  assert.ok(htmlIncludes(html, 'bg-dugout/75'))
+  assert.equal(htmlIncludes(html, 'bg-amber/5'), false)
+  assert.equal(htmlIncludes(html, 'Story note paused'), false)
+  assert.equal(htmlIncludes(html, 'Coverage Pressure'), false)
+  assert.equal(htmlIncludes(html, 'Depth Constraint'), false)
+  assert.equal(htmlIncludes(html, 'Sustainability Question'), false)
+  assert.ok(htmlIncludes(html, 'More Options'))
+})
+
+test('Phase 4B.1 leaves TeamBullpenStoryPanel mounted on the board (no migration)', () => {
+  const board = readFileSync(
+    new URL('../src/components/bullpen/board/BullpenBoardView.jsx', import.meta.url),
+    'utf8',
+  )
+  assert.ok(board.includes('import TeamBullpenStoryPanel'))
+  assert.ok(board.includes('<TeamBullpenStoryPanel'))
 })
 
 test('StoryCard does not display old public labels or raw internal story types', () => {

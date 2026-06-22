@@ -20,6 +20,8 @@ BEAT_COVERAGE_PRESSURE = 'coverage_pressure'
 BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
 BEAT_AVAILABILITY_DEPTH = 'availability_depth'
+BEAT_TRUST_LANE = 'trust_lane'
+BEAT_BRIDGE = 'bridge'
 
 PURPOSE_OPENING = 'opening'
 
@@ -136,6 +138,34 @@ VOICE_LIBRARY = {
             'The recent innings have spread across more than the top arms',
             "{possessive} late-inning depth runs past the top group",
             'The bullpen can turn to more than one rested arm tonight',
+        ),
+    },
+    BEAT_TRUST_LANE: {
+        PURPOSE_OPENING: (
+            'The bullpen has arms available, but the trusted late-game lane is thinner than the roster count suggests',
+            'The active board looks full, yet the dependable late-inning work still runs through {names}',
+            '{team} has bodies available, but the trusted late-game options stay few',
+            "{possessive} available board is wider than its trusted late-inning lane",
+            'The bullpen can fill a board, but the clean late-game choices narrow to {names}',
+            'The relief group has bodies available while the trusted late-inning lane stays narrow',
+            'The dependable late innings still lean on {names} more than the available count suggests',
+            "{possessive} trusted late-inning lane is thinner than the available arm count",
+            'The available arms outnumber the trusted late-game choices',
+            'The bullpen looks stocked, but the dependable late-inning lane holds at a few names',
+        ),
+    },
+    BEAT_BRIDGE: {
+        PURPOSE_OPENING: (
+            "The bullpen's late-game options remain intact, but the route into those innings is thinner than it appears",
+            'The trusted late arms are set, yet the path to reach them runs through a fragile middle',
+            "{possessive} late-game core is settled, but the handoff into it is unstable",
+            'The late innings are covered; the bridge to them is the soft spot',
+            '{team} can finish games, but the road from the starter to the late arms is shaky',
+            "{possessive} bullpen is solid at the back, thinner in the bridge",
+            'The trusted late group is intact while the middle-relief path stays volatile',
+            'The late-game plan holds, but the handoff arms are less certain',
+            'The back of the bullpen is settled; the bridge to it is not',
+            'The starters are leaving the bullpen a long, unsteady bridge to the late arms',
         ),
     },
 }
@@ -267,10 +297,12 @@ def voice_library_report() -> dict[str, Any]:
 __all__ = [
     'BANNED_PUBLIC_LANGUAGE',
     'BEAT_AVAILABILITY_DEPTH',
+    'BEAT_BRIDGE',
     'BEAT_COVERAGE_PRESSURE',
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',
     'BEAT_SUSTAINABILITY_QUESTION',
+    'BEAT_TRUST_LANE',
     'CAPABILITY',
     'DENIED_PUBLIC_PHRASES',
     'PURPOSE_OPENING',

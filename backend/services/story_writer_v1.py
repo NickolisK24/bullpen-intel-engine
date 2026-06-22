@@ -15,19 +15,23 @@ from services.story_construction_engine import (
     construct_team_story_frames,
 )
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_voice_library_v1 import (
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
     DENIED_PUBLIC_PHRASES,
     render_voice_line,
 )
@@ -684,10 +688,169 @@ def _depth_pressure(frame):
     )
 
 
+def _trust_lane_pressure(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    available = headline.get('available_arms_count') or observed.get('available_arms_count')
+    clean_count = observed.get('clean_workload_options_count')
+    secondary_count = observed.get('secondary_options_count')
+    clean_names = _join_names(cause.get('clean_workload_options'), limit=3)
+    route_names = (
+        _join_names(cause.get('top_three_relievers'), limit=3)
+        or _join_names(constraint.get('current_operational_core'), limit=3)
+    )
+    trusted_names = clean_names or route_names
+    share = cause.get('top_three_workload_share_10d') or interpretation.get('top_three_workload_share_10d')
+    has_clean = _present(clean_count) and clean_count and clean_count > 0
+
+    return _sections(
+        headline=_voice_opening(
+            frame,
+            BEAT_TRUST_LANE,
+            names=trusted_names or 'a short list of arms',
+            extra_parts=(available, clean_count, secondary_count),
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The active board lists {_fmt(available)} available {_count_word(available, 'arm')}, but the clean, low-workload group is just {_fmt(clean_count)} deep"
+                if _present(available) and has_clean else None
+            ),
+            (
+                f"The active board lists {_fmt(available)} available {_count_word(available, 'arm')}, but none of them come in clean of recent workload"
+                if _present(available) and _present(clean_count) and not has_clean else None
+            ),
+            (
+                f"That keeps the trusted late-game lane narrow even with a fuller board"
+                if _present(clean_count) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The comparison point is the {_fmt(available)}-arm available board set against a thinner trusted late-inning lane"
+                if _present(available) else None
+            ),
+            (
+                f"Set against that board, the workload-flagged group numbers {_fmt(secondary_count)}"
+                if _present(secondary_count) and secondary_count else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The dependable late-inning work keeps running through {trusted_names}"
+                if trusted_names else None
+            ),
+            (
+                f"The most-used group has handled {_fmt(share, suffix='%')} of the recent bullpen workload"
+                if _present(share) and route_names and not clean_names else None
+            ),
+            (
+                f"The rest of the available arms are still working back from recent outings"
+                if _present(secondary_count) and secondary_count else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If the game tightens, the late-game plan leans back on {trusted_names}, a thinner trusted lane than the {_fmt(available)}-arm board suggests"
+                if trusted_names and _present(available) else None
+            ),
+            (
+                f"If the game tightens, the trusted late-game lane stays thinner than the available arm count suggests"
+                if not (trusted_names and _present(available)) else None
+            ),
+        ),
+    )
+
+
+def _bridge_instability(frame):
+    team = _team(frame)
+    headline = _facts(frame, 'headline_facts')
+    observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    constraint = _facts(frame, 'constraint_facts')
+
+    core_names = _join_names(
+        headline.get('current_operational_core') or baseline.get('current_operational_core'),
+        limit=3,
+    )
+    early_rate = observed.get('early_bullpen_entry_rate') or cause.get('early_bullpen_entry_rate')
+    coverage_ip = observed.get('bullpen_coverage_ip_7d') or cause.get('bullpen_coverage_ip_7d')
+    volatile = observed.get('volatile_middle_count')
+    clean_count = observed.get('clean_workload_options_count')
+    monitor = cause.get('monitor_arms_count')
+    has_monitor = _present(monitor) and monitor
+
+    return _sections(
+        headline=_voice_opening(
+            frame,
+            BEAT_BRIDGE,
+            names=core_names or 'the late arms',
+            extra_parts=(early_rate, coverage_ip, volatile),
+        ),
+        observation_paragraph=_paragraph(
+            (
+                f"The late-game core — {core_names} — is settled, but the bullpen is reaching it through {_fmt(volatile)} unsettled middle-relief {_count_word(volatile, 'arm')}"
+                if core_names and _present(volatile) else None
+            ),
+            (
+                f"The late-game core is settled, but the bullpen is reaching it through {_fmt(volatile)} unsettled middle-relief {_count_word(volatile, 'arm')}"
+                if not core_names and _present(volatile) else None
+            ),
+            (
+                f"The starters are handing off early, with the bullpen entering before the sixth in {_fmt(early_rate, suffix='%')} of recent games"
+                if _present(early_rate) else None
+            ),
+        ),
+        baseline_paragraph=_paragraph(
+            (
+                f"The comparison point is a settled late group against a thin handoff: {_fmt(clean_count)} clean middle {_count_word(clean_count, 'option')} feeding the back of the bullpen"
+                if _present(clean_count) else None
+            ),
+            (
+                f"The bullpen is covering {_fmt(coverage_ip)} innings a game on the way there"
+                if _present(coverage_ip) else None
+            ),
+        ),
+        cause_paragraph=_paragraph(
+            (
+                f"The early starter exits keep putting the middle innings back on the bullpen"
+                if _present(early_rate) else None
+            ),
+            (
+                f"The handoff is leaning on {_fmt(volatile)} unsettled middle {_count_word(volatile, 'arm')}, with {_fmt(monitor)} on the watch list rather than rested options"
+                if _present(volatile) and has_monitor else None
+            ),
+            (
+                f"The handoff is leaning on {_fmt(volatile)} unsettled middle {_count_word(volatile, 'arm')} rather than rested options"
+                if _present(volatile) and not has_monitor else None
+            ),
+        ),
+        constraint_paragraph=_paragraph(
+            (
+                f"If the starters keep exiting early, the path to {core_names} runs through a fragile middle, thinner than the settled late group suggests"
+                if core_names else None
+            ),
+            (
+                f"If the starters keep exiting early, the path to the late arms runs through a fragile middle"
+                if not core_names else None
+            ),
+        ),
+    )
+
+
 WRITERS = {
     TYPE_ROTATION_PRESSURE: _rotation_pressure,
     TYPE_CONCENTRATION_PRESSURE: _concentration_pressure,
     TYPE_OPTIONALITY_STRENGTH: _optionality_strength,
+    TYPE_TRUST_LANE_PRESSURE: _trust_lane_pressure,
+    TYPE_BRIDGE_INSTABILITY: _bridge_instability,
     TYPE_STABLE_CORE: _stable_core,
     TYPE_CORE_TRANSITION: _core_transition,
     TYPE_DEPTH_PRESSURE: _depth_pressure,

@@ -130,6 +130,60 @@ test('positive story maps to a rested card, not a warning', () => {
   assert.equal(card.narrative.includes('Observation sentence.'), true)
 })
 
+test('Home tolerates and renders a trust_lane story (Trust Lane kicker, watch tone)', () => {
+  const feed = canonicalFeed({
+    items: [
+      {
+        story_id: '147:2026-06-06', team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY',
+        date: '2026-06-06', story_available: true, suppression_reason: null,
+        story_type: 'trust_lane', category: 'trust_lane', tone: 'watch',
+        headline: 'Yankees have arms available but a thin trusted lane',
+        narrative: 'Observation sentence.\n\nCause sentence.',
+        beats: [
+          { key: 'observation', label: 'What changed', text: 'Observation sentence.' },
+          { key: 'constraint', label: 'What it creates', text: 'Constraint sentence.' },
+        ],
+        continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+        quality_status: 'published',
+      },
+    ],
+  })
+  const result = getCanonicalHomeStories(dashboardFixture(feed))
+  assert.equal(result.hasStories, true)
+  const card = result.items[0]
+  assert.equal(card.kicker, 'Trust Lane')   // received through the existing adapter map
+  assert.equal(card.tone, 'watch')          // supported tone, not a neutral fallback
+  assert.equal(card.storyKind, 'team_story')
+  assert.equal(card.title, 'Yankees have arms available but a thin trusted lane')
+})
+
+test('Home tolerates and renders a bridge story (Fragile Bridge kicker, watch tone)', () => {
+  const feed = canonicalFeed({
+    items: [
+      {
+        story_id: '111:2026-06-06', team_id: 111, team_name: 'Boston Red Sox', team_abbreviation: 'BOS',
+        date: '2026-06-06', story_available: true, suppression_reason: null,
+        story_type: 'bridge', category: 'bridge', tone: 'watch',
+        headline: 'Red Sox are settled at the back but fragile in the bridge',
+        narrative: 'Observation sentence.\n\nCause sentence.',
+        beats: [
+          { key: 'observation', label: 'What changed', text: 'Observation sentence.' },
+          { key: 'constraint', label: 'What it creates', text: 'Constraint sentence.' },
+        ],
+        continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+        quality_status: 'published',
+      },
+    ],
+  })
+  const result = getCanonicalHomeStories(dashboardFixture(feed))
+  assert.equal(result.hasStories, true)
+  const card = result.items[0]
+  assert.equal(card.kicker, 'Fragile Bridge')  // received through the existing adapter map
+  assert.equal(card.tone, 'watch')             // supported tone, not a neutral fallback
+  assert.equal(card.storyKind, 'team_story')
+  assert.equal(card.title, 'Red Sox are settled at the back but fragile in the bridge')
+})
+
 test('hero takes the lead publishable story and splits prose from why-it-matters', () => {
   const hero = getCanonicalHeroStory(dashboardFixture(canonicalFeed()))
   assert.equal(hero.hasStory, true)

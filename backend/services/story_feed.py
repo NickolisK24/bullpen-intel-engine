@@ -26,19 +26,23 @@ from typing import Any, Callable
 
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_four_beat_interpreter_v1 import (
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
 )
 
 CAPABILITY = 'baseballos_canonical_story_v1'
@@ -150,10 +154,15 @@ _EVIDENCE_BEAT_KEYS = ('baseline', 'cause')
 
 # Internal observation type -> (tone, category). Derived from the underlying read
 # because the public beats are all pressure-framed (see the positive-beat blocker).
+# Trust-lane is its own category so the feed can surface "bodies available, trusted
+# lane thin" distinctly; its tone is the supported `watch` token (a monitor signal)
+# so every surface renders it cleanly rather than as a neutral fallback.
 _OBSERVATION_TONE = {
     TYPE_ROTATION_PRESSURE: ('stress', 'stressed'),
     TYPE_CONCENTRATION_PRESSURE: ('stress', 'stressed'),
     TYPE_DEPTH_PRESSURE: ('stress', 'stressed'),
+    TYPE_TRUST_LANE_PRESSURE: ('watch', 'trust_lane'),
+    TYPE_BRIDGE_INSTABILITY: ('watch', 'bridge'),
     TYPE_CORE_TRANSITION: ('watch', 'watch'),
     TYPE_STABLE_CORE: ('rest', 'rested'),
     TYPE_OPTIONALITY_STRENGTH: ('rest', 'rested'),
@@ -166,6 +175,8 @@ _BEAT_TONE = {
     BEAT_SUSTAINABILITY_QUESTION: ('watch', 'watch'),
     BEAT_ROUTE_CHANGE: ('watch', 'watch'),
     BEAT_AVAILABILITY_DEPTH: ('rest', 'rested'),
+    BEAT_TRUST_LANE: ('watch', 'trust_lane'),
+    BEAT_BRIDGE: ('watch', 'bridge'),
 }
 
 _DEFAULT_TONE = ('watch', 'watch')

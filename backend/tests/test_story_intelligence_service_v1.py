@@ -12,19 +12,23 @@ from services.story_intelligence_service_v1 import (
 )
 from services.story_four_beat_interpreter_v1 import (
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
     observation_public_beat_map,
 )
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_writer_v1 import BANNED_TERMS, SECTION_KEYS
 
@@ -132,6 +136,8 @@ PUBLIC_BEATS = {
     BEAT_DEPTH_CONSTRAINT,
     BEAT_SUSTAINABILITY_QUESTION,
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_TRUST_LANE,
+    BEAT_BRIDGE,
 }
 
 
@@ -404,6 +410,189 @@ def test_pressure_outranks_positive_when_pressure_is_stronger():
     selected = next(profile for profile in profiles if profile.get('selected') is True)
     assert positive is not None
     assert positive['selection_strength'] < selected['selection_strength']
+
+
+def _trust_lane_optionality(*, clean=2, secondary=4, available=6, band='flexible'):
+    """A bullpen with an acceptable available board but a thin trusted/clean lane."""
+    return {
+        'context_available': True,
+        'optionality_band': band,
+        'practical_close_game_paths_count': max(available - 2, 0),
+        'available_arms_count': available,
+        'monitor_arms_count': 1,
+        'restricted_arms_count': 0,
+        'limited_arms_count': 0,
+        'avoid_arms_count': 0,
+        'unavailable_arms_count': 0,
+        'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+        'secondary_options': [{'name': f'Flagged {i + 1}'} for i in range(secondary)],
+    }
+
+
+def _profile_for(result, story_type):
+    profiles = result['selection_metadata']['candidate_profiles']
+    return next((p for p in profiles if p.get('story_type') == story_type), None)
+
+
+def test_trust_lane_publishes_when_clean_trusted_options_are_thin():
+    context = team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6))
+
+    result = build_team_story(118, team_context=context)
+
+    # Six available bodies look acceptable, but only one is clean, so the story
+    # publishes as a trust-lane read, not as positive depth.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_TRUST_LANE
+    assert result['selected_observation']['type'] == TYPE_TRUST_LANE_PRESSURE
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+    assert 'thin_trusted_lane' in result['selection_metadata']['selected_profile']['selection_reasons']
+    assert_forward_clause(result)
+
+
+def test_trust_lane_outranks_positive_depth_when_evidence_is_strong():
+    # A 'flexible' board co-fires the positive optionality read; the strong
+    # trust-lane read should win, but the positive read still competes.
+    context = team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6, band='flexible'))
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['story_type'] == BEAT_TRUST_LANE
+    positive = _profile_for(result, BEAT_AVAILABILITY_DEPTH)
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    assert positive is not None  # the positive read still competed
+    assert trust['selection_strength'] > positive['selection_strength']
+
+
+def test_stronger_acute_pressure_still_outranks_trust_lane():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.4,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.4,
+            'early_bullpen_entry_rate': 65.0,
+            'bullpen_coverage_ip_7d': 5.2,
+        },
+        optionality=_trust_lane_optionality(clean=1, secondary=5, available=6),
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuine, stronger pressure story wins outright on strength; trust-lane
+    # still competes as a ranked candidate below it.
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    selected = next(p for p in result['selection_metadata']['candidate_profiles'] if p.get('selected') is True)
+    assert trust is not None
+    assert trust['selection_strength'] < selected['selection_strength']
+
+
+def test_healthy_trusted_depth_publishes_positive_not_trust_lane():
+    context = team_context(optionality=_trust_lane_optionality(clean=4, secondary=3, available=8, band='deep'))
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuinely deep, clean board reads positive — the trust-lane detector does
+    # not fire when the trusted lane is healthy.
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['selected_observation']['type'] != TYPE_TRUST_LANE_PRESSURE
+
+
+def test_no_trust_lane_story_when_evidence_is_missing():
+    # An acceptable board with few flagged arms is not a thin trust lane, so no
+    # trust-lane story is fabricated.
+    context = team_context(optionality=_trust_lane_optionality(clean=2, secondary=1, available=4, band='narrow'))
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['story_type'] != BEAT_TRUST_LANE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_TRUST_LANE_PRESSURE
+    )
+
+
+def _bridge_inputs(*, early=38.0, coverage=4.2, monitor=3, limited=1, clean=1, available=3,
+                   stability_band='stable'):
+    """A settled late core, real handoff demand, and a volatile, thin middle bridge."""
+    return dict(
+        rotation={
+            'rotation_avg_ip_7d': 5.4, 'rotation_avg_ip_14d': 5.5, 'rotation_ip_trend': -0.1,
+            'early_bullpen_entry_rate': early, 'bullpen_coverage_ip_7d': coverage,
+        },
+        optionality={
+            'context_available': True, 'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 3, 'available_arms_count': available,
+            'monitor_arms_count': monitor, 'limited_arms_count': limited, 'restricted_arms_count': limited,
+            'avoid_arms_count': 0, 'unavailable_arms_count': 0,
+            'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+            'secondary_options': [{'name': f'Mid {i + 1}'} for i in range(max(monitor, 1))],
+        },
+        stability={
+            'stability_band': stability_band,
+            'current_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'previous_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'core_retention_count': 3, 'core_stability_pct': 100, 'core_change_count': 0,
+            'new_core_members': [], 'departed_core_members': [],
+            'current_core_size': 3, 'previous_core_size': 3,
+        },
+    )
+
+
+def test_bridge_publishes_when_the_handoff_is_fragile():
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=45.0)))
+
+    # The late core is settled (a positive stable_core read co-fires), but the
+    # fragile handoff is the more important story.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_BRIDGE
+    assert result['selected_observation']['type'] == TYPE_BRIDGE_INSTABILITY
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+    assert 'settled_late_core' in result['selection_metadata']['selected_profile']['selection_reasons']
+    assert_forward_clause(result)
+
+
+def test_bridge_outranks_trust_lane_when_evidence_is_stronger():
+    # available 4 + secondary 3 also fires trust-lane; the stronger bridge wins.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=38.0, available=4, monitor=3, limited=1, clean=1)))
+
+    assert result['story_type'] == BEAT_BRIDGE
+    bridge = _profile_for(result, BEAT_BRIDGE)
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    assert trust is not None  # trust-lane still competed
+    assert bridge['selection_strength'] > trust['selection_strength']
+
+
+def test_stronger_coverage_pressure_still_outranks_bridge():
+    inputs = _bridge_inputs(early=65.0, coverage=5.2)
+    inputs['rotation'].update({'rotation_ip_trend': -1.4, 'rotation_avg_ip_7d': 4.4, 'rotation_avg_ip_14d': 5.8})
+
+    result = build_team_story(118, team_context=team_context(**inputs))
+
+    # Acute coverage pressure wins outright on strength; bridge ranks below it.
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    bridge = _profile_for(result, BEAT_BRIDGE)
+    selected = next(p for p in result['selection_metadata']['candidate_profiles'] if p.get('selected') is True)
+    assert bridge is not None
+    assert bridge['selection_strength'] < selected['selection_strength']
+
+
+def test_weak_bridge_evidence_does_not_publish():
+    # Settled core and a thin middle, but the starters are going deep — no demand.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=12.0, coverage=3.0)))
+
+    assert result['story_type'] != BEAT_BRIDGE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_BRIDGE_INSTABILITY
+    )
+
+
+def test_healthy_bridge_publishes_positive_not_bridge():
+    # Plenty of clean middle options — a healthy bridge reads positive, not fragile.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(clean=4, monitor=1, limited=0, available=6)))
+
+    assert result['story_type'] != BEAT_BRIDGE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_BRIDGE_INSTABILITY
+    )
 
 
 def test_weak_positive_evidence_does_not_publish_a_fabricated_story():
@@ -708,6 +897,8 @@ def test_every_internal_observation_maps_to_one_public_beat():
         TYPE_STABLE_CORE,
         TYPE_CORE_TRANSITION,
         TYPE_DEPTH_PRESSURE,
+        TYPE_TRUST_LANE_PRESSURE,
+        TYPE_BRIDGE_INSTABILITY,
     }
     assert set(mapping.values()) <= PUBLIC_BEATS
     assert mapping[TYPE_CORE_TRANSITION] == BEAT_ROUTE_CHANGE
@@ -716,6 +907,8 @@ def test_every_internal_observation_maps_to_one_public_beat():
     assert mapping[TYPE_DEPTH_PRESSURE] == BEAT_DEPTH_CONSTRAINT
     assert mapping[TYPE_CONCENTRATION_PRESSURE] == BEAT_SUSTAINABILITY_QUESTION
     assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_AVAILABILITY_DEPTH
+    assert mapping[TYPE_TRUST_LANE_PRESSURE] == BEAT_TRUST_LANE
+    assert mapping[TYPE_BRIDGE_INSTABILITY] == BEAT_BRIDGE
 
 
 def test_short_start_cause_maps_to_coverage_pressure():
@@ -746,6 +939,8 @@ def test_public_story_type_never_exposes_internal_observation_snake_case():
         TYPE_STABLE_CORE,
         TYPE_CORE_TRANSITION,
         TYPE_DEPTH_PRESSURE,
+        TYPE_TRUST_LANE_PRESSURE,
+        TYPE_BRIDGE_INSTABILITY,
     }
     result = build_team_story(118, team_context=team_context(
         concentration={'concentration_band': 'narrow', 'top_three_workload_share_10d': 91.0},

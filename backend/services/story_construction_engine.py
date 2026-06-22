@@ -12,12 +12,14 @@ from typing import Any
 
 from services.bullpen_context import build_team_bullpen_context
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
     build_team_story_observation_payload,
     select_strongest_observation,
 )
@@ -443,10 +445,138 @@ def _depth_pressure_frame(team_context, observation):
     return frame, required, supporting
 
 
+def _trust_lane_pressure_frame(team_context, observation):
+    identity = _team_identity(team_context, observation)
+    optionality = _dict(_dict(team_context).get('bullpen_optionality_context'))
+    concentration = _dict(_dict(team_context).get('bullpen_concentration_context'))
+    stability = _dict(_dict(team_context).get('role_stability_context'))
+    clean = _list(optionality.get('clean_workload_options'))
+    secondary = _list(optionality.get('secondary_options'))
+    top_three = _list(concentration.get('top_three_relievers_10d'))
+    frame = _base_frame()
+    frame['headline_facts'] = {
+        'team_name': identity['team_name'],
+        'available_arms_count': optionality.get('available_arms_count'),
+        'clean_workload_options_count': len(clean),
+    }
+    frame['observation_facts'] = {
+        'type': TYPE_TRUST_LANE_PRESSURE,
+        'available_arms_count': optionality.get('available_arms_count'),
+        'clean_workload_options_count': len(clean),
+        'secondary_options_count': len(secondary),
+        'optionality_band': optionality.get('optionality_band'),
+        'practical_close_game_paths_count': optionality.get('practical_close_game_paths_count'),
+        'concentration_band': concentration.get('concentration_band'),
+    }
+    frame['baseline_facts'] = {
+        'available_arms_count': optionality.get('available_arms_count'),
+        'monitor_arms_count': optionality.get('monitor_arms_count'),
+        'restricted_arms_count': optionality.get('restricted_arms_count'),
+    }
+    frame['cause_facts'] = {
+        'clean_workload_options': clean,
+        'secondary_options': secondary,
+        'top_three_relievers': _names(top_three),
+        'top_three_workload_share_10d': concentration.get('top_three_workload_share_10d'),
+    }
+    frame['interpretation_facts'] = {
+        'optionality_band': optionality.get('optionality_band'),
+        'concentration_band': concentration.get('concentration_band'),
+        'top_three_workload_share_10d': concentration.get('top_three_workload_share_10d'),
+        'practical_close_game_paths_count': optionality.get('practical_close_game_paths_count'),
+    }
+    frame['constraint_facts'] = {
+        'clean_workload_options': clean,
+        'clean_workload_options_count': len(clean),
+        'secondary_options_count': len(secondary),
+        'current_operational_core': _list(stability.get('current_operational_core')),
+    }
+    required = [
+        ('missing_available_arms_count', frame['observation_facts']['available_arms_count']),
+        ('missing_clean_workload_options_count', frame['observation_facts']['clean_workload_options_count']),
+        ('missing_secondary_options_count', frame['observation_facts']['secondary_options_count']),
+    ]
+    supporting = [
+        ('missing_optionality_band', frame['observation_facts']['optionality_band']),
+        (
+            'missing_named_trust_lane_arms',
+            frame['cause_facts']['clean_workload_options'] or frame['cause_facts']['top_three_relievers'],
+        ),
+    ]
+    return frame, required, supporting
+
+
+def _bridge_instability_frame(team_context, observation):
+    identity = _team_identity(team_context, observation)
+    rotation = _dict(_dict(team_context).get('rotation_context'))
+    stability = _dict(_dict(team_context).get('role_stability_context'))
+    optionality = _dict(_dict(team_context).get('bullpen_optionality_context'))
+    concentration = _dict(_dict(team_context).get('bullpen_concentration_context'))
+    monitor = optionality.get('monitor_arms_count') or 0
+    limited = optionality.get('limited_arms_count') or 0
+    volatile_middle = monitor + limited
+    clean = _list(optionality.get('clean_workload_options'))
+    core = _list(stability.get('current_operational_core'))
+    top_three = _list(concentration.get('top_three_relievers_10d'))
+    frame = _base_frame()
+    frame['headline_facts'] = {
+        'team_name': identity['team_name'],
+        'current_operational_core': core,
+        'volatile_middle_count': volatile_middle,
+    }
+    frame['observation_facts'] = {
+        'type': TYPE_BRIDGE_INSTABILITY,
+        'stability_band': stability.get('stability_band'),
+        'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+        'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+        'volatile_middle_count': volatile_middle,
+        'clean_workload_options_count': len(clean),
+    }
+    frame['baseline_facts'] = {
+        'current_operational_core': core,
+        'core_stability_pct': stability.get('core_stability_pct'),
+        'available_arms_count': optionality.get('available_arms_count'),
+    }
+    frame['cause_facts'] = {
+        'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+        'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+        'monitor_arms_count': optionality.get('monitor_arms_count'),
+        'limited_arms_count': optionality.get('limited_arms_count'),
+    }
+    frame['interpretation_facts'] = {
+        'stability_band': stability.get('stability_band'),
+        'volatile_middle_count': volatile_middle,
+        'clean_workload_options_count': len(clean),
+        'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+    }
+    frame['constraint_facts'] = {
+        'current_operational_core': core,
+        'top_three_relievers': _names(top_three),
+        'volatile_middle_count': volatile_middle,
+        'clean_workload_options_count': len(clean),
+    }
+    required = [
+        ('missing_stability_band', frame['observation_facts']['stability_band']),
+        (
+            'missing_handoff_demand',
+            frame['observation_facts']['early_bullpen_entry_rate']
+            or frame['observation_facts']['bullpen_coverage_ip_7d'],
+        ),
+        ('missing_volatile_middle_count', frame['observation_facts']['volatile_middle_count']),
+    ]
+    supporting = [
+        ('missing_operational_core', frame['headline_facts']['current_operational_core']),
+        ('missing_early_bullpen_entry_rate', frame['cause_facts']['early_bullpen_entry_rate']),
+    ]
+    return frame, required, supporting
+
+
 FRAME_BUILDERS = {
     TYPE_ROTATION_PRESSURE: _rotation_pressure_frame,
     TYPE_CONCENTRATION_PRESSURE: _concentration_pressure_frame,
     TYPE_OPTIONALITY_STRENGTH: _optionality_strength_frame,
+    TYPE_TRUST_LANE_PRESSURE: _trust_lane_pressure_frame,
+    TYPE_BRIDGE_INSTABILITY: _bridge_instability_frame,
     TYPE_STABLE_CORE: _stable_core_frame,
     TYPE_CORE_TRANSITION: _core_transition_frame,
     TYPE_DEPTH_PRESSURE: _depth_pressure_frame,
