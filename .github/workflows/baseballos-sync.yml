@@ -71,7 +71,6 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          FOUR_BEAT_STORIES_ENABLED: 'true'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -88,7 +87,6 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          FOUR_BEAT_STORIES_ENABLED: 'true'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
@@ -214,7 +212,6 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          FOUR_BEAT_STORIES_ENABLED: 'true'
           BASEBALLOS_SITE_URL: https://baseballos.vercel.app
         run: |
           set -euo pipefail

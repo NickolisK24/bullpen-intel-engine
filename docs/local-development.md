@@ -283,8 +283,8 @@ http://localhost:5173/bullpen
 ## Visual Narrative Renderer Check
 
 Use `/stories` as the primary visual review surface. It reads
-`/api/bullpen/dashboard`, normalizes `four_beat_stories.items`, and renders
-`story.narrative` before falling back to older story body fields.
+`/api/bullpen/dashboard`, normalizes the canonical story feed
+(`stories.items`), and renders each story's `narrative`.
 
 Verify:
 
@@ -295,7 +295,7 @@ Verify:
   `What I'm Watching`.
 - Trust or disclosure notes appear only when the backend already provides them.
 - Team story links open the bullpen board, for example
-  `/bullpen?view=board&team=TOR&source=four-beat-stories`.
+  `/bullpen?view=board&team=TOR&source=share`.
 
 Raw API check:
 
@@ -305,10 +305,11 @@ http://127.0.0.1:5000/api/bullpen/dashboard
 
 In that JSON, confirm:
 
-- `four_beat_stories.items` exists and has at least one item.
-- Each visible story item has a `narrative` string.
-- Old contract fields such as `body` and `beats` may still exist for backward
-  compatibility, but the public story card should render `narrative`.
+- `stories.items` exists.
+- Each publishable item (`story_available: true`) has a `headline` and a
+  `narrative` string.
+- Canonical items also carry `beats` and `evidence`; the public story card
+  renders `narrative`.
 
 ## Clean Local Reset And Reseed
 
