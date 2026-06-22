@@ -27,6 +27,13 @@ import {
   getWhatChangedSinceYesterday,
   homeTone,
 } from './homeIntelligenceView'
+import {
+  canonicalHomeStoriesEnabled,
+  getCanonicalHeroStory,
+  getCanonicalHomeStories,
+  getCanonicalLeagueContext,
+  hasUsableCanonicalStories,
+} from './homeCanonicalStoriesView'
 
 // The Morning Bullpen Report — BaseballOS's story-led front page. Curated,
 // not exhaustive: one flagship observation, three things to watch, short
@@ -88,13 +95,17 @@ export function HomeView({
   loading = false,
   error = null,
   staleWithError = false,
+  canonicalStoriesEnabled = canonicalHomeStoriesEnabled(),
   onRetry,
 }) {
   const masthead = getMastheadView(dashboard)
-  const hero = getHeroStory(dashboard)
+  // Canonical backend stories power the story surfaces only when the flag is on
+  // and the payload is well-formed; otherwise Home keeps its legacy behavior.
+  const useCanonicalStories = canonicalStoriesEnabled && hasUsableCanonicalStories(dashboard)
+  const hero = useCanonicalStories ? getCanonicalHeroStory(dashboard) : getHeroStory(dashboard)
   const whatChanged = getWhatChangedSinceYesterday(dashboard)
-  const watchItems = getTodayWatchItems(dashboard)
-  const leagueContext = getLeagueContext(dashboard)
+  const watchItems = useCanonicalStories ? getCanonicalHomeStories(dashboard) : getTodayWatchItems(dashboard)
+  const leagueContext = useCanonicalStories ? getCanonicalLeagueContext(dashboard) : getLeagueContext(dashboard)
   const changeItems = Array.isArray(whatChanged?.items) ? whatChanged.items : []
   const teamOptions = useMemo(
     () => buildWhatChangedTeamOptions(teams, changeItems),
