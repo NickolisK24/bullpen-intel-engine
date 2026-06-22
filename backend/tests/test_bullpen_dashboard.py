@@ -420,6 +420,41 @@ class TestDashboardEndpoint:
         assert 'selection_made' not in body['context']
         assert body['availability_summary']['total_pitchers'] >= 0
 
+    def test_dashboard_attaches_league_workload_concentration_baselines(self, client):
+        # Teams with recent relief workload feed a league distribution sample.
+        # Baselines are backend infrastructure only — no UI or story consumes them.
+        with client.application.app_context():
+            for team_id, base in ((301, 30100), (302, 30200)):
+                for idx in range(4):
+                    _seed_pitcher(
+                        f'Reliever {team_id}-{idx}',
+                        team_id=team_id,
+                        mlb_id=base + idx,
+                        innings=1.0,
+                        days_ago=1,
+                        roster_status=STATUS_ACTIVE,
+                        games_started=0,
+                    )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        baselines = body['baselines']
+        assert baselines['capability'] == 'baseline_distribution_v1'
+        family = baselines['families']['workload_concentration']
+        assert family['metric_family'] == 'workload_concentration'
+        assert family['window_days'] == 7
+        assert family['sample_count'] >= 1
+        for metric_key in ('top_share', 'top_one_share'):
+            dist = family['metrics'][metric_key]
+            assert dist['sample_count'] == family['sample_count']
+            assert dist['mean'] is not None
+            assert dist['median'] is not None
+            for percentile in ('p10', 'p25', 'p75', 'p90'):
+                assert percentile in dist
+        # Infrastructure only: the baseline block leaks no ranking/selection.
+        assert 'ranking_applied' not in baselines
+        assert 'selection_made' not in baselines
+
     def test_dashboard_counts_exclude_clear_starters_league_wide(self, client):
         with client.application.app_context():
             _seed_pitcher(
