@@ -182,7 +182,7 @@ class TestDashboardEndpoint:
         monkeypatch.setattr(
             bullpen_api,
             '_canonical_story_team_descriptors',
-            lambda payload, landscape: [
+            lambda landscape: [
                 {'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1'},
                 {'team_id': 2, 'team_name': 'Team 2', 'team_abbreviation': 'T2'},
             ],
@@ -235,8 +235,9 @@ class TestDashboardEndpoint:
             assert 'continuity' in item
             assert item['continuity']['state']
 
-        # Legacy story fields remain untouched (additive change only).
-        assert 'four_beat_stories' in body
+        # The legacy four-beat payload is retired (Phase 5E); the other legacy
+        # story fields remain untouched.
+        assert 'four_beat_stories' not in body
         assert 'story_context' in body
         assert 'continuity' in body
         # Governance posture unchanged.
@@ -348,27 +349,9 @@ class TestDashboardEndpoint:
         assert 'Starter A' not in json.dumps(team_payload)
         assert 'Low Pitch Relief' not in json.dumps(team_payload)
 
-    def test_four_beat_story_path_defaults_on(self, client):
-        body = client.get('/api/bullpen/dashboard').get_json()
-
-        assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
-        assert body['four_beat_stories']['enabled'] is True
-        assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == (
-            'story_strength_with_observation_family_spacing'
-        )
-        assert body['four_beat_stories']['items'] == []
-
-    def test_four_beat_story_path_can_be_disabled(self, client):
-        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = False
-        with client.application.app_context():
-            _seed_pitcher('A One', team_id=1, mlb_id=101)
-
-        body = client.get('/api/bullpen/dashboard').get_json()
-
-        assert 'four_beat_stories' not in body
-
-    def test_four_beat_story_path_includes_items_by_default(self, client):
+    def test_dashboard_does_not_emit_four_beat_stories(self, client):
+        # The legacy four-beat feed was retired from the product dashboard
+        # payload in Phase 5E; it is no longer emitted regardless of seeding.
         with client.application.app_context():
             for idx in range(6):
                 _seed_pitcher(
@@ -384,15 +367,7 @@ class TestDashboardEndpoint:
 
         body = client.get('/api/bullpen/dashboard').get_json()
 
-        assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
-        assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == (
-            'story_strength_with_observation_family_spacing'
-        )
-        assert body['four_beat_stories']['selection_made'] is False
-        assert body['four_beat_stories']['items']
-        assert 'season_era' not in body['four_beat_stories']
-        assert all('computed' in item for item in body['four_beat_stories']['items'])
+        assert 'four_beat_stories' not in body
 
     def test_dashboard_surfaces_backend_authored_season_era(self, client):
         with client.application.app_context():
@@ -434,80 +409,6 @@ class TestDashboardEndpoint:
         assert bullpen_line['earned_runs'] == 1
         assert bullpen_line['innings_outs'] == 6
         assert bullpen_line['era'] == 4.5
-
-    def test_four_beat_story_and_board_share_clean_trust_authority(self, client):
-        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = True
-        team_id = 116
-        with client.application.app_context():
-            jansen = _seed_pitcher(
-                'Kenley Jansen',
-                team_id=team_id,
-                mlb_id=11601,
-                raw_score=10,
-                innings=[1.0, 1.0, 1.0],
-                days_ago=[2, 20, 31],
-                roster_status=STATUS_ACTIVE,
-                games_started=[0, 0, 0],
-            )
-            older_log = (
-                GameLog.query
-                .filter_by(pitcher_id=jansen.id)
-                .order_by(GameLog.game_date.asc())
-                .first()
-            )
-            older_log.save = True
-            older_log.save_situation = True
-
-            for idx in range(5):
-                _seed_pitcher(
-                    f'Detroit Clean Arm {idx}',
-                    team_id=team_id,
-                    mlb_id=11610 + idx,
-                    raw_score=10,
-                    innings=1.0,
-                    days_ago=2,
-                    roster_status=STATUS_ACTIVE,
-                    games_started=0,
-                )
-            db.session.commit()
-
-        dashboard = client.get('/api/bullpen/dashboard').get_json()
-        story = next(
-            item for item in dashboard['four_beat_stories']['items']
-            if item['team_id'] == team_id
-        )
-        board = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
-        board_clean_trust_names = [
-            card['name']
-            for group in board['groups']
-            for card in group['pitchers']
-            if (card['pitcher_labels']['read']['key'] == 'clean_option'
-                and card['pitcher_labels']['role']['key'] == 'trust_arm')
-        ]
-        board_concentration = board['team_shape']['workloadConcentration']
-        implication = next(
-            beat for beat in story['beats']
-            if beat['key'] == 'implication'
-        )
-
-        assert story['rule_key'] == 'pressure_distribution'
-        assert story['computed']['clean_trust_count'] == 1
-        assert board_clean_trust_names == ['Kenley Jansen']
-        assert implication['slots']['clean_trust_names'] == 'Kenley Jansen'
-        assert story['computed']['clean_trust_count'] == len(board_clean_trust_names)
-        assert board_concentration['supportingCounts']['concentrationDescriptor'] == (
-            story['computed']['workload']['concentration_descriptor']
-        )
-        assert board_concentration['supportingCounts']['topShare'] == story['computed']['workload']['top_share']
-        assert story['computed']['capacity_intelligence']['capacity_loss'] == (
-            board['capacity_intelligence']['capacity_loss']
-        )
-        assert story['computed']['rotation_support_pressure'] == (
-            board['rotation_support_pressure']
-        )
-        assert story['computed']['bullpen_stability'] == (
-            board['bullpen_stability']
-        )
 
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
