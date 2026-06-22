@@ -17,7 +17,6 @@ after(async () => {
 })
 
 const {
-  canonicalStoriesPageEnabled,
   hasUsableCanonicalStoriesFeed,
   getCanonicalStoryFeed,
 } = await server.ssrLoadModule('/src/components/stories/storiesCanonicalFeedView.js')
@@ -32,7 +31,6 @@ const PRESSURE_HEADLINE = 'The Brewers are carrying the late innings on a small 
 const LEAGUE_HEADLINE = "Today's bullpen pressure is concentrated in a small set of clubs."
 // Apostrophe-free substring for HTML matching (renderToStaticMarkup escapes ').
 const LEAGUE_HTML_MATCH = 'concentrated in a small set of clubs'
-const FOUR_BEAT_TITLE = 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.'
 
 function canonicalStories(overrides = {}) {
   return {
@@ -71,21 +69,7 @@ function canonicalStories(overrides = {}) {
   }
 }
 
-const fourBeatStories = {
-  capability: 'four_beat_story_template_v1', enabled: true,
-  items: [
-    {
-      story_id: '141:stress_transfer', rule_key: 'stress_transfer', rule_label: 'Stress Transfer',
-      team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR',
-      kicker: 'Stress Transfer', tone: 'stress', category: 'stressed',
-      title: FOUR_BEAT_TITLE,
-      narrative: `${FOUR_BEAT_TITLE}\n\nThe recent workload has clustered around the same late-inning group.`,
-      href: '/bullpen?view=board&team=TOR&source=four-beat-stories', cta: 'Open the team board',
-    },
-  ],
-}
-
-function dashboardFixture({ stories, four_beat_stories } = {}) {
+function dashboardFixture({ stories } = {}) {
   return {
     context: { health: { state: 'strained', label: 'x', reasons: [] }, metrics: { total_relievers: 64, available: 38, monitor: 14, restricted: 9, pct_available: 59, pct_restricted: 14 } },
     landscape: {
@@ -95,18 +79,8 @@ function dashboardFixture({ stories, four_beat_stories } = {}) {
     },
     freshness: { data_through: '2026-06-05', sync_status: 'success', is_current: true },
     ...(stories ? { stories } : {}),
-    ...(four_beat_stories ? { four_beat_stories } : {}),
   }
 }
-
-// ── Feature flag ─────────────────────────────────────────────────────────────
-test('flag defaults off and only an explicit truthy value enables it', () => {
-  assert.equal(canonicalStoriesPageEnabled({}), false)
-  assert.equal(canonicalStoriesPageEnabled({ VITE_USE_CANONICAL_STORIES_PAGE: 'false' }), false)
-  assert.equal(canonicalStoriesPageEnabled({ VITE_USE_CANONICAL_STORIES_PAGE: 'true' }), true)
-  assert.equal(canonicalStoriesPageEnabled({ VITE_USE_CANONICAL_STORIES_PAGE: '1' }), true)
-  assert.equal(canonicalStoriesPageEnabled({ VITE_USE_CANONICAL_STORIES_PAGE: true }), true)
-})
 
 test('hasUsableCanonicalStoriesFeed requires a present items array', () => {
   assert.equal(hasUsableCanonicalStoriesFeed(dashboardFixture({ stories: canonicalStories() })), true)
@@ -198,41 +172,28 @@ test('quiet day with no publishable team stories still yields the league card', 
   assert.equal(feed.items[0].title, LEAGUE_HEADLINE)
 })
 
-// ── Stories page integration behind the flag ─────────────────────────────────
-test('flag enabled: Stories renders canonical stories + league context', () => {
+// ── Stories page integration (canonical-only) ────────────────────────────────
+test('Stories renders canonical stories + league context', () => {
   const html = render(React.createElement(StoriesView, {
-    dashboard: dashboardFixture({ stories: canonicalStories(), four_beat_stories: fourBeatStories }),
-    canonicalStoriesEnabled: true,
+    dashboard: dashboardFixture({ stories: canonicalStories() }),
   }))
   assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), true)
   assert.equal(htmlIncludes(html, PRESSURE_HEADLINE), true)
   assert.equal(htmlIncludes(html, LEAGUE_HTML_MATCH), true)
-  // Legacy Four-Beat content is not used when canonical is active.
-  assert.equal(htmlIncludes(html, FOUR_BEAT_TITLE), false)
 })
 
-test('flag disabled: Stories keeps legacy Four-Beat behavior', () => {
+test('malformed canonical payload renders a safe empty feed without crashing', () => {
   const html = render(React.createElement(StoriesView, {
-    dashboard: dashboardFixture({ stories: canonicalStories(), four_beat_stories: fourBeatStories }),
-    canonicalStoriesEnabled: false,
+    dashboard: dashboardFixture({ stories: { capability: 'x' } }),
   }))
-  assert.equal(htmlIncludes(html, FOUR_BEAT_TITLE), true)
+  // No team story content; the page degrades to its empty/fallback state.
   assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), false)
+  assert.equal(htmlIncludes(html, 'No bullpen story has enough movement'), true)
 })
 
-test('flag enabled but malformed payload: Stories falls back to Four-Beat safely', () => {
-  const html = render(React.createElement(StoriesView, {
-    dashboard: dashboardFixture({ stories: { capability: 'x' }, four_beat_stories: fourBeatStories }),
-    canonicalStoriesEnabled: true,
-  }))
-  assert.equal(htmlIncludes(html, FOUR_BEAT_TITLE), true)
-  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), false)
-})
-
-test('flag enabled, quiet day: Stories renders the league context cleanly', () => {
+test('quiet day: Stories renders the league context cleanly', () => {
   const html = render(React.createElement(StoriesView, {
     dashboard: dashboardFixture({ stories: { items: [], league_context: canonicalStories().league_context } }),
-    canonicalStoriesEnabled: true,
   }))
   assert.equal(htmlIncludes(html, LEAGUE_HTML_MATCH), true)
 })

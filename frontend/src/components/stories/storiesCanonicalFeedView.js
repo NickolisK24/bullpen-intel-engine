@@ -1,32 +1,16 @@
-// Canonical Stories feed adapter (Phase 3).
+// Canonical Stories feed adapter (Phase 3; canonical-only since Phase 5D).
 //
 // Maps the backend canonical story feed (dashboard.stories) into the exact
-// `{ hasStories, items, fallback }` shape the Stories page already renders, so
-// the page can read backend stories behind a feature flag instead of the legacy
-// Four-Beat feed. Home and Stories then share one story source.
+// `{ hasStories, items, fallback }` shape the Stories page renders. Home and
+// Stories share this one canonical story source.
 //
 // This module only formats and presents backend-authored copy. It never invents
 // story content: titles, narrative, and the league read come verbatim from the
 // canonical payload; only short status labels and the league card framing are
 // derived from structured fields.
 
-export const CANONICAL_STORIES_PAGE_FLAG = 'VITE_USE_CANONICAL_STORIES_PAGE'
-
 export const CANONICAL_STORIES_FALLBACK =
   'No bullpen story has enough movement yet today.'
-
-// Read the feature flag. Default is safe (off): only an explicit truthy value
-// enables canonical Stories. `env` is injectable for tests.
-export function canonicalStoriesPageEnabled(env) {
-  let source = env
-  if (source == null) {
-    source = typeof import.meta !== 'undefined' ? import.meta.env : undefined
-  }
-  const raw = (source || {})[CANONICAL_STORIES_PAGE_FLAG]
-  if (raw === true) return true
-  const value = String(raw == null ? '' : raw).trim().toLowerCase()
-  return value === 'true' || value === '1' || value === 'on' || value === 'yes'
-}
 
 function canonicalFeed(dashboard) {
   const feed = dashboard?.stories

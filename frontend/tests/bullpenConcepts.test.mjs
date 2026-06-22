@@ -147,35 +147,31 @@ test('stories feed cards render unlabeled narrative instead of compact concept t
   const html = render(React.createElement(StoriesView, {
     dashboard: {
       ...dashboard,
-      four_beat_stories: {
+      stories: {
+        capability: 'baseballos_canonical_story_v1',
         items: [
           {
-            story_id: '141:stress_transfer',
-            team_id: 141,
-            team_name: 'Toronto Blue Jays',
-            team_abbreviation: 'TOR',
-            kicker: 'Stress Transfer',
-            tone: 'stress',
-            category: 'stressed',
-            title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+            story_id: '141:2026-06-06', team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR',
+            date: '2026-06-06', story_available: true, story_type: 'sustainability_question',
+            category: 'stressed', tone: 'stress',
+            headline: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
             narrative: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.\n\nThe recent workload has clustered around the same late-inning group.\n\nThe next useful read is whether support appears behind that group.',
-            href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
             beats: [
-              { key: 'signal', label: 'Signal', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
-              { key: 'evidence', label: 'Evidence', text: 'The top three arms have carried most of the recent relief work.' },
-              { key: 'mechanism', label: 'Mechanism', text: 'That shape leaves less room behind the clean late-inning path.' },
-              { key: 'implication', label: 'Implication', text: 'The next read is whether support appears behind that group.' },
+              { key: 'observation', label: 'What changed', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
+              { key: 'baseline', label: 'Comparison point', text: 'The top three arms have carried most of the recent relief work.' },
+              { key: 'cause', label: 'Why it happened', text: 'That shape leaves less room behind the clean late-inning path.' },
+              { key: 'constraint', label: 'What it creates', text: 'The next read is whether support appears behind that group.' },
             ],
+            continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
           },
         ],
+        league_context: { headline: 'League read.', summary: 'League summary.', evidence: {} },
       },
     },
   }))
+  // The canonical feed card renders the narrative prose, not beat labels or
+  // landscape concept tags.
   assert.ok(htmlIncludes(html, 'The next useful read is whether support appears behind that group.'))
-  assert.ok(!htmlIncludes(html, 'Signal'))
-  assert.ok(!htmlIncludes(html, 'Evidence'))
-  assert.ok(!htmlIncludes(html, 'Mechanism'))
-  assert.ok(!htmlIncludes(html, 'Implication'))
   assert.ok(!htmlIncludes(html, 'Concentrated Workload'))
   assert.ok(!htmlIncludes(html, 'Wide Recovery Window'))
 })
