@@ -8,20 +8,6 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-from services.four_beat_stories import (
-    BEAT_SIGNAL,
-    LEAD_ERA_ORDINARY,
-    LEAD_PARTICIPATION_NARROW,
-    LEAD_TRUST_LANE_ABSENCE,
-    LEAD_TRUST_LANE_SHALLOW,
-    LEAD_WORKLOAD_HIGH,
-    RULE_HIDDEN_CAPACITY_LOSS,
-    RULE_PRESSURE_DISTRIBUTION,
-    RULE_STRESS_TRANSFER,
-    RULE_SUSTAINABILITY_QUESTION,
-    RULES,
-)
-
 
 DEFAULT_SITE_URL = 'https://baseballos.vercel.app'
 DEFAULT_OG_IMAGE_PATH = '/og/baseballos-card.svg'
@@ -29,21 +15,8 @@ TEAM_PAGE_ROOT = '/team'
 TEAM_SHARE_SOURCE = 'share'
 TWITTER_CARD = 'summary'
 
-PLAIN_SHARE_TITLE_LABELS = {
-    RULE_SUSTAINABILITY_QUESTION: 'Riding the Bullpen Hard',
-    RULE_PRESSURE_DISTRIBUTION: 'Room to Maneuver',
-    RULE_STRESS_TRANSFER: 'Short on Fresh Arms',
-    RULE_HIDDEN_CAPACITY_LOSS: 'Not as Deep as It Looks',
-    'thinning_trust_lane': 'Thin Where It Counts Late',
-}
-
-TENSION_LEAD_DIMENSIONS = {
-    LEAD_TRUST_LANE_ABSENCE,
-    LEAD_TRUST_LANE_SHALLOW,
-    LEAD_WORKLOAD_HIGH,
-    LEAD_PARTICIPATION_NARROW,
-    LEAD_ERA_ORDINARY,
-}
+# Canonical story tones that warrant a tension framing on the share card.
+TENSION_TONES = {'stress', 'watch'}
 
 
 def _clean_text(value):
@@ -143,75 +116,37 @@ def _neutral_shape_description(board):
     return 'Availability and trust details come from the team board.'
 
 
-def _live_story_rule_keys():
-    return {
-        key
-        for key, rule in RULES.items()
-        if (rule or {}).get('status') == 'live'
-    }
-
-
-def unmapped_live_story_rule_keys():
-    return sorted(_live_story_rule_keys() - set(PLAIN_SHARE_TITLE_LABELS))
-
-
-def _plain_share_title_label(story, abbr):
-    rule_key = _clean_text((story or {}).get('rule_key'))
-    if not rule_key:
-        raise ValueError(f'Team story for {abbr} is missing a rule key.')
-    label = PLAIN_SHARE_TITLE_LABELS.get(rule_key)
-    if not label:
-        raise ValueError(f'Team story rule {rule_key} is missing a plain share title label.')
-    return label
-
-
-def _signal_beat(story):
-    beats = story.get('beats') if isinstance(story, dict) else None
-    if isinstance(beats, list):
-        for beat in beats:
-            if isinstance(beat, dict) and beat.get('key') == BEAT_SIGNAL:
-                text = _clean_text(beat.get('text'))
-                if text:
-                    return text
-    return _clean_text((story or {}).get('title'))
-
-
-def _story_label(story):
-    for key in ('rule_label', 'kicker'):
+def _story_title(story):
+    """Share-card title: the canonical share title, falling back to the headline."""
+    for key in ('share_title', 'headline'):
         text = _clean_text((story or {}).get(key))
         if text:
             return text
     return ''
 
 
-def _story_supports_tension(story):
-    signal = _signal_beat(story)
-    if ' but ' not in signal.lower():
-        return False
-    dimension = (story or {}).get('lead_dimension')
-    if dimension not in TENSION_LEAD_DIMENSIONS:
-        return False
+def _story_description(story):
+    """Share-card description: the canonical share summary, falling back to the headline."""
+    for key in ('share_summary', 'headline'):
+        text = _clean_text((story or {}).get(key))
+        if text:
+            return text
+    return ''
 
-    lead_fields = (story or {}).get('lead_fields') or {}
-    computed = (story or {}).get('computed') or {}
-    clean_trust_count = lead_fields.get('clean_trust_count')
-    if clean_trust_count is None:
-        clean_trust_count = computed.get('clean_trust_count')
-    clean_option_count = computed.get('clean_option_count')
 
-    if dimension == LEAD_TRUST_LANE_ABSENCE:
-        return (clean_option_count or 0) > 0 and int(clean_trust_count or 0) == 0
-    if dimension == LEAD_TRUST_LANE_SHALLOW:
-        return int(clean_trust_count or 0) == 1 and (clean_option_count or 0) > 1
-    return True
+def _story_framing(story):
+    return 'tension' if (story or {}).get('tone') in TENSION_TONES else 'clean'
 
 
 def build_story_index(dashboard_payload):
-    stories = (((dashboard_payload or {}).get('four_beat_stories') or {}).get('items') or [])
+    # Canonical story feed (dashboard.stories). Only publishable stories carry
+    # share-ready copy; suppressed entries fall through to the neutral board read.
+    feed = (dashboard_payload or {}).get('stories') or {}
+    stories = feed.get('items') or []
     return {
         _story_key(story): story
         for story in stories
-        if _story_key(story)
+        if isinstance(story, dict) and story.get('story_available') is True and _story_key(story)
     }
 
 
@@ -242,36 +177,33 @@ def build_team_story_preview(
     og_image = _absolute_url(og_image_path, site_url=site_url)
 
     if story:
-        signal = _signal_beat(story)
-        if not signal:
-            raise ValueError(f'Team story for {abbr} is missing a Signal beat.')
-        internal_label = _story_label(story)
-        if not internal_label:
-            raise ValueError(f'Team story for {abbr} is missing a rule label.')
-        share_label = _plain_share_title_label(story, abbr)
-        framing = 'tension' if _story_supports_tension(story) else 'clean'
+        title = _story_title(story)
+        if not title:
+            raise ValueError(f'Canonical story for {abbr} is missing a share title.')
+        description = _story_description(story)
+        if not description:
+            raise ValueError(f'Canonical story for {abbr} is missing a share summary.')
         return {
             'team_id': (team or {}).get('team_id') or story.get('team_id'),
             'team_abbreviation': abbr,
             'team_name': team_name,
             'has_story': True,
-            'framing': framing,
-            'source': 'four_beat_story',
+            'framing': _story_framing(story),
+            'source': 'canonical_story',
             'story_id': story.get('story_id'),
-            'rule_key': story.get('rule_key'),
-            'rule_label': internal_label,
-            'share_title_label': share_label,
-            'lead_dimension': story.get('lead_dimension'),
-            'og_title': f'{share_label} — {team_name}',
-            'og_description': signal,
+            'story_type': story.get('story_type'),
+            'category': story.get('category'),
+            'tone': story.get('tone'),
+            'og_title': title,
+            'og_description': description,
             'og_url': team_page_url,
             'canonical_url': team_page_url,
             'og_image': og_image,
             'twitter_card': TWITTER_CARD,
             'redirect_path': redirect_path,
             'authority': {
-                'title': 'four_beat_story.rule_key.plain_share_title_label',
-                'description': 'four_beat_story.signal',
+                'title': 'canonical_story.share_title',
+                'description': 'canonical_story.share_summary',
                 'redirect': 'tonights_bullpen_board.deep_link',
             },
         }
@@ -284,10 +216,9 @@ def build_team_story_preview(
         'framing': 'neutral',
         'source': 'team_shape',
         'story_id': None,
-        'rule_key': None,
-        'rule_label': None,
-        'share_title_label': None,
-        'lead_dimension': None,
+        'story_type': None,
+        'category': None,
+        'tone': None,
         'og_title': f'Where the {team_name} Bullpen Stands Tonight',
         'og_description': _neutral_shape_description(board),
         'og_url': team_page_url,

@@ -1,21 +1,9 @@
 from pathlib import Path
 
-from services.four_beat_stories import (
-    BEAT_SIGNAL,
-    LEAD_AVAILABILITY_DEEP,
-    LEAD_TRUST_LANE_SHALLOW,
-    RULE_HIDDEN_CAPACITY_LOSS,
-    RULE_PRESSURE_DISTRIBUTION,
-    RULE_STRESS_TRANSFER,
-    RULE_SUSTAINABILITY_QUESTION,
-    RULES,
-)
 from services.team_story_previews import (
-    PLAIN_SHARE_TITLE_LABELS,
     build_team_story_preview,
     build_team_story_previews,
     render_team_story_html,
-    unmapped_live_story_rule_keys,
     write_team_story_pages,
 )
 
@@ -28,40 +16,34 @@ def _team(team_id=1, name='Toronto Blue Jays', abbr='TOR'):
     }
 
 
-def _story(
+def _canonical_story(
     team=None,
     *,
-    signal,
-    lead_dimension,
-    rule_key=RULE_STRESS_TRANSFER,
-    rule_label='Stress Transfer',
-    computed=None,
-    lead_fields=None,
+    headline,
+    share_title,
+    share_summary,
+    story_type='coverage_pressure',
+    category='stressed',
+    tone='stress',
+    story_available=True,
 ):
+    """A canonical story feed item (dashboard.stories.items shape)."""
     team = team or _team()
     return {
-        'story_id': f"{team['team_id']}:fixture",
-        'rule_key': rule_key,
-        'rule_label': rule_label,
+        'story_id': f"{team['team_id']}:2026-06-22",
         'team_id': team['team_id'],
         'team_name': team['team_name'],
         'team_abbreviation': team['team_abbreviation'],
-        'title': signal,
-        'beats': [
-            {
-                'key': BEAT_SIGNAL,
-                'label': 'Signal',
-                'text': signal,
-            },
-            {
-                'key': 'mechanism',
-                'label': 'Mechanism',
-                'text': 'Fixture mechanism text.',
-            },
-        ],
-        'lead_dimension': lead_dimension,
-        'lead_fields': lead_fields or {},
-        'computed': computed or {},
+        'date': '2026-06-22',
+        'story_available': story_available,
+        'story_type': story_type,
+        'category': category,
+        'tone': tone,
+        'headline': headline,
+        'narrative': (f'{headline}\n\nSupporting cause.' if headline else None),
+        'share_title': share_title,
+        'share_summary': share_summary,
+        'continuity': {'state': 'new', 'reason': 'no_prior_canonical_story', 'compared': False},
     }
 
 
@@ -89,109 +71,107 @@ def _board(team=None, labels=None):
     }
 
 
-def test_all_live_story_rules_have_plain_share_title_labels():
-    live_rule_keys = {
-        key
-        for key, rule in RULES.items()
-        if rule.get('status') == 'live'
-    }
-
-    assert unmapped_live_story_rule_keys() == []
-    assert live_rule_keys <= set(PLAIN_SHARE_TITLE_LABELS)
-    assert PLAIN_SHARE_TITLE_LABELS[RULE_SUSTAINABILITY_QUESTION] == 'Riding the Bullpen Hard'
-    assert PLAIN_SHARE_TITLE_LABELS[RULE_PRESSURE_DISTRIBUTION] == 'Room to Maneuver'
-    assert PLAIN_SHARE_TITLE_LABELS[RULE_STRESS_TRANSFER] == 'Short on Fresh Arms'
-    assert PLAIN_SHARE_TITLE_LABELS[RULE_HIDDEN_CAPACITY_LOSS] == 'Not as Deep as It Looks'
-    assert PLAIN_SHARE_TITLE_LABELS['thinning_trust_lane'] == 'Thin Where It Counts Late'
-
-
-def test_tension_story_uses_signal_as_honest_contrast_preview():
+def test_pressure_story_uses_canonical_share_copy_with_tension_framing():
     team = _team()
-    signal = 'The Toronto Blue Jays have room tonight, but the trusted late-inning path is narrow.'
-    story = _story(
+    share_title = 'Toronto Blue Jays bullpen: coverage pressure'
+    share_summary = 'The Blue Jays are leaning on a small group of late-inning arms tonight.'
+    story = _canonical_story(
         team,
-        signal=signal,
-        lead_dimension=LEAD_TRUST_LANE_SHALLOW,
-        rule_key=RULE_STRESS_TRANSFER,
-        rule_label='Stress Transfer',
-        computed={'clean_option_count': 4},
-        lead_fields={'clean_trust_count': 1},
+        headline='The Blue Jays are carrying the late innings on a few arms',
+        share_title=share_title,
+        share_summary=share_summary,
+        story_type='coverage_pressure',
+        category='stressed',
+        tone='stress',
+    )
+
+    preview = build_team_story_preview(team, story=story, board=_board(team))
+
+    assert preview['has_story'] is True
+    assert preview['source'] == 'canonical_story'
+    assert preview['framing'] == 'tension'
+    assert preview['og_title'] == share_title
+    assert preview['og_description'] == share_summary
+    assert preview['og_title'] != preview['og_description']
+    assert preview['og_url'] == 'https://baseballos.vercel.app/team/TOR'
+    assert preview['story_type'] == 'coverage_pressure'
+    assert preview['category'] == 'stressed'
+    assert preview['tone'] == 'stress'
+    assert preview['authority']['title'] == 'canonical_story.share_title'
+    assert preview['authority']['description'] == 'canonical_story.share_summary'
+    assert preview['redirect_path'] == '/bullpen?view=board&team=TOR&source=share'
+
+
+def test_rested_story_uses_clean_framing():
+    team = _team(2, 'Los Angeles Dodgers', 'LAD')
+    story = _canonical_story(
+        team,
+        headline='The Dodgers have more rested options than most clubs today',
+        share_title='Los Angeles Dodgers bullpen: availability depth',
+        share_summary='Most of the Dodgers pen is available and rested tonight.',
+        story_type='availability_depth',
+        category='rested',
+        tone='rest',
+    )
+
+    preview = build_team_story_preview(team, story=story, board=_board(team))
+
+    assert preview['has_story'] is True
+    assert preview['framing'] == 'clean'
+    assert preview['og_title'] == 'Los Angeles Dodgers bullpen: availability depth'
+    assert preview['og_description'] == 'Most of the Dodgers pen is available and rested tonight.'
+
+
+def test_watch_tone_story_uses_tension_framing():
+    team = _team(4, 'Chicago Cubs', 'CHC')
+    story = _canonical_story(
+        team,
+        headline='The Cubs are settled at the back but fragile in the bridge',
+        share_title='Chicago Cubs bullpen: bridge instability',
+        share_summary='The Cubs have a trusted closer but a thin path to reach him.',
+        story_type='bridge',
+        category='watch',
+        tone='watch',
     )
 
     preview = build_team_story_preview(team, story=story, board=_board(team))
 
     assert preview['framing'] == 'tension'
-    assert preview['og_title'] == 'Short on Fresh Arms — Toronto Blue Jays'
-    assert preview['og_description'] == signal
-    assert preview['og_title'] != preview['og_description']
-    assert preview['og_url'] == 'https://baseballos.vercel.app/team/TOR'
-    assert preview['rule_label'] == 'Stress Transfer'
-    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_STRESS_TRANSFER]
-    assert preview['authority']['title'] == 'four_beat_story.rule_key.plain_share_title_label'
-    assert preview['authority']['description'] == 'four_beat_story.signal'
-    assert preview['redirect_path'] == '/bullpen?view=board&team=TOR&source=share'
+    assert preview['tone'] == 'watch'
+    assert preview['og_title'] == 'Chicago Cubs bullpen: bridge instability'
 
 
-def test_no_tension_story_stays_clean_and_does_not_manufacture_contrast():
-    team = _team(2, 'Los Angeles Dodgers', 'LAD')
-    signal = 'The Los Angeles Dodgers have actual room tonight: most of the pen is Available.'
-    story = _story(
+def test_title_falls_back_to_headline_when_share_title_missing():
+    team = _team(7, 'Fixture Club', 'FIX')
+    story = _canonical_story(
         team,
-        signal=signal,
-        lead_dimension=LEAD_AVAILABILITY_DEEP,
-        rule_key=RULE_PRESSURE_DISTRIBUTION,
-        rule_label='Pressure Distribution',
-        computed={'clean_option_count': 6},
-        lead_fields={'clean_trust_count': 2},
+        headline='The Fixture Club lean on a short bridge tonight',
+        share_title=None,
+        share_summary='Only two trusted arms are available late.',
+        tone='stress',
     )
 
     preview = build_team_story_preview(team, story=story, board=_board(team))
 
-    assert preview['framing'] == 'clean'
-    assert ' but ' not in preview['og_title'].lower()
-    assert preview['og_title'] == 'Room to Maneuver — Los Angeles Dodgers'
-    assert preview['og_description'] == signal
-    assert preview['og_title'] != preview['og_description']
-    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_PRESSURE_DISTRIBUTION]
+    assert preview['og_title'] == 'The Fixture Club lean on a short bridge tonight'  # headline fallback
+    assert preview['og_description'] == 'Only two trusted arms are available late.'  # share_summary
 
 
-def test_hidden_capacity_loss_uses_plain_share_label_and_preserves_internal_label():
-    team = _team(4, 'Chicago Cubs', 'CHC')
-    signal = 'The Chicago Cubs have a solid season read, but tonight the usable depth is thin.'
-    story = _story(
+def test_story_without_any_share_copy_raises():
+    team = _team(8, 'Empty Club', 'EMP')
+    story = _canonical_story(
         team,
-        signal=signal,
-        lead_dimension=LEAD_TRUST_LANE_SHALLOW,
-        rule_key=RULE_HIDDEN_CAPACITY_LOSS,
-        rule_label='Hidden Capacity Loss',
-        computed={'clean_option_count': 3},
-        lead_fields={'clean_trust_count': 1},
-    )
-
-    preview = build_team_story_preview(team, story=story, board=_board(team))
-
-    assert preview['og_title'] == 'Not as Deep as It Looks — Chicago Cubs'
-    assert preview['og_description'] == signal
-    assert preview['rule_label'] == 'Hidden Capacity Loss'
-    assert preview['share_title_label'] == PLAIN_SHARE_TITLE_LABELS[RULE_HIDDEN_CAPACITY_LOSS]
-
-
-def test_unmapped_story_rule_fails_before_emitting_public_title():
-    team = _team(5, 'Fixture Club', 'FIX')
-    story = _story(
-        team,
-        signal='The Fixture Club have a fixture Signal beat.',
-        lead_dimension=LEAD_AVAILABILITY_DEEP,
-        rule_key='fixture_rule',
-        rule_label='Fixture Rule',
+        headline=None,
+        share_title=None,
+        share_summary=None,
     )
 
     try:
         build_team_story_preview(team, story=story, board=_board(team))
     except ValueError as error:
-        assert 'missing a plain share title label' in str(error)
+        assert 'missing a share title' in str(error)
     else:
-        raise AssertionError('Expected unmapped story rule to fail.')
+        raise AssertionError('Expected a story with no share copy to fail.')
 
 
 def test_no_story_team_uses_neutral_shape_preview_only():
@@ -211,65 +191,104 @@ def test_no_story_team_uses_neutral_shape_preview_only():
     assert preview['og_url'] == 'https://baseballos.vercel.app/team/QUT'
 
 
-def test_build_team_story_previews_consumes_story_and_board_by_team_identity():
+def test_build_team_story_previews_consumes_canonical_stories_by_team_identity():
     tor = _team(141, 'Toronto Blue Jays', 'TOR')
     lad = _team(119, 'Los Angeles Dodgers', 'LAD')
-    signal = 'The Toronto Blue Jays have room tonight, but the trusted late-inning path is narrow.'
+    nym = _team(121, 'New York Mets', 'NYM')
     payload = {
-        'four_beat_stories': {
+        'stories': {
+            'capability': 'baseballos_canonical_story_v1',
             'items': [
-                _story(
+                _canonical_story(
                     tor,
-                    signal=signal,
-                    lead_dimension=LEAD_TRUST_LANE_SHALLOW,
-                    rule_key=RULE_STRESS_TRANSFER,
-                    rule_label='Stress Transfer',
-                    computed={'clean_option_count': 3},
-                    lead_fields={'clean_trust_count': 1},
-                )
+                    headline='The Blue Jays are carrying the late innings on a few arms',
+                    share_title='Toronto Blue Jays bullpen: coverage pressure',
+                    share_summary='Toronto is leaning on a small late-inning group tonight.',
+                    tone='stress',
+                    category='stressed',
+                ),
+                # A suppressed canonical story is excluded from the index and
+                # falls through to the neutral board read.
+                _canonical_story(
+                    nym,
+                    headline=None,
+                    share_title=None,
+                    share_summary=None,
+                    story_available=False,
+                ),
             ],
         },
     }
 
     previews = build_team_story_previews(
-        [lad, tor],
+        [lad, tor, nym],
         dashboard_payload=payload,
-        boards=[_board(tor), _board(lad)],
+        boards=[_board(tor), _board(lad), _board(nym)],
     )
     by_abbr = {preview['team_abbreviation']: preview for preview in previews}
 
-    assert by_abbr['TOR']['og_description'] == signal
-    assert by_abbr['TOR']['og_title'] == 'Short on Fresh Arms — Toronto Blue Jays'
     assert by_abbr['TOR']['has_story'] is True
+    assert by_abbr['TOR']['og_title'] == 'Toronto Blue Jays bullpen: coverage pressure'
+    assert by_abbr['TOR']['og_description'] == 'Toronto is leaning on a small late-inning group tonight.'
+    # No story present in the feed.
     assert by_abbr['LAD']['has_story'] is False
     assert by_abbr['LAD']['source'] == 'team_shape'
+    # Suppressed story excluded -> neutral preview.
+    assert by_abbr['NYM']['has_story'] is False
+    assert by_abbr['NYM']['source'] == 'team_shape'
+    # Sorting is alphabetical by abbreviation.
+    assert [preview['team_abbreviation'] for preview in previews] == ['LAD', 'NYM', 'TOR']
 
 
-def test_static_html_contains_og_tags_and_human_redirect():
+def test_static_html_contains_canonical_story_og_tags_and_human_redirect():
     team = _team()
-    signal = 'The Toronto Blue Jays have actual room tonight: most of the pen is Available.'
-    preview = build_team_story_preview(
+    story = _canonical_story(
         team,
-        story=_story(
-            team,
-            signal=signal,
-            lead_dimension=LEAD_AVAILABILITY_DEEP,
-            rule_key=RULE_PRESSURE_DISTRIBUTION,
-            rule_label='Pressure Distribution',
-        ),
-        board=_board(team),
+        headline='The Blue Jays have more rested options than most clubs today',
+        share_title='Toronto Blue Jays bullpen: availability depth',
+        share_summary='Most of the Blue Jays pen is available and rested tonight.',
+        story_type='availability_depth',
+        category='rested',
+        tone='rest',
     )
+    preview = build_team_story_preview(team, story=story, board=_board(team))
 
     html = render_team_story_html(preview)
 
-    assert '<meta property="og:title" content="Room to Maneuver — Toronto Blue Jays" />' in html
-    assert '<meta property="og:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
+    assert '<meta property="og:title" content="Toronto Blue Jays bullpen: availability depth" />' in html
+    assert (
+        '<meta property="og:description" content="Most of the Blue Jays pen is available and rested tonight." />'
+        in html
+    )
     assert '<meta property="og:url" content="https://baseballos.vercel.app/team/TOR" />' in html
-    assert '<meta name="twitter:title" content="Room to Maneuver — Toronto Blue Jays" />' in html
-    assert '<meta name="twitter:description" content="The Toronto Blue Jays have actual room tonight: most of the pen is Available." />' in html
+    assert '<meta name="twitter:title" content="Toronto Blue Jays bullpen: availability depth" />' in html
     assert 'window.location.replace("/bullpen?view=board&amp;team=TOR&amp;source=share")' not in html
     assert 'window.location.replace("/bullpen?view=board&team=TOR&source=share")' in html
     assert '<div id="root"></div>' not in html
+
+
+def test_pages_contain_canonical_story_content_not_board_only(tmp_path):
+    team = _team(141, 'Toronto Blue Jays', 'TOR')
+    story = _canonical_story(
+        team,
+        headline='The Blue Jays are carrying the late innings on a few arms',
+        share_title='Toronto Blue Jays bullpen: coverage pressure',
+        share_summary='Toronto is leaning on a small late-inning group tonight.',
+        tone='stress',
+    )
+    previews = build_team_story_previews(
+        [team],
+        dashboard_payload={'stories': {'items': [story]}},
+        boards=[_board(team)],
+    )
+
+    write_team_story_pages(previews, tmp_path)
+    page = (tmp_path / 'team' / 'TOR' / 'index.html').read_text(encoding='utf-8')
+
+    # Real canonical story copy is present (no longer the neutral board fallback).
+    assert 'Toronto Blue Jays bullpen: coverage pressure' in page
+    assert 'Toronto is leaning on a small late-inning group tonight.' in page
+    assert 'Where the Toronto Blue Jays Bullpen Stands Tonight' not in page
 
 
 def test_writer_emits_one_static_page_per_team_and_invalid_team_fallback(tmp_path):
