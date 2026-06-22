@@ -5,6 +5,7 @@ Internal diagnostic evidence only. This module does not render product copy,
 select stories, rank teams, alter observations, or infer causality.
 """
 
+from collections import defaultdict
 from datetime import date, timedelta
 
 from models.game_log import GameLog
@@ -29,6 +30,7 @@ from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows
 from services.bullpen_optionality_context import (
     build_bullpen_optionality_context,
+    build_league_clean_options_baseline,
     empty_bullpen_optionality_context,
 )
 from services.bullpen_population import usage_logs_by_pitcher
@@ -384,6 +386,32 @@ def _optionality_records(team_id, reference_date):
     return current_availability_records(rows, reference_date=reference_date)
 
 
+def _league_clean_options_baseline(reference_date):
+    records = current_availability_records(
+        latest_fatigue_rows(),
+        reference_date=reference_date,
+    )
+    records_by_team = defaultdict(list)
+    pitcher_ids = []
+    for record in records:
+        pitcher = record.get('pitcher')
+        if pitcher is None or pitcher.team_id is None:
+            continue
+        records_by_team[pitcher.team_id].append(record)
+        pitcher_ids.append(pitcher.id)
+    logs_by_pitcher = usage_logs_by_pitcher(
+        pitcher_ids,
+        days=ACTIVE_WINDOW_DAYS,
+        include_stale=False,
+        reference_date=reference_date,
+    )
+    return build_league_clean_options_baseline(
+        records_by_team,
+        logs_by_pitcher=logs_by_pitcher,
+        reference_date=reference_date,
+    )
+
+
 def _bullpen_optionality_context(team_id, reference_date):
     records = _optionality_records(team_id, reference_date)
     pitcher_ids = [
@@ -397,10 +425,12 @@ def _bullpen_optionality_context(team_id, reference_date):
         include_stale=False,
         reference_date=reference_date,
     )
+    league_baseline = _league_clean_options_baseline(reference_date)
     return build_bullpen_optionality_context(
         records,
         logs_by_pitcher=logs_by_pitcher,
         reference_date=reference_date,
+        league_baseline=league_baseline,
     )
 
 

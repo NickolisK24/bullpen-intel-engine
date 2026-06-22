@@ -718,6 +718,35 @@ def _depth_pressure(frame):
     )
 
 
+# Distribution-aware league phrasing for the trust-lane story's baseline beat.
+# Clean options is better-is-higher, so the engine's value-neutral position bands
+# read as lane depth: a below-average clean-options count is a thinner trusted
+# lane, an above-average one is deeper. Descriptive context only — no rank,
+# recommendation, prediction, or superlative-singular ("deepest"/"most") language
+# (governance C1H). Kept separate from the concentration phrasing on purpose.
+_CLEAN_OPTIONS_BASELINE_SENTENCE = {
+    'below_average': 'That trusted group is thinner than the league norm',
+    'about_typical': 'That trusted group is about as deep as the league norm',
+    'above_average': 'That trusted group is deeper than the league norm',
+    'well_above_average': 'That trusted group sits well above the league norm',
+    'among_highest': 'That trusted group is among the deeper clean-options groups in baseball',
+}
+
+
+def _clean_options_band(baseline):
+    """The supported comparison band, only when the baseline read is available."""
+    read = baseline.get('baseline_read') if isinstance(baseline, dict) else None
+    if not isinstance(read, dict) or read.get('available') is not True:
+        return None
+    comparison = read.get('comparison')
+    return comparison if comparison in _CLEAN_OPTIONS_BASELINE_SENTENCE else None
+
+
+def _clean_options_baseline_sentence(baseline):
+    band = _clean_options_band(baseline)
+    return _CLEAN_OPTIONS_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _trust_lane_pressure(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -761,9 +790,13 @@ def _trust_lane_pressure(frame):
             ),
         ),
         baseline_paragraph=_paragraph(
+            # Distribution-aware league read of the clean-options count when
+            # available; otherwise fall back to the board-vs-lane comparison
+            # (never both, to avoid stacking two competing "comparison" lines).
+            _clean_options_baseline_sentence(baseline),
             (
                 f"The comparison point is the {_fmt(available)}-arm available board set against a thinner trusted late-inning lane"
-                if _present(available) else None
+                if _present(available) and not _clean_options_band(baseline) else None
             ),
             (
                 f"Set against that board, the workload-flagged group numbers {_fmt(secondary_count)}"

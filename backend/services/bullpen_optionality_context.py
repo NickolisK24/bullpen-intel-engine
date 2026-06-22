@@ -20,6 +20,8 @@ from services.availability import (
     STATUS_UNAVAILABLE,
 )
 from services.availability_reference_date import product_current_date
+from services.baseline_distribution import build_distribution
+from services.baseline_engine import interpret_value
 from services.workload_appearance import workload_appearance_logs
 
 
@@ -247,7 +249,27 @@ def _sort_options(options):
     )
 
 
-def _empty_context(reference_date=None):
+CLEAN_OPTIONS_BASELINE_METRIC = 'clean_trusted_options'
+
+
+def _league_clean_options_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('clean_workload_options_distribution')
+    return None
+
+
+def _clean_options_baseline_read(clean_count, league_baseline):
+    # Distribution-aware league read for the current clean-options count. The
+    # shared baseline engine owns the interpretation; this only feeds it the team
+    # value and the current-snapshot league distribution (higher is deeper).
+    return interpret_value(
+        CLEAN_OPTIONS_BASELINE_METRIC,
+        clean_count,
+        _league_clean_options_distribution(league_baseline),
+    )
+
+
+def _empty_context(reference_date=None, league_baseline=None):
     ref = _date_value(reference_date)
     return {
         'capability': CAPABILITY,
@@ -263,6 +285,7 @@ def _empty_context(reference_date=None):
         'unavailable_arms_count': 0,
         'unknown_status_count': 0,
         'clean_workload_options': [],
+        'baseline_read': _clean_options_baseline_read(None, league_baseline),
         'secondary_options': [],
         'practical_close_game_paths_count': 0,
         'optionality_band': OPTIONALITY_INSUFFICIENT_DATA,
@@ -283,11 +306,12 @@ def build_bullpen_optionality_context(
     *,
     logs_by_pitcher=None,
     reference_date=None,
+    league_baseline=None,
 ):
     """Build Bullpen Optionality Context Layer 3 from availability records."""
     rows = list(records or [])
     if not rows:
-        return _empty_context(reference_date=reference_date)
+        return _empty_context(reference_date=reference_date, league_baseline=league_baseline)
 
     ref = _reference_date(rows, reference_date=reference_date)
     logs_by_pitcher = logs_by_pitcher or {}
@@ -349,6 +373,7 @@ def build_bullpen_optionality_context(
         'unavailable_arms_count': counts[STATUS_UNAVAILABLE],
         'unknown_status_count': unknown_status_count,
         'clean_workload_options': _sort_options(clean_options),
+        'baseline_read': _clean_options_baseline_read(len(clean_options), league_baseline),
         'secondary_options': _sort_options(secondary_options),
         'practical_close_game_paths_count': practical_paths,
         'optionality_band': band,
@@ -361,6 +386,32 @@ def build_bullpen_optionality_context(
             'band': band,
         },
         'limitations': limitations,
+    }
+
+
+def build_league_clean_options_baseline(records_by_team, *, logs_by_pitcher=None, reference_date=None):
+    """Current-snapshot league distribution of clean_workload_options_count.
+
+    ``records_by_team`` maps team_id -> that team's current availability records.
+    Every team with usable availability data contributes its clean-options count
+    (including 0, which is a real thin value, not missing data), so the league
+    distribution describes exactly the count the trust-lane story narrates. This
+    is a current snapshot, not a rolling window, and is independent of the 7-day
+    dashboard.baselines and the 10-day workload concentration distribution.
+    """
+    counts = []
+    for team_records in (records_by_team or {}).values():
+        context = build_bullpen_optionality_context(
+            team_records,
+            logs_by_pitcher=logs_by_pitcher,
+            reference_date=reference_date,
+        )
+        if context.get('context_available') is not True:
+            continue
+        counts.append(context['optionality_summary_inputs']['clean_count'])
+    return {
+        'clean_workload_options_distribution': build_distribution(counts),
+        'league_team_count': len(counts),
     }
 
 
