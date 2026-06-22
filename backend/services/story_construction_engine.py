@@ -473,6 +473,7 @@ def _trust_lane_pressure_frame(team_context, observation):
         'available_arms_count': optionality.get('available_arms_count'),
         'monitor_arms_count': optionality.get('monitor_arms_count'),
         'restricted_arms_count': optionality.get('restricted_arms_count'),
+        'baseline_read': optionality.get('baseline_read'),
     }
     frame['cause_facts'] = {
         'clean_workload_options': clean,

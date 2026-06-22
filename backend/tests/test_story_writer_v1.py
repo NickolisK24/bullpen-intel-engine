@@ -358,6 +358,70 @@ def test_baseline_story_language_has_no_ranking_or_recommendation_terms():
             assert term not in lowered, (sentence, term)
 
 
+def test_writer_voices_clean_options_below_norm_baseline():
+    optionality = _trust_lane_optionality(clean=1, secondary=5, available=6)
+    optionality['baseline_read'] = {
+        'available': True, 'metric': 'clean_trusted_options', 'comparison': 'below_average',
+    }
+    frame = frame_for(team_context(optionality=optionality), TYPE_TRUST_LANE_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'thinner than the league norm' in text
+    # The distribution-aware read replaces the board-vs-lane comparison line.
+    assert 'The comparison point is the' not in text
+
+
+def test_writer_voices_deeper_clean_options_baseline():
+    optionality = _trust_lane_optionality(clean=1, secondary=5, available=6)
+    optionality['baseline_read'] = {
+        'available': True, 'metric': 'clean_trusted_options', 'comparison': 'above_average',
+    }
+    frame = frame_for(team_context(optionality=optionality), TYPE_TRUST_LANE_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'deeper than the league norm' in text
+
+
+def test_writer_falls_back_to_board_comparison_when_clean_options_baseline_guarded():
+    optionality = _trust_lane_optionality(clean=1, secondary=5, available=6)
+    optionality['baseline_read'] = {'available': False, 'comparison': 'insufficient_sample'}
+    frame = frame_for(team_context(optionality=optionality), TYPE_TRUST_LANE_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded read -> existing behavior preserved, no distribution-aware sentence.
+    assert 'The comparison point is the 6-arm available board' in text
+    assert 'league norm' not in text
+
+
+def test_writer_trust_lane_without_baseline_read_keeps_board_comparison():
+    # No baseline_read at all (legacy frame) still produces the board comparison.
+    frame = frame_for(
+        team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6)),
+        TYPE_TRUST_LANE_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'The comparison point is the 6-arm available board' in text
+    assert 'league norm' not in text
+
+
+def test_clean_options_baseline_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _CLEAN_OPTIONS_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', 'deepest', '#1', 'top-ranked', 'league-leading', 'most',
+        'worst', 'best', 'rank', 'recommend', 'should', 'predict', 'will ',
+    )
+    for sentence in _CLEAN_OPTIONS_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_outputs_optionality_strength_observation():
     frame = frame_for(team_context(optionality={
         'optionality_band': 'deep',

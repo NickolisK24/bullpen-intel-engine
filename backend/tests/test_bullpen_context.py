@@ -108,6 +108,7 @@ BULLPEN_OPTIONALITY_CONTEXT_KEYS = {
     'unavailable_arms_count',
     'unknown_status_count',
     'clean_workload_options',
+    'baseline_read',
     'secondary_options',
     'practical_close_game_paths_count',
     'optionality_band',
