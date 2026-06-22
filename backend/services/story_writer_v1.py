@@ -23,6 +23,7 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
 )
 from services.story_voice_library_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -411,7 +412,7 @@ def _optionality_strength(frame):
     return _sections(
         headline=_voice_opening(
             frame,
-            BEAT_SUSTAINABILITY_QUESTION if not has_unavailable else BEAT_DEPTH_CONSTRAINT,
+            BEAT_AVAILABILITY_DEPTH,
             names=clean_names or secondary_names or 'the late relievers',
             extra_parts=(paths, band, unavailable),
         ),
@@ -489,7 +490,7 @@ def _stable_core(frame):
     return _sections(
         headline=_voice_opening(
             frame,
-            BEAT_ROUTE_CHANGE,
+            BEAT_AVAILABILITY_DEPTH,
             names=current or 'the current late group',
             extra_parts=(previous, retention, stability),
         ),

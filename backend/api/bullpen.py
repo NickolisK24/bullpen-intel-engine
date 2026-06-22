@@ -109,6 +109,7 @@ from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
 from services.story_four_beat_interpreter_v1 import public_beat_for_observation
+from services.story_feed import build_canonical_story_feed
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -1885,6 +1886,82 @@ def _dashboard_continuity_team_ids(landscape):
     return team_ids
 
 
+def _canonical_story_team_descriptors(payload, landscape):
+    """Ordered team descriptors for the canonical story feed.
+
+    Mirrors the four-beat feed's team set and order for compatibility, falling
+    back to the landscape teams when no four-beat feed is present.
+    """
+    descriptors = []
+    seen = set()
+
+    feed = (payload or {}).get('four_beat_stories') or {}
+    for item in feed.get('items') or []:
+        team_id = item.get('team_id')
+        if team_id is None or team_id in seen:
+            continue
+        seen.add(team_id)
+        descriptors.append({
+            'team_id': team_id,
+            'team_name': item.get('team_name'),
+            'team_abbreviation': item.get('team_abbreviation'),
+        })
+    if descriptors:
+        return descriptors
+
+    for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
+        for entry in (landscape or {}).get(key) or []:
+            team_id = entry.get('team_id')
+            if team_id is None or team_id in seen:
+                continue
+            seen.add(team_id)
+            descriptors.append({
+                'team_id': team_id,
+                'team_name': entry.get('team_name'),
+                'team_abbreviation': entry.get('team_abbreviation'),
+            })
+    return descriptors
+
+
+def _canonical_league_signal(landscape, availability_records):
+    """League-wide availability counts for the canonical feed's league context.
+
+    Counts come from the already-built landscape buckets and the classified
+    availability records; no new computation or day-over-day trend is invented.
+    """
+    landscape = landscape or {}
+    team_ids = set()
+    for record in availability_records or []:
+        pitcher = record['pitcher'] if isinstance(record, dict) and 'pitcher' in record else None
+        team_id = getattr(pitcher, 'team_id', None)
+        if team_id is not None:
+            team_ids.add(team_id)
+    return {
+        'team_count': len(team_ids),
+        'constrained_team_count': len(landscape.get('constrained_bullpens') or []),
+        'available_team_count': len(landscape.get('available_bullpens') or []),
+        'monitoring_team_count': len(landscape.get('monitoring_concentration') or []),
+        'availability_trend': None,
+    }
+
+
+def _canonical_prior_story_items(previous_payload):
+    """Prior snapshot's canonical story items, the baseline for continuity.
+
+    Returns an empty list when the prior snapshot predates the canonical feed,
+    so continuity falls back to a truthful "no prior story" read.
+    """
+    stories = (previous_payload or {}).get('stories') or {}
+    items = stories.get('items')
+    return items if isinstance(items, list) else []
+
+
+def _canonical_prior_league_context(previous_payload):
+    stories = (previous_payload or {}).get('stories') or {}
+    context = stories.get('league_context')
+    return context if isinstance(context, dict) else None
+
+
 def _diagnostic_team_exists(team_id):
     return (
         db.session.query(Pitcher.id)
@@ -2424,6 +2501,8 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
             bullpen_environment_by_team=bullpen_environment_by_team,
             story_quality_config=story_quality_config,
         )
+    # Prior dashboard snapshot — the comparison baseline for canonical story
+    # continuity and the "what changed" surfaces. Fetched once and reused below.
     data_through = parse_reference_date(
         freshness.get('data_through')
         or freshness.get('latest_workload_date')
@@ -2431,6 +2510,19 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
     previous_data_through = _dashboard_payload_data_through(previous_payload)
+
+    # Canonical story feed (additive). Wraps Story Intelligence V1 per team into
+    # the forward-facing canonical contract, with continuity keyed to the prior
+    # snapshot's canonical stories. Legacy story fields above are untouched.
+    payload['stories'] = build_canonical_story_feed(
+        _canonical_story_team_descriptors(payload, landscape),
+        as_of_date=reference_date,
+        story_builder=build_story_intelligence_team_story,
+        freshness=freshness,
+        league_signal=_canonical_league_signal(landscape, availability_records),
+        prior_stories=_canonical_prior_story_items(previous_payload),
+        prior_league_context=_canonical_prior_league_context(previous_payload),
+    )
     payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
         data_through,
         previous_data_through,

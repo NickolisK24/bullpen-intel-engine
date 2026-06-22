@@ -25,6 +25,7 @@ from services.story_observation_engine import (
     build_team_story_observation_payload,
 )
 from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -58,11 +59,14 @@ SERVICE_OBSERVATION_PRIORITY = {
     for index, observation_type in enumerate(SERVICE_OBSERVATION_ORDER)
 }
 
+# Positive depth/rest sits last so that on equal strength a pressure or change
+# story is preferred. A stronger pressure story still wins outright on strength.
 PUBLIC_BEAT_TIEBREAK_PRIORITY = {
     BEAT_COVERAGE_PRESSURE: 0,
     BEAT_SUSTAINABILITY_QUESTION: 1,
     BEAT_ROUTE_CHANGE: 2,
     BEAT_DEPTH_CONSTRAINT: 3,
+    BEAT_AVAILABILITY_DEPTH: 4,
 }
 
 SUPPORTING_CONTEXT_KEYS = (
@@ -546,6 +550,75 @@ def _route_selection_reasons(frame):
     return reasons
 
 
+def _selection_strength_for_availability_depth(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    headline = _facts(frame, 'headline_facts')
+    observation_type = observed.get('type')
+
+    strength = 0
+    if observation_type == TYPE_OPTIONALITY_STRENGTH:
+        band = _coalesce(
+            observed.get('optionality_band'),
+            interpretation.get('optionality_band'),
+            headline.get('optionality_band'),
+        )
+        paths = _coalesce(
+            observed.get('practical_close_game_paths_count'),
+            headline.get('practical_close_game_paths_count'),
+        )
+        if band == 'deep':
+            strength += 3
+        elif band == 'flexible':
+            strength += 1
+        strength += _strength_step(paths, ((5.0, 1),))
+        strength += _strength_step(observed.get('clean_workload_options_count'), ((3.0, 1),))
+        strength += _strength_step(observed.get('available_arms_count'), ((7.0, 1),))
+    elif observation_type == TYPE_STABLE_CORE:
+        band = _coalesce(
+            observed.get('stability_band'),
+            interpretation.get('stability_band'),
+        )
+        if band == 'stable':
+            strength += 2
+        strength += _strength_step(observed.get('core_retention_count'), ((4.0, 1),))
+        changes = _number(observed.get('core_change_count'))
+        if changes is not None and changes <= 0:
+            strength += 1
+    return strength
+
+
+def _availability_depth_selection_reasons(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    observation_type = observed.get('type')
+    reasons = []
+    if observation_type == TYPE_OPTIONALITY_STRENGTH:
+        band = _coalesce(observed.get('optionality_band'), interpretation.get('optionality_band'))
+        if band in {'deep', 'flexible'}:
+            reasons.append('rested_optionality_band')
+        paths = _number(observed.get('practical_close_game_paths_count'))
+        if paths is not None and paths >= 5:
+            reasons.append('multiple_close_game_paths')
+        clean = _number(observed.get('clean_workload_options_count'))
+        if clean is not None and clean >= 3:
+            reasons.append('clean_workload_options')
+        available = _number(observed.get('available_arms_count'))
+        if available is not None and available >= 7:
+            reasons.append('deep_available_board')
+    elif observation_type == TYPE_STABLE_CORE:
+        band = _coalesce(observed.get('stability_band'), interpretation.get('stability_band'))
+        if band == 'stable':
+            reasons.append('stable_operational_core')
+        retention = _number(observed.get('core_retention_count'))
+        if retention is not None and retention >= 4:
+            reasons.append('high_core_retention')
+        changes = _number(observed.get('core_change_count'))
+        if changes is not None and changes <= 0:
+            reasons.append('no_core_changes')
+    return reasons
+
+
 def _candidate_selection_profile(candidate):
     public_story = _dict(candidate.get('public_story'))
     frame = _dict(candidate.get('construction_frame'))
@@ -567,6 +640,9 @@ def _candidate_selection_profile(candidate):
     elif story_type == BEAT_ROUTE_CHANGE:
         strength = _selection_strength_for_route(frame)
         reasons = _route_selection_reasons(frame)
+    elif story_type == BEAT_AVAILABILITY_DEPTH:
+        strength = _selection_strength_for_availability_depth(frame)
+        reasons = _availability_depth_selection_reasons(frame)
     else:
         strength = 0
         reasons = []
@@ -585,11 +661,19 @@ def _candidate_is_publicly_selectable(candidate):
     public_story = _dict(candidate.get('public_story'))
     selected = _dict(candidate.get('selected_observation'))
     profile = _dict(candidate.get('selection_profile'))
-    return not (
-        public_story.get('story_type') == BEAT_SUSTAINABILITY_QUESTION
+    story_type = public_story.get('story_type')
+    strength = int(profile.get('selection_strength') or 0)
+    # Never publish a zero-strength optionality read reframed as a worry beat.
+    if (
+        story_type == BEAT_SUSTAINABILITY_QUESTION
         and selected.get('type') == TYPE_OPTIONALITY_STRENGTH
-        and int(profile.get('selection_strength') or 0) <= 0
-    )
+        and strength <= 0
+    ):
+        return False
+    # Positive depth/rest must clear an evidence bar; no fabricated good news.
+    if story_type == BEAT_AVAILABILITY_DEPTH and strength <= 0:
+        return False
+    return True
 
 
 def _candidate_selection_key(candidate):

@@ -28,6 +28,7 @@ BEAT_ROUTE_CHANGE = 'route_change'
 BEAT_COVERAGE_PRESSURE = 'coverage_pressure'
 BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
+BEAT_AVAILABILITY_DEPTH = 'availability_depth'
 
 PUBLIC_BEATS = {
     BEAT_ROUTE_CHANGE: {
@@ -50,15 +51,24 @@ PUBLIC_BEATS = {
         'label': 'Sustainability Question',
         'question_answered': 'Can the current usage pattern keep functioning if the same conditions continue?',
     },
+    BEAT_AVAILABILITY_DEPTH: {
+        'key': BEAT_AVAILABILITY_DEPTH,
+        'label': 'Availability Depth',
+        'question_answered': 'How many rested, usable late-inning options does the bullpen have to work with?',
+    },
 }
 
+# Positive depth/rest reads keep a positive beat. A genuine constraint is a
+# separate observation (depth_pressure / rotation_pressure) that competes on its
+# own evidence in selection, so positive optionality is not folded into a worry
+# frame, and a settled core is not forced into a route-change story.
 BASE_OBSERVATION_BEAT_MAP = {
     TYPE_CORE_TRANSITION: BEAT_ROUTE_CHANGE,
-    TYPE_STABLE_CORE: BEAT_ROUTE_CHANGE,
+    TYPE_STABLE_CORE: BEAT_AVAILABILITY_DEPTH,
     TYPE_ROTATION_PRESSURE: BEAT_COVERAGE_PRESSURE,
     TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
     TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
-    TYPE_OPTIONALITY_STRENGTH: BEAT_SUSTAINABILITY_QUESTION,
+    TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
 }
 
 PUBLIC_BANNED_TERMS = (
@@ -212,16 +222,6 @@ def public_beat_for_observation(observation_type, *, frame=None):
             return BEAT_COVERAGE_PRESSURE
         return BEAT_SUSTAINABILITY_QUESTION
 
-    if observation_type == TYPE_OPTIONALITY_STRENGTH:
-        constraint = _facts(frame, 'constraint_facts')
-        unavailable_count = _number(constraint.get('unavailable_arms_count'))
-        if (
-            unavailable_count is not None
-            and unavailable_count > 0
-        ):
-            return BEAT_DEPTH_CONSTRAINT
-        return BEAT_SUSTAINABILITY_QUESTION
-
     return BASE_OBSERVATION_BEAT_MAP.get(observation_type)
 
 
@@ -230,11 +230,11 @@ def observation_public_beat_map():
 
     return {
         TYPE_CORE_TRANSITION: BEAT_ROUTE_CHANGE,
-        TYPE_STABLE_CORE: BEAT_ROUTE_CHANGE,
+        TYPE_STABLE_CORE: BEAT_AVAILABILITY_DEPTH,
         TYPE_ROTATION_PRESSURE: BEAT_COVERAGE_PRESSURE,
         TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
         TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
-        TYPE_OPTIONALITY_STRENGTH: BEAT_SUSTAINABILITY_QUESTION,
+        TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
     }
 
 
@@ -252,6 +252,10 @@ def _default_forward_clause(beat, frame, names):
         if name_text:
             return f'If this workload pattern holds, the route remains narrow around {name_text}.'
         return 'If this workload pattern holds, the bullpen has fewer ways to spread the late innings.'
+    if beat == BEAT_AVAILABILITY_DEPTH:
+        if name_text:
+            return f'If the game stays close, the manager can spread the late innings beyond {name_text} alone.'
+        return 'If the game stays close, the bullpen has room to spread the late innings across several rested arms.'
     return None
 
 
@@ -372,6 +376,7 @@ def interpret_story_candidate(candidate):
 
 
 __all__ = [
+    'BEAT_AVAILABILITY_DEPTH',
     'BEAT_COVERAGE_PRESSURE',
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',
