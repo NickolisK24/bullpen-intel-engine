@@ -106,8 +106,14 @@ from services.roster_status import (
     classify_roster_status,
 )
 from services.roster_status_audit import with_recent_inactive_roster_audit
+from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
-from services.workload_concentration import summarize_recent_relief_workload
+from services.workload_concentration import (
+    WORKLOAD_CONCENTRATION_BASELINE_FAMILY,
+    build_workload_concentration_baselines,
+    league_relief_workload_by_team,
+    summarize_recent_relief_workload,
+)
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
@@ -2378,6 +2384,24 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
     }
 
+    # League-wide baseline distributions (Baseline Intelligence infrastructure).
+    # Built from the league-wide records and relief logs already in hand; this is
+    # backend-only and is not consumed by any UI or story surface yet.
+    baseline_team_pitcher_ids = {}
+    for record in availability_records:
+        record_pitcher = record['pitcher']
+        record_team_id = getattr(record_pitcher, 'team_id', None)
+        if record_team_id is None:
+            continue
+        baseline_team_pitcher_ids.setdefault(int(record_team_id), []).append(record_pitcher.id)
+    baselines = build_baseline_payload({
+        WORKLOAD_CONCENTRATION_BASELINE_FAMILY: build_workload_concentration_baselines(
+            league_relief_workload_by_team(
+                baseline_team_pitcher_ids, logs_by_pitcher, reference_date,
+            )
+        ),
+    })
+
     payload = {
         'capability': 'bullpen_dashboard',
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -2401,6 +2425,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'availability_summary': summary,
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
+        'baselines': baselines,
     }
     # Prior dashboard snapshot — the comparison baseline for canonical story
     # continuity and the "what changed" surfaces. Fetched once and reused below.

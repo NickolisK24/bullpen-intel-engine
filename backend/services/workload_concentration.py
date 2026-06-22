@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+from services.baseline_distribution import build_metric_distributions, field_extractor
 from services.bullpen_context import BULLPEN_CONTEXT_WINDOW_DAYS
 from utils.games_started import is_relief
 
@@ -107,3 +108,58 @@ def summarize_recent_relief_workload(logs_by_pitcher, reference_date, pitcher_id
             pitcher_ids=pitcher_ids,
         )
     )
+
+
+# ── League-wide baseline aggregation (Baseline Intelligence C1B) ──────────────
+
+WORKLOAD_CONCENTRATION_BASELINE_FAMILY = 'workload_concentration'
+WORKLOAD_CONCENTRATION_BASELINE_METRIC_KEYS = ('top_share', 'top_one_share')
+
+
+def league_relief_workload_by_team(team_to_pitcher_ids, logs_by_pitcher, reference_date):
+    """Recent relief workload concentration for every team that has relief workload.
+
+    ``team_to_pitcher_ids`` maps team_id -> the team's bullpen pitcher ids. Returns
+    one summary per team that actually threw relief pitches in the window. Teams
+    with no relief workload are excluded: their concentration is undefined, not a
+    real ``top_share`` of 0, so including them would bias a league distribution low.
+    """
+    summaries = []
+    for team_id, pitcher_ids in (team_to_pitcher_ids or {}).items():
+        if team_id is None:
+            continue
+        summary = summarize_recent_relief_workload(
+            logs_by_pitcher,
+            reference_date,
+            pitcher_ids=pitcher_ids,
+        )
+        if summary['total_pitches'] <= 0:
+            continue
+        summaries.append({
+            'team_id': team_id,
+            'top_share': summary['top_share'],
+            'top_one_share': summary['top_one_share'],
+            'total_pitches': summary['total_pitches'],
+            'participant_count': summary['participant_count'],
+        })
+    return summaries
+
+
+def build_workload_concentration_baselines(per_team_concentration):
+    """League baseline distributions for the workload-concentration metrics.
+
+    Returns a metric-family block (sample count, window, and a distribution per
+    metric) suitable for registration in the baseline payload container. No
+    interpretation and no per-team ranking — only the league distribution.
+    """
+    items = [item for item in (per_team_concentration or []) if isinstance(item, dict)]
+    extractors = {
+        key: field_extractor(key)
+        for key in WORKLOAD_CONCENTRATION_BASELINE_METRIC_KEYS
+    }
+    return {
+        'metric_family': WORKLOAD_CONCENTRATION_BASELINE_FAMILY,
+        'window_days': RECENT_WORKLOAD_WINDOW_DAYS,
+        'sample_count': len(items),
+        'metrics': build_metric_distributions(items, extractors),
+    }
