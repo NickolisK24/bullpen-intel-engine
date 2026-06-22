@@ -19,6 +19,7 @@ BEAT_ROUTE_CHANGE = 'route_change'
 BEAT_COVERAGE_PRESSURE = 'coverage_pressure'
 BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
+BEAT_AVAILABILITY_DEPTH = 'availability_depth'
 
 PURPOSE_OPENING = 'opening'
 
@@ -121,6 +122,20 @@ VOICE_LIBRARY = {
             'The late-inning plan is still leaning on {names}',
             'The workload is not spreading far beyond {names}',
             '{names} remain the place the recent pressure keeps landing',
+        ),
+    },
+    BEAT_AVAILABILITY_DEPTH: {
+        PURPOSE_OPENING: (
+            'The bullpen has more rested options than most clubs today',
+            'The late innings give {team} room to spread the work',
+            "{possessive} late-inning plan can lean on more than one rested group",
+            '{team} carries clean late-inning depth into tonight',
+            "{possessive} bullpen has several rested arms to choose from",
+            'The bullpen has room to share the late innings tonight',
+            'The trusted late group still has rested help around it',
+            'The recent innings have spread across more than the top arms',
+            "{possessive} late-inning depth runs past the top group",
+            'The bullpen can turn to more than one rested arm tonight',
         ),
     },
 }
@@ -251,6 +266,7 @@ def voice_library_report() -> dict[str, Any]:
 
 __all__ = [
     'BANNED_PUBLIC_LANGUAGE',
+    'BEAT_AVAILABILITY_DEPTH',
     'BEAT_COVERAGE_PRESSURE',
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',

@@ -34,6 +34,7 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
 )
 from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -52,9 +53,11 @@ QUALITY_SUPPRESSED = 'suppressed'
 SUPPRESSION_UNAVAILABLE = 'story_unavailable'
 SUPPRESSION_SUPPRESSED = 'story_suppressed'
 
-# Story Intelligence V1 has no positive rest/depth public beat. A positive read
-# is preserved (tone/category) but flagged here rather than rewritten.
-POSITIVE_OBSERVATION_TYPES = {TYPE_OPTIONALITY_STRENGTH}
+# Positive depth/rest reads (optionality / stable core) now publish under the
+# availability_depth beat. The limitation below is only attached defensively if a
+# positive observation is somehow still reframed into a non-positive beat.
+POSITIVE_OBSERVATION_TYPES = {TYPE_OPTIONALITY_STRENGTH, TYPE_STABLE_CORE}
+POSITIVE_BEATS = {BEAT_AVAILABILITY_DEPTH}
 POSITIVE_BEAT_LIMITATION = 'positive_rest_depth_public_beat_not_yet_supported'
 
 FEED_FALLBACK = 'No bullpen story has enough movement yet today.'
@@ -62,7 +65,6 @@ FEED_FALLBACK = 'No bullpen story has enough movement yet today.'
 FEED_LIMITATIONS = (
     'wraps_story_intelligence_v1_per_team',
     'feed_team_set_and_order_mirror_four_beat_feed',
-    POSITIVE_BEAT_LIMITATION,
     'atomic_evidence_extraction_deferred',
     'no_new_prose_or_metrics_created',
 )
@@ -86,7 +88,7 @@ _OBSERVATION_TONE = {
     TYPE_CONCENTRATION_PRESSURE: ('stress', 'stressed'),
     TYPE_DEPTH_PRESSURE: ('stress', 'stressed'),
     TYPE_CORE_TRANSITION: ('watch', 'watch'),
-    TYPE_STABLE_CORE: ('watch', 'watch'),
+    TYPE_STABLE_CORE: ('rest', 'rested'),
     TYPE_OPTIONALITY_STRENGTH: ('rest', 'rested'),
 }
 
@@ -96,6 +98,7 @@ _BEAT_TONE = {
     BEAT_DEPTH_CONSTRAINT: ('stress', 'stressed'),
     BEAT_SUSTAINABILITY_QUESTION: ('watch', 'watch'),
     BEAT_ROUTE_CHANGE: ('watch', 'watch'),
+    BEAT_AVAILABILITY_DEPTH: ('rest', 'rested'),
 }
 
 _DEFAULT_TONE = ('watch', 'watch')
@@ -254,9 +257,10 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'quality_status': QUALITY_PUBLISHED,
     })
 
-    # Positive rest/depth read with no positive public beat: keep the positive
-    # tone/category, flag it for review, and never rewrite it as upbeat copy.
-    if observation_type in POSITIVE_OBSERVATION_TYPES:
+    # A positive read should publish under a positive beat. Only if one is ever
+    # still reframed into a non-positive beat do we flag it for review rather than
+    # present it as a clean pressure story; valid positive stories publish as-is.
+    if observation_type in POSITIVE_OBSERVATION_TYPES and story_type not in POSITIVE_BEATS:
         if POSITIVE_BEAT_LIMITATION not in item['limitations']:
             item['limitations'].append(POSITIVE_BEAT_LIMITATION)
         item['quality_status'] = QUALITY_REVIEW

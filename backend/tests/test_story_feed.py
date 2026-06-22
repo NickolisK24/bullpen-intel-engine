@@ -135,11 +135,32 @@ class TestAvailableMapping:
 
 
 class TestPositiveBeatBlocker:
-    def test_positive_observation_is_flagged_not_faked(self):
+    def test_published_positive_story_is_rested_and_not_flagged(self):
+        # A positive read published under the availability_depth beat is a clean,
+        # published rest/depth story — no review flag, no parity limitation.
+        payload = _available_payload(
+            3, observation_type='optionality_strength', story_type='availability_depth')
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        assert story['story_available'] is True
+        assert story['tone'] == 'rest'
+        assert story['category'] == 'rested'
+        assert story['quality_status'] == QUALITY_PUBLISHED
+        assert POSITIVE_BEAT_LIMITATION not in story['limitations']
+
+    def test_stable_core_positive_story_is_rested(self):
+        payload = _available_payload(
+            4, observation_type='stable_core', story_type='availability_depth')
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        assert story['tone'] == 'rest'
+        assert story['category'] == 'rested'
+        assert story['quality_status'] == QUALITY_PUBLISHED
+
+    def test_reframed_positive_observation_is_still_flagged(self):
+        # Defensive: if a positive observation is ever still mapped to a
+        # non-positive beat, it is flagged for review rather than presented clean.
         payload = _available_payload(
             3, observation_type='optionality_strength', story_type='sustainability_question')
         story = canonical_story_from_service_payload(payload, date=AS_OF)
-        # Flagged, not rewritten into upbeat copy.
         assert story['quality_status'] == QUALITY_REVIEW
         assert POSITIVE_BEAT_LIMITATION in story['limitations']
         # The engine's authored copy is preserved verbatim.

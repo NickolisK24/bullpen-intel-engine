@@ -11,6 +11,7 @@ from services.story_intelligence_service_v1 import (
     build_team_story,
 )
 from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -130,6 +131,7 @@ PUBLIC_BEATS = {
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_AVAILABILITY_DEPTH,
 }
 
 
@@ -316,7 +318,7 @@ def test_sustainability_question_wins_when_usage_concentration_is_strongest():
     assert_forward_clause(result)
 
 
-def test_positive_optionality_alone_does_not_create_sustainability_story():
+def test_positive_optionality_alone_publishes_availability_depth_story():
     context = team_context(
         optionality={
             'optionality_band': 'deep',
@@ -332,9 +334,96 @@ def test_positive_optionality_alone_does_not_create_sustainability_story():
 
     result = build_team_story(118, team_context=context)
 
-    assert result['state'] == STATE_NEUTRAL
+    # A good-news-only bullpen now publishes a positive depth story rather than
+    # going neutral or being reframed into a sustainability worry.
+    assert result['state'] == STATE_STORY_AVAILABLE
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['story_type'] != BEAT_SUSTAINABILITY_QUESTION
+    assert result['selected_observation']['type'] == TYPE_OPTIONALITY_STRENGTH
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+
+
+def test_stable_core_publishes_availability_depth_story():
+    context = team_context(
+        stability={
+            'stability_band': 'stable',
+            'current_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 3,
+            'core_stability_pct': 100,
+            'core_change_count': 0,
+            'new_core_members': [],
+            'departed_core_members': [],
+            'current_core_size': 3,
+            'previous_core_size': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A settled core publishes as positive depth, not as a route-change story.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['story_type'] != BEAT_ROUTE_CHANGE
+    assert result['selected_observation']['type'] == TYPE_STABLE_CORE
+
+
+def test_pressure_outranks_positive_when_pressure_is_stronger():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.5,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.2,
+            'early_bullpen_entry_rate': 65.0,
+            'bullpen_coverage_ip_7d': 5.2,
+        },
+        optionality={
+            'optionality_band': 'flexible',
+            'practical_close_game_paths_count': 5,
+            'available_arms_count': 5,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            'secondary_options': [{'name': 'Secondary One'}],
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuine, stronger pressure story wins; the positive read still competes
+    # but does not displace it.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    assert result['selected_observation']['type'] == TYPE_ROTATION_PRESSURE
+
+    profiles = result['selection_metadata']['candidate_profiles']
+    positive = next(
+        (profile for profile in profiles if profile.get('story_type') == BEAT_AVAILABILITY_DEPTH),
+        None,
+    )
+    selected = next(profile for profile in profiles if profile.get('selected') is True)
+    assert positive is not None
+    assert positive['selection_strength'] < selected['selection_strength']
+
+
+def test_weak_positive_evidence_does_not_publish_a_fabricated_story():
+    # Optionality band is present but the supporting paths count is missing, so
+    # the frame is incomplete and no positive story is fabricated.
+    context = team_context(
+        optionality={
+            'optionality_band': 'flexible',
+            'practical_close_game_paths_count': None,
+            'available_arms_count': 4,
+            'clean_workload_options': [],
+            'secondary_options': [],
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
     assert result['story_available'] is False
-    assert result['neutral_reason'] == NEUTRAL_NO_VALID_FRAME
+    assert result['state'] == STATE_NEUTRAL
 
 
 def test_sustainability_loses_to_severe_depth_when_depth_is_clearer_constraint():
@@ -622,11 +711,11 @@ def test_every_internal_observation_maps_to_one_public_beat():
     }
     assert set(mapping.values()) <= PUBLIC_BEATS
     assert mapping[TYPE_CORE_TRANSITION] == BEAT_ROUTE_CHANGE
-    assert mapping[TYPE_STABLE_CORE] == BEAT_ROUTE_CHANGE
+    assert mapping[TYPE_STABLE_CORE] == BEAT_AVAILABILITY_DEPTH
     assert mapping[TYPE_ROTATION_PRESSURE] == BEAT_COVERAGE_PRESSURE
     assert mapping[TYPE_DEPTH_PRESSURE] == BEAT_DEPTH_CONSTRAINT
     assert mapping[TYPE_CONCENTRATION_PRESSURE] == BEAT_SUSTAINABILITY_QUESTION
-    assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_SUSTAINABILITY_QUESTION
+    assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_AVAILABILITY_DEPTH
 
 
 def test_short_start_cause_maps_to_coverage_pressure():
