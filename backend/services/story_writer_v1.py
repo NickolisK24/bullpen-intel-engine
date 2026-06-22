@@ -309,6 +309,32 @@ def _rotation_pressure(frame):
     )
 
 
+# Distribution-aware league phrasing for the workload concentration story's
+# baseline beat. Descriptive context only — no rank, recommendation, prediction,
+# or superlative-singular ("highest"/"most") language (governance C1E).
+_CONCENTRATION_BASELINE_SENTENCE = {
+    'among_highest': 'This bullpen has been among the more concentrated workloads in baseball recently',
+    'well_above_average': 'That concentration sits well above the league norm',
+    'above_average': 'That concentration sits above the league norm',
+    'about_typical': 'That concentration is around the league norm',
+    'below_average': 'That concentration is more spread out than a typical bullpen',
+}
+
+
+def _baseline_band(baseline):
+    """The supported comparison band, only when the baseline read is available."""
+    read = baseline.get('baseline_read') if isinstance(baseline, dict) else None
+    if not isinstance(read, dict) or read.get('available') is not True:
+        return None
+    comparison = read.get('comparison')
+    return comparison if comparison in _CONCENTRATION_BASELINE_SENTENCE else None
+
+
+def _concentration_baseline_sentence(baseline):
+    band = _baseline_band(baseline)
+    return _CONCENTRATION_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _concentration_pressure(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -357,13 +383,17 @@ def _concentration_pressure(frame):
             ),
         ),
         baseline_paragraph=_paragraph(
+            # Distribution-aware league read when available; otherwise fall back to
+            # the existing league-average comparison (never both, to avoid stacking
+            # two "vs league" statements).
+            _concentration_baseline_sentence(baseline),
             (
                 f"The league comparison is {_fmt(league, suffix='%')} for top-three bullpen workload"
-                if _present(league) else None
+                if _present(league) and not _baseline_band(baseline) else None
             ),
             (
                 f"That puts this bullpen {_fmt(delta)} percentage points above that baseline"
-                if _present(delta) else None
+                if _present(delta) and not _baseline_band(baseline) else None
             ),
         ),
         cause_paragraph=_paragraph(

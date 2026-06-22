@@ -294,6 +294,70 @@ def test_writer_outputs_concentration_pressure_observation():
     assert_quality_sections(output)
 
 
+def test_writer_voices_distribution_aware_baseline_when_available():
+    frame = frame_for(team_context(concentration={
+        'concentration_band': 'narrow',
+        'top_three_workload_share_10d': 94.0,
+        'league_top_three_workload_share_10d': 58.0,
+        'top_three_share_delta_vs_league': 36.0,
+        'bullpen_workload_total_10d': 240,
+        'baseline_read': {'available': True, 'metric': 'top_share', 'comparison': 'among_highest'},
+    }), TYPE_CONCENTRATION_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'among the more concentrated workloads in baseball recently' in text
+    # The distribution-aware read replaces the raw league-average line (no stacking).
+    assert 'The league comparison is' not in text
+    assert '36 percentage points' not in text
+
+
+def test_writer_voices_well_above_average_baseline():
+    frame = frame_for(team_context(concentration={
+        'concentration_band': 'concentrated',
+        'top_three_workload_share_10d': 65.0,
+        'league_top_three_workload_share_10d': 48.0,
+        'top_three_share_delta_vs_league': 17.0,
+        'bullpen_workload_total_10d': 200,
+        'baseline_read': {'available': True, 'metric': 'top_share', 'comparison': 'well_above_average'},
+    }), TYPE_CONCENTRATION_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'well above the league norm' in text
+
+
+def test_writer_falls_back_to_league_average_when_baseline_guarded():
+    frame = frame_for(team_context(concentration={
+        'concentration_band': 'narrow',
+        'top_three_workload_share_10d': 94.0,
+        'league_top_three_workload_share_10d': 58.0,
+        'top_three_share_delta_vs_league': 36.0,
+        'bullpen_workload_total_10d': 240,
+        'baseline_read': {'available': False, 'comparison': 'insufficient_sample'},
+    }), TYPE_CONCENTRATION_PRESSURE)
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded read -> existing behavior preserved, no distribution-aware sentence.
+    assert '58%' in text
+    assert 'league norm' not in text
+    assert 'among the more concentrated' not in text
+
+
+def test_baseline_story_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _CONCENTRATION_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', '#1', 'top-ranked', 'league-leading', 'most concentrated',
+        'worst', 'best', 'rank', 'recommend', 'should', 'predict', 'will ',
+    )
+    for sentence in _CONCENTRATION_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_outputs_optionality_strength_observation():
     frame = frame_for(team_context(optionality={
         'optionality_band': 'deep',
