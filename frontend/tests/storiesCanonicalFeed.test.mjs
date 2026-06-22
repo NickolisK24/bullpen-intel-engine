@@ -143,6 +143,30 @@ test('no team story is rendered twice (no duplicate flagship/feed entry)', () =>
   assert.equal(new Set(teamIds).size, teamIds.length)
 })
 
+test('trust_lane story renders with the Trust Lane kicker in a safe lane (no break)', () => {
+  const stories = {
+    capability: 'baseballos_canonical_story_v1',
+    items: [
+      {
+        story_id: '147:2026-06-06', team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY',
+        date: '2026-06-06', story_available: true, story_type: 'trust_lane', category: 'trust_lane', tone: 'watch',
+        headline: 'Yankees have arms available but a thin trusted lane',
+        narrative: 'Yankees observation.\n\nYankees cause.',
+        continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+      },
+    ],
+    available_count: 1, suppressed_count: 0,
+    league_context: canonicalStories().league_context,
+  }
+  const feed = getCanonicalStoryFeed(dashboardFixture({ stories }))
+  const card = feed.items.find(i => i.teamId === 147)
+  assert.ok(card)
+  assert.equal(card.kicker, 'Trust Lane')
+  assert.equal(card.tone, 'watch')      // supported tone token, not a neutral fallback
+  assert.equal(card.category, 'watch')  // unknown category renders in the safe watch lane
+  assert.equal(card.title, 'Yankees have arms available but a thin trusted lane')
+})
+
 test('quiet day with no publishable team stories still yields the league card', () => {
   const feed = getCanonicalStoryFeed(dashboardFixture({ stories: { items: [], league_context: canonicalStories().league_context } }))
   assert.equal(feed.items.length, 1)

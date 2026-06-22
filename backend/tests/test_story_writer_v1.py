@@ -6,6 +6,7 @@ from services.story_observation_engine import (
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_writer_v1 import (
     BANNED_TERMS,
@@ -155,6 +156,50 @@ def assert_quality_sections(output):
     assert_no_robotic_language(output)
     assert output['validation']['contains_banned_language'] is False
     assert output['validation']['contains_robotic_language'] is False
+
+
+def _trust_lane_optionality(*, clean=1, secondary=5, available=6, band='flexible'):
+    return {
+        'context_available': True,
+        'optionality_band': band,
+        'practical_close_game_paths_count': max(available - 2, 0),
+        'available_arms_count': available,
+        'monitor_arms_count': 1,
+        'restricted_arms_count': 0,
+        'limited_arms_count': 0,
+        'avoid_arms_count': 0,
+        'unavailable_arms_count': 0,
+        'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+        'secondary_options': [{'name': f'Flagged {i + 1}'} for i in range(secondary)],
+    }
+
+
+def test_writer_outputs_trust_lane_pressure_observation():
+    frame = frame_for(
+        team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6)),
+        TYPE_TRUST_LANE_PRESSURE,
+    )
+    output = write_story_frame(frame)
+
+    assert_writer_shape(output, TYPE_TRUST_LANE_PRESSURE)
+    assert_quality_sections(output)
+    text = written_text(output)
+    assert '6 available arms' in text
+    assert 'trusted' in text.lower()
+    assert output['written_observation']['constraint_paragraph'].startswith('If ')
+
+
+def test_writer_trust_lane_handles_zero_clean_options():
+    # The strongest case: an acceptable board with no clean arms at all.
+    frame = frame_for(
+        team_context(optionality=_trust_lane_optionality(clean=0, secondary=5, available=5)),
+        TYPE_TRUST_LANE_PRESSURE,
+    )
+    output = write_story_frame(frame)
+
+    assert_writer_shape(output, TYPE_TRUST_LANE_PRESSURE)
+    assert_quality_sections(output)
+    assert 'none of them come in clean' in written_text(output).lower()
 
 
 def test_writer_outputs_rotation_pressure_observation():

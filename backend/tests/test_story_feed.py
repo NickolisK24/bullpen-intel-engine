@@ -180,6 +180,25 @@ class TestAvailableMapping:
         assert story['tone'] == 'rest'
         assert story['category'] == 'rested'
 
+    def test_trust_lane_observation_maps_to_trust_lane_category(self):
+        payload = _available_payload(
+            5, observation_type='trust_lane_pressure', story_type='trust_lane')
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        # Trust-lane gets its own category and the supported `watch` tone so every
+        # surface renders it (rather than falling back to neutral).
+        assert story['tone'] == 'watch'
+        assert story['category'] == 'trust_lane'
+        assert story['story_available'] is True
+        assert story['quality_status'] == QUALITY_PUBLISHED
+
+    def test_trust_lane_beat_tone_used_when_observation_type_absent(self):
+        payload = _available_payload(6, observation_type=None, story_type='trust_lane')
+        payload['selected_observation'] = {}
+        payload['construction_frame'] = {}
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        assert story['tone'] == 'watch'
+        assert story['category'] == 'trust_lane'
+
 
 class TestPositiveBeatBlocker:
     def test_published_positive_story_is_rested_and_not_flagged(self):

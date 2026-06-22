@@ -24,6 +24,7 @@ TYPE_OPTIONALITY_STRENGTH = 'optionality_strength'
 TYPE_STABLE_CORE = 'stable_core'
 TYPE_CORE_TRANSITION = 'core_transition'
 TYPE_DEPTH_PRESSURE = 'depth_pressure'
+TYPE_TRUST_LANE_PRESSURE = 'trust_lane_pressure'
 
 SEVERITY_LOW = 'low'
 SEVERITY_MEDIUM = 'medium'
@@ -40,6 +41,18 @@ STABLE_CORE_BANDS = {'stable'}
 CORE_TRANSITION_BANDS = {'transitioning', 'rebuilding'}
 DEPTH_PRESSURE_BANDS = {'moderate', 'heavy'}
 
+# Trust-lane thresholds. A trust-lane read fires when the raw available board
+# looks acceptable, yet the trusted/clean late-inning lane is thin because most
+# of those available arms are pitching through workload flags. It is read from
+# the same optionality layer as optionality_strength, but keys on the clean
+# (no-workload-flag) subset rather than the blended practical-path count, so a
+# bullpen can have bodies available while the trusted late-game lane stays narrow.
+TRUST_LANE_MIN_AVAILABLE = 4
+TRUST_LANE_THIN_CLEAN_MAX = 2
+TRUST_LANE_MIN_FLAGGED = 3
+TRUST_LANE_HIGH_CLEAN_MAX = 1
+TRUST_LANE_HIGH_FLAGGED = 5
+
 SEVERITY_ORDER = {
     SEVERITY_HIGH: 3,
     SEVERITY_MEDIUM: 2,
@@ -50,6 +63,7 @@ TYPE_PRIORITY = {
     TYPE_ROTATION_PRESSURE: 60,
     TYPE_CONCENTRATION_PRESSURE: 50,
     TYPE_DEPTH_PRESSURE: 45,
+    TYPE_TRUST_LANE_PRESSURE: 43,
     TYPE_CORE_TRANSITION: 40,
     TYPE_OPTIONALITY_STRENGTH: 30,
     TYPE_STABLE_CORE: 20,
@@ -359,10 +373,72 @@ def _depth_pressure(team_context: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def _trust_lane_pressure(team_context: dict[str, Any]) -> dict[str, Any] | None:
+    optionality = _dict(team_context.get('bullpen_optionality_context'))
+    if optionality.get('context_available') is not True:
+        return None
+
+    available = _number(optionality.get('available_arms_count'))
+    if available is None:
+        return None
+
+    clean_options = _list(optionality.get('clean_workload_options'))
+    secondary_options = _list(optionality.get('secondary_options'))
+    clean_count = len(clean_options)
+    secondary_count = len(secondary_options)
+
+    # Enough bodies to look acceptable, but the trusted/clean lane is thin and a
+    # real population of available arms is pitching through workload flags.
+    if not (
+        available >= TRUST_LANE_MIN_AVAILABLE
+        and clean_count <= TRUST_LANE_THIN_CLEAN_MAX
+        and secondary_count >= TRUST_LANE_MIN_FLAGGED
+    ):
+        return None
+
+    concentration = _dict(team_context.get('bullpen_concentration_context'))
+    stability = _dict(team_context.get('role_stability_context'))
+
+    severity = SEVERITY_MEDIUM
+    if clean_count <= TRUST_LANE_HIGH_CLEAN_MAX and secondary_count >= TRUST_LANE_HIGH_FLAGGED:
+        severity = SEVERITY_HIGH
+
+    return _observation(
+        team_context,
+        TYPE_TRUST_LANE_PRESSURE,
+        severity,
+        source_layers=['bullpen_optionality_context', 'bullpen_concentration_context'],
+        headline_inputs={
+            'available_arms_count': optionality.get('available_arms_count'),
+            'clean_workload_options_count': clean_count,
+            'secondary_options_count': secondary_count,
+            'optionality_band': optionality.get('optionality_band'),
+        },
+        baseline_inputs={
+            'available_arms_count': optionality.get('available_arms_count'),
+            'monitor_arms_count': optionality.get('monitor_arms_count'),
+            'practical_close_game_paths_count': optionality.get('practical_close_game_paths_count'),
+        },
+        cause_inputs={
+            'clean_workload_options': clean_options,
+            'secondary_options': secondary_options,
+            'top_three_relievers_10d': _list(concentration.get('top_three_relievers_10d')),
+            'top_three_workload_share_10d': concentration.get('top_three_workload_share_10d'),
+        },
+        constraint_inputs={
+            'clean_workload_options_count': clean_count,
+            'secondary_options_count': secondary_count,
+            'current_operational_core': _list(stability.get('current_operational_core')),
+            'limitations': _context_limitations(team_context, optionality),
+        },
+    )
+
+
 OBSERVATION_BUILDERS = (
     _rotation_pressure,
     _concentration_pressure,
     _optionality_strength,
+    _trust_lane_pressure,
     _stable_core,
     _core_transition,
     _depth_pressure,
@@ -501,6 +577,7 @@ __all__ = [
     'TYPE_OPTIONALITY_STRENGTH',
     'TYPE_ROTATION_PRESSURE',
     'TYPE_STABLE_CORE',
+    'TYPE_TRUST_LANE_PRESSURE',
     'VERSION',
     'build_story_observation_engine_v1',
     'build_team_observations',

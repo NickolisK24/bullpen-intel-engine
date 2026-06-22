@@ -6,11 +6,33 @@ from services.story_observation_engine import (
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
     build_story_observation_engine_v1,
     build_team_story_observation_payload,
     select_strongest_observation,
     select_top_observations,
 )
+
+
+def _trust_lane_optionality(*, clean=2, secondary=4, available=6, band='flexible', context_available=True):
+    """A bullpen with an acceptable available board but a thin trusted/clean lane."""
+    return {
+        'context_available': context_available,
+        'optionality_band': band,
+        'practical_close_game_paths_count': max(available - 2, 0),
+        'available_arms_count': available,
+        'monitor_arms_count': 1,
+        'restricted_arms_count': 0,
+        'limited_arms_count': 0,
+        'avoid_arms_count': 0,
+        'unavailable_arms_count': 0,
+        'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+        'secondary_options': [{'name': f'Flagged {i + 1}'} for i in range(secondary)],
+    }
+
+
+def _types(payload):
+    return {item['type'] for item in payload['observations']}
 
 
 def team_context(
@@ -190,6 +212,56 @@ def test_optionality_strength_observation():
     assert item['cause_inputs']['clean_workload_option_count'] == 2
     assert item['constraint_inputs']['unavailable_arms_count'] == 0
     assert_structured_observation(item)
+
+
+def test_trust_lane_pressure_fires_when_clean_trusted_options_are_low():
+    payload = build_team_story_observation_payload(team_context(
+        optionality=_trust_lane_optionality(clean=2, secondary=4, available=6),
+    ))
+
+    item = observation(payload, TYPE_TRUST_LANE_PRESSURE)
+
+    assert item['severity'] == 'medium'
+    assert item['headline_inputs']['available_arms_count'] == 6
+    assert item['headline_inputs']['clean_workload_options_count'] == 2
+    assert item['headline_inputs']['secondary_options_count'] == 4
+    assert_structured_observation(item)
+
+
+def test_trust_lane_pressure_publishes_even_when_available_arms_look_acceptable():
+    # Six available bodies reads as an acceptable board, yet only one is clean.
+    payload = build_team_story_observation_payload(team_context(
+        optionality=_trust_lane_optionality(clean=1, secondary=5, available=6),
+    ))
+
+    item = observation(payload, TYPE_TRUST_LANE_PRESSURE)
+    assert item['severity'] == 'high'
+    assert item['headline_inputs']['available_arms_count'] >= 4
+
+
+def test_trust_lane_pressure_does_not_fire_when_trusted_depth_is_healthy():
+    payload = build_team_story_observation_payload(team_context(
+        optionality=_trust_lane_optionality(clean=4, secondary=4, available=8, band='deep'),
+    ))
+
+    assert TYPE_TRUST_LANE_PRESSURE not in _types(payload)
+
+
+def test_trust_lane_pressure_does_not_fire_without_a_flagged_population():
+    # Few flagged arms means the available count is not masking a thin lane.
+    payload = build_team_story_observation_payload(team_context(
+        optionality=_trust_lane_optionality(clean=2, secondary=1, available=4),
+    ))
+
+    assert TYPE_TRUST_LANE_PRESSURE not in _types(payload)
+
+
+def test_trust_lane_pressure_requires_available_context():
+    payload = build_team_story_observation_payload(team_context(
+        optionality=_trust_lane_optionality(clean=1, secondary=5, available=6, context_available=False),
+    ))
+
+    assert TYPE_TRUST_LANE_PRESSURE not in _types(payload)
 
 
 def test_stable_core_observation():

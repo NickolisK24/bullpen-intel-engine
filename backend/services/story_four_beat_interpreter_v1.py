@@ -17,6 +17,7 @@ from services.story_observation_engine import (
     TYPE_OPTIONALITY_STRENGTH,
     TYPE_ROTATION_PRESSURE,
     TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_voice_library_v1 import render_voice_line
 
@@ -29,6 +30,7 @@ BEAT_COVERAGE_PRESSURE = 'coverage_pressure'
 BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
 BEAT_AVAILABILITY_DEPTH = 'availability_depth'
+BEAT_TRUST_LANE = 'trust_lane'
 
 PUBLIC_BEATS = {
     BEAT_ROUTE_CHANGE: {
@@ -56,6 +58,11 @@ PUBLIC_BEATS = {
         'label': 'Availability Depth',
         'question_answered': 'How many rested, usable late-inning options does the bullpen have to work with?',
     },
+    BEAT_TRUST_LANE: {
+        'key': BEAT_TRUST_LANE,
+        'label': 'Trust Lane',
+        'question_answered': 'How many rested, trusted arms does the late-game plan actually lean on?',
+    },
 }
 
 # Positive depth/rest reads keep a positive beat. A genuine constraint is a
@@ -69,6 +76,7 @@ BASE_OBSERVATION_BEAT_MAP = {
     TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
     TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
     TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
+    TYPE_TRUST_LANE_PRESSURE: BEAT_TRUST_LANE,
 }
 
 PUBLIC_BANNED_TERMS = (
@@ -235,6 +243,7 @@ def observation_public_beat_map():
         TYPE_CONCENTRATION_PRESSURE: BEAT_SUSTAINABILITY_QUESTION,
         TYPE_DEPTH_PRESSURE: BEAT_DEPTH_CONSTRAINT,
         TYPE_OPTIONALITY_STRENGTH: BEAT_AVAILABILITY_DEPTH,
+        TYPE_TRUST_LANE_PRESSURE: BEAT_TRUST_LANE,
     }
 
 
@@ -256,6 +265,10 @@ def _default_forward_clause(beat, frame, names):
         if name_text:
             return f'If the game stays close, the manager can spread the late innings beyond {name_text} alone.'
         return 'If the game stays close, the bullpen has room to spread the late innings across several rested arms.'
+    if beat == BEAT_TRUST_LANE:
+        if name_text:
+            return f'If the game tightens, the trusted late-game lane runs back through {name_text}, thinner than the available arm count suggests.'
+        return 'If the game tightens, the trusted late-game lane stays thinner than the available arm count suggests.'
     return None
 
 
@@ -381,6 +394,7 @@ __all__ = [
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',
     'BEAT_SUSTAINABILITY_QUESTION',
+    'BEAT_TRUST_LANE',
     'CAPABILITY',
     'PUBLIC_BEATS',
     'VERSION',

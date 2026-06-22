@@ -169,6 +169,7 @@ test('StoryCard renders the public beat labels with helper text', () => {
       'depth_constraint',
       'route_change',
       'sustainability_question',
+      'trust_lane',
     ],
   )
 
@@ -216,6 +217,26 @@ test('StoryCard labels the availability_depth positive beat as More Options', ()
   assert.ok(htmlIncludes(html, 'More Options'))
   assert.ok(htmlIncludes(html, 'The Royals bullpen has more rested options than most clubs today'))
   assert.equal(html.includes('availability_depth'), false) // internal type not leaked
+  assert.equal(storyCardHasBannedLanguage(html), false)
+})
+
+test('StoryCard labels the trust_lane beat as Trust Lane', () => {
+  const story = storyPayload({
+    story_type: 'trust_lane',
+    headline: 'The Royals have arms available but a thin trusted late-game lane',
+    observation: 'The active board lists six available arms, but only one comes in clean.',
+    baseline: 'That is a wider board than the trusted late-inning lane.',
+    cause: 'Most of the available arms are pitching through recent workload.',
+    constraint: 'If the game tightens, the late-game plan leans back on a short list of arms.',
+  })
+  const view = getStoryCardView(story)
+  const html = render({ story })
+
+  assert.equal(view.storyType, 'Trust Lane')
+  assert.equal(view.storyTypeHelper, 'How few rested, trusted arms the late-game plan really leans on.')
+  assert.notEqual(view.storyType, 'Bullpen story') // not the generic fallback
+  assert.ok(htmlIncludes(html, 'Trust Lane'))
+  assert.equal(html.includes('trust_lane'), false) // internal type not leaked
   assert.equal(storyCardHasBannedLanguage(html), false)
 })
 

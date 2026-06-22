@@ -21,6 +21,10 @@ export const STORY_TYPE_DISPLAY = {
     label: 'More Options',
     helper: 'How much rested late-inning depth the bullpen has to work with.',
   },
+  trust_lane: {
+    label: 'Trust Lane',
+    helper: 'How few rested, trusted arms the late-game plan really leans on.',
+  },
 }
 
 function asObject(value) {
