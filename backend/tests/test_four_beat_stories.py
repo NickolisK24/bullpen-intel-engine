@@ -37,7 +37,6 @@ from services.four_beat_stories import (
     dedupe_feed_headlines,
     diversify_feed_story_order,
     evaluate_team_rules,
-    four_beat_stories_enabled,
 )
 from services.story_evidence import (
     GENERIC_LANGUAGE_DENYLIST,
@@ -4274,12 +4273,6 @@ def test_content_selective_leads_cover_stress_transfer_and_hidden_capacity_fixtu
     assert stories['HFC']['rule_key'] == RULE_HIDDEN_CAPACITY_LOSS
     assert stories['HFC']['lead_dimension'] is not None
     assert all(story['beats'][0]['skeleton_key'].startswith('lead_signal:') for story in stories.values())
-
-
-def test_feature_flag_defaults_on():
-    assert four_beat_stories_enabled({}) is True
-    assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': False}) is False
-    assert four_beat_stories_enabled({'FOUR_BEAT_STORIES_ENABLED': True}) is True
 
 
 # ─── Story Quality contract wiring (report-only default, opt-in enforcement) ───

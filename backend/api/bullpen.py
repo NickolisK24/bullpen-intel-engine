@@ -82,10 +82,7 @@ from services.bullpen_population import (
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
-from services.four_beat_stories import (
-    build_four_beat_story_feed,
-    four_beat_stories_enabled,
-)
+from services.four_beat_stories import build_four_beat_story_feed
 from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
@@ -1886,28 +1883,14 @@ def _dashboard_continuity_team_ids(landscape):
     return team_ids
 
 
-def _canonical_story_team_descriptors(payload, landscape):
+def _canonical_story_team_descriptors(landscape):
     """Ordered team descriptors for the canonical story feed.
 
-    Mirrors the four-beat feed's team set and order for compatibility, falling
-    back to the landscape teams when no four-beat feed is present.
+    Built from the landscape buckets (constrained, then monitoring, then
+    available), de-duplicated in that priority order.
     """
     descriptors = []
     seen = set()
-
-    feed = (payload or {}).get('four_beat_stories') or {}
-    for item in feed.get('items') or []:
-        team_id = item.get('team_id')
-        if team_id is None or team_id in seen:
-            continue
-        seen.add(team_id)
-        descriptors.append({
-            'team_id': team_id,
-            'team_name': item.get('team_name'),
-            'team_abbreviation': item.get('team_abbreviation'),
-        })
-    if descriptors:
-        return descriptors
 
     for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
         for entry in (landscape or {}).get(key) or []:
@@ -2256,7 +2239,7 @@ def get_story_quality_diagnostic():
     if team_error:
         return _diagnostic_error(team_error)
 
-    payload = build_bullpen_dashboard_payload()
+    payload = build_bullpen_dashboard_payload(include_four_beat_debug=True)
     feed = payload.get('four_beat_stories') or {}
     continuity = payload.get('continuity') or {}
     dump = build_story_quality_debug_dump(feed, team_id=team_id)
@@ -2354,7 +2337,7 @@ def get_stats_overview():
     })
 
 
-def build_bullpen_dashboard_payload(*, use_published_freshness=False):
+def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_four_beat_debug=False):
     """
     League-wide bullpen overview for the landing dashboard.
 
@@ -2488,7 +2471,10 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
     }
-    if four_beat_stories_enabled(current_app.config):
+    # The legacy four-beat feed is retired from the product dashboard payload.
+    # It is still built on demand for the read-only Story Quality diagnostic,
+    # which opts in explicitly; no product surface consumes it.
+    if include_four_beat_debug:
         payload['four_beat_stories'] = build_four_beat_story_feed(
             availability_records=availability_records,
             logs_by_pitcher=logs_by_pitcher,
@@ -2515,7 +2501,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     # the forward-facing canonical contract, with continuity keyed to the prior
     # snapshot's canonical stories. Legacy story fields above are untouched.
     payload['stories'] = build_canonical_story_feed(
-        _canonical_story_team_descriptors(payload, landscape),
+        _canonical_story_team_descriptors(landscape),
         as_of_date=reference_date,
         story_builder=build_story_intelligence_team_story,
         freshness=freshness,

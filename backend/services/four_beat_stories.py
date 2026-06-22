@@ -6,7 +6,6 @@ sentence skeletons with computed slots. Unsupported slots suppress the beat.
 
 from __future__ import annotations
 
-import os
 import string
 from dataclasses import dataclass
 from typing import Any
@@ -58,7 +57,6 @@ CAPABILITY = 'four_beat_story_template_v1'
 VERSION = '2026-06-18.narrative_renderer_v3'
 STORY_PROSE_CAPABILITY = 'story_prose_detemplating_v1'
 STORY_PROSE_VERSION = '2026-06-19'
-FEATURE_FLAG = 'FOUR_BEAT_STORIES_ENABLED'
 
 RULE_STRESS_TRANSFER = 'stress_transfer'
 RULE_PRESSURE_DISTRIBUTION = 'pressure_distribution'
@@ -381,16 +379,6 @@ class TeamInputs:
     rotation_support_by_team: dict[int, dict[str, Any]] | None = None
     bullpen_stability_by_team: dict[int, dict[str, Any]] | None = None
     bullpen_environment_by_team: dict[int, dict[str, Any]] | None = None
-
-
-def _truthy(value):
-    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
-def four_beat_stories_enabled(config=None):
-    if config is not None:
-        return _truthy(config.get(FEATURE_FLAG, True))
-    return _truthy(os.environ.get(FEATURE_FLAG, 'true'))
 
 
 def _voice_opening(beat: str, inputs: dict[str, Any], *, names: str | None = None, extra_parts=()):
@@ -2538,7 +2526,6 @@ def build_four_beat_story_feed(
 __all__ = [
     'CAPABILITY',
     'BEAT_CONTEXT',
-    'FEATURE_FLAG',
     'RULE_HIDDEN_CAPACITY_LOSS',
     'RULE_PRESSURE_DISTRIBUTION',
     'RULE_SPECIAL_SITUATION',
@@ -2552,6 +2539,5 @@ __all__ = [
     'diversify_feed_story_order',
     'diversify_adjacent_story_prose',
     'evaluate_team_rules',
-    'four_beat_stories_enabled',
     'select_lead_dimensions',
 ]
