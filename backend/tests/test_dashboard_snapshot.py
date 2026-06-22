@@ -140,12 +140,6 @@ def _minimal_dashboard_payload():
         'context': {},
         'roles': {'order': [], 'counts': {}, 'total': 0},
         'landscape': {},
-        'continuity': {'capability': 'bullpen_continuity_v1', 'teams': {}, 'limitations': []},
-        'story_context': {
-            'capability': 'bullpen_context_story_v1',
-            'teams': {},
-            'limitations': [],
-        },
         'freshness': {
             'data_through': None,
             'availability_reference_date': None,
@@ -517,8 +511,6 @@ class TestDashboardRouteSnapshotBehavior:
             'context',
             'roles',
             'landscape',
-            'continuity',
-            'story_context',
             'freshness',
             'availability_summary',
         ):

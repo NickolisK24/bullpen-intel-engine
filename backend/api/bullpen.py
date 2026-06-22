@@ -75,7 +75,6 @@ from services.bullpen_context import (
     build_team_bullpen_context,
     sample_bullpen_context_team_ids,
 )
-from services.bullpen_context_story import build_dashboard_story_context
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
@@ -98,10 +97,6 @@ from services.story_quality import (
 )
 from services.pitcher_role import ROLE_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
-from services.story_continuity import (
-    LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
-    build_story_continuity_payload,
-)
 from services.story_intelligence_service_v1 import (
     build_team_story as build_story_intelligence_team_story,
 )
@@ -2239,7 +2234,7 @@ def get_story_quality_diagnostic():
     if team_error:
         return _diagnostic_error(team_error)
 
-    payload = build_bullpen_dashboard_payload(include_four_beat_debug=True)
+    payload = build_bullpen_dashboard_payload(include_story_quality_debug=True)
     feed = payload.get('four_beat_stories') or {}
     continuity = payload.get('continuity') or {}
     dump = build_story_quality_debug_dump(feed, team_id=team_id)
@@ -2337,7 +2332,7 @@ def get_stats_overview():
     })
 
 
-def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_four_beat_debug=False):
+def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_story_quality_debug=False):
     """
     League-wide bullpen overview for the landing dashboard.
 
@@ -2388,11 +2383,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_fo
         freshness=freshness,
     )
     story_quality_config = StoryQualityConfig.from_app_config(current_app.config)
-    continuity = score_continuity_payload(
-        build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape)),
-        story_quality_config,
-    )
-    context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
     injury_il_context = build_injury_il_context_payload(
         pitchers=[pitcher for _score, pitcher in latest_rows],
         availability_records=availability_records,
@@ -2463,18 +2453,17 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_fo
         'rotation_support_pressure': rotation_support_pressure,
         'bullpen_stability': bullpen_stability,
         'bullpen_environment': bullpen_environment,
-        'continuity': continuity,
-        'story_context': context_support,
         'season_era': season_era,
         'freshness': freshness,
         'availability_summary': summary,
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
     }
-    # The legacy four-beat feed is retired from the product dashboard payload.
-    # It is still built on demand for the read-only Story Quality diagnostic,
-    # which opts in explicitly; no product surface consumes it.
-    if include_four_beat_debug:
+    # The legacy four-beat feed and the legacy dashboard continuity payload are
+    # retired from the product dashboard payload. They are still built on demand
+    # for the read-only Story Quality diagnostic, which opts in explicitly; no
+    # product surface consumes them.
+    if include_story_quality_debug:
         payload['four_beat_stories'] = build_four_beat_story_feed(
             availability_records=availability_records,
             logs_by_pitcher=logs_by_pitcher,
@@ -2486,6 +2475,10 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_fo
             bullpen_stability_by_team=bullpen_stability_by_team,
             bullpen_environment_by_team=bullpen_environment_by_team,
             story_quality_config=story_quality_config,
+        )
+        payload['continuity'] = score_continuity_payload(
+            build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape)),
+            story_quality_config,
         )
     # Prior dashboard snapshot — the comparison baseline for canonical story
     # continuity and the "what changed" surfaces. Fetched once and reused below.
@@ -2528,17 +2521,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False, include_fo
     )
     if changes['items']:
         payload['what_changed_since_yesterday'] = changes
-
-    recent_snapshots = dashboard_snapshot_service.get_recent_dashboard_snapshots_before(
-        data_through,
-        lookback_days=STORY_CONTINUITY_LOOKBACK_DAYS,
-    )
-    story_continuity = build_story_continuity_payload(
-        payload,
-        [snapshot.payload for snapshot in recent_snapshots],
-    )
-    if story_continuity['items']:
-        payload['story_continuity'] = story_continuity
 
     return payload
 
@@ -2619,20 +2601,6 @@ def _dashboard_snapshot_unavailable_payload(reason):
             'total': 0,
         },
         'landscape': {},
-        'continuity': {
-            'capability': 'bullpen_continuity_v1',
-            'teams': {},
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
-        'story_context': {
-            'capability': 'bullpen_context_story_v1',
-            'teams': {},
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
         'what_changed_since_yesterday': {
             'capability': 'what_changed_since_yesterday_public_v1',
             'ranking_applied': False,
@@ -2647,17 +2615,6 @@ def _dashboard_snapshot_unavailable_payload(reason):
             },
             'items': [],
             'item_count': 0,
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
-        'story_continuity': {
-            'capability': 'homepage_story_continuity_v1',
-            'ranking_applied': False,
-            'selection_made': False,
-            'current_data_through': None,
-            'lookback_days': STORY_CONTINUITY_LOOKBACK_DAYS,
-            'items': [],
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],
