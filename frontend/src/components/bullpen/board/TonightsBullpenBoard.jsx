@@ -15,6 +15,11 @@ import {
   filterBoardForViewMode,
   getBullpenViewModeEmptyState,
 } from './tonightsBullpenBoardView'
+import {
+  canonicalTeamBoardEnabled,
+  canonicalTeamStoryUnavailable,
+  shouldMountLegacyStoryPanel,
+} from './teamBoardCanonicalView'
 
 // Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
 // against the loaded team list. Returns the matching team_id, or null.
@@ -107,6 +112,18 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   const filteredBoard = filterBoardForViewMode(board.data, boardViewMode)
   const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
 
+  // Team Board canonical migration (Phase 4B.4): the StoryCard above the board is
+  // already the canonical story. When VITE_USE_CANONICAL_TEAM_BOARD is on, stop
+  // mounting the duplicate legacy TeamBullpenStoryPanel so the board shows one
+  // story — unless the canonical story is unavailable, when the legacy panel
+  // returns as a safe fallback. Flag off keeps the current behavior.
+  const canonicalTeamBoard = canonicalTeamBoardEnabled()
+  const mountLegacyStoryPanel = shouldMountLegacyStoryPanel({
+    enabled: canonicalTeamBoard,
+    storyUnavailable: canonicalTeamStoryUnavailable(story),
+    baseShouldShow: boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  })
+
   return (
     <div>
       {/* Team selector — single team; the board is always one bullpen. */}
@@ -183,7 +200,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
-              showStoryPanel={boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY}
+              showStoryPanel={mountLegacyStoryPanel}
               emptyState={getBullpenViewModeEmptyState(boardViewMode)}
             />
             <TeamGameContextCard
