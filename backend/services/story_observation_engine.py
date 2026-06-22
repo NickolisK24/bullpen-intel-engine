@@ -25,6 +25,7 @@ TYPE_STABLE_CORE = 'stable_core'
 TYPE_CORE_TRANSITION = 'core_transition'
 TYPE_DEPTH_PRESSURE = 'depth_pressure'
 TYPE_TRUST_LANE_PRESSURE = 'trust_lane_pressure'
+TYPE_BRIDGE_INSTABILITY = 'bridge_instability'
 
 SEVERITY_LOW = 'low'
 SEVERITY_MEDIUM = 'medium'
@@ -53,6 +54,20 @@ TRUST_LANE_MIN_FLAGGED = 3
 TRUST_LANE_HIGH_CLEAN_MAX = 1
 TRUST_LANE_HIGH_FLAGGED = 5
 
+# Bridge-instability thresholds. The trusted late-game core is settled, but the
+# path into it — the starter-to-late-game handoff — is fragile: the bullpen is
+# being asked to cover a real bridge while the middle-relief options feeding the
+# core are volatile (monitor/limited tier) and the clean bridge arms are few.
+# Read from rotation_context (handoff demand), role_stability_context (a settled
+# late core), and bullpen_optionality_context (volatile middle). No new raw data.
+BRIDGE_STABLE_CORE_BAND = 'stable'
+BRIDGE_MIN_EARLY_ENTRY_RATE = 35.0
+BRIDGE_MIN_COVERAGE_IP = 3.8
+BRIDGE_MIN_VOLATILE_MIDDLE = 2
+BRIDGE_THIN_CLEAN_MAX = 2
+BRIDGE_HIGH_EARLY_ENTRY_RATE = 50.0
+BRIDGE_HIGH_VOLATILE_MIDDLE = 4
+
 SEVERITY_ORDER = {
     SEVERITY_HIGH: 3,
     SEVERITY_MEDIUM: 2,
@@ -63,6 +78,7 @@ TYPE_PRIORITY = {
     TYPE_ROTATION_PRESSURE: 60,
     TYPE_CONCENTRATION_PRESSURE: 50,
     TYPE_DEPTH_PRESSURE: 45,
+    TYPE_BRIDGE_INSTABILITY: 44,
     TYPE_TRUST_LANE_PRESSURE: 43,
     TYPE_CORE_TRANSITION: 40,
     TYPE_OPTIONALITY_STRENGTH: 30,
@@ -434,11 +450,89 @@ def _trust_lane_pressure(team_context: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
+def _bridge_instability(team_context: dict[str, Any]) -> dict[str, Any] | None:
+    stability = _dict(team_context.get('role_stability_context'))
+    optionality = _dict(team_context.get('bullpen_optionality_context'))
+    rotation = _dict(team_context.get('rotation_context'))
+
+    # A fragile bridge presumes a SETTLED late-game core; otherwise the story is a
+    # route-change / core problem, not a handoff problem.
+    if stability.get('stability_band') != BRIDGE_STABLE_CORE_BAND:
+        return None
+    if optionality.get('context_available') is not True:
+        return None
+    if rotation.get('context_available') is False:
+        return None
+
+    early_rate = _number(rotation.get('early_bullpen_entry_rate'))
+    coverage_ip = _number(rotation.get('bullpen_coverage_ip_7d'))
+    # There must be a real handoff demand — the bullpen is covering the bridge.
+    bridge_demand = (
+        (early_rate is not None and early_rate >= BRIDGE_MIN_EARLY_ENTRY_RATE)
+        or (coverage_ip is not None and coverage_ip >= BRIDGE_MIN_COVERAGE_IP)
+    )
+    if not bridge_demand:
+        return None
+
+    monitor = int(_number(optionality.get('monitor_arms_count')) or 0)
+    limited = int(_number(optionality.get('limited_arms_count')) or 0)
+    volatile_middle = monitor + limited
+    clean_count = len(_list(optionality.get('clean_workload_options')))
+    # The middle path is volatile (monitor/limited arms carry the bridge) and the
+    # clean bridge arms are few.
+    if not (volatile_middle >= BRIDGE_MIN_VOLATILE_MIDDLE and clean_count <= BRIDGE_THIN_CLEAN_MAX):
+        return None
+
+    concentration = _dict(team_context.get('bullpen_concentration_context'))
+
+    severity = SEVERITY_MEDIUM
+    if (
+        early_rate is not None
+        and early_rate >= BRIDGE_HIGH_EARLY_ENTRY_RATE
+        and volatile_middle >= BRIDGE_HIGH_VOLATILE_MIDDLE
+    ):
+        severity = SEVERITY_HIGH
+
+    return _observation(
+        team_context,
+        TYPE_BRIDGE_INSTABILITY,
+        severity,
+        source_layers=['rotation_context', 'role_stability_context', 'bullpen_optionality_context'],
+        headline_inputs={
+            'stability_band': stability.get('stability_band'),
+            'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+            'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+            'volatile_middle_count': volatile_middle,
+            'clean_workload_options_count': clean_count,
+        },
+        baseline_inputs={
+            'current_operational_core': _list(stability.get('current_operational_core')),
+            'core_stability_pct': stability.get('core_stability_pct'),
+            'available_arms_count': optionality.get('available_arms_count'),
+        },
+        cause_inputs={
+            'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+            'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+            'monitor_arms_count': optionality.get('monitor_arms_count'),
+            'limited_arms_count': optionality.get('limited_arms_count'),
+            'secondary_options': _list(optionality.get('secondary_options')),
+        },
+        constraint_inputs={
+            'current_operational_core': _list(stability.get('current_operational_core')),
+            'clean_workload_options_count': clean_count,
+            'volatile_middle_count': volatile_middle,
+            'top_three_relievers_10d': _list(concentration.get('top_three_relievers_10d')),
+            'limitations': _context_limitations(team_context, optionality),
+        },
+    )
+
+
 OBSERVATION_BUILDERS = (
     _rotation_pressure,
     _concentration_pressure,
     _optionality_strength,
     _trust_lane_pressure,
+    _bridge_instability,
     _stable_core,
     _core_transition,
     _depth_pressure,
@@ -571,6 +665,7 @@ def build_story_observation_engine_v1(
 
 __all__ = [
     'CAPABILITY',
+    'TYPE_BRIDGE_INSTABILITY',
     'TYPE_CONCENTRATION_PRESSURE',
     'TYPE_CORE_TRANSITION',
     'TYPE_DEPTH_PRESSURE',

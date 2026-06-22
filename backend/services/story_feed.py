@@ -26,6 +26,7 @@ from typing import Any, Callable
 
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
@@ -36,6 +37,7 @@ from services.story_observation_engine import (
 )
 from services.story_four_beat_interpreter_v1 import (
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -160,6 +162,7 @@ _OBSERVATION_TONE = {
     TYPE_CONCENTRATION_PRESSURE: ('stress', 'stressed'),
     TYPE_DEPTH_PRESSURE: ('stress', 'stressed'),
     TYPE_TRUST_LANE_PRESSURE: ('watch', 'trust_lane'),
+    TYPE_BRIDGE_INSTABILITY: ('watch', 'bridge'),
     TYPE_CORE_TRANSITION: ('watch', 'watch'),
     TYPE_STABLE_CORE: ('rest', 'rested'),
     TYPE_OPTIONALITY_STRENGTH: ('rest', 'rested'),
@@ -173,6 +176,7 @@ _BEAT_TONE = {
     BEAT_ROUTE_CHANGE: ('watch', 'watch'),
     BEAT_AVAILABILITY_DEPTH: ('rest', 'rested'),
     BEAT_TRUST_LANE: ('watch', 'trust_lane'),
+    BEAT_BRIDGE: ('watch', 'bridge'),
 }
 
 _DEFAULT_TONE = ('watch', 'watch')

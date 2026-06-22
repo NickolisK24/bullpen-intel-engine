@@ -25,6 +25,10 @@ export const STORY_TYPE_DISPLAY = {
     label: 'Trust Lane',
     helper: 'How few rested, trusted arms the late-game plan really leans on.',
   },
+  bridge: {
+    label: 'Bridge Instability',
+    helper: 'How fragile the path is from the starter to the trusted late-game arms.',
+  },
 }
 
 function asObject(value) {

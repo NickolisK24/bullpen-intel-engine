@@ -199,6 +199,24 @@ class TestAvailableMapping:
         assert story['tone'] == 'watch'
         assert story['category'] == 'trust_lane'
 
+    def test_bridge_observation_maps_to_bridge_category(self):
+        payload = _available_payload(
+            7, observation_type='bridge_instability', story_type='bridge')
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        # Bridge gets its own category and the supported `watch` tone.
+        assert story['tone'] == 'watch'
+        assert story['category'] == 'bridge'
+        assert story['story_available'] is True
+        assert story['quality_status'] == QUALITY_PUBLISHED
+
+    def test_bridge_beat_tone_used_when_observation_type_absent(self):
+        payload = _available_payload(8, observation_type=None, story_type='bridge')
+        payload['selected_observation'] = {}
+        payload['construction_frame'] = {}
+        story = canonical_story_from_service_payload(payload, date=AS_OF)
+        assert story['tone'] == 'watch'
+        assert story['category'] == 'bridge'
+
 
 class TestPositiveBeatBlocker:
     def test_published_positive_story_is_rested_and_not_flagged(self):

@@ -1,5 +1,6 @@
 from services.story_construction_engine import construct_story_frame, construct_team_story_frames
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
@@ -172,6 +173,43 @@ def _trust_lane_optionality(*, clean=1, secondary=5, available=6, band='flexible
         'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
         'secondary_options': [{'name': f'Flagged {i + 1}'} for i in range(secondary)],
     }
+
+
+def _bridge_inputs(*, early=45.0, coverage=4.2, monitor=3, limited=1, clean=1, available=3):
+    return dict(
+        rotation={
+            'rotation_avg_ip_7d': 5.4, 'rotation_avg_ip_14d': 5.5, 'rotation_ip_trend': -0.1,
+            'early_bullpen_entry_rate': early, 'bullpen_coverage_ip_7d': coverage,
+        },
+        optionality={
+            'context_available': True, 'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 3, 'available_arms_count': available,
+            'monitor_arms_count': monitor, 'limited_arms_count': limited, 'restricted_arms_count': limited,
+            'avoid_arms_count': 0, 'unavailable_arms_count': 0,
+            'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+            'secondary_options': [{'name': f'Mid {i + 1}'} for i in range(max(monitor, 1))],
+        },
+        stability={
+            'stability_band': 'stable',
+            'current_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'previous_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'core_retention_count': 3, 'core_stability_pct': 100, 'core_change_count': 0,
+            'new_core_members': [], 'departed_core_members': [],
+            'current_core_size': 3, 'previous_core_size': 3,
+        },
+    )
+
+
+def test_writer_outputs_bridge_instability_observation():
+    frame = frame_for(team_context(**_bridge_inputs()), TYPE_BRIDGE_INSTABILITY)
+    output = write_story_frame(frame)
+
+    assert_writer_shape(output, TYPE_BRIDGE_INSTABILITY)
+    assert_quality_sections(output)
+    text = written_text(output)
+    assert 'settled' in text.lower()
+    assert 'bridge' in text.lower() or 'middle' in text.lower()
+    assert output['written_observation']['constraint_paragraph'].startswith('If ')
 
 
 def test_writer_outputs_trust_lane_pressure_observation():

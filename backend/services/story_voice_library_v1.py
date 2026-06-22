@@ -21,6 +21,7 @@ BEAT_DEPTH_CONSTRAINT = 'depth_constraint'
 BEAT_SUSTAINABILITY_QUESTION = 'sustainability_question'
 BEAT_AVAILABILITY_DEPTH = 'availability_depth'
 BEAT_TRUST_LANE = 'trust_lane'
+BEAT_BRIDGE = 'bridge'
 
 PURPOSE_OPENING = 'opening'
 
@@ -153,6 +154,20 @@ VOICE_LIBRARY = {
             'The bullpen looks stocked, but the dependable late-inning lane holds at a few names',
         ),
     },
+    BEAT_BRIDGE: {
+        PURPOSE_OPENING: (
+            "The bullpen's late-game options remain intact, but the route into those innings is thinner than it appears",
+            'The trusted late arms are set, yet the path to reach them runs through a fragile middle',
+            "{possessive} late-game core is settled, but the handoff into it is unstable",
+            'The late innings are covered; the bridge to them is the soft spot',
+            '{team} can finish games, but the road from the starter to the late arms is shaky',
+            "{possessive} bullpen is solid at the back, thinner in the bridge",
+            'The trusted late group is intact while the middle-relief path stays volatile',
+            'The late-game plan holds, but the handoff arms are less certain',
+            'The back of the bullpen is settled; the bridge to it is not',
+            'The starters are leaving the bullpen a long, unsteady bridge to the late arms',
+        ),
+    },
 }
 
 
@@ -282,6 +297,7 @@ def voice_library_report() -> dict[str, Any]:
 __all__ = [
     'BANNED_PUBLIC_LANGUAGE',
     'BEAT_AVAILABILITY_DEPTH',
+    'BEAT_BRIDGE',
     'BEAT_COVERAGE_PRESSURE',
     'BEAT_DEPTH_CONSTRAINT',
     'BEAT_ROUTE_CHANGE',

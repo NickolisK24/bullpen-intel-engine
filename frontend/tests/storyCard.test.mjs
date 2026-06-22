@@ -165,6 +165,7 @@ test('StoryCard renders the public beat labels with helper text', () => {
     Object.keys(STORY_TYPE_DISPLAY).sort(),
     [
       'availability_depth',
+      'bridge',
       'coverage_pressure',
       'depth_constraint',
       'route_change',
@@ -237,6 +238,26 @@ test('StoryCard labels the trust_lane beat as Trust Lane', () => {
   assert.notEqual(view.storyType, 'Bullpen story') // not the generic fallback
   assert.ok(htmlIncludes(html, 'Trust Lane'))
   assert.equal(html.includes('trust_lane'), false) // internal type not leaked
+  assert.equal(storyCardHasBannedLanguage(html), false)
+})
+
+test('StoryCard labels the bridge beat as Bridge Instability', () => {
+  const story = storyPayload({
+    story_type: 'bridge',
+    headline: 'The Royals are settled at the back but fragile in the bridge',
+    observation: 'The late-game core is settled, but the bullpen reaches it through volatile middle arms.',
+    baseline: 'That is a thin handoff against a stable late group.',
+    cause: 'The starters keep handing off early.',
+    constraint: 'If the starters keep exiting early, the path to the late arms runs through a fragile middle.',
+  })
+  const view = getStoryCardView(story)
+  const html = render({ story })
+
+  assert.equal(view.storyType, 'Bridge Instability')
+  assert.equal(view.storyTypeHelper, 'How fragile the path is from the starter to the trusted late-game arms.')
+  assert.notEqual(view.storyType, 'Bullpen story') // not the generic fallback
+  assert.ok(htmlIncludes(html, 'Bridge Instability'))
+  assert.equal(html.includes('bridge_instability'), false) // internal type not leaked
   assert.equal(storyCardHasBannedLanguage(html), false)
 })
 

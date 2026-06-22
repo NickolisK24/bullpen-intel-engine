@@ -1,5 +1,6 @@
 from services.story_observation_engine import (
     CAPABILITY,
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
@@ -12,6 +13,33 @@ from services.story_observation_engine import (
     select_strongest_observation,
     select_top_observations,
 )
+
+
+def _bridge_inputs(*, early=38.0, coverage=4.2, monitor=3, limited=1, clean=1, available=3,
+                   stability_band='stable', context_available=True):
+    """A settled late core, real handoff demand, and a volatile, thin middle bridge."""
+    return dict(
+        rotation={
+            'rotation_avg_ip_7d': 5.4, 'rotation_avg_ip_14d': 5.5, 'rotation_ip_trend': -0.1,
+            'early_bullpen_entry_rate': early, 'bullpen_coverage_ip_7d': coverage,
+        },
+        optionality={
+            'context_available': context_available, 'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 3, 'available_arms_count': available,
+            'monitor_arms_count': monitor, 'limited_arms_count': limited, 'restricted_arms_count': limited,
+            'avoid_arms_count': 0, 'unavailable_arms_count': 0,
+            'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+            'secondary_options': [{'name': f'Mid {i + 1}'} for i in range(max(monitor, 1))],
+        },
+        stability={
+            'stability_band': stability_band,
+            'current_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'previous_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'core_retention_count': 3, 'core_stability_pct': 100, 'core_change_count': 0,
+            'new_core_members': [], 'departed_core_members': [],
+            'current_core_size': 3, 'previous_core_size': 3,
+        },
+    )
 
 
 def _trust_lane_optionality(*, clean=2, secondary=4, available=6, band='flexible', context_available=True):
@@ -262,6 +290,40 @@ def test_trust_lane_pressure_requires_available_context():
     ))
 
     assert TYPE_TRUST_LANE_PRESSURE not in _types(payload)
+
+
+def test_bridge_instability_fires_when_handoff_is_fragile():
+    payload = build_team_story_observation_payload(team_context(**_bridge_inputs(early=45.0, monitor=3, limited=1, clean=1)))
+
+    item = observation(payload, TYPE_BRIDGE_INSTABILITY)
+    assert item['severity'] in {'medium', 'high'}
+    assert item['headline_inputs']['stability_band'] == 'stable'
+    assert item['headline_inputs']['volatile_middle_count'] == 4
+    assert item['headline_inputs']['clean_workload_options_count'] == 1
+    assert_structured_observation(item)
+
+
+def test_bridge_instability_does_not_fire_without_a_settled_core():
+    # An unsettled core is a route/core problem, not a bridge problem.
+    payload = build_team_story_observation_payload(team_context(**_bridge_inputs(stability_band='transitioning')))
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_does_not_fire_when_bridge_is_healthy():
+    # Plenty of clean middle options = a healthy bridge.
+    payload = build_team_story_observation_payload(team_context(**_bridge_inputs(clean=4, monitor=1, limited=0)))
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_does_not_fire_without_handoff_demand():
+    # Settled core and a thin middle, but the starters are going deep — no bridge demand.
+    payload = build_team_story_observation_payload(team_context(**_bridge_inputs(early=12.0, coverage=3.0)))
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_requires_available_optionality_context():
+    payload = build_team_story_observation_payload(team_context(**_bridge_inputs(context_available=False)))
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
 
 
 def test_stable_core_observation():

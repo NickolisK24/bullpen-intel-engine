@@ -62,6 +62,7 @@ const KICKER_BY_STORY_TYPE = {
   route_change: 'Route Change',
   availability_depth: 'More Options',
   trust_lane: 'Trust Lane',
+  bridge: 'Fragile Bridge',
 }
 function kickerOf(item) {
   return (

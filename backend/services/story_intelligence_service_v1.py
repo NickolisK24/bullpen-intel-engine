@@ -16,6 +16,7 @@ from services.story_construction_engine import (
     construct_team_story_frames,
 )
 from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_CONCENTRATION_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_DEPTH_PRESSURE,
@@ -27,6 +28,7 @@ from services.story_observation_engine import (
 )
 from services.story_four_beat_interpreter_v1 import (
     BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
@@ -44,6 +46,7 @@ SOURCE = 'backend'
 SERVICE_OBSERVATION_ORDER = (
     TYPE_ROTATION_PRESSURE,
     TYPE_CONCENTRATION_PRESSURE,
+    TYPE_BRIDGE_INSTABILITY,
     TYPE_TRUST_LANE_PRESSURE,
     TYPE_CORE_TRANSITION,
     TYPE_OPTIONALITY_STRENGTH,
@@ -63,17 +66,19 @@ SERVICE_OBSERVATION_PRIORITY = {
 }
 
 # Positive depth/rest sits last so that on equal strength a pressure or change
-# story is preferred. Trust-lane sits below the acute pressure beats but above
-# positive depth, so on equal strength an acute pressure story still wins while a
-# strong trust-lane read outranks a generic positive-depth read. A stronger story
-# of any kind still wins outright on strength.
+# story is preferred. Bridge-instability and trust-lane sit below the acute
+# pressure beats but above positive depth (bridge above trust-lane), so on equal
+# strength an acute pressure story still wins while a strong bridge read outranks
+# a trust-lane read, which outranks a generic positive-depth read. A stronger
+# story of any kind still wins outright on strength.
 PUBLIC_BEAT_TIEBREAK_PRIORITY = {
     BEAT_COVERAGE_PRESSURE: 0,
     BEAT_SUSTAINABILITY_QUESTION: 1,
     BEAT_ROUTE_CHANGE: 2,
     BEAT_DEPTH_CONSTRAINT: 3,
-    BEAT_TRUST_LANE: 4,
-    BEAT_AVAILABILITY_DEPTH: 5,
+    BEAT_BRIDGE: 4,
+    BEAT_TRUST_LANE: 5,
+    BEAT_AVAILABILITY_DEPTH: 6,
 }
 
 SUPPORTING_CONTEXT_KEYS = (
@@ -684,6 +689,53 @@ def _trust_lane_selection_reasons(frame):
     return reasons
 
 
+def _selection_strength_for_bridge(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    cause = _facts(frame, 'cause_facts')
+    early_rate = _coalesce(observed.get('early_bullpen_entry_rate'), cause.get('early_bullpen_entry_rate'))
+    coverage_ip = _coalesce(observed.get('bullpen_coverage_ip_7d'), cause.get('bullpen_coverage_ip_7d'))
+    volatile = _number(_coalesce(
+        observed.get('volatile_middle_count'),
+        interpretation.get('volatile_middle_count'),
+    ))
+    clean = _number(observed.get('clean_workload_options_count'))
+
+    strength = 0
+    # A longer/earlier handoff demand is a stronger bridge read.
+    strength += _strength_step(early_rate, ((50.0, 2), (35.0, 1)))
+    strength += _strength_step(coverage_ip, ((4.5, 2), (3.8, 1)))
+    # More volatile middle arms carrying the bridge widens the instability.
+    strength += _strength_step(volatile, ((4.0, 2), (2.0, 1)))
+    # Fewer clean bridge arms is a thinner, more fragile handoff.
+    if clean is not None:
+        if clean <= 0:
+            strength += 2
+        elif clean <= 1:
+            strength += 1
+    return strength
+
+
+def _bridge_selection_reasons(frame):
+    observed = _facts(frame, 'observation_facts')
+    interpretation = _facts(frame, 'interpretation_facts')
+    cause = _facts(frame, 'cause_facts')
+    reasons = []
+    if (observed.get('stability_band') or interpretation.get('stability_band')) == 'stable':
+        reasons.append('settled_late_core')
+    early_rate = _number(_coalesce(observed.get('early_bullpen_entry_rate'), cause.get('early_bullpen_entry_rate')))
+    coverage_ip = _number(_coalesce(observed.get('bullpen_coverage_ip_7d'), cause.get('bullpen_coverage_ip_7d')))
+    if (early_rate is not None and early_rate >= 35.0) or (coverage_ip is not None and coverage_ip >= 3.8):
+        reasons.append('starter_handoff_demand')
+    volatile = _number(_coalesce(observed.get('volatile_middle_count'), interpretation.get('volatile_middle_count')))
+    if volatile is not None and volatile >= 2:
+        reasons.append('volatile_middle_options')
+    clean = _number(observed.get('clean_workload_options_count'))
+    if clean is not None and clean <= 2:
+        reasons.append('thin_clean_bridge')
+    return reasons
+
+
 def _candidate_selection_profile(candidate):
     public_story = _dict(candidate.get('public_story'))
     frame = _dict(candidate.get('construction_frame'))
@@ -711,6 +763,9 @@ def _candidate_selection_profile(candidate):
     elif story_type == BEAT_TRUST_LANE:
         strength = _selection_strength_for_trust_lane(frame)
         reasons = _trust_lane_selection_reasons(frame)
+    elif story_type == BEAT_BRIDGE:
+        strength = _selection_strength_for_bridge(frame)
+        reasons = _bridge_selection_reasons(frame)
     else:
         strength = 0
         reasons = []
@@ -743,6 +798,9 @@ def _candidate_is_publicly_selectable(candidate):
         return False
     # Trust-lane must clear an evidence bar too; no fabricated thin-lane story.
     if story_type == BEAT_TRUST_LANE and strength <= 0:
+        return False
+    # Bridge-instability must clear an evidence bar too; no fabricated bridge story.
+    if story_type == BEAT_BRIDGE and strength <= 0:
         return False
     return True
 

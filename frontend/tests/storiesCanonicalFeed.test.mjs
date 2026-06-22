@@ -167,6 +167,30 @@ test('trust_lane story renders with the Trust Lane kicker in a safe lane (no bre
   assert.equal(card.title, 'Yankees have arms available but a thin trusted lane')
 })
 
+test('bridge story renders with the Fragile Bridge kicker in a safe lane (no break)', () => {
+  const stories = {
+    capability: 'baseballos_canonical_story_v1',
+    items: [
+      {
+        story_id: '111:2026-06-06', team_id: 111, team_name: 'Boston Red Sox', team_abbreviation: 'BOS',
+        date: '2026-06-06', story_available: true, story_type: 'bridge', category: 'bridge', tone: 'watch',
+        headline: 'Red Sox are settled at the back but fragile in the bridge',
+        narrative: 'Red Sox observation.\n\nRed Sox cause.',
+        continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+      },
+    ],
+    available_count: 1, suppressed_count: 0,
+    league_context: canonicalStories().league_context,
+  }
+  const feed = getCanonicalStoryFeed(dashboardFixture({ stories }))
+  const card = feed.items.find(i => i.teamId === 111)
+  assert.ok(card)
+  assert.equal(card.kicker, 'Fragile Bridge')
+  assert.equal(card.tone, 'watch')      // supported tone token, not a neutral fallback
+  assert.equal(card.category, 'watch')  // unknown category renders in the safe watch lane
+  assert.equal(card.title, 'Red Sox are settled at the back but fragile in the bridge')
+})
+
 test('quiet day with no publishable team stories still yields the league card', () => {
   const feed = getCanonicalStoryFeed(dashboardFixture({ stories: { items: [], league_context: canonicalStories().league_context } }))
   assert.equal(feed.items.length, 1)
