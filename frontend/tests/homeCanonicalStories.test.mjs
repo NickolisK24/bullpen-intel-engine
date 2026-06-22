@@ -17,7 +17,6 @@ after(async () => {
 })
 
 const {
-  canonicalHomeStoriesEnabled,
   hasUsableCanonicalStories,
   getCanonicalHomeStories,
   getCanonicalHeroStory,
@@ -101,16 +100,7 @@ function dashboardFixture(stories) {
   }
 }
 
-// ── Feature flag ─────────────────────────────────────────────────────────────
-test('flag defaults off (safe) and only an explicit truthy value enables it', () => {
-  assert.equal(canonicalHomeStoriesEnabled({}), false)
-  assert.equal(canonicalHomeStoriesEnabled({ VITE_USE_CANONICAL_HOME_STORIES: '' }), false)
-  assert.equal(canonicalHomeStoriesEnabled({ VITE_USE_CANONICAL_HOME_STORIES: 'false' }), false)
-  assert.equal(canonicalHomeStoriesEnabled({ VITE_USE_CANONICAL_HOME_STORIES: 'true' }), true)
-  assert.equal(canonicalHomeStoriesEnabled({ VITE_USE_CANONICAL_HOME_STORIES: '1' }), true)
-  assert.equal(canonicalHomeStoriesEnabled({ VITE_USE_CANONICAL_HOME_STORIES: true }), true)
-})
-
+// ── Canonical payload shape ──────────────────────────────────────────────────
 test('hasUsableCanonicalStories requires a present items array', () => {
   assert.equal(hasUsableCanonicalStories(dashboardFixture(canonicalFeed())), true)
   assert.equal(hasUsableCanonicalStories(dashboardFixture({ items: [] })), true) // quiet day is usable
@@ -214,11 +204,10 @@ test('league context maps backend read and evidence counts', () => {
   assert.equal(ctx.href, '/stories')
 })
 
-// ── Home integration behind the flag ─────────────────────────────────────────
-test('flag enabled: Home renders the canonical positive story', () => {
+// ── Home integration (canonical-only) ────────────────────────────────────────
+test('Home renders the canonical positive story', () => {
   const html = render(React.createElement(HomeView, {
     dashboard: dashboardFixture(canonicalFeed()),
-    canonicalStoriesEnabled: true,
   }))
   assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), true)
   assert.equal(htmlIncludes(html, 'More Options'), true)
@@ -226,29 +215,32 @@ test('flag enabled: Home renders the canonical positive story', () => {
   assert.equal(htmlIncludes(html, 'Stretched Thin'), false)
 })
 
-test('flag disabled: Home keeps legacy behavior', () => {
-  const html = render(React.createElement(HomeView, {
-    dashboard: dashboardFixture(canonicalFeed()),
-    canonicalStoriesEnabled: false,
-  }))
-  // Legacy hero derives from landscape counts (MIL is constrained) -> stress.
-  assert.equal(htmlIncludes(html, 'Stretched Thin'), true)
-  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), false)
-})
-
-test('flag enabled but malformed payload: Home falls back to legacy safely', () => {
-  const html = render(React.createElement(HomeView, {
-    dashboard: dashboardFixture({ capability: 'baseballos_canonical_story_v1' }), // no items array
-    canonicalStoriesEnabled: true,
-  }))
-  assert.equal(htmlIncludes(html, 'Stretched Thin'), true) // legacy hero
-  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), false)
-})
-
-test('flag enabled, quiet day: Home renders league/quiet hero without crashing', () => {
+test('quiet day: Home renders the league/quiet hero without crashing', () => {
   const html = render(React.createElement(HomeView, {
     dashboard: dashboardFixture({ items: [], league_context: canonicalFeed().league_context }),
-    canonicalStoriesEnabled: true,
   }))
   assert.equal(htmlIncludes(html, 'League Check-In'), true)
+  assert.equal(htmlIncludes(html, 'bullpen pressure is concentrated in a small set of clubs.'), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
+})
+
+test('malformed dashboard.stories still renders a neutral Home without blanking', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardFixture({ capability: 'baseballos_canonical_story_v1' }), // no items array
+  }))
+  assert.equal(htmlIncludes(html, 'League Check-In'), true)
+  assert.equal(htmlIncludes(html, 'A quiet morning across baseball'), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
+  assert.equal(htmlIncludes(html, 'The league context is waiting on a complete bullpen dashboard.'), true)
+  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), false)
+})
+
+test('missing dashboard.stories still renders a neutral Home without throwing', () => {
+  const dashboard = dashboardFixture(undefined)
+  delete dashboard.stories
+  const html = render(React.createElement(HomeView, { dashboard }))
+  assert.equal(htmlIncludes(html, 'League Check-In'), true)
+  assert.equal(htmlIncludes(html, 'A quiet morning across baseball'), true)
+  assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
 })

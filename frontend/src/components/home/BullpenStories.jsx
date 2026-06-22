@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { homeTone } from './homeIntelligenceView'
+import { homeTone } from './homePresentationView'
 
 // Section 2 — Three Things To Watch. The briefing cut: only the few signals
 // that matter most this morning, in plain baseball language — what the
