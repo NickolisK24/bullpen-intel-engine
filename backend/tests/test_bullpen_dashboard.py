@@ -222,6 +222,13 @@ class TestDashboardEndpoint:
         assert suppressed['quality_status'] == 'suppressed'
         assert suppressed['headline'] is None
 
+        # League context (quiet-day strategy) is present and quality-gated.
+        league = stories['league_context']
+        assert league['capability'] == 'baseballos_league_context_v1'
+        assert league['mode']
+        assert league['day_class']
+        assert league['quality_status'] in ('published', 'neutral')
+
         # Legacy story fields remain untouched (additive change only).
         assert 'four_beat_stories' in body
         assert 'story_context' in body

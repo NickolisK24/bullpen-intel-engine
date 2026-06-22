@@ -69,6 +69,54 @@ FEED_LIMITATIONS = (
     'no_new_prose_or_metrics_created',
 )
 
+# ── League context / quiet-day strategy ──────────────────────────────────────
+# A canonical feed must have an honest answer for quiet days, when few clubs have
+# a publishable story. The league context describes today's league-wide bullpen
+# environment from real counts, or returns a truthful neutral fallback. It never
+# fabricates a team-specific narrative and makes no predictions.
+
+LEAGUE_CONTEXT_CAPABILITY = 'baseballos_league_context_v1'
+QUALITY_NEUTRAL = 'neutral'
+
+# Day classes by number of publishable team stories. Thresholds map to the Home
+# surfaces a future migration would fill: "Three Things To Watch" needs ~3 stories
+# and the feed shows up to ~8. So <=2 stories cannot fill the watch strip (quiet),
+# 3-5 is a thin news day (low_story), and >5 is a normal news day.
+DAY_NORMAL = 'normal'
+DAY_LOW_STORY = 'low_story'
+DAY_QUIET = 'quiet'
+DAY_NO_STORY = 'no_story'
+
+QUIET_STORY_MAX = 2
+LOW_STORY_MAX = 5
+
+# League environment modes.
+LEAGUE_MODE_BROADLY_CONSTRAINED = 'broadly_constrained'
+LEAGUE_MODE_PRESSURE_CONCENTRATED = 'pressure_concentrated'
+LEAGUE_MODE_DEPTH_HEALTHY = 'depth_healthy'
+LEAGUE_MODE_AVAILABILITY_TIGHTENING = 'availability_tightening'
+LEAGUE_MODE_AVAILABILITY_EASING = 'availability_easing'
+LEAGUE_MODE_BROADLY_STABLE = 'broadly_stable'
+LEAGUE_MODE_NEUTRAL = 'neutral'
+
+# Share-of-league thresholds (denominator = clubs with bullpen data, ~30 in
+# season). >=40% of clubs under real pressure is well above a normal day
+# (widespread); <=25% means pressure is contained to a minority (concentrated);
+# >=50% of clubs with rested depth is a broadly healthy league.
+BROADLY_CONSTRAINED_SHARE = 0.40
+PRESSURE_CONCENTRATED_SHARE = 0.25
+DEPTH_HEALTHY_SHARE = 0.50
+
+# Story-mix fallback (used when no league availability signal is supplied): at
+# most this many pressure stories means pressure is concentrated, not broad.
+CONCENTRATED_STORY_MAX = 3
+
+LEAGUE_CONTEXT_LIMITATIONS = (
+    'derived_from_published_team_stories_and_league_availability_counts',
+    'no_predictions_or_betting_content',
+    'day_over_day_availability_trend_optional_and_not_fabricated',
+)
+
 # The four authored paragraphs, mapped to public-safe beat labels. Labels mirror
 # the existing Team Board StoryCard so a future UI can render either source.
 _BEAT_DEFS = (
@@ -120,6 +168,13 @@ def _date_str(value: Any):
     if hasattr(value, 'isoformat'):
         return value.isoformat()
     return str(value)
+
+
+def _int(value: Any):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def story_id_for(team_id: Any, date_value: Any) -> str:
@@ -268,12 +323,179 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
     return item
 
 
+def classify_story_day(publishable_count) -> str:
+    """Classify the day by how many teams have a publishable story."""
+    count = _int(publishable_count) or 0
+    if count <= 0:
+        return DAY_NO_STORY
+    if count <= QUIET_STORY_MAX:
+        return DAY_QUIET
+    if count <= LOW_STORY_MAX:
+        return DAY_LOW_STORY
+    return DAY_NORMAL
+
+
+def _select_league_mode(
+    *,
+    day_class,
+    pressure_count,
+    rest_count,
+    constrained_count,
+    constrained_share,
+    available_share,
+    trend,
+):
+    """Pick one honest league mode + copy. Returns (mode, headline, summary, generated)."""
+    # 1. Widespread pressure across the league.
+    if constrained_share is not None and constrained_share >= BROADLY_CONSTRAINED_SHARE:
+        detail = f'{constrained_count} clubs are' if constrained_count else 'A large share of clubs are'
+        return (
+            LEAGUE_MODE_BROADLY_CONSTRAINED,
+            'Bullpen pressure is unusually widespread across the league today.',
+            f'{detail} carrying real late-inning workload pressure, more than a typical day.',
+            True,
+        )
+
+    # 2. Pressure exists but is contained to a minority of clubs.
+    pressure_present = (constrained_count is not None and constrained_count >= 1) or pressure_count >= 1
+    pressure_contained = (
+        (constrained_share is not None and constrained_share <= PRESSURE_CONCENTRATED_SHARE)
+        or (constrained_share is None and pressure_count <= CONCENTRATED_STORY_MAX)
+    )
+    if pressure_present and pressure_contained:
+        clubs = constrained_count if constrained_count else pressure_count
+        return (
+            LEAGUE_MODE_PRESSURE_CONCENTRATED,
+            "Today's bullpen pressure is concentrated in a small set of clubs.",
+            f'Most bullpens are in normal shape; the meaningful workload pressure is contained to {clubs} clubs.',
+            True,
+        )
+
+    # 3. Broad, healthy depth with little pressure.
+    depth_broad = (
+        (available_share is not None and available_share >= DEPTH_HEALTHY_SHARE)
+        or (available_share is None and rest_count >= 2 and pressure_count == 0)
+    )
+    if depth_broad:
+        return (
+            LEAGUE_MODE_DEPTH_HEALTHY,
+            'Most bullpens carry healthy late-inning depth today.',
+            'A broad share of clubs have rested late-inning options, with little widespread pressure.',
+            True,
+        )
+
+    # 4. Optional day-over-day availability trend (only when a real signal is supplied).
+    if trend == 'tightening':
+        return (
+            LEAGUE_MODE_AVAILABILITY_TIGHTENING,
+            'League-wide bullpen availability is tightening.',
+            'Fewer rested relievers are available across the league than the recent baseline.',
+            True,
+        )
+    if trend == 'easing':
+        return (
+            LEAGUE_MODE_AVAILABILITY_EASING,
+            'League-wide bullpen availability is easing.',
+            'More rested relievers are available across the league than the recent baseline.',
+            True,
+        )
+
+    # 5. Quiet day with no clear league signal: an honest, non-dramatic stable read.
+    if day_class in (DAY_QUIET, DAY_NO_STORY):
+        return (
+            LEAGUE_MODE_BROADLY_STABLE,
+            'No major bullpen story is emerging today.',
+            'Bullpen conditions are broadly stable, with no widespread availability pressure across the league.',
+            False,
+        )
+
+    # 6. Otherwise a truthful neutral observation, with no forced drama.
+    return (
+        LEAGUE_MODE_NEUTRAL,
+        'No single bullpen pattern stands out across the league today.',
+        "Today's read sits with the individual team stories; there is no league-wide bullpen theme.",
+        False,
+    )
+
+
+def build_league_context(items, *, league_signal=None, as_of_date=None) -> dict:
+    """Build the league-context section for the canonical feed.
+
+    Describes today's league-wide bullpen environment from real counts (the
+    published team-story mix plus an optional league availability signal), or a
+    truthful neutral fallback. No team-specific narrative is invented.
+    """
+    rows = [item for item in (items or []) if isinstance(item, dict)]
+    publishable = [item for item in rows if item.get('story_available') is True]
+    pressure = [item for item in publishable if item.get('category') == 'stressed']
+    rest = [item for item in publishable if item.get('category') == 'rested']
+    watch = [item for item in publishable if item.get('category') == 'watch']
+    day_class = classify_story_day(len(publishable))
+
+    signal = _dict(league_signal)
+    team_count = _int(signal.get('team_count'))
+    constrained_count = _int(signal.get('constrained_team_count'))
+    available_count = _int(signal.get('available_team_count'))
+    trend = signal.get('availability_trend')
+    if trend not in ('easing', 'tightening'):
+        trend = None
+
+    constrained_share = (
+        constrained_count / team_count
+        if team_count and constrained_count is not None
+        else None
+    )
+    available_share = (
+        available_count / team_count
+        if team_count and available_count is not None
+        else None
+    )
+
+    mode, headline, summary, generated = _select_league_mode(
+        day_class=day_class,
+        pressure_count=len(pressure),
+        rest_count=len(rest),
+        constrained_count=constrained_count,
+        constrained_share=constrained_share,
+        available_share=available_share,
+        trend=trend,
+    )
+
+    evidence = {
+        'team_story_count': len(rows),
+        'publishable_story_count': len(publishable),
+        'pressure_story_count': len(pressure),
+        'rest_story_count': len(rest),
+        'watch_story_count': len(watch),
+        'league_team_count': team_count,
+        'constrained_team_count': constrained_count,
+        'available_team_count': available_count,
+        'constrained_team_share': round(constrained_share, 3) if constrained_share is not None else None,
+        'available_team_share': round(available_share, 3) if available_share is not None else None,
+        'availability_trend': trend,
+    }
+
+    return {
+        'capability': LEAGUE_CONTEXT_CAPABILITY,
+        'mode': mode,
+        'day_class': day_class,
+        'headline': headline,
+        'summary': summary,
+        'evidence': evidence,
+        'generated': generated,
+        'quality_status': QUALITY_PUBLISHED if generated else QUALITY_NEUTRAL,
+        'as_of_date': _date_str(as_of_date),
+        'limitations': list(LEAGUE_CONTEXT_LIMITATIONS),
+    }
+
+
 def build_canonical_story_feed(
     teams,
     *,
     as_of_date,
     story_builder: Callable | None = None,
     freshness=None,
+    league_signal=None,
 ) -> dict:
     """Build the canonical league-wide story feed.
 
@@ -326,6 +548,11 @@ def build_canonical_story_feed(
         'fallback': FEED_FALLBACK,
         'freshness': _dict(freshness),
         'limitations': list(FEED_LIMITATIONS),
+        'league_context': build_league_context(
+            available + suppressed,
+            league_signal=league_signal,
+            as_of_date=as_of_date,
+        ),
     }
 
 
@@ -336,9 +563,13 @@ __all__ = [
     'QUALITY_PUBLISHED',
     'QUALITY_REVIEW',
     'QUALITY_SUPPRESSED',
+    'QUALITY_NEUTRAL',
+    'LEAGUE_CONTEXT_CAPABILITY',
     'POSITIVE_BEAT_LIMITATION',
     'POSITIVE_OBSERVATION_TYPES',
     'story_id_for',
     'canonical_story_from_service_payload',
     'build_canonical_story_feed',
+    'build_league_context',
+    'classify_story_day',
 ]

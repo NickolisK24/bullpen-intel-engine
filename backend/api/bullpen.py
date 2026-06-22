@@ -1923,6 +1923,28 @@ def _canonical_story_team_descriptors(payload, landscape):
     return descriptors
 
 
+def _canonical_league_signal(landscape, availability_records):
+    """League-wide availability counts for the canonical feed's league context.
+
+    Counts come from the already-built landscape buckets and the classified
+    availability records; no new computation or day-over-day trend is invented.
+    """
+    landscape = landscape or {}
+    team_ids = set()
+    for record in availability_records or []:
+        pitcher = record['pitcher'] if isinstance(record, dict) and 'pitcher' in record else None
+        team_id = getattr(pitcher, 'team_id', None)
+        if team_id is not None:
+            team_ids.add(team_id)
+    return {
+        'team_count': len(team_ids),
+        'constrained_team_count': len(landscape.get('constrained_bullpens') or []),
+        'available_team_count': len(landscape.get('available_bullpens') or []),
+        'monitoring_team_count': len(landscape.get('monitoring_concentration') or []),
+        'availability_trend': None,
+    }
+
+
 def _diagnostic_team_exists(team_id):
     return (
         db.session.query(Pitcher.id)
@@ -2470,6 +2492,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         as_of_date=reference_date,
         story_builder=build_story_intelligence_team_story,
         freshness=freshness,
+        league_signal=_canonical_league_signal(landscape, availability_records),
     )
     data_through = parse_reference_date(
         freshness.get('data_through')

@@ -8,15 +8,43 @@ context is required.
 from datetime import date
 
 from services.story_feed import (
+    DAY_LOW_STORY,
+    DAY_NO_STORY,
+    DAY_NORMAL,
+    DAY_QUIET,
+    LEAGUE_CONTEXT_CAPABILITY,
+    LEAGUE_MODE_BROADLY_CONSTRAINED,
+    LEAGUE_MODE_BROADLY_STABLE,
+    LEAGUE_MODE_DEPTH_HEALTHY,
+    LEAGUE_MODE_NEUTRAL,
+    LEAGUE_MODE_PRESSURE_CONCENTRATED,
     POSITIVE_BEAT_LIMITATION,
+    QUALITY_NEUTRAL,
     QUALITY_PUBLISHED,
     QUALITY_REVIEW,
     QUALITY_SUPPRESSED,
     SOURCE_ENGINE,
     build_canonical_story_feed,
+    build_league_context,
     canonical_story_from_service_payload,
+    classify_story_day,
     story_id_for,
 )
+
+# Public-facing copy must never contain prediction/betting/ranking language.
+_FORBIDDEN_LEAGUE_TERMS = (
+    'bet', 'odds', 'predict', 'probability', 'guaranteed', 'lock',
+    'will win', 'ranked', 'ranking', 'best option',
+)
+
+
+def _story(category, *, available=True):
+    return {'story_available': available, 'category': category}
+
+
+def _no_forbidden_language(context):
+    text = f"{context['headline']} {context['summary']}".lower()
+    return not any(term in text for term in _FORBIDDEN_LEAGUE_TERMS)
 
 # The canonical contract keys every item must carry.
 REQUIRED_KEYS = {
@@ -252,3 +280,120 @@ class TestFeed:
         )
         for item in feed['items']:
             assert REQUIRED_KEYS.issubset(item.keys())
+
+    def test_feed_includes_league_context(self):
+        feed = build_canonical_story_feed(
+            [_descriptor(1)],
+            as_of_date=AS_OF,
+            story_builder=_builder({1: _available_payload(1)}),
+            league_signal={'team_count': 30, 'constrained_team_count': 3, 'available_team_count': 10},
+        )
+        context = feed['league_context']
+        assert context['capability'] == LEAGUE_CONTEXT_CAPABILITY
+        assert context['mode']
+        assert context['day_class']
+        assert _no_forbidden_language(context)
+
+
+class TestStoryDayClassification:
+    def test_no_story_day(self):
+        assert classify_story_day(0) == DAY_NO_STORY
+
+    def test_quiet_day(self):
+        assert classify_story_day(1) == DAY_QUIET
+        assert classify_story_day(2) == DAY_QUIET
+
+    def test_low_story_day(self):
+        assert classify_story_day(3) == DAY_LOW_STORY
+        assert classify_story_day(5) == DAY_LOW_STORY
+
+    def test_normal_day(self):
+        assert classify_story_day(6) == DAY_NORMAL
+        assert classify_story_day(20) == DAY_NORMAL
+
+
+class TestLeagueContext:
+    def test_normal_day_classification(self):
+        context = build_league_context([_story('stressed') for _ in range(6)], as_of_date=AS_OF)
+        assert context['day_class'] == DAY_NORMAL
+        assert context['evidence']['publishable_story_count'] == 6
+
+    def test_quiet_day_is_stable_and_neutral_quality(self):
+        context = build_league_context([_story('watch'), _story('watch')], as_of_date=AS_OF)
+        assert context['day_class'] == DAY_QUIET
+        assert context['mode'] == LEAGUE_MODE_BROADLY_STABLE
+        assert context['generated'] is False
+        assert context['quality_status'] == QUALITY_NEUTRAL
+        assert 'no major bullpen story' in context['headline'].lower()
+        assert _no_forbidden_language(context)
+
+    def test_no_story_day_returns_honest_fallback(self):
+        context = build_league_context([], as_of_date=AS_OF)
+        assert context['day_class'] == DAY_NO_STORY
+        assert context['mode'] == LEAGUE_MODE_BROADLY_STABLE
+        assert context['generated'] is False
+        assert context['quality_status'] == QUALITY_NEUTRAL
+        assert context['evidence']['publishable_story_count'] == 0
+        assert _no_forbidden_language(context)
+
+    def test_league_pressure_concentration(self):
+        items = [_story('stressed'), _story('stressed'), _story('watch')]
+        context = build_league_context(
+            items,
+            league_signal={'team_count': 30, 'constrained_team_count': 5, 'available_team_count': 8},
+            as_of_date=AS_OF,
+        )
+        assert context['mode'] == LEAGUE_MODE_PRESSURE_CONCENTRATED
+        assert context['generated'] is True
+        assert context['quality_status'] == QUALITY_PUBLISHED
+        # The club count in the copy matches the evidence (no fabrication).
+        assert 'contained to 5 clubs' in context['summary']
+        assert context['evidence']['constrained_team_count'] == 5
+        assert _no_forbidden_language(context)
+
+    def test_broadly_constrained_league(self):
+        context = build_league_context(
+            [_story('stressed') for _ in range(8)],
+            league_signal={'team_count': 30, 'constrained_team_count': 14, 'available_team_count': 4},
+            as_of_date=AS_OF,
+        )
+        assert context['mode'] == LEAGUE_MODE_BROADLY_CONSTRAINED
+        assert context['generated'] is True
+        assert '14 clubs' in context['summary']
+        assert _no_forbidden_language(context)
+
+    def test_league_depth_health(self):
+        context = build_league_context(
+            [_story('rested') for _ in range(7)],
+            league_signal={'team_count': 30, 'constrained_team_count': 0, 'available_team_count': 18},
+            as_of_date=AS_OF,
+        )
+        assert context['mode'] == LEAGUE_MODE_DEPTH_HEALTHY
+        assert context['generated'] is True
+        assert _no_forbidden_language(context)
+
+    def test_neutral_fallback_when_no_dominant_pattern(self):
+        # A low-story day with only watch-level stories and no league signal: no
+        # pressure, no broad depth -> a truthful neutral observation, no drama.
+        context = build_league_context([_story('watch') for _ in range(4)], as_of_date=AS_OF)
+        assert context['day_class'] == DAY_LOW_STORY
+        assert context['mode'] == LEAGUE_MODE_NEUTRAL
+        assert context['generated'] is False
+        assert context['quality_status'] == QUALITY_NEUTRAL
+        assert _no_forbidden_language(context)
+
+    def test_no_fabricated_claims_evidence_matches_items(self):
+        items = [
+            _story('stressed'),
+            _story('rested'),
+            _story('watch'),
+            _story('stressed', available=False),
+        ]
+        context = build_league_context(items, as_of_date=AS_OF)
+        evidence = context['evidence']
+        assert evidence['team_story_count'] == 4
+        assert evidence['publishable_story_count'] == 3  # suppressed item excluded
+        assert evidence['pressure_story_count'] == 1
+        assert evidence['rest_story_count'] == 1
+        assert evidence['watch_story_count'] == 1
+        assert _no_forbidden_language(context)
