@@ -17,6 +17,10 @@ export const STORY_TYPE_DISPLAY = {
     label: 'Sustainability Question',
     helper: 'Whether the current usage pattern can keep functioning.',
   },
+  availability_depth: {
+    label: 'More Options',
+    helper: 'How much rested late-inning depth the bullpen has to work with.',
+  },
 }
 
 function asObject(value) {
