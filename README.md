@@ -248,7 +248,10 @@ Frontend:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_API_BASE_URL` | Backend origin when hosted separately |
-| `VITE_ADMIN_API_TOKEN` | Optional operator token; avoid public production bundles when possible |
+
+The frontend has no admin token. Privileged operational endpoints (sync /
+recalculate) are gated by the backend `ADMIN_API_TOKEN` and are triggered
+server-side or with curl, never from the browser.
 
 GitHub Actions scheduled sync:
 

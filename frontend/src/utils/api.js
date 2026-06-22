@@ -11,11 +11,10 @@ const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
 
-// Optional admin token for operational write endpoints (sync / recalculate).
-// Left unset for local dev (the backend allows those routes when its own
-// ADMIN_API_TOKEN is unset). Only set this for a build where you intend the
-// operator UI to drive a token-protected backend.
-const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_API_TOKEN
+// Privileged operational endpoints (sync / recalculate) are gated by the
+// backend ADMIN_API_TOKEN via the X-Admin-Token header. The frontend never
+// holds or sends that token: trigger those endpoints server-side or with curl
+// so the admin secret can never be baked into the public browser bundle.
 export const RECOMMENDATION_CANDIDATE_ROUTE = '/recommendations/candidate'
 export const RECOMMENDATION_V2_BULLPEN_STATE_ROUTE = '/recommendations/v2/bullpen-state'
 export const TEAM_OPERATIONS_BULLPEN_READINESS_ROUTE =
@@ -557,7 +556,6 @@ function buildQuery(params = {}) {
 
 async function request(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
-  if (ADMIN_TOKEN) headers['X-Admin-Token'] = ADMIN_TOKEN
   const method = String(options.method || 'GET').toUpperCase()
   const dedupeKey = method === 'GET' && !options.body ? `${BASE}${path}` : null
   if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
@@ -594,7 +592,9 @@ export const getFatigueScores  = (params = {}) => {
   return request(`/bullpen/fatigue${q ? `?${q}` : ''}`)
 }
 export const getPitcherFatigue = (id) => request(`/bullpen/fatigue/${id}`)
-export const recalculateFatigue = () => request('/bullpen/fatigue/recalculate', { method: 'POST' })
+// No frontend helper for POST /bullpen/fatigue/recalculate: fatigue
+// recalculation is an admin-token-gated operation, triggered server-side or
+// via curl (see docs/current/SETUP.md), never from the browser.
 
 export const getPitchers       = (params = {}) => {
   const q = new URLSearchParams(params).toString()
