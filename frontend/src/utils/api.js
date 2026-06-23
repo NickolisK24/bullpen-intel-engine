@@ -11,6 +11,9 @@ const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
 
+export const AUTH_TOKEN_STORAGE_KEY = 'baseballos.authToken'
+export const AUTH_TOKEN_CHANGED_EVENT = 'baseballos:auth-token-changed'
+
 // Privileged operational endpoints (sync / recalculate) are gated by the
 // backend ADMIN_API_TOKEN via the X-Admin-Token header. The frontend never
 // holds or sends that token: trigger those endpoints server-side or with curl
@@ -23,6 +26,86 @@ export const EXPLANATION_AVAILABILITY_ROUTE_PREFIX = '/explanations/availability
 export const EXPLANATION_TEAM_READINESS_ROUTE = '/explanations/team-readiness'
 export const BULLPEN_INTELLIGENCE_OBSERVATIONS_ROUTE = BULLPEN_OBSERVATIONS_ROUTE
 const inFlightGetRequests = new Map()
+
+function getBrowserStorage() {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage || null
+  } catch {
+    return null
+  }
+}
+
+function cleanAuthToken(value) {
+  const token = value == null ? '' : String(value).trim()
+  return token || null
+}
+
+function emitAuthTokenChange(token) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  try {
+    window.dispatchEvent(new CustomEvent(AUTH_TOKEN_CHANGED_EVENT, {
+      detail: { token: token || null },
+    }))
+  } catch {
+    // CustomEvent is not available in some test environments.
+  }
+}
+
+export function readAuthToken(storage = getBrowserStorage()) {
+  if (!storage) return null
+  try {
+    return cleanAuthToken(storage.getItem(AUTH_TOKEN_STORAGE_KEY))
+  } catch {
+    return null
+  }
+}
+
+export function storeAuthToken(token, storage = getBrowserStorage()) {
+  const cleaned = cleanAuthToken(token)
+  if (!storage) return cleaned
+  try {
+    if (cleaned) {
+      storage.setItem(AUTH_TOKEN_STORAGE_KEY, cleaned)
+    } else {
+      storage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    }
+    emitAuthTokenChange(cleaned)
+  } catch {
+    // Storage can be disabled; callers can still keep the returned token.
+  }
+  return cleaned
+}
+
+export function clearAuthToken(storage = getBrowserStorage()) {
+  if (!storage) {
+    emitAuthTokenChange(null)
+    return false
+  }
+  try {
+    storage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    emitAuthTokenChange(null)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function hasAuthorizationHeader(headers = {}) {
+  return Object.keys(headers).some(key => key.toLowerCase() === 'authorization')
+}
+
+function buildRequestHeaders(options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const token = options.authToken === undefined
+    ? readAuthToken()
+    : cleanAuthToken(options.authToken)
+
+  if (token && !hasAuthorizationHeader(headers)) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  return { headers, token }
+}
 
 const RECOMMENDATION_V2_REQUIRED_TOP_LEVEL_FIELDS = [
   'scope',
@@ -555,9 +638,11 @@ function buildQuery(params = {}) {
 }
 
 async function request(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  const { headers, token } = buildRequestHeaders(options)
   const method = String(options.method || 'GET').toUpperCase()
-  const dedupeKey = method === 'GET' && !options.body ? `${BASE}${path}` : null
+  const dedupeKey = method === 'GET' && !options.body
+    ? `${BASE}${path}|auth:${token || ''}`
+    : null
   if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
     return inFlightGetRequests.get(dedupeKey)
   }
@@ -565,7 +650,12 @@ async function request(path, options = {}) {
   const requestPromise = (async () => {
     try {
       const res = await fetch(`${BASE}${path}`, { ...options, headers })
-      if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`)
+      if (!res.ok) {
+        if (res.status === 401) clearAuthToken()
+        const error = new Error(`API ${res.status}: ${res.statusText}`)
+        error.status = res.status
+        throw error
+      }
       return await res.json()
     } catch (err) {
       console.error(`[API] ${path}`, err)
@@ -582,6 +672,52 @@ async function request(path, options = {}) {
   }
   return requestPromise
 }
+
+// ── Auth / Identity ────────────────────────────────────────
+export const getCurrentUser = () => request('/auth/me')
+
+export const requestMagicLink = (email) => request('/auth/request-link', {
+  method: 'POST',
+  body: JSON.stringify({ email }),
+})
+
+export const verifyMagicLink = async (token) => {
+  const response = await request('/auth/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+    authToken: null,
+  })
+  storeAuthToken(response?.token)
+  return response
+}
+
+export const logoutAuth = async () => {
+  try {
+    return await request('/auth/logout', { method: 'POST' })
+  } finally {
+    clearAuthToken()
+  }
+}
+
+// ── User Team Following ────────────────────────────────────
+export const getFollowedTeams = () => request('/me/teams')
+
+export const followTeam = (teamId, options = {}) => request('/me/teams', {
+  method: 'POST',
+  body: JSON.stringify({
+    team_id: teamId,
+    ...(options.isPrimary === true ? { is_primary: true } : {}),
+  }),
+})
+
+export const deleteFollowedTeam = (teamId) => request(`/me/teams/${teamId}`, {
+  method: 'DELETE',
+})
+
+export const setPrimaryTeam = (teamId) => request('/me/primary-team', {
+  method: 'PUT',
+  body: JSON.stringify({ team_id: teamId }),
+})
 
 // ── Health ─────────────────────────────────────────────────
 export const checkHealth = () => request('/health')

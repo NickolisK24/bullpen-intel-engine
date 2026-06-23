@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  AUTH_TOKEN_CHANGED_EVENT,
+  clearAuthToken,
+  getCurrentUser,
+  getFollowedTeams,
+  readAuthToken,
+} from '../utils/api'
+import {
   PREFERRED_TEAM_CHANGED_EVENT,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
@@ -7,9 +14,39 @@ import {
   resolvePreferredTeam,
   savePreferredTeamPreference,
 } from '../utils/preferredTeam'
+import {
+  claimLocalPreferredTeamOnSignIn,
+  clearServerPreferredTeam,
+  normalizeFollowedTeamsResponse,
+  resolvePreferredTeamForAuthState,
+  resolveServerPreferredTeam,
+  setServerPreferredTeam,
+} from '../utils/preferredTeamServerSync'
 
 export function usePreferredTeamPreference(teams = []) {
   const [preferenceState, setPreferenceState] = useState(() => readPreferredTeamState())
+  const teamDirectoryKey = useMemo(() => (
+    (Array.isArray(teams) ? teams : [])
+      .map(team => [
+        team?.team_id ?? team?.teamId ?? '',
+        team?.team_abbreviation ?? team?.teamAbbreviation ?? team?.teamAbbr ?? '',
+        team?.team_name ?? team?.teamName ?? '',
+      ].join(':'))
+      .join('|')
+  ), [teams])
+  const [authRefreshKey, setAuthRefreshKey] = useState(0)
+  const [authState, setAuthState] = useState(() => ({
+    loading: readAuthToken() != null,
+    authenticated: false,
+    user: null,
+    error: null,
+  }))
+  const [serverState, setServerState] = useState(() => ({
+    loading: false,
+    teams: [],
+    primary_team_id: null,
+    error: null,
+  }))
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -23,33 +60,252 @@ export function usePreferredTeamPreference(teams = []) {
     }
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const refreshAuth = () => setAuthRefreshKey(value => value + 1)
+    window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, refreshAuth)
+    window.addEventListener('storage', refreshAuth)
+    return () => {
+      window.removeEventListener(AUTH_TOKEN_CHANGED_EVENT, refreshAuth)
+      window.removeEventListener('storage', refreshAuth)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const token = readAuthToken()
+
+    if (!token) {
+      setAuthState({
+        loading: false,
+        authenticated: false,
+        user: null,
+        error: null,
+      })
+      setServerState({
+        loading: false,
+        teams: [],
+        primary_team_id: null,
+        error: null,
+      })
+      return () => {
+        active = false
+      }
+    }
+
+    setAuthState({
+      loading: true,
+      authenticated: false,
+      user: null,
+      error: null,
+    })
+
+    getCurrentUser()
+      .then((identity) => {
+        if (!active) return
+        if (identity?.authenticated === true && identity.user) {
+          setAuthState({
+            loading: false,
+            authenticated: true,
+            user: identity.user,
+            error: null,
+          })
+          return
+        }
+
+        clearAuthToken()
+        setAuthState({
+          loading: false,
+          authenticated: false,
+          user: null,
+          error: null,
+        })
+      })
+      .catch((error) => {
+        if (!active) return
+        clearAuthToken()
+        setAuthState({
+          loading: false,
+          authenticated: false,
+          user: null,
+          error,
+        })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [authRefreshKey])
+
+  useEffect(() => {
+    let active = true
+
+    if (!authState.authenticated) {
+      setServerState({
+        loading: false,
+        teams: [],
+        primary_team_id: null,
+        error: null,
+      })
+      return () => {
+        active = false
+      }
+    }
+
+    setServerState(previous => ({
+      ...previous,
+      loading: true,
+      error: null,
+    }))
+
+    getFollowedTeams()
+      .then(async (response) => {
+        let nextState = normalizeFollowedTeamsResponse(response)
+        const localPreference = readPreferredTeamState().team
+        const localClaim = resolvePreferredTeam(localPreference, teams)
+        nextState = await claimLocalPreferredTeamOnSignIn({
+          serverResponse: nextState,
+          localPreference,
+          teamDirectory: teams,
+          claimKey: `${authState.user?.id || 'user'}:${localClaim?.team_id || 'none'}`,
+        })
+
+        if (!active) return
+        setServerState({
+          ...nextState,
+          loading: false,
+          error: null,
+        })
+
+        const serverPreferredTeam = resolveServerPreferredTeam(nextState, teams)
+        if (serverPreferredTeam) {
+          savePreferredTeamPreference(serverPreferredTeam)
+        }
+      })
+      .catch((error) => {
+        if (!active) return
+        if (error?.status === 401) {
+          clearAuthToken()
+        }
+        setServerState(previous => ({
+          ...previous,
+          loading: false,
+          error,
+        }))
+      })
+
+    return () => {
+      active = false
+    }
+  }, [authState.authenticated, authState.user?.id, teamDirectoryKey])
+
   const preferredTeam = useMemo(
-    () => resolvePreferredTeam(preferenceState.team, teams),
-    [preferenceState.team, teams],
+    () => resolvePreferredTeamForAuthState({
+      authenticated: authState.authenticated,
+      serverResponse: serverState,
+      serverError: serverState.error,
+      localPreference: preferenceState.team,
+      teamDirectory: teams,
+    }),
+    [authState.authenticated, preferenceState.team, serverState, teams],
   )
 
   const setPreferredTeam = useCallback((team) => {
     const saved = savePreferredTeamPreference(team)
     setPreferenceState(readPreferredTeamState())
+    if (authState.authenticated && saved?.team_id != null) {
+      setServerState(previous => ({
+        ...previous,
+        loading: true,
+        error: null,
+      }))
+      setServerPreferredTeam(saved)
+        .then((response) => {
+          const nextState = normalizeFollowedTeamsResponse(response)
+          setServerState({
+            ...nextState,
+            loading: false,
+            error: null,
+          })
+          const serverPreferredTeam = resolveServerPreferredTeam(nextState, teams)
+          if (serverPreferredTeam) {
+            savePreferredTeamPreference(serverPreferredTeam)
+          }
+        })
+        .catch((error) => {
+          if (error?.status === 401) clearAuthToken()
+          setServerState(previous => ({
+            ...previous,
+            loading: false,
+            error,
+          }))
+        })
+    }
     return saved
-  }, [])
+  }, [authState.authenticated, teams])
 
   const clearPreferredTeam = useCallback(() => {
+    const currentServerPreferredTeam = resolveServerPreferredTeam(serverState, teams)
+    const currentTeam = currentServerPreferredTeam || resolvePreferredTeam(preferenceState.team, teams)
     clearPreferredTeamPreference()
     setPreferenceState(readPreferredTeamState())
-  }, [])
+    if (authState.authenticated && currentTeam?.team_id != null) {
+      setServerState(previous => ({
+        ...previous,
+        loading: true,
+        error: null,
+      }))
+      clearServerPreferredTeam(currentTeam)
+        .then((response) => {
+          const nextState = normalizeFollowedTeamsResponse(response)
+          setServerState({
+            ...nextState,
+            loading: false,
+            error: null,
+          })
+          const promotedPreferredTeam = resolveServerPreferredTeam(nextState, teams)
+          if (promotedPreferredTeam) {
+            savePreferredTeamPreference(promotedPreferredTeam)
+          }
+        })
+        .catch((error) => {
+          if (error?.status === 401) clearAuthToken()
+          setServerState(previous => ({
+            ...previous,
+            loading: false,
+            error,
+          }))
+        })
+    }
+  }, [authState.authenticated, preferenceState.team, serverState, teams])
 
   const dismissPrompt = useCallback(() => {
     dismissPreferredTeamPrompt()
     setPreferenceState(readPreferredTeamState())
   }, [])
 
+  const preferenceLoading = authState.loading || (authState.authenticated && serverState.loading)
+  const promptDismissed = (
+    preferenceState.promptDismissed
+    || authState.loading
+    || (authState.authenticated && serverState.loading && !serverState.error)
+  )
+
   return {
     preferredTeam,
-    rawPreferredTeam: preferenceState.team,
-    promptDismissed: preferenceState.promptDismissed,
+    rawPreferredTeam: authState.authenticated
+      ? (resolveServerPreferredTeam(serverState, teams) || preferenceState.team)
+      : preferenceState.team,
+    promptDismissed,
     setPreferredTeam,
     clearPreferredTeam,
     dismissPrompt,
+    loading: preferenceLoading,
+    authLoading: authState.loading,
+    authenticated: authState.authenticated,
+    authError: authState.error,
+    serverSyncLoading: serverState.loading,
+    serverSyncError: serverState.error,
   }
 }

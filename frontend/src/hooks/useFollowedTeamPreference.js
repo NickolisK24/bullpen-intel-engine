@@ -5,11 +5,23 @@ export function useFollowedTeamPreference(teams = []) {
     preferredTeam,
     setPreferredTeam,
     clearPreferredTeam,
+    loading,
+    authLoading,
+    authenticated,
+    authError,
+    serverSyncLoading,
+    serverSyncError,
   } = usePreferredTeamPreference(teams)
 
   return {
     followedTeam: preferredTeam,
     setFollowedTeam: setPreferredTeam,
     clearFollowedTeam: clearPreferredTeam,
+    loading,
+    authLoading,
+    authenticated,
+    authError,
+    serverSyncLoading,
+    serverSyncError,
   }
 }

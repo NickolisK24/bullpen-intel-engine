@@ -4,6 +4,7 @@ import {
   LEGACY_FOLLOWED_TEAM_STORAGE_KEY,
   LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY,
   PREFERRED_TEAM_STORAGE_KEY,
+  PREFERRED_TEAM_CHANGED_EVENT,
   buildPreferredTeamHref,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
@@ -101,4 +102,36 @@ test('preferred team helpers build the team board path and clear state', () => {
   assert.equal(preferredTeamLogoUrl(teams[0]), 'https://www.mlbstatic.com/team-logos/1.svg')
   assert.equal(clearPreferredTeamPreference(storage), true)
   assert.equal(readPreferredTeamPreference(storage), null)
+})
+
+test('preferred team change event is preserved for existing consumers', () => {
+  const originalWindow = globalThis.window
+  const originalCustomEvent = globalThis.CustomEvent
+  const events = []
+  globalThis.CustomEvent = class CustomEvent {
+    constructor(type, init = {}) {
+      this.type = type
+      this.detail = init.detail
+    }
+  }
+  globalThis.window = {
+    dispatchEvent(event) {
+      events.push(event)
+      return true
+    },
+  }
+
+  try {
+    const storage = createStorage()
+    savePreferredTeamPreference(teams[0], storage)
+    clearPreferredTeamPreference(storage)
+
+    assert.equal(events[0].type, PREFERRED_TEAM_CHANGED_EVENT)
+    assert.equal(events[0].detail.team.team_id, 1)
+    assert.equal(events[1].type, PREFERRED_TEAM_CHANGED_EVENT)
+    assert.equal(events[1].detail.team, null)
+  } finally {
+    globalThis.window = originalWindow
+    globalThis.CustomEvent = originalCustomEvent
+  }
 })
