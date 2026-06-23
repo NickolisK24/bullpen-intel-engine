@@ -14,7 +14,11 @@ from typing import Any
 from services.availability_reference_date import product_current_date
 from services.baseline_distribution import build_distribution
 from services.baseline_engine import interpret_value
-from services.game_shape import game_shape_of
+from services.game_shape import (
+    SHAPE_BULLPEN_GAME,
+    SHAPE_OPENER_BULK_GAME,
+    game_shape_of,
+)
 from utils.games_started import RELIEF, START, games_started_state
 from utils.innings import log_innings_outs, outs_to_decimal_innings
 
@@ -26,6 +30,12 @@ ROTATION_CONTEXT_7D = 7
 ROTATION_CONTEXT_14D = 14
 EARLY_BULLPEN_ENTRY_OUTS = 15
 MIN_COMPLETE_TEAM_GAME_OUTS = 24
+
+# Game shapes excluded from rotation-depth averages and early-bullpen-entry. An
+# opener/bulk game is not a rotation start, so it must not drag starter depth or
+# read as a failed start. Bullpen games have no starter and are already excluded
+# from analysis; they are surfaced separately via the game-shape distribution.
+ROTATION_DEPTH_EXCLUDED_SHAPES = frozenset({SHAPE_OPENER_BULK_GAME})
 
 CURRENT_ASSIGNMENT_LIMITATION = (
     'Rotation context uses currently assigned pitchers because game logs do not yet store team-at-appearance.'
@@ -230,8 +240,20 @@ def build_rotation_context(logs, *, reference_date=None):
         if game['game_date'] is not None and window_14_start <= game['game_date'] <= ref
     ]
 
-    avg_7d = _average_ip(games_7d)
-    avg_14d = _average_ip(games_14d)
+    # Opener/bulk games are not rotation starts: exclude them from starter-depth
+    # averages and early-bullpen-entry so a short opener in front of a long bulk
+    # arm is not read as a failed rotation start. Coverage burden is unchanged.
+    rotation_games_7d = [
+        game for game in games_7d
+        if game.get('game_shape') not in ROTATION_DEPTH_EXCLUDED_SHAPES
+    ]
+    rotation_games_14d = [
+        game for game in games_14d
+        if game.get('game_shape') not in ROTATION_DEPTH_EXCLUDED_SHAPES
+    ]
+
+    avg_7d = _average_ip(rotation_games_7d)
+    avg_14d = _average_ip(rotation_games_14d)
     limitations = [CURRENT_ASSIGNMENT_LIMITATION, OPENER_BULK_LIMITATION]
     if exclusion_reasons or coverage_exclusion_reasons or rows_without_game_pk:
         limitations.append(INCOMPLETE_GAME_DATA_LIMITATION)
@@ -246,16 +268,25 @@ def build_rotation_context(logs, *, reference_date=None):
         'rotation_avg_ip_7d': avg_7d,
         'rotation_avg_ip_14d': avg_14d,
         'rotation_ip_trend': _trend(avg_7d, avg_14d),
-        'early_bullpen_entry_rate': _early_entry_rate(games_14d),
+        'early_bullpen_entry_rate': _early_entry_rate(rotation_games_14d),
         'bullpen_coverage_ip_7d': _coverage_ip(games_7d),
         'games_in_window_14d': len(grouped),
         'games_analyzed_7d': len(games_7d),
         'games_analyzed_14d': len(games_14d),
+        'rotation_starts_7d': len(rotation_games_7d),
+        'rotation_starts_14d': len(rotation_games_14d),
+        'opener_bulk_games_7d': sum(
+            1 for game in games_7d if game.get('game_shape') == SHAPE_OPENER_BULK_GAME
+        ),
+        'opener_bulk_games_14d': sum(
+            1 for game in games_14d if game.get('game_shape') == SHAPE_OPENER_BULK_GAME
+        ),
+        'bullpen_games_count': game_shape_counts.get(SHAPE_BULLPEN_GAME, 0),
         'games_excluded_14d': sum(exclusion_reasons.values()),
         'coverage_games_7d': sum(1 for game in games_7d if game.get('coverage_available')),
         'coverage_games_14d': sum(1 for game in games_14d if game.get('coverage_available')),
         'early_bullpen_entry_games_14d': sum(
-            1 for game in games_14d if game['early_bullpen_entry']
+            1 for game in rotation_games_14d if game['early_bullpen_entry']
         ),
         'excluded_game_reasons': dict(exclusion_reasons),
         'coverage_excluded_game_reasons': dict(coverage_exclusion_reasons),
