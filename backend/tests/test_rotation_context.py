@@ -6,6 +6,7 @@ from services.rotation_context import (
     OPENER_BULK_LIMITATION,
     build_league_rotation_baseline,
     build_rotation_context,
+    bullpen_coverage_baseline_read,
     rotation_length_baseline_read,
 )
 from utils.innings import outs_to_decimal_innings
@@ -221,3 +222,65 @@ def test_rotation_length_baseline_read_guards_on_thin_league_sample():
 def test_rotation_length_baseline_read_without_distribution_degrades_gracefully():
     assert rotation_length_baseline_read(4.0, {'league_team_count': 5})['available'] is False
     assert rotation_length_baseline_read(None, None)['available'] is False
+
+
+# Current 7-day-window league distribution of bullpen_coverage_ip_7d: a typical
+# club hands the bullpen ~3.5 innings a game, so 2.5 is light and 4.8 is heavy.
+_LEAGUE_COVERAGE = {
+    'bullpen_coverage_ip_7d_distribution': {
+        'sample_count': 28, 'mean': 3.5, 'median': 3.4,
+        'p10': 2.6, 'p25': 3.0, 'p75': 4.0, 'p90': 4.6,
+    },
+}
+
+
+def test_league_rotation_baseline_includes_bullpen_coverage_distribution():
+    logs = [
+        *team_game(1, 101, 1, 18, 9),   # bullpen 9 outs -> 3.0 IP
+        *team_game(2, 201, 1, 12, 15),  # bullpen 15 outs -> 5.0 IP
+        *team_game(3, 301, 1, 15, 12),  # bullpen 12 outs -> 4.0 IP
+    ]
+
+    baseline = build_league_rotation_baseline(logs, reference_date=REF)
+
+    distribution = baseline['bullpen_coverage_ip_7d_distribution']
+    assert distribution['sample_count'] == 3
+    assert round(distribution['mean'], 1) == 4.0
+    assert distribution['median'] == 4.0
+    # The C1K rotation-length distribution is unchanged.
+    assert baseline['rotation_avg_ip_7d_distribution']['sample_count'] == 3
+
+
+def test_bullpen_coverage_baseline_read_marks_heavy_coverage_above_norm():
+    read = bullpen_coverage_baseline_read(4.8, _LEAGUE_COVERAGE)
+
+    assert read['available'] is True
+    assert read['metric'] == 'bullpen_coverage_ip_7d'
+    assert read['comparison'] == 'among_highest'
+    assert read['value'] == 4.8
+
+
+def test_bullpen_coverage_baseline_read_marks_light_coverage_below_norm():
+    read = bullpen_coverage_baseline_read(2.5, _LEAGUE_COVERAGE)
+
+    assert read['available'] is True
+    assert read['comparison'] == 'below_average'
+
+
+def test_bullpen_coverage_baseline_read_guards_on_thin_league_sample():
+    thin = {
+        'bullpen_coverage_ip_7d_distribution': {
+            'sample_count': 3, 'mean': 3.5, 'median': 3.5,
+            'p10': 3.0, 'p25': 3.2, 'p75': 3.8, 'p90': 4.0,
+        },
+    }
+
+    read = bullpen_coverage_baseline_read(4.8, thin)
+
+    assert read['available'] is False
+    assert read['comparison'] == 'insufficient_sample'
+
+
+def test_bullpen_coverage_baseline_read_without_distribution_degrades_gracefully():
+    assert bullpen_coverage_baseline_read(4.0, {'league_team_count': 5})['available'] is False
+    assert bullpen_coverage_baseline_read(None, None)['available'] is False

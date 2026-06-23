@@ -212,6 +212,77 @@ def test_writer_outputs_bridge_instability_observation():
     assert output['written_observation']['constraint_paragraph'].startswith('If ')
 
 
+def _bridge_inputs_with_coverage(coverage_read):
+    inputs = _bridge_inputs()
+    if coverage_read is not None:
+        inputs['rotation'] = {**inputs['rotation'], 'coverage_baseline_read': coverage_read}
+    return inputs
+
+
+def test_writer_voices_bullpen_coverage_above_norm_baseline():
+    frame = frame_for(
+        team_context(**_bridge_inputs_with_coverage(
+            {'available': True, 'metric': 'bullpen_coverage_ip_7d', 'comparison': 'above_average'},
+        )),
+        TYPE_BRIDGE_INSTABILITY,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'innings a game on the way there' in text
+    assert 'above the league norm for recent bullpen coverage' in text
+
+
+def test_writer_voices_bullpen_coverage_heavy_baseline():
+    frame = frame_for(
+        team_context(**_bridge_inputs_with_coverage(
+            {'available': True, 'metric': 'bullpen_coverage_ip_7d', 'comparison': 'among_highest'},
+        )),
+        TYPE_BRIDGE_INSTABILITY,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'among the heavier recent bullpen-coverage workloads' in text
+
+
+def test_writer_bridge_without_coverage_read_keeps_existing_copy():
+    frame = frame_for(team_context(**_bridge_inputs()), TYPE_BRIDGE_INSTABILITY)
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'innings a game on the way there' in text
+    assert 'league norm for recent bullpen coverage' not in text
+
+
+def test_writer_bridge_guarded_coverage_read_keeps_existing_copy():
+    frame = frame_for(
+        team_context(**_bridge_inputs_with_coverage(
+            {'available': False, 'comparison': 'insufficient_sample'},
+        )),
+        TYPE_BRIDGE_INSTABILITY,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded coverage read -> existing bridge copy preserved, no league sentence.
+    assert 'innings a game on the way there' in text
+    assert 'league norm for recent bullpen coverage' not in text
+
+
+def test_bullpen_coverage_baseline_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _COVERAGE_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', 'lowest', '#1', 'top-ranked', 'league-leading', 'most overworked', 'least overworked',
+        'best', 'worst', 'rank', 'recommend', 'should', 'likely to', 'projected', 'predict', 'will ',
+    )
+    for sentence in _COVERAGE_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_outputs_trust_lane_pressure_observation():
     frame = frame_for(
         team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6)),

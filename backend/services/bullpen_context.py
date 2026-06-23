@@ -38,6 +38,7 @@ from services.injury_context import build_injury_context, empty_injury_context
 from services.rotation_context import (
     build_league_rotation_baseline,
     build_rotation_context,
+    bullpen_coverage_baseline_read,
     rotation_length_baseline_read,
 )
 from services.role_stability_context import (
@@ -292,6 +293,7 @@ def _rotation_context(last_logs, prev_logs, windows):
         'rotation_games_excluded_14d': layer1['games_excluded_14d'],
         'rotation_early_bullpen_entry_games_14d': layer1['early_bullpen_entry_games_14d'],
         'baseline_read': rotation_length_baseline_read(layer1['rotation_avg_ip_7d'], league_baseline),
+        'coverage_baseline_read': bullpen_coverage_baseline_read(layer1['bullpen_coverage_ip_7d'], league_baseline),
         'rotation_context_layer': layer1,
         **signal,
     }
@@ -319,6 +321,7 @@ def _empty_rotation_context(windows=None):
         'rotation_games_excluded_14d': 0,
         'rotation_early_bullpen_entry_games_14d': 0,
         'baseline_read': rotation_length_baseline_read(None, None),
+        'coverage_baseline_read': bullpen_coverage_baseline_read(None, None),
         'rotation_context_layer': None,
         'start_classification_state': 'complete',
         'unknown_start_rows': 0,

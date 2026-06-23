@@ -920,6 +920,34 @@ def _trust_lane_pressure(frame):
     )
 
 
+# Distribution-aware league phrasing for the bridge story's bullpen-coverage
+# baseline line. bullpen_coverage_ip_7d is higher-is-more-pressure (more relief
+# innings absorbed). Descriptive context only — no rank, recommendation,
+# prediction, or superlative-singular ("highest"/"most overworked") language
+# (governance C1N).
+_COVERAGE_BASELINE_SENTENCE = {
+    'below_average': 'That is below the league norm for recent bullpen coverage',
+    'about_typical': 'That is around the league norm for recent bullpen coverage',
+    'above_average': 'That is above the league norm for recent bullpen coverage',
+    'well_above_average': 'That is well above the league norm for recent bullpen coverage',
+    'among_highest': 'That is among the heavier recent bullpen-coverage workloads',
+}
+
+
+def _coverage_band(baseline):
+    """The supported coverage comparison band, only when its read is available."""
+    read = baseline.get('coverage_baseline_read') if isinstance(baseline, dict) else None
+    if not isinstance(read, dict) or read.get('available') is not True:
+        return None
+    comparison = read.get('comparison')
+    return comparison if comparison in _COVERAGE_BASELINE_SENTENCE else None
+
+
+def _coverage_baseline_sentence(baseline):
+    band = _coverage_band(baseline)
+    return _COVERAGE_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _bridge_instability(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -970,6 +998,11 @@ def _bridge_instability(frame):
                 f"The bullpen is covering {_fmt(coverage_ip)} innings a game on the way there"
                 if _present(coverage_ip) else None
             ),
+            # Distribution-aware league read of recent bullpen-coverage burden,
+            # appended to the coverage line above; voiced only when the coverage
+            # baseline read is available. Absent or guarded reads leave the
+            # existing bridge copy unchanged.
+            _coverage_baseline_sentence(baseline),
         ),
         cause_paragraph=_paragraph(
             (

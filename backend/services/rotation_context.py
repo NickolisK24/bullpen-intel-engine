@@ -256,6 +256,7 @@ def build_rotation_context(logs, *, reference_date=None):
 
 
 ROTATION_LENGTH_BASELINE_METRIC = 'rotation_avg_ip_7d'
+BULLPEN_COVERAGE_BASELINE_METRIC = 'bullpen_coverage_ip_7d'
 
 
 def _team_id(log: Any):
@@ -281,15 +282,19 @@ def build_league_rotation_baseline(logs, *, reference_date=None):
         by_team[team_id].append(log)
 
     values = []
+    coverage_values = []
     for team_logs in by_team.values():
         context = build_rotation_context(team_logs, reference_date=reference_date)
         avg_7d = context.get('rotation_avg_ip_7d')
-        if avg_7d is None:
-            continue
-        values.append(avg_7d)
+        if avg_7d is not None:
+            values.append(avg_7d)
+        coverage = context.get('bullpen_coverage_ip_7d')
+        if coverage is not None:
+            coverage_values.append(coverage)
 
     return {
         'rotation_avg_ip_7d_distribution': build_distribution(values),
+        'bullpen_coverage_ip_7d_distribution': build_distribution(coverage_values),
         'league_team_count': len(values),
     }
 
@@ -311,6 +316,23 @@ def rotation_length_baseline_read(avg_7d, league_baseline):
     )
 
 
+def _league_coverage_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('bullpen_coverage_ip_7d_distribution')
+    return None
+
+
+def bullpen_coverage_baseline_read(coverage_ip, league_baseline):
+    # Distribution-aware league read of the team's recent bullpen-coverage burden.
+    # Separate from the rotation-length read; same dedicated 7-day league window.
+    # Higher coverage is more bullpen burden; the language layer assigns direction.
+    return interpret_value(
+        BULLPEN_COVERAGE_BASELINE_METRIC,
+        coverage_ip,
+        _league_coverage_distribution(league_baseline),
+    )
+
+
 __all__ = [
     'CAPABILITY',
     'CURRENT_ASSIGNMENT_LIMITATION',
@@ -320,9 +342,11 @@ __all__ = [
     'OPENER_BULK_LIMITATION',
     'ROTATION_CONTEXT_7D',
     'ROTATION_CONTEXT_14D',
+    'BULLPEN_COVERAGE_BASELINE_METRIC',
     'ROTATION_LENGTH_BASELINE_METRIC',
     'VERSION',
     'build_league_rotation_baseline',
     'build_rotation_context',
+    'bullpen_coverage_baseline_read',
     'rotation_length_baseline_read',
 ]
