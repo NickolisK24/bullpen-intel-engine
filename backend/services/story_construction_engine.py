@@ -160,6 +160,7 @@ def _rotation_pressure_frame(team_context, observation):
     frame['baseline_facts'] = {
         'rotation_avg_ip_14d': rotation.get('rotation_avg_ip_14d'),
         'rotation_games_analyzed_14d': rotation.get('rotation_games_analyzed_14d'),
+        'baseline_read': rotation.get('baseline_read'),
     }
     frame['cause_facts'] = {
         'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),

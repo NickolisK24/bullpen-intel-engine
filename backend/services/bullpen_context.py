@@ -35,7 +35,11 @@ from services.bullpen_optionality_context import (
 )
 from services.bullpen_population import usage_logs_by_pitcher
 from services.injury_context import build_injury_context, empty_injury_context
-from services.rotation_context import build_rotation_context
+from services.rotation_context import (
+    build_league_rotation_baseline,
+    build_rotation_context,
+    rotation_length_baseline_read,
+)
 from services.role_stability_context import (
     build_role_stability_context,
     empty_role_stability_context,
@@ -243,12 +247,21 @@ def _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches
     return 'mixed_demand'
 
 
+def _league_rotation_baseline(windows):
+    last = windows['last_7']
+    return build_league_rotation_baseline(
+        _league_logs(last['start_date'], last['end_date']),
+        reference_date=last['end_date'],
+    )
+
+
 def _rotation_context(last_logs, prev_logs, windows):
     all_logs = [*(last_logs or []), *(prev_logs or [])]
     layer1 = build_rotation_context(
         all_logs,
         reference_date=windows['last_7']['end_date'] if windows else None,
     )
+    league_baseline = _league_rotation_baseline(windows) if windows else None
     signal = _start_signal_fields(all_logs)
     last_starts = _starter_logs(last_logs)
     prev_starts = _starter_logs(prev_logs)
@@ -278,6 +291,7 @@ def _rotation_context(last_logs, prev_logs, windows):
         'rotation_games_analyzed_14d': layer1['games_analyzed_14d'],
         'rotation_games_excluded_14d': layer1['games_excluded_14d'],
         'rotation_early_bullpen_entry_games_14d': layer1['early_bullpen_entry_games_14d'],
+        'baseline_read': rotation_length_baseline_read(layer1['rotation_avg_ip_7d'], league_baseline),
         'rotation_context_layer': layer1,
         **signal,
     }
@@ -304,6 +318,7 @@ def _empty_rotation_context(windows=None):
         'rotation_games_analyzed_14d': 0,
         'rotation_games_excluded_14d': 0,
         'rotation_early_bullpen_entry_games_14d': 0,
+        'baseline_read': rotation_length_baseline_read(None, None),
         'rotation_context_layer': None,
         'start_classification_state': 'complete',
         'unknown_start_rows': 0,

@@ -263,6 +263,84 @@ def test_writer_outputs_rotation_pressure_observation():
     assert_quality_sections(output)
 
 
+def _rotation_pressure_rotation(*, comparison=None, available=True):
+    rotation = {
+        'rotation_avg_ip_7d': 4.1,
+        'rotation_avg_ip_14d': 5.4,
+        'rotation_ip_trend': -1.3,
+        'early_bullpen_entry_rate': 50.0,
+        'bullpen_coverage_ip_7d': 4.9,
+    }
+    if comparison is not None or available is False:
+        read = {'available': available, 'comparison': comparison}
+        if available:
+            read['metric'] = 'rotation_avg_ip_7d'
+        rotation['baseline_read'] = read
+    return rotation
+
+
+def test_writer_voices_rotation_length_below_norm_baseline():
+    frame = frame_for(
+        team_context(rotation=_rotation_pressure_rotation(comparison='below_average')),
+        TYPE_ROTATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'shorter than the league norm for starter length' in text
+    # The league read anchors the seven-day value, so the restate line is dropped.
+    assert 'seven-day handoff' not in text
+
+
+def test_writer_voices_rotation_length_above_norm_baseline():
+    frame = frame_for(
+        team_context(rotation=_rotation_pressure_rotation(comparison='above_average')),
+        TYPE_ROTATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'longer than the league norm for starter length' in text
+
+
+def test_writer_rotation_without_baseline_read_keeps_existing_copy():
+    frame = frame_for(
+        team_context(rotation=_rotation_pressure_rotation()),
+        TYPE_ROTATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'The current seven-day handoff is 4.1 innings' in text
+    assert 'league norm' not in text
+
+
+def test_writer_rotation_guarded_baseline_keeps_existing_copy():
+    frame = frame_for(
+        team_context(rotation=_rotation_pressure_rotation(comparison='insufficient_sample', available=False)),
+        TYPE_ROTATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded read -> existing rotation copy preserved, no forced league comparison.
+    assert 'The current seven-day handoff is 4.1 innings' in text
+    assert 'league norm' not in text
+
+
+def test_rotation_length_baseline_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _ROTATION_LENGTH_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', 'lowest', 'longest', 'shortest', '#1', 'top-ranked', 'league-leading',
+        'most', 'best', 'worst', 'rank', 'recommend', 'should', 'likely to', 'projected', 'predict', 'will ',
+    )
+    for sentence in _ROTATION_LENGTH_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_outputs_concentration_pressure_observation():
     frame = frame_for(team_context(
         concentration={

@@ -176,6 +176,23 @@ def test_construction_frame_for_rotation_pressure():
     assert story_frame['constraint_facts']['rotation_games_analyzed_14d'] == 12
 
 
+def test_construction_threads_baseline_read_into_rotation_pressure_frame():
+    read = {'available': True, 'metric': 'rotation_avg_ip_7d', 'comparison': 'below_average'}
+    context = team_context(rotation={
+        'rotation_avg_ip_7d': 4.1,
+        'rotation_avg_ip_14d': 5.4,
+        'rotation_ip_trend': -1.3,
+        'early_bullpen_entry_rate': 50.0,
+        'bullpen_coverage_ip_7d': 4.9,
+        'baseline_read': read,
+    })
+
+    frame = single_frame(context, TYPE_ROTATION_PRESSURE)
+
+    # Transient league read is carried into the frame for the writer, not onto the feed.
+    assert frame['story_frame']['baseline_facts']['baseline_read'] == read
+
+
 def test_construction_frame_for_concentration_pressure():
     context = team_context(
         concentration={

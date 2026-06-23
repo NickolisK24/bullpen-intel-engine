@@ -12,6 +12,8 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from services.availability_reference_date import product_current_date
+from services.baseline_distribution import build_distribution
+from services.baseline_engine import interpret_value
 from utils.games_started import RELIEF, START, games_started_state
 from utils.innings import log_innings_outs, outs_to_decimal_innings
 
@@ -253,6 +255,62 @@ def build_rotation_context(logs, *, reference_date=None):
     }
 
 
+ROTATION_LENGTH_BASELINE_METRIC = 'rotation_avg_ip_7d'
+
+
+def _team_id(log: Any):
+    pitcher = _value(log, 'pitcher')
+    return _value(pitcher, 'team_id') or _value(log, 'team_id')
+
+
+def build_league_rotation_baseline(logs, *, reference_date=None):
+    """Current 7-day-window league distribution of rotation_avg_ip_7d.
+
+    Groups raw league game logs by team and reuses ``build_rotation_context`` so
+    each team's rotation_avg_ip_7d is derived with the exact same starter-IP and
+    start-classification logic as the per-team story value (one value per team).
+    Teams without a usable 7-day rotation_avg_ip_7d are skipped, not counted low.
+    This is a dedicated rotation distribution: independent of dashboard.baselines,
+    the workload-concentration distribution, and the clean-options distribution.
+    """
+    by_team = defaultdict(list)
+    for log in logs or []:
+        team_id = _team_id(log)
+        if team_id is None:
+            continue
+        by_team[team_id].append(log)
+
+    values = []
+    for team_logs in by_team.values():
+        context = build_rotation_context(team_logs, reference_date=reference_date)
+        avg_7d = context.get('rotation_avg_ip_7d')
+        if avg_7d is None:
+            continue
+        values.append(avg_7d)
+
+    return {
+        'rotation_avg_ip_7d_distribution': build_distribution(values),
+        'league_team_count': len(values),
+    }
+
+
+def _league_rotation_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('rotation_avg_ip_7d_distribution')
+    return None
+
+
+def rotation_length_baseline_read(avg_7d, league_baseline):
+    # Distribution-aware league read of the team's recent starter length. The
+    # shared baseline engine owns the interpretation; this only feeds it the team
+    # value and the current 7-day league distribution (longer starts are deeper).
+    return interpret_value(
+        ROTATION_LENGTH_BASELINE_METRIC,
+        avg_7d,
+        _league_rotation_distribution(league_baseline),
+    )
+
+
 __all__ = [
     'CAPABILITY',
     'CURRENT_ASSIGNMENT_LIMITATION',
@@ -262,6 +320,9 @@ __all__ = [
     'OPENER_BULK_LIMITATION',
     'ROTATION_CONTEXT_7D',
     'ROTATION_CONTEXT_14D',
+    'ROTATION_LENGTH_BASELINE_METRIC',
     'VERSION',
+    'build_league_rotation_baseline',
     'build_rotation_context',
+    'rotation_length_baseline_read',
 ]
