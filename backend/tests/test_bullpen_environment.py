@@ -20,7 +20,9 @@ ROTATION_SOURCE_LIMITATION = (
     'Rotation support uses currently assigned pitchers because game logs do not yet store team-at-appearance.'
 )
 ROTATION_OPENER_LIMITATION = (
-    'Credited starters are used as recorded; opener/bulk-reliever roles are not separately inferred.'
+    'Opener/bulk and bullpen games are classified by game shape: an opener is not '
+    'counted as a rotation start, and bulk-follower innings are tracked separately '
+    'rather than as rotation-driven bullpen pressure.'
 )
 STABILITY_USAGE_LIMITATION = (
     'Bullpen stability uses usage patterns and roster status only; roster-move data is not used.'
