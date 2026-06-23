@@ -25,13 +25,32 @@ def bearer_token(req=None):
 
 
 def resolve_current_user(req=None):
-    """Resolve the authenticated user for this request.
+    """Resolve the authenticated user for this request, or None (anonymous).
 
-    Scaffolding only: token verification arrives in D1C. Until then this always
-    returns ``None`` (anonymous), even when a bearer token is present, so no
-    endpoint can be treated as authenticated before authentication exists.
+    A valid, unexpired bearer token whose embedded user id still matches a stored
+    user resolves that user; a missing, malformed, or expired token resolves to
+    anonymous. This never raises, so anonymous-safe endpoints stay anonymous-safe.
     """
-    return None
+    token = bearer_token(req)
+    if not token:
+        return None
+
+    from utils.auth_tokens import verify_bearer_token
+
+    claims = verify_bearer_token(token)
+    if not claims or claims.get('uid') is None:
+        return None
+
+    from utils.db import db
+    from models.user import User
+
+    user = db.session.get(User, claims.get('uid'))
+    if user is None:
+        return None
+    # Defensive: the token's email must still match the stored row.
+    if claims.get('email') and user.email != claims.get('email'):
+        return None
+    return user
 
 
 def anonymous_identity():

@@ -158,9 +158,13 @@ def test_bearer_token_extraction():
     assert bearer_token(SimpleNamespace(headers={'Authorization': 'Bearer '})) is None
 
 
-def test_resolve_current_user_is_anonymous_even_with_a_token():
-    # D1B scaffolding never authenticates, even if a token is present.
-    assert resolve_current_user(SimpleNamespace(headers={'Authorization': 'Bearer x'})) is None
+def test_resolve_current_user_is_anonymous_for_an_unverifiable_token(app):
+    # D1C verifies bearer tokens, but a bogus/unsigned token still resolves to
+    # anonymous (never raises), keeping anonymous-safe endpoints anonymous-safe.
+    with app.app_context():
+        assert resolve_current_user(
+            SimpleNamespace(headers={'Authorization': 'Bearer not-a-signed-token'})
+        ) is None
 
 
 def test_identity_payload_shapes():
@@ -180,7 +184,8 @@ def test_auth_me_returns_anonymous_without_auth(client):
     assert resp.get_json() == {'authenticated': False, 'user': None}
 
 
-def test_auth_me_does_not_require_auth_and_ignores_bearer_for_now(client):
+def test_auth_me_treats_an_invalid_bearer_as_anonymous(client):
+    # A bogus bearer token must never authenticate; /api/auth/me stays anonymous.
     resp = client.get('/api/auth/me', headers={'Authorization': 'Bearer anything'})
     assert resp.status_code == 200
     assert resp.get_json()['authenticated'] is False
