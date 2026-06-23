@@ -20,7 +20,11 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     TYPE_TRUST_LANE_PRESSURE,
 )
-from services.story_voice_library_v1 import render_voice_line
+from services.story_voice_library_v1 import (
+    PURPOSE_FORWARD,
+    looks_like_forward_clause,
+    render_voice_line,
+)
 
 
 CAPABILITY = 'story_four_beat_interpreter_v1'
@@ -190,11 +194,12 @@ def contains_public_banned_language(text):
 
 
 def _has_forward_clause(text):
+    if looks_like_forward_clause(text):
+        return True
     lower = _clean_text(text).lower()
     return (
-        lower.startswith('if ')
-        or ' if ' in lower
-        or 'current route points back to' in lower
+        'current route points back to' in lower
+        or 'points back through' in lower
         or 'fewer ways to' in lower
         or 'late-inning choices' in lower
     )
@@ -257,32 +262,30 @@ def observation_public_beat_map():
 
 
 def _default_forward_clause(beat, frame, names):
+    """Fallback forward clause when the writer did not supply one.
+
+    Rendered from the shared voice-library forward shapes so the fallback varies
+    its opening too (not always "If …") and stays governed. Selection is stable
+    per team/beat.
+    """
     name_text = _join_names(names)
-    if beat == BEAT_ROUTE_CHANGE:
-        if name_text:
-            return f'If the next game tightens, the route points back through {name_text}.'
-        return 'If the next game tightens, the route points back through the current core.'
-    if beat == BEAT_COVERAGE_PRESSURE:
-        return 'If the short starts continue, the bullpen has fewer ways to spread the middle innings.'
-    if beat == BEAT_DEPTH_CONSTRAINT:
-        return 'If the roster stays this thin, the manager has fewer ways to cover the late innings than the roster count suggests.'
-    if beat == BEAT_SUSTAINABILITY_QUESTION:
-        if name_text:
-            return f'If this workload pattern holds, the route remains narrow around {name_text}.'
-        return 'If this workload pattern holds, the bullpen has fewer ways to spread the late innings.'
-    if beat == BEAT_AVAILABILITY_DEPTH:
-        if name_text:
-            return f'If the game stays close, the manager can spread the late innings beyond {name_text} alone.'
-        return 'If the game stays close, the bullpen has room to spread the late innings across several rested arms.'
-    if beat == BEAT_TRUST_LANE:
-        if name_text:
-            return f'If the game tightens, the trusted late-game lane runs back through {name_text}, thinner than the available arm count suggests.'
-        return 'If the game tightens, the trusted late-game lane stays thinner than the available arm count suggests.'
-    if beat == BEAT_BRIDGE:
-        if name_text:
-            return f'If the starters keep exiting early, the path to {name_text} runs through a fragile middle, thinner than the settled late group suggests.'
-        return 'If the starters keep exiting early, the path to the late group runs through a fragile middle, thinner than the settled late arms suggest.'
-    return None
+    line = render_voice_line(
+        beat,
+        purpose=PURPOSE_FORWARD,
+        stable_parts=(
+            _dict(frame).get('team_id'),
+            _dict(frame).get('team_abbreviation'),
+            beat,
+            'forward',
+            name_text,
+        ),
+        names=name_text or 'the bullpen',
+    )
+    if line:
+        return line
+    if name_text:
+        return f'In a close game, the late innings still run through {name_text}.'
+    return 'In a close game, the bullpen leans on its trusted late-inning arms.'
 
 
 def _route_change_headline(frame, written_story):

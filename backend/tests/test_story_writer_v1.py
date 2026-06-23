@@ -18,7 +18,7 @@ from services.story_writer_v1 import (
     write_story_frame,
     write_team_story_frames,
 )
-from services.story_voice_library_v1 import contains_denied_public_phrase
+from services.story_voice_library_v1 import contains_denied_public_phrase, looks_like_forward_clause
 
 
 def team_context(
@@ -209,7 +209,7 @@ def test_writer_outputs_bridge_instability_observation():
     text = written_text(output)
     assert 'settled' in text.lower()
     assert 'bridge' in text.lower() or 'middle' in text.lower()
-    assert output['written_observation']['constraint_paragraph'].startswith('If ')
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
 
 
 def _bridge_inputs_with_coverage(coverage_read):
@@ -295,7 +295,7 @@ def test_writer_outputs_trust_lane_pressure_observation():
     text = written_text(output)
     assert '6 available arms' in text
     assert 'trusted' in text.lower()
-    assert output['written_observation']['constraint_paragraph'].startswith('If ')
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
 
 
 def test_writer_trust_lane_handles_zero_clean_options():
@@ -330,7 +330,7 @@ def test_writer_outputs_rotation_pressure_observation():
     assert 'starters are not covering as many innings as the recent baseline' in text.lower()
     assert '4.9 bullpen innings per game' in text
     assert 'handing the game to the bullpen earlier' in text
-    assert output['written_observation']['constraint_paragraph'].startswith('If short starts continue')
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
 
@@ -438,7 +438,7 @@ def test_writer_outputs_concentration_pressure_observation():
     assert '36 percentage points' in text
     assert 'meaningful innings are bunching around a smaller group' in text
     assert 'The same arms are carrying the meaningful work' in text
-    assert 'If this pattern continues, the margin for spreading the work stays thin' in text
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert 'current operational core' not in text.lower()
     assert_quality_sections(output)
 
@@ -659,7 +659,7 @@ def test_writer_outputs_optionality_strength_observation():
     assert '2 clean workload options' not in text
     assert '2 low-workload late-inning choices' in text
     assert 'clearest late-inning choices include Clean One and Clean Two' in text
-    assert 'multiple late-inning options rather than force one route' in text
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
 
@@ -759,7 +759,7 @@ def test_writer_outputs_stable_core_observation():
     text = written_text(output)
     assert 'First Arm, Second Arm, and Third Arm' in text
     assert '100%' in text
-    assert 'route points back through First Arm, Second Arm, and Third Arm' in text
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
 
@@ -783,7 +783,7 @@ def test_writer_outputs_core_transition_observation():
     assert 'Fifth Arm, Sixth Arm, and Seventh Arm' in text
     assert '0 arms from that baseline' in text
     assert 'The added arms are' in text
-    assert 'route points back through Fifth Arm, Sixth Arm, and Seventh Arm' in text
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
 
@@ -807,7 +807,7 @@ def test_writer_outputs_depth_pressure_observation():
     assert "{'name':" not in text
     assert '3 IL arms' in text
     assert '1 non-IL inactive arm' in text
-    assert 'fewer ways to cover the late innings than the roster count suggests' in text
+    assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
 
