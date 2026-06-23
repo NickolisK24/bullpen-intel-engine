@@ -15,6 +15,7 @@ from collections import Counter
 from typing import Any
 
 from services.availability import STATUS_AVAILABLE, STATUS_UNAVAILABLE
+from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
 
 
 CAPABILITY = 'bullpen_trust_hierarchy_v1'
@@ -140,10 +141,7 @@ def _team_identity(team):
 
 
 def _is_bullpen_record(record: dict[str, Any]) -> bool:
-    eligibility = record.get('eligibility')
-    if eligibility is None:
-        return True
-    return bool(eligibility.get('eligible'))
+    return record_is_bullpen_eligible(record)
 
 
 def _roster_status(record: dict[str, Any]) -> dict[str, Any]:

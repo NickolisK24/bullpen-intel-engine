@@ -15,6 +15,7 @@ from typing import Any
 from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
+from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
 from services.bullpen_identity import build_bullpen_identity
 from services.bullpen_resource_health import build_bullpen_resource_health
 from services.bullpen_trust_hierarchy import build_bullpen_trust_hierarchy
@@ -101,10 +102,7 @@ def _pitcher_id(record: dict[str, Any]) -> int | None:
 
 
 def _is_bullpen_record(record: dict[str, Any]) -> bool:
-    eligibility = record.get('eligibility')
-    if eligibility is None:
-        return True
-    return bool(eligibility.get('eligible'))
+    return record_is_bullpen_eligible(record)
 
 
 def _is_roster_unavailable(record: dict[str, Any]) -> bool:
