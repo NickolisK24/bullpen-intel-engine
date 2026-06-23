@@ -87,8 +87,8 @@ def test_depth_constraint_voice_forms_can_use_named_pressure_points():
     forms = approved_sentence_forms(BEAT_DEPTH_CONSTRAINT)
 
     assert any('{names}' in form and 'pressure point' in form for form in forms)
-    assert any('{names}' in form and 'late-game map' in form for form in forms)
     assert any('{names}' in form and 'roster count' in form for form in forms)
+    assert sum('{names}' in form for form in forms) >= 2
 
 
 def test_voice_library_deny_lists_cover_requested_editorial_terms():

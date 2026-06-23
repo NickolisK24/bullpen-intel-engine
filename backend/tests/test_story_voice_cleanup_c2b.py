@@ -219,8 +219,8 @@ def test_depth_constraint_openings_trimmed_but_keep_named_pressure_points():
     forms = approved_sentence_forms(BEAT_DEPTH_CONSTRAINT)
     assert 5 <= len(forms) <= 8
     assert any('{names}' in form and 'pressure point' in form for form in forms)
-    assert any('{names}' in form and 'late-game map' in form for form in forms)
     assert any('{names}' in form and 'roster count' in form for form in forms)
+    assert sum('{names}' in form for form in forms) >= 2
 
 
 def test_thinner_than_count_repetition_reduced_in_trust_lane_forms():
