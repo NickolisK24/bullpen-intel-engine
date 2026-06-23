@@ -19,6 +19,18 @@ from utils.auth import require_admin_token
 system_bp = Blueprint('system', __name__)
 
 
+@system_bp.route('/email-delivery-health', methods=['GET'])
+@require_admin_token
+def get_email_delivery_health():
+    """Operator check that the active email provider is configured to send.
+
+    Reports the resolved provider, whether a sender is set, readiness, and any
+    config issues. Admin-gated; never exposes the API key.
+    """
+    from utils.email_delivery import email_delivery_health
+    return jsonify(email_delivery_health())
+
+
 @system_bp.route('/pipeline-health', methods=['GET'])
 @require_admin_token
 def get_pipeline_health():
