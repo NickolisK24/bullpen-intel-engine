@@ -11,6 +11,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from services.bullpen_context import build_team_bullpen_context
+from services.story_eligibility_context import apply_swing_bulk_story_context
 from services.story_construction_engine import (
     CONFIDENCE_LOW,
     construct_team_story_frames,
@@ -931,9 +932,10 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
     The service coordinates the existing pipeline and returns a neutral payload
     when no valid observation can be written from the supplied facts.
     """
+    context_supplied = isinstance(team_context, dict)
     context = (
         deepcopy(team_context)
-        if isinstance(team_context, dict)
+        if context_supplied
         else build_team_bullpen_context(team_id, reference_date=as_of_date)
     )
     observation_payload = build_team_story_observation_payload(context)
@@ -998,6 +1000,12 @@ def build_team_story(team_id, as_of_date=None, *, team_context=None):
             writer_output.get('limitations'),
         ),
     })
+    # Eligibility-aware context is added only on the live path (no externally
+    # supplied team_context), so mocked story tests stay byte-stable. It appends
+    # a governed sentence to an existing forward-constraint beat when Swing/Bulk
+    # arms materially shape coverage/depth; it never changes payload shape.
+    if not context_supplied:
+        payload = apply_swing_bulk_story_context(payload, reference_date=as_of_date)
     return payload
 
 
