@@ -542,6 +542,8 @@ def _bridge_instability_frame(team_context, observation):
         'current_operational_core': core,
         'core_stability_pct': stability.get('core_stability_pct'),
         'available_arms_count': optionality.get('available_arms_count'),
+        'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+        'coverage_baseline_read': rotation.get('coverage_baseline_read'),
     }
     frame['cause_facts'] = {
         'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),

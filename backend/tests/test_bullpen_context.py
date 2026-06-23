@@ -42,6 +42,7 @@ ROTATION_CONTEXT_KEYS = {
     'rotation_games_excluded_14d',
     'rotation_early_bullpen_entry_games_14d',
     'baseline_read',
+    'coverage_baseline_read',
     'rotation_context_layer',
     'start_classification_state',
     'unknown_start_rows',
