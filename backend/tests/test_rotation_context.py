@@ -57,7 +57,7 @@ def test_normal_starter_usage_builds_rotation_context_layer():
     assert result['games_analyzed_14d'] == 6
 
 
-def test_multiple_opener_games_are_measured_without_role_inference():
+def test_opener_games_no_longer_distort_rotation_depth_or_pressure():
     result = context([
         *game(1, 1, 3, 24),
         *game(2, 2, 3, 24),
@@ -66,11 +66,18 @@ def test_multiple_opener_games_are_measured_without_role_inference():
         *game(5, 9, 18, 9),
     ])
 
-    assert result['rotation_avg_ip_7d'] == 1.0
-    assert result['rotation_avg_ip_14d'] == 3.0
-    assert result['rotation_ip_trend'] == -2.0
-    assert result['early_bullpen_entry_rate'] == 60.0
-    assert result['bullpen_coverage_ip_7d'] == 8.0
+    # Opener/bulk games are excluded from rotation depth and early-bullpen-entry
+    # instead of being read as failed one-inning starts.
+    assert result['rotation_avg_ip_7d'] is None       # only openers in the 7-day window
+    assert result['rotation_avg_ip_14d'] == 6.0        # the two real starts (was 3.0)
+    assert result['early_bullpen_entry_rate'] == 0.0   # was 60.0
+    assert result['rotation_starts_7d'] == 0
+    assert result['rotation_starts_14d'] == 2
+    assert result['opener_bulk_games_7d'] == 3
+    assert result['opener_bulk_games_14d'] == 3
+    assert result['games_analyzed_14d'] == 5           # openers stay visible, not dropped
+    assert result['game_shape_distribution'] == {'opener_bulk_game': 3, 'normal_start': 2}
+    assert result['bullpen_coverage_ip_7d'] == 8.0     # coverage burden unchanged
     assert OPENER_BULK_LIMITATION in result['limitations']
 
 
