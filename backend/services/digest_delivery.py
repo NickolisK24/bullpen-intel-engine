@@ -28,6 +28,7 @@ from utils.auth_tokens import (
     normalize_email,
 )
 from utils.email_delivery import send_email
+from utils.time import utc_now_naive
 
 
 logger = logging.getLogger('baseballos.digest')
@@ -48,17 +49,24 @@ SKIP_UNVERIFIED_EMAIL = 'unverified_email'
 SKIP_NO_EMAIL = 'no_email'
 
 
-def render_digest_email(payload, *, unsubscribe_url=None):
+def render_digest_email(payload, *, unsubscribe_url=None, tracking=None):
     """Render (subject, text, html) from a ``compose_digest`` send=True payload.
 
     Pure string assembly over the transport-neutral payload — it neither sends
     nor decides. Neutral, plain language only; no new intelligence is added.
+
+    When ``tracking`` (``{open_url, click_url}``) is supplied, the HTML CTA points
+    through the click URL (a server redirect to the same deep link) and an
+    invisible open pixel is appended, so opens/clicks are measurable
+    provider-independently. The plain-text body always carries the real deep
+    link. Without ``tracking`` the output is unchanged.
     """
     sections = payload.get('sections') or {}
     what_changed = sections.get('what_changed') or {}
     story = sections.get('team_story') or {}
     link = sections.get('deep_link') or {}
     trust = sections.get('trust') or {}
+    tracking = tracking or {}
 
     subject = payload.get('subject') or 'Your team bullpen: what changed'
 
@@ -84,6 +92,7 @@ def render_digest_email(payload, *, unsubscribe_url=None):
 
     cta_url = link.get('url')
     cta_label = link.get('label') or 'See your team'
+    cta_href = tracking.get('click_url') or cta_url
 
     text_parts = list(lines)
     if cta_url:
@@ -93,12 +102,17 @@ def render_digest_email(payload, *, unsubscribe_url=None):
     text = '\n\n'.join(text_parts)
 
     html_body = ''.join(f'<p>{_escape(line)}</p>' for line in lines)
-    if cta_url:
-        html_body += f'<p><a href="{_escape(cta_url)}">{_escape(cta_label)}</a></p>'
+    if cta_href:
+        html_body += f'<p><a href="{_escape(cta_href)}">{_escape(cta_label)}</a></p>'
     if unsubscribe_url:
         html_body += (
             '<p style="font-size:12px;color:#888;">'
             f'<a href="{_escape(unsubscribe_url)}">Unsubscribe from these emails</a></p>'
+        )
+    if tracking.get('open_url'):
+        html_body += (
+            f'<img src="{_escape(tracking["open_url"])}" width="1" height="1" '
+            'alt="" style="display:none">'
         )
 
     return subject, text, html_body
@@ -111,6 +125,7 @@ def deliver_team_digest(
     dry_run=False,
     digest_builder=build_team_digest,
     sender=send_email,
+    recorder=None,
 ):
     """Compose and (unless ``dry_run``) send one user's team digest.
 
@@ -120,7 +135,10 @@ def deliver_team_digest(
     enforced by the composition engine (which suppresses), not duplicated here.
 
     ``digest_builder`` and ``sender`` are injectable for testing; the defaults
-    call the real composition engine and the real email seam.
+    call the real composition engine and the real email seam. ``recorder`` is an
+    optional metrics sink (Phase D2E): on a real send it records a delivery and
+    returns tracking URLs to embed; on a suppression it records the reason. When
+    it is None (the default) nothing is recorded and behavior is identical.
     """
     prefs = get_digest_prefs(user)
 
@@ -141,11 +159,24 @@ def deliver_team_digest(
     # team, the data is stale/unavailable, or nothing meaningful changed).
     frontend_base_url = current_app.config.get('FRONTEND_BASE_URL')
     payload = digest_builder(user, reference_date=reference_date, frontend_base_url=frontend_base_url)
+    record = recorder if (recorder is not None and not dry_run) else None
     if not payload.get('send'):
+        if record is not None:
+            record.on_decision(user, status=SUPPRESSED, team_id=payload.get('team_id'),
+                               reason=payload.get('reason'))
         return {'status': SUPPRESSED, 'reason': payload.get('reason'), 'team_id': payload.get('team_id')}
 
+    # Record the send before rendering so the email can carry per-delivery
+    # tracking URLs (open pixel + click redirect).
+    tracking = None
+    if record is not None:
+        tracking = record.on_decision(user, status=SENT, team_id=payload.get('team_id'),
+                                      sent_at=utc_now_naive())
+
     unsubscribe_url = build_unsubscribe_url(generate_unsubscribe_token(user))
-    subject, text, html_body = render_digest_email(payload, unsubscribe_url=unsubscribe_url)
+    subject, text, html_body = render_digest_email(
+        payload, unsubscribe_url=unsubscribe_url, tracking=tracking,
+    )
 
     if dry_run:
         return {
@@ -202,17 +233,38 @@ def _digest_roster():
     return User.query.order_by(User.id).all()
 
 
-def run_digest_job(app, *, reference_date=None, dry_run=False, deliver=deliver_team_digest, users=None):
+def run_digest_job(app, *, reference_date=None, dry_run=False, deliver=None, users=None, recorder=None):
     """Run the daily digest over every user once and return a summary.
 
     Each user is processed at most once, so a single run never sends a user more
     than one digest. Opt-in, cadence, verified email, primary team, and
     suppression are all honored by ``deliver``. Sends nothing when
     ``dry_run=True`` — useful for admin observability.
+
+    Metrics (Phase D2E): on a live run (``dry_run`` False) that uses the default
+    delivery path, a DB-backed recorder persists the run aggregate and each
+    delivery. Passing a custom ``deliver`` opts out of auto-recording (the caller
+    is in control), and ``dry_run`` never persists. A ``recorder`` may be
+    injected for tests.
     """
     summary = _new_summary(dry_run=dry_run, reference_date=reference_date)
 
     with app.app_context():
+        # Only auto-create the DB recorder on the real, persisted path: a live
+        # run that did not inject its own delivery function.
+        if recorder is None and not dry_run and deliver is None:
+            from services.digest_metrics import DbDigestRecorder
+            recorder = DbDigestRecorder()
+        if recorder is not None:
+            recorder.start_run(reference_date=reference_date, dry_run=dry_run)
+
+        active_deliver = deliver
+        if active_deliver is None:
+            def active_deliver(user, *, reference_date=None, dry_run=False):
+                return deliver_team_digest(
+                    user, reference_date=reference_date, dry_run=dry_run, recorder=recorder,
+                )
+
         roster = users if users is not None else _digest_roster()
         seen = set()
         for user in roster:
@@ -223,12 +275,15 @@ def run_digest_job(app, *, reference_date=None, dry_run=False, deliver=deliver_t
                 seen.add(uid)
             summary['considered'] += 1
             try:
-                result = deliver(user, reference_date=reference_date, dry_run=dry_run)
+                result = active_deliver(user, reference_date=reference_date, dry_run=dry_run)
             except Exception:
                 logger.exception('digest delivery failed for user %s', uid)
                 summary['errors'] += 1
                 continue
             _tally(summary, result)
+
+        if recorder is not None:
+            recorder.finish_run(summary)
 
     logger.info('[digest] run summary: %s', summary)
     return summary

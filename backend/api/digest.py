@@ -1,16 +1,20 @@
-"""Digest preferences + one-click unsubscribe (Phase D2D).
+"""Digest preferences, unsubscribe & engagement tracking (Phase D2D + D2E).
 
-Two small surfaces:
+Surfaces:
 
   • /api/digest/preferences  (authenticated) — read and update the user's digest
     opt-in and cadence. Opt-in is explicit; a user is never enrolled by default.
   • /api/digest/unsubscribe  (no auth) — a signed, user-scoped, one-click link
     placed in every digest email that disables the digest.
+  • /api/digest/open         (no auth) — a 1x1 pixel that records an email open.
+  • /api/digest/click        (no auth) — records a deep-link click, attributes a
+    return, and redirects to the team's view.
 
-No email is sent here and nothing is scheduled — this only manages preferences.
+The open/click endpoints are our own (provider-independent) tracking; no email is
+sent here and nothing is scheduled or composed.
 """
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, redirect, request
 
 from models.user import User
 from services.notification_prefs import (
@@ -19,12 +23,19 @@ from services.notification_prefs import (
     disable_digest,
     get_digest_prefs,
 )
+from services.digest_metrics import record_click, record_open
 from utils.auth_tokens import verify_unsubscribe_token
 from utils.db import db
 from utils.identity import require_authenticated_user
 
 
 digest_bp = Blueprint('digest', __name__)
+
+# A 1x1 transparent GIF returned by the open-tracking pixel.
+_TRACKING_PIXEL = (
+    b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01'
+    b'\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+)
 
 
 @digest_bp.route('/preferences', methods=['GET'])
@@ -104,3 +115,41 @@ def unsubscribe():
     if wants_json:
         return jsonify({'ok': valid, 'digest_enabled': False if valid else None}), 200
     return _unsubscribe_html(valid), 200
+
+
+def _pixel_response():
+    response = Response(_TRACKING_PIXEL, mimetype='image/gif')
+    # Discourage caching so repeat opens are observed; never breaks rendering.
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    response.headers['Pragma'] = 'no-cache'
+    return response
+
+
+@digest_bp.route('/open', methods=['GET'])
+def open_pixel():
+    """Record an email open from a signed tracking token; always return a pixel.
+
+    No auth: this is loaded by the recipient's email client. An invalid/expired
+    token simply yields the pixel without recording (a safe no-op).
+    """
+    record_open((request.args.get('t') or '').strip())
+    return _pixel_response()
+
+
+def _team_deep_link(delivery):
+    base = (current_app.config.get('FRONTEND_BASE_URL') or '').rstrip('/')
+    if delivery is not None and delivery.team_id is not None:
+        return f'{base}/?team={delivery.team_id}&source=digest'
+    return f'{base}/' if base else '/'
+
+
+@digest_bp.route('/click', methods=['GET'])
+def click_redirect():
+    """Record a deep-link click + attribute a return, then redirect to the team.
+
+    No auth. The redirect target is always reconstructed from our own config
+    (FRONTEND_BASE_URL + the delivery's team), never from a request parameter, so
+    there is no open-redirect surface. An invalid token redirects to the app root.
+    """
+    delivery = record_click((request.args.get('t') or '').strip())
+    return redirect(_team_deep_link(delivery), code=302)

@@ -16,6 +16,7 @@ from itsdangerous import BadData, URLSafeTimedSerializer
 MAGIC_LINK_SALT = 'baseballos.auth.magic-link.v1'
 BEARER_TOKEN_SALT = 'baseballos.auth.bearer.v1'
 DIGEST_UNSUBSCRIBE_SALT = 'baseballos.digest.unsubscribe.v1'
+DIGEST_TRACKING_SALT = 'baseballos.digest.tracking.v1'
 
 _DEFAULT_MAGIC_LINK_TTL = 900
 _DEFAULT_BEARER_TTL = 2592000
@@ -153,3 +154,26 @@ def build_unsubscribe_url(token):
     """
     base = (current_app.config.get('PUBLIC_API_BASE_URL') or '').rstrip('/')
     return f'{base}/api/digest/unsubscribe?token={token}'
+
+
+def generate_tracking_token(delivery_id):
+    """Sign an open/click tracking token scoped to one delivery (Phase D2E).
+
+    Embeds the delivery id and is signed with its own salt so it cannot be used
+    as any auth/unsubscribe token. Tamper-proofing prevents forging opens/clicks
+    for arbitrary deliveries; it is long-lived (no age check on verify).
+    """
+    return _serializer().dumps({'did': delivery_id}, salt=DIGEST_TRACKING_SALT)
+
+
+def verify_tracking_token(token, *, max_age=None):
+    """Return the delivery id from a valid tracking token, else None."""
+    if not token or not _secret():
+        return None
+    try:
+        data = _serializer().loads(token, salt=DIGEST_TRACKING_SALT, max_age=max_age)
+    except BadData:
+        return None
+    if not isinstance(data, dict) or 'did' not in data:
+        return None
+    return data.get('did')
