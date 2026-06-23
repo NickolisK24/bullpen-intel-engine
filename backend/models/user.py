@@ -39,12 +39,15 @@ class User(db.Model):
     )
 
     def to_dict(self):
+        follows = list(self.followed_teams)
+        primary = next((team.team_id for team in follows if team.is_primary), None)
         return {
             'id': self.id,
             'email': self.email,
             'email_verified': self.email_verified_at is not None,
             'onboarded': self.onboarded_at is not None,
-            'followed_teams': [team.to_dict() for team in self.followed_teams],
+            'followed_teams': [team.to_dict() for team in follows],
+            'primary_team_id': primary,
         }
 
 
