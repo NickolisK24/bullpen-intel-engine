@@ -151,6 +151,8 @@ def _empty_context(ref, window_start, league_baseline=None):
         ),
         'top_three_share_delta_vs_league': None,
         'baseline_read': _baseline_read(None, league_baseline),
+        'top_one_workload_share_10d': None,
+        'lead_arm_baseline_read': _lead_arm_baseline_read(None, league_baseline),
         'bullpen_workload_total_10d': 0,
         'concentration_band': CONCENTRATION_INSUFFICIENT_DATA,
         'top_three_relievers_10d': [],
@@ -213,6 +215,23 @@ def _baseline_read(top_three_share, league_baseline):
         'top_share',
         top_three_share,
         _league_baseline_distribution(league_baseline),
+    )
+
+
+def _league_top_one_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('top_one_workload_share_distribution_10d')
+    return None
+
+
+def _lead_arm_baseline_read(top_one_share, league_baseline):
+    # Distribution-aware league read for the lead-arm (single most-used reliever)
+    # workload share. Separate from the top-three read; same 10-day percentage
+    # units and the same 10-day league window.
+    return interpret_value(
+        'top_one_share',
+        top_one_share,
+        _league_top_one_distribution(league_baseline),
     )
 
 
@@ -299,6 +318,7 @@ def build_bullpen_concentration_context(
     top_three = relievers[:TOP_RELIEVER_COUNT]
     top_three_total = sum(row['pitches'] for row in top_three)
     top_three_share = _share(top_three_total, total_workload)
+    top_one_share = _share(relievers[0]['pitches'], total_workload)
     league_value = _league_baseline_value(league_baseline)
     league_team_count = (
         (league_baseline or {}).get('league_team_count_10d', 0)
@@ -321,6 +341,8 @@ def build_bullpen_concentration_context(
         'league_top_three_workload_share_10d': league_value,
         'top_three_share_delta_vs_league': _delta(top_three_share, league_value),
         'baseline_read': _baseline_read(top_three_share, league_baseline),
+        'top_one_workload_share_10d': top_one_share,
+        'lead_arm_baseline_read': _lead_arm_baseline_read(top_one_share, league_baseline),
         'bullpen_workload_total_10d': total_workload,
         'concentration_band': concentration_band(top_three_share),
         'top_three_relievers_10d': [
@@ -359,17 +381,24 @@ def build_league_bullpen_concentration_baseline(logs, *, reference_date=None):
         by_team[team_id].append(log)
 
     shares = []
+    top_one_shares = []
     for team_logs in by_team.values():
         context = build_bullpen_concentration_context(team_logs, reference_date=ref)
+        if context.get('bullpen_workload_total_10d', 0) <= 0:
+            continue
         share = context.get('top_three_workload_share_10d')
-        if share is not None and context.get('bullpen_workload_total_10d', 0) > 0:
+        if share is not None:
             shares.append(share)
+        top_one = context.get('top_one_workload_share_10d')
+        if top_one is not None:
+            top_one_shares.append(top_one)
 
     league_share = round(sum(shares) / len(shares), 1) if shares else None
     return {
         'league_top_three_workload_share_10d': league_share,
         'league_team_count_10d': len(shares),
         'top_three_workload_share_distribution_10d': build_distribution(shares),
+        'top_one_workload_share_distribution_10d': build_distribution(top_one_shares),
     }
 
 

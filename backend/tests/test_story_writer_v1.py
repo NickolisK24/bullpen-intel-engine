@@ -436,6 +436,76 @@ def test_baseline_story_language_has_no_ranking_or_recommendation_terms():
             assert term not in lowered, (sentence, term)
 
 
+def _concentration_with_lead_arm(lead_arm_read):
+    concentration = {
+        'concentration_band': 'narrow',
+        'top_three_workload_share_10d': 94.0,
+        'league_top_three_workload_share_10d': 58.0,
+        'top_three_share_delta_vs_league': 36.0,
+        'bullpen_workload_total_10d': 240,
+        'baseline_read': {'available': True, 'metric': 'top_share', 'comparison': 'among_highest'},
+    }
+    if lead_arm_read is not None:
+        concentration['top_one_workload_share_10d'] = 48.0
+        concentration['lead_arm_baseline_read'] = lead_arm_read
+    return concentration
+
+
+def test_writer_voices_lead_arm_baseline_as_secondary_read():
+    frame = frame_for(
+        team_context(concentration=_concentration_with_lead_arm(
+            {'available': True, 'metric': 'top_one_share', 'comparison': 'above_average'},
+        )),
+        TYPE_CONCENTRATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # Primary top-three read stays; lead-arm read is layered as a secondary line.
+    assert 'among the more concentrated workloads in baseball recently' in text
+    assert 'The lead arm is carrying more of the workload than a typical bullpen' in text
+
+
+def test_writer_omits_lead_arm_sentence_when_read_absent():
+    frame = frame_for(
+        team_context(concentration=_concentration_with_lead_arm(None)),
+        TYPE_CONCENTRATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'among the more concentrated workloads in baseball recently' in text
+    assert 'lead arm' not in text.lower()
+
+
+def test_writer_omits_lead_arm_sentence_when_read_guarded():
+    frame = frame_for(
+        team_context(concentration=_concentration_with_lead_arm(
+            {'available': False, 'comparison': 'insufficient_sample'},
+        )),
+        TYPE_CONCENTRATION_PRESSURE,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded lead-arm read -> existing C1E copy preserved, no lead-arm sentence.
+    assert 'among the more concentrated workloads in baseball recently' in text
+    assert 'lead arm' not in text.lower()
+
+
+def test_lead_arm_baseline_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _LEAD_ARM_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', 'lowest', '#1', 'top-ranked', 'league-leading', 'most used', 'least used',
+        'best', 'worst', 'rank', 'recommend', 'should', 'likely to', 'projected', 'predict', 'will ',
+    )
+    for sentence in _LEAD_ARM_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_voices_clean_options_below_norm_baseline():
     optionality = _trust_lane_optionality(clean=1, secondary=5, available=6)
     optionality['baseline_read'] = {

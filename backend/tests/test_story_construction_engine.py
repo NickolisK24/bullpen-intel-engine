@@ -228,6 +228,33 @@ def test_construction_frame_for_concentration_pressure():
     ]
 
 
+def test_construction_threads_lead_arm_read_into_concentration_frame():
+    read = {'available': True, 'metric': 'top_one_share', 'comparison': 'above_average'}
+    context = team_context(
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 94.0,
+            'top_three_share_delta_vs_league': 36.0,
+            'bullpen_workload_total_10d': 240,
+            'top_one_workload_share_10d': 48.0,
+            'lead_arm_baseline_read': read,
+        },
+        rotation={
+            'rotation_avg_ip_7d': 4.6,
+            'rotation_avg_ip_14d': 5.9,
+            'rotation_ip_trend': -1.3,
+            'early_bullpen_entry_rate': 42.0,
+        },
+    )
+
+    frame = single_frame(context, TYPE_CONCENTRATION_PRESSURE)
+
+    # Separate lead-arm read carried alongside the top-three read; not on the feed.
+    baseline_facts = frame['story_frame']['baseline_facts']
+    assert baseline_facts['lead_arm_baseline_read'] == read
+    assert baseline_facts['top_one_workload_share_10d'] == 48.0
+
+
 def test_construction_frame_for_optionality_strength():
     context = team_context(optionality={
         'optionality_band': 'deep',
