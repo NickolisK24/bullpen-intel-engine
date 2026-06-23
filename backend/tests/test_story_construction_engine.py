@@ -230,6 +230,23 @@ def test_construction_frame_for_optionality_strength():
     assert story_frame['interpretation_facts']['concentration_band'] == 'normal'
 
 
+def test_construction_threads_baseline_read_into_optionality_strength_frame():
+    read = {'available': True, 'metric': 'clean_trusted_options', 'comparison': 'above_average'}
+    context = team_context(optionality={
+        'optionality_band': 'deep',
+        'practical_close_game_paths_count': 6,
+        'available_arms_count': 7,
+        'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+        'secondary_options': [{'name': 'Secondary One'}],
+        'baseline_read': read,
+    })
+
+    frame = single_frame(context, TYPE_OPTIONALITY_STRENGTH)
+
+    # Transient league read is carried into the frame for the writer, not onto the feed.
+    assert frame['story_frame']['baseline_facts']['baseline_read'] == read
+
+
 def test_construction_frame_for_stable_core():
     context = team_context(stability={
         'stability_band': 'stable',
