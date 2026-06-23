@@ -30,6 +30,8 @@ const {
   buildDraftGenerationPayload,
   buildGeneratedPlatformDrafts,
   buildVerifiedFactSet,
+  canonicalPostableStories,
+  extractStoryFacts,
   findUnverifiedNumbers,
   flattenTakeDrafts,
   getPrivatePostTakes,
@@ -41,289 +43,172 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 
-function story(overrides = {}) {
+// Canonical story feed items (dashboard.stories.items). These carry no legacy
+// `computed` structured facts and no beats keyed 'signal'/'evidence'; the posts
+// adapter derives takes from headline (signal), canonical evidence (evidence),
+// and story_type (rule key).
+function canonicalStory(overrides = {}) {
   return {
-    story_id: `${overrides.team_abbreviation || 'TST'}:${overrides.rule_key || 'test_rule'}`,
-    rule_key: 'test_rule',
-    rule_label: 'Test Rule',
+    story_id: '100:2026-06-17',
     team_id: 100,
     team_name: 'Test Club',
     team_abbreviation: 'TST',
-    kicker: 'Test Rule',
-    tone: 'watch',
+    date: '2026-06-17',
+    story_available: true,
+    story_type: 'route_change',
     category: 'watch',
-    title: 'The Test Club has a neutral bullpen read tonight.',
-    body: 'The current bullpen shape is specific but not especially argumentative.',
-    href: '/bullpen?view=board&team=TST&source=four-beat-stories',
-    cta: 'Open the team board',
-    strength: 40,
-    lead_dimension: null,
-    lead_dimension_detail: null,
+    tone: 'watch',
+    headline: 'The Test Club has a neutral bullpen read tonight.',
+    narrative: 'Test Club observation.\n\nTest Club cause.',
     beats: [
-      {
-        key: 'signal',
-        label: 'Signal',
-        text: 'The Test Club has a neutral bullpen read tonight.',
-      },
-      {
-        key: 'evidence',
-        label: 'Evidence',
-        text: 'The board has ordinary availability and workload shape.',
-      },
-      {
-        key: 'mechanism',
-        label: 'Mechanism',
-        text: 'The public story remains descriptive.',
-      },
-      {
-        key: 'implication',
-        label: 'Implication',
-        text: 'There is no forced drama in the read.',
-      },
+      { key: 'observation', label: 'What stands out', text: 'Ordinary availability across the board.' },
+      { key: 'baseline', label: 'Against the baseline', text: 'The workload shape matches a normal week.' },
+      { key: 'cause', label: 'Why', text: 'No single arm has been overused recently.' },
+      { key: 'constraint', label: 'What it creates', text: 'There is no forced drama in the read.' },
     ],
-    computed: {
-      conditions: {},
-      workload: {
-        total_pitches: 70,
-        participant_count: 5,
-        top_arm_count: 3,
-        top_share: 0.5,
-        concentration_level: 'none',
-        concentration_descriptor: 'no concentration',
-        per_arm_pitches: 14,
-      },
-      availability: {
-        available: 4,
-        available_share: 0.5,
-        total: 8,
-      },
-      season_era: {
-        available: true,
-        era: 4.21,
-        rank: 18,
-        rank_total: 30,
-        strong_results: false,
-        solid_results: false,
-      },
-      high_risk_arms: 0,
-      high_risk_arm_count: 0,
-      high_risk_arm_names: [],
-      roster_unavailable_arms: 0,
-      clean_trust_count: 2,
-      clean_trust_names: ['Example Closer', 'Example Setup'],
-      clean_option_count: 3,
-    },
+    evidence: [
+      { key: 'baseline', label: 'Against the baseline', text: 'Availability sits at a normal level for this club.' },
+      { key: 'cause', label: 'Why', text: 'Recent relief work is spread across the pen.' },
+    ],
+    continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+    quality_status: 'published',
     ...overrides,
   }
 }
 
-const tensionStory = story({
-  story_id: '158:sustainability_question',
-  rule_key: 'sustainability_question',
-  rule_label: 'Sustainability Question',
+// Pressure story: story_type sustainability_question is a tension rule key and
+// the headline carries an explicit "but" contrast, so postability flags tension.
+const pressureStory = canonicalStory({
+  story_id: '158:2026-06-17',
   team_id: 158,
   team_name: 'Milwaukee Brewers',
   team_abbreviation: 'MIL',
-  abbr: 'MIL',
-  tone: 'stress',
+  story_type: 'sustainability_question',
   category: 'stressed',
-  title: 'The Milwaukee Brewers bullpen has pitched well this year, but they are leaning on it hard tonight.',
-  body: 'This bullpen has still run a strong season ERA, but recent workload is high.',
-  strength: 118,
-  lead_dimension: 'workload_high',
-  lead_dimension_detail: {
-    dimension: 'workload_high',
-    score: 840,
-    reason: 'highest or heavy recent workload in the same-rule cluster',
-  },
+  tone: 'stress',
+  headline: 'The Milwaukee Brewers bullpen has pitched well this year, but they are leaning on it hard tonight.',
+  narrative: 'The Milwaukee Brewers are carrying the late innings on a small group.\n\nThe recent workload has clustered around the same arms.',
   beats: [
-    {
-      key: 'signal',
-      label: 'Signal',
-      text: 'The Milwaukee Brewers bullpen has pitched well this year, but they are leaning on it hard tonight.',
-    },
-    {
-      key: 'evidence',
-      label: 'Evidence',
-      text: 'This bullpen has still run a 3.12 season ERA, 2nd among current pens, but recent workload is 34.2 pitches per participating arm with 2 arms carrying heavy recent workload.',
-    },
-    {
-      key: 'mechanism',
-      label: 'Mechanism',
-      text: 'The results are not the issue; the cost of every clean inning is a little higher tonight.',
-    },
-    {
-      key: 'implication',
-      label: 'Implication',
-      text: "Tonight, Trevor Megill is still the trusted late-inning answer. I'm watching whether they have to go there before the eighth.",
-    },
+    { key: 'observation', label: 'What stands out', text: 'The same late-inning group keeps getting the call.' },
+    { key: 'baseline', label: 'Against the baseline', text: 'Recent workload runs heavier than a normal week.' },
+    { key: 'cause', label: 'Why', text: 'Close games have leaned on the trusted arms repeatedly.' },
+    { key: 'constraint', label: 'What it creates', text: 'There is less room behind the clean late-inning path.' },
   ],
-  computed: {
-    conditions: {
-      season_era_strong: true,
-      heavy_recent_workload: true,
-      workload_concentrated: false,
-      depleted_depth: false,
-    },
-    workload: {
-      total_pitches: 171,
-      participant_count: 5,
-      top_arm_count: 3,
-      top_share: 0.58,
-      concentration_level: 'none',
-      concentration_descriptor: 'no concentration',
-      per_arm_pitches: 34.2,
-    },
-    availability: {
-      available: 6,
-      available_share: 0.75,
-      total: 8,
-    },
-    season_era: {
-      available: true,
-      era: 3.12,
-      rank: 2,
-      rank_total: 30,
-      strong_results: true,
-      solid_results: true,
-    },
-    high_risk_arms: 2,
-    high_risk_arm_count: 2,
-    high_risk_arm_names: ['Abner Uribe', 'Elvis Peguero'],
-    roster_unavailable_arms: 0,
-    clean_trust_count: 1,
-    clean_trust_names: ['Trevor Megill'],
-    clean_option_count: 5,
-  },
+  evidence: [
+    { key: 'baseline', label: 'Against the baseline', text: 'The pen has still prevented runs at a strong rate this season.' },
+    { key: 'cause', label: 'Why', text: 'The late-inning workload has concentrated on a small group.' },
+  ],
+  continuity: { state: 'ongoing', reason: 'story_type_persisted', compared: true },
 })
 
-const superlativeStory = story({
-  story_id: '136:pressure_distribution',
-  rule_key: 'pressure_distribution',
-  rule_label: 'Pressure Distribution',
+// Rested story: story_type availability_depth, calm read with no "but".
+const restedStory = canonicalStory({
+  story_id: '136:2026-06-17',
   team_id: 136,
   team_name: 'Seattle Mariners',
   team_abbreviation: 'SEA',
-  abbr: 'SEA',
-  tone: 'rest',
+  story_type: 'availability_depth',
   category: 'rested',
-  title: 'The Seattle Mariners have pressure spread across the pen tonight.',
-  body: 'Recent relief work stayed light and broad.',
-  strength: 94,
-  lead_dimension: 'participation_broad',
-  lead_dimension_detail: {
-    dimension: 'participation_broad',
-    score: 760,
-    reason: 'broadest participation breadth in the same-rule cluster',
-  },
+  tone: 'rest',
+  headline: 'The Seattle Mariners have more rested options than most clubs tonight.',
+  narrative: 'The Seattle Mariners spread recent relief work widely.\n\nThe board has room to maneuver.',
   beats: [
-    {
-      key: 'signal',
-      label: 'Signal',
-      text: 'The Seattle Mariners have pressure spread across the pen tonight.',
-    },
-    {
-      key: 'evidence',
-      label: 'Evidence',
-      text: 'Seven arms shared recent relief work at 14.0 pitches per participating arm.',
-    },
-    {
-      key: 'mechanism',
-      label: 'Mechanism',
-      text: 'When recent work is light and spread out, the pen tends to have more room to maneuver tonight.',
-    },
-    {
-      key: 'implication',
-      label: 'Implication',
-      text: 'Tonight, multiple clean options are available behind the trust lane.',
-    },
+    { key: 'observation', label: 'What stands out', text: 'Recent relief work stayed light and broad.' },
+    { key: 'baseline', label: 'Against the baseline', text: 'Availability sits above a normal week.' },
+    { key: 'cause', label: 'Why', text: 'No single arm has been leaned on recently.' },
+    { key: 'constraint', label: 'What it creates', text: 'Multiple clean options sit behind the trust lane.' },
   ],
-  computed: {
-    conditions: {
-      workload_light: true,
-      broad_participation: true,
-      workload_concentrated: false,
-      heavy_recent_workload: false,
-      depleted_depth: false,
-    },
-    workload: {
-      total_pitches: 98,
-      participant_count: 7,
-      top_arm_count: 3,
-      top_share: 0.44,
-      concentration_level: 'none',
-      concentration_descriptor: 'no concentration',
-      per_arm_pitches: 14,
-    },
-    availability: {
-      available: 8,
-      available_share: 1,
-      total: 8,
-    },
-    season_era: {
-      available: true,
-      era: 3.76,
-      rank: 8,
-      rank_total: 30,
-      strong_results: true,
-      solid_results: true,
-    },
-    high_risk_arms: 0,
-    high_risk_arm_count: 0,
-    high_risk_arm_names: [],
-    roster_unavailable_arms: 0,
-    clean_trust_count: 3,
-    clean_trust_names: ['Andres Munoz', 'Matt Brash', 'Gabe Speier'],
-    clean_option_count: 6,
-  },
+  evidence: [
+    { key: 'baseline', label: 'Against the baseline', text: 'More arms are available than on a typical night.' },
+    { key: 'cause', label: 'Why', text: 'Recent relief work was light and broadly shared.' },
+  ],
+  continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
 })
 
-const neutralStory = story({
-  story_id: '141:neutral_watch',
-  rule_key: 'neutral_watch',
-  rule_label: 'Neutral Watch',
+// Neutral story: story_type route_change, straightforward read.
+const neutralStory = canonicalStory({
+  story_id: '141:2026-06-17',
   team_id: 141,
   team_name: 'Toronto Blue Jays',
   team_abbreviation: 'TOR',
-  abbr: 'TOR',
-  title: 'The Toronto Blue Jays have a straightforward bullpen read tonight.',
-  beats: [
-    {
-      key: 'signal',
-      label: 'Signal',
-      text: 'The Toronto Blue Jays have a straightforward bullpen read tonight.',
-    },
-    {
-      key: 'evidence',
-      label: 'Evidence',
-      text: 'The current board has ordinary availability and workload distribution.',
-    },
-    {
-      key: 'mechanism',
-      label: 'Mechanism',
-      text: 'Nothing on the board creates a sharp public argument.',
-    },
-    {
-      key: 'implication',
-      label: 'Implication',
-      text: 'The honest post framing is mild.',
-    },
-  ],
+  story_type: 'route_change',
+  category: 'watch',
+  tone: 'watch',
+  headline: 'The Toronto Blue Jays have a straightforward bullpen read tonight.',
+  narrative: 'The Toronto Blue Jays show an ordinary board.\n\nNothing sharp stands out.',
 })
+
+// A suppressed item (story_available: false) must produce no take.
+const suppressedStory = {
+  story_id: '121:2026-06-17',
+  team_id: 121,
+  team_name: 'New York Mets',
+  team_abbreviation: 'NYM',
+  date: '2026-06-17',
+  story_available: false,
+  suppression_reason: 'no_story_observations',
+  story_type: null,
+  category: null,
+  tone: null,
+  headline: null,
+  narrative: null,
+  continuity: { state: 'unavailable', compared: true },
+}
+
+// The league_context card has no team_id and must produce no take.
+const leagueContext = {
+  capability: 'baseballos_league_context_v1',
+  mode: 'pressure_concentrated',
+  day_class: 'low_story',
+  headline: "Today's bullpen pressure is concentrated in a small set of clubs.",
+  summary: 'Most bullpens are in normal shape; the meaningful workload pressure is contained to a few clubs.',
+  evidence: { constrained_team_count: 3, available_team_count: 10 },
+  generated: true,
+  quality_status: 'published',
+}
 
 const dashboard = {
   freshness: { data_through: '2026-06-17' },
-  four_beat_stories: {
-    capability: 'four_beat_story_template_v1',
-    enabled: true,
-    items: [neutralStory, superlativeStory, tensionStory],
+  stories: {
+    capability: 'baseballos_canonical_story_v1',
+    items: [neutralStory, restedStory, pressureStory, suppressedStory],
+    available_count: 3,
+    suppressed_count: 1,
+    league_context: leagueContext,
   },
 }
 
-test('postability selector is deterministic and ranks tension and superlative stories above neutral reads', () => {
+test('canonical adapter maps publishable team stories and excludes league + suppressed cards', () => {
+  const sources = canonicalPostableStories(dashboard)
+
+  // Three publishable team stories; the league_context card (no team_id) and the
+  // suppressed item (story_available: false) are excluded.
+  assert.deepEqual(sources.map(source => source.team_abbreviation).sort(), ['MIL', 'SEA', 'TOR'])
+  assert.equal(sources.some(source => source.story_id === '121:2026-06-17'), false)
+
+  const mil = sources.find(source => source.team_abbreviation === 'MIL')
+  assert.equal(mil.rule_key, 'sustainability_question')
+  assert.equal(mil.rule_label, 'Same Few Arms')
+  assert.equal(mil.kicker, 'Same Few Arms')
+  // signal beat = headline; evidence beat = joined canonical evidence text.
+  assert.equal(mil.beats.find(beat => beat.key === 'signal').text, mil.title)
+  assert.equal(
+    mil.beats.find(beat => beat.key === 'evidence').text,
+    'The pen has still prevented runs at a strong rate this season. The late-inning workload has concentrated on a small group.',
+  )
+  assert.equal(mil.source, 'canonical')
+
+  // A missing/malformed canonical feed yields no source stories (and no throw).
+  assert.deepEqual(canonicalPostableStories({}), [])
+  assert.deepEqual(canonicalPostableStories({ stories: { capability: 'x' } }), [])
+  assert.deepEqual(canonicalPostableStories(null), [])
+})
+
+test('postability selector is deterministic and ranks the tension story above neutral reads', () => {
   const first = getPrivatePostTakes(dashboard)
   const second = getPrivatePostTakes(JSON.parse(JSON.stringify(dashboard)))
 
+  // Determinism: same dashboard -> same takes in the same order with the same scores.
   assert.deepEqual(
     first.map(take => [take.abbr, take.postability.score]),
     second.map(take => [take.abbr, take.postability.score]),
@@ -331,33 +216,65 @@ test('postability selector is deterministic and ranks tension and superlative st
   assert.equal(first[0].abbr, 'MIL')
 
   const byTeam = Object.fromEntries(first.map(take => [take.abbr, take]))
+  // The sustainability_question story with an explicit "but" contrast is the
+  // only canonical story that clears the tension bar; SEA and TOR read neutral
+  // because canonical items carry no structured facts to fire a superlative.
   assert.ok(byTeam.MIL.postability.hasTension)
-  assert.ok(byTeam.SEA.postability.hasSuperlative)
+  assert.equal(byTeam.SEA.postability.hasTension, false)
+  assert.equal(byTeam.SEA.postability.hasSuperlative, false)
   assert.equal(byTeam.TOR.postability.hasTension, false)
   assert.equal(byTeam.TOR.postability.hasSuperlative, false)
+  assert.ok(byTeam.MIL.postability.score > byTeam.SEA.postability.score)
   assert.ok(byTeam.MIL.postability.score > byTeam.TOR.postability.score)
-  assert.ok(byTeam.SEA.postability.score > byTeam.TOR.postability.score)
+
+  // ruleKey = story_type; ruleLabel/kicker = mapped label.
+  assert.equal(byTeam.MIL.ruleKey, 'sustainability_question')
+  assert.equal(byTeam.MIL.ruleLabel, 'Same Few Arms')
+  assert.equal(byTeam.SEA.ruleKey, 'availability_depth')
+  assert.equal(byTeam.SEA.ruleLabel, 'More Options')
 })
 
-test('drafts use real four-beat values and avoid fabricated stats', () => {
+test('canonical takes derive signal and evidence from story content, with no structured computed facts', () => {
+  const byTeam = Object.fromEntries(getPrivatePostTakes(dashboard).map(take => [take.abbr, take]))
+  const mil = byTeam.MIL
+
+  // signal = headline; evidence = joined canonical evidence text.
+  assert.equal(mil.signal, 'The Milwaukee Brewers bullpen has pitched well this year, but they are leaning on it hard tonight.')
+  assert.equal(
+    mil.evidence,
+    'The pen has still prevented runs at a strong rate this season. The late-inning workload has concentrated on a small group.',
+  )
+
+  // GAP: canonical stories carry no `computed` block, so no structured numeric
+  // facts (availability/workload/season ERA/clean-trust/high-risk) are produced.
+  for (const take of Object.values(byTeam)) {
+    assert.deepEqual(take.facts.items, [])
+  }
+  // extractStoryFacts still returns its empty-but-valid shape on a canonical
+  // source story (documents the gap; no crash downstream).
+  const facts = extractStoryFacts(canonicalPostableStories(dashboard)[0])
+  assert.deepEqual(facts.items, [])
+  assert.equal(facts.availability.available, null)
+  assert.equal(facts.cleanTrustCount, null)
+})
+
+test('drafts are built from canonical content and never fabricate numbers', () => {
   const [take] = getPrivatePostTakes(dashboard)
   const draftText = flattenTakeDrafts(take).map(draft => draft.text).join('\n\n')
-  const factValues = take.facts.items.map(fact => fact.value).join(' | ')
 
-  for (const expected of [
-    '6/8 arms available',
-    '1 clean Trust Arm',
-    '5 clean options',
-    '3.12 current-pen ERA, No. 2 of 30',
-    '2 heavy-workload arms (Abner Uribe and Elvis Peguero)',
-  ]) {
-    assert.ok(draftText.includes(expected) || factValues.includes(expected), `missing real value: ${expected}`)
+  // Drafts reference the team and stay grounded in the canonical headline.
+  assert.ok(draftText.includes('Milwaukee'))
+  // Canonical takes carry no structured facts, so no draft may smuggle in a
+  // fabricated stat: every numeric token in the copy must be verified.
+  for (const draft of flattenTakeDrafts(take)) {
+    const copy = [draft.text, draft.lead].filter(Boolean).join('\n')
+    assert.deepEqual(findUnverifiedNumbers(copy, take.verifiedFacts), [], draft.label)
   }
   assert.equal(draftText.includes('9/9'), false)
   assert.equal(draftText.includes('No. 1 of 30'), false)
 })
 
-test('verified fact object is structured from the same four-beat story payload', () => {
+test('verified fact object is structured from the canonical story payload', () => {
   const [take] = getPrivatePostTakes(dashboard)
   const facts = buildVerifiedFactSet(take.story, take.facts)
 
@@ -368,14 +285,22 @@ test('verified fact object is structured from the same four-beat story payload',
   })
   assert.equal(facts.signal, take.signal)
   assert.equal(facts.evidence, take.evidence)
-  assert.equal(facts.availability.text, '6/8 arms available')
-  assert.equal(facts.clean_trust.text, '1 clean Trust Arm')
-  assert.deepEqual(facts.clean_trust.names, ['Trevor Megill'])
-  assert.equal(facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
-  assert.equal(facts.high_risk.text, '2 heavy-workload arms (Abner Uribe and Elvis Peguero)')
-  for (const expected of ['6/8', '3.12', '2', '30', '34.2']) {
-    assert.ok(facts.numeric_tokens.includes(expected), `missing verified token: ${expected}`)
+  // story_type carried through as the rule key, with the mapped kicker label.
+  assert.equal(facts.story.rule_key, 'sustainability_question')
+  assert.equal(facts.story.rule_label, 'Same Few Arms')
+  // GAP: canonical stories carry no computed facts, so the structured fact
+  // blocks have no text and the fact-item list is empty.
+  assert.equal(facts.availability.text, undefined)
+  assert.equal(facts.clean_trust.text, undefined)
+  assert.equal(facts.season_era.text, undefined)
+  assert.equal(facts.high_risk.text, undefined)
+  assert.deepEqual(facts.fact_items, [])
+  // The only numeric tokens come from identifiers (story_id / team_id), never
+  // from structured stat values like a 6/8 availability or a 3.12 ERA.
+  for (const statToken of ['6/8', '3.12', '34.2']) {
+    assert.equal(facts.numeric_tokens.includes(statToken), false, statToken)
   }
+  assert.ok(facts.numeric_tokens.includes('158'))
 })
 
 test('generation payload contains the verified fact object and platform constraints', () => {
@@ -392,7 +317,7 @@ test('generation payload contains the verified fact object and platform constrai
   assert.match(payload.writing_instructions.lead, /human claim/)
   assert.ok(payload.constraints.forbidden_residue.includes('The catch:'))
   assert.equal(payload.verified_facts.signal, take.signal)
-  assert.equal(payload.verified_facts.season_era.text, '3.12 current-pen ERA, No. 2 of 30')
+  assert.equal(payload.verified_facts.story.rule_key, 'sustainability_question')
   assert.equal(JSON.stringify(payload).includes('9/9'), false)
 })
 
@@ -407,7 +332,8 @@ test('generated drafts clear the absent-number guard while fabricated numbers ar
   }
 
   const rogueText = 'MIL bullpen tonight: 9/9 arms available and No. 99 of 30.'
-  assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99'])
+  // Canonical takes verify no numbers, so every numeric token in rogue copy is flagged.
+  assert.deepEqual(findUnverifiedNumbers(rogueText, take.verifiedFacts), ['9/9', '9', '99', '30'])
 })
 
 test('generated drafts lead with human interpretation instead of template residue or stat lists', () => {
@@ -428,10 +354,11 @@ test('generated drafts lead with human interpretation instead of template residu
   ]) {
     assert.equal(generatedText.includes(residue), false, residue)
   }
+  // The human X lead opens with the market name, not the abbreviation template
+  // residue, and stays a human sentence rather than a stat list.
   assert.match(xLead, /^Milwaukee/)
   assert.equal(xLead.startsWith('MIL bullpen tonight:'), false)
-  assert.ok(xLead.includes('running hot') || xLead.includes('late') || xLead.includes('tightrope'))
-  assert.ok(generatedText.includes('running hot') || generatedText.includes('trusted late'))
+  assert.ok(generatedText.includes('Milwaukee'))
 })
 
 test('generated drafts avoid future certainty and unsupported causal language', () => {

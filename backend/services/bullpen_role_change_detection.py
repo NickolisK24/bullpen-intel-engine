@@ -201,7 +201,7 @@ def _coverage_label(
     return read.get('label') if isinstance(read, dict) else None
 
 
-def _clean_trusted_options(payload: dict[str, Any] | None, team_key: str, item: dict[str, Any]) -> int | None:
+def _clean_trusted_options(item: dict[str, Any]) -> int | None:
     for direct in (
         item.get('clean_trusted_options_count'),
         item.get('clean_trust_count'),
@@ -210,24 +210,6 @@ def _clean_trusted_options(payload: dict[str, Any] | None, team_key: str, item: 
         _nested(item, 'team_shape', 'cleanOptions', 'supportingCounts', 'cleanTrustArms'),
     ):
         parsed = _int(direct, default=None)
-        if parsed is not None:
-            return parsed
-
-    stories = payload.get('four_beat_stories') if isinstance(payload, dict) else {}
-    stories = stories if isinstance(stories, dict) else {}
-    by_team = stories.get('by_team_id') if isinstance(stories, dict) else {}
-    story = by_team.get(str(team_key)) if isinstance(by_team, dict) else None
-    if not isinstance(story, dict):
-        teams = stories.get('teams') if isinstance(stories, dict) else []
-        for candidate in teams if isinstance(teams, list) else []:
-            if isinstance(candidate, dict) and str(_team_id(candidate)) == str(team_key):
-                story = candidate
-                break
-    for story_value in (
-        _nested(story, 'computed', 'clean_trust_count'),
-        _nested(story, 'lead_fields', 'clean_trust_count'),
-    ):
-        parsed = _int(story_value, default=None)
         if parsed is not None:
             return parsed
     return None
@@ -269,7 +251,7 @@ def _team_metrics(
         'anchor_count': anchor,
         'leverage_count': leverage,
         'trusted_group_size': trusted_group,
-        'clean_trusted_options_count': _clean_trusted_options(payload, team_key, item),
+        'clean_trusted_options_count': _clean_trusted_options(item),
         'trust_arms_unavailable': _int(trust_capacity_loss.get('trust_arms_unavailable')),
     }
 

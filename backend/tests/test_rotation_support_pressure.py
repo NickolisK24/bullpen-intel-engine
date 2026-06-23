@@ -122,7 +122,7 @@ def test_same_date_multiple_games_are_grouped_by_game_pk():
     assert result['bullpen_outs_required'] == 27
 
 
-def test_missing_starter_game_is_excluded_with_clear_semantics():
+def test_no_starter_game_is_tracked_as_bullpen_game_not_excluded():
     result = pressure([
         *game(1, 1, 18, 9),
         *game(2, 2, 18, 9),
@@ -130,27 +130,45 @@ def test_missing_starter_game_is_excluded_with_clear_semantics():
         log(4, 4, 27, 0),
     ])
 
+    # A complete no-starter game is a bullpen game by shape, tracked separately
+    # rather than excluded as generic missing/ambiguous data.
     assert result['games_in_window'] == 4
     assert result['games_analyzed'] == 3
-    assert result['games_excluded'] == 1
-    assert result['excluded_game_reasons'] == {'no_starter': 1}
-    assert INCOMPLETE_GAME_DATA_LIMITATION in result['limitations']
+    assert result['games_excluded'] == 0
+    assert result['excluded_game_reasons'] == {}
+    assert result['bullpen_games'] == 1
+    assert result['bullpen_game_outs'] == 27
+    assert result['game_shape_distribution'].get('bullpen_game') == 1
+    assert INCOMPLETE_GAME_DATA_LIMITATION not in result['limitations']
     assert result['definitions']['games_analyzed'] == (
-        'Games with usable starter/bullpen split data. Excluded games are not counted here.'
+        'Rotation starts (normal or short) with usable starter/bullpen split data. '
+        'Opener/bulk and bullpen games are tracked separately; excluded games are not counted here.'
     )
 
 
-def test_opener_bulk_style_games_keep_source_caveat_visible():
+def test_opener_bulk_games_are_separated_not_read_as_short_start_pressure():
     result = pressure([
         *game(1, 1, 3, 24),
         *game(2, 2, 3, 24),
         *game(3, 3, 3, 24),
     ])
 
-    assert result['status'] == STATUS_HEAVY
-    assert result['games_analyzed'] == 3
-    assert result['starter_avg_innings'] == 1.0
-    assert result['bullpen_innings_required'] == 24.0
+    # Three opener/bulk games and no rotation starts: the read is Limited, not a
+    # false heavy short-start pressure from counting openers as failed starts.
+    assert result['status'] == STATUS_LIMITED
+    assert result['games_in_window'] == 3
+    assert result['games_analyzed'] == 0
+    assert result['opener_bulk_games'] == 3
+    assert result['starter_avg_innings'] == 0.0
+    assert result['short_start_count'] == 0
+    assert result['short_start_rate'] == 0.0
+    # Bulk-follower innings are separated from rotation-driven bullpen burden ...
+    assert result['bullpen_outs_required'] == 0
+    assert result['bullpen_innings_required'] == 0.0
+    # ... but stay visible as transparency (3 x 24 outs = 72 outs = 24.0 IP).
+    assert result['bulk_follower_outs'] == 72
+    assert result['bulk_follower_innings'] == 24.0
+    assert LIMITED_SAMPLE_LIMITATION in result['limitations']
     assert OPENER_BULK_LIMITATION in result['source_limitations']
 
 

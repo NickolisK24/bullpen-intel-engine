@@ -5,6 +5,7 @@ Internal diagnostic evidence only. This module does not render product copy,
 select stories, rank teams, alter observations, or infer causality.
 """
 
+from collections import defaultdict
 from datetime import date, timedelta
 
 from models.game_log import GameLog
@@ -29,11 +30,17 @@ from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows
 from services.bullpen_optionality_context import (
     build_bullpen_optionality_context,
+    build_league_clean_options_baseline,
     empty_bullpen_optionality_context,
 )
 from services.bullpen_population import usage_logs_by_pitcher
 from services.injury_context import build_injury_context, empty_injury_context
-from services.rotation_context import build_rotation_context
+from services.rotation_context import (
+    build_league_rotation_baseline,
+    build_rotation_context,
+    bullpen_coverage_baseline_read,
+    rotation_length_baseline_read,
+)
 from services.role_stability_context import (
     build_role_stability_context,
     empty_role_stability_context,
@@ -241,12 +248,21 @@ def _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches
     return 'mixed_demand'
 
 
+def _league_rotation_baseline(windows):
+    last = windows['last_7']
+    return build_league_rotation_baseline(
+        _league_logs(last['start_date'], last['end_date']),
+        reference_date=last['end_date'],
+    )
+
+
 def _rotation_context(last_logs, prev_logs, windows):
     all_logs = [*(last_logs or []), *(prev_logs or [])]
     layer1 = build_rotation_context(
         all_logs,
         reference_date=windows['last_7']['end_date'] if windows else None,
     )
+    league_baseline = _league_rotation_baseline(windows) if windows else None
     signal = _start_signal_fields(all_logs)
     last_starts = _starter_logs(last_logs)
     prev_starts = _starter_logs(prev_logs)
@@ -276,6 +292,8 @@ def _rotation_context(last_logs, prev_logs, windows):
         'rotation_games_analyzed_14d': layer1['games_analyzed_14d'],
         'rotation_games_excluded_14d': layer1['games_excluded_14d'],
         'rotation_early_bullpen_entry_games_14d': layer1['early_bullpen_entry_games_14d'],
+        'baseline_read': rotation_length_baseline_read(layer1['rotation_avg_ip_7d'], league_baseline),
+        'coverage_baseline_read': bullpen_coverage_baseline_read(layer1['bullpen_coverage_ip_7d'], league_baseline),
         'rotation_context_layer': layer1,
         **signal,
     }
@@ -302,6 +320,8 @@ def _empty_rotation_context(windows=None):
         'rotation_games_analyzed_14d': 0,
         'rotation_games_excluded_14d': 0,
         'rotation_early_bullpen_entry_games_14d': 0,
+        'baseline_read': rotation_length_baseline_read(None, None),
+        'coverage_baseline_read': bullpen_coverage_baseline_read(None, None),
         'rotation_context_layer': None,
         'start_classification_state': 'complete',
         'unknown_start_rows': 0,
@@ -384,6 +404,32 @@ def _optionality_records(team_id, reference_date):
     return current_availability_records(rows, reference_date=reference_date)
 
 
+def _league_clean_options_baseline(reference_date):
+    records = current_availability_records(
+        latest_fatigue_rows(),
+        reference_date=reference_date,
+    )
+    records_by_team = defaultdict(list)
+    pitcher_ids = []
+    for record in records:
+        pitcher = record.get('pitcher')
+        if pitcher is None or pitcher.team_id is None:
+            continue
+        records_by_team[pitcher.team_id].append(record)
+        pitcher_ids.append(pitcher.id)
+    logs_by_pitcher = usage_logs_by_pitcher(
+        pitcher_ids,
+        days=ACTIVE_WINDOW_DAYS,
+        include_stale=False,
+        reference_date=reference_date,
+    )
+    return build_league_clean_options_baseline(
+        records_by_team,
+        logs_by_pitcher=logs_by_pitcher,
+        reference_date=reference_date,
+    )
+
+
 def _bullpen_optionality_context(team_id, reference_date):
     records = _optionality_records(team_id, reference_date)
     pitcher_ids = [
@@ -397,10 +443,12 @@ def _bullpen_optionality_context(team_id, reference_date):
         include_stale=False,
         reference_date=reference_date,
     )
+    league_baseline = _league_clean_options_baseline(reference_date)
     return build_bullpen_optionality_context(
         records,
         logs_by_pitcher=logs_by_pitcher,
         reference_date=reference_date,
+        league_baseline=league_baseline,
     )
 
 

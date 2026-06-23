@@ -12,6 +12,13 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from services.availability_reference_date import product_current_date
+from services.baseline_distribution import build_distribution
+from services.baseline_engine import interpret_value
+from services.game_shape import (
+    SHAPE_BULLPEN_GAME,
+    SHAPE_OPENER_BULK_GAME,
+    game_shape_of,
+)
 from utils.games_started import RELIEF, START, games_started_state
 from utils.innings import log_innings_outs, outs_to_decimal_innings
 
@@ -23,6 +30,12 @@ ROTATION_CONTEXT_7D = 7
 ROTATION_CONTEXT_14D = 14
 EARLY_BULLPEN_ENTRY_OUTS = 15
 MIN_COMPLETE_TEAM_GAME_OUTS = 24
+
+# Game shapes excluded from rotation-depth averages and early-bullpen-entry. An
+# opener/bulk game is not a rotation start, so it must not drag starter depth or
+# read as a failed start. Bullpen games have no starter and are already excluded
+# from analysis; they are surfaced separately via the game-shape distribution.
+ROTATION_DEPTH_EXCLUDED_SHAPES = frozenset({SHAPE_OPENER_BULK_GAME})
 
 CURRENT_ASSIGNMENT_LIMITATION = (
     'Rotation context uses currently assigned pitchers because game logs do not yet store team-at-appearance.'
@@ -156,6 +169,8 @@ def _analyze_game(game_logs):
         'coverage_available': coverage_reason is None,
         'coverage_exclusion_reason': coverage_reason,
         'early_bullpen_entry': starter_outs < EARLY_BULLPEN_ENTRY_OUTS,
+        # Additive game-shape metadata only; it does not affect any calculation.
+        'game_shape': game_shape_of(game_logs),
     }, None
 
 
@@ -196,14 +211,20 @@ def build_rotation_context(logs, *, reference_date=None):
     grouped, rows_without_game_pk = _group_logs(rows, reference_date=ref)
     exclusion_reasons = Counter()
     coverage_exclusion_reasons = Counter()
+    game_shape_counts = Counter()
     analyzed = []
 
     for game_pk, game_logs in grouped.items():
         item, reason = _analyze_game(game_logs)
         if item is None:
             exclusion_reasons[reason] += 1
+            # Classify excluded games (e.g. bullpen games) too so the game-shape
+            # distribution is complete. This is metadata only and changes no
+            # existing calculation or which games are analyzed.
+            game_shape_counts[game_shape_of(game_logs)] += 1
             continue
         item['mlb_game_pk'] = game_pk
+        game_shape_counts[item['game_shape']] += 1
         analyzed.append(item)
         if item.get('coverage_exclusion_reason'):
             coverage_exclusion_reasons[item['coverage_exclusion_reason']] += 1
@@ -219,8 +240,20 @@ def build_rotation_context(logs, *, reference_date=None):
         if game['game_date'] is not None and window_14_start <= game['game_date'] <= ref
     ]
 
-    avg_7d = _average_ip(games_7d)
-    avg_14d = _average_ip(games_14d)
+    # Opener/bulk games are not rotation starts: exclude them from starter-depth
+    # averages and early-bullpen-entry so a short opener in front of a long bulk
+    # arm is not read as a failed rotation start. Coverage burden is unchanged.
+    rotation_games_7d = [
+        game for game in games_7d
+        if game.get('game_shape') not in ROTATION_DEPTH_EXCLUDED_SHAPES
+    ]
+    rotation_games_14d = [
+        game for game in games_14d
+        if game.get('game_shape') not in ROTATION_DEPTH_EXCLUDED_SHAPES
+    ]
+
+    avg_7d = _average_ip(rotation_games_7d)
+    avg_14d = _average_ip(rotation_games_14d)
     limitations = [CURRENT_ASSIGNMENT_LIMITATION, OPENER_BULK_LIMITATION]
     if exclusion_reasons or coverage_exclusion_reasons or rows_without_game_pk:
         limitations.append(INCOMPLETE_GAME_DATA_LIMITATION)
@@ -235,22 +268,110 @@ def build_rotation_context(logs, *, reference_date=None):
         'rotation_avg_ip_7d': avg_7d,
         'rotation_avg_ip_14d': avg_14d,
         'rotation_ip_trend': _trend(avg_7d, avg_14d),
-        'early_bullpen_entry_rate': _early_entry_rate(games_14d),
+        'early_bullpen_entry_rate': _early_entry_rate(rotation_games_14d),
         'bullpen_coverage_ip_7d': _coverage_ip(games_7d),
         'games_in_window_14d': len(grouped),
         'games_analyzed_7d': len(games_7d),
         'games_analyzed_14d': len(games_14d),
+        'rotation_starts_7d': len(rotation_games_7d),
+        'rotation_starts_14d': len(rotation_games_14d),
+        'opener_bulk_games_7d': sum(
+            1 for game in games_7d if game.get('game_shape') == SHAPE_OPENER_BULK_GAME
+        ),
+        'opener_bulk_games_14d': sum(
+            1 for game in games_14d if game.get('game_shape') == SHAPE_OPENER_BULK_GAME
+        ),
+        'bullpen_games_count': game_shape_counts.get(SHAPE_BULLPEN_GAME, 0),
         'games_excluded_14d': sum(exclusion_reasons.values()),
         'coverage_games_7d': sum(1 for game in games_7d if game.get('coverage_available')),
         'coverage_games_14d': sum(1 for game in games_14d if game.get('coverage_available')),
         'early_bullpen_entry_games_14d': sum(
-            1 for game in games_14d if game['early_bullpen_entry']
+            1 for game in rotation_games_14d if game['early_bullpen_entry']
         ),
         'excluded_game_reasons': dict(exclusion_reasons),
         'coverage_excluded_game_reasons': dict(coverage_exclusion_reasons),
+        'game_shape_distribution': dict(game_shape_counts),
         'rows_without_game_pk': rows_without_game_pk,
         'limitations': limitations,
     }
+
+
+ROTATION_LENGTH_BASELINE_METRIC = 'rotation_avg_ip_7d'
+BULLPEN_COVERAGE_BASELINE_METRIC = 'bullpen_coverage_ip_7d'
+
+
+def _team_id(log: Any):
+    pitcher = _value(log, 'pitcher')
+    return _value(pitcher, 'team_id') or _value(log, 'team_id')
+
+
+def build_league_rotation_baseline(logs, *, reference_date=None):
+    """Current 7-day-window league distribution of rotation_avg_ip_7d.
+
+    Groups raw league game logs by team and reuses ``build_rotation_context`` so
+    each team's rotation_avg_ip_7d is derived with the exact same starter-IP and
+    start-classification logic as the per-team story value (one value per team).
+    Teams without a usable 7-day rotation_avg_ip_7d are skipped, not counted low.
+    This is a dedicated rotation distribution: independent of dashboard.baselines,
+    the workload-concentration distribution, and the clean-options distribution.
+    """
+    by_team = defaultdict(list)
+    for log in logs or []:
+        team_id = _team_id(log)
+        if team_id is None:
+            continue
+        by_team[team_id].append(log)
+
+    values = []
+    coverage_values = []
+    for team_logs in by_team.values():
+        context = build_rotation_context(team_logs, reference_date=reference_date)
+        avg_7d = context.get('rotation_avg_ip_7d')
+        if avg_7d is not None:
+            values.append(avg_7d)
+        coverage = context.get('bullpen_coverage_ip_7d')
+        if coverage is not None:
+            coverage_values.append(coverage)
+
+    return {
+        'rotation_avg_ip_7d_distribution': build_distribution(values),
+        'bullpen_coverage_ip_7d_distribution': build_distribution(coverage_values),
+        'league_team_count': len(values),
+    }
+
+
+def _league_rotation_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('rotation_avg_ip_7d_distribution')
+    return None
+
+
+def rotation_length_baseline_read(avg_7d, league_baseline):
+    # Distribution-aware league read of the team's recent starter length. The
+    # shared baseline engine owns the interpretation; this only feeds it the team
+    # value and the current 7-day league distribution (longer starts are deeper).
+    return interpret_value(
+        ROTATION_LENGTH_BASELINE_METRIC,
+        avg_7d,
+        _league_rotation_distribution(league_baseline),
+    )
+
+
+def _league_coverage_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('bullpen_coverage_ip_7d_distribution')
+    return None
+
+
+def bullpen_coverage_baseline_read(coverage_ip, league_baseline):
+    # Distribution-aware league read of the team's recent bullpen-coverage burden.
+    # Separate from the rotation-length read; same dedicated 7-day league window.
+    # Higher coverage is more bullpen burden; the language layer assigns direction.
+    return interpret_value(
+        BULLPEN_COVERAGE_BASELINE_METRIC,
+        coverage_ip,
+        _league_coverage_distribution(league_baseline),
+    )
 
 
 __all__ = [
@@ -262,6 +383,11 @@ __all__ = [
     'OPENER_BULK_LIMITATION',
     'ROTATION_CONTEXT_7D',
     'ROTATION_CONTEXT_14D',
+    'BULLPEN_COVERAGE_BASELINE_METRIC',
+    'ROTATION_LENGTH_BASELINE_METRIC',
     'VERSION',
+    'build_league_rotation_baseline',
     'build_rotation_context',
+    'bullpen_coverage_baseline_read',
+    'rotation_length_baseline_read',
 ]

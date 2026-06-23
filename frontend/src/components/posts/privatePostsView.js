@@ -1,5 +1,3 @@
-import { getFourBeatStoryFeed } from '../stories/storiesFeedView'
-
 export const PRIVATE_POSTS_PATH = '/posts-bpen-7f3d9c'
 export const PRIVATE_POSTS_ROBOTS = 'noindex,nofollow,noarchive'
 export const DEFAULT_POSTABLE_TAKE_LIMIT = 3
@@ -77,6 +75,18 @@ const TEAM_MARKET_NAMES = {
   TEX: 'Texas',
   TOR: 'Toronto',
   WSH: 'Washington',
+}
+
+// Canonical story_type -> kicker/rule label. Mirrors the Stories canonical feed
+// adapter so Private Posts uses the same human-facing label per story type.
+const CANONICAL_KICKER_BY_STORY_TYPE = {
+  coverage_pressure: 'Carrying The Load',
+  sustainability_question: 'Same Few Arms',
+  depth_constraint: 'Thin Margin',
+  route_change: 'Route Change',
+  availability_depth: 'More Options',
+  trust_lane: 'Trust Lane',
+  bridge: 'Fragile Bridge',
 }
 
 function isObject(value) {
@@ -742,7 +752,7 @@ function humanTensionClaim(take) {
 
   return {
     hook: `${facts.market}'s bullpen has a specific read tonight.`,
-    meaning: `It is worth discussing because the board frames a real question, not because it proves what happens next.`,
+    meaning: `It is worth discussing because the board frames a real question, not because it settles what happens next.`,
     team: `${facts.market} fans, this is a bullpen-management question more than a prediction.`,
     linkedin: `The baseball read is simple: turn the board into one honest question, then stop before inventing a bigger story.`,
   }
@@ -1103,9 +1113,59 @@ export function buildPostableTake(story) {
   }
 }
 
+// Adapt the canonical story feed (dashboard.stories) into the shape
+// buildPostableTake consumes. Each PUBLISHABLE canonical story (story_available
+// === true with a non-null team_id) becomes one postable-source story; the
+// league_context card (no team_id) is excluded, and a missing/malformed feed
+// returns [].
+//
+// GAP: the canonical story feed does not carry the legacy four-beat `computed`
+// structured facts (availability/workload/season-ERA/clean-trust/high-risk
+// counts), so those structured facts are not available here. Takes are built
+// from canonical story content instead: the headline as the signal, the joined
+// canonical evidence beats as the evidence, story_type as the rule key, plus
+// continuity. extractStoryFacts already tolerates a missing `computed` (it
+// returns its empty-but-valid shape), so nothing downstream crashes — the
+// resulting takes simply carry no structured numeric facts.
+export function canonicalPostableStories(dashboard) {
+  const feed = dashboard?.stories
+  const items = isObject(feed) && Array.isArray(feed.items) ? feed.items : []
+  return items
+    .filter(item => isObject(item) && item.story_available === true && item.team_id != null)
+    .map(item => {
+      const kicker = CANONICAL_KICKER_BY_STORY_TYPE[item.story_type] || 'Bullpen Story'
+      const evidence = Array.isArray(item.evidence)
+        ? item.evidence.map(part => cleanText(part?.text)).filter(Boolean).join(' ')
+        : ''
+      return {
+        teamId: item.team_id,
+        team_id: item.team_id,
+        teamName: item.team_name,
+        team_name: item.team_name,
+        abbr: item.team_abbreviation,
+        team_abbreviation: item.team_abbreviation,
+        story_id: item.story_id,
+        rule_key: item.story_type,
+        rule_label: kicker,
+        kicker,
+        title: item.headline,
+        body: item.narrative,
+        narrative: item.narrative,
+        tone: item.tone,
+        category: item.category,
+        continuity: item.continuity || null,
+        beats: [
+          { key: 'signal', text: item.headline },
+          { key: 'evidence', text: evidence || cleanText(item.narrative) },
+        ],
+        source: 'canonical',
+      }
+    })
+}
+
 export function getPrivatePostTakes(dashboard, options = {}) {
   const limit = Math.max(1, finiteNumber(options.limit, DEFAULT_POSTABLE_TAKE_LIMIT))
-  return getFourBeatStoryFeed(dashboard).items
+  return canonicalPostableStories(dashboard)
     .map(buildPostableTake)
     .filter(Boolean)
     .sort((a, b) => (

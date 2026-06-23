@@ -1,7 +1,6 @@
 import { EmptyState } from '../../UI'
 import BullpenStressSummary from './BullpenStressSummary'
 import BullpenContextSummary from './BullpenContextSummary'
-import TeamBullpenStoryPanel from './TeamBullpenStoryPanel'
 import {
   getBoardCardView,
   getBoardFreshnessView,
@@ -430,13 +429,13 @@ function BoardGroup({ group, freshness, onViewDetails }) {
   )
 }
 
-// `showStoryPanel` mounts Today's Bullpen Story between the context strips and
-// the board. Tonight's Board (the homepage destination) opts in; embedded uses
-// like the side-by-side comparison stay as they are.
+// `compact` renders the board strips (stress + context snapshot) in their compact
+// form for Tonight's Board, where the canonical StoryCard sits above the board.
+// Embedded uses like the side-by-side comparison keep the full strips.
 export default function BullpenBoardView({
   board,
   onSelectPitcher,
-  showStoryPanel = false,
+  compact = false,
   emptyState = null,
 }) {
   const groups = getBoardGroups(board)
@@ -448,7 +447,6 @@ export default function BullpenBoardView({
     <div>
       <FreshnessBanner freshness={board?.freshness} />
       <RosterStatusBanner summary={board?.roster_status} />
-      {showStoryPanel && <TeamBullpenStoryPanel board={board} />}
 
       <div className="mb-4">
         <h2 className="font-display text-xl tracking-wide text-chalk100">
@@ -460,9 +458,9 @@ export default function BullpenBoardView({
         </p>
       </div>
 
-      <BullpenStressSummary stress={board?.stress} compact={showStoryPanel} />
+      <BullpenStressSummary stress={board?.stress} compact={compact} />
 
-      <BullpenContextSummary board={board} showHealthSummary={!hasStress} compactSnapshot={showStoryPanel} />
+      <BullpenContextSummary board={board} showHealthSummary={!hasStress} compactSnapshot={compact} />
 
       {totals.isEmpty ? (
         <EmptyState

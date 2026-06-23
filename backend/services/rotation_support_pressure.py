@@ -14,6 +14,12 @@ from typing import Any
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability_reference_date import product_current_date
+from services.game_shape import (
+    BULK_FOLLOWER_MIN_OUTS,
+    SHAPE_BULLPEN_GAME,
+    SHAPE_OPENER_BULK_GAME,
+    game_shape_of,
+)
 from utils.games_started import RELIEF, START, games_started_state
 from utils.innings import log_innings_outs, outs_to_decimal_innings
 
@@ -27,6 +33,13 @@ SHORT_START_OUTS = 15
 MIN_ANALYZED_GAMES = 3
 MIN_COMPLETE_TEAM_GAME_OUTS = 24
 MATERIAL_EXCLUDED_GAME_SHARE = 0.25
+
+# Game-shape buckets for a classified team game (see services.game_shape). Only
+# rotation starts drive starter depth, short-start rate, and rotation-driven
+# bullpen burden; opener/bulk and bullpen games are tracked separately.
+KIND_ROTATION_START = 'rotation_start'
+KIND_OPENER_BULK = 'opener_bulk_game'
+KIND_BULLPEN_GAME = 'bullpen_game'
 
 STATUS_SUPPORTIVE = 'supportive'
 STATUS_NEUTRAL = 'neutral'
@@ -61,7 +74,9 @@ CURRENT_ASSIGNMENT_LIMITATION = (
     'Rotation support uses currently assigned pitchers because game logs do not yet store team-at-appearance.'
 )
 OPENER_BULK_LIMITATION = (
-    'Credited starters are used as recorded; opener/bulk-reliever roles are not separately inferred.'
+    'Opener/bulk and bullpen games are classified by game shape: an opener is not '
+    'counted as a rotation start, and bulk-follower innings are tracked separately '
+    'rather than as rotation-driven bullpen pressure.'
 )
 SOURCE_LIMITATIONS = [
     CURRENT_ASSIGNMENT_LIMITATION,
@@ -73,16 +88,29 @@ DEFINITIONS = {
         'Distinct games represented by currently assigned pitchers in the analysis window.'
     ),
     'games_analyzed': (
-        'Games with usable starter/bullpen split data. Excluded games are not counted here.'
+        'Rotation starts (normal or short) with usable starter/bullpen split data. '
+        'Opener/bulk and bullpen games are tracked separately; excluded games are not counted here.'
     ),
     'games_excluded': (
         'Games in the window excluded because starter/relief workload data is incomplete or ambiguous.'
     ),
+    'opener_bulk_games': (
+        'Games classified as opener/bulk by game shape. The opener is not counted as a rotation '
+        'start, and the bulk follower is separated from rotation-driven bullpen burden.'
+    ),
+    'bullpen_games': (
+        'Games with no credited starter, classified as bullpen games by game shape and tracked '
+        'separately rather than excluded as incomplete or ambiguous data.'
+    ),
+    'bulk_follower_outs': (
+        'Outs recorded by bulk-length followers in opener/bulk games, kept visible but separated '
+        'from rotation-driven bullpen pressure.'
+    ),
     'starter_outs': (
-        'Outs recorded by the pitcher with games_started == 1 in analyzed team games.'
+        'Outs recorded by the pitcher with games_started == 1 in analyzed rotation starts.'
     ),
     'bullpen_outs_required': (
-        'Relief outs recorded by pitchers with games_started == 0 in analyzed team games.'
+        'Relief outs recorded by pitchers with games_started == 0 in analyzed rotation starts.'
     ),
     'short_start_count': (
         'Analyzed starts where the starter completed fewer than 15 outs, or five innings.'
@@ -95,7 +123,8 @@ DEFINITIONS = {
 METHODOLOGY_NOTES = [
     'Status thresholds are reasoned defaults for explanation, not validated predictive thresholds.',
     'Game logs do not store team-at-appearance, so this read groups logs by current pitcher team assignment.',
-    'Opener and bulk-reliever roles are not separately inferred from the credited starter flag.',
+    'Opener/bulk and bullpen games are classified by game shape; openers are excluded from '
+    'starter-depth and short-start reads, and bulk-follower innings are tracked separately.',
 ]
 
 
@@ -194,7 +223,25 @@ def _logs_by_game(logs, *, reference_date=None, window_days=DEFAULT_WINDOW_DAYS)
     return grouped, rows_without_game_pk, window_start, ref
 
 
-def _analyzed_game(game_logs):
+def _bulk_follower_outs(relief_logs):
+    """Outs thrown by bulk-length follower(s) within a confirmed opener/bulk game.
+
+    The game has already been classified ``OPENER_BULK_GAME`` by services.game_shape;
+    the bulk arm(s) are the relief appearance(s) covering at least BULK_FOLLOWER_MIN_OUTS,
+    matching the classifier's own definition (no second classifier).
+    """
+    return sum(outs for _log, outs in relief_logs if outs >= BULK_FOLLOWER_MIN_OUTS)
+
+
+def _classify_team_game(game_logs):
+    """Classify one team-game for Rotation Support Pressure.
+
+    Returns ``(record, reason)``. ``record`` carries a ``kind`` describing how the
+    game contributes; ``reason`` is set only for genuine data-quality exclusions
+    (missing innings, ambiguous splits, incomplete outs). Game Shape decides
+    routing so opener/bulk and bullpen games no longer distort starter depth,
+    short-start rate, or rotation-driven bullpen burden.
+    """
     start_logs = []
     relief_logs = []
     unknown_logs = []
@@ -213,20 +260,54 @@ def _analyzed_game(game_logs):
         else:
             unknown_logs.append((log, outs))
 
+    # Genuine data-quality exclusions: real missing/ambiguous data, not a game shape.
     if missing_innings_rows > 0:
         return None, 'missing_innings'
     if unknown_logs:
         return None, 'unknown_split'
+
+    shape = game_shape_of(game_logs)
+    relief_outs = sum(outs for _log, outs in relief_logs)
+
+    # Bullpen game: no credited starter by shape. Track separately rather than
+    # excluding as generic missing data, so a planned bullpen game is not read as
+    # incomplete or ambiguous coverage.
+    if shape == SHAPE_BULLPEN_GAME:
+        if relief_outs < MIN_COMPLETE_TEAM_GAME_OUTS:
+            return None, 'incomplete_outs'
+        return {
+            'kind': KIND_BULLPEN_GAME,
+            'shape': shape,
+            'bullpen_game_outs': relief_outs,
+            'total_known_outs': relief_outs,
+        }, None
+
+    # A rotation read needs exactly one credited starter.
     if len(start_logs) != 1:
         return None, 'multiple_starters' if len(start_logs) > 1 else 'no_starter'
 
     starter_outs = start_logs[0][1]
-    relief_outs = sum(outs for _log, outs in relief_logs)
     known_outs = starter_outs + relief_outs
     if known_outs < MIN_COMPLETE_TEAM_GAME_OUTS:
         return None, 'incomplete_outs'
 
+    # Opener/bulk game: the credited starter is an opener, not a rotation start.
+    # Keep it out of starter-depth and short-start reads; the bulk follower's
+    # innings stay visible as transparency but are not rotation-driven pressure.
+    if shape == SHAPE_OPENER_BULK_GAME:
+        return {
+            'kind': KIND_OPENER_BULK,
+            'shape': shape,
+            'opener_outs': starter_outs,
+            'bulk_follower_outs': _bulk_follower_outs(relief_logs),
+            'total_known_outs': known_outs,
+        }, None
+
+    # NORMAL_START / SHORT_START: a genuine rotation start. Behavior is unchanged
+    # from the pre-Game-Shape read.
     return {
+        'kind': KIND_ROTATION_START,
+        'shape': shape,
         'starter_outs': starter_outs,
         'bullpen_outs_required': relief_outs,
         'total_known_outs': known_outs,
@@ -293,21 +374,39 @@ def build_team_rotation_support_pressure(
         window_days=window_days,
     )
     exclusion_reasons = Counter()
-    analyzed_games = []
+    shape_counts = Counter()
+    rotation_games = []
+    opener_bulk_records = []
+    bullpen_game_records = []
 
     for _game_pk, game_logs in grouped.items():
-        item, reason = _analyzed_game(game_logs)
+        item, reason = _classify_team_game(game_logs)
         if item is None:
             exclusion_reasons[reason] += 1
             continue
-        analyzed_games.append(item)
+        shape_counts[item['shape']] += 1
+        kind = item['kind']
+        if kind == KIND_ROTATION_START:
+            rotation_games.append(item)
+        elif kind == KIND_OPENER_BULK:
+            opener_bulk_records.append(item)
+        elif kind == KIND_BULLPEN_GAME:
+            bullpen_game_records.append(item)
 
-    games_analyzed = len(analyzed_games)
+    # Only rotation starts drive starter depth, short-start rate, and rotation-driven
+    # bullpen burden. Opener/bulk and bullpen games are tracked separately so a team
+    # that uses openers is not read as having short-start rotation pressure.
+    games_analyzed = len(rotation_games)
     games_in_window = len(grouped)
     games_excluded = sum(exclusion_reasons.values())
-    starter_outs = sum(game['starter_outs'] for game in analyzed_games)
-    bullpen_outs = sum(game['bullpen_outs_required'] for game in analyzed_games)
-    short_start_count = sum(1 for game in analyzed_games if game['short_start'])
+    opener_bulk_games = len(opener_bulk_records)
+    bullpen_games = len(bullpen_game_records)
+
+    starter_outs = sum(game['starter_outs'] for game in rotation_games)
+    bullpen_outs = sum(game['bullpen_outs_required'] for game in rotation_games)
+    short_start_count = sum(1 for game in rotation_games if game['short_start'])
+    bulk_follower_outs = sum(game['bulk_follower_outs'] for game in opener_bulk_records)
+    bullpen_game_outs = sum(game['bullpen_game_outs'] for game in bullpen_game_records)
 
     starter_avg_outs = starter_outs / games_analyzed if games_analyzed else 0
     starter_avg_innings = _round_innings_value(starter_avg_outs, 2) if games_analyzed else 0.0
@@ -346,6 +445,8 @@ def build_team_rotation_support_pressure(
         'games_in_window': games_in_window,
         'games_analyzed': games_analyzed,
         'games_excluded': games_excluded,
+        'opener_bulk_games': opener_bulk_games,
+        'bullpen_games': bullpen_games,
         'starter_outs': starter_outs,
         'starter_innings': _round_innings(starter_outs, 1),
         'starter_avg_outs': round(starter_avg_outs, 2),
@@ -359,6 +460,11 @@ def build_team_rotation_support_pressure(
         ),
         'short_start_count': short_start_count,
         'short_start_rate': short_start_rate,
+        'bulk_follower_outs': bulk_follower_outs,
+        'bulk_follower_innings': _round_innings(bulk_follower_outs, 1),
+        'bullpen_game_outs': bullpen_game_outs,
+        'bullpen_game_innings': _round_innings(bullpen_game_outs, 1),
+        'game_shape_distribution': dict(shape_counts),
         'excluded_game_reasons': dict(exclusion_reasons),
         'rows_without_game_pk': rows_without_game_pk,
         'definitions': dict(DEFINITIONS),

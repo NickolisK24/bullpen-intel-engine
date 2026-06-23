@@ -254,10 +254,14 @@ def test_rotation_context_keeps_starter_and_bullpen_innings_separate_for_openers
     rotation = build_rotation_context(logs, reference_date=REF)
 
     assert rotation['games_analyzed_7d'] == 2
-    assert rotation['rotation_avg_ip_7d'] == 3.5
-    assert rotation['early_bullpen_entry_rate'] == 50.0
+    # The opener/bulk game is excluded from rotation depth and early-entry; only
+    # the real start feeds the average. Starter and bullpen innings stay separate.
+    assert rotation['rotation_avg_ip_7d'] == 6.0
+    assert rotation['early_bullpen_entry_rate'] == 0.0
+    assert rotation['rotation_starts_7d'] == 1
+    assert rotation['opener_bulk_games_7d'] == 1
     assert rotation['bullpen_coverage_ip_7d'] == 5.5
-    assert rotation['early_bullpen_entry_games_14d'] == 1
+    assert rotation['early_bullpen_entry_games_14d'] == 0
 
 
 def test_optionality_respects_current_availability_and_injury_keeps_active_relief_out_of_inactive_depth():

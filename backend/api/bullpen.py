@@ -75,17 +75,12 @@ from services.bullpen_context import (
     build_team_bullpen_context,
     sample_bullpen_context_team_ids,
 )
-from services.bullpen_context_story import build_dashboard_story_context
 from services.bullpen_population import (
     eligible_bullpen_pitcher_contexts,
     population_diagnostic,
 )
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
-from services.four_beat_stories import (
-    build_four_beat_story_feed,
-    four_beat_stories_enabled,
-)
 from services.injury_il_context import build_injury_il_context_payload
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
@@ -93,13 +88,13 @@ from services.narrative_memory import (
     build_team_pitcher_usage_trend_continuity,
     build_team_workload_concentration_continuity,
 )
-from services.narrative_memory_story import build_dashboard_story_continuity
 from services.pitcher_role import ROLE_KEYS
 from services.pitcher_role_authority import author_role_read_labels, role_logs_by_pitcher
-from services.story_continuity import (
-    LOOKBACK_DAYS as STORY_CONTINUITY_LOOKBACK_DAYS,
-    build_story_continuity_payload,
+from services.story_intelligence_service_v1 import (
+    build_team_story as build_story_intelligence_team_story,
 )
+from services.story_four_beat_interpreter_v1 import public_beat_for_observation
+from services.story_feed import build_canonical_story_feed
 from services.bullpen_role_change_detection import (
     build_role_change_detection_payload,
     has_role_change_detection_inputs,
@@ -111,8 +106,14 @@ from services.roster_status import (
     classify_roster_status,
 )
 from services.roster_status_audit import with_recent_inactive_roster_audit
+from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
-from services.workload_concentration import summarize_recent_relief_workload
+from services.workload_concentration import (
+    WORKLOAD_CONCENTRATION_BASELINE_FAMILY,
+    build_workload_concentration_baselines,
+    league_relief_workload_by_team,
+    summarize_recent_relief_workload,
+)
 from services.mlb_api import MlbApiFetchError, mlb_client
 from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
@@ -1710,6 +1711,71 @@ def get_team_changes(team_id):
     return jsonify(build_team_changes_payload(team_id, freshness=freshness))
 
 
+def _story_as_of_date_from_request():
+    raw = request.args.get('as_of_date')
+    if raw in (None, ''):
+        return None, None
+    parsed = parse_reference_date(raw)
+    if parsed is None:
+        return None, QueryParamError(
+            'as_of_date',
+            'as_of_date must be an ISO date in YYYY-MM-DD format.',
+        )
+    return parsed, None
+
+
+def _story_api_payload(service_payload):
+    payload = service_payload or {}
+    written = payload.get('written_story') or {}
+    selected = payload.get('selected_observation') or {}
+    frame = payload.get('construction_frame') or {}
+    internal_story_type = selected.get('type') or frame.get('observation_type')
+    story_type = (
+        payload.get('story_type')
+        or (payload.get('public_story_beat') or {}).get('story_type')
+        or public_beat_for_observation(internal_story_type, frame=frame)
+    )
+    story_available = bool(payload.get('story_available') is True)
+    return {
+        'capability': 'story_intelligence_api_v1',
+        'contract': 'story_intelligence_api_v1',
+        'contract_state': 'available' if story_available else 'neutral',
+        'team_id': payload.get('team_id'),
+        'team_name': payload.get('team_name'),
+        'team_abbreviation': payload.get('team_abbreviation'),
+        'as_of_date': payload.get('as_of_date'),
+        'state': payload.get('state'),
+        'story_available': story_available,
+        'neutral_reason': payload.get('neutral_reason'),
+        'story_type': story_type,
+        'headline': written.get('headline'),
+        'observation': written.get('observation_paragraph'),
+        'baseline': written.get('baseline_paragraph'),
+        'cause': written.get('cause_paragraph'),
+        'constraint': written.get('constraint_paragraph'),
+        'freshness': payload.get('freshness') or {},
+        'trust_metadata': payload.get('trust_metadata') or {},
+        'supporting_context': payload.get('supporting_context') or {},
+        'selected_observation': selected or None,
+        'construction_frame': frame or None,
+        'limitations': list(payload.get('limitations') or []),
+    }
+
+
+@bullpen_bp.route('/teams/<int:team_id>/story', methods=['GET'])
+def get_team_story(team_id):
+    if team_id < 1:
+        return query_param_error_response(
+            QueryParamError('team_id', 'team_id must be at least 1.')
+        )
+    as_of_date, error = _story_as_of_date_from_request()
+    if error:
+        return query_param_error_response(error)
+    return jsonify(_story_api_payload(
+        build_story_intelligence_team_story(team_id, as_of_date=as_of_date)
+    ))
+
+
 @bullpen_bp.route('/teams/compare', methods=['GET'])
 def compare_team_bullpens():
     """
@@ -1798,17 +1864,66 @@ def _max_data_through(results):
     return max(dates) if dates else None
 
 
-def _dashboard_continuity_team_ids(landscape):
-    team_ids = []
+def _canonical_story_team_descriptors(landscape):
+    """Ordered team descriptors for the canonical story feed.
+
+    Built from the landscape buckets (constrained, then monitoring, then
+    available), de-duplicated in that priority order.
+    """
+    descriptors = []
     seen = set()
+
     for key in ('constrained_bullpens', 'monitoring_concentration', 'available_bullpens'):
         for entry in (landscape or {}).get(key) or []:
             team_id = entry.get('team_id')
             if team_id is None or team_id in seen:
                 continue
             seen.add(team_id)
-            team_ids.append(team_id)
-    return team_ids
+            descriptors.append({
+                'team_id': team_id,
+                'team_name': entry.get('team_name'),
+                'team_abbreviation': entry.get('team_abbreviation'),
+            })
+    return descriptors
+
+
+def _canonical_league_signal(landscape, availability_records):
+    """League-wide availability counts for the canonical feed's league context.
+
+    Counts come from the already-built landscape buckets and the classified
+    availability records; no new computation or day-over-day trend is invented.
+    """
+    landscape = landscape or {}
+    team_ids = set()
+    for record in availability_records or []:
+        pitcher = record['pitcher'] if isinstance(record, dict) and 'pitcher' in record else None
+        team_id = getattr(pitcher, 'team_id', None)
+        if team_id is not None:
+            team_ids.add(team_id)
+    return {
+        'team_count': len(team_ids),
+        'constrained_team_count': len(landscape.get('constrained_bullpens') or []),
+        'available_team_count': len(landscape.get('available_bullpens') or []),
+        'monitoring_team_count': len(landscape.get('monitoring_concentration') or []),
+        'availability_trend': None,
+    }
+
+
+def _canonical_prior_story_items(previous_payload):
+    """Prior snapshot's canonical story items, the baseline for continuity.
+
+    Returns an empty list when the prior snapshot predates the canonical feed,
+    so continuity falls back to a truthful "no prior story" read.
+    """
+    stories = (previous_payload or {}).get('stories') or {}
+    items = stories.get('items')
+    return items if isinstance(items, list) else []
+
+
+def _canonical_prior_league_context(previous_payload):
+    stories = (previous_payload or {}).get('stories') or {}
+    context = stories.get('league_context')
+    return context if isinstance(context, dict) else None
 
 
 def _diagnostic_team_exists(team_id):
@@ -2217,8 +2332,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         reference_date=reference_date,
         freshness=freshness,
     )
-    continuity = build_dashboard_story_continuity(_dashboard_continuity_team_ids(landscape))
-    context_support = build_dashboard_story_context(_dashboard_continuity_team_ids(landscape))
     injury_il_context = build_injury_il_context_payload(
         pitchers=[pitcher for _score, pitcher in latest_rows],
         availability_records=availability_records,
@@ -2271,6 +2384,24 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'scored_pitcher_inventory': inventory_summary,
     }
 
+    # League-wide baseline distributions (Baseline Intelligence infrastructure).
+    # Built from the league-wide records and relief logs already in hand; this is
+    # backend-only and is not consumed by any UI or story surface yet.
+    baseline_team_pitcher_ids = {}
+    for record in availability_records:
+        record_pitcher = record['pitcher']
+        record_team_id = getattr(record_pitcher, 'team_id', None)
+        if record_team_id is None:
+            continue
+        baseline_team_pitcher_ids.setdefault(int(record_team_id), []).append(record_pitcher.id)
+    baselines = build_baseline_payload({
+        WORKLOAD_CONCENTRATION_BASELINE_FAMILY: build_workload_concentration_baselines(
+            league_relief_workload_by_team(
+                baseline_team_pitcher_ids, logs_by_pitcher, reference_date,
+            )
+        ),
+    })
+
     payload = {
         'capability': 'bullpen_dashboard',
         'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -2289,26 +2420,15 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
         'rotation_support_pressure': rotation_support_pressure,
         'bullpen_stability': bullpen_stability,
         'bullpen_environment': bullpen_environment,
-        'continuity': continuity,
-        'story_context': context_support,
         'season_era': season_era,
         'freshness': freshness,
         'availability_summary': summary,
         'scored_pitcher_inventory': inventory_summary,
         'stats_overview': stats_overview,
+        'baselines': baselines,
     }
-    if four_beat_stories_enabled(current_app.config):
-        payload['four_beat_stories'] = build_four_beat_story_feed(
-            availability_records=availability_records,
-            logs_by_pitcher=logs_by_pitcher,
-            reference_date=reference_date,
-            freshness=freshness,
-            season_era=season_era,
-            capacity_by_team=capacity_by_team,
-            rotation_support_by_team=rotation_support_by_team,
-            bullpen_stability_by_team=bullpen_stability_by_team,
-            bullpen_environment_by_team=bullpen_environment_by_team,
-        )
+    # Prior dashboard snapshot — the comparison baseline for canonical story
+    # continuity and the "what changed" surfaces. Fetched once and reused below.
     data_through = parse_reference_date(
         freshness.get('data_through')
         or freshness.get('latest_workload_date')
@@ -2316,6 +2436,19 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
     previous_data_through = _dashboard_payload_data_through(previous_payload)
+
+    # Canonical story feed (additive). Wraps Story Intelligence V1 per team into
+    # the forward-facing canonical contract, with continuity keyed to the prior
+    # snapshot's canonical stories. Legacy story fields above are untouched.
+    payload['stories'] = build_canonical_story_feed(
+        _canonical_story_team_descriptors(landscape),
+        as_of_date=reference_date,
+        story_builder=build_story_intelligence_team_story,
+        freshness=freshness,
+        league_signal=_canonical_league_signal(landscape, availability_records),
+        prior_stories=_canonical_prior_story_items(previous_payload),
+        prior_league_context=_canonical_prior_league_context(previous_payload),
+    )
     payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
         data_through,
         previous_data_through,
@@ -2335,17 +2468,6 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     if changes['items']:
         payload['what_changed_since_yesterday'] = changes
-
-    recent_snapshots = dashboard_snapshot_service.get_recent_dashboard_snapshots_before(
-        data_through,
-        lookback_days=STORY_CONTINUITY_LOOKBACK_DAYS,
-    )
-    story_continuity = build_story_continuity_payload(
-        payload,
-        [snapshot.payload for snapshot in recent_snapshots],
-    )
-    if story_continuity['items']:
-        payload['story_continuity'] = story_continuity
 
     return payload
 
@@ -2426,20 +2548,6 @@ def _dashboard_snapshot_unavailable_payload(reason):
             'total': 0,
         },
         'landscape': {},
-        'continuity': {
-            'capability': 'bullpen_continuity_v1',
-            'teams': {},
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
-        'story_context': {
-            'capability': 'bullpen_context_story_v1',
-            'teams': {},
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
         'what_changed_since_yesterday': {
             'capability': 'what_changed_since_yesterday_public_v1',
             'ranking_applied': False,
@@ -2454,17 +2562,6 @@ def _dashboard_snapshot_unavailable_payload(reason):
             },
             'items': [],
             'item_count': 0,
-            'limitations': [
-                'Dashboard snapshot is unavailable; production live fallback is disabled.',
-            ],
-        },
-        'story_continuity': {
-            'capability': 'homepage_story_continuity_v1',
-            'ranking_applied': False,
-            'selection_made': False,
-            'current_data_through': None,
-            'lookback_days': STORY_CONTINUITY_LOOKBACK_DAYS,
-            'items': [],
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],

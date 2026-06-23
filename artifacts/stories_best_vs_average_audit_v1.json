@@ -1,0 +1,205 @@
+{
+  "artifact": "stories_best_vs_average_audit_v1",
+  "created_at": "2026-06-21",
+  "source": "local /stories feed via build_bullpen_dashboard_payload with AUTO_SYNC=false",
+  "objective": "Compare the strongest real stories against average and weak executions, then polish weaker archetype wording without changing scoring or context calculations.",
+  "review_scope": {
+    "pre_fix_reviewed_story_count": 9,
+    "post_fix_published_story_count": 9,
+    "reviewed_current_feed": true,
+    "strong_reference_examples": ["Texas Rangers", "Miami Marlins", "Detroit Tigers"],
+    "calculation_layers_modified": {
+      "scoring": false,
+      "fatigue": false,
+      "availability": false,
+      "trust": false,
+      "context_layer_formulas": false
+    }
+  },
+  "beat_distribution": {
+    "before": {
+      "sustainability_question": 3,
+      "pressure_distribution": 6
+    },
+    "after": {
+      "sustainability_question": 3,
+      "pressure_distribution": 6
+    }
+  },
+  "quality_bucket_counts_before": {
+    "strong": 3,
+    "average": 3,
+    "weak": 3
+  },
+  "flagged_issue_counts_before": {
+    "weak_protagonist": 4,
+    "abstract_wording": 3,
+    "generic_wording": 4,
+    "structural_explanation_only": 3,
+    "weak_forward_route": 2,
+    "unclear_baseball_takeaway": 2
+  },
+  "reviewed_stories": [
+    {
+      "team": "Detroit Tigers",
+      "beat": "sustainability_question",
+      "evidence_family": "run_prevention_stress",
+      "quality_bucket": "strong",
+      "why": "The story creates tension between strong run prevention and a heavier workload, then gives the reader named arms to attach the tension to.",
+      "flag_categories": ["names present", "cause present", "baseline present", "strong protagonist", "baseball insight present", "curiosity present"],
+      "original_title": "Detroit Tigers' results remain strong, but the workload is getting heavier.",
+      "original_narrative": "Detroit Tigers' results remain strong, but the workload is getting heavier. Kyle Finnegan, Will Vest, and Tyler Holton have kept Detroit Tigers' run prevention strong with a 1.83 ERA, but the recent workload is still 22.1 pitches for each reliever used recently. The ERA is carrying a steadier public read than the recent workload shape deserves.",
+      "post_fix_title": "Detroit Tigers' results remain strong, but the workload is getting heavier.",
+      "post_fix_status": "retained"
+    },
+    {
+      "team": "Los Angeles Angels",
+      "beat": "sustainability_question",
+      "evidence_family": "trust_shape",
+      "quality_bucket": "weak",
+      "why": "The original title was abstract and the body used internal-sounding relief-read language, so the named arms did not become the reason to stop scrolling.",
+      "flag_categories": ["names present", "cause present", "baseline present", "weak protagonist", "abstract wording", "generic wording"],
+      "original_title": "Los Angeles Angels have less room behind the trusted late plan.",
+      "original_narrative": "Los Angeles Angels have less room behind the trusted late plan than the roster sheet first suggests. Ryan Zeferjahn, Kirby Yates, and Chase Silseth are carrying the named part of Los Angeles Angels' relief read while only 0 trusted late-inning options are available. That leaves fewer comfortable pivots if the game needs one more covered inning before Ryan Zeferjahn and Kirby Yates.",
+      "post_fix_title": "Ryan Zeferjahn and Kirby Yates are the pressure point before Los Angeles Angels' late bridge settles.",
+      "post_fix_status": "improved"
+    },
+    {
+      "team": "Miami Marlins",
+      "beat": "sustainability_question",
+      "evidence_family": "run_prevention_stress",
+      "quality_bucket": "strong",
+      "why": "The title creates curiosity, the evidence names the arms carrying the ERA, and the close ties the next tight inning back to the same pocket.",
+      "flag_categories": ["names present", "cause present", "baseline present", "forward route present", "strong protagonist", "baseball insight present", "curiosity present"],
+      "original_title": "The bullpen is getting pulled into the game earlier than usual.",
+      "original_narrative": "The bullpen is getting pulled into the game earlier than usual. Miami Marlins' 2.77 bullpen ERA still leans heavily on Michael Petersen, John King, and Cade Gibson, with recent usage at 32.7 pitches for each reliever used recently. The next tight inning still points back toward Michael Petersen and John King rather than a wider group.",
+      "post_fix_title": "The bullpen is getting pulled into the game earlier than usual.",
+      "post_fix_status": "retained"
+    },
+    {
+      "team": "Cleveland Guardians",
+      "beat": "pressure_distribution",
+      "evidence_family": "flexibility",
+      "quality_bucket": "weak",
+      "why": "The original version explained structure instead of creating a baseball takeaway, repeated broad-spread language, and had a weak team-level protagonist.",
+      "flag_categories": ["names present", "baseline present", "forward route present", "weak protagonist", "generic wording", "structural explanation only"],
+      "original_title": "Cleveland Guardians is not boxed into one relief lane.",
+      "original_narrative": "The work is spread enough for Cleveland Guardians to keep different relief hands in play. Recent Cleveland Guardians bullpen work has reached 8 relievers while Hunter Gaddis, Matt Festa, and Shawn Armstrong remain part of an available group of 7. The workload is broad enough to keep different hands in play.",
+      "post_fix_title": "Hunter Gaddis and Matt Festa keep Cleveland Guardians from narrowing to one relief lane.",
+      "post_fix_status": "improved"
+    },
+    {
+      "team": "Baltimore Orioles",
+      "beat": "pressure_distribution",
+      "evidence_family": "trust_shape",
+      "quality_bucket": "average",
+      "why": "The original had a useful constraint but leaned on generic bridge language and internal-sounding relief-read phrasing.",
+      "flag_categories": ["names present", "baseline present", "forward route present", "weak protagonist", "abstract wording"],
+      "original_title": "Baltimore Orioles' late bridge is narrow tonight.",
+      "original_narrative": "Baltimore Orioles' bridge into the late innings is narrower than the roster sheet first suggests. Ryan Helsley, Tyler Wells, and Yennier Cano are carrying the named part of Baltimore Orioles' relief read while only 0 trusted late-inning options are available. That leaves fewer comfortable pivots if the game needs one more covered inning before Ryan Helsley and Tyler Wells.",
+      "post_fix_title": "Ryan Helsley and Tyler Wells are the pressure point in a thin late bridge.",
+      "post_fix_status": "improved"
+    },
+    {
+      "team": "Kansas City Royals",
+      "beat": "pressure_distribution",
+      "evidence_family": "flexibility",
+      "quality_bucket": "weak",
+      "why": "The title was the clearest weak example: correct state, little curiosity, and a generic depth summary before the names arrived.",
+      "flag_categories": ["names present", "baseline present", "weak protagonist", "generic wording", "structural explanation only", "unclear baseball takeaway"],
+      "original_title": "Kansas City Royals still have multiple ways to cover a close game.",
+      "original_narrative": "Kansas City Royals still have enough available depth to avoid one narrow relief route. Kansas City Royals have spread recent bullpen work across 8 relievers and still have 7 of 9 relievers available, led by Beck Way, Daniel Lynch IV, and Connor Seabold. That leaves the staff with room to cover a tight inning without forcing one lane.",
+      "post_fix_title": "Beck Way and Daniel Lynch IV give Kansas City Royals more than one answer if the game tightens.",
+      "post_fix_status": "improved"
+    },
+    {
+      "team": "Houston Astros",
+      "beat": "pressure_distribution",
+      "evidence_family": "run_prevention_stress",
+      "quality_bucket": "average",
+      "why": "The title was compelling, but the final sentence explained the state more than it sharpened the operational constraint.",
+      "flag_categories": ["names present", "cause present", "baseline present", "weak forward route", "baseball insight present", "curiosity present"],
+      "original_title": "The game keeps arriving at the bullpen sooner than the baseline.",
+      "original_narrative": "The game keeps arriving at the bullpen sooner than the baseline. Houston Astros' run prevention is strong at a 2.09 ERA, but recent usage still averages 19.9 pitches for each reliever used recently around Josh Hader, Nate Pearson, and Enyel De Los Santos. The run prevention is good, and the workload concentration explains why the same arms still matter.",
+      "post_fix_title": "The game keeps arriving at the bullpen sooner than the baseline.",
+      "post_fix_status": "improved"
+    },
+    {
+      "team": "Philadelphia Phillies",
+      "beat": "pressure_distribution",
+      "evidence_family": "identity",
+      "quality_bucket": "average",
+      "why": "The story has named protagonists and a usable late-game path, but the consequence still reads more structural than curious.",
+      "flag_categories": ["names present", "baseline present", "forward route present", "strong protagonist", "structural explanation only"],
+      "original_title": "Max Lazar and Tim Mayza remain the clearest late-game answers.",
+      "original_narrative": "Max Lazar and Tim Mayza remain the clearest late-game answers. Max Lazar, Tim Mayza, and Bryse Wilson remain the center of the leverage route, with 9 available relievers if the game needs more than that. That gives Philadelphia Phillies a front group while still leaving the manager more than one path through the late innings.",
+      "post_fix_title": "Max Lazar and Tim Mayza remain the clearest late-game answers.",
+      "post_fix_status": "retained"
+    },
+    {
+      "team": "Texas Rangers",
+      "beat": "pressure_distribution",
+      "evidence_family": "workload_concentration",
+      "quality_bucket": "strong",
+      "why": "The title creates a reason to stop scrolling, the route has named arms, the baseline is concrete, and the consequence turns the same pocket into a current constraint.",
+      "flag_categories": ["names present", "cause present", "baseline present", "forward route present", "strong protagonist", "baseball insight present", "curiosity present"],
+      "original_title": "Tonight could send Texas Rangers back through the same relief pocket.",
+      "original_narrative": "If tonight gets tight, Texas Rangers' bullpen route could run back through Joe Ross and Tyler Alexander. Texas Rangers' close-game route has recently run through Joe Ross, Tyler Alexander, and Robby Ahlstrom, who have handled 65% of relief pitches. A close game can still bend back toward the same pocket of relievers.",
+      "post_fix_title": "Tonight could send Texas Rangers back through the same relief pocket.",
+      "post_fix_status": "retained"
+    }
+  ],
+  "strongest_story_outputs": [
+    {
+      "team": "Texas Rangers",
+      "reason": "Immediate curiosity plus named route dependency.",
+      "title": "Tonight could send Texas Rangers back through the same relief pocket."
+    },
+    {
+      "team": "Miami Marlins",
+      "reason": "Clear workload cause under strong ERA surface.",
+      "title": "The bullpen is getting pulled into the game earlier than usual."
+    },
+    {
+      "team": "Detroit Tigers",
+      "reason": "Sharp tension between results and workload.",
+      "title": "Detroit Tigers' results remain strong, but the workload is getting heavier."
+    }
+  ],
+  "worst_story_outputs_before": [
+    {
+      "team": "Kansas City Royals",
+      "reason": "Generic optionality state without curiosity.",
+      "title": "Kansas City Royals still have multiple ways to cover a close game."
+    },
+    {
+      "team": "Cleveland Guardians",
+      "reason": "Structural explanation and weak protagonist.",
+      "title": "Cleveland Guardians is not boxed into one relief lane."
+    },
+    {
+      "team": "Los Angeles Angels",
+      "reason": "Abstract trusted-plan phrasing and relief-read language.",
+      "title": "Los Angeles Angels have less room behind the trusted late plan."
+    }
+  ],
+  "fixes_applied": [
+    "Expanded depth_constraint voice-library openings with named pressure-point and late-game map constructions.",
+    "Added repeated weak stems to the editorial deny-list: still have multiple ways to cover a close game, not boxed into one relief lane, less room behind the trusted late plan, and relief read.",
+    "Rewrote flexibility headlines and frames to lead with named arms and late-inning lanes instead of generic team optionality.",
+    "Rewrote flexibility evidence and consequences so broad participation turns into named places to go in a tight inning.",
+    "Rewrote trust-shape weak-depth language around named pressure points and removed relief-read phrasing from public evidence.",
+    "Sharpened the run-prevention alternatives close so it routes back to the same arms when the game tightens.",
+    "Added tests for strongest forms remaining available, named pressure-point depth forms, denied weak phrases, and best-vs-average generic language reduction."
+  ],
+  "post_fix_summary": {
+    "published_story_count": 9,
+    "strong_examples_retained": ["Detroit Tigers", "Miami Marlins", "Texas Rangers"],
+    "improved_examples": ["Los Angeles Angels", "Cleveland Guardians", "Baltimore Orioles", "Kansas City Royals", "Houston Astros"],
+    "notable_change": "The former Kansas City generic optionality story now publishes with named protagonists and an if-the-game-tightens constraint instead of a team-level depth summary.",
+    "remaining_watchouts": [
+      "Some run-prevention stories still score as average on explicit forward constraint language.",
+      "Identity stories can still read structural when the title is strong but the consequence is mostly path description."
+    ]
+  }
+}

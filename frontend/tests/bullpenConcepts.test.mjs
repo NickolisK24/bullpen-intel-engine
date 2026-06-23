@@ -113,48 +113,65 @@ const dashboard = {
   freshness: { data_through: '2026-06-05', last_successful_sync: '2026-06-06T08:00:00Z', is_current: true, sync_status: 'success' },
 }
 
-test('today stays light: exactly one concept chip, on the hero', () => {
-  const html = render(React.createElement(HomeView, { dashboard }))
-  // Count chips by their unique tooltip marker so the visible label and its
-  // own title attribute are not double-counted.
-  const chips = (html.match(/title="High Bullpen Pressure:/g) || []).length
-  assert.equal(chips, 1, 'the hero carries one pressure chip; story cards on Today stay untagged')
-  assert.ok(htmlIncludes(html, 'High Bullpen Pressure'))
+test('today stays light: canonical story cards do not splatter concept-read tooltips', () => {
+  const canonicalDashboard = {
+    ...dashboard,
+    stories: {
+      capability: 'baseballos_canonical_story_v1',
+      items: [
+        {
+          story_id: '158:2026-06-06', team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL',
+          date: '2026-06-06', story_available: true, suppression_reason: null,
+          story_type: 'coverage_pressure', category: 'stressed', tone: 'stress',
+          headline: 'The Milwaukee Brewers are carrying real late-inning workload.',
+          narrative: 'Observation sentence.\n\nBaseline sentence.\n\nCause sentence.',
+          beats: [
+            { key: 'observation', label: 'What changed', text: 'Observation sentence.' },
+            { key: 'constraint', label: 'What it creates', text: 'Constraint sentence.' },
+          ],
+          continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+        },
+      ],
+      league_context: { headline: 'League read.', summary: 'League summary.', evidence: {} },
+    },
+  }
+  const html = render(React.createElement(HomeView, { dashboard: canonicalDashboard }))
+  // Canonical stories carry no landscape concept reads, so the read-tooltip
+  // marker never appears — Today stays light without per-card concept tags.
+  const chips = (html.match(/Bullpen Pressure:/g) || []).length
+  assert.equal(chips, 0, 'canonical story cards stay untagged by concept reads')
+  assert.ok(htmlIncludes(html, 'The Milwaukee Brewers are carrying real late-inning workload.'))
 })
 
 test('stories feed cards render unlabeled narrative instead of compact concept tags', () => {
   const html = render(React.createElement(StoriesView, {
     dashboard: {
       ...dashboard,
-      four_beat_stories: {
+      stories: {
+        capability: 'baseballos_canonical_story_v1',
         items: [
           {
-            story_id: '141:stress_transfer',
-            team_id: 141,
-            team_name: 'Toronto Blue Jays',
-            team_abbreviation: 'TOR',
-            kicker: 'Stress Transfer',
-            tone: 'stress',
-            category: 'stressed',
-            title: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
+            story_id: '141:2026-06-06', team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR',
+            date: '2026-06-06', story_available: true, story_type: 'sustainability_question',
+            category: 'stressed', tone: 'stress',
+            headline: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.',
             narrative: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.\n\nThe recent workload has clustered around the same late-inning group.\n\nThe next useful read is whether support appears behind that group.',
-            href: '/bullpen?view=board&team=TOR&source=four-beat-stories',
             beats: [
-              { key: 'signal', label: 'Signal', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
-              { key: 'evidence', label: 'Evidence', text: 'The top three arms have carried most of the recent relief work.' },
-              { key: 'mechanism', label: 'Mechanism', text: 'That shape leaves less room behind the clean late-inning path.' },
-              { key: 'implication', label: 'Implication', text: 'The next read is whether support appears behind that group.' },
+              { key: 'observation', label: 'What changed', text: 'The Toronto Blue Jays are transferring bullpen pressure onto a smaller group tonight.' },
+              { key: 'baseline', label: 'Comparison point', text: 'The top three arms have carried most of the recent relief work.' },
+              { key: 'cause', label: 'Why it happened', text: 'That shape leaves less room behind the clean late-inning path.' },
+              { key: 'constraint', label: 'What it creates', text: 'The next read is whether support appears behind that group.' },
             ],
+            continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
           },
         ],
+        league_context: { headline: 'League read.', summary: 'League summary.', evidence: {} },
       },
     },
   }))
+  // The canonical feed card renders the narrative prose, not beat labels or
+  // landscape concept tags.
   assert.ok(htmlIncludes(html, 'The next useful read is whether support appears behind that group.'))
-  assert.ok(!htmlIncludes(html, 'Signal'))
-  assert.ok(!htmlIncludes(html, 'Evidence'))
-  assert.ok(!htmlIncludes(html, 'Mechanism'))
-  assert.ok(!htmlIncludes(html, 'Implication'))
   assert.ok(!htmlIncludes(html, 'Concentrated Workload'))
   assert.ok(!htmlIncludes(html, 'Wide Recovery Window'))
 })

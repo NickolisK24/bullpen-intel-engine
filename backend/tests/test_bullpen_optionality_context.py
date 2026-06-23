@@ -12,6 +12,7 @@ from services.bullpen_optionality_context import (
     CAPABILITY,
     NO_OPTIONALITY_DATA_LIMITATION,
     build_bullpen_optionality_context,
+    build_league_clean_options_baseline,
 )
 
 
@@ -235,3 +236,111 @@ def test_doubleheader_workload_inputs_do_not_duplicate_bullpen_paths():
     assert result['secondary_options'][0]['player_id'] == 1
     assert result['practical_close_game_paths_count'] == 1
     assert result['optionality_band'] == 'thin'
+
+
+# Current-snapshot league distribution of the clean-options count: teams typically
+# carry three clean arms, so one is below the norm and five is among the deepest.
+_LEAGUE_CLEAN_OPTIONS = {
+    'clean_workload_options_distribution': {
+        'sample_count': 28, 'mean': 3.0, 'median': 3.0,
+        'p10': 1.0, 'p25': 2.0, 'p75': 4.0, 'p90': 5.0,
+    },
+    'league_team_count': 28,
+}
+
+
+def test_league_clean_options_baseline_builds_distribution_from_team_counts():
+    records_by_team = {
+        1: [record(1, name='A1'), record(2, name='A2')],  # 2 clean
+        2: [record(11, name='B1')],  # 1 clean
+        3: [record(21, status=STATUS_MONITOR, name='C1', reasons=['recent workload'])],  # 0 clean
+    }
+
+    baseline = build_league_clean_options_baseline(records_by_team, reference_date=REF)
+
+    assert baseline['league_team_count'] == 3
+    distribution = baseline['clean_workload_options_distribution']
+    assert distribution['sample_count'] == 3
+    assert distribution['median'] == 1.0
+    assert round(distribution['mean'], 2) == 1.0
+
+
+def test_league_clean_options_baseline_skips_teams_without_records():
+    records_by_team = {
+        1: [record(1, name='A1'), record(2, name='A2')],  # 2 clean
+        2: [],  # no records -> context unavailable -> not counted
+    }
+
+    baseline = build_league_clean_options_baseline(records_by_team, reference_date=REF)
+
+    assert baseline['league_team_count'] == 1
+    assert baseline['clean_workload_options_distribution']['sample_count'] == 1
+
+
+def test_baseline_read_marks_thin_clean_options_below_league_norm():
+    result = build_bullpen_optionality_context(
+        [
+            record(1, name='Clean One'),
+            record(2, status=STATUS_MONITOR, name='Monitor', reasons=['recent workload']),
+        ],
+        reference_date=REF,
+        league_baseline=_LEAGUE_CLEAN_OPTIONS,
+    )
+
+    read = result['baseline_read']
+    assert read['available'] is True
+    assert read['metric'] == 'clean_trusted_options'
+    assert read['comparison'] == 'below_average'
+    assert read['value'] == 1.0
+
+
+def test_baseline_read_marks_deep_clean_options_against_league_norm():
+    records = [record(player_id, name=f'Clean {player_id}') for player_id in range(1, 6)]
+
+    result = build_bullpen_optionality_context(
+        records,
+        reference_date=REF,
+        league_baseline=_LEAGUE_CLEAN_OPTIONS,
+    )
+
+    read = result['baseline_read']
+    assert read['available'] is True
+    assert read['comparison'] == 'among_highest'
+    assert read['value'] == 5.0
+
+
+def test_baseline_read_guards_on_thin_league_sample():
+    thin = {
+        'clean_workload_options_distribution': {
+            'sample_count': 3, 'mean': 2.0, 'median': 2.0,
+            'p10': 1.0, 'p25': 1.0, 'p75': 3.0, 'p90': 3.0,
+        },
+        'league_team_count': 3,
+    }
+
+    result = build_bullpen_optionality_context(
+        [record(1, name='Clean One')],
+        reference_date=REF,
+        league_baseline=thin,
+    )
+
+    assert result['baseline_read']['available'] is False
+    assert result['baseline_read']['comparison'] == 'insufficient_sample'
+
+
+def test_baseline_read_without_distribution_degrades_gracefully():
+    # A legacy-shaped league baseline (no distribution) must not crash the context.
+    result = build_bullpen_optionality_context(
+        [record(1, name='Clean One')],
+        reference_date=REF,
+        league_baseline={'league_team_count': 5},
+    )
+
+    assert result['baseline_read']['available'] is False
+
+
+def test_empty_context_carries_unavailable_baseline_read():
+    result = context([])
+
+    assert result['baseline_read']['available'] is False
+    assert result['baseline_read']['comparison'] == 'unavailable'

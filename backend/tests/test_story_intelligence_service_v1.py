@@ -1,0 +1,1061 @@
+from copy import deepcopy
+from datetime import date
+
+from services.story_intelligence_service_v1 import (
+    CAPABILITY,
+    NEUTRAL_NO_OBSERVATIONS,
+    NEUTRAL_NO_VALID_FRAME,
+    STATE_NEUTRAL,
+    STATE_STORY_AVAILABLE,
+    build_story_intelligence_service_v1,
+    build_team_story,
+)
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
+    observation_public_beat_map,
+)
+from services.story_observation_engine import (
+    TYPE_BRIDGE_INSTABILITY,
+    TYPE_CONCENTRATION_PRESSURE,
+    TYPE_CORE_TRANSITION,
+    TYPE_DEPTH_PRESSURE,
+    TYPE_OPTIONALITY_STRENGTH,
+    TYPE_ROTATION_PRESSURE,
+    TYPE_STABLE_CORE,
+    TYPE_TRUST_LANE_PRESSURE,
+)
+from services.story_writer_v1 import BANNED_TERMS, SECTION_KEYS
+from services.story_feed import canonical_story_from_service_payload
+from services.story_voice_library_v1 import looks_like_forward_clause
+
+
+def team_context(
+    *,
+    team_id=118,
+    team_name='Kansas City Royals',
+    team_abbreviation='KC',
+    rotation=None,
+    concentration=None,
+    optionality=None,
+    stability=None,
+    injury=None,
+    limitations=None,
+):
+    return {
+        'team_id': team_id,
+        'team': {
+            'team_id': team_id,
+            'team_name': team_name,
+            'team_abbreviation': team_abbreviation,
+        },
+        'reference_date': '2026-06-20',
+        'data_through_date': '2026-06-20',
+        'rotation_context': {
+            'context_available': True,
+            'rotation_avg_ip_7d': 5.7,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -0.1,
+            'early_bullpen_entry_rate': 10.0,
+            'bullpen_coverage_ip_7d': 3.3,
+            'rotation_games_analyzed_7d': 6,
+            'rotation_games_analyzed_14d': 12,
+            'rotation_early_bullpen_entry_games_14d': 1,
+            **(rotation or {}),
+        },
+        'bullpen_concentration_context': {
+            'concentration_band': 'normal',
+            'top_three_workload_share_10d': 61.0,
+            'league_top_three_workload_share_10d': 58.0,
+            'top_three_share_delta_vs_league': 3.0,
+            'bullpen_workload_total_10d': 180,
+            'top_three_relievers_10d': [
+                {'name': 'First Arm', 'pitches': 50, 'workload_share': 27.8},
+                {'name': 'Second Arm', 'pitches': 35, 'workload_share': 19.4},
+                {'name': 'Third Arm', 'pitches': 25, 'workload_share': 13.9},
+            ],
+            'league_team_count_10d': 30,
+            **(concentration or {}),
+        },
+        'bullpen_optionality_context': {
+            'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 3,
+            'available_arms_count': 3,
+            'monitor_arms_count': 1,
+            'restricted_arms_count': 2,
+            'limited_arms_count': 1,
+            'avoid_arms_count': 1,
+            'unavailable_arms_count': 0,
+            'clean_workload_options': [{'name': 'Clean Arm'}],
+            'secondary_options': [{'name': 'Monitor Arm'}],
+            **(optionality or {}),
+        },
+        'role_stability_context': {
+            'stability_band': 'mostly_stable',
+            'current_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Fourth Arm'],
+            'core_retention_count': 2,
+            'core_stability_pct': 67,
+            'core_change_count': 1,
+            'new_core_members': ['Third Arm'],
+            'departed_core_members': ['Fourth Arm'],
+            'current_core_size': 3,
+            'previous_core_size': 3,
+            **(stability or {}),
+        },
+        'injury_context': {
+            'depth_pressure_band': 'light',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 1,
+            'il_bullpen_arms_count': 1,
+            'non_il_inactive_bullpen_arms_count': 0,
+            'inactive_bullpen_share': 12.5,
+            'injury_context_confidence': 'high',
+            'inactive_bullpen_arms': [{'name': 'Inactive Arm'}],
+            'role_uncertain_inactive_count': 0,
+            'unknown_roster_status_count': 0,
+            **(injury or {}),
+        },
+        'limitations': list(limitations or []),
+    }
+
+
+def written_text(result):
+    return ' '.join(
+        value for value in (result.get('written_story') or {}).values()
+        if value
+    )
+
+
+PUBLIC_BEATS = {
+    BEAT_ROUTE_CHANGE,
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_AVAILABILITY_DEPTH,
+    BEAT_TRUST_LANE,
+    BEAT_BRIDGE,
+}
+
+
+def assert_story_contract(result, observation_type, public_story_type=None):
+    assert result['capability'] == CAPABILITY
+    assert result['state'] == STATE_STORY_AVAILABLE
+    assert result['story_available'] is True
+    assert result['selected_observation']['type'] == observation_type
+    assert result['construction_frame']['observation_type'] == observation_type
+    assert result['story_type'] == (public_story_type or observation_public_beat_map()[observation_type])
+    assert result['story_type'] in PUBLIC_BEATS
+    assert result['story_type'] != observation_type
+    assert result['public_story_beat']['internal_observation_type'] == observation_type
+    assert tuple(result['written_story'].keys()) == SECTION_KEYS
+    assert result['writer_output']['validation']['passed'] is True
+    assert set(result['supporting_context']) == {
+        'rotation_context',
+        'bullpen_concentration_context',
+        'bullpen_optionality_context',
+        'role_stability_context',
+        'injury_context',
+    }
+
+
+def assert_no_banned_language(result):
+    text = written_text(result).lower()
+    for term in BANNED_TERMS:
+        assert term not in text
+    for term in ['will win', 'expected to win', 'projected', 'probability', 'odds', 'lock', 'guaranteed']:
+        assert term not in text
+
+
+def assert_forward_clause(result):
+    constraint = (result.get('written_story') or {}).get('constraint_paragraph') or ''
+    assert looks_like_forward_clause(constraint), constraint
+
+
+def test_build_team_story_runs_full_pipeline_from_context_fetch(monkeypatch):
+    context = team_context(concentration={
+        'concentration_band': 'narrow',
+        'top_three_workload_share_10d': 94.0,
+        'top_three_share_delta_vs_league': 36.0,
+    })
+    calls = []
+
+    def fake_context(team_id, reference_date=None):
+        calls.append((team_id, reference_date))
+        return context
+
+    monkeypatch.setattr(
+        'services.story_intelligence_service_v1.build_team_bullpen_context',
+        fake_context,
+    )
+
+    result = build_team_story(118, date(2026, 6, 20))
+
+    assert calls == [(118, date(2026, 6, 20))]
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE)
+    assert result['team_name'] == 'Kansas City Royals'
+    assert result['freshness']['data_through'] == '2026-06-20'
+    assert '94%' in written_text(result)
+    assert result['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    assert_forward_clause(result)
+    assert_no_banned_language(result)
+
+
+def test_depth_pressure_does_not_automatically_override_specific_active_story():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.4,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.4,
+            'early_bullpen_entry_rate': 50.0,
+            'bullpen_coverage_ip_7d': 4.8,
+        },
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 88.0,
+        },
+        optionality={
+            'optionality_band': 'deep',
+            'practical_close_game_paths_count': 6,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert result['observation_count'] >= 3
+    assert 'The starters are not covering as many innings as the recent baseline' in written_text(result)
+    assert 'Shorter starts are pushing 4.8 bullpen innings per game into the relief group' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_coverage_pressure_wins_over_depth_and_route_when_short_starts_are_strongest():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 2.4,
+            'rotation_avg_ip_14d': 3.0,
+            'rotation_ip_trend': -0.6,
+            'early_bullpen_entry_rate': 82.0,
+            'bullpen_coverage_ip_7d': 5.7,
+        },
+        stability={
+            'stability_band': 'transitioning',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm'],
+            'core_retention_count': 1,
+            'core_stability_pct': 33,
+            'core_change_count': 2,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 6,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert result['selection_metadata']['selected_profile']['selection_strength'] >= 7
+    assert 'The rotation has been handing the game to the bullpen earlier' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_sustainability_question_wins_when_usage_concentration_is_strongest():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+            'bullpen_coverage_ip_7d': 3.0,
+        },
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 94.0,
+            'top_three_share_delta_vs_league': 36.0,
+        },
+        optionality={
+            'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 2,
+            'available_arms_count': 3,
+            'clean_workload_options': [{'name': 'Clean Arm'}],
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 6,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_SUSTAINABILITY_QUESTION)
+    assert result['selection_metadata']['selected_profile']['selection_strength'] >= 8
+    evidence = result['selection_metadata']['selected_profile']['sustainability_evidence']
+    assert evidence['sustainability_evidence_present'] is True
+    assert evidence['top_three_workload_share_10d'] == 94.0
+    assert evidence['concentration_band'] == 'narrow'
+    assert evidence['practical_close_game_paths_count'] == 2
+    assert evidence['repeated_route_core_arms'] == ['First Arm', 'Second Arm', 'Third Arm']
+    assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
+    assert 'meaningful innings are bunching around a smaller group' in written_text(result)
+    assert 'The same arms are carrying the meaningful work' in written_text(result)
+    assert_forward_clause(result)
+    assert result['written_story']['baseline_paragraph']
+    assert result['written_story']['cause_paragraph']
+    assert result['written_story']['observation_paragraph']
+    assert_forward_clause(result)
+
+
+def test_positive_optionality_alone_publishes_availability_depth_story():
+    context = team_context(
+        optionality={
+            'optionality_band': 'deep',
+            'practical_close_game_paths_count': 6,
+            'available_arms_count': 7,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            'secondary_options': [{'name': 'Secondary One'}],
+            'limited_arms_count': 0,
+            'avoid_arms_count': 0,
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A good-news-only bullpen now publishes a positive depth story rather than
+    # going neutral or being reframed into a sustainability worry.
+    assert result['state'] == STATE_STORY_AVAILABLE
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['story_type'] != BEAT_SUSTAINABILITY_QUESTION
+    assert result['selected_observation']['type'] == TYPE_OPTIONALITY_STRENGTH
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+
+
+def test_stable_core_publishes_availability_depth_story():
+    context = team_context(
+        stability={
+            'stability_band': 'stable',
+            'current_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 3,
+            'core_stability_pct': 100,
+            'core_change_count': 0,
+            'new_core_members': [],
+            'departed_core_members': [],
+            'current_core_size': 3,
+            'previous_core_size': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A settled core publishes as positive depth, not as a route-change story.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['story_type'] != BEAT_ROUTE_CHANGE
+    assert result['selected_observation']['type'] == TYPE_STABLE_CORE
+
+
+def test_pressure_outranks_positive_when_pressure_is_stronger():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.5,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.2,
+            'early_bullpen_entry_rate': 65.0,
+            'bullpen_coverage_ip_7d': 5.2,
+        },
+        optionality={
+            'optionality_band': 'flexible',
+            'practical_close_game_paths_count': 5,
+            'available_arms_count': 5,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            'secondary_options': [{'name': 'Secondary One'}],
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuine, stronger pressure story wins; the positive read still competes
+    # but does not displace it.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    assert result['selected_observation']['type'] == TYPE_ROTATION_PRESSURE
+
+    profiles = result['selection_metadata']['candidate_profiles']
+    positive = next(
+        (profile for profile in profiles if profile.get('story_type') == BEAT_AVAILABILITY_DEPTH),
+        None,
+    )
+    selected = next(profile for profile in profiles if profile.get('selected') is True)
+    assert positive is not None
+    assert positive['selection_strength'] < selected['selection_strength']
+
+
+def _trust_lane_optionality(*, clean=2, secondary=4, available=6, band='flexible'):
+    """A bullpen with an acceptable available board but a thin trusted/clean lane."""
+    return {
+        'context_available': True,
+        'optionality_band': band,
+        'practical_close_game_paths_count': max(available - 2, 0),
+        'available_arms_count': available,
+        'monitor_arms_count': 1,
+        'restricted_arms_count': 0,
+        'limited_arms_count': 0,
+        'avoid_arms_count': 0,
+        'unavailable_arms_count': 0,
+        'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+        'secondary_options': [{'name': f'Flagged {i + 1}'} for i in range(secondary)],
+    }
+
+
+def _profile_for(result, story_type):
+    profiles = result['selection_metadata']['candidate_profiles']
+    return next((p for p in profiles if p.get('story_type') == story_type), None)
+
+
+def test_trust_lane_publishes_when_clean_trusted_options_are_thin():
+    context = team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6))
+
+    result = build_team_story(118, team_context=context)
+
+    # Six available bodies look acceptable, but only one is clean, so the story
+    # publishes as a trust-lane read, not as positive depth.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_TRUST_LANE
+    assert result['selected_observation']['type'] == TYPE_TRUST_LANE_PRESSURE
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+    assert 'thin_trusted_lane' in result['selection_metadata']['selected_profile']['selection_reasons']
+    assert_forward_clause(result)
+
+
+def test_trust_lane_outranks_positive_depth_when_evidence_is_strong():
+    # A 'flexible' board co-fires the positive optionality read; the strong
+    # trust-lane read should win, but the positive read still competes.
+    context = team_context(optionality=_trust_lane_optionality(clean=1, secondary=5, available=6, band='flexible'))
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['story_type'] == BEAT_TRUST_LANE
+    positive = _profile_for(result, BEAT_AVAILABILITY_DEPTH)
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    assert positive is not None  # the positive read still competed
+    assert trust['selection_strength'] > positive['selection_strength']
+
+
+def test_stronger_acute_pressure_still_outranks_trust_lane():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.4,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.4,
+            'early_bullpen_entry_rate': 65.0,
+            'bullpen_coverage_ip_7d': 5.2,
+        },
+        optionality=_trust_lane_optionality(clean=1, secondary=5, available=6),
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuine, stronger pressure story wins outright on strength; trust-lane
+    # still competes as a ranked candidate below it.
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    selected = next(p for p in result['selection_metadata']['candidate_profiles'] if p.get('selected') is True)
+    assert trust is not None
+    assert trust['selection_strength'] < selected['selection_strength']
+
+
+def test_healthy_trusted_depth_publishes_positive_not_trust_lane():
+    context = team_context(optionality=_trust_lane_optionality(clean=4, secondary=3, available=8, band='deep'))
+
+    result = build_team_story(118, team_context=context)
+
+    # A genuinely deep, clean board reads positive — the trust-lane detector does
+    # not fire when the trusted lane is healthy.
+    assert result['story_type'] == BEAT_AVAILABILITY_DEPTH
+    assert result['selected_observation']['type'] != TYPE_TRUST_LANE_PRESSURE
+
+
+def test_no_trust_lane_story_when_evidence_is_missing():
+    # An acceptable board with few flagged arms is not a thin trust lane, so no
+    # trust-lane story is fabricated.
+    context = team_context(optionality=_trust_lane_optionality(clean=2, secondary=1, available=4, band='narrow'))
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['story_type'] != BEAT_TRUST_LANE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_TRUST_LANE_PRESSURE
+    )
+
+
+def _bridge_inputs(*, early=38.0, coverage=4.2, monitor=3, limited=1, clean=1, available=3,
+                   stability_band='stable'):
+    """A settled late core, real handoff demand, and a volatile, thin middle bridge."""
+    return dict(
+        rotation={
+            'rotation_avg_ip_7d': 5.4, 'rotation_avg_ip_14d': 5.5, 'rotation_ip_trend': -0.1,
+            'early_bullpen_entry_rate': early, 'bullpen_coverage_ip_7d': coverage,
+        },
+        optionality={
+            'context_available': True, 'optionality_band': 'narrow',
+            'practical_close_game_paths_count': 3, 'available_arms_count': available,
+            'monitor_arms_count': monitor, 'limited_arms_count': limited, 'restricted_arms_count': limited,
+            'avoid_arms_count': 0, 'unavailable_arms_count': 0,
+            'clean_workload_options': [{'name': f'Clean {i + 1}'} for i in range(clean)],
+            'secondary_options': [{'name': f'Mid {i + 1}'} for i in range(max(monitor, 1))],
+        },
+        stability={
+            'stability_band': stability_band,
+            'current_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'previous_operational_core': ['Core One', 'Core Two', 'Core Three'],
+            'core_retention_count': 3, 'core_stability_pct': 100, 'core_change_count': 0,
+            'new_core_members': [], 'departed_core_members': [],
+            'current_core_size': 3, 'previous_core_size': 3,
+        },
+    )
+
+
+def test_bridge_publishes_when_the_handoff_is_fragile():
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=45.0)))
+
+    # The late core is settled (a positive stable_core read co-fires), but the
+    # fragile handoff is the more important story.
+    assert result['story_available'] is True
+    assert result['story_type'] == BEAT_BRIDGE
+    assert result['selected_observation']['type'] == TYPE_BRIDGE_INSTABILITY
+    assert result['selection_metadata']['selected_profile']['selection_strength'] > 0
+    assert 'settled_late_core' in result['selection_metadata']['selected_profile']['selection_reasons']
+    assert_forward_clause(result)
+
+
+def test_bridge_outranks_trust_lane_when_evidence_is_stronger():
+    # available 4 + secondary 3 also fires trust-lane; the stronger bridge wins.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=38.0, available=4, monitor=3, limited=1, clean=1)))
+
+    assert result['story_type'] == BEAT_BRIDGE
+    bridge = _profile_for(result, BEAT_BRIDGE)
+    trust = _profile_for(result, BEAT_TRUST_LANE)
+    assert trust is not None  # trust-lane still competed
+    assert bridge['selection_strength'] > trust['selection_strength']
+
+
+def test_stronger_coverage_pressure_still_outranks_bridge():
+    inputs = _bridge_inputs(early=65.0, coverage=5.2)
+    inputs['rotation'].update({'rotation_ip_trend': -1.4, 'rotation_avg_ip_7d': 4.4, 'rotation_avg_ip_14d': 5.8})
+
+    result = build_team_story(118, team_context=team_context(**inputs))
+
+    # Acute coverage pressure wins outright on strength; bridge ranks below it.
+    assert result['story_type'] == BEAT_COVERAGE_PRESSURE
+    bridge = _profile_for(result, BEAT_BRIDGE)
+    selected = next(p for p in result['selection_metadata']['candidate_profiles'] if p.get('selected') is True)
+    assert bridge is not None
+    assert bridge['selection_strength'] < selected['selection_strength']
+
+
+def test_weak_bridge_evidence_does_not_publish():
+    # Settled core and a thin middle, but the starters are going deep — no demand.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(early=12.0, coverage=3.0)))
+
+    assert result['story_type'] != BEAT_BRIDGE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_BRIDGE_INSTABILITY
+    )
+
+
+def test_healthy_bridge_publishes_positive_not_bridge():
+    # Plenty of clean middle options — a healthy bridge reads positive, not fragile.
+    result = build_team_story(118, team_context=team_context(**_bridge_inputs(clean=4, monitor=1, limited=0, available=6)))
+
+    assert result['story_type'] != BEAT_BRIDGE
+    assert result['selected_observation'] is None or (
+        result['selected_observation'].get('type') != TYPE_BRIDGE_INSTABILITY
+    )
+
+
+def test_weak_positive_evidence_does_not_publish_a_fabricated_story():
+    # Optionality band is present but the supporting paths count is missing, so
+    # the frame is incomplete and no positive story is fabricated.
+    context = team_context(
+        optionality={
+            'optionality_band': 'flexible',
+            'practical_close_game_paths_count': None,
+            'available_arms_count': 4,
+            'clean_workload_options': [],
+            'secondary_options': [],
+            'unavailable_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['story_available'] is False
+    assert result['state'] == STATE_NEUTRAL
+
+
+def test_sustainability_loses_to_severe_depth_when_depth_is_clearer_constraint():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 78.0,
+            'top_three_share_delta_vs_league': 20.0,
+        },
+        optionality={
+            'optionality_band': 'thin',
+            'practical_close_game_paths_count': 2,
+            'available_arms_count': 3,
+            'clean_workload_options': [{'name': 'Clean Arm'}],
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 5,
+            'inactive_bullpen_arms_count': 12,
+            'il_bullpen_arms_count': 7,
+            'non_il_inactive_bullpen_arms_count': 5,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
+    profiles = result['selection_metadata']['candidate_profiles']
+    sustainability = next(
+        profile for profile in profiles
+        if profile['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    )
+    selected = result['selection_metadata']['selected_profile']
+    assert selected['story_type'] == BEAT_DEPTH_CONSTRAINT
+    assert selected['selection_strength'] > sustainability['selection_strength']
+    assert_forward_clause(result)
+
+
+def test_sustainability_loses_to_true_route_change_when_core_movement_is_clearer():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 5.8,
+            'rotation_avg_ip_14d': 5.7,
+            'rotation_ip_trend': 0.1,
+            'early_bullpen_entry_rate': 10.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 76.0,
+            'top_three_share_delta_vs_league': 18.0,
+        },
+        optionality={
+            'optionality_band': 'deep',
+            'practical_close_game_paths_count': 5,
+            'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+        },
+        stability={
+            'stability_band': 'rebuilding',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 0,
+            'core_stability_pct': 0,
+            'core_change_count': 3,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    profiles = result['selection_metadata']['candidate_profiles']
+    sustainability = next(
+        profile for profile in profiles
+        if profile['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    )
+    selected = result['selection_metadata']['selected_profile']
+    assert selected['story_type'] == BEAT_ROUTE_CHANGE
+    assert selected['selection_strength'] > sustainability['selection_strength']
+    assert_forward_clause(result)
+
+
+def test_severe_depth_pressure_can_still_win_over_weaker_active_story():
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.9,
+            'rotation_avg_ip_14d': 5.5,
+            'rotation_ip_trend': -0.6,
+            'early_bullpen_entry_rate': 45.0,
+        },
+        concentration={
+            'concentration_band': 'concentrated',
+            'top_three_workload_share_10d': 72.0,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
+    assert '4 relievers are not part of the current game plan' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure():
+    context = team_context(
+        stability={
+            'stability_band': 'rebuilding',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm', 'Third Arm'],
+            'core_retention_count': 0,
+            'core_stability_pct': 0,
+            'core_change_count': 3,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    assert 'The route has changed, now running through Fifth Arm, Sixth Arm, and Seventh Arm.' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_route_change_can_explain_roster_change_with_held_route():
+    context = team_context(
+        stability={
+            'stability_band': 'transitioning',
+            'current_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Fourth Arm'],
+            'new_core_members': ['Third Arm'],
+            'departed_core_members': ['Fourth Arm'],
+            'core_retention_count': 2,
+            'core_stability_pct': 67,
+            'core_change_count': 1,
+        },
+        injury={
+            'depth_pressure_band': 'light',
+            'active_bullpen_arms_count': 7,
+            'inactive_bullpen_arms_count': 1,
+            'il_bullpen_arms_count': 1,
+            'non_il_inactive_bullpen_arms_count': 0,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
+    assert_forward_clause(result)
+    assert_forward_clause(result)
+
+
+def test_neutral_state_when_no_observations_exist():
+    result = build_team_story(118, team_context=team_context())
+
+    assert result['capability'] == CAPABILITY
+    assert result['state'] == STATE_NEUTRAL
+    assert result['story_available'] is False
+    assert result['neutral_reason'] == NEUTRAL_NO_OBSERVATIONS
+    assert result['selected_observation'] is None
+    assert result['construction_frame'] is None
+    assert result['written_story'] is None
+    assert result['writer_output'] is None
+    assert result['story_type'] is None
+    assert result['public_story_beat'] is None
+    assert NEUTRAL_NO_OBSERVATIONS in result['limitations']
+
+
+def test_incomplete_context_keeps_valid_story_with_limitations():
+    context = team_context(
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 72.0,
+            'league_top_three_workload_share_10d': None,
+            'top_three_share_delta_vs_league': None,
+        },
+        rotation={
+            'rotation_avg_ip_7d': None,
+            'rotation_avg_ip_14d': None,
+            'rotation_ip_trend': None,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CONCENTRATION_PRESSURE, BEAT_SUSTAINABILITY_QUESTION)
+    assert result['construction_frame']['construction_confidence'] == 'medium'
+    assert set(result['limitations']) >= {
+        'missing_league_baseline',
+        'missing_top_three_share_delta_vs_league',
+        'missing_rotation_context',
+    }
+    assert result['written_story']['baseline_paragraph'] is None
+
+
+def test_low_confidence_frame_returns_neutral_instead_of_forcing_story():
+    context = team_context(concentration={
+        'concentration_band': 'narrow',
+        'top_three_relievers_10d': [],
+        'top_three_workload_share_10d': None,
+    })
+
+    result = build_team_story(118, team_context=context)
+
+    assert result['state'] == STATE_NEUTRAL
+    assert result['story_available'] is False
+    assert result['neutral_reason'] == NEUTRAL_NO_VALID_FRAME
+    assert result['written_story'] is None
+    assert NEUTRAL_NO_VALID_FRAME in result['limitations']
+
+
+def test_service_does_not_mutate_context_or_state_change_flags():
+    context = team_context(rotation={
+        'rotation_avg_ip_7d': 4.1,
+        'rotation_avg_ip_14d': 5.4,
+        'rotation_ip_trend': -1.3,
+        'early_bullpen_entry_rate': 50.0,
+        'bullpen_coverage_ip_7d': 4.9,
+    })
+    original = deepcopy(context)
+
+    result = build_team_story(118, team_context=context)
+
+    assert context == original
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert result['trust_metadata']['external_generation_used'] is False
+    assert result['trust_metadata']['new_metrics_created'] is False
+    assert result['trust_metadata']['context_formula_changes'] is False
+    assert result['trust_metadata']['availability_changes'] is False
+    assert result['trust_metadata']['fatigue_changes'] is False
+
+
+def test_engine_payload_wraps_multiple_team_story_contracts():
+    first = team_context(
+        team_id=1,
+        team_name='Team One',
+        concentration={'concentration_band': 'narrow'},
+    )
+    second = team_context(
+        team_id=2,
+        team_name='Team Two',
+    )
+
+    result = build_story_intelligence_service_v1(team_contexts=[first, second])
+
+    assert result['capability'] == CAPABILITY
+    assert result['team_count'] == 2
+    assert result['teams'][0]['state'] == STATE_STORY_AVAILABLE
+    assert result['teams'][1]['state'] == STATE_NEUTRAL
+    assert result['teams'][0]['selected_observation']['type'] == TYPE_CONCENTRATION_PRESSURE
+    assert result['teams'][0]['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+
+
+def test_every_internal_observation_maps_to_one_public_beat():
+    mapping = observation_public_beat_map()
+
+    assert set(mapping) == {
+        TYPE_ROTATION_PRESSURE,
+        TYPE_CONCENTRATION_PRESSURE,
+        TYPE_OPTIONALITY_STRENGTH,
+        TYPE_STABLE_CORE,
+        TYPE_CORE_TRANSITION,
+        TYPE_DEPTH_PRESSURE,
+        TYPE_TRUST_LANE_PRESSURE,
+        TYPE_BRIDGE_INSTABILITY,
+    }
+    assert set(mapping.values()) <= PUBLIC_BEATS
+    assert mapping[TYPE_CORE_TRANSITION] == BEAT_ROUTE_CHANGE
+    assert mapping[TYPE_STABLE_CORE] == BEAT_AVAILABILITY_DEPTH
+    assert mapping[TYPE_ROTATION_PRESSURE] == BEAT_COVERAGE_PRESSURE
+    assert mapping[TYPE_DEPTH_PRESSURE] == BEAT_DEPTH_CONSTRAINT
+    assert mapping[TYPE_CONCENTRATION_PRESSURE] == BEAT_SUSTAINABILITY_QUESTION
+    assert mapping[TYPE_OPTIONALITY_STRENGTH] == BEAT_AVAILABILITY_DEPTH
+    assert mapping[TYPE_TRUST_LANE_PRESSURE] == BEAT_TRUST_LANE
+    assert mapping[TYPE_BRIDGE_INSTABILITY] == BEAT_BRIDGE
+
+
+def test_short_start_cause_maps_to_coverage_pressure():
+    result = build_team_story(118, team_context=team_context(
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 88.0,
+        },
+        rotation={
+            'rotation_avg_ip_7d': 4.4,
+            'rotation_avg_ip_14d': 5.8,
+            'rotation_ip_trend': -1.4,
+            'early_bullpen_entry_rate': 50.0,
+            'bullpen_coverage_ip_7d': 4.8,
+        },
+    ))
+
+    assert_story_contract(result, TYPE_ROTATION_PRESSURE, BEAT_COVERAGE_PRESSURE)
+    assert 'The starters are not covering as many innings as the recent baseline' in written_text(result)
+    assert_forward_clause(result)
+
+
+def test_public_story_type_never_exposes_internal_observation_snake_case():
+    internal_types = {
+        TYPE_ROTATION_PRESSURE,
+        TYPE_CONCENTRATION_PRESSURE,
+        TYPE_OPTIONALITY_STRENGTH,
+        TYPE_STABLE_CORE,
+        TYPE_CORE_TRANSITION,
+        TYPE_DEPTH_PRESSURE,
+        TYPE_TRUST_LANE_PRESSURE,
+        TYPE_BRIDGE_INSTABILITY,
+    }
+    result = build_team_story(118, team_context=team_context(
+        concentration={'concentration_band': 'narrow', 'top_three_workload_share_10d': 91.0},
+    ))
+
+    assert result['story_type'] in PUBLIC_BEATS
+    assert result['story_type'] not in internal_types
+    assert result['selected_observation']['type'] in internal_types
+    assert result['public_story_beat']['internal_observation_type'] == result['selected_observation']['type']
+
+
+def test_story_names_arms_and_keeps_baseline_when_evidence_exists():
+    result = build_team_story(118, team_context=team_context(
+        concentration={'concentration_band': 'narrow', 'top_three_workload_share_10d': 91.0},
+    ))
+    text = written_text(result)
+
+    assert 'First Arm, Second Arm, and Third Arm' in text
+    assert result['written_story']['baseline_paragraph']
+    assert 'league comparison' in result['written_story']['baseline_paragraph']
+    assert_forward_clause(result)
+    assert_no_banned_language(result)
+
+
+def test_depth_constraint_names_inactive_arms_when_present():
+    result = build_team_story(118, team_context=team_context(
+        injury={
+            'depth_pressure_band': 'heavy',
+            'inactive_bullpen_arms_count': 4,
+            'il_bullpen_arms_count': 3,
+            'non_il_inactive_bullpen_arms_count': 1,
+            'inactive_bullpen_arms': [{'name': 'Inactive Arm'}, {'name': 'Depth Arm'}],
+        },
+        rotation={'rotation_ip_trend': 0.0, 'early_bullpen_entry_rate': 10.0},
+        concentration={'concentration_band': 'normal'},
+    ))
+
+    assert_story_contract(result, TYPE_DEPTH_PRESSURE, BEAT_DEPTH_CONSTRAINT)
+    assert 'Inactive Arm' in written_text(result)
+    assert "{'name':" not in written_text(result)
+    assert_forward_clause(result)
+
+
+# All transient Product Credibility baseline reads (C1E/C1H/C1I/C1K/C1L/C1N).
+# These may exist internally (context layers, frame facts) but must NEVER be
+# serialized onto a public canonical feed item.
+_BASELINE_READ_FIELDS = {
+    'baseline_read',
+    'lead_arm_baseline_read',
+    'coverage_baseline_read',
+    'rotation_length_baseline_read',
+    'bullpen_coverage_baseline_read',
+    'clean_options_baseline_read',
+    'top_one_baseline_read',
+    'top_three_baseline_read',
+}
+
+
+def _baseline_read_keys(payload):
+    """Recursively collect any dict key that is, or ends with, a baseline_read field."""
+    found = []
+
+    def _scan(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(key, str) and (
+                    key in _BASELINE_READ_FIELDS or key.endswith('_baseline_read')
+                ):
+                    found.append(key)
+                _scan(value)
+        elif isinstance(node, (list, tuple)):
+            for entry in node:
+                _scan(entry)
+
+    _scan(payload)
+    return found
+
+
+def test_canonical_feed_item_never_serializes_baseline_reads():
+    # A firing context whose layers all carry transient baseline reads, so the
+    # full pipeline genuinely has reads available to (accidentally) leak.
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.1,
+            'rotation_avg_ip_14d': 5.4,
+            'rotation_ip_trend': -1.3,
+            'early_bullpen_entry_rate': 50.0,
+            'bullpen_coverage_ip_7d': 4.8,
+            'baseline_read': {'available': True, 'metric': 'rotation_avg_ip_7d', 'comparison': 'below_average'},
+            'coverage_baseline_read': {'available': True, 'metric': 'bullpen_coverage_ip_7d', 'comparison': 'above_average'},
+        },
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 94.0,
+            'top_three_share_delta_vs_league': 36.0,
+            'bullpen_workload_total_10d': 240,
+            'baseline_read': {'available': True, 'metric': 'top_share', 'comparison': 'among_highest'},
+            'top_one_workload_share_10d': 48.0,
+            'lead_arm_baseline_read': {'available': True, 'metric': 'top_one_share', 'comparison': 'above_average'},
+        },
+        optionality={
+            'baseline_read': {'available': True, 'metric': 'clean_trusted_options', 'comparison': 'below_average'},
+        },
+    )
+
+    payload = build_team_story(118, date(2026, 6, 20), team_context=context)
+    item = canonical_story_from_service_payload(payload, date='2026-06-20')
+
+    # The pipeline produced a real story (so the leak check is meaningful).
+    assert item['story_available'] is True
+    # Self-check: the reads DO exist upstream in the internal service payload
+    # (supporting context / frame facts), proving the recursive scan can find them.
+    assert _baseline_read_keys(payload)
+    # ...but they must NOT appear anywhere on the public canonical feed item.
+    leaked = _baseline_read_keys(item)
+    assert leaked == [], f'baseline reads leaked onto canonical feed item: {sorted(set(leaked))}'

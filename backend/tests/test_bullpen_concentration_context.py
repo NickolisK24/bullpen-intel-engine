@@ -160,15 +160,62 @@ def test_league_baseline_and_delta_are_calculated_from_team_shares():
         reference_date=REF,
     )
 
-    assert baseline == {
-        'league_top_three_workload_share_10d': 75.0,
-        'league_team_count_10d': 2,
-    }
+    assert baseline['league_top_three_workload_share_10d'] == 75.0
+    assert baseline['league_team_count_10d'] == 2
+    distribution = baseline['top_three_workload_share_distribution_10d']
+    assert distribution['sample_count'] == 2
+    assert round(distribution['mean'], 1) == 75.0
 
     result = context(team_two, league_baseline=baseline)
     assert result['top_three_workload_share_10d'] == 90.0
     assert result['league_top_three_workload_share_10d'] == 75.0
     assert result['top_three_share_delta_vs_league'] == 15.0
+
+
+_LEAGUE_DISTRIBUTION = {
+    'league_top_three_workload_share_10d': 48.0,
+    'league_team_count_10d': 28,
+    'top_three_workload_share_distribution_10d': {
+        'sample_count': 28, 'mean': 48.0, 'median': 50.0,
+        'p10': 38.0, 'p25': 42.0, 'p75': 58.0, 'p90': 66.0,
+    },
+}
+
+
+def test_baseline_read_interprets_team_value_against_league_distribution():
+    # Three arms carry nearly all the work -> top-three share at/above p90.
+    result = context(
+        [log(1, 1, 80), log(2, 1, 10), log(3, 1, 10), log(4, 2, 5)],
+        league_baseline=_LEAGUE_DISTRIBUTION,
+    )
+    read = result['baseline_read']
+    assert read['available'] is True
+    assert read['metric'] == 'top_share'
+    assert read['comparison'] == 'among_highest'
+    assert read['direction'] == 'higher'
+
+
+def test_baseline_read_guards_on_thin_league_sample():
+    thin = {
+        'league_top_three_workload_share_10d': 90.0,
+        'league_team_count_10d': 1,
+        'top_three_workload_share_distribution_10d': {
+            'sample_count': 1, 'mean': 90.0, 'median': 90.0,
+            'p10': 90.0, 'p25': 90.0, 'p75': 90.0, 'p90': 90.0,
+        },
+    }
+    result = context([log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)], league_baseline=thin)
+    assert result['baseline_read']['available'] is False
+    assert result['baseline_read']['comparison'] == 'insufficient_sample'
+
+
+def test_baseline_read_without_distribution_degrades_gracefully():
+    # A legacy-shaped league baseline (no distribution) must not crash the context.
+    result = context(
+        [log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)],
+        league_baseline={'league_top_three_workload_share_10d': 50.0},
+    )
+    assert result['baseline_read']['available'] is False
 
 
 def test_doubleheader_workload_aggregation_counts_distinct_appearances():
@@ -186,3 +233,87 @@ def test_doubleheader_workload_aggregation_counts_distinct_appearances():
     assert result['top_three_relievers_10d'][0]['pitches'] == 25
     assert result['top_three_relievers_10d'][0]['appearances'] == 2
     assert result['top_three_workload_share_10d'] == 88.9
+
+
+_LEAGUE_TOP_ONE = {
+    'top_one_workload_share_distribution_10d': {
+        'sample_count': 28, 'mean': 25.0, 'median': 24.0,
+        'p10': 16.0, 'p25': 20.0, 'p75': 30.0, 'p90': 36.0,
+    },
+}
+
+
+def test_league_baseline_includes_top_one_workload_distribution():
+    team_one = [
+        log(1, 1, 40, team_id=1),
+        log(2, 1, 30, team_id=1),
+        log(3, 2, 30, team_id=1),
+    ]  # lead arm 40 / 100 -> 40.0
+    team_two = [
+        log(11, 1, 80, team_id=2),
+        log(12, 1, 20, team_id=2),
+    ]  # lead arm 80 / 100 -> 80.0
+    baseline = build_league_bullpen_concentration_baseline(
+        [*team_one, *team_two],
+        reference_date=REF,
+    )
+
+    distribution = baseline['top_one_workload_share_distribution_10d']
+    assert distribution['sample_count'] == 2
+    assert round(distribution['mean'], 1) == 60.0
+
+
+def test_context_exposes_lead_arm_share_and_separate_baseline_read():
+    result = context([log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)])
+
+    assert result['top_one_workload_share_10d'] == 80.0
+    # Separate read, distinct from the top-three baseline_read.
+    assert result['lead_arm_baseline_read']['metric'] == 'top_one_share'
+    assert result['baseline_read']['metric'] == 'top_share'
+
+
+def test_lead_arm_baseline_read_marks_heavy_single_arm_reliance():
+    result = context(
+        [log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)],
+        league_baseline=_LEAGUE_TOP_ONE,
+    )
+
+    read = result['lead_arm_baseline_read']
+    assert read['available'] is True
+    assert read['metric'] == 'top_one_share'
+    assert read['comparison'] == 'among_highest'
+    assert read['value'] == 80.0
+
+
+def test_lead_arm_baseline_read_marks_balanced_lead_arm_below_norm():
+    # Six arms split the workload evenly -> the lead arm is below the league norm.
+    result = context(
+        [log(player_id, 1, 20) for player_id in range(1, 7)],
+        league_baseline=_LEAGUE_TOP_ONE,
+    )
+
+    read = result['lead_arm_baseline_read']
+    assert read['available'] is True
+    assert read['comparison'] == 'below_average'
+
+
+def test_lead_arm_baseline_read_guards_on_thin_league_sample():
+    thin = {
+        'top_one_workload_share_distribution_10d': {
+            'sample_count': 2, 'mean': 50.0, 'median': 50.0,
+            'p10': 40.0, 'p25': 45.0, 'p75': 55.0, 'p90': 60.0,
+        },
+    }
+    result = context([log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)], league_baseline=thin)
+
+    assert result['lead_arm_baseline_read']['available'] is False
+    assert result['lead_arm_baseline_read']['comparison'] == 'insufficient_sample'
+
+
+def test_lead_arm_baseline_read_without_distribution_degrades_gracefully():
+    result = context(
+        [log(1, 1, 80), log(2, 1, 10), log(3, 1, 10)],
+        league_baseline={'league_team_count_10d': 5},
+    )
+
+    assert result['lead_arm_baseline_read']['available'] is False

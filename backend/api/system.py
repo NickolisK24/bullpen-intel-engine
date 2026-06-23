@@ -10,13 +10,53 @@ the sync/recalculate write endpoints.
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 
 from services import sync_metadata
 from utils.auth import require_admin_token
 
 
 system_bp = Blueprint('system', __name__)
+
+
+@system_bp.route('/digest-status', methods=['GET'])
+@require_admin_token
+def get_digest_status():
+    """Operator visibility into the daily team digest.
+
+    Runs the digest decision pipeline in dry-run mode (no email is sent) and
+    reports how many users were considered, how many would send, and how many
+    were suppressed or skipped (by reason). Safe to call anytime; this is a
+    point-in-time snapshot, not a metrics system.
+    """
+    from services.digest_delivery import run_digest_job
+    summary = run_digest_job(current_app._get_current_object(), dry_run=True)
+    return jsonify(summary)
+
+
+@system_bp.route('/digest-metrics', methods=['GET'])
+@require_admin_token
+def get_digest_metrics():
+    """Durable digest metrics for the operator (Phase D2E).
+
+    Lifetime totals (sent, suppressed, opens, clicks, attributed returns) plus
+    open/click/return rates and recent run aggregates — enough to answer whether
+    the digest is bringing users back. Admin-gated; measurement only.
+    """
+    from services.digest_metrics import metrics_overview
+    return jsonify(metrics_overview())
+
+
+@system_bp.route('/email-delivery-health', methods=['GET'])
+@require_admin_token
+def get_email_delivery_health():
+    """Operator check that the active email provider is configured to send.
+
+    Reports the resolved provider, whether a sender is set, readiness, and any
+    config issues. Admin-gated; never exposes the API key.
+    """
+    from utils.email_delivery import email_delivery_health
+    return jsonify(email_delivery_health())
 
 
 @system_bp.route('/pipeline-health', methods=['GET'])
