@@ -444,6 +444,86 @@ def test_writer_outputs_optionality_strength_observation():
     assert_quality_sections(output)
 
 
+def _optionality_strength_optionality(*, comparison=None, available=True):
+    optionality = {
+        'optionality_band': 'deep',
+        'practical_close_game_paths_count': 6,
+        'available_arms_count': 7,
+        'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+        'secondary_options': [{'name': 'Secondary One'}],
+    }
+    if comparison is not None or available is False:
+        read = {'available': available, 'comparison': comparison}
+        if available:
+            read['metric'] = 'clean_trusted_options'
+        optionality['baseline_read'] = read
+    return optionality
+
+
+def test_writer_voices_optionality_depth_above_norm_baseline():
+    frame = frame_for(
+        team_context(optionality=_optionality_strength_optionality(comparison='above_average')),
+        TYPE_OPTIONALITY_STRENGTH,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # The internal clean-count line is enriched with a league depth read.
+    assert '2 low-workload late-inning choices' in text
+    assert 'deeper than the league norm' in text
+
+
+def test_writer_voices_optionality_depth_among_highest_baseline():
+    frame = frame_for(
+        team_context(optionality=_optionality_strength_optionality(comparison='among_highest')),
+        TYPE_OPTIONALITY_STRENGTH,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'among the deeper clean-options groups in baseball' in text
+
+
+def test_writer_optionality_strength_without_baseline_read_keeps_existing_copy():
+    frame = frame_for(
+        team_context(optionality=_optionality_strength_optionality()),
+        TYPE_OPTIONALITY_STRENGTH,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert '2 low-workload late-inning choices' in text
+    assert 'league norm' not in text
+    assert 'among the deeper' not in text
+
+
+def test_writer_optionality_strength_guarded_baseline_keeps_existing_copy():
+    frame = frame_for(
+        team_context(optionality=_optionality_strength_optionality(comparison='insufficient_sample', available=False)),
+        TYPE_OPTIONALITY_STRENGTH,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    # Guarded read -> existing positive copy preserved, no forced league comparison.
+    assert '2 low-workload late-inning choices' in text
+    assert 'league norm' not in text
+    assert 'among the deeper' not in text
+
+
+def test_optionality_depth_baseline_language_has_no_ranking_or_recommendation_terms():
+    from services.story_writer_v1 import _OPTIONALITY_DEPTH_BASELINE_SENTENCE
+
+    forbidden = (
+        'highest', 'lowest', 'deepest', '#1', 'top-ranked', 'league-leading', 'most',
+        'worst', 'best', 'rank', 'recommend', 'should', 'likely to', 'projected', 'predict', 'will ',
+    )
+    for sentence in _OPTIONALITY_DEPTH_BASELINE_SENTENCE.values():
+        lowered = sentence.lower()
+        for term in forbidden:
+            assert term not in lowered, (sentence, term)
+
+
 def test_writer_outputs_stable_core_observation():
     frame = frame_for(team_context(stability={
         'stability_band': 'stable',

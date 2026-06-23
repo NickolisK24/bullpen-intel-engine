@@ -423,6 +423,25 @@ def _concentration_pressure(frame):
     )
 
 
+# Distribution-aware league phrasing for the positive optionality/depth story's
+# baseline beat. Same clean-options metric and bands as the trust-lane story, but
+# voiced for a healthy-depth narrative (better-is-higher). Descriptive context
+# only — no rank, recommendation, prediction, or superlative-singular language
+# (governance C1I). Reuses the shared C1H band reader; does not recompute the read.
+_OPTIONALITY_DEPTH_BASELINE_SENTENCE = {
+    'below_average': 'That is still thinner than the league norm',
+    'about_typical': 'That is about as deep as a typical bullpen',
+    'above_average': 'That is deeper than the league norm',
+    'well_above_average': 'That clean lane sits well above the league norm',
+    'among_highest': 'That puts them among the deeper clean-options groups in baseball',
+}
+
+
+def _optionality_depth_baseline_sentence(baseline):
+    band = _clean_options_band(baseline)
+    return _OPTIONALITY_DEPTH_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _optionality_strength(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -469,6 +488,10 @@ def _optionality_strength(frame):
                 f"There are {_fmt(clean_count)} low-workload late-inning {_count_word(clean_count, 'choice', 'choices')}"
                 if _present(clean_count) and clean_count > 0 else None
             ),
+            # Distribution-aware league depth read of the clean-options count,
+            # enriching the internal counts above with "compared to what?" context.
+            # Absent or guarded reads return None and leave the copy unchanged.
+            _optionality_depth_baseline_sentence(baseline),
         ),
         cause_paragraph=_paragraph(
             (
