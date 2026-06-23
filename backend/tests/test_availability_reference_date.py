@@ -12,6 +12,7 @@ import services.bullpen_eligibility as bullpen_eligibility
 import services.bullpen_population as bullpen_population
 import services.game_context as game_context
 import services.pitcher_role as pitcher_role
+import services.sync_metadata as sync_metadata
 import services.sync as sync_service
 from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
@@ -66,6 +67,7 @@ def _set_runtime_today(monkeypatch, runtime_day):
     ):
         if hasattr(module, 'date'):
             monkeypatch.setattr(module, 'date', runtime_date)
+    monkeypatch.setattr(sync_metadata, 'product_current_date', lambda: runtime_day)
 
 
 def _seed_reference_date_case():
