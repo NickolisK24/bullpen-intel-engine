@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
-import { getBullpenDashboard, getTeamBullpenBoard, getTeams } from '../../utils/api'
+import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
@@ -14,6 +14,7 @@ import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
 import TeamMark from '../team/TeamMark'
+import WhatChangedCard from '../dashboard/WhatChangedCard'
 import {
   getBoardContextView,
   getBullpenStressView,
@@ -52,6 +53,14 @@ export default function Home() {
     ),
     [preferredTeamId],
   )
+  const preferredChanges = useFetch(
+    () => (
+      preferredTeamId == null
+        ? Promise.resolve(null)
+        : getTeamChanges(preferredTeamId)
+    ),
+    [preferredTeamId],
+  )
 
   return (
     <HomeView
@@ -66,6 +75,10 @@ export default function Home() {
       preferredTeamBoard={preferredBoard.data}
       preferredTeamBoardLoading={preferredTeamId != null && preferredBoard.loading}
       preferredTeamBoardError={preferredTeamId != null ? preferredBoard.error : null}
+      preferredTeamChanges={preferredChanges.data}
+      preferredTeamChangesLoading={preferredTeamId != null && preferredChanges.loading}
+      preferredTeamChangesError={preferredTeamId != null ? preferredChanges.error : null}
+      onRetryPreferredTeamChanges={preferredChanges.refetch}
       loading={dash.loading}
       error={dash.error}
       staleWithError={dash.staleWithError}
@@ -86,6 +99,10 @@ export function HomeView({
   preferredTeamBoard = null,
   preferredTeamBoardLoading = false,
   preferredTeamBoardError = null,
+  preferredTeamChanges = null,
+  preferredTeamChangesLoading = false,
+  preferredTeamChangesError = null,
+  onRetryPreferredTeamChanges = null,
   loading = false,
   error = null,
   staleWithError = false,
@@ -95,12 +112,11 @@ export function HomeView({
   // The story surfaces read the canonical backend feed (dashboard.stories). The
   // canonical adapters return safe neutral reads for an empty, missing, or
   // malformed payload, so Home never blanks on a quiet morning.
-  const hero = getCanonicalHeroStory(dashboard)
+  const hero = getCanonicalHeroStory(dashboard, { preferredTeam })
   const watchItems = getCanonicalHomeStories(dashboard)
   const leagueContext = getCanonicalLeagueContext(dashboard)
   const teamOptions = useMemo(() => buildWhatChangedTeamOptions(teams), [teams])
   const selectedValue = selectedWhatChangedTeamValue(teamOptions, [], preferredTeam)
-  const selectedTeam = selectedWhatChangedTeam(teamOptions, selectedValue)
   const showFirstVisitPicker = !preferredTeam && !preferredTeamPromptDismissed
 
   const handleSelectTeam = (team) => {
@@ -156,6 +172,13 @@ export function HomeView({
 
           {preferredTeam && (
             <>
+              <WhatChangedCard
+                followedTeam={preferredTeam}
+                changes={preferredTeamChanges}
+                loading={preferredTeamChangesLoading}
+                error={preferredTeamChangesError}
+                onRetry={onRetryPreferredTeamChanges}
+              />
               <TonightsTeamBullpenPicture
                 team={preferredTeam}
                 board={preferredTeamBoard}

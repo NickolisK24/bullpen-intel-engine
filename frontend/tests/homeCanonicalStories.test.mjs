@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -29,6 +30,9 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 
 const POSITIVE_HEADLINE = 'The Giants bullpen has more rested options than most clubs today'
+const METS_HEADLINE = 'Mets bridge arms changed after last night'
+const YANKEES_HEADLINE = 'Yankees lead the league story today'
+const metsTeam = { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM' }
 
 function canonicalFeed(overrides = {}) {
   return {
@@ -97,6 +101,70 @@ function dashboardFixture(stories) {
     },
     freshness: { data_through: '2026-06-05', sync_status: 'success', is_current: true },
     stories,
+  }
+}
+
+function teamStory({
+  teamId,
+  teamName,
+  teamAbbr,
+  headline,
+  storyType = 'route_change',
+  category = 'watch',
+  tone = 'watch',
+}) {
+  return {
+    story_id: `${teamId}:2026-06-06`,
+    team_id: teamId,
+    team_name: teamName,
+    team_abbreviation: teamAbbr,
+    date: '2026-06-06',
+    story_available: true,
+    suppression_reason: null,
+    story_type: storyType,
+    category,
+    tone,
+    headline,
+    narrative: `${headline} observation.\n\n${headline} baseline.\n\n${headline} cause.\n\n${headline} constraint.`,
+    beats: [
+      { key: 'observation', label: 'What changed', text: `${headline} observation.` },
+      { key: 'baseline', label: 'Comparison point', text: `${headline} baseline.` },
+      { key: 'cause', label: 'Why it happened', text: `${headline} cause.` },
+      { key: 'constraint', label: 'What it creates', text: `${headline} constraint.` },
+    ],
+    share_summary: `${headline} observation.`,
+    continuity: { state: 'new', reason: 'no_prior_canonical_story', compared: false },
+    quality_status: 'published',
+  }
+}
+
+function makeChanges(overrides = {}) {
+  return {
+    state: 'changes',
+    comparison: {
+      anchor_game_date: '2026-06-06',
+      current_game_date: '2026-06-07',
+      global_latest_game_date: '2026-06-07',
+      label: 'Compared with NYM: Jun 6 -> Jun 7',
+      is_current: true,
+      team_data_behind_league: false,
+    },
+    team_summary: null,
+    pitcher_changes: [
+      {
+        type: 'appearance',
+        pitcher_id: 1,
+        pitcher_name: 'Mets Relief Arm',
+        game_date: '2026-06-07',
+        pitches: 19,
+        summary: 'Mets Relief Arm pitched Sunday - 19 pitches.',
+      },
+    ],
+    freshness: {
+      latest_workload_date: '2026-06-07',
+      is_current: true,
+    },
+    ...overrides,
   }
 }
 
@@ -187,6 +255,71 @@ test('hero takes the lead publishable story and splits prose from why-it-matters
   assert.deepEqual(hero.chips, [])
 })
 
+test('preferred team story becomes the Home flagship when available', () => {
+  const dashboard = dashboardFixture(canonicalFeed({
+    items: [
+      teamStory({
+        teamId: 147,
+        teamName: 'New York Yankees',
+        teamAbbr: 'NYY',
+        headline: YANKEES_HEADLINE,
+        storyType: 'coverage_pressure',
+        category: 'stressed',
+        tone: 'stress',
+      }),
+      teamStory({
+        teamId: 121,
+        teamName: 'New York Mets',
+        teamAbbr: 'NYM',
+        headline: METS_HEADLINE,
+      }),
+    ],
+  }))
+
+  const hero = getCanonicalHeroStory(dashboard, { preferredTeam: metsTeam })
+
+  assert.equal(hero.headline, METS_HEADLINE)
+  assert.equal(hero.team.abbr, 'NYM')
+})
+
+test('preferred team hero falls back to generic flagship when no team story exists', () => {
+  const dashboard = dashboardFixture(canonicalFeed({
+    items: [
+      teamStory({
+        teamId: 147,
+        teamName: 'New York Yankees',
+        teamAbbr: 'NYY',
+        headline: YANKEES_HEADLINE,
+        storyType: 'coverage_pressure',
+        category: 'stressed',
+        tone: 'stress',
+      }),
+      {
+        story_id: '121:2026-06-06',
+        team_id: 121,
+        team_name: 'New York Mets',
+        team_abbreviation: 'NYM',
+        date: '2026-06-06',
+        story_available: false,
+        suppression_reason: 'no_story_observations',
+        story_type: null,
+        category: null,
+        tone: null,
+        headline: null,
+        narrative: null,
+        beats: [],
+        continuity: { state: 'unavailable', reason: 'no_publishable_story_today', compared: true },
+        quality_status: 'suppressed',
+      },
+    ],
+  }))
+
+  const hero = getCanonicalHeroStory(dashboard, { preferredTeam: metsTeam })
+
+  assert.equal(hero.headline, YANKEES_HEADLINE)
+  assert.equal(hero.team.abbr, 'NYY')
+})
+
 test('quiet day with no publishable story falls to a league/quiet hero', () => {
   const hero = getCanonicalHeroStory(dashboardFixture({ items: [], league_context: canonicalFeed().league_context }))
   assert.equal(hero.hasStory, false)
@@ -213,6 +346,75 @@ test('Home renders the canonical positive story', () => {
   assert.equal(htmlIncludes(html, 'More Options'), true)
   // The positive story is not framed as a pressure warning.
   assert.equal(htmlIncludes(html, 'Stretched Thin'), false)
+})
+
+test('preferred team Home renders What Changed before the bullpen picture and team flagship', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardFixture(canonicalFeed({
+      items: [
+        teamStory({
+          teamId: 147,
+          teamName: 'New York Yankees',
+          teamAbbr: 'NYY',
+          headline: YANKEES_HEADLINE,
+          storyType: 'coverage_pressure',
+          category: 'stressed',
+          tone: 'stress',
+        }),
+        teamStory({
+          teamId: 121,
+          teamName: 'New York Mets',
+          teamAbbr: 'NYM',
+          headline: METS_HEADLINE,
+        }),
+      ],
+    })),
+    preferredTeam: metsTeam,
+    preferredTeamChanges: makeChanges(),
+  }))
+
+  assert.equal(htmlIncludes(html, 'My Team'), true)
+  assert.equal(htmlIncludes(html, 'What Changed Since Last Game'), true)
+  assert.equal(htmlIncludes(html, 'Mets Relief Arm pitched Sunday - 19 pitches.'), true)
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s Bullpen Picture'), true)
+  assert.equal(htmlIncludes(html, METS_HEADLINE), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
+  assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)
+
+  assert.ok(html.indexOf('What Changed Since Last Game') < html.indexOf('Tonight&#x27;s Bullpen Picture'))
+  assert.ok(html.indexOf('Tonight&#x27;s Bullpen Picture') < html.indexOf('What BaseballOS Sees Today'))
+  assert.ok(html.indexOf(METS_HEADLINE) < html.indexOf('Three Things To Watch'))
+})
+
+test('preferred team Home falls back to generic flagship while preserving league discovery', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardFixture(canonicalFeed()),
+    preferredTeam: metsTeam,
+    preferredTeamChanges: makeChanges({ state: 'no_changes', pitcher_changes: [] }),
+  }))
+
+  assert.equal(htmlIncludes(html, 'What Changed Since Last Game'), true)
+  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), true)
+  assert.equal(htmlIncludes(html, METS_HEADLINE), false)
+  assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
+})
+
+test('anonymous Home flow keeps picker, generic flagship, watch cards, and league context', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardFixture(canonicalFeed()),
+    teams: [metsTeam],
+    preferredTeam: null,
+    preferredTeamPromptDismissed: false,
+  }))
+
+  assert.equal(htmlIncludes(html, 'Pick Your Team'), true)
+  assert.equal(htmlIncludes(html, 'Make Today open around your bullpen'), true)
+  assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), true)
+  assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)
+  assert.equal(htmlIncludes(html, 'League Context'), true)
+  assert.equal(htmlIncludes(html, 'What Changed Since Last Game'), false)
+  assert.ok(html.indexOf('Pick Your Team') < html.indexOf('What BaseballOS Sees Today'))
 })
 
 test('quiet day: Home renders the league/quiet hero without crashing', () => {
@@ -243,4 +445,13 @@ test('missing dashboard.stories still renders a neutral Home without throwing', 
   assert.equal(htmlIncludes(html, 'A quiet morning across baseball'), true)
   assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)
   assert.equal(htmlIncludes(html, 'League Context'), true)
+})
+
+test('Home reuses the existing team changes API contract', () => {
+  const apiSource = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
+  const homeSource = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+
+  assert.match(apiSource, /export const getTeamChanges = \(teamId\) => request\(`\/bullpen\/teams\/\$\{teamId\}\/changes`\)/)
+  assert.match(homeSource, /getTeamChanges\(preferredTeamId\)/)
+  assert.doesNotMatch(homeSource, /\/bullpen\/teams\/\$\{preferredTeamId\}\/changes/)
 })

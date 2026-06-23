@@ -51,6 +51,12 @@ function cleanText(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function cleanTeamId(value) {
+  if (value == null || value === '') return null
+  const id = Number(value)
+  return Number.isInteger(id) ? id : null
+}
+
 function teamHref(item) {
   const abbr = cleanText(item?.team_abbreviation)
   return abbr ? `/bullpen?view=board&team=${encodeURIComponent(abbr)}` : null
@@ -111,6 +117,31 @@ function publishableItems(dashboard) {
   return items.filter(item => item && item.story_available === true)
 }
 
+function storyMatchesTeam(item, team) {
+  if (!item || !team) return false
+
+  const storyTeamId = cleanTeamId(item.team_id ?? item.teamId)
+  const preferredTeamId = cleanTeamId(team.team_id ?? team.teamId)
+  if (storyTeamId != null && preferredTeamId != null) {
+    return storyTeamId === preferredTeamId
+  }
+
+  const storyAbbr = cleanText(item.team_abbreviation ?? item.teamAbbreviation ?? item.abbr)?.toLowerCase()
+  const preferredAbbr = cleanText(team.team_abbreviation ?? team.teamAbbreviation ?? team.teamAbbr ?? team.abbr)?.toLowerCase()
+  if (storyAbbr && preferredAbbr) {
+    return storyAbbr === preferredAbbr
+  }
+
+  const storyName = cleanText(item.team_name ?? item.teamName)?.toLowerCase()
+  const preferredName = cleanText(team.team_name ?? team.teamName)?.toLowerCase()
+  return Boolean(storyName && preferredName && storyName === preferredName)
+}
+
+function preferredTeamLead(dashboard, preferredTeam) {
+  if (!preferredTeam) return null
+  return publishableItems(dashboard).find(item => storyMatchesTeam(item, preferredTeam)) || null
+}
+
 // One canonical published story -> a Home story card (BullpenStories shape).
 function toStoryCard(item) {
   const href = teamHref(item)
@@ -141,9 +172,10 @@ export function getCanonicalHomeStories(dashboard, { limit = 3 } = {}) {
   }
 }
 
-// The flagship hero — the strongest publishable story, or a league/quiet read.
-export function getCanonicalHeroStory(dashboard) {
-  const lead = publishableItems(dashboard)[0] || null
+// The flagship hero — the preferred team story when available, then the
+// strongest publishable story, or a league/quiet read.
+export function getCanonicalHeroStory(dashboard, { preferredTeam = null } = {}) {
+  const lead = preferredTeamLead(dashboard, preferredTeam) || publishableItems(dashboard)[0] || null
   if (lead) {
     return {
       hasStory: true,
