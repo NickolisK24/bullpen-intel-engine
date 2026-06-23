@@ -24,6 +24,7 @@ BEAT_TRUST_LANE = 'trust_lane'
 BEAT_BRIDGE = 'bridge'
 
 PURPOSE_OPENING = 'opening'
+PURPOSE_ELIGIBILITY_CONTEXT = 'eligibility_context'
 
 DENIED_PUBLIC_PHRASES = (
     'sit at the front of',
@@ -171,6 +172,32 @@ VOICE_LIBRARY = {
 }
 
 
+# Eligibility-aware context lines (Phase C3E). Each qualifies an existing
+# forward-constraint beat when Swing/Bulk arms materially shape coverage or
+# depth. They are governed surface voice: descriptive only, with no public
+# roles, rankings, recommendations, or predictions.
+ELIGIBILITY_CONTEXT_LINES = {
+    BEAT_COVERAGE_PRESSURE: (
+        'Some of that coverage comes from swing and bulk options rather than dedicated relief roles',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'Part of that depth is tied to swing and bulk usage rather than traditional bullpen roles',
+    ),
+    BEAT_TRUST_LANE: (
+        'The clean late-inning lane is thinner than the raw arm count, with some arms working as swing or bulk options',
+    ),
+    BEAT_BRIDGE: (
+        'Some of the bullpen count is swing or bulk usage, leaving the bridge thinner than the raw total suggests',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'Some of that depth comes from swing and bulk options rather than dedicated late-inning roles',
+    ),
+}
+
+for _beat, _forms in ELIGIBILITY_CONTEXT_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_ELIGIBILITY_CONTEXT] = _forms
+
+
 class _SafeFormatDict(dict):
     def __missing__(self, key: str) -> str:
         return ''
@@ -305,6 +332,8 @@ __all__ = [
     'BEAT_TRUST_LANE',
     'CAPABILITY',
     'DENIED_PUBLIC_PHRASES',
+    'ELIGIBILITY_CONTEXT_LINES',
+    'PURPOSE_ELIGIBILITY_CONTEXT',
     'PURPOSE_OPENING',
     'VERSION',
     'approved_sentence_forms',
