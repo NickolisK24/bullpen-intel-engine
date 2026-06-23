@@ -114,6 +114,7 @@ def create_app(config_name=None):
     from models.dashboard_snapshot import DashboardSnapshot
     from models.availability_backtest_result import AvailabilityBacktestResult
     from models.postgame_processed_game import PostgameProcessedGame
+    from models.user import User, UserFollowedTeam
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
@@ -124,6 +125,7 @@ def create_app(config_name=None):
     from api.observations import observations_bp
     from api.pitchers import pitchers_bp
     from api.system import system_bp
+    from api.auth import auth_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -134,6 +136,7 @@ def create_app(config_name=None):
     app.register_blueprint(observations_bp, url_prefix='/api/observations')
     app.register_blueprint(pitchers_bp, url_prefix='/api/pitchers')
     app.register_blueprint(system_bp, url_prefix='/api/system')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
 
     @app.route('/api/health')
     def health():
