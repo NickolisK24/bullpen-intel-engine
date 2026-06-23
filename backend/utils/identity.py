@@ -7,7 +7,9 @@ seam here means D1C can add token verification in one place without changing any
 endpoint that already calls ``resolve_current_user()``.
 """
 
-from flask import request
+from functools import wraps
+
+from flask import g, jsonify, request
 
 
 AUTH_HEADER = 'Authorization'
@@ -69,3 +71,22 @@ def identity_for(user):
         'authenticated': True,
         'user': user.to_dict(),
     }
+
+
+def require_authenticated_user(view):
+    """Gate a route behind a valid bearer token.
+
+    Resolves the current user and stashes it on ``flask.g.current_user`` for the
+    view; an unauthenticated request gets a safe 401 JSON response. Only routes
+    that opt in (the /api/me/* surfaces) use this — every existing endpoint stays
+    anonymous-compatible.
+    """
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        user = resolve_current_user()
+        if user is None:
+            return jsonify({'error': 'authentication_required'}), 401
+        g.current_user = user
+        return view(*args, **kwargs)
+
+    return wrapper
