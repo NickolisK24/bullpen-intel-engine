@@ -134,6 +134,19 @@ class Config:
     EMAIL_API_KEY = os.environ.get('EMAIL_API_KEY')
     EMAIL_SEND_TIMEOUT = float(os.environ.get('EMAIL_SEND_TIMEOUT', '10'))
 
+    # ── Team digest scheduling & delivery (Phase D2D) ────────────────────────
+    # The daily digest job is registered only when DIGEST_SEND_ENABLED is true,
+    # so turning on AUTO_SYNC alone never starts emailing. Per-user opt-in is
+    # still required regardless of this flag. DIGEST_SEND_HOUR_ET is when the
+    # daily job runs (Eastern). PUBLIC_API_BASE_URL is the backend's public
+    # origin, used to build absolute one-click unsubscribe links in the email.
+    DIGEST_SEND_ENABLED = (
+        os.environ.get('DIGEST_SEND_ENABLED', 'false').lower()
+        in ('1', 'true', 'yes', 'on')
+    )
+    DIGEST_SEND_HOUR_ET = int(os.environ.get('DIGEST_SEND_HOUR_ET', '7'))
+    PUBLIC_API_BASE_URL = os.environ.get('PUBLIC_API_BASE_URL', '')
+
     # ── Story Quality contract (scoring + gating) ────────────────────────────
     # The Story Quality scorer always runs and annotates every generated story
     # with a rule-by-rule scorecard. Enforcement is opt-in and fail-open: with
