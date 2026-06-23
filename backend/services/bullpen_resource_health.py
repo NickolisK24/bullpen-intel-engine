@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.availability import STATUS_AVAILABLE, STATUS_UNAVAILABLE
+from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
 from services.roster_status import (
     STATUS_IL_10,
     STATUS_IL_15,
@@ -132,10 +133,7 @@ def _pitcher_id(record: dict[str, Any]) -> int | None:
 
 
 def _is_bullpen_record(record: dict[str, Any]) -> bool:
-    eligibility = record.get('eligibility')
-    if eligibility is None:
-        return True
-    return bool(eligibility.get('eligible'))
+    return record_is_bullpen_eligible(record)
 
 
 def _read_key(record: dict[str, Any]) -> str:

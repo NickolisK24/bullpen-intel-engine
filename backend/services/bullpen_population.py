@@ -6,6 +6,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from services.availability_reference_date import product_current_date
 from services.bullpen_eligibility import evaluate_bullpen_eligibility
+from services.bullpen_eligibility_vocabulary import normalize_eligibility
 from services.pitcher_role import ROLE_WINDOW_DAYS
 from services.role_authority import (
     ROLE_AMBIGUOUS,
@@ -58,15 +59,22 @@ def _eligibility_for(pitcher, logs, roster_status, reference_date, use_role_auth
     Role Authority (default) derives Starter/Reliever/Ambiguous/Unknown from the
     authoritative gamesStarted signal. The legacy innings heuristic remains
     selectable for rollback and for the read-only diagnostic comparison.
+
+    Either engine's payload is normalized onto the shared eligibility vocabulary
+    so every downstream record carries a consistent field set (including
+    eligibility_type and authority/source). Normalization preserves the engine's
+    eligible/role/status decision unchanged.
     """
     if use_role_authority:
-        return classify_role(pitcher, logs, reference_date=reference_date)
-    return evaluate_bullpen_eligibility(
-        pitcher,
-        logs,
-        reference_date=reference_date,
-        respect_local_active=not roster_status.get('is_authoritative'),
-    )
+        raw = classify_role(pitcher, logs, reference_date=reference_date)
+    else:
+        raw = evaluate_bullpen_eligibility(
+            pitcher,
+            logs,
+            reference_date=reference_date,
+            respect_local_active=not roster_status.get('is_authoritative'),
+        )
+    return normalize_eligibility(raw)
 
 
 def eligible_bullpen_pitcher_contexts(
