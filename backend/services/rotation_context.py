@@ -14,6 +14,7 @@ from typing import Any
 from services.availability_reference_date import product_current_date
 from services.baseline_distribution import build_distribution
 from services.baseline_engine import interpret_value
+from services.game_shape import game_shape_of
 from utils.games_started import RELIEF, START, games_started_state
 from utils.innings import log_innings_outs, outs_to_decimal_innings
 
@@ -158,6 +159,8 @@ def _analyze_game(game_logs):
         'coverage_available': coverage_reason is None,
         'coverage_exclusion_reason': coverage_reason,
         'early_bullpen_entry': starter_outs < EARLY_BULLPEN_ENTRY_OUTS,
+        # Additive game-shape metadata only; it does not affect any calculation.
+        'game_shape': game_shape_of(game_logs),
     }, None
 
 
@@ -198,14 +201,20 @@ def build_rotation_context(logs, *, reference_date=None):
     grouped, rows_without_game_pk = _group_logs(rows, reference_date=ref)
     exclusion_reasons = Counter()
     coverage_exclusion_reasons = Counter()
+    game_shape_counts = Counter()
     analyzed = []
 
     for game_pk, game_logs in grouped.items():
         item, reason = _analyze_game(game_logs)
         if item is None:
             exclusion_reasons[reason] += 1
+            # Classify excluded games (e.g. bullpen games) too so the game-shape
+            # distribution is complete. This is metadata only and changes no
+            # existing calculation or which games are analyzed.
+            game_shape_counts[game_shape_of(game_logs)] += 1
             continue
         item['mlb_game_pk'] = game_pk
+        game_shape_counts[item['game_shape']] += 1
         analyzed.append(item)
         if item.get('coverage_exclusion_reason'):
             coverage_exclusion_reasons[item['coverage_exclusion_reason']] += 1
@@ -250,6 +259,7 @@ def build_rotation_context(logs, *, reference_date=None):
         ),
         'excluded_game_reasons': dict(exclusion_reasons),
         'coverage_excluded_game_reasons': dict(coverage_exclusion_reasons),
+        'game_shape_distribution': dict(game_shape_counts),
         'rows_without_game_pk': rows_without_game_pk,
         'limitations': limitations,
     }
