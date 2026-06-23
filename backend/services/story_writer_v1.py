@@ -244,6 +244,41 @@ def validate_written_observation(output):
     }
 
 
+# Human phrasing for the internal "band" labels, so a story reads as a sentence
+# rather than dropping a raw enum word into prose ("the late-game map balanced").
+# Descriptive only — the band value carries its own polarity, so the same map can
+# serve a positive (optionality/stable) and a constrained (depth) read.
+_OPTIONALITY_BAND_SENTENCE = {
+    'deep': 'That gives the bullpen plenty of room to work the late innings',
+    'flexible': 'That keeps the late innings flexible',
+    'narrow': 'That leaves the late innings with little room to maneuver',
+    'thin': 'That leaves the late innings stretched thin',
+}
+
+_CONCENTRATION_BAND_SENTENCE = {
+    'balanced': 'The work has stayed spread across the group',
+    'normal': 'The workload has spread in a normal pattern',
+    'concentrated': 'A small group is carrying most of the recent work',
+    'narrow': 'The recent work has bunched onto just a few arms',
+}
+
+_DEPTH_PRESSURE_BAND_SENTENCE = {
+    'moderate': 'That trims the late-inning depth the manager can lean on',
+    'heavy': 'That leaves the late-inning depth stretched thin',
+}
+
+
+def _band_phrase(mapping, band):
+    """Map an internal band label to a human sentence; None when unrecognized.
+
+    Returning None on an unknown band keeps an unmapped enum out of the prose
+    rather than leaking it; the surrounding paragraph keeps its other sentences.
+    """
+    if band is None:
+        return None
+    return mapping.get(_clean_text(band).lower())
+
+
 # Distribution-aware league phrasing for the rotation-pressure story's baseline
 # beat. rotation_avg_ip_7d is better-is-higher (longer starts ease bullpen load),
 # so the engine's value-neutral position bands read as starter length: a
@@ -312,7 +347,7 @@ def _rotation_pressure(frame):
             # present (it already anchors the seven-day value) to avoid stacking.
             _rotation_length_baseline_sentence(baseline),
             (
-                f"The comparison point is {_fmt(avg_14)} starter innings over the full 14-day window"
+                f"Over the full two-week window, the rotation averaged {_fmt(avg_14)} starter innings"
                 if _present(avg_14) else None
             ),
             (
@@ -542,7 +577,7 @@ def _optionality_strength(frame):
                 if _present(paths) else None
             ),
             (
-                f"That leaves the late-game map {band}"
+                _band_phrase(_OPTIONALITY_BAND_SENTENCE, band)
                 if _present(band) else None
             ),
         ),
@@ -574,7 +609,7 @@ def _optionality_strength(frame):
                 if _present(secondary_count) and secondary_count > 0 else None
             ),
             (
-                f"The workload pattern is {concentration}"
+                _band_phrase(_CONCENTRATION_BAND_SENTENCE, concentration)
                 if _present(concentration) else None
             ),
         ),
@@ -620,11 +655,11 @@ def _stable_core(frame):
         ),
         observation_paragraph=_paragraph(
             (
-                f"The current core is {current}"
+                f"The late innings still run through {current}"
                 if current else None
             ),
             (
-                f"The same core is still carrying the main bullpen route"
+                "It is the same trusted group as before"
                 if _present(observed.get('stability_band')) else None
             ),
         ),
@@ -640,11 +675,11 @@ def _stable_core(frame):
         ),
         cause_paragraph=_paragraph(
             (
-                f"The current group carried {_fmt(stability, suffix='%')} of the route overlap"
+                f"The same arms have handled {_fmt(stability, suffix='%')} of the recent late-inning work"
                 if _present(stability) else None
             ),
             (
-                f"The workload pattern is {concentration}"
+                _band_phrase(_CONCENTRATION_BAND_SENTENCE, concentration)
                 if _present(concentration) else None
             ),
         ),
@@ -701,7 +736,7 @@ def _core_transition(frame):
         ),
         baseline_paragraph=_paragraph(
             (
-                f"The comparison point is the previous route: {previous}"
+                f"Not long ago, those innings still ran through {previous}"
                 if previous else None
             ),
             (
@@ -767,7 +802,7 @@ def _depth_pressure(frame):
                 if _present(inactive) and not _present(active) else None
             ),
             (
-                f"That leaves the late-inning depth {depth_band}"
+                _band_phrase(_DEPTH_PRESSURE_BAND_SENTENCE, depth_band)
                 if _present(depth_band) else None
             ),
         ),
@@ -801,7 +836,7 @@ def _depth_pressure(frame):
                 if _present(paths) else None
             ),
             (
-                f"The available late-inning map is {optionality}"
+                _band_phrase(_OPTIONALITY_BAND_SENTENCE, optionality)
                 if _present(optionality) else None
             ),
         ),
@@ -885,7 +920,7 @@ def _trust_lane_pressure(frame):
             # (never both, to avoid stacking two competing "comparison" lines).
             _clean_options_baseline_sentence(baseline),
             (
-                f"The comparison point is the {_fmt(available)}-arm available board set against a thinner trusted late-inning lane"
+                f"Against the {_fmt(available)}-arm available board, the trusted late-inning lane is a shorter list"
                 if _present(available) and not _clean_options_band(baseline) else None
             ),
             (
@@ -909,7 +944,7 @@ def _trust_lane_pressure(frame):
         ),
         constraint_paragraph=_paragraph(
             (
-                f"If the game tightens, the late-game plan leans back on {trusted_names}, a thinner trusted lane than the {_fmt(available)}-arm board suggests"
+                f"If the game tightens, the late-game plan leans back on {trusted_names}, thinner than the available arm count suggests"
                 if trusted_names and _present(available) else None
             ),
             (
@@ -991,7 +1026,7 @@ def _bridge_instability(frame):
         ),
         baseline_paragraph=_paragraph(
             (
-                f"The comparison point is a settled late group against a thin handoff: {_fmt(clean_count)} clean middle {_count_word(clean_count, 'option')} feeding the back of the bullpen"
+                f"A settled late group sits behind a thin handoff: {_fmt(clean_count)} clean middle {_count_word(clean_count, 'option')} feeding the back of the bullpen"
                 if _present(clean_count) else None
             ),
             (

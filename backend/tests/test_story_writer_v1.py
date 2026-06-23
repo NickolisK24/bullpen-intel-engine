@@ -611,7 +611,7 @@ def test_writer_falls_back_to_board_comparison_when_clean_options_baseline_guard
     text = written_text(write_story_frame(frame))
 
     # Guarded read -> existing behavior preserved, no distribution-aware sentence.
-    assert 'The comparison point is the 6-arm available board' in text
+    assert 'Against the 6-arm available board' in text
     assert 'league norm' not in text
 
 
@@ -624,7 +624,7 @@ def test_writer_trust_lane_without_baseline_read_keeps_board_comparison():
 
     text = written_text(write_story_frame(frame))
 
-    assert 'The comparison point is the 6-arm available board' in text
+    assert 'Against the 6-arm available board' in text
     assert 'league norm' not in text
 
 
