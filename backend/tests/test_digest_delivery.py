@@ -141,6 +141,7 @@ def full_app():
         try:
             yield app
         finally:
+            db.session.remove()
             drop_test_schema(app)
 
 

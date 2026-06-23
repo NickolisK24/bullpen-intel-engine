@@ -93,7 +93,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run backend tests on Postgres
-        run: python -m pytest tests -q
+        run: python -u -m pytest tests -vv -ra --tb=short --durations=50 --durations-min=1
 
   frontend-tests:
     runs-on: ubuntu-latest

@@ -46,6 +46,7 @@ def app():
         try:
             yield app
         finally:
+            db.session.remove()
             drop_test_schema(app)
             auth_email.reset_outbox()
 
