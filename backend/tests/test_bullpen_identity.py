@@ -16,7 +16,6 @@ from services.bullpen_identity import (
     IDENTITY_UNKNOWN,
     build_bullpen_identity,
 )
-from services.team_story_facts import BEAT_SIGNAL, build_story_facts
 
 
 def capacity_payload(
@@ -249,32 +248,6 @@ def test_identity_consolidates_repeated_capacity_context_caveats():
         'Some bullpen capacity is based on limited-read or unknown availability inputs.'
         not in result['caveats']
     )
-
-
-def test_story_facts_expose_identity_without_changing_story_selection_inputs():
-    capacity = capacity_payload(
-        active=8,
-        clean=5,
-        anchor=1,
-        leverage=2,
-        trusted=2,
-        depth=1,
-    )
-    identity = build_bullpen_identity(capacity)
-    capacity['bullpen_identity'] = identity
-    facts = build_story_facts(
-        'pressure_distribution',
-        {
-            'team': {'team_id': 1, 'team_name': 'Test Team', 'team_abbreviation': 'TST'},
-            'capacity_intelligence': capacity,
-            'workload': {'total_pitches': 60, 'participant_count': 6},
-            'availability': {'available': 6, 'total': 8},
-        },
-        [{'key': BEAT_SIGNAL, 'text': 'The Test Team bullpen work is spread out tonight.'}],
-    )
-
-    assert facts['bullpen_identity'] == identity
-    assert facts['identity_context'] == identity['identity_summary']
 
 
 def test_identity_output_keeps_governance_boundaries_and_no_score_leakage():

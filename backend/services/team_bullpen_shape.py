@@ -1,6 +1,7 @@
 """Backend-authored team bullpen shape reads for board consumers."""
 
 from services.bullpen_coverage_safety import build_bullpen_coverage_safety_read
+from services.bullpen_eligibility_vocabulary import record_is_swing_bulk
 from services.workload_concentration import RECENT_WORKLOAD_WINDOW_DAYS
 
 
@@ -160,12 +161,16 @@ def _summarize_cards(groups, context=None):
         read_key = _label_key(card, 'read')
         role_label = (card.get('pitcher_labels') or {}).get('role', {}).get('label') or 'Limited Read'
         read_label = READ_KEY_BY_LABEL_KEY.get(read_key, 'Limited Read')
-        if role_label in role_counts:
+        # Swing/Bulk arms support coverage/depth context but are held out of the
+        # trust/bridge lanes and the clean-option headline.
+        is_swing_bulk = record_is_swing_bulk(card)
+        suppress_trust_bridge = is_swing_bulk and role_label in ('Trust Arm', 'Bridge Arm')
+        if role_label in role_counts and not suppress_trust_bridge:
             role_counts[role_label] += 1
-        if read_label in read_counts:
+        if read_label in read_counts and not (is_swing_bulk and read_label == READ_LABELS['clean']):
             read_counts[read_label] += 1
         role_bucket = ROLE_KEY_BY_LABEL_KEY.get(role_key)
-        if role_bucket:
+        if role_bucket and not (is_swing_bulk and role_bucket in ('trust', 'bridge')):
             role_read_counts[role_bucket][read_label] += 1
         if _card_fatigue(card) >= 70:
             high_fatigue_arms += 1

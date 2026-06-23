@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
+import { useAuthState } from '../hooks/useAuthState'
 import { useFetch } from '../hooks/useFetch'
 import { usePreferredTeamPreference } from '../hooks/usePreferredTeamPreference'
 import { getBullpenDashboard } from '../utils/api'
@@ -90,10 +91,64 @@ function SidebarFreshnessItem({ label, value }) {
   )
 }
 
+export function SidebarAccountBlock({ authState, onNavigate }) {
+  if (authState?.loading) {
+    return (
+      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+        <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+          Account
+        </div>
+        <div className="mt-2 font-mono text-[11px] text-chalk500">
+          Checking sign-in...
+        </div>
+      </div>
+    )
+  }
+
+  if (authState?.authenticated) {
+    return (
+      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+        <div className="font-mono text-[9px] uppercase tracking-widest text-amber/80">
+          Signed in
+        </div>
+        <div className="mt-2 truncate text-xs text-chalk300">
+          {authState.user?.email || 'Account active'}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            authState.signOut?.()
+            onNavigate?.()
+          }}
+          className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+        >
+          Sign out
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+        Account
+      </div>
+      <Link
+        to="/signin"
+        onClick={onNavigate}
+        className="mt-3 inline-flex w-full justify-center rounded border border-amber/35 bg-amber/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15"
+      >
+        Sign in
+      </Link>
+    </div>
+  )
+}
+
 export default function Sidebar() {
   // Mobile-only collapsible nav. On lg+ the nav is always shown and this
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
+  const authState = useAuthState()
   const { preferredTeam } = usePreferredTeamPreference()
   const dashboardFreshness = useFetch(getBullpenDashboard)
   const preferredHref = buildPreferredTeamHref(preferredTeam, 'nav-my-team')
@@ -172,13 +227,19 @@ export default function Sidebar() {
 
       {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
       <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-dirt`}>
-        <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-          <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
-            Data Freshness
-          </div>
-          <div className="space-y-3">
-            <SidebarFreshnessItem label="Last Sync" value={freshness.lastSync} />
-            <SidebarFreshnessItem label="Data Through" value={freshness.dataThrough} />
+        <div className="space-y-3">
+          <SidebarAccountBlock
+            authState={authState}
+            onNavigate={() => setOpen(false)}
+          />
+          <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+            <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
+              Data Freshness
+            </div>
+            <div className="space-y-3">
+              <SidebarFreshnessItem label="Last Sync" value={freshness.lastSync} />
+              <SidebarFreshnessItem label="Data Through" value={freshness.dataThrough} />
+            </div>
           </div>
         </div>
       </div>

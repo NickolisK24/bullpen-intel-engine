@@ -201,7 +201,10 @@ The one optional frontend variable lives in `frontend/.env`
 | `CORS_ORIGINS` | backend | No | (none) | Extra comma-separated allowed origins, added to the built-in localhost + Vercel demo origins. |
 | `ADMIN_API_TOKEN` | backend | No (required in production) | (none) | Token gating admin endpoints (`POST /api/bullpen/sync`, `POST /api/bullpen/fatigue/recalculate`, `GET /api/bullpen/fatigue/snapshot`) via the `X-Admin-Token` header. Unset locally -> those routes are allowed in development (with a warning). |
 | `VITE_API_BASE_URL` | frontend | No | (uses dev proxy) | Backend origin for the frontend to call (no trailing `/api`). Only needed when the backend is hosted separately. |
-| `VITE_ADMIN_API_TOKEN` | frontend | No | (none) | Sends `X-Admin-Token` from the frontend for the operator "Recalculate" action. Usually unset — it ends up in the public bundle, so prefer curl for protected calls. |
+
+There is no frontend admin token. The protected admin endpoints below are
+triggered server-side or with curl, never from the browser, so the admin
+secret can never reach the public JS bundle.
 
 ### Protected admin endpoints
 

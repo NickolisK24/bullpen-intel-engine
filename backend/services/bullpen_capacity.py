@@ -15,6 +15,10 @@ from typing import Any
 from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
+from services.bullpen_eligibility_vocabulary import (
+    record_is_bullpen_eligible,
+    record_is_swing_bulk,
+)
 from services.bullpen_identity import build_bullpen_identity
 from services.bullpen_resource_health import build_bullpen_resource_health
 from services.bullpen_trust_hierarchy import build_bullpen_trust_hierarchy
@@ -101,10 +105,7 @@ def _pitcher_id(record: dict[str, Any]) -> int | None:
 
 
 def _is_bullpen_record(record: dict[str, Any]) -> bool:
-    eligibility = record.get('eligibility')
-    if eligibility is None:
-        return True
-    return bool(eligibility.get('eligible'))
+    return record_is_bullpen_eligible(record)
 
 
 def _is_roster_unavailable(record: dict[str, Any]) -> bool:
@@ -334,6 +335,7 @@ def _records(records):
             'state_reason': reason,
             'roster_unavailable': _is_roster_unavailable(record),
             'availability_status': _availability_status(record),
+            'is_swing_bulk': record_is_swing_bulk(record),
         })
     return normalized
 
@@ -382,7 +384,12 @@ def build_team_bullpen_capacity(
     if unknown_weight > 0 and UNKNOWN_CAPACITY_LIMITATION not in limitations:
         limitations.append(UNKNOWN_CAPACITY_LIMITATION)
 
-    trust_records = [record for record in normalized if record['role_key'] == 'trust_arm']
+    # Swing/Bulk arms are held out of the trust lane; they support coverage and
+    # depth context, not Trust Arm capacity.
+    trust_records = [
+        record for record in normalized
+        if record['role_key'] == 'trust_arm' and not record['is_swing_bulk']
+    ]
     trust_weight = sum(weights.get(record['pitcher_id'], 0) for record in trust_records)
     trust_available_weight = _sum_weight(trust_records, weights, 'available')
     trust_unavailable_weight = _sum_weight(trust_records, weights, 'unavailable')

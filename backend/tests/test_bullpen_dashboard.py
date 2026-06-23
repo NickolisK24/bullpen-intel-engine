@@ -134,6 +134,118 @@ class TestDashboardEndpoint:
         # Freshness/data-through is present for the hero.
         assert 'data_through' in body['freshness']
 
+    def test_dashboard_includes_canonical_stories_and_keeps_legacy(self, client, monkeypatch):
+        # Canonical contract keys every story item must carry.
+        required_keys = {
+            'story_id', 'team_id', 'team_name', 'date', 'story_available',
+            'suppression_reason', 'story_type', 'category', 'tone', 'headline',
+            'narrative', 'beats', 'evidence', 'freshness', 'trust_metadata',
+            'limitations', 'share_ready', 'share_title', 'share_summary',
+            'source_engine', 'quality_status',
+        }
+
+        def fake_story_builder(team_id, as_of_date=None):
+            if team_id == 1:
+                return {
+                    'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1',
+                    'as_of_date': '2026-06-22',
+                    'story_available': True,
+                    'story_type': 'coverage_pressure',
+                    'story_type_label': 'Coverage Pressure',
+                    'selected_observation': {'type': 'rotation_pressure', 'severity': 'high'},
+                    'construction_frame': {'observation_type': 'rotation_pressure'},
+                    'public_story_beat': {
+                        'story_type': 'coverage_pressure',
+                        'story_type_label': 'Coverage Pressure',
+                    },
+                    'written_story': {
+                        'headline': 'Team 1 leans on its setup arms',
+                        'observation_paragraph': 'Observation text.',
+                        'baseline_paragraph': 'Baseline text.',
+                        'cause_paragraph': 'Cause text.',
+                        'constraint_paragraph': 'Constraint text.',
+                    },
+                    'freshness': {'data_through': '2026-06-21'},
+                    'trust_metadata': {'external_generation_used': False},
+                    'limitations': [],
+                }
+            return {
+                'team_id': team_id, 'team_name': f'Team {team_id}',
+                'team_abbreviation': f'T{team_id}',
+                'as_of_date': '2026-06-22',
+                'story_available': False,
+                'neutral_reason': 'no_story_observations',
+                'freshness': {}, 'trust_metadata': {}, 'limitations': [],
+            }
+
+        monkeypatch.setattr(bullpen_api, 'build_story_intelligence_team_story', fake_story_builder)
+        monkeypatch.setattr(
+            bullpen_api,
+            '_canonical_story_team_descriptors',
+            lambda landscape: [
+                {'team_id': 1, 'team_name': 'Team 1', 'team_abbreviation': 'T1'},
+                {'team_id': 2, 'team_name': 'Team 2', 'team_abbreviation': 'T2'},
+            ],
+        )
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=7001)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        # Canonical feed is present and shaped.
+        stories = body['stories']
+        assert stories['capability'] == 'baseballos_canonical_story_v1'
+        assert stories['source_engine'] == 'story_intelligence_service_v1'
+        assert stories['available_count'] == 1
+        assert stories['suppressed_count'] == 1
+        assert stories['suppression_reasons'] == {'no_story_observations': 1}
+        assert len(stories['items']) == 2
+        for item in stories['items']:
+            assert required_keys.issubset(item.keys())
+
+        # Available story first, with mapped content and a stable team+date id.
+        available = stories['items'][0]
+        assert available['team_id'] == 1
+        assert available['story_available'] is True
+        assert available['headline'] == 'Team 1 leans on its setup arms'
+        assert available['narrative'].startswith('Observation text.')
+        assert available['tone'] == 'stress'
+        assert available['category'] == 'stressed'
+        assert available['quality_status'] == 'published'
+        assert available['story_id'] == f"1:{available['date']}"
+
+        # Suppressed team carries a reason and no fabricated story.
+        suppressed = stories['items'][1]
+        assert suppressed['team_id'] == 2
+        assert suppressed['story_available'] is False
+        assert suppressed['suppression_reason'] == 'no_story_observations'
+        assert suppressed['quality_status'] == 'suppressed'
+        assert suppressed['headline'] is None
+
+        # League context (quiet-day strategy) is present and quality-gated.
+        league = stories['league_context']
+        assert league['capability'] == 'baseballos_league_context_v1'
+        assert league['mode']
+        assert league['day_class']
+        assert league['quality_status'] in ('published', 'neutral')
+        assert league['continuity']['state'] in ('new', 'unchanged', 'changed')
+
+        # Continuity metadata is present on every canonical item.
+        for item in stories['items']:
+            assert 'continuity' in item
+            assert item['continuity']['state']
+
+        # The legacy four-beat, story-context, and top-level continuity payloads
+        # are all retired from the product dashboard payload (Phases 5E-5F). The
+        # canonical per-story continuity asserted above is unaffected.
+        assert 'four_beat_stories' not in body
+        assert 'story_context' not in body
+        assert 'continuity' not in body
+        assert 'story_continuity' not in body
+        # Governance posture unchanged.
+        assert body['ranking_applied'] is False
+        assert body['selection_made'] is False
+
     def test_dashboard_surfaces_public_what_changed_payload(self, client, monkeypatch):
         public_payload = {
             'capability': 'what_changed_since_yesterday_public_v1',
@@ -239,27 +351,9 @@ class TestDashboardEndpoint:
         assert 'Starter A' not in json.dumps(team_payload)
         assert 'Low Pitch Relief' not in json.dumps(team_payload)
 
-    def test_four_beat_story_path_defaults_on(self, client):
-        body = client.get('/api/bullpen/dashboard').get_json()
-
-        assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
-        assert body['four_beat_stories']['enabled'] is True
-        assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == (
-            'story_strength_with_observation_family_spacing'
-        )
-        assert body['four_beat_stories']['items'] == []
-
-    def test_four_beat_story_path_can_be_disabled(self, client):
-        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = False
-        with client.application.app_context():
-            _seed_pitcher('A One', team_id=1, mlb_id=101)
-
-        body = client.get('/api/bullpen/dashboard').get_json()
-
-        assert 'four_beat_stories' not in body
-
-    def test_four_beat_story_path_includes_items_by_default(self, client):
+    def test_dashboard_does_not_emit_four_beat_stories(self, client):
+        # The legacy four-beat feed was retired from the product dashboard
+        # payload in Phase 5E; it is no longer emitted regardless of seeding.
         with client.application.app_context():
             for idx in range(6):
                 _seed_pitcher(
@@ -275,15 +369,7 @@ class TestDashboardEndpoint:
 
         body = client.get('/api/bullpen/dashboard').get_json()
 
-        assert body['four_beat_stories']['capability'] == 'four_beat_story_template_v1'
-        assert body['four_beat_stories']['feed_ordering_applied'] is True
-        assert body['four_beat_stories']['feed_ordering_basis'] == (
-            'story_strength_with_observation_family_spacing'
-        )
-        assert body['four_beat_stories']['selection_made'] is False
-        assert body['four_beat_stories']['items']
-        assert 'season_era' not in body['four_beat_stories']
-        assert all('computed' in item for item in body['four_beat_stories']['items'])
+        assert 'four_beat_stories' not in body
 
     def test_dashboard_surfaces_backend_authored_season_era(self, client):
         with client.application.app_context():
@@ -326,80 +412,6 @@ class TestDashboardEndpoint:
         assert bullpen_line['innings_outs'] == 6
         assert bullpen_line['era'] == 4.5
 
-    def test_four_beat_story_and_board_share_clean_trust_authority(self, client):
-        client.application.config['FOUR_BEAT_STORIES_ENABLED'] = True
-        team_id = 116
-        with client.application.app_context():
-            jansen = _seed_pitcher(
-                'Kenley Jansen',
-                team_id=team_id,
-                mlb_id=11601,
-                raw_score=10,
-                innings=[1.0, 1.0, 1.0],
-                days_ago=[2, 20, 31],
-                roster_status=STATUS_ACTIVE,
-                games_started=[0, 0, 0],
-            )
-            older_log = (
-                GameLog.query
-                .filter_by(pitcher_id=jansen.id)
-                .order_by(GameLog.game_date.asc())
-                .first()
-            )
-            older_log.save = True
-            older_log.save_situation = True
-
-            for idx in range(5):
-                _seed_pitcher(
-                    f'Detroit Clean Arm {idx}',
-                    team_id=team_id,
-                    mlb_id=11610 + idx,
-                    raw_score=10,
-                    innings=1.0,
-                    days_ago=2,
-                    roster_status=STATUS_ACTIVE,
-                    games_started=0,
-                )
-            db.session.commit()
-
-        dashboard = client.get('/api/bullpen/dashboard').get_json()
-        story = next(
-            item for item in dashboard['four_beat_stories']['items']
-            if item['team_id'] == team_id
-        )
-        board = client.get(f'/api/bullpen/teams/{team_id}/board').get_json()
-        board_clean_trust_names = [
-            card['name']
-            for group in board['groups']
-            for card in group['pitchers']
-            if (card['pitcher_labels']['read']['key'] == 'clean_option'
-                and card['pitcher_labels']['role']['key'] == 'trust_arm')
-        ]
-        board_concentration = board['team_shape']['workloadConcentration']
-        implication = next(
-            beat for beat in story['beats']
-            if beat['key'] == 'implication'
-        )
-
-        assert story['rule_key'] == 'pressure_distribution'
-        assert story['computed']['clean_trust_count'] == 1
-        assert board_clean_trust_names == ['Kenley Jansen']
-        assert implication['slots']['clean_trust_names'] == 'Kenley Jansen'
-        assert story['computed']['clean_trust_count'] == len(board_clean_trust_names)
-        assert board_concentration['supportingCounts']['concentrationDescriptor'] == (
-            story['computed']['workload']['concentration_descriptor']
-        )
-        assert board_concentration['supportingCounts']['topShare'] == story['computed']['workload']['top_share']
-        assert story['computed']['capacity_intelligence']['capacity_loss'] == (
-            board['capacity_intelligence']['capacity_loss']
-        )
-        assert story['computed']['rotation_support_pressure'] == (
-            board['rotation_support_pressure']
-        )
-        assert story['computed']['bullpen_stability'] == (
-            board['bullpen_stability']
-        )
-
     def test_no_governance_or_ranking_fields_leak(self, client):
         with client.application.app_context():
             _seed_pitcher('Solo', team_id=1, mlb_id=1)
@@ -407,6 +419,41 @@ class TestDashboardEndpoint:
         assert 'ranking_applied' not in body['context']
         assert 'selection_made' not in body['context']
         assert body['availability_summary']['total_pitchers'] >= 0
+
+    def test_dashboard_attaches_league_workload_concentration_baselines(self, client):
+        # Teams with recent relief workload feed a league distribution sample.
+        # Baselines are backend infrastructure only — no UI or story consumes them.
+        with client.application.app_context():
+            for team_id, base in ((301, 30100), (302, 30200)):
+                for idx in range(4):
+                    _seed_pitcher(
+                        f'Reliever {team_id}-{idx}',
+                        team_id=team_id,
+                        mlb_id=base + idx,
+                        innings=1.0,
+                        days_ago=1,
+                        roster_status=STATUS_ACTIVE,
+                        games_started=0,
+                    )
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+
+        baselines = body['baselines']
+        assert baselines['capability'] == 'baseline_distribution_v1'
+        family = baselines['families']['workload_concentration']
+        assert family['metric_family'] == 'workload_concentration'
+        assert family['window_days'] == 7
+        assert family['sample_count'] >= 1
+        for metric_key in ('top_share', 'top_one_share'):
+            dist = family['metrics'][metric_key]
+            assert dist['sample_count'] == family['sample_count']
+            assert dist['mean'] is not None
+            assert dist['median'] is not None
+            for percentile in ('p10', 'p25', 'p75', 'p90'):
+                assert percentile in dist
+        # Infrastructure only: the baseline block leaks no ranking/selection.
+        assert 'ranking_applied' not in baselines
+        assert 'selection_made' not in baselines
 
     def test_dashboard_counts_exclude_clear_starters_league_wide(self, client):
         with client.application.app_context():
@@ -681,53 +728,3 @@ class TestDashboardEndpoint:
         assert all(entry['total_relievers'] == 10 for entry in landscape_entries)
         assert all(entry['available'] == 5 for entry in landscape_entries)
         assert all(entry['monitor'] == 5 for entry in landscape_entries)
-
-    def test_dashboard_attaches_story_continuity_for_landscape_teams_only(self, client):
-        with client.application.app_context():
-            _seed_pitcher(
-                'Core One',
-                team_id=77,
-                mlb_id=7701,
-                raw_score=50,
-                innings=[1.0, 1.0, 1.0, 1.0],
-                days_ago=[1, 2, 4, 6],
-                roster_status=STATUS_ACTIVE,
-            )
-            _seed_pitcher(
-                'Core Two',
-                team_id=77,
-                mlb_id=7702,
-                raw_score=50,
-                innings=[1.0, 1.0, 1.0],
-                days_ago=[1, 3, 5],
-                roster_status=STATUS_ACTIVE,
-            )
-            _seed_pitcher(
-                'Depth Arm',
-                team_id=77,
-                mlb_id=7703,
-                raw_score=10,
-                innings=[1.0],
-                days_ago=[8],
-                roster_status=STATUS_ACTIVE,
-            )
-            # Historical workload exists, but this team has no scored current
-            # bullpen entry and should not be computed for dashboard continuity.
-            db.session.add(Pitcher(
-                mlb_id=8801,
-                full_name='Unsurfaced Arm',
-                team_id=88,
-                team_name='Team 88',
-                team_abbreviation='T88',
-                active=True,
-            ))
-            db.session.commit()
-
-        body = client.get('/api/bullpen/dashboard').get_json()
-
-        assert body['continuity']['capability'] == 'bullpen_continuity_v1'
-        assert set(body['continuity']['teams']) == {'77'}
-        team = body['continuity']['teams']['77']
-        assert team['continuity']['type'] == 'workload_concentration'
-        assert team['by_type']['workload_concentration']['continuity_note']
-        assert 'Narrative Memory' not in json.dumps(body['continuity'])

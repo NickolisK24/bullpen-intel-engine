@@ -2,6 +2,7 @@ from collections import defaultdict
 
 from models.pitcher import Pitcher
 from services.availability_reference_date import product_current_date
+from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
 from services.bullpen_population import eligible_bullpen_pitcher_contexts
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
@@ -122,10 +123,7 @@ def _team_filter_allows(pitcher, team_ids):
 
 
 def _is_bullpen_context(context):
-    eligibility = context.get('eligibility')
-    if not isinstance(eligibility, dict):
-        return True
-    return eligibility.get('eligible') is True
+    return record_is_bullpen_eligible(context)
 
 
 def build_injury_il_context_from_contexts(

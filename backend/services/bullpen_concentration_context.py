@@ -13,6 +13,9 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from services.availability_reference_date import product_current_date
+from services.baseline_distribution import build_distribution
+from services.baseline_engine import interpret_value
+from services.game_shape import bulk_follower_appearance_keys
 from services.workload_appearance import (
     is_pitch_count_workload_log,
     is_workload_appearance_log,
@@ -148,6 +151,9 @@ def _empty_context(ref, window_start, league_baseline=None):
             'league_top_three_workload_share_10d'
         ),
         'top_three_share_delta_vs_league': None,
+        'baseline_read': _baseline_read(None, league_baseline),
+        'top_one_workload_share_10d': None,
+        'lead_arm_baseline_read': _lead_arm_baseline_read(None, league_baseline),
         'bullpen_workload_total_10d': 0,
         'concentration_band': CONCENTRATION_INSUFFICIENT_DATA,
         'top_three_relievers_10d': [],
@@ -159,6 +165,8 @@ def _empty_context(ref, window_start, league_baseline=None):
         'zero_pitch_artifact_rows_excluded_10d': 0,
         'non_pitch_workload_rows_excluded_10d': 0,
         'rows_without_pitcher_id_10d': 0,
+        'bulk_follower_appearances_10d': 0,
+        'bulk_follower_pitches_discounted_10d': 0,
         'excluded_row_reasons': {},
         'limitations': [CURRENT_ASSIGNMENT_LIMITATION, PITCH_COUNT_WORKLOAD_LIMITATION],
     }
@@ -196,6 +204,40 @@ def _league_baseline_value(league_baseline):
     return league_baseline
 
 
+def _league_baseline_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('top_three_workload_share_distribution_10d')
+    return None
+
+
+def _baseline_read(top_three_share, league_baseline):
+    # Distribution-aware league read for the top-three workload share. The shared
+    # baseline engine owns the interpretation; this only feeds it the team value
+    # and the 10-day league distribution, in the same percentage units.
+    return interpret_value(
+        'top_share',
+        top_three_share,
+        _league_baseline_distribution(league_baseline),
+    )
+
+
+def _league_top_one_distribution(league_baseline):
+    if isinstance(league_baseline, dict):
+        return league_baseline.get('top_one_workload_share_distribution_10d')
+    return None
+
+
+def _lead_arm_baseline_read(top_one_share, league_baseline):
+    # Distribution-aware league read for the lead-arm (single most-used reliever)
+    # workload share. Separate from the top-three read; same 10-day percentage
+    # units and the same 10-day league window.
+    return interpret_value(
+        'top_one_share',
+        top_one_share,
+        _league_top_one_distribution(league_baseline),
+    )
+
+
 def build_bullpen_concentration_context(
     logs,
     *,
@@ -217,6 +259,13 @@ def build_bullpen_concentration_context(
         'appearances': 0,
     })
     exclusions = Counter()
+    bulk_follower_appearances = 0
+    bulk_follower_pitches = 0
+    bulk_keys = bulk_follower_appearance_keys(
+        window_rows,
+        pitcher_id_of=_pitcher_key,
+        game_pk_of=lambda log: _value(log, 'mlb_game_pk'),
+    )
 
     for log in window_rows:
         state = games_started_state(_value(log, 'games_started'))
@@ -239,6 +288,16 @@ def build_bullpen_concentration_context(
         pitcher_key = _pitcher_key(log)
         if pitcher_key is None:
             exclusions['missing_pitcher_id'] += 1
+            continue
+
+        # A planned bulk-follower outing in an opener/bulk game is separated from
+        # ordinary bullpen concentration: the workload is real (fatigue and
+        # availability still count it in full elsewhere), but it reflects a
+        # starter-like role and must not read as bullpen overuse.
+        if (pitcher_key, _value(log, 'mlb_game_pk')) in bulk_keys:
+            exclusions['bulk_follower'] += 1
+            bulk_follower_appearances += 1
+            bulk_follower_pitches += workload_pitch_count(log) or 0
             continue
 
         pitches = workload_pitch_count(log)
@@ -270,6 +329,8 @@ def build_bullpen_concentration_context(
             'zero_pitch_artifact_rows_excluded_10d': exclusions['zero_pitch_artifact'],
             'non_pitch_workload_rows_excluded_10d': exclusions['non_pitch_workload'],
             'rows_without_pitcher_id_10d': exclusions['missing_pitcher_id'],
+            'bulk_follower_appearances_10d': bulk_follower_appearances,
+            'bulk_follower_pitches_discounted_10d': bulk_follower_pitches,
             'excluded_row_reasons': dict(exclusions),
         })
         if exclusions:
@@ -279,6 +340,7 @@ def build_bullpen_concentration_context(
     top_three = relievers[:TOP_RELIEVER_COUNT]
     top_three_total = sum(row['pitches'] for row in top_three)
     top_three_share = _share(top_three_total, total_workload)
+    top_one_share = _share(relievers[0]['pitches'], total_workload)
     league_value = _league_baseline_value(league_baseline)
     league_team_count = (
         (league_baseline or {}).get('league_team_count_10d', 0)
@@ -300,6 +362,9 @@ def build_bullpen_concentration_context(
         'top_three_workload_share_10d': top_three_share,
         'league_top_three_workload_share_10d': league_value,
         'top_three_share_delta_vs_league': _delta(top_three_share, league_value),
+        'baseline_read': _baseline_read(top_three_share, league_baseline),
+        'top_one_workload_share_10d': top_one_share,
+        'lead_arm_baseline_read': _lead_arm_baseline_read(top_one_share, league_baseline),
         'bullpen_workload_total_10d': total_workload,
         'concentration_band': concentration_band(top_three_share),
         'top_three_relievers_10d': [
@@ -320,6 +385,8 @@ def build_bullpen_concentration_context(
         'zero_pitch_artifact_rows_excluded_10d': exclusions['zero_pitch_artifact'],
         'non_pitch_workload_rows_excluded_10d': exclusions['non_pitch_workload'],
         'rows_without_pitcher_id_10d': exclusions['missing_pitcher_id'],
+        'bulk_follower_appearances_10d': bulk_follower_appearances,
+        'bulk_follower_pitches_discounted_10d': bulk_follower_pitches,
         'excluded_row_reasons': dict(exclusions),
         'limitations': limitations,
     }
@@ -338,16 +405,24 @@ def build_league_bullpen_concentration_baseline(logs, *, reference_date=None):
         by_team[team_id].append(log)
 
     shares = []
+    top_one_shares = []
     for team_logs in by_team.values():
         context = build_bullpen_concentration_context(team_logs, reference_date=ref)
+        if context.get('bullpen_workload_total_10d', 0) <= 0:
+            continue
         share = context.get('top_three_workload_share_10d')
-        if share is not None and context.get('bullpen_workload_total_10d', 0) > 0:
+        if share is not None:
             shares.append(share)
+        top_one = context.get('top_one_workload_share_10d')
+        if top_one is not None:
+            top_one_shares.append(top_one)
 
     league_share = round(sum(shares) / len(shares), 1) if shares else None
     return {
         'league_top_three_workload_share_10d': league_share,
         'league_team_count_10d': len(shares),
+        'top_three_workload_share_distribution_10d': build_distribution(shares),
+        'top_one_workload_share_distribution_10d': build_distribution(top_one_shares),
     }
 
 

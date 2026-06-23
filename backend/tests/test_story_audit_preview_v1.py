@@ -1,0 +1,650 @@
+from copy import deepcopy
+from datetime import date
+
+import services.story_audit_preview_v1 as audit
+from services.story_audit_preview_v1 import (
+    CAPABILITY,
+    STATE_NEUTRAL,
+    STATE_STORY,
+    build_story_audit_preview,
+)
+from services.story_four_beat_interpreter_v1 import (
+    BEAT_COVERAGE_PRESSURE,
+    BEAT_DEPTH_CONSTRAINT,
+    BEAT_ROUTE_CHANGE,
+    BEAT_SUSTAINABILITY_QUESTION,
+)
+from services.story_observation_engine import (
+    TYPE_CONCENTRATION_PRESSURE,
+    TYPE_CORE_TRANSITION,
+    TYPE_DEPTH_PRESSURE,
+    TYPE_ROTATION_PRESSURE,
+)
+
+
+def story_payload(**overrides):
+    payload = {
+        'team_id': 118,
+        'team_name': 'Kansas City Royals',
+        'team_abbreviation': 'KC',
+        'as_of_date': '2026-06-20',
+        'state': 'story_available',
+        'story_available': True,
+        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+        'neutral_reason': None,
+        'selected_observation': {
+            'type': TYPE_CONCENTRATION_PRESSURE,
+            'severity': 'high',
+        },
+        'written_story': {
+            'headline': "Kansas City Royals' bullpen is running through three arms",
+            'observation_paragraph': 'The top group has handled 94% of the bullpen workload.',
+            'baseline_paragraph': 'The league comparison is 58% for top-three bullpen workload.',
+            'cause_paragraph': 'Starter length is down against the two-week mark.',
+            'constraint_paragraph': 'If the game shape repeats, the route still runs through the same core.',
+        },
+        'writer_output': {
+            'validation': {
+                'passed': True,
+                'contains_banned_language': False,
+                'contains_robotic_language': False,
+                'has_text': True,
+            },
+        },
+        'freshness': {
+            'as_of_date': '2026-06-20',
+            'data_through': '2026-06-20',
+            'data_through_date': '2026-06-20',
+            'limitations': [],
+        },
+        'trust_metadata': {
+            'external_generation_used': False,
+            'new_metrics_created': False,
+            'context_formula_changes': False,
+            'availability_changes': False,
+            'fatigue_changes': False,
+        },
+        'limitations': [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def neutral_payload(**overrides):
+    payload = story_payload()
+    payload.update({
+        'team_id': 119,
+        'team_name': 'Neutral Team',
+        'team_abbreviation': 'NT',
+        'state': 'neutral',
+        'story_available': False,
+        'neutral_reason': 'no_story_observations',
+        'selected_observation': None,
+        'written_story': None,
+        'writer_output': None,
+        'limitations': ['no_story_observations'],
+    })
+    payload.update(overrides)
+    return payload
+
+
+def service_payload(teams):
+    return {
+        'capability': 'story_intelligence_service_v1',
+        'as_of_date': '2026-06-20',
+        'team_count': len(teams),
+        'teams': teams,
+        'limitations': ['service_coordinates_existing_deterministic_engines'],
+    }
+
+
+def test_audit_output_includes_multiple_teams_and_clean_neutral_states(monkeypatch):
+    teams = [
+        story_payload(),
+        neutral_payload(),
+    ]
+    calls = []
+
+    def fake_service(*, team_ids=None, team_contexts=None, as_of_date=None):
+        calls.append({
+            'team_ids': team_ids,
+            'team_contexts': team_contexts,
+            'as_of_date': as_of_date,
+        })
+        return service_payload(teams)
+
+    monkeypatch.setattr(audit, 'build_story_intelligence_service_v1', fake_service)
+
+    result = build_story_audit_preview(team_ids=[118, 119], as_of_date=date(2026, 6, 20))
+
+    assert calls == [{
+        'team_ids': [118, 119],
+        'team_contexts': None,
+        'as_of_date': date(2026, 6, 20),
+    }]
+    assert result['capability'] == CAPABILITY
+    assert result['as_of_date'] == '2026-06-20'
+    assert result['team_count'] == 2
+    assert result['state_counts'] == {
+        STATE_STORY: 1,
+        STATE_NEUTRAL: 1,
+        'needs_review': 0,
+    }
+    assert result['story_type_counts'] == {BEAT_SUSTAINABILITY_QUESTION: 1}
+    assert result['story_type_distribution'] == [{
+        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+        'count': 1,
+        'share_of_story_states': 100.0,
+    }]
+
+    story = result['teams'][0]
+    assert story['state'] == STATE_STORY
+    assert story['story_type'] == BEAT_SUSTAINABILITY_QUESTION
+    assert story['headline'].startswith('Kansas City Royals')
+    assert set(story['sections']) == {
+        'headline',
+        'observation',
+        'baseline',
+        'cause',
+        'constraint',
+    }
+    assert story['freshness']['data_through'] == '2026-06-20'
+    assert story['trust_metadata']['external_generation_used'] is False
+
+    neutral = result['teams'][1]
+    assert neutral['state'] == STATE_NEUTRAL
+    assert neutral['story_type'] is None
+    assert neutral['headline'] is None
+    assert neutral['neutral_reason'] == 'no_story_observations'
+    assert neutral['validation_flags']['missing_required_sections'] == []
+    assert neutral['validation_flags']['awkward_phrasing'] == []
+
+
+def test_audit_reports_story_type_distribution_summary(monkeypatch):
+    teams = [
+        story_payload(team_id=1, story_type=BEAT_DEPTH_CONSTRAINT, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        story_payload(team_id=2, story_type=BEAT_COVERAGE_PRESSURE, selected_observation={'type': TYPE_ROTATION_PRESSURE}),
+        story_payload(team_id=3, story_type=BEAT_DEPTH_CONSTRAINT, selected_observation={'type': TYPE_DEPTH_PRESSURE}),
+        neutral_payload(team_id=4),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1, 2, 3, 4])
+
+    assert result['story_type_counts'] == {
+        BEAT_DEPTH_CONSTRAINT: 2,
+        BEAT_COVERAGE_PRESSURE: 1,
+    }
+    assert result['story_type_distribution'] == [
+        {
+            'story_type': BEAT_DEPTH_CONSTRAINT,
+            'count': 2,
+            'share_of_story_states': 66.7,
+        },
+        {
+            'story_type': BEAT_COVERAGE_PRESSURE,
+            'count': 1,
+            'share_of_story_states': 33.3,
+        },
+    ]
+
+
+def test_audit_uses_default_team_ids_when_no_scope_is_supplied(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(audit, '_default_team_ids', lambda limit=None: [118, 119])
+
+    def fake_service(*, team_ids=None, team_contexts=None, as_of_date=None):
+        calls.append(team_ids)
+        return service_payload([story_payload(), neutral_payload()])
+
+    monkeypatch.setattr(audit, 'build_story_intelligence_service_v1', fake_service)
+
+    result = build_story_audit_preview(limit=2)
+
+    assert calls == [[118, 119]]
+    assert result['team_count'] == 2
+
+
+def test_audit_passes_supplied_contexts_through_service(monkeypatch):
+    contexts = [
+        {'team_id': 118, 'team': {'team_name': 'Context Team'}},
+        {'team_id': 119, 'team': {'team_name': 'Second Context Team'}},
+        {'team_id': 120, 'team': {'team_name': 'Trimmed Context Team'}},
+    ]
+    calls = []
+
+    def fake_service(*, team_ids=None, team_contexts=None, as_of_date=None):
+        calls.append(team_contexts)
+        return service_payload([
+            story_payload(team_id=118, team_name='Context Team'),
+            neutral_payload(team_id=119, team_name='Second Context Team'),
+        ])
+
+    monkeypatch.setattr(audit, 'build_story_intelligence_service_v1', fake_service)
+
+    result = build_story_audit_preview(team_contexts=contexts, limit=2)
+
+    assert calls == [contexts[:2]]
+    assert result['team_count'] == 2
+
+
+def test_internal_and_banned_language_flags_work(monkeypatch):
+    unsafe = story_payload(
+        story_type=BEAT_COVERAGE_PRESSURE,
+        selected_observation={'type': TYPE_ROTATION_PRESSURE},
+        written_story={
+            'headline': 'Context indicates this bullpen has a ranking problem',
+            'observation_paragraph': 'The observation type is leaking into copy.',
+            'baseline_paragraph': 'The comparison point is present.',
+            'cause_paragraph': 'The cause is present.',
+            'constraint_paragraph': 'The constraint is present.',
+        },
+        writer_output={
+            'validation': {
+                'passed': False,
+                'contains_banned_language': True,
+                'contains_robotic_language': True,
+                'has_text': True,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([unsafe]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert result['state_counts']['needs_review'] == 1
+    assert result['story_type_counts'] == {BEAT_COVERAGE_PRESSURE: 1}
+    assert flags['has_internal_terms'] is True
+    assert flags['has_banned_language'] is True
+    assert flags['needs_review'] is True
+
+
+def test_awkward_sox_possessive_is_flagged_from_real_audit_finding(monkeypatch):
+    awkward = story_payload(
+        team_id=111,
+        team_name='Boston Red Sox',
+        written_story={
+            'headline': "Boston Red Sox's bullpen depth is under pressure",
+            'observation_paragraph': 'There are 13 bullpen arms outside the active route.',
+            'baseline_paragraph': 'The active bullpen count is 9 arms.',
+            'cause_paragraph': 'The depth loss includes 6 IL arms.',
+            'constraint_paragraph': 'The available route is flexible.',
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([awkward]),
+    )
+
+    result = build_story_audit_preview(team_ids=[111])
+    flags = result['teams'][0]['validation_flags']
+
+    assert flags['awkward_phrasing'] == ['sox_possessive']
+    assert flags['needs_review'] is True
+
+
+def test_real_quality_flags_catch_raw_objects_internal_types_and_diff_phrasing(monkeypatch):
+    unsafe = story_payload(
+        story_type=BEAT_ROUTE_CHANGE,
+        selected_observation={'type': TYPE_CORE_TRANSITION},
+        written_story={
+            'headline': 'The route changed through core_transition evidence',
+            'observation_paragraph': 'The bullpen has 3 core changes.',
+            'baseline_paragraph': 'The comparison point is present.',
+            'cause_paragraph': "The inactive group includes {'player_id': 1, 'name': 'Leaked Arm'}.",
+            'constraint_paragraph': 'The available route is flexible.',
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([unsafe]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert result['state_counts']['needs_review'] == 1
+    assert flags['raw_internal_observation_terms'] == ['core_transition']
+    assert flags['has_raw_object_literal'] is True
+    assert 'core changes' in flags['database_diff_terms']
+    assert flags['missing_forward_constraint_clause'] is True
+    assert flags['needs_review'] is True
+
+
+def test_short_start_cause_omission_is_flagged_for_coverage_story(monkeypatch):
+    unsafe = story_payload(
+        story_type=BEAT_COVERAGE_PRESSURE,
+        selected_observation={'type': TYPE_ROTATION_PRESSURE},
+        written_story={
+            'headline': 'The bullpen is covering extra innings',
+            'observation_paragraph': 'The starters are averaging 4.1 innings over the last week.',
+            'baseline_paragraph': 'The comparison point is 5.4 starter innings over the full 14-day window.',
+            'cause_paragraph': 'The cause is present but vague.',
+            'constraint_paragraph': 'If short starts continue, the bullpen has fewer clean ways to spread the innings.',
+        },
+        selection_metadata={
+            'selected_profile': {
+                'story_type': BEAT_COVERAGE_PRESSURE,
+                'selection_strength': 7,
+                'evidence_completeness': 4,
+            },
+            'candidate_profiles': [],
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([unsafe]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert flags['short_start_cause_omitted'] is True
+    assert flags['needs_review'] is True
+
+
+def test_selection_balance_flags_when_competitive_beat_evidence_is_never_selected(monkeypatch):
+    teams = [
+        story_payload(
+            team_id=1,
+            story_type=BEAT_DEPTH_CONSTRAINT,
+            selected_observation={'type': TYPE_DEPTH_PRESSURE},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 6,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'observation_type': TYPE_ROTATION_PRESSURE,
+                        'story_type': BEAT_COVERAGE_PRESSURE,
+                        'selection_strength': 7,
+                        'evidence_completeness': 4,
+                    },
+                    {
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 8,
+                        'evidence_completeness': 5,
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': True,
+                        },
+                    },
+                ],
+            },
+        ),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1])
+
+    assert result['selection_balance_flags'] == [
+        {
+            'code': 'coverage_evidence_present_but_never_selected',
+            'candidate_team_count': 1,
+        },
+        {
+            'code': 'sustainability_evidence_present_but_never_selected',
+            'candidate_team_count': 1,
+        },
+    ]
+
+
+def test_audit_explains_sustainability_selection_and_suppression(monkeypatch):
+    teams = [
+        story_payload(
+            team_id=1,
+            story_type=BEAT_DEPTH_CONSTRAINT,
+            selected_observation={'type': TYPE_DEPTH_PRESSURE},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 9,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'selected': True,
+                        'selection_rank': 1,
+                        'observation_type': TYPE_DEPTH_PRESSURE,
+                        'severity': 'high',
+                        'story_type': BEAT_DEPTH_CONSTRAINT,
+                        'selection_strength': 9,
+                        'evidence_completeness': 5,
+                        'selection_reasons': ['inactive_depth_pressure'],
+                    },
+                    {
+                        'selected': False,
+                        'selection_rank': 2,
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'severity': 'high',
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 7,
+                        'evidence_completeness': 5,
+                        'selection_reasons': [
+                            'elevated_top_three_workload_share',
+                            'limited_practical_paths',
+                            'named_route_arms_available',
+                        ],
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': True,
+                            'top_three_workload_share_10d': 88.0,
+                            'concentration_band': 'narrow',
+                            'clean_workload_options_count': 1,
+                            'practical_close_game_paths_count': 2,
+                            'repeated_route_core_arms': ['First Arm', 'Second Arm'],
+                            'optionality_band': 'thin',
+                            'rotation_pressure': {'rotation_ip_trend': 0.1},
+                            'has_named_arms': True,
+                            'has_baseline': True,
+                            'has_cause': True,
+                            'has_forward_constraint': True,
+                            'suppression_reasons': [],
+                        },
+                    },
+                ],
+            },
+        ),
+        story_payload(
+            team_id=2,
+            story_type=BEAT_ROUTE_CHANGE,
+            selected_observation={'type': TYPE_CORE_TRANSITION},
+            selection_metadata={
+                'selected_profile': {
+                    'story_type': BEAT_ROUTE_CHANGE,
+                    'selection_strength': 7,
+                    'evidence_completeness': 5,
+                },
+                'candidate_profiles': [
+                    {
+                        'selected': True,
+                        'selection_rank': 1,
+                        'observation_type': TYPE_CORE_TRANSITION,
+                        'severity': 'high',
+                        'story_type': BEAT_ROUTE_CHANGE,
+                        'selection_strength': 7,
+                        'evidence_completeness': 5,
+                        'selection_reasons': ['operational_core_changed'],
+                    },
+                    {
+                        'selected': False,
+                        'selection_rank': 2,
+                        'observation_type': TYPE_CONCENTRATION_PRESSURE,
+                        'severity': 'medium',
+                        'story_type': BEAT_SUSTAINABILITY_QUESTION,
+                        'selection_strength': 3,
+                        'evidence_completeness': 3,
+                        'selection_reasons': ['elevated_top_three_workload_share'],
+                        'sustainability_evidence': {
+                            'sustainability_evidence_present': False,
+                            'top_three_workload_share_10d': 76.0,
+                            'concentration_band': 'concentrated',
+                            'clean_workload_options_count': 3,
+                            'practical_close_game_paths_count': 5,
+                            'repeated_route_core_arms': ['First Arm', 'Second Arm'],
+                            'optionality_band': 'deep',
+                            'rotation_pressure': {},
+                            'has_named_arms': True,
+                            'has_baseline': True,
+                            'has_cause': True,
+                            'has_forward_constraint': True,
+                            'suppression_reasons': ['insufficient_optionality_constraint'],
+                        },
+                    },
+                ],
+            },
+        ),
+    ]
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload(teams),
+    )
+
+    result = build_story_audit_preview(team_ids=[1, 2])
+
+    first = result['teams'][0]
+    assert first['eligible_beats'][0]['story_type'] == BEAT_DEPTH_CONSTRAINT
+    assert first['eligible_beats'][0]['selection_outcome'] == 'selected'
+    diagnostics = first['sustainability_diagnostics']
+    assert diagnostics['candidate_present'] is True
+    assert diagnostics['sustainability_evidence_present'] is True
+    assert diagnostics['top_three_workload_share_10d'] == 88.0
+    assert diagnostics['repeated_route_core_arms'] == ['First Arm', 'Second Arm']
+    assert diagnostics['suppression_reasons'] == ['stronger_depth_constraint']
+
+    second = result['teams'][1]['sustainability_diagnostics']
+    assert second['sustainability_evidence_present'] is False
+    assert second['suppression_reasons'] == [
+        'insufficient_optionality_constraint',
+        'stronger_route_change',
+    ]
+
+
+def test_audit_explains_absent_sustainability_candidate_from_context(monkeypatch):
+    team = story_payload(
+        team_id=1,
+        story_type=BEAT_DEPTH_CONSTRAINT,
+        selected_observation={'type': TYPE_DEPTH_PRESSURE},
+        selection_metadata={
+            'selected_profile': {
+                'story_type': BEAT_DEPTH_CONSTRAINT,
+                'selection_strength': 6,
+                'evidence_completeness': 5,
+            },
+            'candidate_profiles': [
+                {
+                    'selected': True,
+                    'selection_rank': 1,
+                    'observation_type': TYPE_DEPTH_PRESSURE,
+                    'story_type': BEAT_DEPTH_CONSTRAINT,
+                    'selection_strength': 6,
+                    'evidence_completeness': 5,
+                    'selection_reasons': ['inactive_depth_pressure'],
+                },
+            ],
+        },
+        supporting_context={
+            'bullpen_concentration_context': {
+                'concentration_band': 'normal',
+                'top_three_workload_share_10d': 61.0,
+                'league_top_three_workload_share_10d': 58.0,
+                'top_three_relievers_10d': [
+                    {'name': 'First Arm'},
+                    {'name': 'Second Arm'},
+                ],
+            },
+            'bullpen_optionality_context': {
+                'optionality_band': 'deep',
+                'practical_close_game_paths_count': 6,
+                'clean_workload_options': [{'name': 'Clean One'}, {'name': 'Clean Two'}],
+            },
+            'role_stability_context': {
+                'current_operational_core': ['First Arm', 'Second Arm'],
+            },
+            'rotation_context': {
+                'rotation_ip_trend': 0.1,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([team]),
+    )
+
+    result = build_story_audit_preview(team_ids=[1])
+    diagnostics = result['teams'][0]['sustainability_diagnostics']
+
+    assert diagnostics['candidate_present'] is False
+    assert diagnostics['top_three_workload_share_10d'] == 61.0
+    assert diagnostics['concentration_band'] == 'normal'
+    assert diagnostics['practical_close_game_paths_count'] == 6
+    assert diagnostics['repeated_route_core_arms'] == ['First Arm', 'Second Arm']
+    assert diagnostics['sustainability_evidence_present'] is False
+    assert diagnostics['suppression_reasons'] == [
+        'insufficient_concentration',
+        'insufficient_optionality_constraint',
+        'no_sustainability_candidate',
+    ]
+
+
+def test_missing_and_awkward_story_sections_are_detected(monkeypatch):
+    incomplete = story_payload(
+        written_story={
+            'headline': 'A valid headline is present',
+            'observation_paragraph': 'The observation is present.',
+            'baseline_paragraph': None,
+            'cause_paragraph': '   ',
+            'constraint_paragraph': 'N/A',
+        },
+    )
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([incomplete]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+    flags = result['teams'][0]['validation_flags']
+
+    assert flags['missing_required_sections'] == ['baseline', 'cause']
+    assert flags['awkward_empty_sections'] == ['cause', 'constraint']
+    assert flags['needs_review'] is True
+
+
+def test_audit_does_not_mutate_service_payload(monkeypatch):
+    payload = story_payload()
+    original = deepcopy(payload)
+    monkeypatch.setattr(
+        audit,
+        'build_story_intelligence_service_v1',
+        lambda **kwargs: service_payload([payload]),
+    )
+
+    result = build_story_audit_preview(team_ids=[118])
+
+    assert payload == original
+    trust = result['teams'][0]['trust_metadata']
+    assert trust['new_metrics_created'] is False
+    assert trust['context_formula_changes'] is False
+    assert trust['availability_changes'] is False
+    assert trust['fatigue_changes'] is False

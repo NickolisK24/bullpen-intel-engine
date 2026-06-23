@@ -1,0 +1,2606 @@
+{
+  "audit_preview_capability": "story_intelligence_audit_preview_v1",
+  "calculation_boundaries": {
+    "availability_changes": false,
+    "context_layer_formula_changes": false,
+    "fatigue_changes": false,
+    "llm_integration_added": false,
+    "prediction_system_added": false,
+    "scoring_changes": false,
+    "trust_changes": false
+  },
+  "capability": "four_beat_real_quality_audit_v1",
+  "complete_team_count": true,
+  "expected_team_count": 30,
+  "fixes_applied": [
+    "Added sustainability evidence diagnostics to service selection metadata.",
+    "Added per-team eligible beat and suppression audit fields.",
+    "Filtered positive optionality-only candidates out of public sustainability selection.",
+    "Polished sustainability wording around named arms, narrow routes, and forward constraints."
+  ],
+  "generated_at": "2026-06-21T17:04:41.185792+00:00",
+  "initial_audit_summary": {
+    "beat_distribution": {
+      "coverage_pressure": 1,
+      "depth_constraint": 17,
+      "route_change": 12,
+      "sustainability_question": 0
+    },
+    "neutral_count": 0,
+    "team_count": 30
+  },
+  "initial_findings": [
+    "Before this pass, the real audit selected depth_constraint 17, route_change 12, coverage_pressure 1, sustainability_question 0, neutral 0.",
+    "Sustainability rarity needed evidence-level explanation instead of forced distribution."
+  ],
+  "payload_source": "live_story_audit_preview",
+  "post_fix_summary": {
+    "beat_distribution": [
+      {
+        "count": 12,
+        "share_of_story_states": 40.0,
+        "story_type": "route_change"
+      },
+      {
+        "count": 1,
+        "share_of_story_states": 3.3,
+        "story_type": "coverage_pressure"
+      },
+      {
+        "count": 17,
+        "share_of_story_states": 56.7,
+        "story_type": "depth_constraint"
+      },
+      {
+        "count": 0,
+        "share_of_story_states": 0.0,
+        "story_type": "sustainability_question"
+      }
+    ],
+    "flagged_issue_counts": {
+      "team_flag_counts": {},
+      "term_counts": {}
+    },
+    "needs_review_count": 0,
+    "neutral_count": 0,
+    "repetition_summary": {
+      "repeated_headline_count": 0,
+      "repeated_headlines": {},
+      "repeated_story_text_count": 0
+    },
+    "selection_balance_flags": [],
+    "story_count": 30,
+    "sustainability_summary": {
+      "candidate_count": 0,
+      "evidence_present_count": 0,
+      "selected_count": 0,
+      "suppressed_by_reason": {
+        "insufficient_concentration": 30,
+        "insufficient_optionality_constraint": 16,
+        "no_sustainability_candidate": 30
+      },
+      "teams_with_sustainability_evidence": []
+    },
+    "team_count": 30,
+    "unexpected_story_types": []
+  },
+  "prediction_applied": false,
+  "public_story_types_allowed": [
+    "route_change",
+    "coverage_pressure",
+    "depth_constraint",
+    "sustainability_question"
+  ],
+  "ranking_applied": false,
+  "selection_made": false,
+  "source": "backend",
+  "strongest_story_outputs": [
+    {
+      "headline": "The route has changed, now running through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Drey Jameson, Philip Abner, and Kade Strowd. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Paul Sewald, Kevin Ginkel, and Taylor Clarke. The arms moving out of that route are Drey Jameson, Philip Abner, and Kade Strowd.",
+        "constraint": "If the next game tightens, the route points back through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+        "headline": "The route has changed, now running through Paul Sewald, Kevin Ginkel, and Taylor Clarke.",
+        "observation": "The important-outs route now runs through Paul Sewald, Kevin Ginkel, and Taylor Clarke. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "headline": "Athletics' bullpen has fewer practical paths than the active list suggests",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The active list still shows 8 bullpen arms.",
+        "cause": "The inactive group includes Braden Nett, Brady Basso, Brooks Kriske, and Chen Zhong-Ao Zhuang. The depth loss includes 4 IL arms. It also includes 7 non-IL inactive arms.",
+        "constraint": "If the roster stays this thin, the practical path remains smaller than the active list suggests. The current route has 3 practical close-game paths. The available route is narrow.",
+        "headline": "Athletics' bullpen has fewer practical paths than the active list suggests",
+        "observation": "There are 11 bullpen arms outside the active route. That leaves the practical path heavy."
+      },
+      "story_type": "depth_constraint",
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are JR Ritchie, Anthony Molina, and Carlos Carrasco. The arms moving out of that route are Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez.",
+        "constraint": "If the next game tightens, the route points back through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "observation": "The important-outs route now runs through JR Ritchie, Anthony Molina, and Carlos Carrasco. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "headline": "The route has changed, now running through Yennier Cano, Tyler Wells, and Rico Garcia.",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Albert Su\u00e1rez, Keegan Akin, and Anthony Nunez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Yennier Cano, Tyler Wells, and Rico Garcia. The arms moving out of that route are Albert Su\u00e1rez, Keegan Akin, and Anthony Nunez.",
+        "constraint": "If the next game tightens, the route points back through Yennier Cano, Tyler Wells, and Rico Garcia.",
+        "headline": "The route has changed, now running through Yennier Cano, Tyler Wells, and Rico Garcia.",
+        "observation": "The important-outs route now runs through Yennier Cano, Tyler Wells, and Rico Garcia. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "headline": "Boston Red Sox' bullpen has fewer practical paths than the active list suggests",
+      "review_basis": "complete_clean_story",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The active list still shows 9 bullpen arms.",
+        "cause": "The inactive group includes Alec Gamboa, Eduardo Rivera, Garrett Crochet, and Jack Anderson. The depth loss includes 6 IL arms. It also includes 7 non-IL inactive arms.",
+        "constraint": "If the roster stays this thin, the practical path remains smaller than the active list suggests. The current route has 5 practical close-game paths. The available route is flexible.",
+        "headline": "Boston Red Sox' bullpen has fewer practical paths than the active list suggests",
+        "observation": "There are 13 bullpen arms outside the active route. That leaves the practical path heavy."
+      },
+      "story_type": "depth_constraint",
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    }
+  ],
+  "team_count": 30,
+  "team_selection_audit": [
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "deep",
+        "practical_close_game_paths_count": 6,
+        "repeated_route_core_arms": [
+          "Paul Sewald",
+          "Kevin Ginkel",
+          "Taylor Clarke"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 2.7,
+          "early_bullpen_entry_rate": 33.3,
+          "rotation_avg_ip_14d": 5.2,
+          "rotation_avg_ip_7d": 5.1,
+          "rotation_ip_trend": -0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 43.2
+      },
+      "team_abbreviation": "AZ",
+      "team_id": 109,
+      "team_name": "Arizona Diamondbacks"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 6,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Scott Barlow",
+          "Jos\u00e9 Suarez",
+          "Luis Medina"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.3,
+          "early_bullpen_entry_rate": 46.2,
+          "rotation_avg_ip_14d": 4.3,
+          "rotation_avg_ip_7d": 3.6,
+          "rotation_ip_trend": -0.7
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 44.6
+      },
+      "team_abbreviation": "ATH",
+      "team_id": 133,
+      "team_name": "Athletics"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 4,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "JR Ritchie",
+          "Anthony Molina",
+          "Carlos Carrasco"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.6,
+          "early_bullpen_entry_rate": 50.0,
+          "rotation_avg_ip_14d": 4.4,
+          "rotation_avg_ip_7d": 4.1,
+          "rotation_ip_trend": -0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 39.8
+      },
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_tiebreak_or_evidence_completeness",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Yennier Cano",
+          "Tyler Wells",
+          "Rico Garcia"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 1.9,
+          "early_bullpen_entry_rate": 30.8,
+          "rotation_avg_ip_14d": 5.4,
+          "rotation_avg_ip_7d": 5.7,
+          "rotation_ip_trend": 0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 48.7
+      },
+      "team_abbreviation": "BAL",
+      "team_id": 110,
+      "team_name": "Baltimore Orioles"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Tommy Kahnle",
+          "Tyron Guerrero",
+          "Ryan Watson"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.4,
+          "early_bullpen_entry_rate": 25.0,
+          "rotation_avg_ip_14d": 5.1,
+          "rotation_avg_ip_7d": 4.8,
+          "rotation_ip_trend": -0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 49.2
+      },
+      "team_abbreviation": "BOS",
+      "team_id": 111,
+      "team_name": "Boston Red Sox"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 4,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Ethan Roberts",
+          "Colin Rea",
+          "Hoby Milner"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.5,
+          "early_bullpen_entry_rate": 50.0,
+          "rotation_avg_ip_14d": 4.1,
+          "rotation_avg_ip_7d": 3.7,
+          "rotation_ip_trend": -0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 41.0
+      },
+      "team_abbreviation": "CHC",
+      "team_id": 112,
+      "team_name": "Chicago Cubs"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "coverage_pressure"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_tiebreak_or_evidence_completeness",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "coverage_pressure",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Joe Rock",
+          "Trevor Richards",
+          "Erick Fedde"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 5.7,
+          "early_bullpen_entry_rate": 81.8,
+          "rotation_avg_ip_14d": 2.8,
+          "rotation_avg_ip_7d": 2.4,
+          "rotation_ip_trend": -0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 49.9
+      },
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Tejay Antone",
+          "Chris Paddack",
+          "Zach Maxwell"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.1,
+          "early_bullpen_entry_rate": 25.0,
+          "rotation_avg_ip_14d": 4.9,
+          "rotation_avg_ip_7d": 4.6,
+          "rotation_ip_trend": -0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 46.8
+      },
+      "team_abbreviation": "CIN",
+      "team_id": 113,
+      "team_name": "Cincinnati Reds"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Cade Smith",
+          "Hunter Gaddis",
+          "Colin Holderman"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 2.3,
+          "early_bullpen_entry_rate": 9.1,
+          "rotation_avg_ip_14d": 5.6,
+          "rotation_avg_ip_7d": 5.7,
+          "rotation_ip_trend": 0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 54.2
+      },
+      "team_abbreviation": "CLE",
+      "team_id": 114,
+      "team_name": "Cleveland Guardians"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 4,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "deep",
+        "practical_close_game_paths_count": 6,
+        "repeated_route_core_arms": [
+          "Zach Agnos",
+          "Blas Casta\u00f1o",
+          "Brennan Bernardino"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.7,
+          "early_bullpen_entry_rate": 41.7,
+          "rotation_avg_ip_14d": 4.7,
+          "rotation_avg_ip_7d": 4.8,
+          "rotation_ip_trend": 0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 41.4
+      },
+      "team_abbreviation": "COL",
+      "team_id": 115,
+      "team_name": "Colorado Rockies"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Tyler Holton",
+          "Kyle Finnegan",
+          "Jacob Waguespack"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.4,
+          "early_bullpen_entry_rate": 45.5,
+          "rotation_avg_ip_14d": 4.6,
+          "rotation_avg_ip_7d": 4.3,
+          "rotation_ip_trend": -0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 51.0
+      },
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 6,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "AJ Blubaugh",
+          "Enyel De Los Santos",
+          "Josh Hader"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 2.6,
+          "early_bullpen_entry_rate": 33.3,
+          "rotation_avg_ip_14d": 4.6,
+          "rotation_avg_ip_7d": 4.7,
+          "rotation_ip_trend": 0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 47.2
+      },
+      "team_abbreviation": "HOU",
+      "team_id": 117,
+      "team_name": "Houston Astros"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Mason Black",
+          "Beck Way",
+          "Alex Lange"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.1,
+          "early_bullpen_entry_rate": 46.2,
+          "rotation_avg_ip_14d": 4.6,
+          "rotation_avg_ip_7d": 4.8,
+          "rotation_ip_trend": 0.2
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 47.0
+      },
+      "team_abbreviation": "KC",
+      "team_id": 118,
+      "team_name": "Kansas City Royals"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 6,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "short_start_trend"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Mitch Farris",
+          "Chase Silseth",
+          "Ryan Zeferjahn"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.0,
+          "early_bullpen_entry_rate": 25.0,
+          "rotation_avg_ip_14d": 4.8,
+          "rotation_avg_ip_7d": 4.1,
+          "rotation_ip_trend": -0.7
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 38.3
+      },
+      "team_abbreviation": "LAA",
+      "team_id": 108,
+      "team_name": "Los Angeles Angels"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Jonathan Hern\u00e1ndez",
+          "Alex Vesia",
+          "Will Klein"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.0,
+          "early_bullpen_entry_rate": 40.0,
+          "rotation_avg_ip_14d": 4.8,
+          "rotation_avg_ip_7d": 4.8,
+          "rotation_ip_trend": 0.0
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 48.5
+      },
+      "team_abbreviation": "LAD",
+      "team_id": 119,
+      "team_name": "Los Angeles Dodgers"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Cade Gibson",
+          "Michael Petersen",
+          "John King"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.5,
+          "early_bullpen_entry_rate": 41.7,
+          "rotation_avg_ip_14d": 4.8,
+          "rotation_avg_ip_7d": 4.4,
+          "rotation_ip_trend": -0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 44.2
+      },
+      "team_abbreviation": "MIA",
+      "team_id": 146,
+      "team_name": "Miami Marlins"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 8,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "thin",
+        "practical_close_game_paths_count": 2,
+        "repeated_route_core_arms": [
+          "Chad Patrick",
+          "Aaron Ashby",
+          "Drew Rom"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.5,
+          "early_bullpen_entry_rate": 25.0,
+          "rotation_avg_ip_14d": 5.4,
+          "rotation_avg_ip_7d": 5.1,
+          "rotation_ip_trend": -0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 52.3
+      },
+      "team_abbreviation": "MIL",
+      "team_id": 158,
+      "team_name": "Milwaukee Brewers"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Justin Lawrence",
+          "Cody Laweryson",
+          "Eric Orze"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.3,
+          "early_bullpen_entry_rate": 41.7,
+          "rotation_avg_ip_14d": 4.9,
+          "rotation_avg_ip_7d": 4.9,
+          "rotation_ip_trend": 0.0
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 50.1
+      },
+      "team_abbreviation": "MIN",
+      "team_id": 142,
+      "team_name": "Minnesota Twins"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Cionel P\u00e9rez",
+          "Austin Warren",
+          "Devin Williams"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.2,
+          "early_bullpen_entry_rate": 66.7,
+          "rotation_avg_ip_14d": 3.9,
+          "rotation_avg_ip_7d": 4.0,
+          "rotation_ip_trend": 0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 40.4
+      },
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 4,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 4,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Jake Bird",
+          "Ryan Yarbrough",
+          "Fernando Cruz"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.0,
+          "early_bullpen_entry_rate": 50.0,
+          "rotation_avg_ip_14d": 4.7,
+          "rotation_avg_ip_7d": 4.1,
+          "rotation_ip_trend": -0.6
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 52.5
+      },
+      "team_abbreviation": "NYY",
+      "team_id": 147,
+      "team_name": "New York Yankees"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 7,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "deep",
+        "practical_close_game_paths_count": 7,
+        "repeated_route_core_arms": [
+          "Andrew Painter",
+          "Tim Mayza",
+          "Chase Shugart"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.3,
+          "early_bullpen_entry_rate": 33.3,
+          "rotation_avg_ip_14d": 5.0,
+          "rotation_avg_ip_7d": 5.3,
+          "rotation_ip_trend": 0.3
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 41.3
+      },
+      "team_abbreviation": "PHI",
+      "team_id": 143,
+      "team_name": "Philadelphia Phillies"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 1,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 5,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Carmen Mlodzinski",
+          "Evan Sisk",
+          "Yohan Ram\u00edrez"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.1,
+          "early_bullpen_entry_rate": 41.7,
+          "rotation_avg_ip_14d": 4.7,
+          "rotation_avg_ip_7d": 5.1,
+          "rotation_ip_trend": 0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 46.1
+      },
+      "team_abbreviation": "PIT",
+      "team_id": 134,
+      "team_name": "Pittsburgh Pirates"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 6,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Lucas Giolito",
+          "Griffin Canning",
+          "Jason Adam"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 5.5,
+          "early_bullpen_entry_rate": 58.3,
+          "rotation_avg_ip_14d": 4.1,
+          "rotation_avg_ip_7d": 3.3,
+          "rotation_ip_trend": -0.8
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 41.5
+      },
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_tiebreak_or_evidence_completeness",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 5,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Robbie Ray",
+          "JT Brubaker",
+          "Dylan Smith"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.5,
+          "early_bullpen_entry_rate": 54.5,
+          "rotation_avg_ip_14d": 4.7,
+          "rotation_avg_ip_7d": 4.0,
+          "rotation_ip_trend": -0.7
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 46.0
+      },
+      "team_abbreviation": "SF",
+      "team_id": 137,
+      "team_name": "San Francisco Giants"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes",
+            "no_core_retention"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        }
+      ],
+      "selected_beat": "route_change",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "normal",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Alex Hoppe",
+          "Nick Davila",
+          "Michael Rucker"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 2.9,
+          "early_bullpen_entry_rate": 15.4,
+          "rotation_avg_ip_14d": 5.5,
+          "rotation_avg_ip_7d": 5.1,
+          "rotation_ip_trend": -0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 62.3
+      },
+      "team_abbreviation": "SEA",
+      "team_id": 136,
+      "team_name": "Seattle Mariners"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 4,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "George Soriano",
+          "JoJo Romero",
+          "Ryne Stanek"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 2.1,
+          "early_bullpen_entry_rate": 38.5,
+          "rotation_avg_ip_14d": 5.3,
+          "rotation_avg_ip_7d": 5.4,
+          "rotation_ip_trend": 0.1
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 50.3
+      },
+      "team_abbreviation": "STL",
+      "team_id": 138,
+      "team_name": "St. Louis Cardinals"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure"
+          ],
+          "selection_strength": 2,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 2,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 5,
+        "repeated_route_core_arms": [
+          "Cole Sulser",
+          "Ian Seymour",
+          "Cam Booser"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.9,
+          "early_bullpen_entry_rate": 41.7,
+          "rotation_avg_ip_14d": 4.6,
+          "rotation_avg_ip_7d": 3.9,
+          "rotation_ip_trend": -0.7
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 40.8
+      },
+      "team_abbreviation": "TB",
+      "team_id": 139,
+      "team_name": "Tampa Bay Rays"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 7,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 1,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "narrow",
+        "practical_close_game_paths_count": 3,
+        "repeated_route_core_arms": [
+          "Cal Quantrill",
+          "Robby Ahlstrom",
+          "Joe Ross"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 3.5,
+          "early_bullpen_entry_rate": 33.3,
+          "rotation_avg_ip_14d": 5.0,
+          "rotation_avg_ip_7d": 4.6,
+          "rotation_ip_trend": -0.4
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 46.7
+      },
+      "team_abbreviation": "TEX",
+      "team_id": 140,
+      "team_name": "Texas Rangers"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group",
+            "practical_paths_narrowed",
+            "optionality_constraint"
+          ],
+          "selection_strength": 9,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "short_start_trend",
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 5,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        },
+        {
+          "evidence_completeness": 5,
+          "observation_type": "core_transition",
+          "selected": false,
+          "selection_outcome": "not_selected_lower_selection_strength",
+          "selection_rank": 3,
+          "selection_reasons": [
+            "operational_core_changed",
+            "multiple_core_changes"
+          ],
+          "selection_strength": 3,
+          "severity": "medium",
+          "story_type": "route_change"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 0,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "thin",
+        "practical_close_game_paths_count": 1,
+        "repeated_route_core_arms": [
+          "Louis Varland",
+          "Tyler Rogers",
+          "Spencer Miles"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 4.8,
+          "early_bullpen_entry_rate": 50.0,
+          "rotation_avg_ip_14d": 4.2,
+          "rotation_avg_ip_7d": 3.6,
+          "rotation_ip_trend": -0.6
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 40.7
+      },
+      "team_abbreviation": "TOR",
+      "team_id": 141,
+      "team_name": "Toronto Blue Jays"
+    },
+    {
+      "eligible_beats": [
+        {
+          "evidence_completeness": 5,
+          "observation_type": "depth_pressure",
+          "selected": true,
+          "selection_outcome": "selected",
+          "selection_rank": 1,
+          "selection_reasons": [
+            "inactive_depth_pressure",
+            "large_inactive_group"
+          ],
+          "selection_strength": 5,
+          "severity": "high",
+          "story_type": "depth_constraint"
+        },
+        {
+          "evidence_completeness": 4,
+          "observation_type": "rotation_pressure",
+          "selected": false,
+          "selection_outcome": "not_selected_tiebreak_or_evidence_completeness",
+          "selection_rank": 2,
+          "selection_reasons": [
+            "early_bullpen_entry_pressure",
+            "bullpen_coverage_load"
+          ],
+          "selection_strength": 5,
+          "severity": "medium",
+          "story_type": "coverage_pressure"
+        }
+      ],
+      "selected_beat": "depth_constraint",
+      "state": "story",
+      "sustainability_diagnostics": {
+        "candidate_present": false,
+        "clean_workload_options_count": 3,
+        "concentration_band": "balanced",
+        "has_baseline": true,
+        "has_cause": true,
+        "has_forward_constraint": true,
+        "has_named_arms": true,
+        "missing_baseline_or_cause": false,
+        "optionality_band": "flexible",
+        "practical_close_game_paths_count": 4,
+        "repeated_route_core_arms": [
+          "Miles Mikolas",
+          "Brad Lord",
+          "Riley Cornelio"
+        ],
+        "rotation_pressure": {
+          "bullpen_coverage_ip_7d": 5.3,
+          "early_bullpen_entry_rate": 58.3,
+          "rotation_avg_ip_14d": 3.6,
+          "rotation_avg_ip_7d": 3.4,
+          "rotation_ip_trend": -0.2
+        },
+        "selected": false,
+        "selection_outcome": "not_selected_no_candidate",
+        "selection_reasons": [],
+        "selection_strength": 0,
+        "suppression_reasons": [
+          "insufficient_concentration",
+          "insufficient_optionality_constraint",
+          "no_sustainability_candidate"
+        ],
+        "sustainability_evidence_present": false,
+        "top_three_workload_share_10d": 48.0
+      },
+      "team_abbreviation": "WSH",
+      "team_id": 120,
+      "team_name": "Washington Nationals"
+    }
+  ],
+  "unexpected_story_type_count": 0,
+  "version": "2026-06-21.v1",
+  "worst_story_outputs": [
+    {
+      "headline": "Chicago White Sox' rotation is handing more of the game to the bullpen",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is 2.8 starter innings over the full 14-day window. The current seven-day handoff is 2.4 innings.",
+        "cause": "The starters are not covering as many innings as the recent baseline. Shorter starts are pushing 5.7 bullpen innings per game into the relief group. The rotation has been handing the game to the bullpen earlier.",
+        "constraint": "If short starts continue, the bullpen has fewer clean ways to spread the innings.",
+        "headline": "Chicago White Sox' rotation is handing more of the game to the bullpen",
+        "observation": "The starters are averaging 2.4 innings over the last week. That recent starter length is down 0.4 innings from the two-week mark. The bullpen has entered before the sixth in 81.8% of recent games."
+      },
+      "story_type": "coverage_pressure",
+      "team_abbreviation": "CWS",
+      "team_id": 145,
+      "team_name": "Chicago White Sox"
+    },
+    {
+      "headline": "The route has changed, now running through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Sean Manaea, David Peterson, and Jonathan Pintaro. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Cionel P\u00e9rez, Austin Warren, and Devin Williams. The arms moving out of that route are Sean Manaea, David Peterson, and Jonathan Pintaro.",
+        "constraint": "If the next game tightens, the route points back through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+        "headline": "The route has changed, now running through Cionel P\u00e9rez, Austin Warren, and Devin Williams.",
+        "observation": "The important-outs route now runs through Cionel P\u00e9rez, Austin Warren, and Devin Williams. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "NYM",
+      "team_id": 121,
+      "team_name": "New York Mets"
+    },
+    {
+      "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are JR Ritchie, Anthony Molina, and Carlos Carrasco. The arms moving out of that route are Dylan Dodd, Raisel Iglesias, and Reynaldo L\u00f3pez.",
+        "constraint": "If the next game tightens, the route points back through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "headline": "The route has changed, now running through JR Ritchie, Anthony Molina, and Carlos Carrasco.",
+        "observation": "The important-outs route now runs through JR Ritchie, Anthony Molina, and Carlos Carrasco. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "ATL",
+      "team_id": 144,
+      "team_name": "Atlanta Braves"
+    },
+    {
+      "headline": "The route has changed, now running through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Ty Madden, Drew Anderson, and Drew Sommers. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Tyler Holton, Kyle Finnegan, and Jacob Waguespack. The arms moving out of that route are Ty Madden, Drew Anderson, and Drew Sommers.",
+        "constraint": "If the next game tightens, the route points back through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+        "headline": "The route has changed, now running through Tyler Holton, Kyle Finnegan, and Jacob Waguespack.",
+        "observation": "The important-outs route now runs through Tyler Holton, Kyle Finnegan, and Jacob Waguespack. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "DET",
+      "team_id": 116,
+      "team_name": "Detroit Tigers"
+    },
+    {
+      "headline": "The route has changed, now running through Lucas Giolito, Griffin Canning, and Jason Adam.",
+      "review_basis": "longest_clean_output_no_post_fix_flags",
+      "review_flags": [],
+      "sections": {
+        "baseline": "The comparison point is the previous route: Adrian Morejon, Ron Marinaccio, and Mason Miller. The current route retained 0 arms from that baseline.",
+        "cause": "The added arms are Lucas Giolito, Griffin Canning, and Jason Adam. The arms moving out of that route are Adrian Morejon, Ron Marinaccio, and Mason Miller.",
+        "constraint": "If the next game tightens, the route points back through Lucas Giolito, Griffin Canning, and Jason Adam.",
+        "headline": "The route has changed, now running through Lucas Giolito, Griffin Canning, and Jason Adam.",
+        "observation": "The important-outs route now runs through Lucas Giolito, Griffin Canning, and Jason Adam. That is a 3-spot change from the prior route."
+      },
+      "story_type": "route_change",
+      "team_abbreviation": "SD",
+      "team_id": 135,
+      "team_name": "San Diego Padres"
+    }
+  ]
+}
