@@ -21,13 +21,18 @@ PUBLIC_BEATS = (
 )
 
 
+# Depth Constraint was intentionally trimmed (Phase C2B) from a long list of
+# interchangeable roster-count openings to a small set of distinct, strong ones.
+MIN_OPENING_FORMS = {BEAT_DEPTH_CONSTRAINT: 5}
+
+
 def test_voice_library_exposes_approved_forms_for_each_public_beat():
     report = voice_library_report()
 
     assert report['deterministic'] is True
     for beat in PUBLIC_BEATS:
         forms = approved_sentence_forms(beat)
-        assert len(forms) >= 10
+        assert len(forms) >= MIN_OPENING_FORMS.get(beat, 10)
         assert report['beats'][beat]['opening']['count'] == len(forms)
         assert report['beats'][beat]['opening']['contains_denied_public_phrase'] is False
         assert report['beats'][beat]['opening']['contains_banned_public_language'] is False
