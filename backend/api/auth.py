@@ -16,6 +16,7 @@ data beyond creating/confirming the requesting user's own account.
 from flask import Blueprint, jsonify, request
 
 from models.user import User
+from services.digest_metrics import attribute_return
 from utils.auth_email import send_magic_link
 from utils.auth_tokens import (
     build_magic_link,
@@ -78,6 +79,13 @@ def verify():
         user.email_verified_at = now
     user.last_login_at = now
     db.session.commit()
+
+    # Signing in is a clear "came back" signal: attribute a digest-driven return
+    # if a recent digest is awaiting attribution. Best-effort — never block login.
+    try:
+        attribute_return(user.id, when=now)
+    except Exception:
+        db.session.rollback()
 
     return jsonify({'token': generate_bearer_token(user), 'user': user.to_dict()})
 

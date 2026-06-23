@@ -210,7 +210,10 @@ def test_identity_migration_is_well_formed_and_chains_off_prior_head():
         assert token in source, token
 
 
-def test_identity_migration_is_the_single_alembic_head():
+def test_migrations_have_a_single_linear_head():
+    # The migration history must stay linear (exactly one head, no divergent
+    # branches). The identity migration remains part of that chain; later phases
+    # (e.g. digest metrics) extend it, advancing the head past identity.
     revisions = {}
     for path in glob.glob(os.path.join(MIGRATIONS_DIR, '*.py')):
         text = open(path).read()
@@ -220,4 +223,5 @@ def test_identity_migration_is_the_single_alembic_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {IDENTITY_REVISION}
+    assert len(heads) == 1, f'expected a single alembic head, found: {heads}'
+    assert IDENTITY_REVISION in revisions

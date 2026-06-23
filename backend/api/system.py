@@ -34,6 +34,19 @@ def get_digest_status():
     return jsonify(summary)
 
 
+@system_bp.route('/digest-metrics', methods=['GET'])
+@require_admin_token
+def get_digest_metrics():
+    """Durable digest metrics for the operator (Phase D2E).
+
+    Lifetime totals (sent, suppressed, opens, clicks, attributed returns) plus
+    open/click/return rates and recent run aggregates — enough to answer whether
+    the digest is bringing users back. Admin-gated; measurement only.
+    """
+    from services.digest_metrics import metrics_overview
+    return jsonify(metrics_overview())
+
+
 @system_bp.route('/email-delivery-health', methods=['GET'])
 @require_admin_token
 def get_email_delivery_health():
