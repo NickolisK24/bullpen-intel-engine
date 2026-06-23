@@ -7,6 +7,7 @@ from typing import Any
 
 from services.baseline_distribution import build_metric_distributions, field_extractor
 from services.bullpen_context import BULLPEN_CONTEXT_WINDOW_DAYS
+from services.game_shape import bulk_follower_appearance_keys
 from utils.games_started import is_relief
 
 
@@ -85,6 +86,21 @@ def recent_relief_pitch_totals(logs_by_pitcher, reference_date, pitcher_ids=None
 
     allowed = set(pitcher_ids or (logs_by_pitcher or {}).keys())
     start = reference_date - timedelta(days=RECENT_WORKLOAD_WINDOW_DAYS - 1)
+
+    # Planned bulk-follower outings in opener/bulk games are separated from
+    # ordinary bullpen concentration. Detection is game-shape-aware: it needs the
+    # game's opener line to be present, so when only relief lines are visible no
+    # appearance is discounted (conservative — ordinary long relief is never
+    # mislabeled). The real workload still counts in fatigue and availability.
+    window_logs = []
+    for pitcher_id in allowed:
+        for log in (logs_by_pitcher or {}).get(pitcher_id, []) or []:
+            game_date = _value(log, 'game_date')
+            if game_date is None or game_date < start or game_date > reference_date:
+                continue
+            window_logs.append(log)
+    bulk_keys = bulk_follower_appearance_keys(window_logs)
+
     pitch_by_pitcher = {}
     for pitcher_id in allowed:
         for log in (logs_by_pitcher or {}).get(pitcher_id, []) or []:
@@ -92,6 +108,8 @@ def recent_relief_pitch_totals(logs_by_pitcher, reference_date, pitcher_ids=None
             if game_date is None or game_date < start or game_date > reference_date:
                 continue
             if not is_relief(log):
+                continue
+            if (pitcher_id, _value(log, 'mlb_game_pk')) in bulk_keys:
                 continue
             pitch_by_pitcher[pitcher_id] = (
                 pitch_by_pitcher.get(pitcher_id, 0)
