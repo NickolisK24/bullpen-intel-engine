@@ -216,6 +216,8 @@ def _concentration_pressure_frame(team_context, observation):
         'top_three_share_delta_vs_league': concentration.get('top_three_share_delta_vs_league'),
         'league_team_count_10d': concentration.get('league_team_count_10d'),
         'baseline_read': concentration.get('baseline_read'),
+        'top_one_workload_share_10d': concentration.get('top_one_workload_share_10d'),
+        'lead_arm_baseline_read': concentration.get('lead_arm_baseline_read'),
     }
     frame['cause_facts'] = {
         'rotation_avg_ip_7d': rotation.get('rotation_avg_ip_7d'),

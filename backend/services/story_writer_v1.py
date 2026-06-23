@@ -369,6 +369,34 @@ def _concentration_baseline_sentence(baseline):
     return _CONCENTRATION_BASELINE_SENTENCE.get(band) if band else None
 
 
+# Secondary distribution-aware phrasing for lead-arm (single most-used reliever)
+# workload reliance, layered under the primary top-three concentration read.
+# top_one_share is higher-is-more-concentrated (not "better"). Descriptive context
+# only — no rank, recommendation, prediction, or superlative-singular
+# ("highest"/"most used") language (governance C1L).
+_LEAD_ARM_BASELINE_SENTENCE = {
+    'below_average': 'The lead arm is carrying less of the workload than a typical bullpen',
+    'about_typical': 'The lead arm is carrying about a typical share of the workload',
+    'above_average': 'The lead arm is carrying more of the workload than a typical bullpen',
+    'well_above_average': 'The lead arm is carrying well above a typical share of the workload',
+    'among_highest': 'The lead arm is near the upper end of recent single-arm workload',
+}
+
+
+def _lead_arm_band(baseline):
+    """The supported lead-arm comparison band, only when its read is available."""
+    read = baseline.get('lead_arm_baseline_read') if isinstance(baseline, dict) else None
+    if not isinstance(read, dict) or read.get('available') is not True:
+        return None
+    comparison = read.get('comparison')
+    return comparison if comparison in _LEAD_ARM_BASELINE_SENTENCE else None
+
+
+def _lead_arm_baseline_sentence(baseline):
+    band = _lead_arm_band(baseline)
+    return _LEAD_ARM_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _concentration_pressure(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -429,6 +457,11 @@ def _concentration_pressure(frame):
                 f"That puts this bullpen {_fmt(delta)} percentage points above that baseline"
                 if _present(delta) and not _baseline_band(baseline) else None
             ),
+            # Secondary, optional lead-arm read: single-arm reliance vs the league,
+            # voiced only when the separate lead-arm baseline read is available. The
+            # top-three comparison above stays primary; absent/guarded reads add
+            # nothing and preserve the existing C1E copy.
+            _lead_arm_baseline_sentence(baseline),
         ),
         cause_paragraph=_paragraph(
             (
