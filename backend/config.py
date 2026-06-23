@@ -107,6 +107,22 @@ class Config:
     # Unset in development = those endpoints are allowed locally (with a warning).
     ADMIN_API_TOKEN = os.environ.get('ADMIN_API_TOKEN')
 
+    # ── User identity / magic-link authentication (Phase D1C) ────────────────
+    # Signing secret for stateless magic-link and bearer tokens. Reuses the
+    # validated SECRET_KEY unless a dedicated USER_AUTH_SECRET is provided; in
+    # production SECRET_KEY is already required to be strong (see
+    # ProductionConfig), so token signing is safe by default there. No password
+    # storage and no sessions table — tokens are signed and verified statelessly.
+    USER_AUTH_SECRET = (
+        os.environ.get('USER_AUTH_SECRET')
+        or os.environ.get('SECRET_KEY', _DEV_SECRET)
+    )
+    # Short-lived magic link (default 15 minutes); longer-lived bearer token
+    # (default 30 days). FRONTEND_BASE_URL is where the emailed link points.
+    MAGIC_LINK_TTL_SECONDS = int(os.environ.get('MAGIC_LINK_TTL_SECONDS', '900'))
+    AUTH_TOKEN_TTL_SECONDS = int(os.environ.get('AUTH_TOKEN_TTL_SECONDS', '2592000'))
+    FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173')
+
     # ── Story Quality contract (scoring + gating) ────────────────────────────
     # The Story Quality scorer always runs and annotates every generated story
     # with a rule-by-rule scorecard. Enforcement is opt-in and fail-open: with
