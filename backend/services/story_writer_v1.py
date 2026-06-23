@@ -244,6 +244,35 @@ def validate_written_observation(output):
     }
 
 
+# Distribution-aware league phrasing for the rotation-pressure story's baseline
+# beat. rotation_avg_ip_7d is better-is-higher (longer starts ease bullpen load),
+# so the engine's value-neutral position bands read as starter length: a
+# below-average 7-day average is shorter than the league norm. Descriptive
+# context only — no rank, recommendation, prediction, or superlative-singular
+# ("longest"/"most") language (governance C1K).
+_ROTATION_LENGTH_BASELINE_SENTENCE = {
+    'below_average': 'That is shorter than the league norm for starter length',
+    'about_typical': 'That is around the league norm for starter length',
+    'above_average': 'That is longer than the league norm for starter length',
+    'well_above_average': 'That is well above the league norm for starter length',
+    'among_highest': 'That recent starter length is among the longer rotations in baseball',
+}
+
+
+def _rotation_length_band(baseline):
+    """The supported comparison band, only when the baseline read is available."""
+    read = baseline.get('baseline_read') if isinstance(baseline, dict) else None
+    if not isinstance(read, dict) or read.get('available') is not True:
+        return None
+    comparison = read.get('comparison')
+    return comparison if comparison in _ROTATION_LENGTH_BASELINE_SENTENCE else None
+
+
+def _rotation_length_baseline_sentence(baseline):
+    band = _rotation_length_band(baseline)
+    return _ROTATION_LENGTH_BASELINE_SENTENCE.get(band) if band else None
+
+
 def _rotation_pressure(frame):
     team = _team(frame)
     headline = _facts(frame, 'headline_facts')
@@ -277,13 +306,18 @@ def _rotation_pressure(frame):
             ),
         ),
         baseline_paragraph=_paragraph(
+            # Distribution-aware league read of recent starter length when
+            # available; adds "compared to what?" context alongside the team's own
+            # 14-day mark. The seven-day restate is dropped when the league read is
+            # present (it already anchors the seven-day value) to avoid stacking.
+            _rotation_length_baseline_sentence(baseline),
             (
                 f"The comparison point is {_fmt(avg_14)} starter innings over the full 14-day window"
                 if _present(avg_14) else None
             ),
             (
                 f"The current seven-day handoff is {_fmt(avg_7)} innings"
-                if _present(avg_7) else None
+                if _present(avg_7) and not _rotation_length_band(baseline) else None
             ),
         ),
         cause_paragraph=_paragraph(
