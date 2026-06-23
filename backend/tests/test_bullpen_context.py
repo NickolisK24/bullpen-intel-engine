@@ -94,6 +94,8 @@ BULLPEN_CONCENTRATION_CONTEXT_KEYS = {
     'zero_pitch_artifact_rows_excluded_10d',
     'non_pitch_workload_rows_excluded_10d',
     'rows_without_pitcher_id_10d',
+    'bulk_follower_appearances_10d',
+    'bulk_follower_pitches_discounted_10d',
     'excluded_row_reasons',
     'limitations',
 }

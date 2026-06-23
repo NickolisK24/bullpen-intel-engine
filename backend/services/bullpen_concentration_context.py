@@ -15,6 +15,7 @@ from typing import Any
 from services.availability_reference_date import product_current_date
 from services.baseline_distribution import build_distribution
 from services.baseline_engine import interpret_value
+from services.game_shape import bulk_follower_appearance_keys
 from services.workload_appearance import (
     is_pitch_count_workload_log,
     is_workload_appearance_log,
@@ -164,6 +165,8 @@ def _empty_context(ref, window_start, league_baseline=None):
         'zero_pitch_artifact_rows_excluded_10d': 0,
         'non_pitch_workload_rows_excluded_10d': 0,
         'rows_without_pitcher_id_10d': 0,
+        'bulk_follower_appearances_10d': 0,
+        'bulk_follower_pitches_discounted_10d': 0,
         'excluded_row_reasons': {},
         'limitations': [CURRENT_ASSIGNMENT_LIMITATION, PITCH_COUNT_WORKLOAD_LIMITATION],
     }
@@ -256,6 +259,13 @@ def build_bullpen_concentration_context(
         'appearances': 0,
     })
     exclusions = Counter()
+    bulk_follower_appearances = 0
+    bulk_follower_pitches = 0
+    bulk_keys = bulk_follower_appearance_keys(
+        window_rows,
+        pitcher_id_of=_pitcher_key,
+        game_pk_of=lambda log: _value(log, 'mlb_game_pk'),
+    )
 
     for log in window_rows:
         state = games_started_state(_value(log, 'games_started'))
@@ -278,6 +288,16 @@ def build_bullpen_concentration_context(
         pitcher_key = _pitcher_key(log)
         if pitcher_key is None:
             exclusions['missing_pitcher_id'] += 1
+            continue
+
+        # A planned bulk-follower outing in an opener/bulk game is separated from
+        # ordinary bullpen concentration: the workload is real (fatigue and
+        # availability still count it in full elsewhere), but it reflects a
+        # starter-like role and must not read as bullpen overuse.
+        if (pitcher_key, _value(log, 'mlb_game_pk')) in bulk_keys:
+            exclusions['bulk_follower'] += 1
+            bulk_follower_appearances += 1
+            bulk_follower_pitches += workload_pitch_count(log) or 0
             continue
 
         pitches = workload_pitch_count(log)
@@ -309,6 +329,8 @@ def build_bullpen_concentration_context(
             'zero_pitch_artifact_rows_excluded_10d': exclusions['zero_pitch_artifact'],
             'non_pitch_workload_rows_excluded_10d': exclusions['non_pitch_workload'],
             'rows_without_pitcher_id_10d': exclusions['missing_pitcher_id'],
+            'bulk_follower_appearances_10d': bulk_follower_appearances,
+            'bulk_follower_pitches_discounted_10d': bulk_follower_pitches,
             'excluded_row_reasons': dict(exclusions),
         })
         if exclusions:
@@ -363,6 +385,8 @@ def build_bullpen_concentration_context(
         'zero_pitch_artifact_rows_excluded_10d': exclusions['zero_pitch_artifact'],
         'non_pitch_workload_rows_excluded_10d': exclusions['non_pitch_workload'],
         'rows_without_pitcher_id_10d': exclusions['missing_pitcher_id'],
+        'bulk_follower_appearances_10d': bulk_follower_appearances,
+        'bulk_follower_pitches_discounted_10d': bulk_follower_pitches,
         'excluded_row_reasons': dict(exclusions),
         'limitations': limitations,
     }

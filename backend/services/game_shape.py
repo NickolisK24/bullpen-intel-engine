@@ -16,6 +16,7 @@ never per pitcher.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from utils.games_started import RELIEF, START, games_started_state
@@ -229,3 +230,49 @@ def classify_game_shape(game_logs) -> dict[str, Any]:
 def game_shape_of(game_logs) -> str:
     """Return only the classified shape constant for one game's logs."""
     return classify_game_shape(game_logs)['shape']
+
+
+def _default_pitcher_id(log: Any):
+    return _value(log, 'pitcher_id') if _value(log, 'pitcher_id') is not None else _value(log, 'player_id')
+
+
+def _default_game_pk(log: Any):
+    pk = _value(log, 'mlb_game_pk')
+    return pk if pk is not None else _value(log, 'game_pk')
+
+
+def bulk_follower_appearance_keys(logs, *, pitcher_id_of=_default_pitcher_id, game_pk_of=_default_game_pk) -> set:
+    """Identify bulk-follower relief appearances across a window of game logs.
+
+    Logs spanning multiple games are grouped by game id; each game is classified
+    by shape, and ONLY ``OPENER_BULK_GAME`` games contribute their bulk-length
+    (>= ``BULK_FOLLOWER_MIN_OUTS``) relief appearance(s). Detection is therefore
+    game-shape-aware, not length-only: an ordinary long reliever in a normal game
+    is never flagged because that game does not classify as an opener/bulk game,
+    and a game whose opener line is absent classifies as a bullpen game and is
+    skipped (conservative — no false discount).
+
+    Returns a set of ``(pitcher_id, game_pk)`` keys so callers can match each log
+    against its own pitcher-id convention.
+    """
+    by_game: dict[Any, list] = defaultdict(list)
+    for log in logs or []:
+        game_pk = game_pk_of(log)
+        if game_pk is None:
+            continue
+        by_game[game_pk].append(log)
+
+    keys: set = set()
+    for game_pk, game_logs in by_game.items():
+        if classify_game_shape(game_logs)['shape'] != SHAPE_OPENER_BULK_GAME:
+            continue
+        for log in game_logs:
+            if _state(log) != RELIEF:
+                continue
+            outs = _outs(log)
+            if outs is None or outs < BULK_FOLLOWER_MIN_OUTS:
+                continue
+            pitcher_id = pitcher_id_of(log)
+            if pitcher_id is not None:
+                keys.add((pitcher_id, game_pk))
+    return keys
