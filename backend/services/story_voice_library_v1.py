@@ -25,6 +25,7 @@ BEAT_BRIDGE = 'bridge'
 
 PURPOSE_OPENING = 'opening'
 PURPOSE_ELIGIBILITY_CONTEXT = 'eligibility_context'
+PURPOSE_FORWARD = 'forward'
 
 DENIED_PUBLIC_PHRASES = (
     'sit at the front of',
@@ -191,6 +192,66 @@ for _beat, _forms in ELIGIBILITY_CONTEXT_LINES.items():
     VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_ELIGIBILITY_CONTEXT] = _forms
 
 
+# Forward-clause ("what it creates") shapes per beat. Each beat carries several
+# governed openings so the closing beat no longer always reads "If X, then Y".
+# Positive beats (availability depth) describe what the depth lets the manager
+# do, not a worry. Descriptive only — no prediction, recommendation, ranking,
+# betting, internal-engine, eligibility, or game-shape terms.
+FORWARD_CLAUSE_LINES = {
+    BEAT_COVERAGE_PRESSURE: (
+        'If the short starts continue, the bullpen has fewer ways to spread the middle innings',
+        'In a tight game, more of the middle innings keep landing on the bullpen',
+        'The immediate effect is a bullpen asked to cover innings the rotation usually would',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'If this workload pattern holds, the late innings stay narrow around {names}',
+        'For now, the meaningful innings keep coming back to {names}',
+        'In a close game, the bullpen still leans on {names}',
+    ),
+    BEAT_ROUTE_CHANGE: (
+        'If the next game tightens, the late innings point back through {names}',
+        'In a close game, the important outs now run through {names}',
+        'The immediate effect is a late-inning order reshaped around {names}',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'If the roster stays this thin, the manager has fewer ways to cover the late innings than the roster count suggests',
+        'In a long game, the bullpen runs short of fresh options before the roster count would suggest',
+        'That leaves the manager fewer trusted late-inning options than the roster shows',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'In a close game, the manager can lean on more than one rested arm',
+        'For now, the late innings can be spread across {names} rather than forced onto one arm',
+        'The immediate effect is real late-inning flexibility for the manager',
+    ),
+    BEAT_TRUST_LANE: (
+        'If the game tightens, the late-game plan leans back on {names}, thinner than the available arm count suggests',
+        'In a tight game, the dependable late innings still run through {names}',
+        'The immediate effect is a short, trusted late-game group around {names}',
+    ),
+    BEAT_BRIDGE: (
+        'If the starters keep exiting early, the path to {names} runs through a fragile middle',
+        'In a close game, reaching {names} means getting through an unsettled middle',
+        'For now, the bullpen has to cross a shaky middle to reach {names}',
+    ),
+}
+
+for _beat, _forms in FORWARD_CLAUSE_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_FORWARD] = _forms
+
+
+# Approved openings a forward clause may use. The closing beat is recognized by
+# these (not only "If …"), so varied governed shapes are preserved downstream.
+FORWARD_CLAUSE_OPENERS = (
+    'if ',
+    'in a tight game',
+    'in a close game',
+    'in a long game',
+    'for now',
+    'the immediate effect',
+    'that leaves',
+)
+
+
 class _SafeFormatDict(dict):
     def __missing__(self, key: str) -> str:
         return ''
@@ -202,6 +263,19 @@ def _clean_text(value: Any) -> str:
 
 def _normalize(value: Any) -> str:
     return _clean_text(value).lower()
+
+
+def looks_like_forward_clause(text: Any) -> bool:
+    """Recognize a governed forward-looking 'what it creates' clause.
+
+    Forward beats vary their opening (not only "If …"), so recognition is by the
+    approved opener set plus a mid-sentence conditional. Keeps downstream layers
+    from rewriting a perfectly good varied clause back into the old cadence.
+    """
+    lower = _normalize(text)
+    if not lower:
+        return False
+    return any(lower.startswith(opener) for opener in FORWARD_CLAUSE_OPENERS) or ' if ' in lower
 
 
 def _stable_text(parts: list[Any] | tuple[Any, ...]) -> str:
@@ -326,12 +400,16 @@ __all__ = [
     'CAPABILITY',
     'DENIED_PUBLIC_PHRASES',
     'ELIGIBILITY_CONTEXT_LINES',
+    'FORWARD_CLAUSE_LINES',
+    'FORWARD_CLAUSE_OPENERS',
     'PURPOSE_ELIGIBILITY_CONTEXT',
+    'PURPOSE_FORWARD',
     'PURPOSE_OPENING',
     'VERSION',
     'approved_sentence_forms',
     'contains_banned_public_language',
     'contains_denied_public_phrase',
+    'looks_like_forward_clause',
     'render_voice_line',
     'select_voice_template',
     'stable_voice_index',

@@ -32,6 +32,7 @@ from services.story_observation_engine import (
 )
 from services.story_writer_v1 import BANNED_TERMS, SECTION_KEYS
 from services.story_feed import canonical_story_from_service_payload
+from services.story_voice_library_v1 import looks_like_forward_clause
 
 
 def team_context(
@@ -173,7 +174,7 @@ def assert_no_banned_language(result):
 
 def assert_forward_clause(result):
     constraint = (result.get('written_story') or {}).get('constraint_paragraph') or ''
-    assert constraint.startswith('If '), constraint
+    assert looks_like_forward_clause(constraint), constraint
 
 
 def test_build_team_story_runs_full_pipeline_from_context_fetch(monkeypatch):
@@ -318,7 +319,7 @@ def test_sustainability_question_wins_when_usage_concentration_is_strongest():
     assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
     assert 'meaningful innings are bunching around a smaller group' in written_text(result)
     assert 'The same arms are carrying the meaningful work' in written_text(result)
-    assert 'If this pattern continues, the margin for spreading the work stays thin' in written_text(result)
+    assert_forward_clause(result)
     assert result['written_story']['baseline_paragraph']
     assert result['written_story']['cause_paragraph']
     assert result['written_story']['observation_paragraph']
@@ -783,7 +784,7 @@ def test_route_change_can_explain_roster_change_with_held_route():
 
     assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
     assert 'First Arm, Second Arm, and Third Arm' in written_text(result)
-    assert 'route points back through First Arm, Second Arm, and Third Arm' in written_text(result)
+    assert_forward_clause(result)
     assert_forward_clause(result)
 
 

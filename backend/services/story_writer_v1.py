@@ -33,6 +33,7 @@ from services.story_voice_library_v1 import (
     BEAT_SUSTAINABILITY_QUESTION,
     BEAT_TRUST_LANE,
     DENIED_PUBLIC_PHRASES,
+    PURPOSE_FORWARD,
     render_voice_line,
 )
 
@@ -219,6 +220,31 @@ def _voice_opening(frame, beat, *, names=None, extra_parts=()):
     )
 
 
+def _forward_line(frame, beat, *, names=None, extra_parts=()):
+    """Render the deterministic forward-clause ('what it creates') for a beat.
+
+    Selection is independent of the headline (a distinct stable key) so the
+    closing beat varies its opening across teams instead of always reading
+    "If X, then Y".
+    """
+    team = _team(frame)
+    return render_voice_line(
+        beat,
+        purpose=PURPOSE_FORWARD,
+        stable_parts=(
+            _dict(frame).get('team_id'),
+            _dict(frame).get('team_abbreviation'),
+            _dict(frame).get('observation_type'),
+            'forward',
+            _clean_text(names),
+            *tuple(extra_parts or ()),
+        ),
+        team=team,
+        possessive=_possessive(team),
+        names=names or 'the bullpen',
+    )
+
+
 def _has_banned_language(text):
     lower = _clean_text(text).lower()
     return any(term in lower for term in BANNED_TERMS)
@@ -370,10 +396,7 @@ def _rotation_pressure(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If short starts continue, the bullpen has fewer ways to spread the middle innings"
-                if _present(constraint.get('bullpen_coverage_ip_7d')) or _present(coverage) else None
-            ),
+            _forward_line(frame, BEAT_COVERAGE_PRESSURE, extra_parts=(avg_7, trend, coverage)),
         ),
     )
 
@@ -517,10 +540,7 @@ def _concentration_pressure(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If this pattern continues, the margin for spreading the work stays thin around {route_names}"
-                if route_names else None
-            ),
+            _forward_line(frame, BEAT_SUSTAINABILITY_QUESTION, names=route_names, extra_parts=(share, band)),
         ),
     )
 
@@ -614,9 +634,11 @@ def _optionality_strength(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the same game shape returns, the club can choose among multiple late-inning options rather than force one route"
-                if _present(paths) else None
+            _forward_line(
+                frame,
+                BEAT_AVAILABILITY_DEPTH,
+                names=clean_names or secondary_names,
+                extra_parts=(paths, band),
             ),
             (
                 f"The current plan has to work around {_fmt(unavailable)} unavailable {_count_word(unavailable, 'arm')}"
@@ -684,14 +706,7 @@ def _stable_core(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the next game tightens, the route points back through {current}"
-                if current else None
-            ),
-            (
-                f"If the next game tightens, the route points back through the {_fmt(core_size)}-arm core"
-                if not current and _present(core_size) else None
-            ),
+            _forward_line(frame, BEAT_AVAILABILITY_DEPTH, names=current, extra_parts=(retention, stability)),
         ),
     )
 
@@ -755,14 +770,7 @@ def _core_transition(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the next game tightens, the route points back through {current}"
-                if current else None
-            ),
-            (
-                f"If the next game tightens, the bullpen is working with {_fmt(retention)} retained {_count_word(retention, 'arm')} from the prior core"
-                if not current and _present(retention) else None
-            ),
+            _forward_line(frame, BEAT_ROUTE_CHANGE, names=current or new_members, extra_parts=(changes, retention)),
         ),
     )
 
@@ -827,10 +835,7 @@ def _depth_pressure(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the roster stays this thin, the manager has fewer ways to cover the late innings than the roster count suggests"
-                if _present(paths) or _present(inactive) else None
-            ),
+            _forward_line(frame, BEAT_DEPTH_CONSTRAINT, names=inactive_names, extra_parts=(inactive, active)),
             (
                 f"The current plan has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
                 if _present(paths) else None
@@ -943,14 +948,7 @@ def _trust_lane_pressure(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the game tightens, the late-game plan leans back on {trusted_names}, thinner than the available arm count suggests"
-                if trusted_names and _present(available) else None
-            ),
-            (
-                f"If the game tightens, the trusted late-game lane stays thinner than the available arm count suggests"
-                if not (trusted_names and _present(available)) else None
-            ),
+            _forward_line(frame, BEAT_TRUST_LANE, names=trusted_names, extra_parts=(available, clean_count)),
         ),
     )
 
@@ -1054,14 +1052,7 @@ def _bridge_instability(frame):
             ),
         ),
         constraint_paragraph=_paragraph(
-            (
-                f"If the starters keep exiting early, the path to {core_names} runs through a fragile middle, thinner than the settled late group suggests"
-                if core_names else None
-            ),
-            (
-                f"If the starters keep exiting early, the path to the late arms runs through a fragile middle"
-                if not core_names else None
-            ),
+            _forward_line(frame, BEAT_BRIDGE, names=core_names, extra_parts=(early_rate, coverage_ip)),
         ),
     )
 

@@ -140,6 +140,24 @@ LEAGUE_CONTINUITY_NEW = 'new'
 LEAGUE_CONTINUITY_UNCHANGED = 'unchanged'
 LEAGUE_CONTINUITY_CHANGED = 'changed'
 
+# Human-readable continuity phrasing. Descriptive only — never exposes the
+# internal state name, never predicts. A suppressed/unavailable story has no
+# story to narrate, so it carries no sentence.
+CONTINUITY_SENTENCES = {
+    CONTINUITY_NEW: 'This is new today.',
+    CONTINUITY_ONGOING: 'This has carried over from the last read.',
+    CONTINUITY_CHANGED: 'The story has changed since the last read.',
+    CONTINUITY_UNCHANGED: 'This reads the same as the last snapshot.',
+    CONTINUITY_RESOLVED: 'This has eased since the last read.',
+    CONTINUITY_UNAVAILABLE: None,
+}
+
+LEAGUE_CONTINUITY_SENTENCES = {
+    LEAGUE_CONTINUITY_NEW: 'This is the first league read in this window.',
+    LEAGUE_CONTINUITY_UNCHANGED: 'The league picture is steady since the last read.',
+    LEAGUE_CONTINUITY_CHANGED: 'The league picture has shifted since the last read.',
+}
+
 # The four authored paragraphs, mapped to public-safe beat labels. Labels mirror
 # the existing Team Board StoryCard so a future UI can render either source.
 _BEAT_DEFS = (
@@ -536,6 +554,7 @@ def _league_continuity(today_mode, prior_league_context=None) -> dict:
     return {
         'state': state,
         'reason': reason,
+        'sentence': LEAGUE_CONTINUITY_SENTENCES.get(state),
         'previous_mode': prior_mode,
         'changed_since': prior_date,
     }
@@ -586,6 +605,7 @@ def build_story_continuity(today_item, prior_item=None) -> dict:
     return {
         'state': state,
         'reason': reason,
+        'sentence': CONTINUITY_SENTENCES.get(state),
         'previous_story_id': previous_story_id,
         'previous_story_type': previous_story_type,
         'previous_headline': previous_headline,
