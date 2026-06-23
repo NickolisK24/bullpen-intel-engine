@@ -15,7 +15,10 @@ from collections import Counter
 from typing import Any
 
 from services.availability import STATUS_AVAILABLE, STATUS_UNAVAILABLE
-from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
+from services.bullpen_eligibility_vocabulary import (
+    record_is_bullpen_eligible,
+    record_is_swing_bulk,
+)
 
 
 CAPABILITY = 'bullpen_trust_hierarchy_v1'
@@ -319,6 +322,8 @@ def _bucket_for(record: dict[str, Any], season_relief_outs: int) -> tuple[str, s
         return BUCKET_UNKNOWN, 'Insufficient observed usage prevents a stronger bucket.'
     if _is_limited_read(record) and not trusted_workload:
         return BUCKET_UNKNOWN, 'Limited role or availability data prevents a stronger bucket.'
+    if record_is_swing_bulk(record):
+        return BUCKET_DEPTH, 'Swing/bulk role contributes to depth, not the trust or bridge lane.'
 
     strong_confidence = confidence not in WEAK_CONFIDENCE
 

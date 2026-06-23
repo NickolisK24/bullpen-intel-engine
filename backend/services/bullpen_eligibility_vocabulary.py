@@ -187,3 +187,42 @@ def record_is_bullpen_eligible(record: Any) -> bool:
     if not _is_payload(record):
         return False
     return normalize_eligibility(record.get('eligibility'))['eligible']
+
+
+def record_eligibility_type(record: Any) -> str:
+    """Return the eligibility_type for a record/card carrying an ``eligibility`` payload.
+
+    Missing or malformed payloads fail closed to ``UNKNOWN_LIMITED``, matching
+    ``record_is_bullpen_eligible``.
+    """
+    if not _is_payload(record):
+        return ELIGIBILITY_UNKNOWN_LIMITED
+    payload = record.get('eligibility')
+    if not _is_payload(payload):
+        return ELIGIBILITY_UNKNOWN_LIMITED
+    return payload.get('eligibility_type') or eligibility_type_for(payload)
+
+
+def record_is_swing_bulk(record: Any) -> bool:
+    """Whether a bullpen record/card is a Swing/Bulk Relief arm.
+
+    Only records that are bullpen-eligible AND explicitly typed
+    ``SWING_BULK_RELIEF`` qualify. Untyped or normal-relief records are not
+    treated as swing/bulk, so legacy payloads keep their prior counting
+    behavior.
+    """
+    return (
+        record_is_bullpen_eligible(record)
+        and record_eligibility_type(record) == ELIGIBILITY_SWING_BULK_RELIEF
+    )
+
+
+def record_counts_for_primary_lane(record: Any) -> bool:
+    """Whether a record may count toward Trust Arm / Bridge Arm / Clean Option.
+
+    Eligible bullpen records count in the primary (trust/bridge/clean) lane
+    unless they are Swing/Bulk Relief, which is held to coverage/depth context
+    by default. Withheld eligibility types never reach team metrics and are
+    excluded here as well.
+    """
+    return record_is_bullpen_eligible(record) and not record_is_swing_bulk(record)
