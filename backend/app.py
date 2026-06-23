@@ -66,6 +66,16 @@ def _init_scheduler(app):
             replace_existing=True,
             misfire_grace_time=60 * 60,
         )
+
+        # Daily team digest job — only registered when explicitly enabled, so
+        # turning on AUTO_SYNC alone never starts emailing. Per-user opt-in is
+        # still required for any individual digest to send.
+        if app.config.get('DIGEST_SEND_ENABLED'):
+            from services.digest_delivery import register_digest_job
+            digest_hour = int(app.config.get('DIGEST_SEND_HOUR_ET', 7))
+            register_digest_job(_scheduler, app, hour=digest_hour, minute=0, timezone=eastern)
+            print(f'[scheduler] Daily team digest scheduled at {digest_hour:02d}:00 ET.', flush=True)
+
         _scheduler.start()
         print('[scheduler] Daily bullpen sync scheduled at 06:00 ET.', flush=True)
 
@@ -127,6 +137,7 @@ def create_app(config_name=None):
     from api.system import system_bp
     from api.auth import auth_bp
     from api.me import me_bp
+    from api.digest import digest_bp
 
     app.register_blueprint(bullpen_bp, url_prefix='/api/bullpen')
     app.register_blueprint(prospects_bp, url_prefix='/api/prospects')
@@ -139,6 +150,7 @@ def create_app(config_name=None):
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(me_bp, url_prefix='/api/me')
+    app.register_blueprint(digest_bp, url_prefix='/api/digest')
 
     @app.route('/api/health')
     def health():

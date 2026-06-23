@@ -10,13 +10,28 @@ the sync/recalculate write endpoints.
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, current_app, jsonify
 
 from services import sync_metadata
 from utils.auth import require_admin_token
 
 
 system_bp = Blueprint('system', __name__)
+
+
+@system_bp.route('/digest-status', methods=['GET'])
+@require_admin_token
+def get_digest_status():
+    """Operator visibility into the daily team digest.
+
+    Runs the digest decision pipeline in dry-run mode (no email is sent) and
+    reports how many users were considered, how many would send, and how many
+    were suppressed or skipped (by reason). Safe to call anytime; this is a
+    point-in-time snapshot, not a metrics system.
+    """
+    from services.digest_delivery import run_digest_job
+    summary = run_digest_job(current_app._get_current_object(), dry_run=True)
+    return jsonify(summary)
 
 
 @system_bp.route('/email-delivery-health', methods=['GET'])
