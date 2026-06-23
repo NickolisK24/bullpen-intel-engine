@@ -1,39 +1,26 @@
-"""Magic-link delivery adapter (Phase D1C).
+"""Magic-link email seam (Phase D1C; delivery via D2B).
 
-MVP delivery: an in-memory outbox that dev and tests can inspect, plus redacted
-logging. A production email provider is a config-driven placeholder — this phase
-adds no provider dependency. The magic link / token is never returned in an HTTP
-response and is never logged in production.
+This stays the single seam the auth code calls. It composes the magic-link
+message and hands it to utils.email_delivery, which selects the provider
+(in-memory outbox in dev/test, a real transactional provider in production).
+Auth code never talks to a provider directly. The outbox / reset_outbox names
+are re-exported so existing callers and tests are unchanged.
 """
 
-from flask import current_app
-
-
-# In-memory capture for dev/test inspection only. Never a real delivery channel.
-outbox = []
-
-
-def reset_outbox():
-    """Clear the captured outbox (tests/dev only)."""
-    outbox.clear()
-
-
-def _redact(email):
-    if not email or '@' not in email:
-        return '***'
-    name, _, domain = email.partition('@')
-    head = name[0] if name else ''
-    return f'{head}***@{domain}'
+from utils.email_delivery import outbox, reset_outbox, send_email  # noqa: F401  (re-exported seam)
 
 
 def send_magic_link(email, link, *, token=None):
-    """Deliver a magic link. Captures to the outbox; logs redacted in production."""
-    record = {'email': email, 'link': link}
-    outbox.append(record)
-    env = current_app.config.get('APP_ENV', 'development')
-    if env == 'production':
-        # A real provider integration belongs here. Never log the link or token.
-        current_app.logger.info('Magic-link email queued for %s', _redact(email))
-    else:
-        current_app.logger.info('[dev] magic-link for %s -> %s', email, link)
-    return record
+    """Compose and deliver the sign-in magic link via the email delivery seam."""
+    subject = 'Your BaseballOS sign-in link'
+    text = (
+        'Sign in to BaseballOS using the link below:\n\n'
+        f'{link}\n\n'
+        'This link expires shortly. If you did not request it, you can ignore this email.'
+    )
+    html = (
+        '<p>Sign in to BaseballOS using the link below:</p>'
+        f'<p><a href="{link}">Sign in to BaseballOS</a></p>'
+        '<p>This link expires shortly. If you did not request it, you can ignore this email.</p>'
+    )
+    return send_email(email, subject, text=text, html=html, kind='magic_link', link=link)

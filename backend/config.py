@@ -123,6 +123,17 @@ class Config:
     AUTH_TOKEN_TTL_SECONDS = int(os.environ.get('AUTH_TOKEN_TTL_SECONDS', '2592000'))
     FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'http://localhost:5173')
 
+    # ── Transactional email delivery (Phase D2B) ─────────────────────────────
+    # The provider is only used in production; development and test always
+    # capture to an in-memory outbox and never send. No secret is stored in the
+    # repository — the API key and sender come from the environment. Missing
+    # production config fails soft (logged, not sent) and is surfaced by the
+    # email-delivery health check rather than crashing the app.
+    EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'resend')
+    EMAIL_FROM = os.environ.get('EMAIL_FROM')
+    EMAIL_API_KEY = os.environ.get('EMAIL_API_KEY')
+    EMAIL_SEND_TIMEOUT = float(os.environ.get('EMAIL_SEND_TIMEOUT', '10'))
+
     # ── Story Quality contract (scoring + gating) ────────────────────────────
     # The Story Quality scorer always runs and annotates every generated story
     # with a rule-by-rule scorecard. Enforcement is opt-in and fail-open: with
