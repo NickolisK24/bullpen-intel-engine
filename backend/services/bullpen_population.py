@@ -23,6 +23,7 @@ from services.roster_status import (
     roster_status_summary,
 )
 from services.roster_status_audit import with_recent_inactive_roster_audit
+from services.swing_bulk_eligibility import refine_swing_bulk_eligibility
 
 
 def usage_logs_by_pitcher(pitcher_ids, days=ROLE_WINDOW_DAYS, include_stale=False, reference_date=None):
@@ -62,8 +63,9 @@ def _eligibility_for(pitcher, logs, roster_status, reference_date, use_role_auth
 
     Either engine's payload is normalized onto the shared eligibility vocabulary
     so every downstream record carries a consistent field set (including
-    eligibility_type and authority/source). Normalization preserves the engine's
-    eligible/role/status decision unchanged.
+    eligibility_type and authority/source), then refined with behavior-aware
+    swing/bulk detection. Both steps preserve the engine's eligible/role/status
+    decision unchanged.
     """
     if use_role_authority:
         raw = classify_role(pitcher, logs, reference_date=reference_date)
@@ -74,7 +76,7 @@ def _eligibility_for(pitcher, logs, roster_status, reference_date, use_role_auth
             reference_date=reference_date,
             respect_local_active=not roster_status.get('is_authoritative'),
         )
-    return normalize_eligibility(raw)
+    return refine_swing_bulk_eligibility(normalize_eligibility(raw), logs)
 
 
 def eligible_bullpen_pitcher_contexts(
