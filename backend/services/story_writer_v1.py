@@ -358,10 +358,6 @@ def _rotation_pressure(frame):
                 if _present(avg_7) else None
             ),
             (
-                f"That recent starter length is down {_fmt(abs(trend))} innings from the two-week mark"
-                if _present(trend) and trend < 0 else None
-            ),
-            (
                 f"The bullpen has entered before the sixth in {_fmt(early_rate, suffix='%')} of recent games"
                 if _present(early_rate) else None
             ),
@@ -497,23 +493,16 @@ def _concentration_pressure(frame):
                 f"The top group has handled {_fmt(share, suffix='%')} of the bullpen workload"
                 if _present(share) and not names else None
             ),
-            (
-                f"That comes inside a {_fmt(total)}-pitch bullpen window"
-                if _present(total) else None
-            ),
         ),
         baseline_paragraph=_paragraph(
-            # Distribution-aware league read when available; otherwise fall back to
-            # the existing league-average comparison (never both, to avoid stacking
-            # two "vs league" statements).
+            # One comparison read per beat: the distribution-aware league read when
+            # available, otherwise a single league-average line. The raw "X points
+            # above baseline" delta is dropped — the team share (above) and the
+            # league share read it side by side without analyst framing.
             _concentration_baseline_sentence(baseline),
             (
                 f"The league comparison is {_fmt(league, suffix='%')} for top-three bullpen workload"
                 if _present(league) and not _baseline_band(baseline) else None
-            ),
-            (
-                f"That puts this bullpen {_fmt(delta)} percentage points above that baseline"
-                if _present(delta) and not _baseline_band(baseline) else None
             ),
             # Secondary, optional lead-arm read: single-arm reliance vs the league,
             # voiced only when the separate lead-arm baseline read is available. The
@@ -533,10 +522,6 @@ def _concentration_pressure(frame):
             (
                 f"The same arms are carrying the meaningful work: {route_names}"
                 if route_names else None
-            ),
-            (
-                f"The bullpen has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
-                if _present(paths) else None
             ),
         ),
         constraint_paragraph=_paragraph(
@@ -920,17 +905,13 @@ def _trust_lane_pressure(frame):
             ),
         ),
         baseline_paragraph=_paragraph(
-            # Distribution-aware league read of the clean-options count when
-            # available; otherwise fall back to the board-vs-lane comparison
-            # (never both, to avoid stacking two competing "comparison" lines).
+            # One comparison read per beat: the distribution-aware league read when
+            # available, otherwise the board-vs-lane line. The separate
+            # workload-flagged count is dropped to keep the beat to one number.
             _clean_options_baseline_sentence(baseline),
             (
                 f"Against the {_fmt(available)}-arm available board, the trusted late-inning lane is a shorter list"
                 if _present(available) and not _clean_options_band(baseline) else None
-            ),
-            (
-                f"Set against that board, the workload-flagged group numbers {_fmt(secondary_count)}"
-                if _present(secondary_count) and secondary_count else None
             ),
         ),
         cause_paragraph=_paragraph(
@@ -1024,7 +1005,7 @@ def _bridge_instability(frame):
         ),
         baseline_paragraph=_paragraph(
             (
-                f"A settled late group sits behind a thin handoff: {_fmt(clean_count)} clean middle {_count_word(clean_count, 'option')} feeding the back of the bullpen"
+                "A settled late group sits behind a thin handoff"
                 if _present(clean_count) else None
             ),
             (

@@ -435,7 +435,9 @@ def test_writer_outputs_concentration_pressure_observation():
     assert 'First Arm, Second Arm, and Third Arm' in text
     assert '94%' in text
     assert '58%' in text
-    assert '36 percentage points' in text
+    # Metric stacking reduced (Phase C2E): the team share and the league share read
+    # side by side; the raw "X percentage points above baseline" delta is gone.
+    assert 'percentage points' not in text
     assert 'meaningful innings are bunching around a smaller group' in text
     assert 'The same arms are carrying the meaningful work' in text
     assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
