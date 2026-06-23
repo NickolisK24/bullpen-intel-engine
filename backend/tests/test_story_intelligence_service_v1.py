@@ -31,6 +31,7 @@ from services.story_observation_engine import (
     TYPE_TRUST_LANE_PRESSURE,
 )
 from services.story_writer_v1 import BANNED_TERMS, SECTION_KEYS
+from services.story_feed import canonical_story_from_service_payload
 
 
 def team_context(
@@ -982,3 +983,78 @@ def test_depth_constraint_names_inactive_arms_when_present():
     assert 'Inactive Arm' in written_text(result)
     assert "{'name':" not in written_text(result)
     assert_forward_clause(result)
+
+
+# All transient Product Credibility baseline reads (C1E/C1H/C1I/C1K/C1L/C1N).
+# These may exist internally (context layers, frame facts) but must NEVER be
+# serialized onto a public canonical feed item.
+_BASELINE_READ_FIELDS = {
+    'baseline_read',
+    'lead_arm_baseline_read',
+    'coverage_baseline_read',
+    'rotation_length_baseline_read',
+    'bullpen_coverage_baseline_read',
+    'clean_options_baseline_read',
+    'top_one_baseline_read',
+    'top_three_baseline_read',
+}
+
+
+def _baseline_read_keys(payload):
+    """Recursively collect any dict key that is, or ends with, a baseline_read field."""
+    found = []
+
+    def _scan(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(key, str) and (
+                    key in _BASELINE_READ_FIELDS or key.endswith('_baseline_read')
+                ):
+                    found.append(key)
+                _scan(value)
+        elif isinstance(node, (list, tuple)):
+            for entry in node:
+                _scan(entry)
+
+    _scan(payload)
+    return found
+
+
+def test_canonical_feed_item_never_serializes_baseline_reads():
+    # A firing context whose layers all carry transient baseline reads, so the
+    # full pipeline genuinely has reads available to (accidentally) leak.
+    context = team_context(
+        rotation={
+            'rotation_avg_ip_7d': 4.1,
+            'rotation_avg_ip_14d': 5.4,
+            'rotation_ip_trend': -1.3,
+            'early_bullpen_entry_rate': 50.0,
+            'bullpen_coverage_ip_7d': 4.8,
+            'baseline_read': {'available': True, 'metric': 'rotation_avg_ip_7d', 'comparison': 'below_average'},
+            'coverage_baseline_read': {'available': True, 'metric': 'bullpen_coverage_ip_7d', 'comparison': 'above_average'},
+        },
+        concentration={
+            'concentration_band': 'narrow',
+            'top_three_workload_share_10d': 94.0,
+            'top_three_share_delta_vs_league': 36.0,
+            'bullpen_workload_total_10d': 240,
+            'baseline_read': {'available': True, 'metric': 'top_share', 'comparison': 'among_highest'},
+            'top_one_workload_share_10d': 48.0,
+            'lead_arm_baseline_read': {'available': True, 'metric': 'top_one_share', 'comparison': 'above_average'},
+        },
+        optionality={
+            'baseline_read': {'available': True, 'metric': 'clean_trusted_options', 'comparison': 'below_average'},
+        },
+    )
+
+    payload = build_team_story(118, date(2026, 6, 20), team_context=context)
+    item = canonical_story_from_service_payload(payload, date='2026-06-20')
+
+    # The pipeline produced a real story (so the leak check is meaningful).
+    assert item['story_available'] is True
+    # Self-check: the reads DO exist upstream in the internal service payload
+    # (supporting context / frame facts), proving the recursive scan can find them.
+    assert _baseline_read_keys(payload)
+    # ...but they must NOT appear anywhere on the public canonical feed item.
+    leaked = _baseline_read_keys(item)
+    assert leaked == [], f'baseline reads leaked onto canonical feed item: {sorted(set(leaked))}'
