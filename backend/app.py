@@ -106,6 +106,10 @@ def create_app(config_name=None):
     allowed_origins = [
         "http://localhost:5173",
         "http://localhost:3000",
+        # Production frontends: the canonical custom domain and the legacy Vercel
+        # domain (kept during the transition). Further origins can be added
+        # without a deploy via the CORS_ORIGINS env var (comma-separated).
+        "https://baseballos.app",
         "https://baseballos.vercel.app",
     ]
 
