@@ -20,6 +20,7 @@ from html import escape as _escape
 
 from flask import current_app
 
+from services.board_freshness import board_freshness_block
 from services.digest_composer import build_team_digest
 from services.notification_prefs import cadence_due, get_digest_prefs
 from utils.auth_tokens import (
@@ -127,6 +128,7 @@ def deliver_team_digest(
     sender=send_email,
     recorder=None,
     force=False,
+    freshness=None,
 ):
     """Compose and (unless ``dry_run``) send one user's team digest.
 
@@ -167,8 +169,17 @@ def deliver_team_digest(
 
     # Gate 3 + content: compose (the engine suppresses when there is no primary
     # team, the data is stale/unavailable, or nothing meaningful changed).
+    # Supply the SAME board/published-snapshot freshness the Today surface uses,
+    # so the shared What-Changed builder does not fail closed to stale (which is
+    # what suppressed the digest while Today showed changes). Only the real
+    # composition path sources it; an injected test builder keeps freshness as-is.
+    if freshness is None and digest_builder is build_team_digest:
+        freshness = board_freshness_block()
     frontend_base_url = current_app.config.get('FRONTEND_BASE_URL')
-    payload = digest_builder(user, reference_date=reference_date, frontend_base_url=frontend_base_url)
+    payload = digest_builder(
+        user, reference_date=reference_date, frontend_base_url=frontend_base_url,
+        freshness=freshness,
+    )
     record = recorder if (recorder is not None and not dry_run) else None
     if not payload.get('send'):
         if record is not None:
