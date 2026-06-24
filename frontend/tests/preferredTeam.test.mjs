@@ -112,8 +112,11 @@ test('preferred team labels do not expose raw ids while metadata is loading', ()
 
   assert.equal(preferredTeamLabel(idOnlyTeam), 'your team')
   assert.equal(preferredTeamShortLabel(idOnlyTeam), 'Team')
+  assert.equal(preferredTeamLabel(resolvePreferredTeam({ team_id: 1 }, teams)), 'Aces')
   assert.equal(preferredTeamLabel(teams[0]), 'Aces')
   assert.equal(preferredTeamShortLabel(teams[0]), 'ACE')
+  assert.equal(preferredTeamLabel({ team_name: '147', team_abbreviation: '147' }), 'your team')
+  assert.equal(preferredTeamShortLabel({ team_name: '147', team_abbreviation: '147' }), 'Team')
   assert.equal(buildPreferredTeamHref(idOnlyTeam, 'test-source'), '/bullpen?view=board&team=147&source=test-source')
 })
 

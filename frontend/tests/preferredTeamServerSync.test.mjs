@@ -15,6 +15,7 @@ after(async () => {
 })
 
 const sync = await server.ssrLoadModule('/src/utils/preferredTeamServerSync.js')
+const preferenceHook = await server.ssrLoadModule('/src/hooks/usePreferredTeamPreference.js')
 const {
   claimLocalPreferredTeamOnSignIn,
   normalizeFollowedTeamsResponse,
@@ -23,6 +24,7 @@ const {
   setServerPreferredTeam,
   shouldClaimLocalPreferredTeam,
 } = sync
+const { serverStateForPreferredTeamPreference } = preferenceHook
 
 const teams = [
   { team_id: 118, team_name: 'Dodgers', team_abbreviation: 'LAD' },
@@ -78,6 +80,24 @@ test('anonymous and failed auth states fall back to the local preferred team', (
   )
 })
 
+test('authenticated id-only server primary keeps matching local display metadata', () => {
+  const localPreference = { team_id: 118, team_name: 'Dodgers', team_abbreviation: 'LAD' }
+  const serverResponse = {
+    teams: [{ team_id: 118, is_primary: true }],
+    primary_team_id: 118,
+  }
+
+  assert.deepEqual(
+    resolvePreferredTeamForAuthState({
+      authenticated: true,
+      serverResponse,
+      localPreference,
+      teamDirectory: [],
+    }),
+    localPreference,
+  )
+})
+
 test('followed-team response normalization accepts primary flags and ids', () => {
   assert.deepEqual(
     normalizeFollowedTeamsResponse({
@@ -114,6 +134,28 @@ test('setting preferred team follows it and marks it primary on the server', asy
     ['PUT /api/me/primary-team', 147],
   ])
   assert.equal(response.primary_team_id, 147)
+})
+
+test('preferred-team event state updates sibling hook server primary without page refresh', () => {
+  const previous = {
+    loading: false,
+    teams: [
+      { team_id: 147, is_primary: true },
+    ],
+    primary_team_id: 147,
+    error: null,
+  }
+
+  const next = serverStateForPreferredTeamPreference(previous, {
+    team: { team_id: 118, team_name: 'Dodgers', team_abbreviation: 'LAD' },
+  })
+
+  assert.equal(next.primary_team_id, 118)
+  assert.deepEqual(next.teams, [
+    { team_id: 118, is_primary: true },
+    { team_id: 147, is_primary: false },
+  ])
+  assert.equal(next.error, null)
 })
 
 test('localStorage team is claimed on sign-in when server has no teams', async () => {
