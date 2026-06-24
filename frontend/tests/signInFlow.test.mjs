@@ -47,10 +47,12 @@ const {
 const { SidebarAccountBlock } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const {
   AUTH_TOKEN_STORAGE_KEY,
+  isAuthTokenStorageEvent,
   readAuthToken,
   storeAuthToken,
 } = await server.ssrLoadModule('/src/utils/api.js')
 const {
+  authStateForTokenCheck,
   initialAuthState,
   normalizeAuthResponse,
   signOutAuthState,
@@ -272,6 +274,42 @@ test('auth-state helpers normalize anonymous, loading, and authenticated states'
   })
 })
 
+test('signed-in auth state stays visible during background token checks', () => {
+  const authenticatedState = {
+    loading: false,
+    authenticated: true,
+    user: { id: 1, email: 'fan@example.com' },
+    error: new Error('stale'),
+  }
+
+  assert.deepEqual(authStateForTokenCheck(authenticatedState), {
+    loading: false,
+    authenticated: true,
+    user: { id: 1, email: 'fan@example.com' },
+    error: null,
+  })
+  assert.deepEqual(authStateForTokenCheck({
+    loading: false,
+    authenticated: false,
+    user: null,
+    error: null,
+  }), {
+    loading: true,
+    authenticated: false,
+    user: null,
+    error: null,
+  })
+})
+
+test('auth storage refresh is limited to bearer token changes', () => {
+  const preferredTeamEvent = Object.create({ key: 'baseballos.preferredTeam' })
+
+  assert.equal(isAuthTokenStorageEvent({ key: AUTH_TOKEN_STORAGE_KEY }), true)
+  assert.equal(isAuthTokenStorageEvent({ key: null }), true)
+  assert.equal(isAuthTokenStorageEvent({ key: 'baseballos.preferredTeam' }), false)
+  assert.equal(isAuthTokenStorageEvent(preferredTeamEvent), false)
+})
+
 test('Sidebar anonymous state shows the sign-in entry', () => {
   const html = render(React.createElement(SidebarAccountBlock, {
     authState: {
@@ -299,6 +337,21 @@ test('Sidebar authenticated state shows email and sign out', () => {
   assert.ok(htmlIncludes(html, 'Signed in'))
   assert.ok(htmlIncludes(html, 'fan@example.com'))
   assert.ok(htmlIncludes(html, 'Sign out'))
+})
+
+test('Sidebar keeps signed-in account visible during background refresh', () => {
+  const html = render(React.createElement(SidebarAccountBlock, {
+    authState: {
+      loading: true,
+      authenticated: true,
+      user: { email: 'fan@example.com' },
+      signOut: () => {},
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'Signed in'))
+  assert.ok(htmlIncludes(html, 'fan@example.com'))
+  assert.ok(!htmlIncludes(html, 'Checking sign-in...'))
 })
 
 test('sign-out auth state clears the stored bearer token', async () => {

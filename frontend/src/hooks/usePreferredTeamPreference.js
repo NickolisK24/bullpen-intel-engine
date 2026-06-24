@@ -4,12 +4,15 @@ import {
   clearAuthToken,
   getCurrentUser,
   getFollowedTeams,
+  isAuthTokenStorageEvent,
   readAuthToken,
 } from '../utils/api'
+import { authStateForTokenCheck } from './useAuthState'
 import {
   PREFERRED_TEAM_CHANGED_EVENT,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
+  isPreferredTeamStorageEvent,
   readPreferredTeamState,
   resolvePreferredTeam,
   savePreferredTeamPreference,
@@ -52,11 +55,14 @@ export function usePreferredTeamPreference(teams = []) {
     if (typeof window === 'undefined') return undefined
 
     const refresh = () => setPreferenceState(readPreferredTeamState())
+    const refreshForPreferredTeamStorage = (event) => {
+      if (isPreferredTeamStorageEvent(event)) refresh()
+    }
     window.addEventListener(PREFERRED_TEAM_CHANGED_EVENT, refresh)
-    window.addEventListener('storage', refresh)
+    window.addEventListener('storage', refreshForPreferredTeamStorage)
     return () => {
       window.removeEventListener(PREFERRED_TEAM_CHANGED_EVENT, refresh)
-      window.removeEventListener('storage', refresh)
+      window.removeEventListener('storage', refreshForPreferredTeamStorage)
     }
   }, [])
 
@@ -64,11 +70,14 @@ export function usePreferredTeamPreference(teams = []) {
     if (typeof window === 'undefined') return undefined
 
     const refreshAuth = () => setAuthRefreshKey(value => value + 1)
+    const refreshAuthForStorage = (event) => {
+      if (isAuthTokenStorageEvent(event)) refreshAuth()
+    }
     window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, refreshAuth)
-    window.addEventListener('storage', refreshAuth)
+    window.addEventListener('storage', refreshAuthForStorage)
     return () => {
       window.removeEventListener(AUTH_TOKEN_CHANGED_EVENT, refreshAuth)
-      window.removeEventListener('storage', refreshAuth)
+      window.removeEventListener('storage', refreshAuthForStorage)
     }
   }, [])
 
@@ -94,12 +103,7 @@ export function usePreferredTeamPreference(teams = []) {
       }
     }
 
-    setAuthState({
-      loading: true,
-      authenticated: false,
-      user: null,
-      error: null,
-    })
+    setAuthState(previous => authStateForTokenCheck(previous))
 
     getCurrentUser()
       .then((identity) => {

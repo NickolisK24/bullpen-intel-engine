@@ -3,6 +3,7 @@ import {
   AUTH_TOKEN_CHANGED_EVENT,
   clearAuthToken,
   getCurrentUser,
+  isAuthTokenStorageEvent,
   logoutAuth,
   readAuthToken,
 } from '../utils/api'
@@ -39,6 +40,23 @@ export function normalizeAuthResponse(identity) {
   return anonymousState()
 }
 
+export function authStateForTokenCheck(previousState = null) {
+  if (previousState?.authenticated && previousState.user) {
+    return {
+      ...previousState,
+      loading: false,
+      error: null,
+    }
+  }
+
+  return {
+    loading: true,
+    authenticated: false,
+    user: null,
+    error: null,
+  }
+}
+
 export async function signOutAuthState(logout = logoutAuth) {
   try {
     await logout()
@@ -56,11 +74,14 @@ export function useAuthState() {
     if (typeof window === 'undefined') return undefined
 
     const refresh = () => setRefreshKey(value => value + 1)
+    const refreshForAuthStorage = (event) => {
+      if (isAuthTokenStorageEvent(event)) refresh()
+    }
     window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, refresh)
-    window.addEventListener('storage', refresh)
+    window.addEventListener('storage', refreshForAuthStorage)
     return () => {
       window.removeEventListener(AUTH_TOKEN_CHANGED_EVENT, refresh)
-      window.removeEventListener('storage', refresh)
+      window.removeEventListener('storage', refreshForAuthStorage)
     }
   }, [])
 
@@ -75,12 +96,7 @@ export function useAuthState() {
       }
     }
 
-    setState({
-      loading: true,
-      authenticated: false,
-      user: null,
-      error: null,
-    })
+    setState(previous => authStateForTokenCheck(previous))
 
     getCurrentUser()
       .then((identity) => {

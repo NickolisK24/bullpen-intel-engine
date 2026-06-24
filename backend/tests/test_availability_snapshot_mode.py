@@ -5,7 +5,9 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 from sqlalchemy import event
 
+import api.bullpen as bullpen_api
 import models.prospect  # noqa: F401  (register on db.metadata)
+import services.sync_metadata as sync_metadata
 from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
@@ -401,11 +403,18 @@ def test_snapshot_endpoint_allows_development_without_token_when_unconfigured(de
     assert res.headers['X-BaseballOS-Current-Availability'] == 'false'
 
 
-def test_public_current_fatigue_endpoint_remains_open_with_admin_token_configured(production_client):
+def test_public_current_fatigue_endpoint_remains_open_with_admin_token_configured(
+    production_client,
+    monkeypatch,
+):
+    reference_date = date(2026, 6, 24)
+    monkeypatch.setattr(bullpen_api, 'product_current_date', lambda: reference_date)
+    monkeypatch.setattr(sync_metadata, 'product_current_date', lambda: reference_date)
+
     with production_client.application.app_context():
         _add_pitcher(
             'Public Current Workload',
-            latest_game_date=date.today(),
+            latest_game_date=reference_date,
             raw_score=24.0,
             log_pitches=[8],
         )
@@ -416,7 +425,7 @@ def test_public_current_fatigue_endpoint_remains_open_with_admin_token_configure
     body = res.get_json()
     assert isinstance(body, list)
     assert len(body) == 1
-    assert body[0]['availability']['inputs']['reference_date'] == date.today().isoformat()
+    assert body[0]['availability']['inputs']['reference_date'] == reference_date.isoformat()
 
 
 def test_audit_script_uses_shared_snapshot_path():

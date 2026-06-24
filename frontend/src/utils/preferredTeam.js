@@ -227,6 +227,15 @@ export function clearPreferredTeamPreference(storage = getBrowserStorage()) {
   }
 }
 
+export function isPreferredTeamStorageEvent(event) {
+  if (!event || !('key' in event)) return true
+  return event.key == null || [
+    PREFERRED_TEAM_STORAGE_KEY,
+    LEGACY_FOLLOWED_TEAM_STORAGE_KEY,
+    LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY,
+  ].includes(event.key)
+}
+
 export function resolvePreferredTeam(preference, teams = []) {
   const normalized = normalizePreferredTeam(preference)
   if (!normalized) return null
@@ -271,14 +280,14 @@ export function preferredTeamLabel(team, fallback = 'your team') {
   const normalized = normalizePreferredTeam(team)
   return normalized?.team_name
     || normalized?.team_abbreviation
-    || (normalized?.team_id != null ? `Team ${normalized.team_id}` : fallback)
+    || fallback
 }
 
 export function preferredTeamShortLabel(team, fallback = 'Team') {
   const normalized = normalizePreferredTeam(team)
   return normalized?.team_abbreviation
     || normalized?.team_name
-    || (normalized?.team_id != null ? String(normalized.team_id) : fallback)
+    || fallback
 }
 
 export function preferredTeamLogoUrl(team) {

@@ -13,6 +13,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
+import services.sync_metadata as sync_metadata
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_population import CURRENT_AVAILABILITY_SCOPE, current_availability_records
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
@@ -55,6 +56,7 @@ def client(tmp_path, monkeypatch):
 def _seed_pitcher(
     name, team_id, mlb_id, raw_score=10.0, innings=1.0, days_ago=1,
     roster_status=STATUS_ACTIVE, games_started=None, earned_runs=0,
+    reference_date=None,
 ):
     pitcher = Pitcher(mlb_id=mlb_id, full_name=name, team_id=team_id,
                       team_name=f'Team {team_id}', team_abbreviation=f'T{team_id}', active=True,
@@ -74,13 +76,14 @@ def _seed_pitcher(
         earned_runs if isinstance(earned_runs, list)
         else [earned_runs] * len(innings_values)
     )
+    seed_reference_date = reference_date or date.today()
     for idx, innings_pitched in enumerate(innings_values):
         innings_outs = parse_mlb_innings_to_outs(innings_pitched)
         start_flag = games_started_values[idx] if games_started_values is not None else (
             1 if innings_outs >= 9 else 0
         )
         db.session.add(GameLog(pitcher_id=pitcher.id, mlb_game_pk=mlb_id * 10 + idx,
-                                game_date=date.today() - timedelta(days=day_values[idx]),
+                                game_date=seed_reference_date - timedelta(days=day_values[idx]),
                                 pitches_thrown=12,
                                 innings_pitched=outs_to_decimal_innings(innings_outs),
                                 innings_pitched_outs=innings_outs,
@@ -480,7 +483,11 @@ class TestDashboardEndpoint:
         assert body['availability_summary']['total_pitchers'] == 1
         assert body['landscape']['teams_evaluated'] == 1
 
-    def test_current_availability_summary_uses_governed_authority(self, client):
+    def test_current_availability_summary_uses_governed_authority(self, client, monkeypatch):
+        reference_date = date(2026, 6, 24)
+        monkeypatch.setattr(bullpen_api, 'product_current_date', lambda: reference_date)
+        monkeypatch.setattr(sync_metadata, 'product_current_date', lambda: reference_date)
+
         with client.application.app_context():
             _seed_pitcher(
                 'Governed Starter',
@@ -489,6 +496,7 @@ class TestDashboardEndpoint:
                 innings=[6.0, 5.1, 6.0],
                 days_ago=[1, 6, 11],
                 games_started=[1, 1, 1],
+                reference_date=reference_date,
             )
             _seed_pitcher(
                 'Governed Reliever',
@@ -497,10 +505,11 @@ class TestDashboardEndpoint:
                 innings=[1.0, 0.2, 1.0],
                 days_ago=[1, 3, 5],
                 games_started=[0, 0, 0],
+                reference_date=reference_date,
             )
             authority_records = current_availability_records(
                 availability_latest_fatigue_rows(),
-                reference_date=date.today(),
+                reference_date=reference_date,
             )
             authority_summary = summarize_availability_records(authority_records)
 

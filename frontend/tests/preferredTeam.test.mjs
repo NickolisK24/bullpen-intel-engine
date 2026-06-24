@@ -8,8 +8,11 @@ import {
   buildPreferredTeamHref,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
+  isPreferredTeamStorageEvent,
+  preferredTeamLabel,
   preferredTeamLogoUrl,
   preferredTeamSelectionValue,
+  preferredTeamShortLabel,
   readPreferredTeamPreference,
   readPreferredTeamState,
   resolvePreferredTeam,
@@ -102,6 +105,27 @@ test('preferred team helpers build the team board path and clear state', () => {
   assert.equal(preferredTeamLogoUrl(teams[0]), 'https://www.mlbstatic.com/team-logos/1.svg')
   assert.equal(clearPreferredTeamPreference(storage), true)
   assert.equal(readPreferredTeamPreference(storage), null)
+})
+
+test('preferred team labels do not expose raw ids while metadata is loading', () => {
+  const idOnlyTeam = { team_id: 147 }
+
+  assert.equal(preferredTeamLabel(idOnlyTeam), 'your team')
+  assert.equal(preferredTeamShortLabel(idOnlyTeam), 'Team')
+  assert.equal(preferredTeamLabel(teams[0]), 'Aces')
+  assert.equal(preferredTeamShortLabel(teams[0]), 'ACE')
+  assert.equal(buildPreferredTeamHref(idOnlyTeam, 'test-source'), '/bullpen?view=board&team=147&source=test-source')
+})
+
+test('preferred team storage refresh is limited to preference keys', () => {
+  const authEvent = Object.create({ key: 'baseballos.authToken' })
+
+  assert.equal(isPreferredTeamStorageEvent({ key: PREFERRED_TEAM_STORAGE_KEY }), true)
+  assert.equal(isPreferredTeamStorageEvent({ key: LEGACY_FOLLOWED_TEAM_STORAGE_KEY }), true)
+  assert.equal(isPreferredTeamStorageEvent({ key: LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY }), true)
+  assert.equal(isPreferredTeamStorageEvent({ key: null }), true)
+  assert.equal(isPreferredTeamStorageEvent({ key: 'baseballos.authToken' }), false)
+  assert.equal(isPreferredTeamStorageEvent(authEvent), false)
 })
 
 test('preferred team change event is preserved for existing consumers', () => {
