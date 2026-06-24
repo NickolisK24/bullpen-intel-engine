@@ -91,6 +91,11 @@ export function clearAuthToken(storage = getBrowserStorage()) {
   }
 }
 
+export function isAuthTokenStorageEvent(event) {
+  if (!event || !('key' in event)) return true
+  return event.key == null || event.key === AUTH_TOKEN_STORAGE_KEY
+}
+
 function hasAuthorizationHeader(headers = {}) {
   return Object.keys(headers).some(key => key.toLowerCase() === 'authorization')
 }

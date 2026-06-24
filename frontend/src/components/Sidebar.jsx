@@ -92,19 +92,6 @@ function SidebarFreshnessItem({ label, value }) {
 }
 
 export function SidebarAccountBlock({ authState, onNavigate }) {
-  if (authState?.loading) {
-    return (
-      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-        <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-          Account
-        </div>
-        <div className="mt-2 font-mono text-[11px] text-chalk500">
-          Checking sign-in...
-        </div>
-      </div>
-    )
-  }
-
   if (authState?.authenticated) {
     return (
       <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
@@ -124,6 +111,19 @@ export function SidebarAccountBlock({ authState, onNavigate }) {
         >
           Sign out
         </button>
+      </div>
+    )
+  }
+
+  if (authState?.loading) {
+    return (
+      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+        <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+          Account
+        </div>
+        <div className="mt-2 font-mono text-[11px] text-chalk500">
+          Checking sign-in...
+        </div>
       </div>
     )
   }
