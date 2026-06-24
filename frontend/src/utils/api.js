@@ -704,6 +704,23 @@ export const logoutAuth = async () => {
   }
 }
 
+// ── Digest Preferences ─────────────────────────────────────
+export const getDigestPreferences = () => request('/digest/preferences')
+
+export const updateDigestPreferences = (preferences = {}) => {
+  const payload = {}
+  if (preferences.digest_enabled !== undefined) {
+    payload.digest_enabled = preferences.digest_enabled
+  }
+  if (preferences.digest_cadence !== undefined) {
+    payload.digest_cadence = preferences.digest_cadence
+  }
+  return request('/digest/preferences', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 // ── User Team Following ────────────────────────────────────
 export const getFollowedTeams = () => request('/me/teams')
 
