@@ -21,12 +21,20 @@ const {
   DIGEST_SAVE_ERROR,
   DIGEST_SAVE_IDLE,
   DIGEST_SAVE_SAVED,
+  FOLLOWED_TEAM_SAVE_SAVED,
+  FollowedTeamPickerView,
   DigestPreferencesCardView,
+  buildFollowedTeamOptions,
   digestPreferencesForCadence,
   digestPreferencesForEnabled,
+  filterFollowedTeamOptions,
   normalizeDigestPreferences,
   saveDigestPreferenceSelection,
+  saveFollowedTeamSelection,
 } = await server.ssrLoadModule('/src/components/trust/DigestPreferencesCard.jsx')
+const {
+  shouldFocusDigestPreferences,
+} = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const {
   getDigestPreferences,
   updateDigestPreferences,
@@ -46,6 +54,7 @@ test('signed-out Digest Preferences card prompts sign-in without exposing contro
   assert.ok(htmlIncludes(html, 'Digest Preferences'))
   assert.ok(htmlIncludes(html, 'Sign in to manage digest emails for your followed team.'))
   assert.ok(htmlIncludes(html, 'href="/signin"'))
+  assert.equal(htmlIncludes(html, 'Switch Team'), false)
   assert.equal(htmlIncludes(html, 'name="digest_enabled"'), false)
   assert.equal(htmlIncludes(html, 'Save preferences'), false)
 })
@@ -68,8 +77,131 @@ test('signed-in Digest Preferences card renders loaded preferences and followed 
   assert.ok(htmlIncludes(html, 'Digest emails'))
   assert.ok(htmlIncludes(html, 'Off'))
   assert.ok(htmlIncludes(html, 'Cadence'))
+  assert.ok(htmlIncludes(html, 'Followed Team'))
   assert.ok(htmlIncludes(html, 'Kansas City Royals'))
+  assert.ok(htmlIncludes(html, 'Your digest follows this team.'))
+  assert.ok(htmlIncludes(html, 'Switch Team'))
   assert.ok(htmlIncludes(html, 'BaseballOS only sends a digest when there is something meaningful to report.'))
+})
+
+test('followed team picker renders team names, marks current team, and filters directory options', () => {
+  const teams = [
+    { team_id: 118, team_name: 'Kansas City Royals', team_abbreviation: 'KC' },
+    { team_id: 110, team_name: 'Baltimore Orioles', team_abbreviation: 'BAL' },
+    { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+  ]
+  const options = buildFollowedTeamOptions(teams)
+  const filtered = filterFollowedTeamOptions(options, 'yank')
+  const html = render(React.createElement(FollowedTeamPickerView, {
+    options,
+    currentValue: 'team:118',
+    selectedValue: 'team:110',
+  }))
+
+  assert.deepEqual(options.map(option => option.label), [
+    'Baltimore Orioles',
+    'Kansas City Royals',
+    'New York Yankees',
+  ])
+  assert.deepEqual(filtered.map(option => option.label), ['New York Yankees'])
+  assert.ok(htmlIncludes(html, 'Baltimore Orioles'))
+  assert.ok(htmlIncludes(html, 'Kansas City Royals'))
+  assert.ok(htmlIncludes(html, 'New York Yankees'))
+  assert.ok(htmlIncludes(html, 'Current'))
+  assert.equal(htmlIncludes(html, '>118<'), false)
+  assert.equal(htmlIncludes(html, 'team:118'), false)
+})
+
+test('signed-in Digest Preferences card opens an inline followed-team picker', () => {
+  const html = render(React.createElement(DigestPreferencesCardView, {
+    authenticated: true,
+    preferences: {
+      digest_enabled: true,
+      digest_cadence: 'daily',
+    },
+    followedTeam: {
+      team_id: 118,
+      team_name: 'Kansas City Royals',
+      team_abbreviation: 'KC',
+    },
+    teams: [
+      { team_id: 118, team_name: 'Kansas City Royals', team_abbreviation: 'KC' },
+      { team_id: 110, team_name: 'Baltimore Orioles', team_abbreviation: 'BAL' },
+    ],
+    teamPickerOpen: true,
+    selectedTeamValue: 'team:118',
+  }))
+
+  assert.ok(htmlIncludes(html, 'Search teams'))
+  assert.ok(htmlIncludes(html, 'Save team'))
+  assert.ok(htmlIncludes(html, 'Cancel'))
+  assert.ok(htmlIncludes(html, 'Baltimore Orioles'))
+  assert.ok(htmlIncludes(html, 'Kansas City Royals'))
+  assert.equal(htmlIncludes(html, '>110<'), false)
+})
+
+test('followed team picker save calls setPreferredTeam with selected team and returns saved display state', async () => {
+  const teams = [
+    { team_id: 118, team_name: 'Kansas City Royals', team_abbreviation: 'KC' },
+    { team_id: 110, team_name: 'Baltimore Orioles', team_abbreviation: 'BAL' },
+  ]
+  const options = buildFollowedTeamOptions(teams)
+  const statuses = []
+  let selectedTeam = null
+  let displayTeam = null
+
+  const saved = await saveFollowedTeamSelection({
+    selectedValue: 'team:110',
+    options,
+    setPreferredTeam: (team) => {
+      selectedTeam = team
+      return team
+    },
+    setFollowedTeam: (team) => {
+      displayTeam = team
+    },
+    setStatus: status => statuses.push(status),
+  })
+
+  assert.equal(selectedTeam.team_name, 'Baltimore Orioles')
+  assert.equal(saved.team_name, 'Baltimore Orioles')
+  assert.equal(displayTeam.team_name, 'Baltimore Orioles')
+  assert.deepEqual(statuses, ['loading', FOLLOWED_TEAM_SAVE_SAVED])
+})
+
+test('followed team picker cancel has a visible escape path and does not save by itself', async () => {
+  let called = false
+  const html = render(React.createElement(FollowedTeamPickerView, {
+    options: buildFollowedTeamOptions([
+      { team_id: 118, team_name: 'Kansas City Royals', team_abbreviation: 'KC' },
+    ]),
+  }))
+  const saved = await saveFollowedTeamSelection({
+    selectedValue: '',
+    options: [],
+    setPreferredTeam: () => {
+      called = true
+    },
+  })
+
+  assert.ok(htmlIncludes(html, 'Cancel'))
+  assert.equal(saved, null)
+  assert.equal(called, false)
+})
+
+test('Data Trust focus targets support query param and hash forms', () => {
+  assert.equal(shouldFocusDigestPreferences({
+    searchParams: new URLSearchParams('focus=digest-preferences'),
+    hash: '',
+  }), true)
+  assert.equal(shouldFocusDigestPreferences({
+    searchParams: new URLSearchParams(''),
+    hash: '#digest-preferences',
+  }), true)
+  assert.equal(shouldFocusDigestPreferences({
+    searchParams: new URLSearchParams('focus=other'),
+    hash: '',
+  }), false)
 })
 
 test('digest preference helpers enable, disable, and save cadence changes', async () => {

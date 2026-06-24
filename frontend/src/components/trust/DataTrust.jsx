@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
@@ -21,12 +23,41 @@ import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 // limitations, and diagnostics. The dashboard shows the summaries; the full
 // depth lives here behind intentional navigation.
 export default function DataTrust() {
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const [digestPreferencesFocused, setDigestPreferencesFocused] = useState(false)
   const backtest = useFetch(getAvailabilityBacktest)
   const dashboard = useFetch(getBullpenDashboard)
   const overview = useFetch(getBullpenOverview)
   const sync = useFetch(getSyncStatus)
   const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
   const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
+  const focusSearch = searchParams.toString()
+
+  useEffect(() => {
+    if (!shouldFocusDigestPreferences({
+      searchParams: new URLSearchParams(focusSearch),
+      hash: location.hash,
+    })) return undefined
+
+    setDigestPreferencesFocused(true)
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
+
+    const scrollTimer = window.setTimeout(() => {
+      const target = document.getElementById('digest-preferences')
+      if (!target) return
+      target.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      target.focus?.({ preventScroll: true })
+    }, 0)
+    const clearTimer = window.setTimeout(() => {
+      setDigestPreferencesFocused(false)
+    }, 2600)
+
+    return () => {
+      window.clearTimeout(scrollTimer)
+      window.clearTimeout(clearTimer)
+    }
+  }, [focusSearch, location.hash])
 
   return (
     <DataTrustView
@@ -36,7 +67,18 @@ export default function DataTrust() {
       sync={sync}
       v2BullpenState={v2BullpenState}
       teamOperationsReadiness={teamOperationsReadiness}
+      digestPreferencesFocused={digestPreferencesFocused}
     />
+  )
+}
+
+export function shouldFocusDigestPreferences({ searchParams, hash } = {}) {
+  const params = searchParams instanceof URLSearchParams
+    ? searchParams
+    : new URLSearchParams(String(searchParams || ''))
+  return (
+    params.get('focus') === 'digest-preferences'
+    || String(hash || '') === '#digest-preferences'
   )
 }
 
@@ -47,6 +89,7 @@ export function DataTrustView({
   sync,
   v2BullpenState,
   teamOperationsReadiness,
+  digestPreferencesFocused = false,
 }) {
   const servedFreshness = dashboard?.data?.freshness || null
 
@@ -129,7 +172,7 @@ export function DataTrustView({
         />
       </section>
 
-      <DigestPreferencesCard />
+      <DigestPreferencesCard focused={digestPreferencesFocused} />
 
       {/* Pitcher workload inventory */}
       <section className="mb-6" aria-label="Pitcher workload inventory">

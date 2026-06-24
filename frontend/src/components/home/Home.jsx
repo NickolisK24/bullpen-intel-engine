@@ -87,8 +87,8 @@ export default function Home() {
     [activeTeamId],
   )
 
-  // An explicit team choice (digest "Switch followed team", the Change Team
-  // dropdown, or the first-visit picker) must win over the digest link. Persist
+  // An explicit team choice (digest "Switch followed team" or the first-visit
+  // picker) must win over the digest link. Persist
   // the choice, then drop the view-only ?team=/source= params so Today follows
   // the followed team instead of staying pinned to the team from the email —
   // keeping the sidebar and Today in agreement. Nothing is cleared on page load
@@ -109,6 +109,7 @@ export default function Home() {
       preferredTeam={preferredTeam}
       viewTeam={activeTeam}
       teamRelationship={teamRelationship}
+      authenticated={authenticated}
       isDigestReturn={todayView.isDigestReturn && todayView.urlTeamValid}
       urlTeamPending={todayView.urlTeamPending}
       preferredTeamPromptDismissed={promptDismissed}
@@ -137,6 +138,7 @@ export function HomeView({
   preferredTeam = null,
   viewTeam = preferredTeam,
   teamRelationship = relationshipFor({ viewTeam: preferredTeam, followedTeam: preferredTeam }),
+  authenticated = false,
   isDigestReturn = false,
   urlTeamPending = false,
   preferredTeamPromptDismissed = true,
@@ -165,7 +167,6 @@ export function HomeView({
   const activeTeam = viewTeam || null
   const heroTeam = activeTeam || preferredTeam
   const teamHero = getCanonicalHeroStory(dashboard, { preferredTeam: heroTeam })
-  const selectedValue = selectedWhatChangedTeamValue(teamOptions, [], activeTeam)
   const showFirstVisitPicker = !activeTeam && !urlTeamPending && !preferredTeamPromptDismissed
 
   const handleSelectTeam = (team) => {
@@ -178,9 +179,7 @@ export function HomeView({
     <PreferredTeamHeader
       team={activeTeam}
       relationship={teamRelationship}
-      teamOptions={teamOptions}
-      selectedValue={selectedValue}
-      onSelectTeam={handleSelectTeam}
+      authenticated={authenticated}
     />
   ) : showFirstVisitPicker ? (
     <FirstVisitTeamPicker
@@ -327,17 +326,6 @@ function buildWhatChangedTeamHref(team) {
   return `/bullpen?${query.toString()}`
 }
 
-function changeMatchesTeam(change, option) {
-  if (!change || !option) return false
-  if (option.teamId != null && change.teamId != null) {
-    if (Number(option.teamId) === Number(change.teamId)) return true
-  }
-  if (option.teamAbbr && change.teamAbbr) {
-    return option.teamAbbr.toLowerCase() === change.teamAbbr.toLowerCase()
-  }
-  return option.teamName?.toLowerCase() === change.teamName?.toLowerCase()
-}
-
 export function buildWhatChangedTeamOptions(teams = [], items = []) {
   const seen = new Set()
   const options = []
@@ -367,22 +355,6 @@ export function buildWhatChangedTeamOptions(teams = [], items = []) {
   ))
 }
 
-function defaultWhatChangedTeamValue(options, items) {
-  const firstChangedItem = items.find(item => options.some(option => changeMatchesTeam(item, option)))
-  const withChange = options.find(option => changeMatchesTeam(firstChangedItem, option))
-  return withChange?.value || options[0]?.value || ''
-}
-
-function selectedWhatChangedTeamValue(options, items, preferredTeam) {
-  const preferredValue = preferredTeamSelectionValue(preferredTeam)
-  if (preferredValue && options.some(option => option.value === preferredValue)) {
-    return preferredValue
-  }
-  const preferredOption = options.find(option => changeMatchesTeam(preferredTeam, option))
-  if (preferredOption) return preferredOption.value
-  return defaultWhatChangedTeamValue(options, items)
-}
-
 function selectedWhatChangedTeam(options, value) {
   return options.find(option => option.value === value) || null
 }
@@ -400,22 +372,20 @@ function TeamReturnLoading() {
 function PreferredTeamHeader({
   team,
   relationship = {},
-  teamOptions = [],
-  selectedValue = '',
-  onSelectTeam = () => {},
+  authenticated = false,
 }) {
   const teamLabel = preferredTeamLabel(team)
   const boardHref = buildPreferredTeamHref(team, 'home-my-team')
-  const canSwitch = teamOptions.length > 0
-  const selectValue = teamOptions.some(option => option.value === selectedValue)
-    ? selectedValue
-    : ''
-
-  const handleChange = (event) => {
-    const option = selectedWhatChangedTeam(teamOptions, event.target.value)
-    if (option) onSelectTeam(option)
-  }
   const isFollowing = relationship.isFollowing === true
+  const canManageFollowedTeam = (
+    authenticated
+    || isFollowing
+    || relationship.kind === 'digest-switch'
+    || relationship.kind === 'digest-followed'
+  )
+  const changeTeamHref = canManageFollowedTeam
+    ? '/trust?focus=digest-preferences'
+    : '/signin'
   const eyebrow = isFollowing
     ? 'My Team'
     : relationship.kind === 'digest-switch' || relationship.kind === 'digest-preview' || relationship.kind === 'digest-followed'
@@ -459,23 +429,12 @@ function PreferredTeamHeader({
           </div>
 
           <div className="flex flex-col gap-1.5 pt-2 opacity-50 transition-opacity hover:opacity-90 sm:flex-row sm:items-end lg:absolute lg:bottom-7 lg:right-7 lg:pt-0">
-            <label className="flex w-full min-w-[10rem] flex-col gap-1 font-mono text-[8px] uppercase tracking-widest text-chalk700 sm:w-auto">
-              Change team
-              <select
-                value={selectValue}
-                onChange={handleChange}
-                disabled={!canSwitch}
-                className="baseballos-select min-h-7 rounded border border-dirt/80 px-2 py-0.5 text-[11px] normal-case tracking-normal outline-none transition-colors hover:border-chalk500 hover:text-chalk100 focus:border-amber/60 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="Change preferred team"
-              >
-                {!selectValue && <option value="">Choose team</option>}
-                {teamOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.teamName}{option.teamAbbr ? ` (${option.teamAbbr})` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Link
+              to={changeTeamHref}
+              className="inline-flex min-h-7 items-center justify-center rounded border border-dirt/80 bg-transparent px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-chalk600 transition-colors hover:border-amber/40 hover:text-amber"
+            >
+              Change followed team
+            </Link>
             <Link
               to={boardHref}
               className="inline-flex min-h-7 items-center justify-center rounded border border-dirt/80 bg-transparent px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-chalk600 transition-colors hover:border-amber/40 hover:text-amber"

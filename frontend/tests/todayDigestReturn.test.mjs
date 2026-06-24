@@ -117,6 +117,7 @@ function renderDigestHome({
     preferredTeam: followedTeam,
     viewTeam,
     teamRelationship,
+    authenticated,
     isDigestReturn: true,
     preferredTeamChanges: changes,
     preferredTeamPromptDismissed: true,
@@ -195,6 +196,7 @@ test('signed-out digest return renders that team Today preview with sign-in prom
   assert.ok(htmlIncludes(html, 'Here&#x27;s what changed for the Kansas City Royals since their last game.'))
   assert.ok(htmlIncludes(html, 'Sign in to follow this team and get future bullpen updates.'))
   assert.ok(htmlIncludes(html, 'Kansas City Royals'))
+  assert.ok(htmlIncludes(html, 'href="/signin"'))
   assert.ok(htmlIncludes(html, 'Royals Relief Arm pitched Tuesday - 18 pitches.'))
   assert.ok(htmlIncludes(html, 'What Changed Since Last Game'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Picture'))
@@ -210,7 +212,10 @@ test('signed-in digest return for followed team shows welcome-back notice withou
 
   assert.ok(htmlIncludes(html, 'This is already your followed team.'))
   assert.ok(htmlIncludes(html, 'Following'))
+  assert.ok(htmlIncludes(html, 'Change followed team'))
+  assert.ok(htmlIncludes(html, 'href="/trust?focus=digest-preferences"'))
   assert.equal(htmlIncludes(html, 'Switch followed team'), false)
+  assert.equal(htmlIncludes(html, 'aria-label="Change preferred team"'), false)
 })
 
 test('signed-in digest return for another team shows URL team and switch prompt', () => {
@@ -222,6 +227,8 @@ test('signed-in digest return for another team shows URL team and switch prompt'
   assert.ok(htmlIncludes(html, 'Kansas City Royals'))
   assert.ok(htmlIncludes(html, 'Want to make the Kansas City Royals your followed team?'))
   assert.ok(htmlIncludes(html, 'Switch followed team'))
+  assert.ok(htmlIncludes(html, 'Change followed team'))
+  assert.ok(htmlIncludes(html, 'href="/trust?focus=digest-preferences"'))
   assert.equal(htmlIncludes(html, 'My Team'), false)
   assert.equal(htmlIncludes(html, 'Following'), false)
 })
@@ -255,6 +262,7 @@ test('no params preserves followed-team Home behavior', () => {
     teams,
     preferredTeam: metsTeam,
     viewTeam: metsTeam,
+    authenticated: true,
     teamRelationship: relationshipFor({
       viewTeam: metsTeam,
       followedTeam: metsTeam,
@@ -264,7 +272,30 @@ test('no params preserves followed-team Home behavior', () => {
 
   assert.ok(htmlIncludes(html, 'My Team'))
   assert.ok(htmlIncludes(html, 'Following'))
+  assert.ok(htmlIncludes(html, 'Change followed team'))
+  assert.ok(htmlIncludes(html, 'href="/trust?focus=digest-preferences"'))
+  assert.equal(htmlIncludes(html, 'aria-label="Change preferred team"'), false)
   assert.equal(htmlIncludes(html, 'Digest Update'), false)
+})
+
+test('signed-out team preview routes persistent team changes to sign-in', () => {
+  const html = render(React.createElement(HomeView, {
+    dashboard: dashboardFixture(),
+    teams,
+    preferredTeam: null,
+    viewTeam: royalsTeam,
+    authenticated: false,
+    teamRelationship: relationshipFor({
+      viewTeam: royalsTeam,
+      followedTeam: null,
+    }),
+    preferredTeamChanges: changesFixture('Kansas City Royals'),
+    preferredTeamPromptDismissed: true,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Change followed team'))
+  assert.ok(htmlIncludes(html, 'href="/signin"'))
+  assert.equal(htmlIncludes(html, 'aria-label="Change preferred team"'), false)
 })
 
 test('What Changed remains the first team-specific section for digest returns', () => {
