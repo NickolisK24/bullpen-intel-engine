@@ -1,21 +1,14 @@
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
-                     'July', 'August', 'September', 'October', 'November', 'December']
+import {
+  formatDateOnly,
+  formatUtcDateTimeEt,
+} from '../../utils/dateDisplay'
 
 export const fmtSyncDate = (iso) => {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  return `${MONTHS_LONG[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
+  return formatUtcDateTimeEt(iso, { includeDate: true })
 }
 
 export const fmtDataDate = (ymd) => {
-  if (!ymd) return null
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
-  if (!m) return null
-  const [, y, mm, dd] = m
-  return `${MONTHS_SHORT[Number(mm) - 1]} ${Number(dd)}, ${y}`
+  return formatDateOnly(ymd, { month: 'short' })
 }
 
 export const completedGamesDataLine = (ymd) => {
@@ -28,21 +21,17 @@ const successfulStatuses = new Set(['success', 'ok'])
 const staleStates = new Set(['stale', 'historical'])
 const missingStates = new Set(['missing', 'metadata_unavailable', 'unknown'])
 
-const successfulSyncLabel = (data) => {
-  const jobName = data?.last_successful_sync_run?.job_name || data?.sync?.job_name
-  if (jobName === 'postgame_refresh') return 'Last completed-game refresh'
-  if (jobName === 'daily_sync') return 'Morning full sync'
-  return 'Last synced'
-}
-
 export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority } = {}) {
   const status = data?.status
-  const latestAttempt = data?.last_sync
-  const successfulSync = data?.last_successful_sync || (successfulStatuses.has(status) ? latestAttempt : null)
+  const latestAttempt = data?.last_checked || data?.last_sync
+  const successfulSync = data?.last_successful_sync || (successfulStatuses.has(status) ? data?.last_sync : null)
   const dataThroughSource = freshnessAuthority === undefined
-    ? data?.data?.latest_game_date
+    ? (data?.data_through || data?.data?.latest_game_date)
     : freshnessAuthority?.data_through
-  const dataThrough = completedGamesDataLine(dataThroughSource)
+  const dataThrough = formatDateOnly(dataThroughSource, { month: 'long' })
+  const dataCoverageLine = completedGamesDataLine(dataThroughSource)
+  const lastCheckedValue = formatUtcDateTimeEt(latestAttempt, { includeDate: false })
+  const lastDataUpdateValue = formatUtcDateTimeEt(successfulSync, { includeDate: false })
   const logCount = data?.data?.game_logs
   const freshness = data?.freshness || {}
   const limitations = freshness.limitations || []
@@ -68,8 +57,13 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
         : { borderColor: '#ef444455', backgroundColor: '#ef444412', color: '#fca5a5' },
       syncLabel: 'Last sync failed',
       syncValue: fmtSyncDate(latestAttempt) || 'Latest attempt failed',
-      dataLabel: dataThrough ? 'Data coverage' : null,
+      lastCheckedLabel: 'Last checked',
+      lastCheckedValue,
+      lastDataUpdateLabel: 'Last data update',
+      lastDataUpdateValue,
+      dataLabel: dataThrough ? 'Data through' : null,
       dataValue: dataThrough,
+      dataCoverageLine,
       coverageValue,
       helper: stale
         ? (freshness.label || data?.message || 'Latest sync attempt failed.')
@@ -91,10 +85,15 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
         : limited
           ? { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' }
         : { color: '#d1dce8' },
-      syncLabel: successfulSyncLabel(data),
+      syncLabel: 'Last data update',
       syncValue: fmtSyncDate(successfulSync),
-      dataLabel: dataThrough ? 'Data coverage' : null,
+      lastCheckedLabel: 'Last checked',
+      lastCheckedValue,
+      lastDataUpdateLabel: 'Last data update',
+      lastDataUpdateValue,
+      dataLabel: dataThrough ? 'Data through' : null,
       dataValue: dataThrough,
+      dataCoverageLine,
       coverageValue,
       refreshed: coverageValue,
       helper: stale
@@ -114,8 +113,13 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
       style: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
       syncLabel: 'Sync metadata',
       syncValue: 'Unavailable',
-      dataLabel: 'Data coverage',
+      lastCheckedLabel: 'Last checked',
+      lastCheckedValue,
+      lastDataUpdateLabel: 'Last data update',
+      lastDataUpdateValue,
+      dataLabel: 'Data through',
       dataValue: dataThrough,
+      dataCoverageLine,
       coverageValue,
       helper: 'Sync metadata unavailable; data coverage is based on game logs.',
       limitations,
@@ -131,8 +135,13 @@ export function getSyncStatusView(data, { now = Date.now(), freshnessAuthority }
     style: {},
     syncLabel: 'No data loaded',
     syncValue: null,
+    lastCheckedLabel: 'Last checked',
+    lastCheckedValue,
+    lastDataUpdateLabel: 'Last data update',
+    lastDataUpdateValue,
     dataLabel: null,
     dataValue: null,
+    dataCoverageLine,
     coverageValue,
     helper: 'No sync metadata or game logs are available.',
     limitations,

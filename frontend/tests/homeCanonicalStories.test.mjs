@@ -394,6 +394,9 @@ test('preferred team Home falls back to generic flagship while preserving league
   }))
 
   assert.equal(htmlIncludes(html, 'What Changed Since Last Game'), true)
+  assert.equal(htmlIncludes(html, 'You&#x27;re caught up on New York Mets.'), true)
+  assert.equal(htmlIncludes(html, 'here&#x27;s the current picture.'), true)
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s Bullpen Picture'), true)
   assert.equal(htmlIncludes(html, POSITIVE_HEADLINE), true)
   assert.equal(htmlIncludes(html, METS_HEADLINE), false)
   assert.equal(htmlIncludes(html, 'Three Things To Watch'), true)

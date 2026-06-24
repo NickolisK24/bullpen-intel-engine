@@ -1,12 +1,12 @@
+import { formatDateOnly } from '../../utils/dateDisplay'
+import { preferredTeamLabel } from '../../utils/preferredTeam'
+
 function teamLabel(team) {
-  return team?.team_name || team?.team_abbreviation || 'your team'
+  return preferredTeamLabel(team)
 }
 
 function formatShortDate(value) {
-  if (!value) return null
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return formatDateOnly(value, { month: 'short' })?.replace(/, \d{4}$/, '') || null
 }
 
 function freshnessDate(changes) {
@@ -121,7 +121,7 @@ export function WhatChangedCard({
   } else if (state === 'no_changes') {
     body = (
       <CardStatus>
-        No meaningful bullpen movement since the last completed game.
+        You're caught up on {teamLabel(followedTeam)}. No major bullpen movement since their last completed game; here's the current picture.
       </CardStatus>
     )
   } else if (state === 'changes') {

@@ -92,6 +92,8 @@ test('renders stored backtest values and honest framing', () => {
   const text = visibleText(renderCard())
 
   assert.ok(text.includes('Operational Backtest'))
+  assert.ok(text.includes('Computed Jun 15, 2026, 3:00 AM ET'))
+  assert.ok(text.includes('Data through June 14, 2026'))
   assert.ok(text.includes('Operational Availability Backtest'))
   assert.ok(text.includes('43.2%'))
   assert.ok(text.includes('n=12,345'))
