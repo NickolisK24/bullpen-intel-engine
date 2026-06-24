@@ -11,12 +11,20 @@ from services.digest_composer import (
     MAX_DIGEST_CHANGES,
     SUPPRESS_CHANGES_UNAVAILABLE,
     SUPPRESS_DATA_UNAVAILABLE,
+    SUPPRESS_NO_BASELINE,
     SUPPRESS_NO_MEANINGFUL_CHANGE,
     SUPPRESS_NO_TEAM,
+    SUPPRESS_STALE_DATA,
     build_team_digest,
     compose_digest,
 )
-from services.team_changes import STATE_CHANGES, STATE_NO_CHANGES, STATE_UNAVAILABLE
+from services.team_changes import (
+    STATE_CHANGES,
+    STATE_NO_BASELINE,
+    STATE_NO_CHANGES,
+    STATE_STALE,
+    STATE_UNAVAILABLE,
+)
 
 
 def _changes(state=STATE_CHANGES, *, pitcher_changes=None, team_summary='Bullpen is tightening.',
@@ -196,3 +204,37 @@ def test_build_team_digest_suppressed_without_primary_team():
     result = build_team_digest(_User([]), changes_builder=fail_builder, story_builder=fail_builder)
     assert result['send'] is False
     assert result['reason'] == SUPPRESS_NO_TEAM
+
+
+def test_build_team_digest_forwards_freshness_to_changes_builder():
+    # The freshness the delivery layer sources (board/published-snapshot) must
+    # reach build_team_changes_payload, or it fail-closes to a stale state.
+    received = {}
+
+    def fake_changes(team_id, freshness=None):
+        received['freshness'] = freshness
+        return _changes(team={'team_id': team_id, 'team_name': 'Test', 'team_abbreviation': 'TST'})
+
+    def fake_story(team_id, as_of_date=None):
+        return _story()
+
+    fresh = {'freshness_state': 'current', 'data_through': '2026-06-23', 'is_current': True}
+    result = build_team_digest(_User([_Follow(118, is_primary=True)]), freshness=fresh,
+                               changes_builder=fake_changes, story_builder=fake_story,
+                               frontend_base_url='https://x')
+    assert received['freshness'] == fresh
+    assert result['send'] is True
+
+
+# ── Honest suppression reasons per state (does not change send/suppress) ──────
+
+def test_stale_state_is_suppressed_as_stale_data():
+    result = compose_digest(team_id=118, changes=_changes(state=STATE_STALE), story=_story())
+    assert result['send'] is False
+    assert result['reason'] == SUPPRESS_STALE_DATA
+
+
+def test_no_baseline_state_is_suppressed_as_no_baseline():
+    result = compose_digest(team_id=118, changes=_changes(state=STATE_NO_BASELINE), story=_story())
+    assert result['send'] is False
+    assert result['reason'] == SUPPRESS_NO_BASELINE

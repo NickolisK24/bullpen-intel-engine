@@ -12,6 +12,8 @@ from __future__ import annotations
 from services.story_intelligence_service_v1 import build_team_story
 from services.team_changes import (
     STATE_CHANGES,
+    STATE_NO_BASELINE,
+    STATE_STALE,
     STATE_UNAVAILABLE,
     build_team_changes_payload,
 )
@@ -19,10 +21,14 @@ from services.team_changes import (
 
 CAPABILITY = 'team_digest_v1'
 
-# Suppression reasons — no digest is produced.
+# Suppression reasons — no digest is produced. Each maps to a distinct
+# team_changes state so the reason is honest (a stale/missing-freshness read is
+# not reported as "no meaningful change").
 SUPPRESS_NO_TEAM = 'no_followed_team'
 SUPPRESS_CHANGES_UNAVAILABLE = 'changes_unavailable'
-SUPPRESS_DATA_UNAVAILABLE = 'data_unavailable'        # stale or missing data
+SUPPRESS_DATA_UNAVAILABLE = 'data_unavailable'        # missing/unavailable data
+SUPPRESS_STALE_DATA = 'stale_data'                    # freshness stale/missing
+SUPPRESS_NO_BASELINE = 'no_baseline'                  # no prior game to compare
 SUPPRESS_NO_MEANINGFUL_CHANGE = 'no_meaningful_change'
 
 MAX_DIGEST_CHANGES = 3
@@ -95,9 +101,17 @@ def compose_digest(*, team_id, changes, story=None, reference_date=None, fronten
     resolved_id, team_name, team_abbr = _team_identity(changes, story, team_id)
     state = changes.get('state')
 
-    # Suppress: stale/missing data, then no meaningful change.
+    # Suppress with an honest reason per state. Only STATE_CHANGES sends; every
+    # other state suppresses (this does NOT change the send/suppress decision,
+    # only which reason is reported).
     if state == STATE_UNAVAILABLE:
         return _suppressed(SUPPRESS_DATA_UNAVAILABLE, team_id=resolved_id,
+                           team_name=team_name, reference_date=reference_date)
+    if state == STATE_STALE:
+        return _suppressed(SUPPRESS_STALE_DATA, team_id=resolved_id,
+                           team_name=team_name, reference_date=reference_date)
+    if state == STATE_NO_BASELINE:
+        return _suppressed(SUPPRESS_NO_BASELINE, team_id=resolved_id,
                            team_name=team_name, reference_date=reference_date)
     if state != STATE_CHANGES:
         return _suppressed(SUPPRESS_NO_MEANINGFUL_CHANGE, team_id=resolved_id,

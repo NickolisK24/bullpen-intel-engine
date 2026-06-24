@@ -493,3 +493,44 @@ def test_admin_digest_status_is_dry_run(full_app, client):
     assert body['dry_run'] is True
     assert body['considered'] >= 1
     assert email_delivery.outbox == []  # a dry-run never sends
+
+
+# ── Board freshness contract (digest path supplies the same freshness as Today) ─
+
+def test_real_path_sources_board_freshness(ctx_app, monkeypatch):
+    # On the default (real) composition path, deliver_team_digest must source the
+    # board/published-snapshot freshness so the What-Changed builder does not
+    # fail closed to stale. (No team here -> SUPPRESS_NO_TEAM, but freshness is
+    # still sourced before composing.)
+    calls = []
+    monkeypatch.setattr(dd, 'board_freshness_block',
+                        lambda: calls.append(1) or {'freshness_state': 'current'})
+    user = _StubUser(prefs={'digest_enabled': True, 'digest_cadence': 'daily'})  # opted in, verified, no team
+    with ctx_app.app_context():
+        result = deliver_team_digest(user)
+    assert calls == [1]  # board freshness sourced on the real path
+    assert result['status'] == SUPPRESSED and result['reason'] == SUPPRESS_NO_TEAM
+
+
+def test_injected_builder_does_not_source_board_freshness(ctx_app, monkeypatch):
+    # An injected (test) builder keeps the no-DB path: board freshness is not
+    # sourced, so unit tests need no database.
+    calls = []
+    monkeypatch.setattr(dd, 'board_freshness_block', lambda: calls.append(1) or {})
+    user = _StubUser(prefs={'digest_enabled': True, 'digest_cadence': 'daily'})
+    with ctx_app.app_context():
+        deliver_team_digest(
+            user,
+            digest_builder=lambda u, **k: _send_payload(118),
+            sender=lambda *a, **k: {'ok': True, 'provider': 'outbox', 'to': 'x'},
+        )
+    assert calls == []
+
+
+def test_board_freshness_block_returns_a_dict(full_app):
+    from services.board_freshness import board_freshness_block
+    with full_app.app_context():
+        fresh = board_freshness_block()
+    assert isinstance(fresh, dict)
+    # Empty DB -> sync-status fallback shape (never raises, fails closed cleanly).
+    assert 'reason_codes' in fresh
