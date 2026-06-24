@@ -17,9 +17,11 @@ after(async () => {
 })
 
 const {
+  hasDigestReturnParams,
   parseTodayTeamParam,
   relationshipFor,
   resolveTodayViewTeam,
+  searchWithoutDigestReturnParams,
 } = await server.ssrLoadModule('/src/utils/todayDigestReturn.js')
 const {
   DigestReturnNoticeView,
@@ -270,4 +272,90 @@ test('What Changed remains the first team-specific section for digest returns', 
 
   assert.ok(html.indexOf('What Changed Since Last Game') < html.indexOf('Tonight&#x27;s Bullpen Picture'))
   assert.ok(html.indexOf('What Changed Since Last Game') < html.indexOf('What BaseballOS Sees Today'))
+})
+
+test('searchWithoutDigestReturnParams drops only the view-only digest params', () => {
+  const dropped = searchWithoutDigestReturnParams('?team=118&source=digest')
+  assert.equal(dropped.changed, true)
+  assert.equal(dropped.params.has('team'), false)
+  assert.equal(dropped.params.has('source'), false)
+  assert.equal(dropped.params.toString(), '')
+
+  // Unrelated params are preserved; team/source are still removed.
+  const mixed = searchWithoutDigestReturnParams('?team=118&source=digest&keep=1')
+  assert.equal(mixed.changed, true)
+  assert.equal(mixed.params.get('keep'), '1')
+  assert.equal(mixed.params.has('team'), false)
+
+  // No-op when there is nothing to clear.
+  const noop = searchWithoutDigestReturnParams('?keep=1')
+  assert.equal(noop.changed, false)
+  assert.equal(noop.params.get('keep'), '1')
+
+  // Accepts a URLSearchParams instance and does not mutate the caller's object.
+  const original = new URLSearchParams('team=118&source=digest')
+  const fromInstance = searchWithoutDigestReturnParams(original)
+  assert.equal(fromInstance.changed, true)
+  assert.equal(fromInstance.params.has('team'), false)
+  assert.equal(original.has('team'), true)
+
+  assert.equal(hasDigestReturnParams('?team=118&source=digest'), true)
+  assert.equal(hasDigestReturnParams('?keep=1'), false)
+})
+
+test('explicit team change consumes the URL override so the followed team drives Today', () => {
+  // Initial digest landing: the URL team overrides the (different) followed team.
+  const onLanding = resolveTodayViewTeam({
+    search: '?team=118&source=digest',
+    teams,
+    teamsLoaded: true,
+    preferredTeam: metsTeam,
+  })
+  assert.equal(onLanding.urlTeamValid, true)
+  assert.equal(onLanding.viewTeam.team_id, 118) // Royals, from the link
+
+  // User clicks "Switch followed team": the preference becomes Royals and the
+  // override params are cleared. Today shows Royals because it is now followed,
+  // not because of a stale URL override (no digest-return state remains).
+  const afterSwitch = searchWithoutDigestReturnParams('?team=118&source=digest')
+  const switched = resolveTodayViewTeam({
+    search: afterSwitch.params.toString(),
+    teams,
+    teamsLoaded: true,
+    preferredTeam: royalsTeam,
+  })
+  assert.equal(switched.urlTeamValid, false)
+  assert.equal(switched.isDigestReturn, false)
+  assert.equal(switched.viewTeam.team_id, 118)
+
+  // User then changes team to the Mets via the normal selector while a stale
+  // digest link is still in the URL: the override is consumed and Today follows
+  // the Mets — the sidebar (preferred) and Today agree, not the old digest team.
+  const afterChange = searchWithoutDigestReturnParams('?team=118&source=digest')
+  const changed = resolveTodayViewTeam({
+    search: afterChange.params.toString(),
+    teams,
+    teamsLoaded: true,
+    preferredTeam: metsTeam,
+  })
+  assert.equal(changed.urlTeamValid, false)
+  assert.equal(changed.viewTeam.team_id, 121) // New York Mets
+})
+
+test('dismissing the digest notice persists nothing and renders no notice', () => {
+  let followed = null
+  const html = render(React.createElement(DigestReturnNoticeView, {
+    team: royalsTeam,
+    relationship: relationshipFor({
+      urlTeamValid: true,
+      authenticated: true,
+      viewTeam: royalsTeam,
+      followedTeam: metsTeam,
+    }),
+    onFollowTeam: (team) => { followed = team },
+    dismissed: true,
+  }))
+
+  assert.equal(html, '')
+  assert.equal(followed, null)
 })

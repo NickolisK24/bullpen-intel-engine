@@ -13,6 +13,7 @@ import {
 import {
   relationshipFor,
   resolveTodayViewTeam,
+  searchWithoutDigestReturnParams,
 } from '../../utils/todayDigestReturn'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
@@ -40,7 +41,7 @@ import {
 // league context, and a handoff to Stories. The Stories page carries the
 // browseable feed and the Bullpen page remains the team directory.
 export default function Home() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const dash = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
   const teamList = teams.data || []
@@ -86,6 +87,19 @@ export default function Home() {
     [activeTeamId],
   )
 
+  // An explicit team choice (digest "Switch followed team", the Change Team
+  // dropdown, or the first-visit picker) must win over the digest link. Persist
+  // the choice, then drop the view-only ?team=/source= params so Today follows
+  // the followed team instead of staying pinned to the team from the email —
+  // keeping the sidebar and Today in agreement. Nothing is cleared on page load
+  // or on dismiss; only an explicit selection clears the override.
+  const handleSelectPreferredTeam = (team) => {
+    if (!team) return
+    setPreferredTeam(team)
+    const { params, changed } = searchWithoutDigestReturnParams(searchParams)
+    if (changed) setSearchParams(params, { replace: true })
+  }
+
   return (
     <HomeView
       dashboard={dash.data}
@@ -98,7 +112,7 @@ export default function Home() {
       isDigestReturn={todayView.isDigestReturn && todayView.urlTeamValid}
       urlTeamPending={todayView.urlTeamPending}
       preferredTeamPromptDismissed={promptDismissed}
-      onSelectPreferredTeam={setPreferredTeam}
+      onSelectPreferredTeam={handleSelectPreferredTeam}
       onDismissPreferredTeamPrompt={dismissPrompt}
       preferredTeamBoard={preferredBoard.data}
       preferredTeamBoardLoading={activeTeamId != null && preferredBoard.loading}

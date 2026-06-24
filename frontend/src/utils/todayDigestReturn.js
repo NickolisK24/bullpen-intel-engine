@@ -132,6 +132,30 @@ export function resolveTodayViewTeam({
   }
 }
 
+// The view-only digest-return params. They override Today's team on the initial
+// landing from a digest link, but an explicit team choice must win afterward —
+// so once the user follows/switches/changes team we drop these from the URL and
+// let the followed team drive Today (keeping the sidebar and Today in agreement).
+export const DIGEST_RETURN_PARAM_KEYS = ['team', 'source']
+
+export function hasDigestReturnParams(search = '') {
+  const params = paramsFromSearch(search)
+  return DIGEST_RETURN_PARAM_KEYS.some(key => params.has(key))
+}
+
+export function searchWithoutDigestReturnParams(search = '') {
+  // Clone so the caller's params object is never mutated.
+  const params = new URLSearchParams(paramsFromSearch(search))
+  let changed = false
+  for (const key of DIGEST_RETURN_PARAM_KEYS) {
+    if (params.has(key)) {
+      params.delete(key)
+      changed = true
+    }
+  }
+  return { params, changed }
+}
+
 export function relationshipFor({
   urlTeamValid = false,
   authenticated = false,
