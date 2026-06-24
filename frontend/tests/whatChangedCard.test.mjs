@@ -104,13 +104,16 @@ test('no baseline state tells users to check after the next game', () => {
   assert.ok(htmlIncludes(html, 'No earlier completed game is available for comparison yet. Check back after the next game.'))
 })
 
-test('no changes state renders a quiet empty summary', () => {
+test('no changes state renders a positive quiet-day summary', () => {
   const html = renderCard({
     followedTeam: team,
     changes: makeChanges({ state: 'no_changes', pitcher_changes: [], team_summary: null }),
   })
 
-  assert.ok(htmlIncludes(html, 'No meaningful bullpen movement since the last completed game.'))
+  assert.ok(htmlIncludes(html, 'You&#x27;re caught up on Aces.'))
+  assert.ok(htmlIncludes(html, 'No major bullpen movement since their last completed game'))
+  assert.ok(htmlIncludes(html, 'here&#x27;s the current picture.'))
+  assert.equal(htmlIncludes(html, 'No meaningful bullpen movement since the last completed game.'), false)
 })
 
 test('changes state renders pitcher summaries without team summary counts', () => {

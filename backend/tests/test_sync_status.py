@@ -147,14 +147,15 @@ class TestSyncStatusSnapshot:
         assert body['status'] == 'success'
         assert body['sync_authority'] == 'sync_runs'
         assert body['metadata_source'] == 'sync_runs'
-        assert body['last_sync'] == '2026-06-01T21:39:12'
-        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
+        assert body['last_sync'] == '2026-06-01T21:39:12Z'
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56Z'
         assert body['pitchers_updated'] == 428
         assert body['new_logs_added'] == 120
         assert body['data']['game_logs'] == 1
         assert body['data']['latest_game_date'] == '2026-05-31'
         assert body['data']['latest_workload_date'] == '2026-05-31'
-        assert body['data']['latest_fatigue_calculated_at'] == '2026-06-01T21:39:55'
+        assert body['data']['latest_fatigue_calculated_at'] == '2026-06-01T21:39:55Z'
+        assert body['last_checked'] == body['last_sync'] == '2026-06-01T21:39:12Z'
         assert body['freshness']['is_current'] is True
         assert body['freshness']['is_stale'] is False
         assert body['freshness']['freshness_state'] == 'current'
@@ -198,8 +199,11 @@ class TestSyncStatusSnapshot:
         body = res.get_json()
 
         assert body['status'] == 'failed'
-        assert body['last_sync'] == '2026-06-02T10:00:00'
-        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
+        assert body['last_sync'] == '2026-06-02T10:00:00Z'
+        # last_checked is the latest CHECK, even when it did not update data
+        # (here the later failed run) — distinct from last_successful_sync.
+        assert body['last_checked'] == body['last_sync']
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56Z'
         assert body['message'] == 'MLB API unavailable'
         assert body['freshness']['reason_codes'] == ['latest_sync_failed']
         assert 'The latest sync attempt failed; data may reflect an earlier successful sync.' in body['freshness']['limitations']
@@ -291,8 +295,8 @@ class TestSyncStatusSnapshot:
 
         # Durable metadata wins; the conflicting cache file is ignored.
         assert body['status'] == 'success'
-        assert body['last_sync'] == '2026-06-01T21:39:12'
-        assert body['last_successful_sync'] == '2026-06-01T21:39:56'
+        assert body['last_sync'] == '2026-06-01T21:39:12Z'
+        assert body['last_successful_sync'] == '2026-06-01T21:39:56Z'
         assert body['pitchers_updated'] == 428
         assert body['errors'] == 0
         assert body['message'] != 'stale cache file should not win'

@@ -79,6 +79,10 @@ export function DataTrustView({
       {/* Freshness & sync */}
       <section className="mb-6" aria-label="Data freshness and sync detail">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness &amp; Sync</h2>
+        <p className="mb-3 max-w-3xl text-xs leading-relaxed text-chalk500">
+          Last checked means BaseballOS ran. Last data update means new baseball data was written.
+          Data through is the latest completed MLB date included in the bullpen picture.
+        </p>
         {(() => {
           const provenance = getDataProvenance({
             data_through: servedFreshness?.data_through,

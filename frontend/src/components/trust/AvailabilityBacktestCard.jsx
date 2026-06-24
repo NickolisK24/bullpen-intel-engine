@@ -1,4 +1,8 @@
 import { LoadingPane, ErrorState, EmptyState } from '../UI'
+import {
+  formatDateOnly,
+  formatUtcDateTimeEt,
+} from '../../utils/dateDisplay'
 
 const TIER_TONES = {
   Available: 'border-emerald-400/35 bg-emerald-400/5 text-emerald-300',
@@ -25,27 +29,11 @@ function formatCount(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return 'Not computed'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatUtcDateTimeEt(value, { includeDate: true }) || 'Not computed'
 }
 
 function formatDate(value) {
-  if (!value) return 'Not available'
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  return formatDateOnly(value, { month: 'long' }) || 'Not available'
 }
 
 function TierRateRow({ tier }) {

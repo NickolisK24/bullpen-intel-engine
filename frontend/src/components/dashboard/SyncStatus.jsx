@@ -56,9 +56,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
         dot="#8899aa"
         status="Checking"
         metrics={[
-          { label: 'Last synced', value: 'Checking sync status', muted: true },
-          { label: 'Data coverage', value: 'Checking data coverage', muted: true },
-          { label: 'Refresh Coverage', value: 'Checking refresh count', muted: true },
+          { label: 'Last checked', value: 'Checking sync status', muted: true },
+          { label: 'Last data update', value: 'Checking data update', muted: true },
+          { label: 'Data through', value: 'Checking data coverage', muted: true },
         ]}
       />
     )
@@ -70,9 +70,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
         status="Limited"
         helper="Sync status unavailable."
         metrics={[
-          { label: 'Last synced', value: 'Unavailable', muted: true },
-          { label: 'Data coverage', value: 'Unavailable', muted: true },
-          { label: 'Refresh Coverage', value: 'Unavailable', muted: true },
+          { label: 'Last checked', value: 'Unavailable', muted: true },
+          { label: 'Last data update', value: 'Unavailable', muted: true },
+          { label: 'Data through', value: 'Unavailable', muted: true },
         ]}
       />
     )
@@ -80,9 +80,11 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
 
   const view = getSyncStatusView(data, { now, freshnessAuthority })
   const title = [view.helper, ...view.limitations].filter(Boolean).join(' ')
-  const syncValue = view.syncValue || (view.syncLabel === 'No data loaded' ? 'No data loaded' : 'Unavailable')
+  const lastCheckedValue = view.lastCheckedValue || 'Unavailable'
+  const lastDataUpdateValue = view.lastDataUpdateValue || (
+    view.syncLabel === 'No data loaded' ? 'No data loaded' : 'Unavailable'
+  )
   const dataValue = view.dataValue || 'Unavailable'
-  const coverageValue = view.coverageValue || 'Not reported'
 
   return (
     <TrustStrip
@@ -92,9 +94,9 @@ export function SyncStatusContent({ data, loading, error, now, freshnessAuthorit
       status={view.healthLabel}
       helper={view.helper}
       metrics={[
-        { label: view.syncLabel === 'No data loaded' ? 'Last synced' : view.syncLabel, value: syncValue, muted: !view.syncValue },
-        { label: view.dataLabel || 'Data coverage', value: dataValue, muted: !view.dataValue },
-        { label: 'Refresh Coverage', value: coverageValue, muted: !view.coverageValue },
+        { label: view.lastCheckedLabel || 'Last checked', value: lastCheckedValue, muted: !view.lastCheckedValue },
+        { label: view.lastDataUpdateLabel || 'Last data update', value: lastDataUpdateValue, muted: !view.lastDataUpdateValue },
+        { label: view.dataLabel || 'Data through', value: dataValue, muted: !view.dataValue },
       ]}
     />
   )
