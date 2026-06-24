@@ -17,6 +17,11 @@ function cleanText(value) {
   return text || null
 }
 
+function displayText(value) {
+  const text = cleanText(value)
+  return text && !/^\d+$/.test(text) ? text : null
+}
+
 function cleanTeamId(value) {
   if (value == null || value === '') return null
   const id = Number(value)
@@ -278,15 +283,15 @@ export function buildPreferredTeamHref(team, source = 'preferred-team') {
 
 export function preferredTeamLabel(team, fallback = 'your team') {
   const normalized = normalizePreferredTeam(team)
-  return normalized?.team_name
-    || normalized?.team_abbreviation
+  return displayText(normalized?.team_name)
+    || displayText(normalized?.team_abbreviation)
     || fallback
 }
 
 export function preferredTeamShortLabel(team, fallback = 'Team') {
   const normalized = normalizePreferredTeam(team)
-  return normalized?.team_abbreviation
-    || normalized?.team_name
+  return displayText(normalized?.team_abbreviation)
+    || displayText(normalized?.team_name)
     || fallback
 }
 

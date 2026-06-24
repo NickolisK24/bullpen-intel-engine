@@ -3,7 +3,7 @@ import { Link, NavLink } from 'react-router-dom'
 import { useAuthState } from '../hooks/useAuthState'
 import { useFetch } from '../hooks/useFetch'
 import { usePreferredTeamPreference } from '../hooks/usePreferredTeamPreference'
-import { getBullpenDashboard } from '../utils/api'
+import { getBullpenDashboard, getTeams } from '../utils/api'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
@@ -144,14 +144,44 @@ export function SidebarAccountBlock({ authState, onNavigate }) {
   )
 }
 
+export function SidebarFollowingCard({ preferredTeam, onNavigate }) {
+  if (!preferredTeam) return null
+
+  const preferredHref = buildPreferredTeamHref(preferredTeam, 'nav-my-team')
+  const teamLabel = preferredTeamLabel(preferredTeam, 'Team')
+
+  return (
+    <NavLink
+      to={preferredHref}
+      onClick={onNavigate}
+      className="mt-3 rounded-lg border border-dirt bg-field/40 px-3 py-2.5 text-left transition-colors hover:border-amber/30 hover:bg-amber/5"
+    >
+      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+        Following
+      </div>
+      <div className="mt-1.5 flex min-w-0 items-center gap-2">
+        <TeamMark
+          team={preferredTeam}
+          className="h-8 w-8 border-amber/20 bg-white/[0.04] p-1"
+          fallbackClassName="text-[10px]"
+        />
+        <span className="min-w-0 truncate text-sm text-chalk200">
+          {teamLabel}
+        </span>
+      </div>
+    </NavLink>
+  )
+}
+
 export default function Sidebar() {
   // Mobile-only collapsible nav. On lg+ the nav is always shown and this
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
   const authState = useAuthState()
-  const { preferredTeam } = usePreferredTeamPreference()
   const dashboardFreshness = useFetch(getBullpenDashboard)
-  const preferredHref = buildPreferredTeamHref(preferredTeam, 'nav-my-team')
+  const teams = useFetch(getTeams)
+  const teamList = teams.data || []
+  const { preferredTeam } = usePreferredTeamPreference(teamList)
   const freshness = sidebarFreshness(
     dashboardFreshness.data,
     dashboardFreshness.loading,
@@ -202,27 +232,10 @@ export default function Sidebar() {
             )}
           </NavLink>
         ))}
-        {preferredTeam && (
-          <NavLink
-            to={preferredHref}
-            onClick={() => setOpen(false)}
-            className="mt-3 rounded-lg border border-dirt bg-field/40 px-3 py-2.5 text-left transition-colors hover:border-amber/30 hover:bg-amber/5"
-          >
-            <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-              Following
-            </div>
-            <div className="mt-1.5 flex min-w-0 items-center gap-2">
-              <TeamMark
-                team={preferredTeam}
-                className="h-8 w-8 border-amber/20 bg-white/[0.04] p-1"
-                fallbackClassName="text-[10px]"
-              />
-              <span className="min-w-0 truncate text-sm text-chalk200">
-                {preferredTeamLabel(preferredTeam)}
-              </span>
-            </div>
-          </NavLink>
-        )}
+        <SidebarFollowingCard
+          preferredTeam={preferredTeam}
+          onNavigate={() => setOpen(false)}
+        />
       </nav>
 
       {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}

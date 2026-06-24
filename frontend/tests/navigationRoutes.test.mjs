@@ -18,7 +18,10 @@ after(async () => {
 })
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
-const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const {
+  SidebarFollowingCard,
+  default: Sidebar,
+} = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -61,6 +64,34 @@ test('Pipeline is demoted from primary nav while Today remains the first destina
   assert.ok(html.indexOf('Today') < html.indexOf('Stories'))
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
   assert.equal(htmlIncludes(html, 'Pipeline'), false)
+})
+
+test('Sidebar Following card renders the resolved team name, not a generic placeholder', () => {
+  const html = render(React.createElement(SidebarFollowingCard, {
+    preferredTeam: {
+      team_id: 118,
+      team_name: 'Kansas City Royals',
+      team_abbreviation: 'KC',
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'Following'))
+  assert.ok(htmlIncludes(html, 'Kansas City Royals'))
+  assert.equal(htmlIncludes(html, 'your team'), false)
+  assert.equal(htmlIncludes(html, '>118<'), false)
+})
+
+test('Sidebar Following card falls back to a safe abbreviation label', () => {
+  const html = render(React.createElement(SidebarFollowingCard, {
+    preferredTeam: {
+      team_id: 118,
+      team_abbreviation: 'KC',
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'KC'))
+  assert.equal(htmlIncludes(html, 'your team'), false)
+  assert.equal(htmlIncludes(html, '>118<'), false)
 })
 
 test('desktop shell keeps the navigation rail fixed while content scrolls', () => {

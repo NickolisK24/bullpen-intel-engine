@@ -26,6 +26,34 @@ import {
   setServerPreferredTeam,
 } from '../utils/preferredTeamServerSync'
 
+export function serverStateForPreferredTeamPreference(previous = {}, preferenceState = {}) {
+  const preferredTeamId = preferenceState.team?.team_id ?? null
+  if (preferredTeamId == null) return previous
+
+  const previousTeams = Array.isArray(previous.teams) ? previous.teams : []
+  const hasPrimary = previousTeams.some(team => team?.team_id === preferredTeamId)
+  const nextTeams = [
+    { team_id: preferredTeamId, is_primary: true },
+    ...previousTeams
+      .filter(team => team?.team_id !== preferredTeamId)
+      .map(team => ({ ...team, is_primary: false })),
+  ]
+
+  if (
+    previous.primary_team_id === preferredTeamId
+    && hasPrimary
+    && previousTeams.every((team, index) => team.is_primary === nextTeams[index]?.is_primary)
+  ) {
+    return previous
+  }
+
+  return {
+    ...previous,
+    teams: nextTeams,
+    primary_team_id: preferredTeamId,
+  }
+}
+
 export function usePreferredTeamPreference(teams = []) {
   const [preferenceState, setPreferenceState] = useState(() => readPreferredTeamState())
   const teamDirectoryKey = useMemo(() => (
@@ -54,7 +82,11 @@ export function usePreferredTeamPreference(teams = []) {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
-    const refresh = () => setPreferenceState(readPreferredTeamState())
+    const refresh = () => {
+      const nextPreferenceState = readPreferredTeamState()
+      setPreferenceState(nextPreferenceState)
+      setServerState(previous => serverStateForPreferredTeamPreference(previous, nextPreferenceState))
+    }
     const refreshForPreferredTeamStorage = (event) => {
       if (isPreferredTeamStorageEvent(event)) refresh()
     }

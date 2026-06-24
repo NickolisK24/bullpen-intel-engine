@@ -51,7 +51,18 @@ export function resolvePreferredTeamForAuthState({
 } = {}) {
   const localTeam = resolvePreferredTeam(localPreference, teamDirectory)
   if (!authenticated || serverError) return localTeam
-  return resolveServerPreferredTeam(serverResponse, teamDirectory) || localTeam
+  const serverTeam = resolveServerPreferredTeam(serverResponse, teamDirectory)
+  if (
+    serverTeam?.team_id != null
+    && localTeam?.team_id === serverTeam.team_id
+  ) {
+    return {
+      ...serverTeam,
+      team_abbreviation: serverTeam.team_abbreviation || localTeam.team_abbreviation,
+      team_name: serverTeam.team_name || localTeam.team_name,
+    }
+  }
+  return serverTeam || localTeam
 }
 
 export function shouldClaimLocalPreferredTeam(serverResponse = {}, localPreference = null, teamDirectory = []) {
