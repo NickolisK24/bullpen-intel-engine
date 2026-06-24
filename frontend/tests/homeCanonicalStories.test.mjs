@@ -455,6 +455,6 @@ test('Home reuses the existing team changes API contract', () => {
   const homeSource = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
 
   assert.match(apiSource, /export const getTeamChanges = \(teamId\) => request\(`\/bullpen\/teams\/\$\{teamId\}\/changes`\)/)
-  assert.match(homeSource, /getTeamChanges\(preferredTeamId\)/)
-  assert.doesNotMatch(homeSource, /\/bullpen\/teams\/\$\{preferredTeamId\}\/changes/)
+  assert.match(homeSource, /getTeamChanges\(activeTeamId\)/)
+  assert.doesNotMatch(homeSource, /\/bullpen\/teams\/\$\{activeTeamId\}\/changes/)
 })

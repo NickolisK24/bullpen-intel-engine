@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
 import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
@@ -10,6 +10,10 @@ import {
   readPreferredTeamPreference,
   savePreferredTeamSelectionValue,
 } from '../../utils/preferredTeam'
+import {
+  relationshipFor,
+  resolveTodayViewTeam,
+} from '../../utils/todayDigestReturn'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
@@ -20,6 +24,7 @@ import {
   getBullpenStressView,
 } from '../bullpen/board/tonightsBullpenBoardView'
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
+import DigestReturnNotice from './DigestReturnNotice'
 import {
   getMastheadView,
   homeTone,
@@ -35,6 +40,7 @@ import {
 // league context, and a handoff to Stories. The Stories page carries the
 // browseable feed and the Bullpen page remains the team directory.
 export default function Home() {
+  const [searchParams] = useSearchParams()
   const dash = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
   const teamList = teams.data || []
@@ -43,23 +49,41 @@ export default function Home() {
     promptDismissed,
     setPreferredTeam,
     dismissPrompt,
+    authLoading,
+    authenticated,
   } = usePreferredTeamPreference(teamList)
-  const preferredTeamId = preferredTeam?.team_id ?? null
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : ''
+  const teamsLoaded = Array.isArray(teams.data) || Boolean(teams.error)
+  const todayView = resolveTodayViewTeam({
+    search,
+    teams: teamList,
+    teamsLoaded,
+    preferredTeam,
+  })
+  const activeTeam = todayView.viewTeam
+  const activeTeamId = activeTeam?.team_id ?? null
+  const teamRelationship = relationshipFor({
+    urlTeamValid: todayView.urlTeamValid,
+    authenticated,
+    authLoading,
+    viewTeam: activeTeam,
+    followedTeam: preferredTeam,
+  })
   const preferredBoard = useFetch(
     () => (
-      preferredTeamId == null
+      activeTeamId == null
         ? Promise.resolve(null)
-        : getTeamBullpenBoard(preferredTeamId)
+        : getTeamBullpenBoard(activeTeamId)
     ),
-    [preferredTeamId],
+    [activeTeamId],
   )
   const preferredChanges = useFetch(
     () => (
-      preferredTeamId == null
+      activeTeamId == null
         ? Promise.resolve(null)
-        : getTeamChanges(preferredTeamId)
+        : getTeamChanges(activeTeamId)
     ),
-    [preferredTeamId],
+    [activeTeamId],
   )
 
   return (
@@ -69,15 +93,19 @@ export default function Home() {
       teamsLoading={teams.loading}
       teamsError={teams.error}
       preferredTeam={preferredTeam}
+      viewTeam={activeTeam}
+      teamRelationship={teamRelationship}
+      isDigestReturn={todayView.isDigestReturn && todayView.urlTeamValid}
+      urlTeamPending={todayView.urlTeamPending}
       preferredTeamPromptDismissed={promptDismissed}
       onSelectPreferredTeam={setPreferredTeam}
       onDismissPreferredTeamPrompt={dismissPrompt}
       preferredTeamBoard={preferredBoard.data}
-      preferredTeamBoardLoading={preferredTeamId != null && preferredBoard.loading}
-      preferredTeamBoardError={preferredTeamId != null ? preferredBoard.error : null}
+      preferredTeamBoardLoading={activeTeamId != null && preferredBoard.loading}
+      preferredTeamBoardError={activeTeamId != null ? preferredBoard.error : null}
       preferredTeamChanges={preferredChanges.data}
-      preferredTeamChangesLoading={preferredTeamId != null && preferredChanges.loading}
-      preferredTeamChangesError={preferredTeamId != null ? preferredChanges.error : null}
+      preferredTeamChangesLoading={activeTeamId != null && preferredChanges.loading}
+      preferredTeamChangesError={activeTeamId != null ? preferredChanges.error : null}
       onRetryPreferredTeamChanges={preferredChanges.refetch}
       loading={dash.loading}
       error={dash.error}
@@ -93,6 +121,10 @@ export function HomeView({
   teamsLoading = false,
   teamsError = null,
   preferredTeam = null,
+  viewTeam = preferredTeam,
+  teamRelationship = relationshipFor({ viewTeam: preferredTeam, followedTeam: preferredTeam }),
+  isDigestReturn = false,
+  urlTeamPending = false,
   preferredTeamPromptDismissed = true,
   onSelectPreferredTeam = () => {},
   onDismissPreferredTeamPrompt = () => {},
@@ -116,16 +148,22 @@ export function HomeView({
   const watchItems = getCanonicalHomeStories(dashboard)
   const leagueContext = getCanonicalLeagueContext(dashboard)
   const teamOptions = useMemo(() => buildWhatChangedTeamOptions(teams), [teams])
-  const selectedValue = selectedWhatChangedTeamValue(teamOptions, [], preferredTeam)
-  const showFirstVisitPicker = !preferredTeam && !preferredTeamPromptDismissed
+  const activeTeam = viewTeam || null
+  const heroTeam = activeTeam || preferredTeam
+  const teamHero = getCanonicalHeroStory(dashboard, { preferredTeam: heroTeam })
+  const selectedValue = selectedWhatChangedTeamValue(teamOptions, [], activeTeam)
+  const showFirstVisitPicker = !activeTeam && !urlTeamPending && !preferredTeamPromptDismissed
 
   const handleSelectTeam = (team) => {
     if (team) onSelectPreferredTeam(team)
   }
 
-  const teamBlock = preferredTeam ? (
+  const teamBlock = urlTeamPending ? (
+    <TeamReturnLoading />
+  ) : activeTeam ? (
     <PreferredTeamHeader
-      team={preferredTeam}
+      team={activeTeam}
+      relationship={teamRelationship}
       teamOptions={teamOptions}
       selectedValue={selectedValue}
       onSelectTeam={handleSelectTeam}
@@ -166,26 +204,39 @@ export function HomeView({
             />
           )}
 
+          {isDigestReturn && activeTeam && (
+            <DigestReturnNotice
+              team={activeTeam}
+              relationship={teamRelationship}
+              onFollowTeam={handleSelectTeam}
+            />
+          )}
+
           {teamBlock}
 
-          {!preferredTeam && heroSection}
+          {!activeTeam && heroSection}
 
-          {preferredTeam && (
+          {activeTeam && (
             <>
               <WhatChangedCard
-                followedTeam={preferredTeam}
+                followedTeam={activeTeam}
                 changes={preferredTeamChanges}
                 loading={preferredTeamChangesLoading}
                 error={preferredTeamChangesError}
                 onRetry={onRetryPreferredTeamChanges}
               />
               <TonightsTeamBullpenPicture
-                team={preferredTeam}
+                team={activeTeam}
                 board={preferredTeamBoard}
                 loading={preferredTeamBoardLoading}
                 error={preferredTeamBoardError}
               />
-              {heroSection}
+              <section className="mb-8" aria-label="What BaseballOS sees today">
+                <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
+                  What BaseballOS Sees Today
+                </div>
+                <HeroStory hero={teamHero} />
+              </section>
             </>
           )}
           <BullpenStories stories={watchItems} showCta={false} />
@@ -322,7 +373,23 @@ function selectedWhatChangedTeam(options, value) {
   return options.find(option => option.value === value) || null
 }
 
-function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSelectTeam = () => {} }) {
+function TeamReturnLoading() {
+  return (
+    <section className="mb-6" aria-label="Loading team update">
+      <div className="border border-dirt bg-dugout p-4 sm:p-5">
+        <p className="font-mono text-xs text-chalk500">Loading team update...</p>
+      </div>
+    </section>
+  )
+}
+
+function PreferredTeamHeader({
+  team,
+  relationship = {},
+  teamOptions = [],
+  selectedValue = '',
+  onSelectTeam = () => {},
+}) {
   const teamLabel = preferredTeamLabel(team)
   const boardHref = buildPreferredTeamHref(team, 'home-my-team')
   const canSwitch = teamOptions.length > 0
@@ -334,9 +401,20 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
     const option = selectedWhatChangedTeam(teamOptions, event.target.value)
     if (option) onSelectTeam(option)
   }
+  const isFollowing = relationship.isFollowing === true
+  const eyebrow = isFollowing
+    ? 'My Team'
+    : relationship.kind === 'digest-switch' || relationship.kind === 'digest-preview' || relationship.kind === 'digest-followed'
+      ? 'Digest Update'
+      : 'Team Preview'
+  const subtitle = relationship.kind?.startsWith('digest')
+    ? `Here's what changed for the ${teamLabel} since their last game.`
+    : isFollowing
+      ? 'Your bullpen. Tonight.'
+      : `${teamLabel} bullpen preview.`
 
   return (
-    <section className="mb-7" aria-label="My team">
+    <section className="mb-7" aria-label={isFollowing ? 'My team' : 'Team preview'}>
       <div className="relative min-h-[15rem] overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-8 sm:p-10 lg:p-12">
         <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-45" />
         <div className="relative z-10 flex min-h-[12rem] flex-col justify-between gap-8 lg:min-h-[13rem]">
@@ -349,17 +427,19 @@ function PreferredTeamHeader({ team, teamOptions = [], selectedValue = '', onSel
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-amber">
-                  My Team
+                  {eyebrow}
                 </span>
-                <span className="rounded border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-emerald-300">
-                  Following
-                </span>
+                {isFollowing && (
+                  <span className="rounded border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-emerald-300">
+                    Following
+                  </span>
+                )}
               </div>
               <h2 className="mt-5 break-words font-display text-6xl leading-none tracking-wide text-chalk100 sm:text-7xl lg:text-8xl">
                 {teamLabel}
               </h2>
               <p className="mt-4 text-xl leading-relaxed text-chalk300">
-                Your bullpen. Tonight.
+                {subtitle}
               </p>
             </div>
           </div>
