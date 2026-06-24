@@ -33,12 +33,14 @@ const {
   deleteFollowedTeam,
   followTeam,
   getCurrentUser,
+  getDigestPreferences,
   getFollowedTeams,
   logoutAuth,
   readAuthToken,
   requestMagicLink,
   setPrimaryTeam,
   storeAuthToken,
+  updateDigestPreferences,
   verifyMagicLink,
 } = api
 
@@ -195,6 +197,29 @@ test('server follow helpers call the expected /api/me endpoints', async () => {
     '/api/me/teams/118',
     '/api/me/primary-team',
   ])
+})
+
+test('digest preference helpers call authenticated digest preference endpoints', async () => {
+  const storage = createStorage()
+  installWindow(storage)
+  storeAuthToken('digest-token', storage)
+  const calls = installFetch(async (url, options) => {
+    if (url === '/api/digest/preferences' && (!options.method || options.method === 'GET')) {
+      return { json: { notification_prefs: { digest_enabled: false, digest_cadence: 'daily' } } }
+    }
+    assert.equal(url, '/api/digest/preferences')
+    assert.equal(options.method, 'PUT')
+    assert.deepEqual(JSON.parse(options.body), { digest_enabled: true, digest_cadence: 'weekly' })
+    return { json: { notification_prefs: { digest_enabled: true, digest_cadence: 'weekly' } } }
+  })
+
+  const preferences = await getDigestPreferences()
+  const updated = await updateDigestPreferences({ digest_enabled: true, digest_cadence: 'weekly' })
+
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer digest-token')
+  assert.equal(preferences.notification_prefs.digest_enabled, false)
+  assert.equal(updated.notification_prefs.digest_cadence, 'weekly')
 })
 
 test('401 API responses clear the stored token for safe fallback', async () => {

@@ -13,6 +13,7 @@ import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSumm
 import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
 import FatigueInsightCard from '../dashboard/FatigueInsightCard'
 import AvailabilityBacktestCard from './AvailabilityBacktestCard'
+import DigestPreferencesCard from './DigestPreferencesCard'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
@@ -127,6 +128,8 @@ export function DataTrustView({
           freshnessAuthority={servedFreshness}
         />
       </section>
+
+      <DigestPreferencesCard />
 
       {/* Pitcher workload inventory */}
       <section className="mb-6" aria-label="Pitcher workload inventory">
