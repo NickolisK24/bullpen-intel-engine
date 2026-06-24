@@ -26,7 +26,7 @@ from services.role_authority import (
     classify_role,
 )
 from utils.db import db
-from utils.time import utc_now_naive
+from utils.time import to_utc_iso, utc_now_naive
 
 
 METHOD_VERSION = 'availability_next_day_reliever_v1'
@@ -387,7 +387,7 @@ def _payload_from_rows(rows):
         'status': 'ok',
         'method_version': latest.method_version,
         'cadence': latest.cadence,
-        'computed_at': latest.computed_at.isoformat(),
+        'computed_at': to_utc_iso(latest.computed_at),
         'data_through': max(data_through_values).isoformat() if data_through_values else None,
         'ranking_applied': False,
         'selection_made': False,

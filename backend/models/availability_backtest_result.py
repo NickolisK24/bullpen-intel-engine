@@ -1,5 +1,5 @@
 from utils.db import db
-from utils.time import utc_now_naive
+from utils.time import to_utc_iso, utc_now_naive
 
 
 class AvailabilityBacktestResult(db.Model):
@@ -42,7 +42,7 @@ class AvailabilityBacktestResult(db.Model):
             'id': self.id,
             'method_version': self.method_version,
             'cadence': self.cadence,
-            'computed_at': self.computed_at.isoformat() if self.computed_at else None,
+            'computed_at': to_utc_iso(self.computed_at),
             'data_through': self.data_through.isoformat() if self.data_through else None,
             'season': self.season,
             'window_label': self.window_label,

@@ -176,7 +176,7 @@ def test_latest_payload_comes_from_stored_computation(client):
         payload = latest_backtest_payload()
 
     assert payload['status'] == 'ok'
-    assert payload['computed_at'] == '2026-06-15T07:00:00'
+    assert payload['computed_at'] == '2026-06-15T07:00:00Z'
     rates_2026 = tier_rates(payload, 2026)
     assert rates_2026[STATUS_AVAILABLE]['next_day_rate_pct'] == 41.0
     assert rates_2026[STATUS_AVOID]['next_day_rate_pct'] == 4.0

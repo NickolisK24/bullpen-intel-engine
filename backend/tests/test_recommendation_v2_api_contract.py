@@ -304,7 +304,7 @@ class TestRecommendationEngineV2ApiContract:
         assert payload['freshness']['aggregate_v2_freshness_status'] == 'stale'
         assert payload['freshness']['overall_sync_status'] == 'success'
         assert payload['freshness']['overall_sync_current'] is True
-        assert payload['freshness']['sync_timestamp'] == '2026-06-03T07:44:27'
+        assert payload['freshness']['sync_timestamp'] == '2026-06-03T07:44:27Z'
         assert payload['fail_closed']['failed_closed'] is True
         assert payload['fail_closed']['state'] == 'degraded'
         assert payload['fail_closed']['critical_failure'] is False
@@ -316,7 +316,7 @@ class TestRecommendationEngineV2ApiContract:
         assert 'Source freshness is stale.' in payload['fail_closed']['reason_summary']
         assert 'data_state_stale' in payload['fail_closed']['reason_codes']
         assert payload['status_metadata']['overall_sync_status'] == 'success'
-        assert payload['status_metadata']['sync_timestamp'] == '2026-06-03T07:44:27'
+        assert payload['status_metadata']['sync_timestamp'] == '2026-06-03T07:44:27Z'
         assert payload['status_metadata']['source_freshness_status'] == 'stale'
         assert payload['status_metadata']['aggregate_v2_freshness_status'] == 'stale'
         assert payload['status_metadata']['fail_closed_reason_code'] == 'data_state_stale'

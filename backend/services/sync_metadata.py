@@ -13,7 +13,7 @@ from services.availability_reference_date import (
     product_current_date,
 )
 from utils.db import db
-from utils.time import utc_now_naive
+from utils.time import to_utc_iso, utc_now_naive
 
 
 STATUS_RUNNING = 'running'
@@ -120,7 +120,9 @@ def build_degradation_block(data_age_days):
 
 
 def _iso(value):
-    return value.isoformat() if value else None
+    # Emit timezone-explicit UTC (…Z) for datetimes so the frontend renders the
+    # correct local/ET time; dates stay date-only. See utils.time.to_utc_iso.
+    return to_utc_iso(value)
 
 
 def collect_data_metadata():
@@ -599,6 +601,9 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         # Which durable source actually answered: 'sync_runs' or 'none'.
         'metadata_source': metadata_source,
         'last_sync': last_sync,
+        # Clearly named alias of last_sync: the latest check attempt, including
+        # no-op postgame runs (so a healthy quiet check is visible as "checked").
+        'last_checked': last_sync,
         'last_successful_sync': last_successful_sync,
         'last_completed_game_refresh': (
             _iso(postgame_run.completed_at or postgame_run.started_at)
