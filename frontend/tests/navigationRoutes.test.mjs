@@ -19,7 +19,9 @@ after(async () => {
 
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const {
+  SidebarDataFreshnessCard,
   SidebarFollowingCard,
+  sidebarFreshness,
   default: Sidebar,
 } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 
@@ -92,6 +94,57 @@ test('Sidebar Following card falls back to a safe abbreviation label', () => {
   assert.ok(htmlIncludes(html, 'KC'))
   assert.equal(htmlIncludes(html, 'your team'), false)
   assert.equal(htmlIncludes(html, '>118<'), false)
+})
+
+test('Sidebar Data Freshness renders sync status timestamps in ET', () => {
+  const freshness = sidebarFreshness({
+    status: 'success',
+    last_checked: '2026-06-24T10:00:00Z',
+    last_sync: '2026-06-24T10:02:00Z',
+    last_successful_sync: '2026-06-24T10:02:00Z',
+    data_through: '2026-06-23',
+    data: { game_logs: 1, latest_game_date: '2026-06-23' },
+    freshness: {
+      is_current: true,
+      freshness_state: 'current',
+      limitations: [],
+      reason_codes: [],
+    },
+  }, false, null)
+
+  const html = render(React.createElement(SidebarDataFreshnessCard, { freshness }))
+
+  assert.ok(htmlIncludes(html, 'Data Freshness'))
+  assert.ok(htmlIncludes(html, 'Last checked'))
+  assert.ok(htmlIncludes(html, '6:00 AM ET'))
+  assert.ok(htmlIncludes(html, 'Last data update'))
+  assert.ok(htmlIncludes(html, '6:02 AM ET'))
+  assert.ok(htmlIncludes(html, 'Data through'))
+  assert.ok(htmlIncludes(html, 'June 23, 2026'))
+  assert.equal(htmlIncludes(html, 'Last Sync'), false)
+  assert.equal(htmlIncludes(html, '10:02 AM ET'), false)
+})
+
+test('Sidebar Data Freshness keeps date-only data through values timezone-safe', () => {
+  const freshness = sidebarFreshness({
+    status: 'success',
+    last_checked: '2026-06-01T00:30:00Z',
+    last_sync: '2026-06-01T00:30:00Z',
+    last_successful_sync: '2026-06-01T00:30:00Z',
+    data_through: '2026-06-01',
+    data: { game_logs: 1, latest_game_date: '2026-06-01' },
+    freshness: {
+      is_current: true,
+      freshness_state: 'current',
+      limitations: [],
+      reason_codes: [],
+    },
+  }, false, null)
+
+  assert.equal(freshness.lastChecked, '8:30 PM ET')
+  assert.equal(freshness.lastDataUpdate, '8:30 PM ET')
+  assert.equal(freshness.dataThrough, 'June 1, 2026')
+  assert.notEqual(freshness.dataThrough, 'May 31, 2026')
 })
 
 test('desktop shell keeps the navigation rail fixed while content scrolls', () => {

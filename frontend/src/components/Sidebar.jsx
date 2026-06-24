@@ -3,11 +3,12 @@ import { Link, NavLink } from 'react-router-dom'
 import { useAuthState } from '../hooks/useAuthState'
 import { useFetch } from '../hooks/useFetch'
 import { usePreferredTeamPreference } from '../hooks/usePreferredTeamPreference'
-import { getBullpenDashboard, getTeams } from '../utils/api'
+import { getSyncStatus, getTeams } from '../utils/api'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
 } from '../utils/preferredTeam'
+import { getSyncStatusView } from './dashboard/syncStatusView'
 import TeamMark from './team/TeamMark'
 
 const NAV = [
@@ -19,62 +20,30 @@ const NAV = [
   { to: '/trust',       icon: '🛡', label: 'Data & Trust' },
 ]
 
-const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  hour: 'numeric',
-  minute: '2-digit',
-  timeZone: 'America/New_York',
-})
-
-const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-
-function formatEasternTime(value) {
-  if (!value) return 'Loading'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unavailable'
-  return `${TIME_FORMATTER.format(date)} ET`
-}
-
-function formatDateOnly(value) {
-  if (!value) return 'Loading'
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!match) return 'Unavailable'
-  const [, year, month, day] = match
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12))
-  if (Number.isNaN(date.getTime())) return 'Unavailable'
-  return DATE_FORMATTER.format(date)
-}
-
-function sidebarFreshness(dashboard, loading, error) {
-  if (error && !dashboard) {
+export function sidebarFreshness(syncStatus, loading, error) {
+  if (loading && !syncStatus) {
     return {
-      lastSync: 'Unavailable',
+      lastChecked: 'Loading',
+      lastDataUpdate: 'Loading',
+      dataThrough: 'Loading',
+    }
+  }
+
+  if (error && !syncStatus) {
+    return {
+      lastChecked: 'Unavailable',
+      lastDataUpdate: 'Unavailable',
       dataThrough: 'Unavailable',
     }
   }
 
-  const freshness = dashboard?.freshness || {}
-  const snapshot = dashboard?.snapshot || {}
+  const view = getSyncStatusView(syncStatus)
   return {
-    lastSync: loading && !dashboard
-      ? 'Loading'
-      : formatEasternTime(
-        freshness.last_successful_sync
-        || snapshot.published_at
-        || snapshot.snapshot_generated_at
-        || dashboard?.generated_at,
-      ),
-    dataThrough: loading && !dashboard
-      ? 'Loading'
-      : formatDateOnly(
-        freshness.data_through
-        || snapshot.data_through
-        || freshness.latest_workload_date,
-      ),
+    lastChecked: view.lastCheckedValue || 'Unavailable',
+    lastDataUpdate: view.lastDataUpdateValue || (
+      view.syncLabel === 'No data loaded' ? 'No data loaded' : 'Unavailable'
+    ),
+    dataThrough: view.dataValue || 'Unavailable',
   }
 }
 
@@ -86,6 +55,21 @@ function SidebarFreshnessItem({ label, value }) {
       </div>
       <div className="mt-1 font-mono text-[11px] leading-tight text-chalk200">
         {value}
+      </div>
+    </div>
+  )
+}
+
+export function SidebarDataFreshnessCard({ freshness }) {
+  return (
+    <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
+      <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
+        Data Freshness
+      </div>
+      <div className="space-y-3">
+        <SidebarFreshnessItem label="Last checked" value={freshness.lastChecked} />
+        <SidebarFreshnessItem label="Last data update" value={freshness.lastDataUpdate} />
+        <SidebarFreshnessItem label="Data through" value={freshness.dataThrough} />
       </div>
     </div>
   )
@@ -178,14 +162,14 @@ export default function Sidebar() {
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
   const authState = useAuthState()
-  const dashboardFreshness = useFetch(getBullpenDashboard)
+  const syncStatus = useFetch(getSyncStatus)
   const teams = useFetch(getTeams)
   const teamList = teams.data || []
   const { preferredTeam } = usePreferredTeamPreference(teamList)
   const freshness = sidebarFreshness(
-    dashboardFreshness.data,
-    dashboardFreshness.loading,
-    dashboardFreshness.error,
+    syncStatus.data,
+    syncStatus.loading,
+    syncStatus.error,
   )
 
   return (
@@ -245,15 +229,7 @@ export default function Sidebar() {
             authState={authState}
             onNavigate={() => setOpen(false)}
           />
-          <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-            <div className="mb-3 font-mono text-[9px] uppercase tracking-widest text-amber/80">
-              Data Freshness
-            </div>
-            <div className="space-y-3">
-              <SidebarFreshnessItem label="Last Sync" value={freshness.lastSync} />
-              <SidebarFreshnessItem label="Data Through" value={freshness.dataThrough} />
-            </div>
-          </div>
+          <SidebarDataFreshnessCard freshness={freshness} />
         </div>
       </div>
     </aside>
