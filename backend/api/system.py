@@ -10,13 +10,20 @@ the sync/recalculate write endpoints.
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from services import sync_metadata
 from utils.auth import require_admin_token
 
 
 system_bp = Blueprint('system', __name__)
+
+
+def _redact_email(email):
+    if not email or '@' not in str(email):
+        return '***'
+    name, _, domain = str(email).partition('@')
+    return f'{(name[:1] or "")}***@{domain}'
 
 
 @system_bp.route('/digest-status', methods=['GET'])
@@ -45,6 +52,71 @@ def get_digest_metrics():
     """
     from services.digest_metrics import metrics_overview
     return jsonify(metrics_overview())
+
+
+@system_bp.route('/digest-test-send', methods=['POST'])
+@require_admin_token
+def digest_test_send():
+    """Admin-gated SINGLE-USER digest test (dry-run by default).
+
+    The controlled-smoke-test path. Safety properties:
+      • Targets exactly ONE user, by explicit email — it never iterates users,
+        so it can never broadcast (a missing email is a 400, not "everyone").
+      • Dry-run unless ``send: true`` is passed explicitly; dry-run sends nothing
+        and persists nothing.
+      • Does NOT require DIGEST_SEND_ENABLED (that flag only gates the scheduled
+        broad job, which this path never invokes) and never schedules anything.
+      • Respects opt-in / unsubscribe unless ``force: true`` (an explicit
+        single-user test override). The verified-email gate and composer
+        suppression are always enforced — force never sends to an unverified
+        address and never sends a suppressed (no-team / no-change / stale) digest.
+      • Records exactly one delivery (+ tracking) only on a real send; logs the
+        target redacted.
+
+    Body: {"email": "<addr>", "send": false, "force": false}
+    """
+    from models.user import User
+    from services.digest_delivery import deliver_team_digest
+    from services.digest_metrics import DbDigestRecorder
+    from utils.auth_tokens import normalize_email
+    from utils.db import db
+
+    data = request.get_json(silent=True) or {}
+    email = normalize_email(data.get('email'))
+    if not email:
+        return jsonify({'error': 'email_required'}), 400
+    send = data.get('send') is True
+    force = data.get('force') is True
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        return jsonify({'error': 'user_not_found', 'target': _redact_email(email)}), 404
+
+    recorder = DbDigestRecorder() if send else None
+    result = deliver_team_digest(
+        user, dry_run=not send, force=force, recorder=recorder,
+    )
+    if send:
+        db.session.commit()
+
+    current_app.logger.info(
+        '[digest-test] target=%s send=%s force=%s status=%s',
+        _redact_email(email), send, force, result.get('status'),
+    )
+    return jsonify({
+        'mode': 'send' if send else 'dry_run',
+        'target': _redact_email(email),
+        'user_id': user.id,
+        'force': force,
+        'requires_digest_send_enabled': False,
+        'digest_send_enabled': bool(current_app.config.get('DIGEST_SEND_ENABLED')),
+        'result': result,
+        'links': {
+            'frontend_base_url': current_app.config.get('FRONTEND_BASE_URL'),
+            'public_api_base_url': current_app.config.get('PUBLIC_API_BASE_URL') or None,
+            'public_api_base_url_set': bool(current_app.config.get('PUBLIC_API_BASE_URL')),
+        },
+    })
 
 
 @system_bp.route('/email-delivery-health', methods=['GET'])

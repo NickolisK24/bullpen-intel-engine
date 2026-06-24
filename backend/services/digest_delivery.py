@@ -126,6 +126,7 @@ def deliver_team_digest(
     digest_builder=build_team_digest,
     sender=send_email,
     recorder=None,
+    force=False,
 ):
     """Compose and (unless ``dry_run``) send one user's team digest.
 
@@ -139,14 +140,23 @@ def deliver_team_digest(
     optional metrics sink (Phase D2E): on a real send it records a delivery and
     returns tracking URLs to embed; on a suppression it records the reason. When
     it is None (the default) nothing is recorded and behavior is identical.
+
+    ``force`` (default False) is a single-user test override used only by the
+    admin one-user test-send path: it bypasses ONLY the opt-in/cadence gate (so a
+    deliberately chosen verified user — even one not opted in or unsubscribed —
+    can receive a controlled test). It does NOT bypass the verified-email gate or
+    composer suppression, and it has no effect on the scheduled broad job.
     """
     prefs = get_digest_prefs(user)
 
-    # Gate 1: explicit opt-in + cadence due (no send without opt-in).
-    if not prefs['digest_enabled'] or prefs['digest_cadence'] == 'off':
-        return {'status': SKIPPED, 'reason': SKIP_NOT_OPTED_IN, 'team_id': None}
-    if not cadence_due(prefs['digest_cadence'], reference_date):
-        return {'status': SKIPPED, 'reason': SKIP_CADENCE_NOT_DUE, 'team_id': None}
+    # Gate 1: explicit opt-in + cadence due (no send without opt-in). A single
+    # explicit test send may override this gate via force; everything below
+    # (verified email, composer suppression) is still enforced.
+    if not force:
+        if not prefs['digest_enabled'] or prefs['digest_cadence'] == 'off':
+            return {'status': SKIPPED, 'reason': SKIP_NOT_OPTED_IN, 'team_id': None}
+        if not cadence_due(prefs['digest_cadence'], reference_date):
+            return {'status': SKIPPED, 'reason': SKIP_CADENCE_NOT_DUE, 'team_id': None}
 
     # Gate 2: verified, usable email.
     if getattr(user, 'email_verified_at', None) is None:
