@@ -104,7 +104,10 @@ def build_story_blueprint(*, story_type, beats, stable_parts=(), frame=None) -> 
         story_type, purpose=PURPOSE_LESSON, stable_parts=tuple(stable_parts),
     )
 
-    evidence_text = build_evidence_case(frame, story_type=story_type) if frame else ''
+    evidence_text = (
+        build_evidence_case(frame, story_type=story_type, variety_key=tuple(stable_parts))
+        if frame else ''
+    )
     evidence_source = 'evidence_case' if evidence_text else 'evidence'
     if not evidence_text:
         evidence_text = _evidence_text(beats)

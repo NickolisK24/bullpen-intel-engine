@@ -19,6 +19,11 @@ capped at three sentences, de-duplicated, with consistent player names and
 correct singular/plural grammar. Tiny, non-meaningful deltas are omitted rather
 than dressed up as evidence (prefer under-claiming).
 
+The closing meaning sentence is drawn deterministically from a small bank of
+approved, fact-free variants (keyed by ``variety_key``), so two same-type cases
+in the same feed do not share identical sentence scaffolding while their facts
+stay exactly as the frame reports them (Feed Variety Pass).
+
 It is deterministic and additive: when it cannot build a case (an unsupported
 type, or a frame without facts) it returns ``''`` and the blueprint falls back to
 the existing baseline+cause text, so output is never lost. The internal editorial
@@ -39,16 +44,64 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     TYPE_TRUST_LANE_PRESSURE,
 )
+from services.story_voice_library_v1 import stable_voice_index
 
 
 CAPABILITY = 'story_evidence_case_v1'
-VERSION = '2026-06-25.v1'
+VERSION = '2026-06-25.v2'
 
 MAX_SENTENCES = 3
 NAME_LIMIT = 3
 # Below these, a delta is noise, not evidence — omit it (prefer under-claiming).
 MIN_MEANINGFUL_IP_DELTA = 0.3
 MIN_MEANINGFUL_PCT_DELTA = 2.0
+
+# Approved, fact-free closing "meaning" sentences per observation type. The first
+# is the canonical line (used when no variety_key is given, keeping output
+# backward-compatible); the alternates let same-type cases differ in the feed
+# without changing any fact. All clear the engine's guardrail vocabularies.
+MEANING_VARIANTS = {
+    TYPE_ROTATION_PRESSURE: (
+        'A steady pitching line is sitting on a heavier real workload',
+        'The result looks routine; the innings underneath it are not',
+        'A clean line can hide how much the bullpen is carrying',
+    ),
+    TYPE_CONCENTRATION_PRESSURE: (
+        'The late innings are riding a few arms more than the roster spreads them',
+        'The work is gathering on a small group rather than the whole bullpen',
+        'A few arms are carrying more than their share of the late work',
+    ),
+    TYPE_OPTIONALITY_STRENGTH: (
+        'The manager has more than one rested way through the late innings',
+        'There is more than one clean path to the end of a close game',
+        'Late-inning choices like these are what flexibility looks like',
+    ),
+    TYPE_STABLE_CORE: (
+        'The manager knows who is ready late without guessing',
+        'A settled group takes the guesswork out of the late innings',
+        'There is no question about who handles the end of a game',
+    ),
+    TYPE_CORE_TRANSITION: (
+        'Who gets the biggest outs has changed, even with a similar-looking roster',
+        'The names that finish games are not the ones from a month ago',
+        'The late-inning order has been redrawn under a familiar roster',
+    ),
+    TYPE_DEPTH_PRESSURE: (
+        'That leaves the roster looking deeper than the group the manager can actually use',
+        'The usable group is smaller than the roster line suggests',
+        'On paper the bullpen looks deeper than the arms truly in the plan',
+    ),
+    TYPE_TRUST_LANE_PRESSURE: (
+        'The trusted lane is narrower than the full board makes it look',
+        'The list of arms is long; the list of trusted arms is short',
+        'A full board and a short circle of trust are not the same thing',
+    ),
+    TYPE_BRIDGE_INSTABILITY: (
+        'The soft spot is the path to the late arms, not the arms themselves',
+        'The challenge is the bridge to the closer, not the closer',
+        'Reaching the late arms is harder than the late arms themselves',
+    ),
+}
 
 
 def _dict(value: Any) -> dict:
@@ -131,9 +184,29 @@ def _facts(frame: dict, key: str) -> dict:
     return _dict(_dict(frame.get('story_frame')).get(key))
 
 
-# ── Per-type evidence cases ───────────────────────────────────────────────────
-# Each returns an ordered list of raw sentence strings (strongest, corroborating,
-# meaning); _assemble() filters, de-duplicates, and caps them.
+def _key_text(variety_key: Any) -> str:
+    if isinstance(variety_key, (list, tuple)):
+        return '|'.join(_clean(part) for part in variety_key if _clean(part))
+    return _clean(variety_key)
+
+
+def _meaning(observation_type: Any, variety_key: Any):
+    """Select the closing meaning sentence deterministically.
+
+    Index 0 (the canonical line) when no variety_key is supplied, so callers
+    without one stay backward-compatible; otherwise a stable per-story choice.
+    """
+    variants = MEANING_VARIANTS.get(observation_type) or ()
+    if not variants:
+        return None
+    key = _key_text(variety_key)
+    if not key:
+        return variants[0]
+    index = stable_voice_index((CAPABILITY, VERSION, observation_type, key), len(variants))
+    return variants[index]
+
+
+# ── Per-type evidence cases (factual sentences only; meaning added centrally) ──
 
 def _rotation_pressure(frame: dict) -> list:
     obs = _facts(frame, 'observation_facts')
@@ -161,7 +234,6 @@ def _rotation_pressure(frame: dict) -> list:
     else:
         parts.append(starts)
         parts.append(coverage_line)
-    parts.append('A steady pitching line is sitting on a heavier real workload')
     return parts
 
 
@@ -179,7 +251,6 @@ def _concentration_pressure(frame: dict) -> list:
         parts.append(f"A few arms have handled {_fmt(share)}% of the bullpen's recent work")
     if delta is not None and delta >= MIN_MEANINGFUL_PCT_DELTA:
         parts.append(f"That is {_fmt(delta)} points above the league's typical top-three share")
-    parts.append('The late innings are riding a few arms more than the roster spreads them')
     return parts
 
 
@@ -197,7 +268,6 @@ def _optionality_strength(frame: dict) -> list:
         parts.append(f'{clean} {_arm(clean)} {_be(clean)} rested and clean for the late innings')
     if clean_names:
         parts.append(f'The rested group is led by {clean_names}')
-    parts.append('The manager has more than one rested way through the late innings')
     return parts
 
 
@@ -215,7 +285,6 @@ def _stable_core(frame: dict) -> list:
         parts.append(f'The late innings have run through {names}')
     if previous:
         parts.append('It is the same trusted group as before')
-    parts.append('The manager knows who is ready late without guessing')
     return parts
 
 
@@ -240,7 +309,6 @@ def _core_transition(frame: dict) -> list:
         moves.append(f'moved on from {departed}')
     if moves:
         parts.append('The route ' + ' and '.join(moves))
-    parts.append('Who gets the biggest outs has changed, even with a similar-looking roster')
     return parts
 
 
@@ -260,7 +328,6 @@ def _depth_pressure(frame: dict) -> list:
         parts.append(line)
     if active is not None:
         parts.append(f'The live bullpen is down to {active} {_arm(active)}')
-    parts.append('That leaves the roster looking deeper than the group the manager can actually use')
     return parts
 
 
@@ -279,7 +346,6 @@ def _trust_lane_pressure(frame: dict) -> list:
         )
     if clean_names:
         parts.append(f'The dependable late work runs through {clean_names}')
-    parts.append('The trusted lane is narrower than the full board makes it look')
     return parts
 
 
@@ -303,7 +369,6 @@ def _bridge_instability(frame: dict) -> list:
         parts.append(f'Starters are handing off early, entering before the sixth in {_fmt(early)}% of recent games')
     elif coverage is not None:
         parts.append(f'The bullpen is covering {_fmt(coverage)} innings a game to reach them')
-    parts.append('The soft spot is the path to the late arms, not the arms themselves')
     return parts
 
 
@@ -339,18 +404,23 @@ def _assemble(parts: list) -> str:
     return ' '.join(out)
 
 
-def build_evidence_case(frame: Any, *, story_type: Any = None) -> str:
+def build_evidence_case(frame: Any, *, story_type: Any = None, variety_key: Any = None) -> str:
     """Build the curated Evidence-section text for one construction frame.
 
+    ``variety_key`` (e.g. the story id) selects the closing meaning sentence so
+    same-type cases differ across a feed; without it the canonical line is used.
     Returns ``''`` when no case can be built (unsupported type or a frame with no
     facts), so the blueprint can fall back to the existing beat text. Never
     mutates the frame. Deterministic.
     """
     frame = _dict(frame)
-    builder = _BUILDERS.get(frame.get('observation_type'))
+    observation_type = frame.get('observation_type')
+    builder = _BUILDERS.get(observation_type)
     if builder is None:
         return ''
-    return _assemble(builder(frame))
+    parts = list(builder(frame))
+    parts.append(_meaning(observation_type, variety_key))
+    return _assemble(parts)
 
 
 def evidence_case_report() -> dict:
@@ -364,6 +434,7 @@ def evidence_case_report() -> dict:
         'min_meaningful_ip_delta': MIN_MEANINGFUL_IP_DELTA,
         'min_meaningful_pct_delta': MIN_MEANINGFUL_PCT_DELTA,
         'supported_observation_types': list(SUPPORTED_OBSERVATION_TYPES),
+        'meaning_variant_counts': {k: len(v) for k, v in MEANING_VARIANTS.items()},
     }
 
 
@@ -374,6 +445,7 @@ __all__ = [
     'NAME_LIMIT',
     'MIN_MEANINGFUL_IP_DELTA',
     'MIN_MEANINGFUL_PCT_DELTA',
+    'MEANING_VARIANTS',
     'SUPPORTED_OBSERVATION_TYPES',
     'build_evidence_case',
     'evidence_case_report',
