@@ -130,6 +130,7 @@ def create_app(config_name=None):
     from models.postgame_processed_game import PostgameProcessedGame
     from models.user import User, UserFollowedTeam
     from models.digest_metrics import DigestRun, DigestDelivery
+    from models.product_event import ProductEvent
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp
