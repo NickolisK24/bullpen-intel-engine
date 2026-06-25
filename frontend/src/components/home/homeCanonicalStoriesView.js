@@ -146,6 +146,9 @@ function preferredTeamLead(dashboard, preferredTeam) {
 function toStoryCard(item) {
   const href = teamHref(item)
   return {
+    storyId: item.story_id || null,
+    storyType: item.story_type || null,
+    teamId: item.team_id != null ? item.team_id : null,
     storyKind: item.category === 'rested' ? 'team_recovery' : 'team_story',
     family: 'canonical_story',
     tone: toneOf(item),
@@ -179,6 +182,9 @@ export function getCanonicalHeroStory(dashboard, { preferredTeam = null } = {}) 
   if (lead) {
     return {
       hasStory: true,
+      storyId: lead.story_id || null,
+      storyType: lead.story_type || null,
+      teamId: lead.team_id != null ? lead.team_id : null,
       storyKind: lead.category === 'rested' ? 'team_recovery' : 'team_story',
       tone: toneOf(lead),
       kicker: kickerOf(lead),

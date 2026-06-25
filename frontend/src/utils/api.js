@@ -6,6 +6,7 @@ import {
   OBSERVATION_ITEM_REQUIRED_FIELDS,
   OBSERVATION_RESPONSE_REQUIRED_FIELDS,
 } from '../types/observations'
+import { getOrCreateProductAnonId } from './productIdentity'
 
 const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
@@ -643,6 +644,7 @@ function buildQuery(params = {}) {
 }
 
 async function request(path, options = {}) {
+  const { silent = false, authToken: _authToken, ...fetchOptions } = options
   const { headers, token } = buildRequestHeaders(options)
   const method = String(options.method || 'GET').toUpperCase()
   const dedupeKey = method === 'GET' && !options.body
@@ -654,7 +656,7 @@ async function request(path, options = {}) {
 
   const requestPromise = (async () => {
     try {
-      const res = await fetch(`${BASE}${path}`, { ...options, headers })
+      const res = await fetch(`${BASE}${path}`, { ...fetchOptions, headers })
       if (!res.ok) {
         if (res.status === 401) clearAuthToken()
         const error = new Error(`API ${res.status}: ${res.statusText}`)
@@ -663,7 +665,7 @@ async function request(path, options = {}) {
       }
       return await res.json()
     } catch (err) {
-      console.error(`[API] ${path}`, err)
+      if (!silent) console.error(`[API] ${path}`, err)
       throw err
     } finally {
       if (dedupeKey) {
@@ -686,10 +688,23 @@ export const requestMagicLink = (email) => request('/auth/request-link', {
   body: JSON.stringify({ email }),
 })
 
-export const verifyMagicLink = async (token) => {
+function payloadWithProductAnonId(payload = {}) {
+  const anonId = payload.anon_id === undefined
+    ? getOrCreateProductAnonId()
+    : payload.anon_id
+  return {
+    ...payload,
+    ...(anonId ? { anon_id: anonId } : {}),
+  }
+}
+
+export const verifyMagicLink = async (token, options = {}) => {
   const response = await request('/auth/verify', {
     method: 'POST',
-    body: JSON.stringify({ token }),
+    body: JSON.stringify(payloadWithProductAnonId({
+      token,
+      ...(options.anonId === undefined ? {} : { anon_id: options.anonId }),
+    })),
     authToken: null,
   })
   storeAuthToken(response?.token)
@@ -703,6 +718,19 @@ export const logoutAuth = async () => {
     clearAuthToken()
   }
 }
+
+// ── Product Intelligence ───────────────────────────────────
+export const recordTodayLoaded = (payload = {}) => request('/product/today-loaded', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId(payload)),
+  silent: true,
+})
+
+export const recordStoryViewed = (payload = {}) => request('/product/story-viewed', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId(payload)),
+  silent: true,
+})
 
 // ── Digest Preferences ─────────────────────────────────────
 export const getDigestPreferences = () => request('/digest/preferences')
