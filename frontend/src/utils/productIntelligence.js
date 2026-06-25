@@ -222,3 +222,107 @@ export function observeStoryInteractedOnce({
     interactionType: payload.interaction_type,
   }), send, payload)
 }
+
+// ── Story impression observation (V3-1) ───────────────────────────────────────
+// A story card appeared on screen, as opposed to merely rendering into the DOM.
+// The honest successor to the old render-fired story_viewed: it shares the exact
+// canonical identity (story_id + story_type + team_id + surface + anon_id) and the
+// in-session dedupe, but fires from viewport observation rather than on render.
+
+// Approximate viewport visibility at which a card counts as "appeared".
+export const STORY_IMPRESSION_THRESHOLD = 0.5
+
+// Same payload shape as story_viewed (the on-screen presentation fact).
+export function buildStoryImpressionPayload(story, options = {}) {
+  return buildStoryViewedPayload(story, options)
+}
+
+export function storyImpressionObservationKey({
+  storyId = null,
+  storyType = null,
+  teamId = null,
+  surface = null,
+} = {}) {
+  return productObservationKey([
+    'story_impression',
+    cleanSurface(surface),
+    cleanTeamId(teamId),
+    cleanText(storyId),
+    cleanText(storyType),
+  ])
+}
+
+// A stable per-card key for wiring viewport refs. Null for any card that lacks a
+// canonical story identity (e.g. the league context card), so such cards are
+// never observed and never emit an impression.
+export function storyImpressionRefKey(story) {
+  const storyId = cleanText(storyValue(story, 'storyId', 'story_id', 'id'))
+  const storyType = cleanText(storyValue(story, 'storyType', 'story_type'))
+  if (!storyId || !storyType) return null
+  const teamId = cleanTeamId(storyValue(story, 'teamId', 'team_id'))
+  return [storyId, storyType, teamId == null ? 'none' : teamId].join('|')
+}
+
+export function observeStoryImpressionOnce({
+  story,
+  surface = null,
+  anonId = getOrCreateProductAnonId(),
+  send,
+} = {}) {
+  const payload = buildStoryImpressionPayload(story, { surface, anonId })
+  if (!payload) return Promise.resolve(false)
+  return sendOnce(storyImpressionObservationKey({
+    storyId: payload.story_id,
+    storyType: payload.story_type,
+    teamId: payload.team_id,
+    surface: payload.surface,
+  }), send, payload)
+}
+
+// Pure viewport-impression orchestrator, decoupled from React for testability.
+// observe(element, story) starts watching a card; when it reaches the threshold
+// the impression fires once (deduped via observeStoryImpressionOnce) and the
+// element is unobserved. IntersectionObserver is feature-detected — when it is
+// unavailable the tracker is an inert no-op (it never fires a false impression).
+// disconnect() tears everything down.
+export function createStoryImpressionTracker({
+  surface = null,
+  anonId = getOrCreateProductAnonId(),
+  send,
+  threshold = STORY_IMPRESSION_THRESHOLD,
+} = {}) {
+  if (typeof IntersectionObserver === 'undefined') {
+    return { supported: false, observe() {}, unobserve() {}, disconnect() {} }
+  }
+
+  const storyByElement = new Map()
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting || entry.intersectionRatio < threshold) continue
+      const element = entry.target
+      const story = storyByElement.get(element)
+      if (!story) continue
+      observer.unobserve(element)
+      storyByElement.delete(element)
+      observeStoryImpressionOnce({ story, surface, anonId, send })
+    }
+  }, { threshold })
+
+  return {
+    supported: true,
+    observe(element, story) {
+      if (!element || !story) return
+      storyByElement.set(element, story)
+      observer.observe(element)
+    },
+    unobserve(element) {
+      if (!element) return
+      storyByElement.delete(element)
+      observer.unobserve(element)
+    },
+    disconnect() {
+      storyByElement.clear()
+      observer.disconnect()
+    },
+  }
+}

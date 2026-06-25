@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { useStoryViewedObservations } from '../../hooks/useProductIntelligence'
+import { useStoryImpressionObservations } from '../../hooks/useProductIntelligence'
 import { getBullpenDashboard, recordStoryInteracted } from '../../utils/api'
 import { observeStoryInteractedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
@@ -64,9 +64,8 @@ export function StoriesView({
   const visible = filterStoryFeed(feed.items, activeFilter)
   const productLoaded = Boolean(dashboard) && !loading
 
-  useStoryViewedObservations({
+  const registerStoryImpression = useStoryImpressionObservations({
     enabled: productLoaded,
-    stories: visible,
     surface: 'stories',
   })
 
@@ -152,7 +151,11 @@ export function StoriesView({
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {visible.map((story, index) => (
-                  <FeedStoryCard key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`} story={story} />
+                  <FeedStoryCard
+                    key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`}
+                    story={story}
+                    impressionRef={registerStoryImpression(story)}
+                  />
                 ))}
               </div>
             )}
@@ -235,7 +238,7 @@ function StoryFeedEmptyState({ state, onReset }) {
 }
 
 // A feed entry with the club named when the story belongs to one.
-function FeedStoryCard({ story }) {
+function FeedStoryCard({ story, impressionRef }) {
   const tone = homeTone(story.tone)
   const hasDestination = Boolean(story.href)
   const hasTeam = story.teamId != null && Boolean(story.abbr)
@@ -294,11 +297,12 @@ function FeedStoryCard({ story }) {
   )
 
   if (!hasDestination) {
-    return <article className="card flex flex-col p-5">{inner}</article>
+    return <article ref={impressionRef} className="card flex flex-col p-5">{inner}</article>
   }
 
   return (
     <article
+      ref={impressionRef}
       className="card group relative flex flex-col p-5 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
     >
       <Link

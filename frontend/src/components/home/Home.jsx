@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
 import {
-  useStoryViewedObservations,
+  useStoryImpressionObservations,
   useTodayLoadedObservation,
 } from '../../hooks/useProductIntelligence'
 import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
@@ -180,24 +180,14 @@ export function HomeView({
   const productLoaded = Boolean(dashboard) && !loading && !urlTeamPending && !authLoading && !preferredTeamLoading
   const productSource = isDigestReturn ? 'digest' : 'direct'
   const storySurface = isDigestReturn ? 'digest_web' : 'home'
-  const presentedStories = useMemo(() => {
-    const items = []
-    const flagship = activeTeam ? teamHero : hero
-    if (flagship?.hasStory) items.push(flagship)
-    if (watchItems?.hasStories && Array.isArray(watchItems.items)) {
-      items.push(...watchItems.items)
-    }
-    return items
-  }, [activeTeam, hero, teamHero, watchItems])
 
   useTodayLoadedObservation({
     loaded: productLoaded,
     teamId: activeTeam?.team_id ?? activeTeam?.teamId ?? null,
     source: productSource,
   })
-  useStoryViewedObservations({
+  const registerStoryImpression = useStoryImpressionObservations({
     enabled: productLoaded,
-    stories: presentedStories,
     surface: storySurface,
   })
 
@@ -228,7 +218,7 @@ export function HomeView({
       <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
         What BaseballOS Sees Today
       </div>
-      <HeroStory hero={hero} />
+      <HeroStory hero={hero} impressionRef={registerStoryImpression(hero)} />
     </section>
   )
 
@@ -280,11 +270,11 @@ export function HomeView({
                 <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
                   What BaseballOS Sees Today
                 </div>
-                <HeroStory hero={teamHero} />
+                <HeroStory hero={teamHero} impressionRef={registerStoryImpression(teamHero)} />
               </section>
             </>
           )}
-          <BullpenStories stories={watchItems} showCta={false} />
+          <BullpenStories stories={watchItems} showCta={false} registerImpressionRef={registerStoryImpression} />
           <LeagueContext context={leagueContext} />
         </>
       )}
@@ -735,11 +725,11 @@ function Masthead({ masthead }) {
 
 // The flagship observation, told the way a baseball writer would lead a
 // column. Stories deliberately explores the observations behind and beyond it.
-function HeroStory({ hero }) {
+function HeroStory({ hero, impressionRef }) {
   const tone = homeTone(hero.tone)
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout bg-stadium-glow p-5 sm:p-7">
+    <div ref={impressionRef} className="relative overflow-hidden rounded-xl border border-dirt bg-dugout bg-stadium-glow p-5 sm:p-7">
       <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
       <div className="relative z-10">
         <div className="flex flex-wrap items-center gap-2">
