@@ -32,6 +32,7 @@ afterEach(() => {
 const {
   recordStoryImpression,
   recordStoryInteracted,
+  recordStoryTeamBoardOpened,
   recordStoryViewed,
   recordTodayLoaded,
   verifyMagicLink,
@@ -46,11 +47,13 @@ const {
   STORY_IMPRESSION_THRESHOLD,
   buildStoryImpressionPayload,
   buildStoryInteractedPayload,
+  buildStoryTeamBoardOpenedPayload,
   buildStoryViewedPayload,
   buildTodayLoadedPayload,
   createStoryImpressionTracker,
   observeStoryImpressionOnce,
   observeStoryInteractedOnce,
+  observeStoryTeamBoardOpened,
   observeStoryViewedOnce,
   observeTodayLoadedOnce,
   resetProductObservationDedupeForTests,
@@ -504,4 +507,71 @@ test('Home and Stories track impressions on screen, not story_viewed on render',
     assert.equal(src.includes('useStoryViewedObservations'), false)
     assert.ok(src.includes('useStoryImpressionObservations'))
   }
+})
+
+// ── V3-2: story_viewed-on-expand + story_team_board_opened ────────────────────
+
+test('story_team_board_opened payload mirrors the canonical story identity', () => {
+  const story = { storyId: '158:2026-06-22', storyType: 'coverage_pressure', teamId: 158 }
+  assert.deepEqual(
+    buildStoryTeamBoardOpenedPayload(story, { surface: 'home', anonId: 'anon:test' }),
+    buildStoryViewedPayload(story, { surface: 'home', anonId: 'anon:test' }),
+  )
+})
+
+test('observeStoryTeamBoardOpened fires on every click (one event per physical open, not deduped)', async () => {
+  const story = { storyId: '158:2026-06-22', storyType: 'coverage_pressure', teamId: 158 }
+  const calls = []
+  const send = async (payload) => { calls.push(payload) }
+  assert.equal(await observeStoryTeamBoardOpened({ story, surface: 'stories', anonId: 'anon:test', send }), true)
+  assert.equal(await observeStoryTeamBoardOpened({ story, surface: 'stories', anonId: 'anon:test', send }), true)
+  assert.equal(calls.length, 2)
+  assert.deepEqual(calls[0], {
+    anon_id: 'anon:test', team_id: 158, story_id: '158:2026-06-22',
+    story_type: 'coverage_pressure', surface: 'stories',
+  })
+})
+
+test('observeStoryTeamBoardOpened skips stories without a canonical identity', async () => {
+  const calls = []
+  const send = async (payload) => { calls.push(payload) }
+  assert.equal(await observeStoryTeamBoardOpened({
+    story: { storyId: '', storyType: 'coverage_pressure', teamId: 1 },
+    surface: 'stories', anonId: 'anon:test', send,
+  }), false)
+  assert.equal(calls.length, 0)
+})
+
+test('recordStoryTeamBoardOpened posts to the story-event endpoint with its event_name', async () => {
+  const storage = createStorage()
+  installWindow(storage)
+  const calls = installFetch(async () => ({ json: { ok: true } }))
+
+  await recordStoryTeamBoardOpened({
+    team_id: 158, story_id: '158:2026-06-22', story_type: 'coverage_pressure', surface: 'stories',
+  })
+
+  assert.deepEqual(calls.map(call => call.url), ['/api/product/story-event'])
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    anon_id: readProductAnonId(storage),
+    team_id: 158,
+    story_id: '158:2026-06-22',
+    story_type: 'coverage_pressure',
+    surface: 'stories',
+    event_name: 'story_team_board_opened',
+  })
+})
+
+test('Stories wires expand to story_viewed and the CTA to story_team_board_opened, never story_interacted', () => {
+  const src = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
+  assert.ok(src.includes('observeStoryViewedOnce'))
+  assert.ok(src.includes('observeStoryTeamBoardOpened'))
+  assert.equal(src.includes('observeStoryInteractedOnce'), false)
+  assert.equal(src.includes('recordStoryInteracted'), false)
+})
+
+test('Home wires story_team_board_opened on its story CTAs', () => {
+  const src = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+  assert.ok(src.includes('observeStoryTeamBoardOpened'))
+  assert.ok(src.includes('recordStoryTeamBoardOpened'))
 })

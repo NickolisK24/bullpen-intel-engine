@@ -746,6 +746,14 @@ export const recordStoryImpression = (payload = {}) => request('/product/story-e
   silent: true,
 })
 
+// V3-2: story_team_board_opened posts through the same owned story-event endpoint.
+// Fires once per physical click (not deduped) — each Team Board open is a signal.
+export const recordStoryTeamBoardOpened = (payload = {}) => request('/product/story-event', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_team_board_opened' })),
+  silent: true,
+})
+
 // ── Digest Preferences ─────────────────────────────────────
 export const getDigestPreferences = () => request('/digest/preferences')
 

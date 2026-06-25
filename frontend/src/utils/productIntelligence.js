@@ -326,3 +326,28 @@ export function createStoryImpressionTracker({
     },
   }
 }
+
+// ── Story team-board open (V3-2) ──────────────────────────────────────────────
+// The reader followed a story's primary CTA into the Team Board — the high-intent
+// story → team-board conversion. Unlike impressions/views (deduped once per
+// session), this fires once per physical click: each open is a distinct intent
+// signal, so it is intentionally NOT routed through the session dedupe.
+
+export function buildStoryTeamBoardOpenedPayload(story, options = {}) {
+  return buildStoryViewedPayload(story, options)
+}
+
+export function observeStoryTeamBoardOpened({
+  story,
+  surface = null,
+  anonId = getOrCreateProductAnonId(),
+  send,
+} = {}) {
+  const payload = buildStoryTeamBoardOpenedPayload(story, { surface, anonId })
+  if (!payload || typeof send !== 'function') return Promise.resolve(false)
+  try {
+    return Promise.resolve(send(payload)).then(() => true).catch(() => false)
+  } catch {
+    return Promise.resolve(false)
+  }
+}

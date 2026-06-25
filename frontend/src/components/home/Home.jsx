@@ -6,7 +6,8 @@ import {
   useStoryImpressionObservations,
   useTodayLoadedObservation,
 } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
+import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams, recordStoryTeamBoardOpened } from '../../utils/api'
+import { observeStoryTeamBoardOpened } from '../../utils/productIntelligence'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
@@ -218,7 +219,11 @@ export function HomeView({
       <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
         What BaseballOS Sees Today
       </div>
-      <HeroStory hero={hero} impressionRef={registerStoryImpression(hero)} />
+      <HeroStory
+        hero={hero}
+        impressionRef={registerStoryImpression(hero)}
+        onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: hero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+      />
     </section>
   )
 
@@ -270,11 +275,20 @@ export function HomeView({
                 <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
                   What BaseballOS Sees Today
                 </div>
-                <HeroStory hero={teamHero} impressionRef={registerStoryImpression(teamHero)} />
+                <HeroStory
+                  hero={teamHero}
+                  impressionRef={registerStoryImpression(teamHero)}
+                  onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: teamHero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+                />
               </section>
             </>
           )}
-          <BullpenStories stories={watchItems} showCta={false} registerImpressionRef={registerStoryImpression} />
+          <BullpenStories
+            stories={watchItems}
+            showCta={false}
+            registerImpressionRef={registerStoryImpression}
+            onTeamBoardOpen={(story) => observeStoryTeamBoardOpened({ story, surface: storySurface, send: recordStoryTeamBoardOpened })}
+          />
           <LeagueContext context={leagueContext} />
         </>
       )}
@@ -725,7 +739,7 @@ function Masthead({ masthead }) {
 
 // The flagship observation, told the way a baseball writer would lead a
 // column. Stories deliberately explores the observations behind and beyond it.
-function HeroStory({ hero, impressionRef }) {
+function HeroStory({ hero, impressionRef, onTeamBoardOpen }) {
   const tone = homeTone(hero.tone)
 
   return (
@@ -790,6 +804,7 @@ function HeroStory({ hero, impressionRef }) {
           {hero.team?.href && (
             <Link
               to={hero.team.href}
+              onClick={onTeamBoardOpen}
               className="rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
             >
               Step inside the {hero.team.abbr || hero.team.teamName} pen →
