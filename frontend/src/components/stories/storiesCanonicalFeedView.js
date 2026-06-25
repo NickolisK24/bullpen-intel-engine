@@ -100,6 +100,7 @@ function toFeedCard(item) {
     title: cleanText(item.headline) || 'Bullpen story',
     narrative: cleanText(item.narrative),
     body: cleanText(item.narrative),
+    blueprint: Array.isArray(item.blueprint) ? item.blueprint : [],
     disclosureNote: null,
     href: teamHref(item),
     cta: 'Open the team board',

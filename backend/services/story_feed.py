@@ -24,6 +24,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from services.story_blueprint_v1 import build_story_blueprint
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import (
     TYPE_BRIDGE_INSTABILITY,
@@ -329,6 +330,9 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'quality_status': QUALITY_SUPPRESSED,
         # Populated at feed assembly, which has the prior-snapshot context.
         'continuity': None,
+        # V2 Story Blueprint (Phase A): the 5-section teaching shape. Empty for a
+        # suppressed/neutral item; populated below for an available story.
+        'blueprint': [],
     }
 
     if not story_available:
@@ -360,6 +364,13 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'share_title': _share_title(team_name, story_type_label, headline or None),
         'share_summary': _share_summary(beats),
         'quality_status': QUALITY_PUBLISHED,
+        # Reframe the authored beats into the 5-section teaching blueprint. This
+        # adds no facts: 'noticed'/'evidence'/'tomorrow' reuse the validated beat
+        # prose; the surface + lesson lines are deterministic, fact-free public
+        # voice. Backward-compatible (additive field).
+        'blueprint': build_story_blueprint(
+            story_type=story_type, beats=beats, stable_parts=(item['story_id'],),
+        ),
     })
 
     # A positive read should publish under a positive beat. Only if one is ever
