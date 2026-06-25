@@ -89,6 +89,8 @@ function leagueTone(mode) {
 // One canonical published story -> a Stories feed card (FeedStoryCard shape).
 function toFeedCard(item) {
   return {
+    storyId: item.story_id || null,
+    storyType: item.story_type || null,
     teamId: item.team_id != null ? item.team_id : null,
     teamName: item.team_name || null,
     abbr: item.team_abbreviation || null,

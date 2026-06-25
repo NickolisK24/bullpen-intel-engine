@@ -153,6 +153,7 @@ digest seams.
 - **Trigger:** `POST /api/product/today-loaded` (owned, anonymous-safe; client beacon on Today-view mount).
 - **Owner:** Product ingestion API (`api/product_events.py`).
 - **Payload:** none — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = digest | direct | organic`.
+- **Frontend Activation:** D2A-4 sends this from Today after the dashboard has loaded and team/auth resolution is no longer pending. The client dedupes by `source + team_id` during the browser session and includes the stable pseudonymous `anon_id`.
 - **Introduced Phase:** D2A-2.
 - **Related Metrics:** Arrival / return-to-product rate; an input to a future Understanding definition.
 - **Version:** 1.
@@ -164,6 +165,7 @@ digest seams.
 - **Trigger:** `POST /api/auth/verify` success.
 - **Owner:** Auth API (`api/auth.py`).
 - **Payload:** `{new_user}` — columns: `user_id`, `anon_id` (optional; the pre-auth → user bridge), `source=sign_in`.
+- **Frontend Activation:** D2A-4 includes the same stable pseudonymous `anon_id` in the magic-link verify request so pre-auth Today/story observations can be bridged after authentication. The id is generated client-side and contains no PII.
 - **Introduced Phase:** D2A-2.
 - **Related Metrics:** Sign-in volume, new vs returning, anon→auth bridge coverage.
 - **Version:** 1.
@@ -186,6 +188,7 @@ digest seams.
 - **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe; client beacon when a story renders).
 - **Owner:** Product ingestion API (`api/product_events.py`).
 - **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** D2A-4 sends this only for rendered canonical story cards/flagships carrying backend `story_id` and `story_type`. Home digest returns use `surface=digest_web`; regular Today uses `home`; Stories uses `stories`. The client dedupes by `surface + team_id + story_id + story_type` during the browser session.
 - **Introduced Phase:** D2A-3.
 - **Related Metrics:** Story-presentation volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
 - **Version:** 1.

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
+import { useStoryViewedObservations } from '../../hooks/useProductIntelligence'
 import { getBullpenDashboard } from '../../utils/api'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
@@ -60,6 +61,13 @@ export function StoriesView({
   const activeCount = counts[activeFilter] ?? 0
   const activeLabel = getActiveStoryFilterLabel(activeFilter, activeCount)
   const visible = filterStoryFeed(feed.items, activeFilter)
+  const productLoaded = Boolean(dashboard) && !loading
+
+  useStoryViewedObservations({
+    enabled: productLoaded,
+    stories: visible,
+    surface: 'stories',
+  })
 
   return (
     <div className="p-4 sm:p-5 lg:p-6 max-w-7xl mx-auto">

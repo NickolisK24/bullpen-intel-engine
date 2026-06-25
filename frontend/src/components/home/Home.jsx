@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
+import {
+  useStoryViewedObservations,
+  useTodayLoadedObservation,
+} from '../../hooks/useProductIntelligence'
 import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
 import {
   buildPreferredTeamHref,
@@ -50,6 +54,7 @@ export default function Home() {
     promptDismissed,
     setPreferredTeam,
     dismissPrompt,
+    loading: preferredTeamLoading,
     authLoading,
     authenticated,
   } = usePreferredTeamPreference(teamList)
@@ -110,6 +115,8 @@ export default function Home() {
       viewTeam={activeTeam}
       teamRelationship={teamRelationship}
       authenticated={authenticated}
+      authLoading={authLoading}
+      preferredTeamLoading={preferredTeamLoading}
       isDigestReturn={todayView.isDigestReturn && todayView.urlTeamValid}
       urlTeamPending={todayView.urlTeamPending}
       preferredTeamPromptDismissed={promptDismissed}
@@ -139,6 +146,8 @@ export function HomeView({
   viewTeam = preferredTeam,
   teamRelationship = relationshipFor({ viewTeam: preferredTeam, followedTeam: preferredTeam }),
   authenticated = false,
+  authLoading = false,
+  preferredTeamLoading = false,
   isDigestReturn = false,
   urlTeamPending = false,
   preferredTeamPromptDismissed = true,
@@ -168,6 +177,29 @@ export function HomeView({
   const heroTeam = activeTeam || preferredTeam
   const teamHero = getCanonicalHeroStory(dashboard, { preferredTeam: heroTeam })
   const showFirstVisitPicker = !activeTeam && !urlTeamPending && !preferredTeamPromptDismissed
+  const productLoaded = Boolean(dashboard) && !loading && !urlTeamPending && !authLoading && !preferredTeamLoading
+  const productSource = isDigestReturn ? 'digest' : 'direct'
+  const storySurface = isDigestReturn ? 'digest_web' : 'home'
+  const presentedStories = useMemo(() => {
+    const items = []
+    const flagship = activeTeam ? teamHero : hero
+    if (flagship?.hasStory) items.push(flagship)
+    if (watchItems?.hasStories && Array.isArray(watchItems.items)) {
+      items.push(...watchItems.items)
+    }
+    return items
+  }, [activeTeam, hero, teamHero, watchItems])
+
+  useTodayLoadedObservation({
+    loaded: productLoaded,
+    teamId: activeTeam?.team_id ?? activeTeam?.teamId ?? null,
+    source: productSource,
+  })
+  useStoryViewedObservations({
+    enabled: productLoaded,
+    stories: presentedStories,
+    surface: storySurface,
+  })
 
   const handleSelectTeam = (team) => {
     if (team) onSelectPreferredTeam(team)
