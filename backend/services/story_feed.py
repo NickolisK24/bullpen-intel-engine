@@ -21,6 +21,7 @@ rewritten into upbeat copy.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -48,6 +49,8 @@ from services.story_four_beat_interpreter_v1 import (
 CAPABILITY = 'baseballos_canonical_story_v1'
 VERSION = '2026-06-22.phase_1'
 SOURCE_ENGINE = 'story_intelligence_service_v1'
+
+logger = logging.getLogger('baseballos.story_feed')
 
 QUALITY_PUBLISHED = 'published'
 QUALITY_REVIEW = 'review'
@@ -677,7 +680,7 @@ def build_canonical_story_feed(
         reason = story.get('suppression_reason') or 'unknown'
         suppression_reasons[reason] = suppression_reasons.get(reason, 0) + 1
 
-    return {
+    feed = {
         'capability': CAPABILITY,
         'version': VERSION,
         'source_engine': SOURCE_ENGINE,
@@ -697,6 +700,25 @@ def build_canonical_story_feed(
             prior_league_context=prior_league_context,
         ),
     }
+
+    # Editorial Review (report-only, internal): automatically evaluate every
+    # generated story against the Storytelling Manifesto and log a compact
+    # internal summary. It never mutates the feed, never suppresses, and never
+    # changes publication — fault-isolated so a reviewer error cannot break the
+    # feed, and the report is never added to the published payload.
+    _log_editorial_review(feed)
+
+    return feed
+
+
+def _log_editorial_review(feed: dict) -> None:
+    try:
+        from services.editorial_review_v1 import review_canonical_feed
+        review = review_canonical_feed(feed)
+        if review['warn_count']:
+            logger.info('[story_feed] %s', review['summary'])
+    except Exception:  # report-only telemetry must never affect publication
+        logger.debug('[story_feed] editorial review skipped', exc_info=True)
 
 
 __all__ = [
