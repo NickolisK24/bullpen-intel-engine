@@ -20,12 +20,11 @@ It is deterministic and conservative:
     each choice is a stable hash of the story id and slot.
 
 It varies the headline, the "what everyone saw" opener, the "why it matters"
-lesson, and the fact-free Evidence meaning sentence. The "why it matters
-tomorrow" carry line is intentionally left alone — it mirrors the constraint beat
-and is mostly name-bearing — so the blueprint never diverges from the underlying
-beats. The factual Evidence sentences (numbers and names) are never touched here;
-only the closing meaning line is swapped, and only for another approved line from
-the same bank.
+lesson, the "why it matters tomorrow" watch cue, and the fact-free Evidence
+meaning sentence — all fact-free approved lines it can swap wholesale. The
+factual Evidence sentences (numbers and names) are never touched here; only the
+closing meaning line is swapped, and only for another approved line from the same
+bank.
 """
 
 from __future__ import annotations
@@ -39,6 +38,7 @@ from services.story_voice_library_v1 import (
     PURPOSE_LESSON,
     PURPOSE_OPENING,
     PURPOSE_SURFACE,
+    PURPOSE_WATCH,
     approved_sentence_forms,
     contains_banned_public_language,
     contains_denied_public_phrase,
@@ -52,6 +52,7 @@ VERSION = '2026-06-25.v1'
 SLOT_HEADLINE = 'headline'
 SLOT_SAW = 'what_everyone_saw'
 SLOT_WHY = 'why_it_matters'
+SLOT_TOMORROW = 'why_it_matters_tomorrow'
 SLOT_EVIDENCE = 'evidence'
 
 # Flat lookup from an approved Evidence meaning line to the bank it belongs to.
@@ -68,6 +69,7 @@ VARIETY_SLOTS = (
     (SLOT_HEADLINE, PURPOSE_OPENING),
     (SLOT_SAW, PURPOSE_SURFACE),
     (SLOT_WHY, PURPOSE_LESSON),
+    (SLOT_TOMORROW, PURPOSE_WATCH),
 )
 
 # Fields fillable from a canonical story without player names or new data. Forms
@@ -290,6 +292,7 @@ __all__ = [
     'SLOT_HEADLINE',
     'SLOT_SAW',
     'SLOT_WHY',
+    'SLOT_TOMORROW',
     'SLOT_EVIDENCE',
     'VARIETY_SLOTS',
     'apply_feed_variety',

@@ -78,7 +78,10 @@ def test_voice_library_keeps_best_story_curiosity_forms_available():
     coverage_forms = approved_sentence_forms(BEAT_COVERAGE_PRESSURE)
     sustainability_forms = approved_sentence_forms(BEAT_SUSTAINABILITY_QUESTION)
 
-    assert 'The next close game still points toward {names}' in route_forms
+    # Route change is a change story: openings lead with the shift, never
+    # "remain"/"still" continuity language, and avoid the internal "leverage route".
+    assert 'The late innings now run through {names}' in route_forms
+    assert not any('remain' in f.lower() or 'still' in f.lower() or 'leverage route' in f.lower() for f in route_forms)
     assert 'The game keeps arriving at the bullpen sooner than the baseline' in coverage_forms
     assert 'The workload continues to land in the same pocket' in sustainability_forms
 

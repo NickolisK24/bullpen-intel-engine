@@ -321,7 +321,7 @@ def _route_change_headline(frame, written_story):
             ) if _clean_text(_dict(frame).get('team_name')) else 'This bullpen',
             names=names,
         )
-        return library_headline or f'The roster changed while the route still runs through {names}.'
+        return library_headline or f'The roster changed, and the late innings now run through {names}.'
     return _dict(written_story).get('headline')
 
 

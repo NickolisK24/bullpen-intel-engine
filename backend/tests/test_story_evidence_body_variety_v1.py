@@ -88,7 +88,9 @@ def test_evidence_meaning_diversifies_across_keys():
 def test_no_variety_key_is_canonical_variant():
     # Backward-compatible: variant 0 (canonical) when no key is supplied.
     text = build_evidence_case(_cov_frame())
-    assert text.startswith('The bullpen has been entering before the sixth in 66% of recent games')
+    # Coverage now leads with the change-from-baseline (canonical variant 0), not
+    # the early-entry rate the Noticed section states.
+    assert text.startswith('Starts have shortened to 4.4 innings from 5.6 over the prior two weeks')
     assert _meaning_of(text) == MEANING_VARIANTS[TYPE_ROTATION_PRESSURE][0]
 
 

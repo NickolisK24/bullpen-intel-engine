@@ -31,6 +31,11 @@ PURPOSE_FORWARD = 'forward'
 # evergreen public language — no team facts, no within-game claims, no prediction.
 PURPOSE_SURFACE = 'surface'
 PURPOSE_LESSON = 'lesson'
+# Final Story Polish Pass: the reader-facing "what to watch next" carry line
+# ("why it matters tomorrow"). Fact-free, observational watch cues — no
+# prediction, no "will", no within-game claim — so the feed coordinator can
+# de-duplicate them across a same-beat cluster like the surface/lesson lines.
+PURPOSE_WATCH = 'watch'
 
 DENIED_PUBLIC_PHRASES = (
     'sit at the front of',
@@ -65,20 +70,20 @@ BANNED_PUBLIC_LANGUAGE = (
 
 VOICE_LIBRARY = {
     BEAT_ROUTE_CHANGE: {
+        # Route change is always a change story, so the headline leads with the
+        # shift, never "remain"/"still" continuity language, and avoids the
+        # internal-ish "leverage route" phrase.
         PURPOSE_OPENING: (
-            '{names} remain the first names the game reaches for',
-            'The late innings still begin with {names}',
-            'The bullpen continues to bend toward {names}',
-            '{names} remain the center of the leverage route',
-            'The next close game still points toward {names}',
-            '{names} remain the hinge of the bullpen plan',
-            "{possessive} leverage plan still starts with {names}",
-            'When the game tightens, {names} still shape the first call',
-            '{names} remain the clearest late-game answers',
-            "{possessive} close-game route still runs through {names}",
-            '{names} still organize the late innings',
-            "{possessive} bullpen has changed around the same leverage center",
-            'The roster movement has not moved the late-game center away from {names}',
+            'The late innings now run through {names}',
+            'The important outs now run through {names}',
+            'The back of the bullpen now runs through {names}',
+            "{possessive} late-game order has been reshaped around {names}",
+            'The game now reaches for {names} late',
+            'When the game tightens, the call now goes to {names}',
+            "{possessive} closing order now runs through {names}",
+            'The late-inning order has shifted toward {names}',
+            'The bullpen now leans on {names} for the biggest outs',
+            '{names} are now at the center of the late innings',
         ),
     },
     BEAT_COVERAGE_PRESSURE: {
@@ -363,6 +368,61 @@ for _beat, _forms in LESSON_LINES.items():
     VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_LESSON] = _forms
 
 
+# Final Story Polish Pass: reader-facing "what to watch next" carry lines for the
+# blueprint's "why it matters tomorrow" section. Fact-free and observational
+# ("watch how / whether / which") — never a prediction, never "will", no
+# within-game claim — so they read as a payoff beat and the feed coordinator can
+# de-duplicate them across a same-beat cluster.
+WATCH_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'Next close game, watch which arms get the biggest outs now.',
+        'Watch whether the new late-inning order holds.',
+        'Watch who the manager calls in the eighth, not just the ninth.',
+        'Watch whether the late innings keep running through the new group.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Next game, watch how early the starter hands the ball to the bullpen.',
+        'Watch how many innings land on the bullpen before the sixth.',
+        'Watch whether the rotation gives the bullpen a lighter night.',
+        'Next start, watch the inning the starter comes out.',
+        'Watch how much of the middle the bullpen has to cover.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'Next long game, watch how fast the usable arms run out.',
+        'Watch how few arms the manager actually has to choose from late.',
+        'Watch whether a fresh arm is even left when the game stretches.',
+        'Watch how quickly a long night thins the bullpen.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'Watch whether the late innings keep funneling to the same few arms.',
+        'Watch whether the workload finally spreads across the bullpen.',
+        'Next week, watch how often the same names are back out there.',
+        'Watch whether anyone new starts sharing the late-inning load.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'Next close game, watch how many different rested arms the manager uses.',
+        'Watch the manager mix and match late instead of leaning on one arm.',
+        'Watch how deep into the bullpen a tight game can go.',
+        'Watch whether the late innings stay spread across several arms.',
+    ),
+    BEAT_TRUST_LANE: (
+        'Next tight game, watch how small the trusted group really is.',
+        'Watch whether anyone new earns a high-leverage out.',
+        'Watch how quickly the late innings come back to the same arm.',
+        'Watch who the manager trusts when the lead is thin.',
+    ),
+    BEAT_BRIDGE: (
+        'Next game, watch the path to the closer, not just the closer.',
+        'Watch the sixth and seventh innings, where the trouble is.',
+        'Watch how the bullpen tries to bridge to its late arms.',
+        'Watch whether the middle innings hold long enough to reach the back.',
+    ),
+}
+
+for _beat, _forms in WATCH_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_WATCH] = _forms
+
+
 # Approved openings a forward clause may use. The closing beat is recognized by
 # these (not only "If …"), so varied governed shapes are preserved downstream.
 FORWARD_CLAUSE_OPENERS = (
@@ -532,7 +592,9 @@ __all__ = [
     'PURPOSE_LESSON',
     'PURPOSE_OPENING',
     'PURPOSE_SURFACE',
+    'PURPOSE_WATCH',
     'SURFACE_FRAMING_LINES',
+    'WATCH_LINES',
     'VERSION',
     'approved_sentence_forms',
     'contains_banned_public_language',
