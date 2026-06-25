@@ -24,6 +24,7 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     TYPE_TRUST_LANE_PRESSURE,
 )
+from services.story_reasoning_engine_v1 import build_editorial_intent
 from services.story_voice_library_v1 import (
     BEAT_AVAILABILITY_DEPTH,
     BEAT_BRIDGE,
@@ -1050,12 +1051,26 @@ WRITERS = {
 }
 
 
-def write_story_frame(frame):
-    """Write one deterministic BaseballOS observation from one construction frame."""
+def write_story_frame(frame, *, editorial_intent=None):
+    """Write one deterministic BaseballOS observation from one construction frame.
+
+    ``editorial_intent`` is the Story Reasoning Engine's intent object for this
+    frame — the deterministic reasoning the prose embodies (the surface read it
+    corrects, the structural truth, the supporting evidence, the lesson, and the
+    reader shift). When a caller does not supply one, it is built here from the
+    same frame, so every written observation carries it. It is internal only
+    (the writer output is never serialized publicly) and never alters the prose,
+    which keeps existing output byte-stable and backward-compatible.
+    """
     frame = _dict(frame)
     observation_type = frame.get('observation_type')
     writer = WRITERS.get(observation_type)
     written = writer(frame) if writer else _sections()
+    if editorial_intent is None:
+        editorial_intent = build_editorial_intent(
+            observation_type=observation_type,
+            frame=frame,
+        )
     output = {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -1067,6 +1082,7 @@ def write_story_frame(frame):
         'severity': frame.get('severity'),
         'written_observation': written,
         'source_frame': frame,
+        'editorial_intent': editorial_intent,
         'limitations': list(frame.get('limitations') or []),
     }
     output['validation'] = validate_written_observation(output)
