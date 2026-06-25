@@ -120,3 +120,45 @@ test('home hero adapter passes the backend blueprint through', () => {
   assert.equal(hero.hasStory, true)
   assert.deepEqual(hero.blueprint, SECTIONS)
 })
+
+
+// ── V3-2: collapse / expand ───────────────────────────────────────────────────
+
+test('collapsible StoryBlueprint collapses to the lead-in with a Read the full read control', () => {
+  const html = renderToStaticMarkup(React.createElement(StoryBlueprint, {
+    sections: SECTIONS,
+    collapsible: true,
+  }))
+  // The lead-in (what everyone saw + what BaseballOS noticed) stays visible.
+  assert.ok(htmlIncludes(html, 'What everyone saw'))
+  assert.ok(htmlIncludes(html, 'What BaseballOS noticed'))
+  // Evidence / why it matters / why it matters tomorrow are hidden until expanded.
+  assert.equal(htmlIncludes(html, 'Evidence'), false)
+  assert.equal(htmlIncludes(html, 'Why it matters'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen workload is borrowed, not free.'), false)
+  // Accessible, collapsed expand control.
+  assert.ok(htmlIncludes(html, 'Read the full read'))
+  assert.ok(htmlIncludes(html, 'type="button"'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="false"'))
+})
+
+test('collapsible StoryBlueprint with initialExpanded shows every section and Show less', () => {
+  const html = renderToStaticMarkup(React.createElement(StoryBlueprint, {
+    sections: SECTIONS,
+    collapsible: true,
+    initialExpanded: true,
+  }))
+  for (const section of SECTIONS) {
+    assert.ok(htmlIncludes(html, section.label), section.label)
+  }
+  assert.ok(htmlIncludes(html, 'Bullpen workload is borrowed, not free.'))
+  assert.ok(htmlIncludes(html, 'Show less'))
+  assert.ok(htmlIncludes(html, 'aria-expanded="true"'))
+})
+
+test('non-collapsible StoryBlueprint shows every section with no toggle', () => {
+  const html = renderToStaticMarkup(React.createElement(StoryBlueprint, { sections: SECTIONS }))
+  assert.ok(htmlIncludes(html, 'Why it matters tomorrow'))
+  assert.equal(htmlIncludes(html, 'Read the full read'), false)
+  assert.equal(htmlIncludes(html, 'aria-expanded'), false)
+})

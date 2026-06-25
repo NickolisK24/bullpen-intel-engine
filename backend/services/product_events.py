@@ -89,11 +89,20 @@ STORY_IMPRESSION = 'story_impression'
 
 PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED, STORY_IMPRESSION)
 
+# ── Story team-board open (V3-2) ──────────────────────────────────────────────
+# The reader followed a story's primary CTA into the Team Board — the high-intent
+# story → team-board conversion. It is the explicit successor to the generic
+# story_interacted(select) the Stories feed used to emit; that legacy event is no
+# longer emitted for Team Board opens. Fires once per physical click (NOT deduped
+# per session — each open is a distinct intent signal). Grouped under the
+# interaction events below.
+STORY_TEAM_BOARD_OPENED = 'story_team_board_opened'
+
 # Story-event names accepted by the owned generic /story-event ingestion
 # endpoint. A small owned allowlist; an unrecognized name records nothing
-# (best-effort, never fabricated). Phase V3-1 accepts story_impression only;
-# later V3 phases extend this as new story behaviors are defined.
-STORY_EVENT_NAMES = (STORY_IMPRESSION,)
+# (best-effort, never fabricated). Extended per V3 phase as new story behaviors
+# are defined (V3-1: story_impression; V3-2: + story_team_board_opened).
+STORY_EVENT_NAMES = (STORY_IMPRESSION, STORY_TEAM_BOARD_OPENED)
 
 # ── Product interaction observation (D2A-7) ───────────────────────────────────
 # A user intentionally performed an explicit interaction with a rendered story
@@ -101,7 +110,7 @@ STORY_EVENT_NAMES = (STORY_IMPRESSION,)
 # interaction occurred — never engagement, interest, completion, or understanding.
 STORY_INTERACTED = 'story_interacted'
 
-PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED,)
+PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED, STORY_TEAM_BOARD_OPENED)
 
 # ── Digest deliverability (D2A-7, provider-backed) ────────────────────────────
 # Facts reported by the email provider (Resend) about a sent digest's fate. They

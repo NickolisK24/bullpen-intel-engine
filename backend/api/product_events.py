@@ -7,7 +7,8 @@ into the canonical Product Event log:
   • POST /api/product/story-viewed     (D2A-3) — a story was presented to the user.
   • POST /api/product/story-interacted (D2A-7) — a story was explicitly interacted with.
   • POST /api/product/story-event      (V3-1)  — an owned story observation under an
-                                        allowlisted event_name (V3-1: story_impression).
+                                        allowlisted event_name (V3-1: story_impression;
+                                        V3-2: + story_team_board_opened).
 
 Future product-behavior facts can be added here without new infrastructure.
 
@@ -122,13 +123,13 @@ def story_event():
     """Record an owned story observation under an allowlisted event_name. Always 200.
 
     The single generic seam for V3 story observations. The client supplies an
-    ``event_name`` (Phase V3-1: ``story_impression`` only) plus the canonical story
-    descriptors. An unrecognized or missing event_name records nothing — the call
-    is best-effort and fault-isolated, still returns 200, and never fabricates an
-    event. Associates the signed-in user when present; otherwise an anonymous
-    (optionally anon_id-tagged) observation. ``story_impression`` is the honest
-    successor to the old render-fired story_viewed: it means the card actually
-    appeared on screen, not merely that it was rendered.
+    ``event_name`` (V3-1: ``story_impression``; V3-2: ``story_team_board_opened``)
+    plus the canonical story descriptors. An unrecognized or missing event_name
+    records nothing — the call is best-effort and fault-isolated, still returns
+    200, and never fabricates an event. Associates the signed-in user when present;
+    otherwise an anonymous (optionally anon_id-tagged) observation.
+    ``story_impression`` means the card appeared on screen; ``story_team_board_opened``
+    means the reader followed the story's primary CTA into the Team Board.
     """
     data = request.get_json(silent=True) or {}
     event_name = normalize_story_event_name(data.get('event_name'))
