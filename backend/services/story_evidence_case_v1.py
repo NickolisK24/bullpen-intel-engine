@@ -272,19 +272,18 @@ def _optionality_strength(frame: dict) -> list:
 
 
 def _stable_core(frame: dict) -> list:
+    # Lead with the workload share (a number the "noticed" section does not give)
+    # rather than restating "it is the same trusted group as before", which the
+    # noticed section already says.
     head = _facts(frame, 'headline_facts')
-    base = _facts(frame, 'baseline_facts')
     names = _join_names(head.get('current_operational_core'))
     pct = _num(head.get('core_stability_pct'))
-    previous = base.get('previous_operational_core')
 
     parts = []
     if names and pct is not None:
         parts.append(f'{names} have handled {_fmt(pct)}% of the recent late-inning work')
     elif names:
         parts.append(f'The late innings have run through {names}')
-    if previous:
-        parts.append('It is the same trusted group as before')
     return parts
 
 
@@ -332,43 +331,54 @@ def _depth_pressure(frame: dict) -> list:
 
 
 def _trust_lane_pressure(frame: dict) -> list:
+    # The "noticed" section already states the available-vs-clean count contrast,
+    # so the case leads from a different angle: who the trusted lane actually is,
+    # then how many of the rest are working back from recent outings.
     obs = _facts(frame, 'observation_facts')
     cause = _facts(frame, 'cause_facts')
     available = _intval(obs.get('available_arms_count'))
     clean = _intval(obs.get('clean_workload_options_count'))
+    secondary = _intval(obs.get('secondary_options_count'))
     clean_names = _join_names(cause.get('clean_workload_options'))
 
     parts = []
-    if available is not None and clean is not None:
+    if clean_names:
+        parts.append(f'The dependable late work runs through {clean_names}')
+        if secondary:
+            parts.append(
+                f'{secondary} more {_arm(secondary)} {_be(secondary)} available '
+                f'but working back from recent outings'
+            )
+    elif available is not None and clean is not None:
+        # No trusted arm to name: fall back to the count contrast.
         parts.append(
             f'The board lists {available} available {_arm(available)}, '
             f'but only {clean} {_be(clean)} clean and rested for the late innings'
         )
-    if clean_names:
-        parts.append(f'The dependable late work runs through {clean_names}')
     return parts
 
 
 def _bridge_instability(frame: dict) -> list:
+    # The "noticed" section already states the settled core, the volatile-middle
+    # count, and the early-entry rate. The case leads from a different angle: how
+    # few clean bridge arms there are, then the innings the bullpen covers to get
+    # to the late group.
     obs = _facts(frame, 'observation_facts')
-    head = _facts(frame, 'headline_facts')
-    core = _join_names(head.get('current_operational_core'))
-    volatile = _intval(obs.get('volatile_middle_count'))
-    early = _num(obs.get('early_bullpen_entry_rate'))
+    cause = _facts(frame, 'cause_facts')
+    clean = _intval(obs.get('clean_workload_options_count'))
     coverage = _num(obs.get('bullpen_coverage_ip_7d'))
+    monitor = _intval(cause.get('monitor_arms_count'))
+    limited = _intval(cause.get('limited_arms_count'))
 
     parts = []
-    if core and volatile is not None:
-        parts.append(
-            f'The late-game core — {core} — is settled, but the path to it runs through '
-            f'{volatile} unsettled middle {_arm(volatile)}'
-        )
-    elif volatile is not None:
-        parts.append(f'A settled late group sits behind {volatile} unsettled middle {_arm(volatile)}')
-    if early is not None:
-        parts.append(f'Starters are handing off early, entering before the sixth in {_fmt(early)}% of recent games')
-    elif coverage is not None:
-        parts.append(f'The bullpen is covering {_fmt(coverage)} innings a game to reach them')
+    if clean == 0:
+        parts.append('Not one fully rested arm is available to bridge the gap')
+    elif clean is not None:
+        parts.append(f'Only {clean} clean middle {_arm(clean)} {_be(clean)} rested to bridge the gap')
+    if coverage is not None:
+        parts.append(f'The bullpen is covering {_fmt(coverage)} innings a game just to reach them')
+    elif monitor is not None and limited is not None:
+        parts.append(f'The bridge is leaning on {monitor} watch-list and {limited} limited {_arm(limited)}')
     return parts
 
 
