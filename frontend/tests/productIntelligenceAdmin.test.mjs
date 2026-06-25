@@ -26,6 +26,7 @@ const {
   normalizeProductEventsLimit,
 } = await server.ssrLoadModule('/src/utils/adminProductEvents.js')
 const {
+  formatLocalEventTimestamp,
   ProductEventHeartbeatTable,
   ProductEventsTable,
   ProductIntelligenceAdminView,
@@ -118,7 +119,7 @@ test('heartbeat table shows event name, count, and most recent for operator veri
   assert.ok(htmlIncludes(html, 'Count'))
   assert.ok(htmlIncludes(html, 'Most recent event'))
   assert.ok(htmlIncludes(html, 'today_loaded'))
-  assert.ok(htmlIncludes(html, '2026-06-25T11:59:00Z'))
+  assert.equal(htmlIncludes(html, '2026-06-25T11:59:00Z'), false)
   // A never-seen event is visibly at zero (an em dash for the missing timestamp).
   assert.ok(htmlIncludes(html, 'digest_complaint'))
   assert.equal(/chart/i.test(html), false)
@@ -155,12 +156,48 @@ test('admin console renders operator controls and sanitized event rows', () => {
   assert.ok(htmlIncludes(html, 'Internal read-only event verification'))
   assert.ok(htmlIncludes(html, 'Admin token'))
   assert.ok(htmlIncludes(html, 'story_viewed'))
-  assert.ok(htmlIncludes(html, '2026-06-24T12:00:00Z'))
+  assert.equal(htmlIncludes(html, '2026-06-24T12:00:00Z'), false)
   assert.ok(htmlIncludes(html, 'Yes'))
   assert.ok(htmlIncludes(html, 'story_id: 118:2026-06-24'))
   assert.ok(htmlIncludes(html, 'email: [redacted]'))
   assert.equal(htmlIncludes(html, 'fan@example.com'), false)
   assert.equal(htmlIncludes(html, 'anon:client-123'), false)
+})
+
+test('local event timestamp formatter converts UTC to browser-local style labels', () => {
+  const now = new Date('2026-06-25T18:00:00Z')
+
+  assert.equal(formatLocalEventTimestamp('2026-06-25T17:19:24Z', {
+    locale: 'en-US',
+    now,
+    timeZone: 'America/New_York',
+    includeTimeZone: false,
+  }), 'Today • 1:19 PM')
+  assert.equal(formatLocalEventTimestamp('2026-06-24T11:42:00Z', {
+    locale: 'en-US',
+    now,
+    timeZone: 'America/New_York',
+    includeTimeZone: false,
+  }), 'Yesterday • 7:42 AM')
+  assert.equal(formatLocalEventTimestamp('2026-06-23T11:42:00Z', {
+    locale: 'en-US',
+    now,
+    timeZone: 'America/New_York',
+    includeTimeZone: false,
+  }), 'Jun 23, 2026 • 7:42 AM')
+})
+
+test('local event timestamp formatter can include a timezone abbreviation cleanly', () => {
+  assert.equal(formatLocalEventTimestamp('2026-06-25T17:19:24Z', {
+    locale: 'en-US',
+    now: new Date('2026-06-25T18:00:00Z'),
+    timeZone: 'America/New_York',
+  }), 'Today • 1:19 PM EDT')
+})
+
+test('local event timestamp formatter fails gracefully for invalid values', () => {
+  assert.equal(formatLocalEventTimestamp(null), '—')
+  assert.equal(formatLocalEventTimestamp('not-a-date'), '—')
 })
 
 test('product event table renders an empty state without charts or rollups', () => {

@@ -15,6 +15,62 @@ function cleanValue(value) {
   return String(value)
 }
 
+function datePartsFor(date, { locale, timeZone } = {}) {
+  const parts = new Intl.DateTimeFormat(locale, {
+    ...(timeZone ? { timeZone } : {}),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return {
+    year: Number(byType.year),
+    month: Number(byType.month),
+    day: Number(byType.day),
+  }
+}
+
+function calendarDayIndex(parts) {
+  if (!parts.year || !parts.month || !parts.day) return null
+  return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / 86400000)
+}
+
+function localDateLabel(date, { locale, now, timeZone } = {}) {
+  const eventIndex = calendarDayIndex(datePartsFor(date, { locale, timeZone }))
+  const nowIndex = calendarDayIndex(datePartsFor(now, { locale, timeZone }))
+  const diff = nowIndex === null || eventIndex === null ? null : nowIndex - eventIndex
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Yesterday'
+  return new Intl.DateTimeFormat(locale, {
+    ...(timeZone ? { timeZone } : {}),
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+export function formatLocalEventTimestamp(value, {
+  locale = undefined,
+  now = new Date(),
+  timeZone = undefined,
+  includeTimeZone = true,
+} = {}) {
+  if (value === null || value === undefined || value === '') return '—'
+
+  const date = new Date(value)
+  const comparisonDate = new Date(now)
+  if (Number.isNaN(date.getTime()) || Number.isNaN(comparisonDate.getTime())) return '—'
+
+  const time = new Intl.DateTimeFormat(locale, {
+    ...(timeZone ? { timeZone } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    ...(includeTimeZone ? { timeZoneName: 'short' } : {}),
+  }).format(date)
+  return `${localDateLabel(date, { locale, now: comparisonDate, timeZone })} • ${time}`
+}
+
 export function payloadSummaryText(summary) {
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return 'No payload'
   const entries = Object.entries(summary)
@@ -227,7 +283,7 @@ export function ProductEventHeartbeatTable({ rows = [] }) {
               <tr key={row.event_name} className="align-top">
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk200">{cleanValue(row.event_name)}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk300">{cleanValue(row.count)}</td>
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk400">{cleanValue(row.most_recent)}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk400">{formatLocalEventTimestamp(row.most_recent)}</td>
               </tr>
             ))}
           </tbody>
@@ -273,7 +329,7 @@ export function ProductEventsTable({ rows = [] }) {
             {rows.map(row => (
               <tr key={row.id || `${row.event_name}-${row.occurred_at}`} className="align-top">
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk200">{cleanValue(row.event_name)}</td>
-                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk400">{cleanValue(row.occurred_at)}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk400">{formatLocalEventTimestamp(row.occurred_at)}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk300">{cleanValue(row.user_id)}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk300">{cleanValue(row.anon_id_present)}</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk300">{cleanValue(row.team_id)}</td>
