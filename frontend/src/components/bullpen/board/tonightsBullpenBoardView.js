@@ -294,9 +294,22 @@ export function getRosterStatusSummaryView(summary) {
   const inactiveContextCount = Number(payload.inactive_context_count || 0)
   const activeMlbCount = Number(payload.active_mlb_count || 0)
   const excludedInactiveCount = Number(payload.excluded_inactive_count || 0)
-  const unavailablePitchersCount = inactiveContextCount + excludedInactiveCount
+  // Every count the board shows must map to evidence a reader can open. Only the
+  // roster-inactive arms shown on the board as cards (inactiveContextCount) have
+  // that evidence, so the "Unavailable Pitchers" figure reflects exactly those.
+  // Roster-inactive arms BaseballOS is aware of but does not list as cards
+  // (excludedInactiveCount) are reported on their own line rather than folded in,
+  // so a visible count never claims more pitchers than the cards behind it.
+  const unavailablePitchersCount = inactiveContextCount
+  const notShownRosterContextCount = excludedInactiveCount
+  const rosterContextTotalCount = inactiveContextCount + excludedInactiveCount
   const coveragePct = totalCandidates > 0 ? Math.round((knownCount / totalCandidates) * 100) : null
-  const shouldShow = totalCandidates > 0 || limitations.length > 0 || unknownCount > 0 || unavailablePitchersCount > 0
+  const shouldShow = (
+    totalCandidates > 0
+    || limitations.length > 0
+    || unknownCount > 0
+    || rosterContextTotalCount > 0
+  )
   return {
     shouldShow,
     authority,
@@ -312,6 +325,8 @@ export function getRosterStatusSummaryView(summary) {
     inactiveContextCount,
     excludedInactiveCount,
     unavailablePitchersCount,
+    notShownRosterContextCount,
+    rosterContextTotalCount,
     coverageLabel: coveragePct == null ? 'Not loaded' : `${coveragePct}%`,
     limitations,
     tone: authority === 'available'

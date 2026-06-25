@@ -359,6 +359,28 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
     team = _team_info(team_id)
     payload = _base_payload(team, freshness=freshness, generated_at=generated_at)
 
+    # Resolve the team's data-derived game dates up front and publish the current
+    # game reference date before any freshness gate can short-circuit. The board,
+    # pitcher detail, and bullpen endpoints all expose this data-derived date
+    # regardless of wall-clock staleness, so the changes surface must advertise the
+    # same date for every availability-related endpoint to agree. Freshness gating
+    # below still governs whether *deltas* are computed — not whether the basic
+    # current game date is known.
+    dates = _team_game_dates(team_id)
+    current_date = dates[0] if dates else None
+    global_latest_date, team_reason_codes, team_limitations = _team_freshness_notes(
+        team,
+        current_date,
+        freshness,
+    )
+    if current_date is not None:
+        payload['comparison'].update({
+            'current_game_date': _iso_date(current_date),
+            'team_latest_game_date': _iso_date(current_date),
+            'global_latest_game_date': _iso_date(global_latest_date),
+            'team_data_behind_league': bool(team_reason_codes),
+        })
+
     blocker_state, blocker_codes, blocker_limitations = _freshness_blocker(freshness)
     if blocker_state:
         payload.update({
@@ -368,7 +390,6 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
         })
         return payload
 
-    dates = _team_game_dates(team_id)
     if not dates:
         payload.update({
             'state': STATE_UNAVAILABLE,
@@ -376,19 +397,6 @@ def build_team_changes_payload(team_id, freshness=None, generated_at=None):
             'limitations': ['No completed game logs are available for this team.'],
         })
         return payload
-
-    current_date = dates[0]
-    global_latest_date, team_reason_codes, team_limitations = _team_freshness_notes(
-        team,
-        current_date,
-        freshness,
-    )
-    payload['comparison'].update({
-        'current_game_date': _iso_date(current_date),
-        'team_latest_game_date': _iso_date(current_date),
-        'global_latest_game_date': _iso_date(global_latest_date),
-        'team_data_behind_league': bool(team_reason_codes),
-    })
 
     if len(dates) < 2:
         payload.update({

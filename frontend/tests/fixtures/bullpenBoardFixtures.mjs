@@ -426,3 +426,89 @@ export const rosterContextBoard = makeBoard({
     limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
   },
 })
+
+// STL-like case: the roster summary knows about more roster-inactive arms than
+// the board lists as cards. One inactive pitcher is shown (a card the reader can
+// open); the other six are off the active roster and not listed. The visible
+// "Unavailable Pitchers" count must stay at the one shown card, with the rest
+// reported separately — never folded into a single "7" that has no cards behind it.
+export const rosterContextExcludedBoard = makeBoard({
+  cardsByStatus: {
+    Available: [
+      card(20, 'Andre Active', 'Available', { short_reason: 'Low recent workload' }),
+    ],
+    Unavailable: [
+      card(21, 'Ike Injured', 'Unavailable', {
+        confidence: 'high',
+        short_reason: 'Roster status: 60-Day IL.',
+        reasons: ['Roster status: 60-Day IL.'],
+        limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
+        roster_status: {
+          status: 'IL_60',
+          label: '60-Day IL',
+          source: 'test_fixture',
+          is_authoritative: true,
+          is_active_mlb: false,
+          is_inactive_context: true,
+          confidence: 'high',
+          evidence: ['Stored roster status: 60-Day IL.'],
+          limitations: [],
+        },
+      }),
+    ],
+  },
+  rosterStatus: {
+    authority: 'available',
+    total_candidates: 8,
+    known_count: 8,
+    unknown_count: 0,
+    included_unknown_count: 0,
+    active_mlb_count: 1,
+    inactive_context_count: 1,
+    excluded_inactive_count: 6,
+    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
+  },
+})
+
+// NYY-like case: two 40-man (not active) arms are surfaced as cards for roster
+// awareness. They are inspectable, so the visible "Unavailable Pitchers" count
+// maps exactly to the two cards and no "off roster (not shown)" line appears.
+function fortyManNotActiveCard(pitcherId, name) {
+  return card(pitcherId, name, 'Unavailable', {
+    confidence: 'high',
+    short_reason: 'Roster status: 40-Man (not active).',
+    reasons: ['Roster status: 40-Man (not active).'],
+    limitations: ['Unavailable due to roster status; not available for bullpen planning.'],
+    roster_status: {
+      status: '40_MAN_ONLY',
+      label: '40-Man (not active)',
+      source: 'test_fixture',
+      is_authoritative: true,
+      is_active_mlb: false,
+      is_inactive_context: true,
+      confidence: 'high',
+      evidence: ['Stored roster status: 40-Man (not active).'],
+      limitations: [],
+    },
+  })
+}
+
+export const fortyManShownBoard = makeBoard({
+  cardsByStatus: {
+    Unavailable: [
+      fortyManNotActiveCard(30, 'Milo Marquez'),
+      fortyManNotActiveCard(31, 'Nate Nunez'),
+    ],
+  },
+  rosterStatus: {
+    authority: 'available',
+    total_candidates: 8,
+    known_count: 8,
+    unknown_count: 0,
+    included_unknown_count: 0,
+    active_mlb_count: 6,
+    inactive_context_count: 2,
+    excluded_inactive_count: 0,
+    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
+  },
+})
