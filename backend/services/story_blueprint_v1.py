@@ -24,6 +24,7 @@ from services.story_evidence_case_v1 import build_evidence_case
 from services.story_voice_library_v1 import (
     PURPOSE_LESSON,
     PURPOSE_SURFACE,
+    PURPOSE_WATCH,
     render_voice_line,
 )
 
@@ -112,12 +113,19 @@ def build_story_blueprint(*, story_type, beats, stable_parts=(), frame=None) -> 
     if not evidence_text:
         evidence_text = _evidence_text(beats)
 
+    # "Why it matters tomorrow" is a reader-facing watch cue (what to look for next
+    # game) drawn from the approved, fact-free watch bank; it falls back to the
+    # authored constraint beat when no watch line exists (backward-compatible).
+    watch = render_voice_line(story_type, purpose=PURPOSE_WATCH, stable_parts=tuple(stable_parts))
+    tomorrow_text = _clean(watch) or _beat_text(beats, _TOMORROW_BEAT_KEY)
+    tomorrow_source = 'watch' if _clean(watch) else _TOMORROW_BEAT_KEY
+
     candidates = (
         _section(SECTION_SAW, _clean(surface), 'framing'),
         _section(SECTION_NOTICED, _beat_text(beats, _NOTICED_BEAT_KEY), _NOTICED_BEAT_KEY),
         _section(SECTION_EVIDENCE, evidence_text, evidence_source),
         _section(SECTION_WHY, _clean(lesson), 'lesson'),
-        _section(SECTION_TOMORROW, _beat_text(beats, _TOMORROW_BEAT_KEY), _TOMORROW_BEAT_KEY),
+        _section(SECTION_TOMORROW, tomorrow_text, tomorrow_source),
     )
     return [section for section in candidates if section['text']]
 

@@ -197,19 +197,13 @@ def test_depth_headline_uses_a_non_name_form():
 _AVAIL_NAMES = ('Phillips', 'Graterol', 'Vesia', 'Brasier', 'Hudson', 'Yates')
 
 
-def test_availability_carry_line_caps_names():
-    # Guarantee: with six clean options, the carry line never names more than the
-    # first three (some teams' carry form names none — also fine).
-    named_somewhere = False
+def test_availability_carry_line_names_no_arms():
+    # The carry line is now a fact-free watch cue, so a six-name pileup is
+    # impossible: the line never names the relievers at all.
     for tid in range(750, 790):
         tomorrow = _sect(_canon(_availability_ctx(tid, f'Deep Pen {tid}', f'DP{tid % 100}')), 'why_it_matters_tomorrow')
-        listed = [n for n in _AVAIL_NAMES if n in tomorrow]
-        assert len(listed) <= 3, (tid, tomorrow)
-        if listed:
-            # When the carry line does name the group, it is the first three only.
-            assert set(listed) == {'Phillips', 'Graterol', 'Vesia'}, (tid, tomorrow)
-            named_somewhere = True
-    assert named_somewhere  # the cap is actually exercised, not just vacuously true
+        assert not any(n in tomorrow for n in _AVAIL_NAMES), (tid, tomorrow)
+        assert tomorrow.lower().startswith('watch') or 'watch' in tomorrow.lower()
 
 
 def test_depth_carry_line_is_a_single_clean_clause():

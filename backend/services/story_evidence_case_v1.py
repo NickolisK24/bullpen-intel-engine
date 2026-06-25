@@ -276,6 +276,10 @@ def _pick_form(slot: str, variety_key: Any, **slots: Any):
 # ── Per-type evidence cases (factual sentences only; meaning added centrally) ──
 
 def _rotation_pressure(frame: dict, variety_key: Any) -> list:
+    # The "noticed" section already states the early-entry rate, so the case
+    # leads from a different angle: the change from the two-week baseline (a
+    # number Noticed omits) or the innings the bullpen is covering — not the
+    # early-entry rate again.
     obs = _facts(frame, 'observation_facts')
     cause = _facts(frame, 'cause_facts')
     avg7 = _num(obs.get('rotation_avg_ip_7d'))
@@ -283,28 +287,25 @@ def _rotation_pressure(frame: dict, variety_key: Any) -> list:
     early = _num(obs.get('early_bullpen_entry_rate'))
     coverage = _num(cause.get('bullpen_coverage_ip_7d'))
 
-    if avg7 is not None and avg14 is not None and (avg14 - avg7) >= MIN_MEANINGFUL_IP_DELTA:
-        starts = _pick_form('coverage_starts', variety_key, avg7=_fmt(avg7), avg14=_fmt(avg14))
-    elif avg7 is not None:
-        starts = f'Starts have run {_fmt(avg7)} innings over the last week'
-    else:
-        starts = None
-    coverage_line = (
-        f'That hands the relief group about {_fmt(coverage)} innings a game the rotation usually covers'
+    meaningful = avg7 is not None and avg14 is not None and (avg14 - avg7) >= MIN_MEANINGFUL_IP_DELTA
+    shortening = _pick_form('coverage_starts', variety_key, avg7=_fmt(avg7), avg14=_fmt(avg14)) if meaningful else None
+    coverage_std = (
+        f'The bullpen is covering about {_fmt(coverage)} innings a game the rotation usually handles'
         if coverage is not None else None
     )
+    early_line = _pick_form('coverage_early', variety_key, early=_fmt(early)) if early is not None else None
+    starts_bare = f'Starts have run {_fmt(avg7)} innings over the last week' if (avg7 is not None and not meaningful) else None
 
-    parts = []
-    if early is not None:
-        parts.append(_pick_form('coverage_early', variety_key, early=_fmt(early)))
-        parts.append(starts or coverage_line)
-    else:
-        parts.append(starts)
-        parts.append(coverage_line)
-    return parts
+    # Lead preference: change-from-baseline, then coverage innings, then (only as
+    # a fallback) the early-entry rate or the bare start length.
+    ordered = [s for s in (shortening, coverage_std, early_line, starts_bare) if s]
+    return ordered[:2]
 
 
 def _concentration_pressure(frame: dict, variety_key: Any) -> list:
+    # The "noticed" section already names the trio and its workload share, so the
+    # case leads with the league comparison (a number Noticed omits) rather than
+    # restating the same share.
     head = _facts(frame, 'headline_facts')
     base = _facts(frame, 'baseline_facts')
     names = _join_names(head.get('top_three_relievers'))
@@ -312,27 +313,35 @@ def _concentration_pressure(frame: dict, variety_key: Any) -> list:
     delta = _num(base.get('top_three_share_delta_vs_league'))
 
     parts = []
-    if names and share is not None:
+    if delta is not None and delta >= MIN_MEANINGFUL_PCT_DELTA:
+        parts.append(f"The top three are carrying {_fmt(delta)} points more of the load than a typical bullpen")
+        parts.append('The rest of the bullpen is splitting what is left')
+    elif names and share is not None:
         parts.append(f"{names} have handled {_fmt(share)}% of the bullpen's recent work")
     elif share is not None:
         parts.append(f"A few arms have handled {_fmt(share)}% of the bullpen's recent work")
-    if delta is not None and delta >= MIN_MEANINGFUL_PCT_DELTA:
-        parts.append(f"That is {_fmt(delta)} points above the league's typical top-three share")
     return parts
 
 
 def _optionality_strength(frame: dict, variety_key: Any) -> list:
+    # The "noticed" section already states the close-game-path count, so the case
+    # leads with the available-vs-clean breakdown — a different cut of the depth —
+    # then names the rested group.
     obs = _facts(frame, 'observation_facts')
     cause = _facts(frame, 'cause_facts')
-    paths = _intval(obs.get('practical_close_game_paths_count'))
+    available = _intval(obs.get('available_arms_count'))
     clean = _intval(obs.get('clean_workload_options_count'))
+    paths = _intval(obs.get('practical_close_game_paths_count'))
     clean_names = _join_names(cause.get('clean_workload_options'))
 
     parts = []
-    if paths is not None:
+    if available is not None and clean is not None:
+        parts.append(
+            f'{available} {_arm(available)} {_be(available)} available, '
+            f'{clean} of them clean and rested for the late innings'
+        )
+    elif paths is not None:
         parts.append(f'The bullpen has {paths} clean {_way(paths)} to close a game right now')
-    elif clean is not None:
-        parts.append(f'{clean} {_arm(clean)} {_be(clean)} rested and clean for the late innings')
     if clean_names:
         parts.append(f'The rested group is led by {clean_names}')
     return parts

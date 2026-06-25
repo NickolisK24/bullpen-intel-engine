@@ -11,6 +11,7 @@ from services.story_voice_library_v1 import (
     DENIED_PUBLIC_PHRASES,
     LESSON_LINES,
     SURFACE_FRAMING_LINES,
+    WATCH_LINES,
 )
 from services.story_writer_v1 import BANNED_TERMS, ROBOTIC_TERMS
 from services.story_four_beat_interpreter_v1 import PUBLIC_BANNED_TERMS
@@ -94,15 +95,15 @@ def test_blueprint_has_five_sections_in_canonical_order():
 def test_blueprint_reuses_existing_beats_without_new_claims():
     beats = _beats()
     bp = {s['key']: s for s in build_story_blueprint(story_type='coverage_pressure', beats=beats, stable_parts=('x',))}
-    # 'noticed' / 'tomorrow' reuse the authored beat prose verbatim.
+    # 'noticed' reuses the authored beat prose verbatim.
     assert bp[SECTION_NOTICED]['text'] == beats[0]['text']
-    assert bp[SECTION_TOMORROW]['text'] == beats[3]['text']
     # Evidence reuses the baseline + cause beats.
     assert beats[1]['text'] in bp[SECTION_EVIDENCE]['text']
     assert beats[2]['text'] in bp[SECTION_EVIDENCE]['text']
-    # Surface + lesson come from approved voice copy.
+    # Surface / lesson / tomorrow come from approved voice copy.
     assert bp[SECTION_SAW]['text'] in SURFACE_FRAMING_LINES['coverage_pressure']
     assert bp[SECTION_WHY]['text'] in LESSON_LINES['coverage_pressure']
+    assert bp[SECTION_TOMORROW]['text'] in WATCH_LINES['coverage_pressure']
 
 
 def test_blueprint_is_deterministic():
@@ -117,11 +118,14 @@ def test_blueprint_empty_without_story_type_or_beats():
 
 
 def test_blueprint_drops_sections_with_missing_beats():
-    # Only observation present -> noticed + surface + lesson survive; no evidence/tomorrow.
+    # Only observation present -> noticed + surface + lesson + tomorrow survive
+    # (tomorrow is now a voice-bank watch cue, independent of the constraint beat);
+    # evidence has no baseline/cause beats to draw on, so it is dropped.
     beats = [{'key': 'observation', 'label': 'What changed', 'text': 'Something changed.'}]
     keys = [s['key'] for s in build_story_blueprint(story_type='bridge', beats=beats, stable_parts=('x',))]
     assert SECTION_NOTICED in keys
-    assert SECTION_EVIDENCE not in keys and SECTION_TOMORROW not in keys
+    assert SECTION_TOMORROW in keys
+    assert SECTION_EVIDENCE not in keys
 
 
 # ── Guardrails: surface + lesson copy carries no banned/internal/prediction terms

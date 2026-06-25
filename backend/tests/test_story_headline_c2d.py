@@ -154,8 +154,9 @@ def test_strong_headline_patterns_are_preserved():
     coverage = approved_sentence_forms(BEAT_COVERAGE_PRESSURE)
     route = approved_sentence_forms(BEAT_ROUTE_CHANGE)
     assert 'The ERA tells one story; the workload tells another' in coverage
-    assert 'The bullpen continues to bend toward {names}' in route
-    assert 'When the game tightens, {names} still shape the first call' in route
+    # Route headlines are change-aware (no "remain"/"still").
+    assert 'The late innings now run through {names}' in route
+    assert 'When the game tightens, the call now goes to {names}' in route
     # The two strong bridge contrast headlines survive the trim.
     bridge = approved_sentence_forms(BEAT_BRIDGE)
     assert 'The late innings are covered; the bridge to them is the soft spot' in bridge

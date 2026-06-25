@@ -311,10 +311,13 @@ def test_name_consistency_concentration_across_sections():
     evidence = sections[SECTION_EVIDENCE]
     tomorrow = sections['why_it_matters_tomorrow']
     noticed = sections['what_baseballos_noticed']
-    for trio_text in (noticed, evidence, tomorrow):
-        assert 'Clase' in trio_text
-        # The other group must not bleed into the same-idea sections.
-        assert 'Alvarez' not in trio_text and 'Boone' not in trio_text and 'Cruz' not in trio_text
+    # Noticed names the workload trio.
+    assert 'Clase' in noticed
+    # The operational-core trio must never bleed into ANY section (the original
+    # mismatch). Evidence now leads with the league comparison and tomorrow is a
+    # fact-free watch cue, so neither names the wrong group.
+    for text in (noticed, evidence, tomorrow):
+        assert 'Alvarez' not in text and 'Boone' not in text and 'Cruz' not in text
 
 
 def test_real_stories_still_pass_editorial_review_and_keep_blueprint_shape():
