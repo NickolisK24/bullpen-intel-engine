@@ -3,10 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../hooks/usePreferredTeamPreference'
 import {
-  useStoryViewedObservations,
+  useStoryImpressionObservations,
   useTodayLoadedObservation,
 } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams } from '../../utils/api'
+import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams, recordStoryShareClicked, recordStoryTeamBoardOpened } from '../../utils/api'
+import { observeStoryShareClicked, observeStoryTeamBoardOpened } from '../../utils/productIntelligence'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
@@ -180,24 +181,14 @@ export function HomeView({
   const productLoaded = Boolean(dashboard) && !loading && !urlTeamPending && !authLoading && !preferredTeamLoading
   const productSource = isDigestReturn ? 'digest' : 'direct'
   const storySurface = isDigestReturn ? 'digest_web' : 'home'
-  const presentedStories = useMemo(() => {
-    const items = []
-    const flagship = activeTeam ? teamHero : hero
-    if (flagship?.hasStory) items.push(flagship)
-    if (watchItems?.hasStories && Array.isArray(watchItems.items)) {
-      items.push(...watchItems.items)
-    }
-    return items
-  }, [activeTeam, hero, teamHero, watchItems])
 
   useTodayLoadedObservation({
     loaded: productLoaded,
     teamId: activeTeam?.team_id ?? activeTeam?.teamId ?? null,
     source: productSource,
   })
-  useStoryViewedObservations({
+  const registerStoryImpression = useStoryImpressionObservations({
     enabled: productLoaded,
-    stories: presentedStories,
     surface: storySurface,
   })
 
@@ -228,7 +219,12 @@ export function HomeView({
       <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
         What BaseballOS Sees Today
       </div>
-      <HeroStory hero={hero} />
+      <HeroStory
+        hero={hero}
+        impressionRef={registerStoryImpression(hero)}
+        onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: hero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+        onShareClick={() => observeStoryShareClicked({ story: hero, surface: storySurface, send: recordStoryShareClicked })}
+      />
     </section>
   )
 
@@ -280,11 +276,21 @@ export function HomeView({
                 <div className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">
                   What BaseballOS Sees Today
                 </div>
-                <HeroStory hero={teamHero} />
+                <HeroStory
+                  hero={teamHero}
+                  impressionRef={registerStoryImpression(teamHero)}
+                  onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: teamHero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+                  onShareClick={() => observeStoryShareClicked({ story: teamHero, surface: storySurface, send: recordStoryShareClicked })}
+                />
               </section>
             </>
           )}
-          <BullpenStories stories={watchItems} showCta={false} />
+          <BullpenStories
+            stories={watchItems}
+            showCta={false}
+            registerImpressionRef={registerStoryImpression}
+            onTeamBoardOpen={(story) => observeStoryTeamBoardOpened({ story, surface: storySurface, send: recordStoryTeamBoardOpened })}
+          />
           <LeagueContext context={leagueContext} />
         </>
       )}
@@ -735,11 +741,11 @@ function Masthead({ masthead }) {
 
 // The flagship observation, told the way a baseball writer would lead a
 // column. Stories deliberately explores the observations behind and beyond it.
-function HeroStory({ hero }) {
+function HeroStory({ hero, impressionRef, onTeamBoardOpen, onShareClick }) {
   const tone = homeTone(hero.tone)
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-dirt bg-dugout bg-stadium-glow p-5 sm:p-7">
+    <div ref={impressionRef} className="relative overflow-hidden rounded-xl border border-dirt bg-dugout bg-stadium-glow p-5 sm:p-7">
       <div className="absolute inset-0 bg-grid-lines opacity-100 pointer-events-none" />
       <div className="relative z-10">
         <div className="flex flex-wrap items-center gap-2">
@@ -800,12 +806,13 @@ function HeroStory({ hero }) {
           {hero.team?.href && (
             <Link
               to={hero.team.href}
+              onClick={onTeamBoardOpen}
               className="rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
             >
               Step inside the {hero.team.abbr || hero.team.teamName} pen →
             </Link>
           )}
-          {hero.team && <TeamShareButton team={hero.team} />}
+          {hero.team && <TeamShareButton team={hero.team} onShareClick={onShareClick} />}
           <Link
             to="/bullpen"
             className="rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"

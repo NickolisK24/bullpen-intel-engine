@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { homeTone } from './homePresentationView'
 
@@ -7,7 +8,7 @@ import { homeTone } from './homePresentationView'
 // lives on the Stories page.
 export const SHORT_LIST_LIMIT = 3
 
-export default function BullpenStories({ stories, showCta = true }) {
+export default function BullpenStories({ stories, showCta = true, registerImpressionRef = null, onTeamBoardOpen = null }) {
   const shortList = (Array.isArray(stories?.items) ? stories.items : []).slice(0, SHORT_LIST_LIMIT)
 
   return (
@@ -22,7 +23,12 @@ export default function BullpenStories({ stories, showCta = true }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shortList.map((story, index) => (
-            <StoryCard key={`${story.kicker}-${index}`} story={story} />
+            <StoryCard
+              key={`${story.kicker}-${index}`}
+              story={story}
+              impressionRef={registerImpressionRef ? registerImpressionRef(story) : undefined}
+              onTeamBoardOpen={onTeamBoardOpen}
+            />
           ))}
         </div>
       )}
@@ -151,12 +157,22 @@ export function StorySection({
 // it matters tomorrow). Presentation only — it renders backend-authored copy and
 // invents nothing. Returns null when no usable sections are supplied, so callers
 // fall back to the existing flat narrative.
+// Sections shown when a collapsible blueprint is collapsed: the hook (what
+// everyone saw) and the insight (what BaseballOS noticed). Evidence / why it
+// matters / why it matters tomorrow stay behind "Read the full read".
+const COLLAPSED_BLUEPRINT_KEYS = new Set(['what_everyone_saw', 'what_baseballos_noticed'])
+
 export function StoryBlueprint({
   sections,
   compact = false,
+  collapsible = false,
+  initialExpanded = false,
+  onExpand = null,
   className = '',
   bodyClassName = '',
 }) {
+  const [expanded, setExpanded] = useState(initialExpanded)
+
   const usable = (Array.isArray(sections) ? sections : [])
     .map(section => ({
       key: cleanText(section?.key),
@@ -167,9 +183,26 @@ export function StoryBlueprint({
 
   if (!usable.length) return null
 
+  // Collapsed shows the lead-in (what everyone saw + what BaseballOS noticed);
+  // the rest stays behind the toggle. Falls back to the first two sections if the
+  // backend ever sends unrecognized keys, so collapse never empties the card.
+  const lead = usable.filter(section => COLLAPSED_BLUEPRINT_KEYS.has(section.key))
+  const collapsedSections = lead.length ? lead : usable.slice(0, 2)
+  const canCollapse = collapsible && collapsedSections.length < usable.length
+  const visible = canCollapse && !expanded ? collapsedSections : usable
+
+  const handleToggle = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const next = !expanded
+    setExpanded(next)
+    // story_viewed fires on the expand transition only — never on collapse.
+    if (next && typeof onExpand === 'function') onExpand()
+  }
+
   return (
     <div className={`story-blueprint ${className}`}>
-      {usable.map((section, index) => (
+      {visible.map((section, index) => (
         <section key={section.key || `blueprint-${index}`} className={index > 0 ? 'mt-3' : ''}>
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
             {section.label}
@@ -184,6 +217,17 @@ export function StoryBlueprint({
           ))}
         </section>
       ))}
+      {canCollapse && (
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-expanded={expanded}
+          className="story-blueprint-toggle mt-3 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-amber/80 transition-colors hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/40"
+        >
+          {expanded ? 'Show less' : 'Read the full read'}
+          <span aria-hidden="true">{expanded ? '↑' : '↓'}</span>
+        </button>
+      )}
     </div>
   )
 }
@@ -257,7 +301,7 @@ export function StoryDisclosureNote({ note, className = '' }) {
 // board, league notes open the league view, data notes open Data & Trust.
 // A story with no meaningful destination renders as plain copy — no CTA, no
 // pretend link.
-function StoryCard({ story }) {
+function StoryCard({ story, impressionRef, onTeamBoardOpen }) {
   const tone = homeTone(story.tone)
   const hasDestination = Boolean(story.href)
 
@@ -281,12 +325,14 @@ function StoryCard({ story }) {
   )
 
   if (!hasDestination) {
-    return <article className="card flex flex-col p-4">{inner}</article>
+    return <article ref={impressionRef} className="card flex flex-col p-4">{inner}</article>
   }
 
   return (
     <Link
+      ref={impressionRef}
       to={story.href}
+      onClick={() => { if (typeof onTeamBoardOpen === 'function') onTeamBoardOpen(story) }}
       className="card group flex flex-col p-4 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
     >
       {inner}

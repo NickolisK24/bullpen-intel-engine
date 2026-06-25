@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { useStoryViewedObservations } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, recordStoryInteracted } from '../../utils/api'
-import { observeStoryInteractedOnce } from '../../utils/productIntelligence'
+import { useStoryImpressionObservations } from '../../hooks/useProductIntelligence'
+import { getBullpenDashboard, recordStoryShareClicked, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
+import { observeStoryShareClicked, observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from '../home/BullpenStories'
@@ -64,9 +64,8 @@ export function StoriesView({
   const visible = filterStoryFeed(feed.items, activeFilter)
   const productLoaded = Boolean(dashboard) && !loading
 
-  useStoryViewedObservations({
+  const registerStoryImpression = useStoryImpressionObservations({
     enabled: productLoaded,
-    stories: visible,
     surface: 'stories',
   })
 
@@ -152,7 +151,11 @@ export function StoriesView({
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {visible.map((story, index) => (
-                  <FeedStoryCard key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`} story={story} />
+                  <FeedStoryCard
+                    key={`${story.kicker}-${story.teamId ?? 'league'}-${index}`}
+                    story={story}
+                    impressionRef={registerStoryImpression(story)}
+                  />
                 ))}
               </div>
             )}
@@ -234,19 +237,26 @@ function StoryFeedEmptyState({ state, onReset }) {
   )
 }
 
-// A feed entry with the club named when the story belongs to one.
-function FeedStoryCard({ story }) {
+// A feed entry with the club named when the story belongs to one. The card is no
+// longer a single full-bleed link: the blueprint owns an in-card expand control
+// (story_viewed on first expand) and an explicit Team Board CTA owns navigation
+// (story_team_board_opened) — two distinct, non-conflicting controls.
+function FeedStoryCard({ story, impressionRef }) {
   const tone = homeTone(story.tone)
   const hasDestination = Boolean(story.href)
   const hasTeam = story.teamId != null && Boolean(story.abbr)
+  const hasBlueprint = Array.isArray(story.blueprint) && story.blueprint.length > 0
   const team = {
     team_id: story.teamId,
     team_name: story.teamName,
     team_abbreviation: story.abbr,
   }
 
-  const inner = (
-    <>
+  return (
+    <article
+      ref={impressionRef}
+      className={`card flex flex-col p-5${hasDestination ? ' group transition-all duration-200 hover:border-amber/40 hover:bg-amber/5' : ''}`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="h-1 w-8 rounded-full" style={{ backgroundColor: tone.dot }} aria-hidden="true" />
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -258,7 +268,7 @@ function FeedStoryCard({ story }) {
           {hasTeam && (
             <TeamShareButton
               team={team}
-              className="pointer-events-auto"
+              onShareClick={() => observeStoryShareClicked({ story, surface: 'stories', send: recordStoryShareClicked })}
             />
           )}
         </div>
@@ -278,43 +288,27 @@ function FeedStoryCard({ story }) {
         {story.title}
       </h3>
 
-      {Array.isArray(story.blueprint) && story.blueprint.length > 0 ? (
-        <StoryBlueprint sections={story.blueprint} className="mt-3 flex-1" />
+      {hasBlueprint ? (
+        <StoryBlueprint
+          sections={story.blueprint}
+          collapsible
+          onExpand={() => observeStoryViewedOnce({ stories: [story], surface: 'stories', send: recordStoryViewed })}
+          className="mt-3 flex-1"
+        />
       ) : (
         <StoryNarrativeBody text={story.narrative || story.body} />
       )}
       <StoryDisclosureNote note={story.disclosureNote || story.disclosure_note} />
 
       {hasDestination && (
-        <div className="mt-3 font-mono text-[10px] uppercase tracking-widest text-chalk600 group-hover:text-amber transition-colors">
-          {story.cta || 'Open the full picture'} →
-        </div>
+        <Link
+          to={story.href}
+          onClick={() => observeStoryTeamBoardOpened({ story, surface: 'stories', send: recordStoryTeamBoardOpened })}
+          className="mt-3 inline-flex items-center font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber group-hover:text-amber"
+        >
+          {story.cta || 'Open the team board'} →
+        </Link>
       )}
-    </>
-  )
-
-  if (!hasDestination) {
-    return <article className="card flex flex-col p-5">{inner}</article>
-  }
-
-  return (
-    <article
-      className="card group relative flex flex-col p-5 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
-    >
-      <Link
-        to={story.href}
-        aria-label={story.cta || 'Open the full picture'}
-        onClick={() => observeStoryInteractedOnce({
-          story,
-          surface: 'stories',
-          interactionType: 'select',
-          send: recordStoryInteracted,
-        })}
-        className="absolute inset-0 z-10"
-      />
-      <div className="relative z-20 flex flex-1 flex-col pointer-events-none">
-        {inner}
-      </div>
     </article>
   )
 }

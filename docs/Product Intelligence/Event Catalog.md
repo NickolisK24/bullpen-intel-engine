@@ -21,9 +21,11 @@ that — nothing is collected for vanity.
 - **Owned telemetry.** First-party only — no third-party behavioral analytics.
 - **Fault-isolated.** Emission is best-effort; a telemetry failure can never raise
   into, or roll back, a production write.
-- **Trust-first.** Smallest useful payload. No PII. No browser analytics (no
-  mouse / scroll / viewport / cursor / heatmaps / dwell). Every field has a clear
-  Product Intelligence purpose.
+- **Trust-first.** Smallest useful payload. No PII. No browser-analytics payloads
+  (no mouse / scroll / cursor / heatmaps / dwell, and no stored viewport geometry).
+  Viewport visibility may be used **only** as a local client-side trigger (e.g.
+  `story_impression`), never recorded. Every field has a clear Product Intelligence
+  purpose.
 
 ## Storage & envelope
 
@@ -203,26 +205,66 @@ verification only, no rates or time series.
 
 ### story_viewed
 
-- **Purpose:** Observe how users consume BaseballOS intelligence — **presentation only**.
-- **Definition:** A BaseballOS story was successfully presented to the user. It records the presentation fact and **nothing about engagement, understanding, or completion**.
-- **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe; client beacon when a story renders).
+- **Purpose:** Observe meaningful story consumption — the reader chose to read the full story.
+- **Definition (V3-2):** The user intentionally consumed a story by **expanding it** ("Read the full read"). It records the meaningful-consumption fact and **nothing about dwell, scroll, completion, or understanding**.
+- **Status / cutover:** The meaning of this event changed across V3 — segment any trend at the cutovers. **≤ V2:** emitted on *render* (a card mounted, seen or not) — it meant *rendered*. **V3-1:** retired from render; on-screen presentation moved to `story_impression`, and `story_viewed` was reserved. **V3-2:** now emitted on the **first expand** of a collapsible story card — it means *read*. The event name, endpoint, payload, and historical rows are unchanged.
+- **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe), fired on the first expand of a story card.
 - **Owner:** Product ingestion API (`api/product_events.py`).
 - **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
-- **Frontend Activation:** D2A-4 sends this only for rendered canonical story cards/flagships carrying backend `story_id` and `story_type`. Home digest returns use `surface=digest_web`; regular Today uses `home`; Stories uses `stories`. The client dedupes by `surface + team_id + story_id + story_type` during the browser session.
-- **Introduced Phase:** D2A-3.
-- **Related Metrics:** Story-presentation volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
+- **Frontend Activation:** V3-2. The Stories feed card renders collapsed (headline + team + what everyone saw + what BaseballOS noticed); the blueprint's "Read the full read" control expands it and fires `story_viewed` once per story per surface per browser session (never on collapse, render, or impression). The always-expanded Home flagship and the compact Home watch cards have no expand control, so they emit `story_impression` (and, on the CTA, `story_team_board_opened`) but not `story_viewed`.
+- **Introduced Phase:** D2A-3 (reinterpreted V3-1 → V3-2).
+- **Related Metrics:** Meaningful story-consumption (expand) volume by type / team / surface. **No** dwell, scroll, or completion is inferred.
+- **Version:** 1.
+
+### story_impression
+
+- **Purpose:** Observe how users actually consume BaseballOS intelligence — **on-screen presentation only**. The honest successor to the old render-fired `story_viewed` volume.
+- **Definition:** A story card appeared on screen (viewport ≈ 50%+ visible), as opposed to merely rendering into the DOM. It records the presentation fact and **nothing about engagement, dwell, reading, or understanding**.
+- **Trigger:** `POST /api/product/story-event` with `event_name=story_impression` (owned, anonymous-safe; client beacon fired from an `IntersectionObserver` when a card crosses ~50% visibility). The endpoint accepts only an allowlisted `event_name` (V3-1: `story_impression` only); an unrecognized or missing name records nothing and still returns 200.
+- **Trust-first note:** viewport visibility is used **only** as a client-side trigger. No viewport, scroll, coordinate, dwell, or heatmap data is ever sent or stored — the payload is the same minimal presentation fact as every other story event.
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** V3-1. `useStoryImpressionObservations` observes each rendered story card and fires once per story per surface per browser session when it reaches the threshold. `IntersectionObserver` is feature-detected; where it is unavailable the tracker no-ops (it never fires a false impression). Cards without a canonical story identity (e.g. the league context card) are never observed. Dedupes by `surface + team_id + story_id + story_type`.
+- **Introduced Phase:** V3-1.
+- **Related Metrics:** On-screen story-presentation volume by type / team / surface; the like-for-like successor to pre-V3 `story_viewed` volume. **No** engagement, dwell, or completion is inferred.
+- **Version:** 1.
+
+### story_team_board_opened
+
+- **Purpose:** Observe the high-intent story → Team Board conversion — the reader acted on a story.
+- **Definition:** The user clicked a story's primary CTA to open the Team Board. It records the navigation-intent fact only.
+- **Trigger:** `POST /api/product/story-event` with `event_name=story_team_board_opened` (owned, anonymous-safe), fired on the CTA click. Allowlisted on the same generic seam as `story_impression`.
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** V3-2. Fired from the Stories feed card's "Open the team board" CTA, the Home flagship's "Step inside the … pen" CTA, and the Home watch-card link — each replacing the generic `story_interacted(select)` for Team Board opens. Fires **once per physical click** (NOT deduped per session): each open is a distinct intent signal.
+- **Introduced Phase:** V3-2.
+- **Related Metrics:** Story → Team Board conversion by type / team / surface. **No** engagement or completion is inferred.
+- **Version:** 1.
+
+### story_share_clicked
+
+- **Purpose:** Observe share intent from a story context — the reader chose to share.
+- **Definition:** The user activated the Share control on a story surface. It records the share-**intent** fact only — it does **not** assert that a native share or clipboard copy actually completed (that cannot be reliably interpreted).
+- **Trigger:** `POST /api/product/story-event` with `event_name=story_share_clicked` (owned, anonymous-safe), fired on the Share button click/tap, before (and independent of) `navigator.share` / clipboard. Allowlisted on the same generic seam as `story_impression`.
+- **Share scope:** Today's Share shares the **team page** (`/team/<abbr>`), not a unique story URL. The payload therefore carries `share_target: "team"` so the event is honest about what was shared. (No story-specific permalink system exists; none is introduced here.)
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type, share_target}` (`share_target` is an owned allowlist — currently only `team`; anything else records as null, never fabricated) — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** V3-3. Fired from `TeamShareButton`'s click on the Stories feed card and the Home flagship (the only story surfaces that render Share). Fires **once per physical click** (NOT deduped per session): each share click is a distinct intent signal. A Share with no canonical story identity emits nothing (no malformed event).
+- **Introduced Phase:** V3-3.
+- **Related Metrics:** Story share-intent volume by type / team / surface. **No** share completion or engagement is inferred.
 - **Version:** 1.
 
 ### story_interacted
 
 - **Purpose:** Observe explicit interaction with a rendered story — **the fact only**.
+- **Status (V3-2): legacy / deprecated for Team Board opens.** The Stories feed card selection that emitted `story_interacted(select)` was a Team Board open; V3-2 replaces it with the explicit `story_team_board_opened`, and the frontend no longer emits `story_interacted`. The event name, endpoint (`POST /api/product/story-interacted`), payload, and historical rows are preserved unchanged; the endpoint stays live and anonymous-safe.
 - **Definition:** A user intentionally performed an explicit interaction with a rendered story (e.g. selecting / opening / expanding it). It records the interaction fact and **nothing about engagement, interest, completion, or understanding**.
-- **Trigger:** `POST /api/product/story-interacted` (owned, anonymous-safe; client beacon on an existing story UI action).
+- **Trigger:** `POST /api/product/story-interacted` (owned, anonymous-safe). No longer fired by the client as of V3-2.
 - **Owner:** Product ingestion API (`api/product_events.py`).
 - **Payload:** `{story_id, story_type, interaction_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null). `interaction_type` is an owned allowlist (`expand | open | select`); unrecognized values are recorded as null, never fabricated.
-- **Frontend Activation:** D2A-7 fires this from the existing Stories feed card selection (the click-through link) with `interaction_type = select`, `surface = stories`. The client dedupes by `surface + team_id + story_id + story_type + interaction_type` during the browser session.
+- **Frontend Activation:** D2A-7 fired this from the Stories feed card selection with `interaction_type = select`, `surface = stories`. **Retired in V3-2** in favour of `story_team_board_opened`.
 - **Introduced Phase:** D2A-7.
-- **Related Metrics:** Story-interaction volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
+- **Related Metrics:** Story-interaction volume (legacy). Superseded by `story_team_board_opened`. **No** engagement, dwell, or completion is inferred.
 - **Version:** 1.
 
 ### digest_delivered
