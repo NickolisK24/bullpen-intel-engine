@@ -373,6 +373,7 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         # voice. Backward-compatible (additive field).
         'blueprint': build_story_blueprint(
             story_type=story_type, beats=beats, stable_parts=(item['story_id'],),
+            frame=frame,
         ),
     })
 

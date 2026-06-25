@@ -469,7 +469,10 @@ def _concentration_pressure(frame):
     trend = cause.get('rotation_ip_trend')
     paths = interpretation.get('practical_close_game_paths_count')
     core = _join_names(constraint.get('current_operational_core'))
-    route_names = core or names
+    # Lead with the workload trio the headline and observation already name
+    # (top_three_relievers), so the cause and forward lines do not reference a
+    # different group than the rest of the story (editorial name consistency).
+    route_names = names or core
     band = observed.get('concentration_band') or interpretation.get('concentration_band')
     narrow_route = band in {'narrow', 'concentrated'} or _lte(paths, 3)
     short_starts = _present(trend) and trend < 0

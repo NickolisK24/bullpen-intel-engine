@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.story_evidence_case_v1 import build_evidence_case
 from services.story_voice_library_v1 import (
     PURPOSE_LESSON,
     PURPOSE_SURFACE,
@@ -79,12 +80,18 @@ def _section(key, text, source):
     return {'key': key, 'label': SECTION_LABELS[key], 'text': text, 'source': source}
 
 
-def build_story_blueprint(*, story_type, beats, stable_parts=()) -> list[dict]:
+def build_story_blueprint(*, story_type, beats, stable_parts=(), frame=None) -> list[dict]:
     """Build the 5-section teaching blueprint for one available story.
 
     Returns ``[]`` when there is no usable ``story_type`` or no authored beats, so
     a suppressed / empty story carries an empty blueprint (backward-compatible).
     Sections are emitted in canonical order and only when they carry text.
+
+    When the construction ``frame`` is supplied, the Evidence section is a curated
+    Evidence Case built from the frame's structured facts (strongest support, one
+    corroborating fact, one plain-language meaning). Without a frame — or if the
+    case cannot be built — Evidence falls back to the existing baseline + cause
+    beat text, so output is never lost (backward-compatible).
     """
     story_type = _clean(story_type)
     if not story_type or not beats:
@@ -97,10 +104,15 @@ def build_story_blueprint(*, story_type, beats, stable_parts=()) -> list[dict]:
         story_type, purpose=PURPOSE_LESSON, stable_parts=tuple(stable_parts),
     )
 
+    evidence_text = build_evidence_case(frame, story_type=story_type) if frame else ''
+    evidence_source = 'evidence_case' if evidence_text else 'evidence'
+    if not evidence_text:
+        evidence_text = _evidence_text(beats)
+
     candidates = (
         _section(SECTION_SAW, _clean(surface), 'framing'),
         _section(SECTION_NOTICED, _beat_text(beats, _NOTICED_BEAT_KEY), _NOTICED_BEAT_KEY),
-        _section(SECTION_EVIDENCE, _evidence_text(beats), 'evidence'),
+        _section(SECTION_EVIDENCE, evidence_text, evidence_source),
         _section(SECTION_WHY, _clean(lesson), 'lesson'),
         _section(SECTION_TOMORROW, _beat_text(beats, _TOMORROW_BEAT_KEY), _TOMORROW_BEAT_KEY),
     )
