@@ -26,6 +26,11 @@ BEAT_BRIDGE = 'bridge'
 PURPOSE_OPENING = 'opening'
 PURPOSE_ELIGIBILITY_CONTEXT = 'eligibility_context'
 PURPOSE_FORWARD = 'forward'
+# V2 Story Blueprint (Phase A): the public surface framing ("what everyone saw")
+# and the transferable baseball lesson ("why it matters"). Both are generic,
+# evergreen public language — no team facts, no within-game claims, no prediction.
+PURPOSE_SURFACE = 'surface'
+PURPOSE_LESSON = 'lesson'
 
 DENIED_PUBLIC_PHRASES = (
     'sit at the front of',
@@ -236,6 +241,98 @@ for _beat, _forms in FORWARD_CLAUSE_LINES.items():
     VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_FORWARD] = _forms
 
 
+# V2 Story Blueprint surface framing ("what everyone saw"). Each line names only
+# the COMMON, outside read for a story type — generic and evergreen, asserting no
+# specific result, no within-game event, and no number. The real specifics live
+# in the Evidence section. Descriptive only; no prediction, internal-engine,
+# game-shape, or denied editorial terms.
+SURFACE_FRAMING_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'From the outside, the late innings look like business as usual.',
+        'The names at the end of a game rarely draw attention on their own.',
+        'On the surface, the back of the bullpen looks settled.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Most nights the final line looks ordinary, just another game in the books.',
+        'On the surface, the pitching line says the bullpen did its job.',
+        'From the outside, nothing about the result stands out.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'The roster lists a full bullpen.',
+        'On paper there are plenty of arms to choose from.',
+        'A full bullpen looks deep from the outside.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'The results have been holding up.',
+        'On the surface, the pattern is working.',
+        'From the outside, the bullpen looks like it is managing fine.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'A full bullpen looks the same from the outside on any given night.',
+        'On paper, the late-inning options look unchanged.',
+        'From the stands, depth stays invisible until it is needed.',
+    ),
+    BEAT_TRUST_LANE: (
+        'On paper, the bullpen has plenty of arms to choose from.',
+        'From the outside, there look to be many late-game options.',
+        'A long bullpen list suggests a lot of choices.',
+    ),
+    BEAT_BRIDGE: (
+        'The back of the bullpen draws the attention; the path to it usually goes unnoticed.',
+        'From the outside, the late-inning arms are what people watch.',
+        'On the surface, the end of the bullpen looks set.',
+    ),
+}
+
+for _beat, _forms in SURFACE_FRAMING_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_SURFACE] = _forms
+
+
+# V2 Story Blueprint baseball lesson ("why it matters"). Each line teaches a
+# transferable, evergreen baseball idea tied to the story type — no specific
+# result, no number, no within-game event, no prediction. Plain public language.
+LESSON_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'Who gets the most important outs is a choice a manager makes night to night, and it shifts before anyone announces it.',
+        'Late-inning roles are rarely fixed; they move with form, rest, and trust.',
+        'The order a bullpen is used in says as much as the names on the roster.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Carrying extra innings works in short bursts, but it quietly narrows how a manager can spread the next few games.',
+        'A bullpen asked to cover innings the rotation usually handles has fewer clean ways to set up the late innings.',
+        'Bullpen workload is borrowed, not free; the bill arrives in the games that follow.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'A roster count is not the same as a usable group; rest and role decide how many arms a manager can really call on.',
+        'Depth is about who is truly available tonight, not how many names are on the page.',
+        'The bullpen a manager can really use is almost always smaller than the one on paper.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'A pattern that works can still be hard to keep up when it leans on the same few arms.',
+        'Results and staying power are different questions; one is about tonight, the other about the weeks ahead.',
+        'How a bullpen gets its outs matters as much as whether it got them.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'Rested, usable arms are what give a manager real choices late in a game.',
+        'Depth shows up not in the headline but in how many good options a manager has in the seventh and eighth.',
+        'The value of a deep bullpen is choice: more clean ways to finish a game.',
+    ),
+    BEAT_TRUST_LANE: (
+        'Most late-game plans really lean on a small group of trusted arms, smaller than the roster suggests.',
+        'Trust, not the number of arms, decides who a manager actually uses with the game on the line.',
+        'The fewer trusted arms there are, the more each one\'s rest matters.',
+    ),
+    BEAT_BRIDGE: (
+        'Late-inning stability is not only about the final arms; it is about building a clean enough path to reach them.',
+        'The middle innings are the bridge; when the bridge is shaky, even a strong back of the bullpen is hard to use.',
+        'Reaching the trusted arms with a lead intact is its own challenge, separate from who finishes.',
+    ),
+}
+
+for _beat, _forms in LESSON_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_LESSON] = _forms
+
+
 # Approved openings a forward clause may use. The closing beat is recognized by
 # these (not only "If …"), so varied governed shapes are preserved downstream.
 FORWARD_CLAUSE_OPENERS = (
@@ -399,9 +496,13 @@ __all__ = [
     'ELIGIBILITY_CONTEXT_LINES',
     'FORWARD_CLAUSE_LINES',
     'FORWARD_CLAUSE_OPENERS',
+    'LESSON_LINES',
     'PURPOSE_ELIGIBILITY_CONTEXT',
     'PURPOSE_FORWARD',
+    'PURPOSE_LESSON',
     'PURPOSE_OPENING',
+    'PURPOSE_SURFACE',
+    'SURFACE_FRAMING_LINES',
     'VERSION',
     'approved_sentence_forms',
     'contains_banned_public_language',

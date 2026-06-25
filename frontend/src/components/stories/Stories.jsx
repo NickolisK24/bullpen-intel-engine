@@ -6,7 +6,7 @@ import { getBullpenDashboard, recordStoryInteracted } from '../../utils/api'
 import { observeStoryInteractedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
-import { SectionHeading, StoryDisclosureNote } from '../home/BullpenStories'
+import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
@@ -278,7 +278,11 @@ function FeedStoryCard({ story }) {
         {story.title}
       </h3>
 
-      <StoryNarrativeBody text={story.narrative || story.body} />
+      {Array.isArray(story.blueprint) && story.blueprint.length > 0 ? (
+        <StoryBlueprint sections={story.blueprint} className="mt-3 flex-1" />
+      ) : (
+        <StoryNarrativeBody text={story.narrative || story.body} />
+      )}
       <StoryDisclosureNote note={story.disclosureNote || story.disclosure_note} />
 
       {hasDestination && (
