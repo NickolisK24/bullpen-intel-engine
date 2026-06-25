@@ -22,6 +22,18 @@ from models.digest_metrics import (
     DigestDelivery,
     DigestRun,
 )
+from services.product_events import (
+    RETURN_VIA_CLICK,
+    RETURN_VIA_SIGN_IN,
+    SOURCE_CLICK_REDIRECT,
+    SOURCE_SIGN_IN,
+    record_digest_clicked,
+    record_digest_generated,
+    record_digest_opened,
+    record_digest_returned,
+    record_digest_sent,
+    record_digest_suppressed,
+)
 from utils.auth_tokens import generate_tracking_token, verify_tracking_token
 from utils.db import db
 from utils.time import utc_now_naive
@@ -91,6 +103,10 @@ def record_open(token, *, when=None):
     if delivery.opened_at is None:
         delivery.opened_at = when
     delivery.open_count = (delivery.open_count or 0) + 1
+    record_digest_opened(
+        delivery_id=delivery.id, user_id=delivery.user_id,
+        team_id=delivery.team_id, occurred_at=when,
+    )
     db.session.commit()
     return True
 
@@ -108,7 +124,16 @@ def record_click(token, *, when=None):
     if delivery.clicked_at is None:
         delivery.clicked_at = when
     delivery.click_count = (delivery.click_count or 0) + 1
-    _attribute_to_delivery(delivery, when)
+    newly_returned = _attribute_to_delivery(delivery, when)
+    record_digest_clicked(
+        delivery_id=delivery.id, user_id=delivery.user_id,
+        team_id=delivery.team_id, occurred_at=when,
+    )
+    if newly_returned:
+        record_digest_returned(
+            user_id=delivery.user_id, delivery_id=delivery.id, team_id=delivery.team_id,
+            attribution_source=RETURN_VIA_CLICK, source=SOURCE_CLICK_REDIRECT, occurred_at=when,
+        )
     db.session.commit()
     return delivery
 
@@ -141,14 +166,20 @@ def attribute_return(user_id, *, when=None, window_days=RETURN_ATTRIBUTION_WINDO
     if delivery is None:
         return False
     delivery.returned_at = when
+    record_digest_returned(
+        user_id=user_id, delivery_id=delivery.id, team_id=delivery.team_id,
+        attribution_source=RETURN_VIA_SIGN_IN, source=SOURCE_SIGN_IN, occurred_at=when,
+    )
     db.session.commit()
     return True
 
 
 def _attribute_to_delivery(delivery, when):
-    """Mark this specific sent delivery as a return (first_return_after_digest)."""
+    """Mark this sent delivery as a return; return True if newly attributed."""
     if delivery.status == STATUS_SENT and delivery.returned_at is None and delivery.sent_at is not None:
         delivery.returned_at = when
+        return True
+    return False
 
 
 def _delivery_for_token(token):
@@ -272,8 +303,28 @@ class DbDigestRecorder:
             sent_at=sent_at,
             digest_type=digest_type,
         )
+
+        # Canonical events: every eligible decision is first a generated payload,
+        # then either a send or an engine suppression. Emitted on the same session
+        # as the delivery, so they commit atomically with the run.
+        user_id = getattr(user, 'id', None)
+        run_id = self.run.id if self.run is not None else None
+        reference_date = self.run.reference_date if self.run is not None else None
+        record_digest_generated(
+            user_id=user_id, team_id=team_id, run_id=run_id,
+            reference_date=reference_date, digest_type=digest_type,
+            has_meaningful_change=(status == STATUS_SENT), occurred_at=sent_at,
+        )
         if status == STATUS_SENT:
+            record_digest_sent(
+                user_id=user_id, team_id=team_id, run_id=run_id,
+                delivery_id=delivery.id, digest_type=digest_type, occurred_at=sent_at,
+            )
             return tracking_urls_for(delivery.id)
+        record_digest_suppressed(
+            user_id=user_id, team_id=team_id, run_id=run_id,
+            reason=reason, digest_type=digest_type,
+        )
         return None
 
     def finish_run(self, summary):

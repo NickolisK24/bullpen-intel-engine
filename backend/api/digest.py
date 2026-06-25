@@ -24,6 +24,11 @@ from services.notification_prefs import (
     get_digest_prefs,
 )
 from services.digest_metrics import record_click, record_open
+from services.product_events import (
+    SOURCE_ONE_CLICK,
+    SOURCE_SETTINGS,
+    record_digest_optin_change,
+)
 from utils.auth_tokens import verify_unsubscribe_token
 from utils.db import db
 from utils.identity import require_authenticated_user
@@ -60,7 +65,9 @@ def update_preferences():
     ):
         return jsonify({'error': 'invalid_cadence'}), 400
 
+    before = get_digest_prefs(g.current_user)
     prefs = apply_digest_prefs(g.current_user, enabled=enabled, cadence=cadence)
+    record_digest_optin_change(g.current_user, before, prefs, source=SOURCE_SETTINGS)
     db.session.commit()
     return jsonify({'notification_prefs': prefs}), 200
 
@@ -109,7 +116,9 @@ def unsubscribe():
     )
 
     if valid:
+        before = get_digest_prefs(user)
         disable_digest(user)
+        record_digest_optin_change(user, before, get_digest_prefs(user), source=SOURCE_ONE_CLICK)
         db.session.commit()
 
     if wants_json:
