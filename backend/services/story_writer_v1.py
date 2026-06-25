@@ -204,8 +204,12 @@ def _count_word(value, singular, plural=None):
     return singular if value == 1 else plural
 
 
-def _voice_opening(frame, beat, *, names=None, extra_parts=()):
+def _voice_opening(frame, beat, *, names=None, extra_parts=(), allow_unnamed=False):
     team = _team(frame)
+    # With allow_unnamed, an empty names leaves the {names} slot empty so the
+    # library excludes name-bearing forms (used when the only names available are
+    # the wrong ones to feature, e.g. inactive/IL arms in a depth story).
+    names_slot = _clean_text(names) if allow_unnamed else (names or 'the bullpen')
     return render_voice_line(
         beat,
         stable_parts=(
@@ -217,7 +221,7 @@ def _voice_opening(frame, beat, *, names=None, extra_parts=()):
         ),
         team=team,
         possessive=_possessive(team),
-        names=names or 'the bullpen',
+        names=names_slot,
     )
 
 
@@ -569,6 +573,12 @@ def _optionality_strength(frame):
     secondary_count = observed.get('secondary_options_count')
     clean_names = _join_names(cause.get('clean_workload_options'))
     secondary_names = _join_names(cause.get('secondary_options'))
+    # A capped list for the carry line so the "tomorrow" thought never piles up a
+    # six-name string; the cause beat above still enumerates the full set.
+    carry_names = (
+        _join_names(cause.get('clean_workload_options'), limit=3)
+        or _join_names(cause.get('secondary_options'), limit=3)
+    )
     concentration = interpretation.get('concentration_band')
     unavailable = constraint.get('unavailable_arms_count')
     has_unavailable = _present(unavailable) and unavailable > 0
@@ -626,7 +636,7 @@ def _optionality_strength(frame):
             _forward_line(
                 frame,
                 BEAT_AVAILABILITY_DEPTH,
-                names=clean_names or secondary_names,
+                names=carry_names,
                 extra_parts=(paths, band),
             ),
             (
@@ -770,7 +780,6 @@ def _depth_pressure(frame):
     observed = _facts(frame, 'observation_facts')
     baseline = _facts(frame, 'baseline_facts')
     cause = _facts(frame, 'cause_facts')
-    interpretation = _facts(frame, 'interpretation_facts')
     constraint = _facts(frame, 'constraint_facts')
 
     inactive = headline.get('inactive_bullpen_arms_count') or observed.get('inactive_bullpen_arms_count')
@@ -779,15 +788,17 @@ def _depth_pressure(frame):
     il_count = cause.get('il_bullpen_arms_count')
     non_il = cause.get('non_il_inactive_bullpen_arms_count')
     inactive_names = _join_names(cause.get('inactive_bullpen_arms'), limit=4)
-    paths = interpretation.get('practical_close_game_paths_count')
-    optionality = interpretation.get('optionality_band')
 
     return _sections(
         headline=_voice_opening(
             frame,
             BEAT_DEPTH_CONSTRAINT,
-            names=inactive_names or 'the relief group',
+            # Never feature the inactive / IL arms in the headline (they are the
+            # ones OUT of the plan). With no safe group to name, use a non-name
+            # headline.
+            names=None,
             extra_parts=(inactive, active, depth_band),
+            allow_unnamed=True,
         ),
         observation_paragraph=_paragraph(
             (
@@ -823,16 +834,11 @@ def _depth_pressure(frame):
                 if _present(non_il) else None
             ),
         ),
+        # One clean carry line (the forward clause), no multi-clause bolt-on. The
+        # close-game-choice count and band read live in the Evidence/observation
+        # sections; the "tomorrow" line stays a single reader-facing thought.
         constraint_paragraph=_paragraph(
-            _forward_line(frame, BEAT_DEPTH_CONSTRAINT, names=inactive_names, extra_parts=(inactive, active)),
-            (
-                f"The current plan has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
-                if _present(paths) else None
-            ),
-            (
-                _band_phrase(_OPTIONALITY_BAND_SENTENCE, optionality)
-                if _present(optionality) else None
-            ),
+            _forward_line(frame, BEAT_DEPTH_CONSTRAINT, extra_parts=(inactive, active)),
         ),
     )
 

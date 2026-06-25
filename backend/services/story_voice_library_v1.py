@@ -102,6 +102,8 @@ VOICE_LIBRARY = {
             'The roster lists more relievers than the bullpen really trusts late',
             'The bullpen has bodies listed, but fewer arms to call on late',
             '{team} has more relievers on paper than in the late-inning plan',
+            'A long game exposes how few arms {team} can actually use',
+            'The active bullpen is shorter than the roster page suggests',
             '{names} become the pressure point when the bullpen runs short',
             'A long game gets back to {names} in a hurry',
             'The roster count hides how fast a tight game gets back to {names}',

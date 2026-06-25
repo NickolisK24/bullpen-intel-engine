@@ -168,18 +168,28 @@ def test_singular_plural_depth_and_trust():
     ))
     assert '1 arm is outside the current plan' in depth_one
 
-    trust_one = build_evidence_case(_frame(
+    # Trust now leads with the trusted arm; the secondary-count line carries the
+    # singular/plural grammar.
+    trust_plural = build_evidence_case(_frame(
         TYPE_TRUST_LANE_PRESSURE,
-        observation_facts={'available_arms_count': 6, 'clean_workload_options_count': 1},
+        observation_facts={'available_arms_count': 6, 'clean_workload_options_count': 1, 'secondary_options_count': 5},
         cause_facts={'clean_workload_options': [{'name': 'Leclerc'}]},
     ))
-    assert 'only 1 is clean and rested' in trust_one
-    trust_two = build_evidence_case(_frame(
+    assert 'The dependable late work runs through Leclerc' in trust_plural
+    assert '5 more arms are available' in trust_plural
+    trust_singular = build_evidence_case(_frame(
+        TYPE_TRUST_LANE_PRESSURE,
+        observation_facts={'available_arms_count': 4, 'clean_workload_options_count': 1, 'secondary_options_count': 1},
+        cause_facts={'clean_workload_options': [{'name': 'Hader'}]},
+    ))
+    assert '1 more arm is available' in trust_singular
+    # Fallback (no named trusted arm) keeps the count-contrast grammar.
+    trust_fallback = build_evidence_case(_frame(
         TYPE_TRUST_LANE_PRESSURE,
         observation_facts={'available_arms_count': 5, 'clean_workload_options_count': 2},
-        cause_facts={'clean_workload_options': [{'name': 'Hader'}, {'name': 'Pressly'}]},
+        cause_facts={},
     ))
-    assert 'only 2 are clean and rested' in trust_two
+    assert 'only 2 are clean and rested' in trust_fallback
 
 
 # ── No banned / unsupported language in any generated case ────────────────────
