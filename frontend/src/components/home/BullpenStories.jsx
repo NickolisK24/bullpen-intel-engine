@@ -7,7 +7,7 @@ import { homeTone } from './homePresentationView'
 // lives on the Stories page.
 export const SHORT_LIST_LIMIT = 3
 
-export default function BullpenStories({ stories, showCta = true }) {
+export default function BullpenStories({ stories, showCta = true, registerImpressionRef = null }) {
   const shortList = (Array.isArray(stories?.items) ? stories.items : []).slice(0, SHORT_LIST_LIMIT)
 
   return (
@@ -22,7 +22,11 @@ export default function BullpenStories({ stories, showCta = true }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shortList.map((story, index) => (
-            <StoryCard key={`${story.kicker}-${index}`} story={story} />
+            <StoryCard
+              key={`${story.kicker}-${index}`}
+              story={story}
+              impressionRef={registerImpressionRef ? registerImpressionRef(story) : undefined}
+            />
           ))}
         </div>
       )}
@@ -257,7 +261,7 @@ export function StoryDisclosureNote({ note, className = '' }) {
 // board, league notes open the league view, data notes open Data & Trust.
 // A story with no meaningful destination renders as plain copy — no CTA, no
 // pretend link.
-function StoryCard({ story }) {
+function StoryCard({ story, impressionRef }) {
   const tone = homeTone(story.tone)
   const hasDestination = Boolean(story.href)
 
@@ -281,11 +285,12 @@ function StoryCard({ story }) {
   )
 
   if (!hasDestination) {
-    return <article className="card flex flex-col p-4">{inner}</article>
+    return <article ref={impressionRef} className="card flex flex-col p-4">{inner}</article>
   }
 
   return (
     <Link
+      ref={impressionRef}
       to={story.href}
       className="card group flex flex-col p-4 transition-all duration-200 hover:border-amber/40 hover:bg-amber/5"
     >

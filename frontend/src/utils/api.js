@@ -738,6 +738,14 @@ export const recordStoryInteracted = (payload = {}) => request('/product/story-i
   silent: true,
 })
 
+// V3-1: story_impression posts through the owned generic story-event endpoint.
+// event_name is fixed here so the client can only ever emit the allowlisted name.
+export const recordStoryImpression = (payload = {}) => request('/product/story-event', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_impression' })),
+  silent: true,
+})
+
 // ── Digest Preferences ─────────────────────────────────────
 export const getDigestPreferences = () => request('/digest/preferences')
 

@@ -21,9 +21,11 @@ that — nothing is collected for vanity.
 - **Owned telemetry.** First-party only — no third-party behavioral analytics.
 - **Fault-isolated.** Emission is best-effort; a telemetry failure can never raise
   into, or roll back, a production write.
-- **Trust-first.** Smallest useful payload. No PII. No browser analytics (no
-  mouse / scroll / viewport / cursor / heatmaps / dwell). Every field has a clear
-  Product Intelligence purpose.
+- **Trust-first.** Smallest useful payload. No PII. No browser-analytics payloads
+  (no mouse / scroll / cursor / heatmaps / dwell, and no stored viewport geometry).
+  Viewport visibility may be used **only** as a local client-side trigger (e.g.
+  `story_impression`), never recorded. Every field has a clear Product Intelligence
+  purpose.
 
 ## Storage & envelope
 
@@ -205,12 +207,26 @@ verification only, no rates or time series.
 
 - **Purpose:** Observe how users consume BaseballOS intelligence — **presentation only**.
 - **Definition:** A BaseballOS story was successfully presented to the user. It records the presentation fact and **nothing about engagement, understanding, or completion**.
-- **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe; client beacon when a story renders).
+- **Status (V3-1):** **No longer emitted on render.** Through V2 this fired when a story card mounted, whether or not it ever appeared on screen — i.e. it meant *rendered*, not *viewed*. From V3-1 the in-product surfaces emit `story_impression` (below) for the honest on-screen-presentation fact, and `story_viewed` is **reserved** for a future meaningful-consumption trigger (e.g. expand). The event name, endpoint (`POST /api/product/story-viewed`), payload, and all historical rows are unchanged; pre-V3-1 rows carry the *rendered* meaning, so segment any trend at the V3-1 cutover.
+- **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe). Retired from the render path in V3-1; the endpoint stays live for the legacy contract and the future consumption trigger.
 - **Owner:** Product ingestion API (`api/product_events.py`).
 - **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
-- **Frontend Activation:** D2A-4 sends this only for rendered canonical story cards/flagships carrying backend `story_id` and `story_type`. Home digest returns use `surface=digest_web`; regular Today uses `home`; Stories uses `stories`. The client dedupes by `surface + team_id + story_id + story_type` during the browser session.
+- **Frontend Activation:** D2A-4 originally sent this on render for canonical story cards/flagships. **Retired from render in V3-1** in favour of `story_impression`; see that event for the current on-screen beacon.
 - **Introduced Phase:** D2A-3.
-- **Related Metrics:** Story-presentation volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
+- **Related Metrics:** Story-presentation volume by type / team / surface (pre-V3-1; succeeded by `story_impression`). **No** engagement, dwell, or completion is inferred.
+- **Version:** 1.
+
+### story_impression
+
+- **Purpose:** Observe how users actually consume BaseballOS intelligence — **on-screen presentation only**. The honest successor to the old render-fired `story_viewed` volume.
+- **Definition:** A story card appeared on screen (viewport ≈ 50%+ visible), as opposed to merely rendering into the DOM. It records the presentation fact and **nothing about engagement, dwell, reading, or understanding**.
+- **Trigger:** `POST /api/product/story-event` with `event_name=story_impression` (owned, anonymous-safe; client beacon fired from an `IntersectionObserver` when a card crosses ~50% visibility). The endpoint accepts only an allowlisted `event_name` (V3-1: `story_impression` only); an unrecognized or missing name records nothing and still returns 200.
+- **Trust-first note:** viewport visibility is used **only** as a client-side trigger. No viewport, scroll, coordinate, dwell, or heatmap data is ever sent or stored — the payload is the same minimal presentation fact as every other story event.
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** V3-1. `useStoryImpressionObservations` observes each rendered story card and fires once per story per surface per browser session when it reaches the threshold. `IntersectionObserver` is feature-detected; where it is unavailable the tracker no-ops (it never fires a false impression). Cards without a canonical story identity (e.g. the league context card) are never observed. Dedupes by `surface + team_id + story_id + story_type`.
+- **Introduced Phase:** V3-1.
+- **Related Metrics:** On-screen story-presentation volume by type / team / surface; the like-for-like successor to pre-V3 `story_viewed` volume. **No** engagement, dwell, or completion is inferred.
 - **Version:** 1.
 
 ### story_interacted

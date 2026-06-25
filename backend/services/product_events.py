@@ -67,9 +67,33 @@ PRODUCT_BEHAVIOR_EVENTS = (TODAY_LOADED, SIGNED_IN, FOLLOWED_TEAM_CHANGED)
 # It records ONLY the presentation fact — never engagement, understanding, or
 # completion. Future phases will define what understanding means FROM this data;
 # this phase only collects it.
+#
+# History note (V3-1): through V2, story_viewed was emitted on RENDER — when a
+# story card mounted, whether or not it ever appeared on screen. From V3-1 the
+# in-product surfaces no longer emit story_viewed on render; the honest
+# on-screen-presentation fact is story_impression (below). story_viewed is
+# reserved for a future, meaningful-consumption trigger. Its name, endpoint, and
+# historical rows are preserved unchanged.
 STORY_VIEWED = 'story_viewed'
 
-PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED,)
+# ── Story impression observation (V3-1) ───────────────────────────────────────
+# A story card actually appeared on screen (viewport ≈ 50%+ visible), as opposed
+# to merely being rendered into the DOM. The honest successor to the old
+# render-fired story_viewed volume: a presentation fact only — WHICH story
+# appeared, for WHICH team, on WHICH surface, and to WHOM — inferring nothing
+# about engagement, dwell, reading, or understanding. (Viewport visibility is
+# used only as a client-side trigger; no viewport / scroll / coordinate / dwell
+# data is ever sent or stored — the payload is the same minimal presentation
+# fact as story_viewed.)
+STORY_IMPRESSION = 'story_impression'
+
+PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED, STORY_IMPRESSION)
+
+# Story-event names accepted by the owned generic /story-event ingestion
+# endpoint. A small owned allowlist; an unrecognized name records nothing
+# (best-effort, never fabricated). Phase V3-1 accepts story_impression only;
+# later V3 phases extend this as new story behaviors are defined.
+STORY_EVENT_NAMES = (STORY_IMPRESSION,)
 
 # ── Product interaction observation (D2A-7) ───────────────────────────────────
 # A user intentionally performed an explicit interaction with a rendered story
@@ -166,6 +190,13 @@ def normalize_story_surface(value):
 def normalize_story_interaction(value):
     """Coerce a client-supplied interaction kind to the owned allowlist, else None."""
     if isinstance(value, str) and value.strip().lower() in STORY_INTERACTIONS:
+        return value.strip().lower()
+    return None
+
+
+def normalize_story_event_name(value):
+    """Coerce a client-supplied story-event name to the owned allowlist, else None."""
+    if isinstance(value, str) and value.strip().lower() in STORY_EVENT_NAMES:
         return value.strip().lower()
     return None
 
@@ -384,6 +415,30 @@ def record_story_viewed(*, user_id=None, anon_id=None, team_id=None, story_id=No
     """
     return record_event(
         STORY_VIEWED, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        team_id=team_id, source=surface,
+        payload={'story_id': story_id, 'story_type': story_type},
+    )
+
+
+# ── Story observation emitter (V3-1, generic owned story-event seam) ───────────
+
+def record_story_event(event_name, *, user_id=None, anon_id=None, team_id=None,
+                       story_id=None, story_type=None, surface=None, occurred_at=None):
+    """Append one owned story observation under a validated ``event_name``.
+
+    The generic seam behind ``POST /api/product/story-event``. The caller validates
+    ``event_name`` against ``STORY_EVENT_NAMES`` (the endpoint does this and ignores
+    anything else); this records the standard story envelope — WHICH story
+    (story_id + the existing canonical story_type), for WHICH team, on WHICH
+    surface, and to WHOM. It infers nothing about engagement, dwell, or
+    understanding. The surface is stored in the source column; story descriptors
+    live in the payload.
+
+    Phase V3-1 uses this for ``story_impression`` (a card appeared on screen) —
+    the honest successor to the old render-fired story_viewed.
+    """
+    return record_event(
+        event_name, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
         team_id=team_id, source=surface,
         payload={'story_id': story_id, 'story_type': story_type},
     )
