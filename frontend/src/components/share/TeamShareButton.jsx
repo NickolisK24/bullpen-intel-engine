@@ -7,7 +7,7 @@ import {
 
 const copiedVisibleMs = 1800
 
-export default function TeamShareButton({ team, className = '' }) {
+export default function TeamShareButton({ team, className = '', onShareClick = null }) {
   const [copied, setCopied] = useState(false)
   const timeoutRef = useRef(null)
   const shareUrl = buildTeamShareUrl(team)
@@ -22,6 +22,10 @@ export default function TeamShareButton({ team, className = '' }) {
   async function handleShare(event) {
     event.preventDefault()
     event.stopPropagation()
+
+    // Fire share-intent tracking up front — never gated on native-share / copy
+    // success, which cannot be reliably interpreted.
+    if (typeof onShareClick === 'function') onShareClick()
 
     const result = await shareTeamUrl(team)
     if (result.status !== 'copied') return

@@ -754,6 +754,14 @@ export const recordStoryTeamBoardOpened = (payload = {}) => request('/product/st
   silent: true,
 })
 
+// V3-3: story_share_clicked posts through the same owned story-event endpoint.
+// Fired on Share click intent (not native-share / copy success); per-click, not deduped.
+export const recordStoryShareClicked = (payload = {}) => request('/product/story-event', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId({ ...payload, event_name: 'story_share_clicked' })),
+  silent: true,
+})
+
 // ── Digest Preferences ─────────────────────────────────────
 export const getDigestPreferences = () => request('/digest/preferences')
 

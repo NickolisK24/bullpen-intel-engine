@@ -98,11 +98,21 @@ PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED, STORY_IMPRESSION)
 # interaction events below.
 STORY_TEAM_BOARD_OPENED = 'story_team_board_opened'
 
+# ── Story share click (V3-3) ──────────────────────────────────────────────────
+# The reader activated the Share control from a story context. Fired on click/tap
+# INTENT — never on native-share / clipboard success, which cannot be reliably
+# interpreted. Fires once per physical click (NOT deduped). Honest about scope:
+# today's Share shares the TEAM page, not a unique story URL, so the payload
+# carries share_target='team' alongside the story descriptors. Grouped under the
+# interaction events below.
+STORY_SHARE_CLICKED = 'story_share_clicked'
+
 # Story-event names accepted by the owned generic /story-event ingestion
 # endpoint. A small owned allowlist; an unrecognized name records nothing
 # (best-effort, never fabricated). Extended per V3 phase as new story behaviors
-# are defined (V3-1: story_impression; V3-2: + story_team_board_opened).
-STORY_EVENT_NAMES = (STORY_IMPRESSION, STORY_TEAM_BOARD_OPENED)
+# are defined (V3-1: story_impression; V3-2: + story_team_board_opened;
+# V3-3: + story_share_clicked).
+STORY_EVENT_NAMES = (STORY_IMPRESSION, STORY_TEAM_BOARD_OPENED, STORY_SHARE_CLICKED)
 
 # ── Product interaction observation (D2A-7) ───────────────────────────────────
 # A user intentionally performed an explicit interaction with a rendered story
@@ -110,7 +120,7 @@ STORY_EVENT_NAMES = (STORY_IMPRESSION, STORY_TEAM_BOARD_OPENED)
 # interaction occurred — never engagement, interest, completion, or understanding.
 STORY_INTERACTED = 'story_interacted'
 
-PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED, STORY_TEAM_BOARD_OPENED)
+PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED, STORY_TEAM_BOARD_OPENED, STORY_SHARE_CLICKED)
 
 # ── Digest deliverability (D2A-7, provider-backed) ────────────────────────────
 # Facts reported by the email provider (Resend) about a sent digest's fate. They
@@ -171,6 +181,13 @@ STORY_INTERACTION_OPEN = 'open'
 STORY_INTERACTION_SELECT = 'select'
 STORY_INTERACTIONS = (STORY_INTERACTION_EXPAND, STORY_INTERACTION_OPEN, STORY_INTERACTION_SELECT)
 
+# story_share_clicked share targets (kept in the payload). Today the Share control
+# shares the team page, so the only owned value is 'team'; anything else records as
+# None rather than fabricated. Names the share destination scope — it asserts
+# nothing about whether the native share / copy actually completed.
+SHARE_TARGET_TEAM = 'team'
+SHARE_TARGETS = (SHARE_TARGET_TEAM,)
+
 # Attribution source for a return (kept in the payload, not promoted to a column).
 RETURN_VIA_CLICK = 'click'
 RETURN_VIA_SIGN_IN = 'sign_in'
@@ -206,6 +223,13 @@ def normalize_story_interaction(value):
 def normalize_story_event_name(value):
     """Coerce a client-supplied story-event name to the owned allowlist, else None."""
     if isinstance(value, str) and value.strip().lower() in STORY_EVENT_NAMES:
+        return value.strip().lower()
+    return None
+
+
+def normalize_share_target(value):
+    """Coerce a client-supplied share target to the owned allowlist, else None."""
+    if isinstance(value, str) and value.strip().lower() in SHARE_TARGETS:
         return value.strip().lower()
     return None
 
@@ -432,7 +456,8 @@ def record_story_viewed(*, user_id=None, anon_id=None, team_id=None, story_id=No
 # ── Story observation emitter (V3-1, generic owned story-event seam) ───────────
 
 def record_story_event(event_name, *, user_id=None, anon_id=None, team_id=None,
-                       story_id=None, story_type=None, surface=None, occurred_at=None):
+                       story_id=None, story_type=None, surface=None,
+                       share_target=None, occurred_at=None):
     """Append one owned story observation under a validated ``event_name``.
 
     The generic seam behind ``POST /api/product/story-event``. The caller validates
@@ -443,13 +468,19 @@ def record_story_event(event_name, *, user_id=None, anon_id=None, team_id=None,
     understanding. The surface is stored in the source column; story descriptors
     live in the payload.
 
-    Phase V3-1 uses this for ``story_impression`` (a card appeared on screen) —
-    the honest successor to the old render-fired story_viewed.
+    Phase V3-1 uses this for ``story_impression`` (a card appeared on screen),
+    V3-2 for ``story_team_board_opened`` (the reader opened the Team Board), and
+    V3-3 for ``story_share_clicked`` (the reader hit Share from a story context;
+    ``share_target`` names the share destination scope, e.g. ``team``). The optional
+    ``share_target`` is added to the payload only when present, so the other events
+    keep their minimal ``{story_id, story_type}`` shape.
     """
+    payload = {'story_id': story_id, 'story_type': story_type}
+    if share_target is not None:
+        payload['share_target'] = share_target
     return record_event(
         event_name, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
-        team_id=team_id, source=surface,
-        payload={'story_id': story_id, 'story_type': story_type},
+        team_id=team_id, source=surface, payload=payload,
     )
 
 

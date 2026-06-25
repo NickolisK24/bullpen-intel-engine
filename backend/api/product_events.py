@@ -8,7 +8,8 @@ into the canonical Product Event log:
   • POST /api/product/story-interacted (D2A-7) — a story was explicitly interacted with.
   • POST /api/product/story-event      (V3-1)  — an owned story observation under an
                                         allowlisted event_name (V3-1: story_impression;
-                                        V3-2: + story_team_board_opened).
+                                        V3-2: + story_team_board_opened;
+                                        V3-3: + story_share_clicked).
 
 Future product-behavior facts can be added here without new infrastructure.
 
@@ -24,6 +25,7 @@ from flask import Blueprint, jsonify, request
 from services.product_events import (
     normalize_anon_id,
     normalize_arrival_source,
+    normalize_share_target,
     normalize_short_text,
     normalize_story_event_name,
     normalize_story_interaction,
@@ -123,13 +125,15 @@ def story_event():
     """Record an owned story observation under an allowlisted event_name. Always 200.
 
     The single generic seam for V3 story observations. The client supplies an
-    ``event_name`` (V3-1: ``story_impression``; V3-2: ``story_team_board_opened``)
-    plus the canonical story descriptors. An unrecognized or missing event_name
-    records nothing — the call is best-effort and fault-isolated, still returns
-    200, and never fabricates an event. Associates the signed-in user when present;
-    otherwise an anonymous (optionally anon_id-tagged) observation.
-    ``story_impression`` means the card appeared on screen; ``story_team_board_opened``
-    means the reader followed the story's primary CTA into the Team Board.
+    ``event_name`` (V3-1: ``story_impression``; V3-2: ``story_team_board_opened``;
+    V3-3: ``story_share_clicked``) plus the canonical story descriptors. An
+    unrecognized or missing event_name records nothing — the call is best-effort
+    and fault-isolated, still returns 200, and never fabricates an event. Associates
+    the signed-in user when present; otherwise an anonymous (optionally
+    anon_id-tagged) observation. ``story_impression`` means the card appeared on
+    screen; ``story_team_board_opened`` means the reader opened the Team Board; and
+    ``story_share_clicked`` means the reader hit Share from a story context
+    (``share_target`` names the destination scope, e.g. ``team``).
     """
     data = request.get_json(silent=True) or {}
     event_name = normalize_story_event_name(data.get('event_name'))
@@ -143,6 +147,7 @@ def story_event():
             story_id=normalize_short_text(data.get('story_id')),
             story_type=normalize_short_text(data.get('story_type')),
             surface=normalize_story_surface(data.get('surface')),
+            share_target=normalize_share_target(data.get('share_target')),
         )
         db.session.commit()
     return jsonify({'ok': True}), 200
