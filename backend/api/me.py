@@ -15,6 +15,12 @@ Primary-team policy (deterministic, at most one primary per user):
 from flask import Blueprint, g, jsonify, request
 
 from models.user import UserFollowedTeam
+from services.product_events import (
+    FOLLOW_ACTION_FOLLOW,
+    FOLLOW_ACTION_SET_PRIMARY,
+    FOLLOW_ACTION_UNFOLLOW,
+    record_followed_team_changed,
+)
 from services.team_directory import is_valid_team_id
 from utils.db import db
 from utils.identity import require_authenticated_user
@@ -68,6 +74,14 @@ def _serialize(user):
     }
 
 
+def _follow_state(user):
+    """Snapshot of (followed team_ids, primary team_id) for change detection."""
+    follows = user.followed_teams
+    teams = {follow.team_id for follow in follows}
+    primary = next((follow.team_id for follow in follows if follow.is_primary), None)
+    return teams, primary
+
+
 @me_bp.route('/teams', methods=['GET'])
 @require_authenticated_user
 def list_followed_teams():
@@ -85,6 +99,7 @@ def follow_team():
     if team_id is None or not is_valid_team_id(team_id):
         return jsonify({'error': 'invalid_team_id'}), 400
 
+    before_teams, before_primary = _follow_state(user)
     existing = next((f for f in user.followed_teams if f.team_id == team_id), None)
     first_follow = len(user.followed_teams) == 0
     if existing is None:
@@ -97,6 +112,18 @@ def follow_team():
     else:
         _ensure_single_primary(user)
 
+    _, after_primary = _follow_state(user)
+    if team_id not in before_teams:
+        action = FOLLOW_ACTION_FOLLOW
+    elif after_primary != before_primary:
+        action = FOLLOW_ACTION_SET_PRIMARY
+    else:
+        action = None
+    if action is not None:
+        record_followed_team_changed(
+            user_id=user.id, team_id=team_id, action=action,
+            prior_primary_team_id=before_primary, primary_team_id=after_primary,
+        )
     db.session.commit()
     return jsonify(_serialize(user)), 200
 
@@ -108,10 +135,16 @@ def unfollow_team(team_id):
     user = g.current_user
     follow = next((f for f in user.followed_teams if f.team_id == team_id), None)
     if follow is not None:
+        _, before_primary = _follow_state(user)
         was_primary = follow.is_primary
         user.followed_teams.remove(follow)
         if was_primary:
             _ensure_single_primary(user)
+        _, after_primary = _follow_state(user)
+        record_followed_team_changed(
+            user_id=user.id, team_id=team_id, action=FOLLOW_ACTION_UNFOLLOW,
+            prior_primary_team_id=before_primary, primary_team_id=after_primary,
+        )
         db.session.commit()
     return jsonify(_serialize(user)), 200
 
@@ -126,11 +159,18 @@ def set_primary_team():
     if team_id is None or not is_valid_team_id(team_id):
         return jsonify({'error': 'invalid_team_id'}), 400
 
+    before_teams, before_primary = _follow_state(user)
     existing = next((f for f in user.followed_teams if f.team_id == team_id), None)
     if existing is None:
         user.followed_teams.append(
             UserFollowedTeam(team_id=team_id, created_at=utc_now_naive())
         )
     _set_primary(user, team_id)
+    _, after_primary = _follow_state(user)
+    if team_id not in before_teams or after_primary != before_primary:
+        record_followed_team_changed(
+            user_id=user.id, team_id=team_id, action=FOLLOW_ACTION_SET_PRIMARY,
+            prior_primary_team_id=before_primary, primary_team_id=after_primary,
+        )
     db.session.commit()
     return jsonify(_serialize(user)), 200
