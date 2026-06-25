@@ -95,6 +95,7 @@ function RosterStatusBanner({ summary }) {
     view.authority !== 'available'
     || view.unknownCount > 0
     || view.unavailablePitchersCount > 0
+    || view.notShownRosterContextCount > 0
     || view.limitations.length > 0
   )
   const rosterFacts = (
@@ -105,10 +106,18 @@ function RosterStatusBanner({ summary }) {
       </span>
       <span
         className="font-mono text-xs"
-        title="Pitchers BaseballOS is not counting for the current bullpen plan because of roster context."
+        title="Roster-inactive pitchers (injured list, optioned, or 40-man only) shown on the board so you can open each one and see why it is out of the bullpen plan."
       >
         <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
       </span>
+      {view.notShownRosterContextCount > 0 && (
+        <span
+          className="font-mono text-xs"
+          title="More roster-inactive arms BaseballOS is aware of but does not show as cards because they are off the active roster. Counted here for roster awareness only, not shown as bullpen options."
+        >
+          <span className="text-chalk500">Off Roster (not shown)</span> {view.notShownRosterContextCount}
+        </span>
+      )}
       <span className="font-mono text-xs">
         <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
       </span>
