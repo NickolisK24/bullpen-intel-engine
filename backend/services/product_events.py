@@ -52,6 +52,16 @@ DIGEST_LIFECYCLE_EVENTS = (
     DIGEST_CLICKED, DIGEST_RETURNED, DIGEST_UNSUBSCRIBED, DIGEST_REENABLED,
 )
 
+# ── Product behavior events (D2A-2) ───────────────────────────────────────────
+# Owned, first-party facts about what a user does AFTER returning. Only these
+# three are added in D2A-2; story_viewed / story_engaged / Understanding Session
+# and the intelligence layers remain intentionally deferred.
+TODAY_LOADED = 'today_loaded'
+SIGNED_IN = 'signed_in'
+FOLLOWED_TEAM_CHANGED = 'followed_team_changed'
+
+PRODUCT_BEHAVIOR_EVENTS = (TODAY_LOADED, SIGNED_IN, FOLLOWED_TEAM_CHANGED)
+
 # ── Sources (where a fact originated) ─────────────────────────────────────────
 SOURCE_DIGEST_JOB = 'digest_job'
 SOURCE_TRACKING_PIXEL = 'tracking_pixel'
@@ -59,10 +69,44 @@ SOURCE_CLICK_REDIRECT = 'click_redirect'
 SOURCE_ONE_CLICK = 'one_click'
 SOURCE_SETTINGS = 'settings'
 SOURCE_SIGN_IN = 'sign_in'
+# In-product action surface (e.g. team-following changes inside the app).
+SOURCE_APP = 'app'
+
+# Arrival sources for today_loaded — how the user reached the Today view. Kept to
+# a small, owned allowlist; anything else normalizes to 'direct'.
+SOURCE_DIGEST = 'digest'
+SOURCE_DIRECT = 'direct'
+SOURCE_ORGANIC = 'organic'
+ARRIVAL_SOURCES = (SOURCE_DIGEST, SOURCE_DIRECT, SOURCE_ORGANIC)
+
+# followed_team_changed actions (kept in the payload).
+FOLLOW_ACTION_FOLLOW = 'follow'
+FOLLOW_ACTION_UNFOLLOW = 'unfollow'
+FOLLOW_ACTION_SET_PRIMARY = 'set_primary'
 
 # Attribution source for a return (kept in the payload, not promoted to a column).
 RETURN_VIA_CLICK = 'click'
 RETURN_VIA_SIGN_IN = 'sign_in'
+
+# Cap matching ProductEvent.anon_id (String(64)); pseudonymous, never PII.
+ANON_ID_MAX_LEN = 64
+
+
+def normalize_arrival_source(value):
+    """Coerce a client-supplied arrival source to the owned allowlist."""
+    if isinstance(value, str) and value.strip().lower() in ARRIVAL_SOURCES:
+        return value.strip().lower()
+    return SOURCE_DIRECT
+
+
+def normalize_anon_id(value):
+    """Coerce a client-supplied pseudonymous id to a safe, length-capped string."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned[:ANON_ID_MAX_LEN]
 
 
 # ── Core writer ───────────────────────────────────────────────────────────────
@@ -199,3 +243,46 @@ def record_digest_optin_change(user, before_prefs, after_prefs, *, source,
     if after and not before:
         return record_digest_reenabled(user_id=user_id, source=source, occurred_at=occurred_at)
     return None
+
+
+# ── Product behavior emitters (D2A-2) ─────────────────────────────────────────
+
+def record_today_loaded(*, user_id=None, anon_id=None, team_id=None, source=None,
+                        occurred_at=None):
+    """A user successfully arrived inside BaseballOS (the Today view).
+
+    Anonymous-safe: user_id and anon_id are both optional. The smallest useful
+    payload is the columns themselves (team_id + arrival source); no body payload.
+    """
+    return record_event(
+        TODAY_LOADED, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        team_id=team_id, source=source or SOURCE_DIRECT,
+    )
+
+
+def record_signed_in(*, user_id, anon_id=None, new_user=False, occurred_at=None):
+    """A user authenticated. anon_id (when supplied) bridges pre-auth behavior to
+    this user for future User Intelligence."""
+    return record_event(
+        SIGNED_IN, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        source=SOURCE_SIGN_IN, payload={'new_user': bool(new_user)},
+    )
+
+
+def record_followed_team_changed(*, user_id, team_id, action,
+                                 prior_primary_team_id=None, primary_team_id=None,
+                                 source=SOURCE_APP, occurred_at=None):
+    """A user changed their team preferences (follow / unfollow / set primary).
+
+    Observation only — it never alters following behavior. The before/after
+    primary is kept in the payload to support future Team Intelligence.
+    """
+    return record_event(
+        FOLLOWED_TEAM_CHANGED, occurred_at=occurred_at, user_id=user_id, team_id=team_id,
+        source=source,
+        payload={
+            'action': action,
+            'prior_primary_team_id': prior_primary_team_id,
+            'primary_team_id': primary_team_id,
+        },
+    )

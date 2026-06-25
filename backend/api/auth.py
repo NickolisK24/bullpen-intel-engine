@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request
 
 from models.user import User
 from services.digest_metrics import attribute_return
+from services.product_events import normalize_anon_id, record_signed_in
 from utils.auth_email import send_magic_link
 from utils.auth_tokens import (
     build_magic_link,
@@ -75,9 +76,21 @@ def verify():
         db.session.add(user)
 
     now = utc_now_naive()
+    first_sign_in = user.last_login_at is None
     if user.email_verified_at is None:
         user.email_verified_at = now
     user.last_login_at = now
+
+    # Record the sign-in as a canonical product behavior event. anon_id (when the
+    # client supplies one) bridges pre-auth behavior to this user. flush() assigns
+    # a new user's id so the event carries it; the event commits atomically with
+    # the login state. Best-effort — emission never blocks or breaks login.
+    db.session.flush()
+    record_signed_in(
+        user_id=user.id,
+        anon_id=normalize_anon_id(data.get('anon_id')),
+        new_user=first_sign_in,
+    )
     db.session.commit()
 
     # Signing in is a clear "came back" signal: attribute a digest-driven return
