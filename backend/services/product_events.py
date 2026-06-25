@@ -62,6 +62,15 @@ FOLLOWED_TEAM_CHANGED = 'followed_team_changed'
 
 PRODUCT_BEHAVIOR_EVENTS = (TODAY_LOADED, SIGNED_IN, FOLLOWED_TEAM_CHANGED)
 
+# ── Product understanding observation (D2A-3) ─────────────────────────────────
+# A pure observation: a BaseballOS story was successfully presented to the user.
+# It records ONLY the presentation fact — never engagement, understanding, or
+# completion. Future phases will define what understanding means FROM this data;
+# this phase only collects it.
+STORY_VIEWED = 'story_viewed'
+
+PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED,)
+
 # ── Sources (where a fact originated) ─────────────────────────────────────────
 SOURCE_DIGEST_JOB = 'digest_job'
 SOURCE_TRACKING_PIXEL = 'tracking_pixel'
@@ -79,6 +88,14 @@ SOURCE_DIRECT = 'direct'
 SOURCE_ORGANIC = 'organic'
 ARRIVAL_SOURCES = (SOURCE_DIGEST, SOURCE_DIRECT, SOURCE_ORGANIC)
 
+# Surfaces a story can be presented on (stored in the event's source column).
+# A small owned allowlist; anything unrecognized is recorded as None (unknown)
+# rather than fabricated.
+STORY_SURFACE_HOME = 'home'
+STORY_SURFACE_STORIES = 'stories'
+STORY_SURFACE_DIGEST_WEB = 'digest_web'
+STORY_SURFACES = (STORY_SURFACE_HOME, STORY_SURFACE_STORIES, STORY_SURFACE_DIGEST_WEB)
+
 # followed_team_changed actions (kept in the payload).
 FOLLOW_ACTION_FOLLOW = 'follow'
 FOLLOW_ACTION_UNFOLLOW = 'unfollow'
@@ -90,6 +107,9 @@ RETURN_VIA_SIGN_IN = 'sign_in'
 
 # Cap matching ProductEvent.anon_id (String(64)); pseudonymous, never PII.
 ANON_ID_MAX_LEN = 64
+# Caps for client-supplied story descriptors (story id like "<team_id>:<date>",
+# and the existing canonical story_type). Bounded so a client cannot bloat a row.
+STORY_FIELD_MAX_LEN = 64
 
 
 def normalize_arrival_source(value):
@@ -97,6 +117,23 @@ def normalize_arrival_source(value):
     if isinstance(value, str) and value.strip().lower() in ARRIVAL_SOURCES:
         return value.strip().lower()
     return SOURCE_DIRECT
+
+
+def normalize_story_surface(value):
+    """Coerce a client-supplied story surface to the owned allowlist, else None."""
+    if isinstance(value, str) and value.strip().lower() in STORY_SURFACES:
+        return value.strip().lower()
+    return None
+
+
+def normalize_short_text(value, *, max_len=STORY_FIELD_MAX_LEN):
+    """Coerce a client-supplied descriptor to a safe, length-capped string or None."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned[:max_len]
 
 
 def normalize_anon_id(value):
@@ -285,4 +322,24 @@ def record_followed_team_changed(*, user_id, team_id, action,
             'prior_primary_team_id': prior_primary_team_id,
             'primary_team_id': primary_team_id,
         },
+    )
+
+
+# ── Product understanding observation emitter (D2A-3) ──────────────────────────
+
+def record_story_viewed(*, user_id=None, anon_id=None, team_id=None, story_id=None,
+                        story_type=None, surface=None, occurred_at=None):
+    """A BaseballOS story was successfully presented to the user.
+
+    Observation only: it records WHICH story (story_id + the existing canonical
+    story_type), for WHICH team, on WHICH surface, and to WHOM (user and/or
+    anon_id). It deliberately records nothing about engagement, dwell, scroll, or
+    completion — those are not facts this phase can trustworthily observe. The
+    surface is stored in the event's source column; story descriptors live in the
+    payload.
+    """
+    return record_event(
+        STORY_VIEWED, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        team_id=team_id, source=surface,
+        payload={'story_id': story_id, 'story_type': story_type},
     )

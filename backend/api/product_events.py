@@ -1,9 +1,12 @@
-"""Product behavior ingestion API (Phase D2A-2).
+"""Product behavior ingestion API (Phase D2A-2, extended D2A-3).
 
 A single, owned, anonymous-safe seam for recording first-party product behavior
-into the canonical Product Event log. Today it accepts only the Today-view
-arrival (today_loaded); future product-behavior facts can be added here without
-new infrastructure.
+into the canonical Product Event log:
+
+  • POST /api/product/today-loaded  (D2A-2) — a Today-view arrival.
+  • POST /api/product/story-viewed  (D2A-3) — a story was presented to the user.
+
+Future product-behavior facts can be added here without new infrastructure.
 
 This is OWNED telemetry (no third-party analytics). It records measurement only —
 it never reads or changes product state, and it is deliberately minimal: the
@@ -16,6 +19,9 @@ from flask import Blueprint, jsonify, request
 from services.product_events import (
     normalize_anon_id,
     normalize_arrival_source,
+    normalize_short_text,
+    normalize_story_surface,
+    record_story_viewed,
     record_today_loaded,
 )
 from utils.db import db
@@ -50,6 +56,30 @@ def today_loaded():
         anon_id=normalize_anon_id(data.get('anon_id')),
         team_id=_coerce_team_id(data.get('team_id')),
         source=normalize_arrival_source(data.get('source')),
+    )
+    db.session.commit()
+    return jsonify({'ok': True}), 200
+
+
+@product_bp.route('/story-viewed', methods=['POST'])
+def story_viewed():
+    """Record that a story was presented to the user. Anonymous-safe; always 200.
+
+    A pure observation — it records WHICH story (story_id + the existing canonical
+    story_type), for WHICH team, on WHICH surface, and to WHOM. It infers nothing
+    about engagement, understanding, or completion. Associates the signed-in user
+    when present; otherwise an anonymous (optionally anon_id-tagged) view.
+    Best-effort — a telemetry failure never surfaces as an error to the client.
+    """
+    data = request.get_json(silent=True) or {}
+    user = resolve_current_user()  # None when anonymous; never raises
+    record_story_viewed(
+        user_id=getattr(user, 'id', None),
+        anon_id=normalize_anon_id(data.get('anon_id')),
+        team_id=_coerce_team_id(data.get('team_id')),
+        story_id=normalize_short_text(data.get('story_id')),
+        story_type=normalize_short_text(data.get('story_type')),
+        surface=normalize_story_surface(data.get('surface')),
     )
     db.session.commit()
     return jsonify({'ok': True}), 200

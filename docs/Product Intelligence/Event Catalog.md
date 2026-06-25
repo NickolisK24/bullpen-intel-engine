@@ -1,0 +1,214 @@
+# BaseballOS — Product Intelligence Event Catalog
+
+This is the **canonical reference** for every Product Intelligence event BaseballOS
+records. It is the source of truth for what each event means, when it fires, who
+emits it, and what it carries.
+
+Product Intelligence answers one question: **is BaseballOS creating a repeat user
+habit?** The primary KPI is **Return Rate**. Email exists to bring users back;
+BaseballOS exists to create understanding. Every event below must ladder up to
+that — nothing is collected for vanity.
+
+## Principles (apply to every event)
+
+- **Immutable facts.** A row records a thing that happened, stamped with when it
+  happened. Rows are only ever inserted — never updated or deleted.
+- **Append-only.** Corrections are new compensating events, never edits. History
+  is never rewritten.
+- **State stays derived.** Current state (open counts, return timestamps, opt-in
+  status, followed teams) lives in its own tables; this log never stores derived
+  status.
+- **Owned telemetry.** First-party only — no third-party behavioral analytics.
+- **Fault-isolated.** Emission is best-effort; a telemetry failure can never raise
+  into, or roll back, a production write.
+- **Trust-first.** Smallest useful payload. No PII. No browser analytics (no
+  mouse / scroll / viewport / cursor / heatmaps / dwell). Every field has a clear
+  Product Intelligence purpose.
+
+## Storage & envelope
+
+All events live in one append-only PostgreSQL table, `product_events`
+(introduced D2A-1). It is deliberately **foreign-key-free** so the log survives
+deletion of the rows it references and never cascades a delete into history.
+
+Every event shares this envelope; per-event rows below list only the meaningful
+fields.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Surrogate primary key (append order). |
+| `event_name` | Canonical event name (see catalog). |
+| `occurred_at` | UTC timestamp the fact occurred. |
+| `schema_version` | Payload schema version (currently `1`). |
+| `user_id` | Actor user id, when known (nullable; not a FK). |
+| `anon_id` | Pseudonymous client id, when supplied (nullable; never PII). |
+| `team_id` | Team the fact concerns, when applicable (nullable; not a FK). |
+| `run_id` | Digest run id, for digest-job events (nullable). |
+| `delivery_id` | Digest delivery id, for per-send events (nullable). |
+| `source` | Where the fact originated / its surface. |
+| `payload` | Event-specific JSON (JSON-safe primitives only). |
+| `created_at` | Row write time (audit; equals `occurred_at` for live events). |
+
+Vocabulary, sources, normalizers, and emitters live in
+`backend/services/product_events.py`. Ingestion endpoints live in
+`backend/api/product_events.py`; digest-lifecycle emission lives at the existing
+digest seams.
+
+---
+
+## Catalog
+
+### digest_generated
+
+- **Purpose:** Measure content supply — whether there was something worth saying.
+- **Definition:** The composer produced a digest payload for an eligible user during a run.
+- **Trigger:** `DbDigestRecorder.on_decision`, once per eligible decision in `run_digest_job`.
+- **Owner:** Digest delivery recorder (`services/digest_metrics.py`, via `services/digest_delivery.py`).
+- **Payload:** `{reference_date, digest_type, has_meaningful_change}` — columns: `user_id`, `team_id`, `run_id`, `source=digest_job`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Generation volume, suppression rate, content-supply health.
+- **Version:** 1.
+
+### digest_suppressed
+
+- **Purpose:** Measure how often a generated digest is held back.
+- **Definition:** The engine suppressed a generated digest (`send=False`).
+- **Trigger:** `on_decision` with status suppressed.
+- **Owner:** Digest delivery recorder (`services/digest_metrics.py`).
+- **Payload:** `{reason, digest_type}` — columns: `user_id`, `team_id`, `run_id`, `source=digest_job`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Suppression rate, suppressed-by-reason.
+- **Version:** 1.
+
+### digest_sent
+
+- **Purpose:** The digest was sent — the denominator for open/click/return rates.
+- **Definition:** A digest email was accepted for delivery to the user.
+- **Trigger:** `on_decision` with status sent (recorded with the delivery row).
+- **Owner:** Digest delivery recorder (`services/digest_metrics.py`).
+- **Payload:** `{digest_type}` — columns: `user_id`, `team_id`, `run_id`, `delivery_id`, `source=digest_job`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Sent volume; denominator for Return Rate, open/click rate.
+- **Version:** 1.
+
+### digest_opened
+
+- **Purpose:** Soft attention signal (treat as soft — Apple MPP inflates opens).
+- **Definition:** The tracking pixel of a sent digest was loaded. Every open is a fact.
+- **Trigger:** `GET /api/digest/open` → `record_open`.
+- **Owner:** Digest tracking endpoint (`api/digest.py` → `services/digest_metrics.py`).
+- **Payload:** none — columns: `delivery_id`, `user_id`, `team_id`, `source=tracking_pixel`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Open rate (supporting, soft).
+- **Version:** 1.
+
+### digest_clicked
+
+- **Purpose:** Intent signal — the content created enough curiosity to act.
+- **Definition:** A tracked CTA link in a sent digest was clicked. Every click is a fact.
+- **Trigger:** `GET /api/digest/click` → `record_click`.
+- **Owner:** Digest tracking endpoint (`api/digest.py` → `services/digest_metrics.py`).
+- **Payload:** none — columns: `delivery_id`, `user_id`, `team_id`, `source=click_redirect`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Click rate, click-to-open.
+- **Version:** 1.
+
+### digest_returned
+
+- **Purpose:** **Primary KPI** — the user came back into the product via the digest.
+- **Definition:** The first attributed return after a sent digest, within the attribution window. Idempotent (first return only).
+- **Trigger:** `record_click` (a click implies a return) or `attribute_return` (sign-in within the window).
+- **Owner:** Digest tracking endpoint + auth verify (`services/digest_metrics.py`).
+- **Payload:** `{attribution_source: click | sign_in}` — columns: `user_id`, `delivery_id`, `team_id`, `source=click_redirect | sign_in`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** **Return Rate (primary KPI).**
+- **Version:** 1.
+
+### digest_unsubscribed
+
+- **Purpose:** Trust / list health.
+- **Definition:** The user turned the digest off (effective opt-in → opt-out).
+- **Trigger:** One-click unsubscribe (`/api/digest/unsubscribe`) or `PUT /api/digest/preferences` disabling.
+- **Owner:** Digest API (`api/digest.py` via `record_digest_optin_change`).
+- **Payload:** none — columns: `user_id`, `source=one_click | settings`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Unsubscribe rate.
+- **Version:** 1.
+
+### digest_reenabled
+
+- **Purpose:** Channel reactivation.
+- **Definition:** The user turned the digest back on (effective opt-out → opt-in).
+- **Trigger:** `PUT /api/digest/preferences` enabling.
+- **Owner:** Digest API (`api/digest.py` via `record_digest_optin_change`).
+- **Payload:** none — columns: `user_id`, `source=settings`.
+- **Introduced Phase:** D2A-1.
+- **Related Metrics:** Re-enable / reactivation rate.
+- **Version:** 1.
+
+### today_loaded
+
+- **Purpose:** Measure arrival inside BaseballOS — the bridge from email to product.
+- **Definition:** A user successfully arrived at the Today view.
+- **Trigger:** `POST /api/product/today-loaded` (owned, anonymous-safe; client beacon on Today-view mount).
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** none — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = digest | direct | organic`.
+- **Introduced Phase:** D2A-2.
+- **Related Metrics:** Arrival / return-to-product rate; an input to a future Understanding definition.
+- **Version:** 1.
+
+### signed_in
+
+- **Purpose:** Bridge anonymous usage to authenticated usage.
+- **Definition:** A user authenticated via the magic-link verify flow.
+- **Trigger:** `POST /api/auth/verify` success.
+- **Owner:** Auth API (`api/auth.py`).
+- **Payload:** `{new_user}` — columns: `user_id`, `anon_id` (optional; the pre-auth → user bridge), `source=sign_in`.
+- **Introduced Phase:** D2A-2.
+- **Related Metrics:** Sign-in volume, new vs returning, anon→auth bridge coverage.
+- **Version:** 1.
+
+### followed_team_changed
+
+- **Purpose:** Observe product preference changes (input to future Team Intelligence).
+- **Definition:** A user's followed-team set or primary team actually changed.
+- **Trigger:** `POST /api/me/teams`, `DELETE /api/me/teams/<id>`, or `PUT /api/me/primary-team` — only when state changes.
+- **Owner:** Authenticated user API (`api/me.py`).
+- **Payload:** `{action: follow | unfollow | set_primary, prior_primary_team_id, primary_team_id}` — columns: `user_id`, `team_id`, `source=app`.
+- **Introduced Phase:** D2A-2.
+- **Related Metrics:** Net follows, primary-team churn, per-team subscriber growth.
+- **Version:** 1.
+
+### story_viewed
+
+- **Purpose:** Observe how users consume BaseballOS intelligence — **presentation only**.
+- **Definition:** A BaseballOS story was successfully presented to the user. It records the presentation fact and **nothing about engagement, understanding, or completion**.
+- **Trigger:** `POST /api/product/story-viewed` (owned, anonymous-safe; client beacon when a story renders).
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Introduced Phase:** D2A-3.
+- **Related Metrics:** Story-presentation volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
+- **Version:** 1.
+
+---
+
+## Reserved (architecture only — intentionally NOT yet defined)
+
+These are reserved so future phases can define them **from observed reality**, not
+from invented thresholds. None is implemented:
+
+- **`story_engaged`** — engagement beyond presentation.
+- **Understanding Session** — a derived session concept.
+- **Understanding Rate** — a derived KPI.
+- **Story taxonomy / `story_category`** — classification beyond the existing `story_type`.
+- **Retention engine; User / Team / Story / Trust / Release Intelligence; dashboards.**
+
+Measure first. Define later.
+
+## Change policy
+
+- Adding an event: append a new section here in the same phase as the code change.
+- Changing a payload incompatibly: bump that event's `Version` and the row's
+  `schema_version`; never rewrite historical rows.
+- This catalog and the vocabulary in `backend/services/product_events.py` must
+  stay in lockstep.
