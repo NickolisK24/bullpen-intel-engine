@@ -21,9 +21,12 @@ rewritten into upbeat copy.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from services.story_blueprint_v1 import build_story_blueprint
+from services.story_feed_variety_v1 import apply_feed_variety
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import (
     TYPE_BRIDGE_INSTABILITY,
@@ -48,6 +51,8 @@ from services.story_four_beat_interpreter_v1 import (
 CAPABILITY = 'baseballos_canonical_story_v1'
 VERSION = '2026-06-22.phase_1'
 SOURCE_ENGINE = 'story_intelligence_service_v1'
+
+logger = logging.getLogger('baseballos.story_feed')
 
 QUALITY_PUBLISHED = 'published'
 QUALITY_REVIEW = 'review'
@@ -329,6 +334,9 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'quality_status': QUALITY_SUPPRESSED,
         # Populated at feed assembly, which has the prior-snapshot context.
         'continuity': None,
+        # V2 Story Blueprint (Phase A): the 5-section teaching shape. Empty for a
+        # suppressed/neutral item; populated below for an available story.
+        'blueprint': [],
     }
 
     if not story_available:
@@ -360,6 +368,14 @@ def canonical_story_from_service_payload(service_payload, *, team_id=None, team=
         'share_title': _share_title(team_name, story_type_label, headline or None),
         'share_summary': _share_summary(beats),
         'quality_status': QUALITY_PUBLISHED,
+        # Reframe the authored beats into the 5-section teaching blueprint. This
+        # adds no facts: 'noticed'/'evidence'/'tomorrow' reuse the validated beat
+        # prose; the surface + lesson lines are deterministic, fact-free public
+        # voice. Backward-compatible (additive field).
+        'blueprint': build_story_blueprint(
+            story_type=story_type, beats=beats, stable_parts=(item['story_id'],),
+            frame=frame,
+        ),
     })
 
     # A positive read should publish under a positive beat. Only if one is ever
@@ -672,12 +688,20 @@ def build_canonical_story_feed(
 
     available = [story for story in items if story['story_available']]
     suppressed = [story for story in items if not story['story_available']]
+    # Feed-level editorial variety: de-duplicate high-visibility phrasing
+    # (headline / opener / lesson) across the assembled feed using approved
+    # voice-library alternates. Deterministic and fault-isolated — any error
+    # leaves the stories untouched, never breaking the feed.
+    try:
+        available = apply_feed_variety(available)
+    except Exception:
+        logger.debug('[story_feed] feed variety skipped', exc_info=True)
     suppression_reasons: dict[str, int] = {}
     for story in suppressed:
         reason = story.get('suppression_reason') or 'unknown'
         suppression_reasons[reason] = suppression_reasons.get(reason, 0) + 1
 
-    return {
+    feed = {
         'capability': CAPABILITY,
         'version': VERSION,
         'source_engine': SOURCE_ENGINE,
@@ -697,6 +721,25 @@ def build_canonical_story_feed(
             prior_league_context=prior_league_context,
         ),
     }
+
+    # Editorial Review (report-only, internal): automatically evaluate every
+    # generated story against the Storytelling Manifesto and log a compact
+    # internal summary. It never mutates the feed, never suppresses, and never
+    # changes publication — fault-isolated so a reviewer error cannot break the
+    # feed, and the report is never added to the published payload.
+    _log_editorial_review(feed)
+
+    return feed
+
+
+def _log_editorial_review(feed: dict) -> None:
+    try:
+        from services.editorial_review_v1 import review_canonical_feed
+        review = review_canonical_feed(feed)
+        if review['warn_count']:
+            logger.info('[story_feed] %s', review['summary'])
+    except Exception:  # report-only telemetry must never affect publication
+        logger.debug('[story_feed] editorial review skipped', exc_info=True)
 
 
 __all__ = [

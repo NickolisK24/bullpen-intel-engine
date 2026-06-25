@@ -26,6 +26,16 @@ BEAT_BRIDGE = 'bridge'
 PURPOSE_OPENING = 'opening'
 PURPOSE_ELIGIBILITY_CONTEXT = 'eligibility_context'
 PURPOSE_FORWARD = 'forward'
+# V2 Story Blueprint (Phase A): the public surface framing ("what everyone saw")
+# and the transferable baseball lesson ("why it matters"). Both are generic,
+# evergreen public language — no team facts, no within-game claims, no prediction.
+PURPOSE_SURFACE = 'surface'
+PURPOSE_LESSON = 'lesson'
+# Final Story Polish Pass: the reader-facing "what to watch next" carry line
+# ("why it matters tomorrow"). Fact-free, observational watch cues — no
+# prediction, no "will", no within-game claim — so the feed coordinator can
+# de-duplicate them across a same-beat cluster like the surface/lesson lines.
+PURPOSE_WATCH = 'watch'
 
 DENIED_PUBLIC_PHRASES = (
     'sit at the front of',
@@ -60,20 +70,20 @@ BANNED_PUBLIC_LANGUAGE = (
 
 VOICE_LIBRARY = {
     BEAT_ROUTE_CHANGE: {
+        # Route change is always a change story, so the headline leads with the
+        # shift, never "remain"/"still" continuity language, and avoids the
+        # internal-ish "leverage route" phrase.
         PURPOSE_OPENING: (
-            '{names} remain the first names the game reaches for',
-            'The late innings still begin with {names}',
-            'The bullpen continues to bend toward {names}',
-            '{names} remain the center of the leverage route',
-            'The next close game still points toward {names}',
-            '{names} remain the hinge of the bullpen plan',
-            "{possessive} leverage plan still starts with {names}",
-            'When the game tightens, {names} still shape the first call',
-            '{names} remain the clearest late-game answers',
-            "{possessive} close-game route still runs through {names}",
-            '{names} still organize the late innings',
-            "{possessive} bullpen has changed around the same leverage center",
-            'The roster movement has not moved the late-game center away from {names}',
+            'The late innings now run through {names}',
+            'The important outs now run through {names}',
+            'The back of the bullpen now runs through {names}',
+            "{possessive} late-game order has been reshaped around {names}",
+            'The game now reaches for {names} late',
+            'When the game tightens, the call now goes to {names}',
+            "{possessive} closing order now runs through {names}",
+            'The late-inning order has shifted toward {names}',
+            'The bullpen now leans on {names} for the biggest outs',
+            '{names} are now at the center of the late innings',
         ),
     },
     BEAT_COVERAGE_PRESSURE: {
@@ -97,6 +107,8 @@ VOICE_LIBRARY = {
             'The roster lists more relievers than the bullpen really trusts late',
             'The bullpen has bodies listed, but fewer arms to call on late',
             '{team} has more relievers on paper than in the late-inning plan',
+            'A long game exposes how few arms {team} can actually use',
+            'The active bullpen is shorter than the roster page suggests',
             '{names} become the pressure point when the bullpen runs short',
             'A long game gets back to {names} in a hurry',
             'The roster count hides how fast a tight game gets back to {names}',
@@ -234,6 +246,181 @@ FORWARD_CLAUSE_LINES = {
 
 for _beat, _forms in FORWARD_CLAUSE_LINES.items():
     VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_FORWARD] = _forms
+
+
+# V2 Story Blueprint surface framing ("what everyone saw"). Each line names only
+# the COMMON, outside read for a story type — generic and evergreen, asserting no
+# specific result, no within-game event, and no number. The real specifics live
+# in the Evidence section. Descriptive only; no prediction, internal-engine,
+# game-shape, or denied editorial terms.
+SURFACE_FRAMING_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'From the outside, the late innings look like business as usual.',
+        'The names at the end of a game rarely draw attention on their own.',
+        'On the surface, the back of the bullpen looks settled.',
+        'The late-inning order tends to fade into the background.',
+        'Most fans assume the same arms finish games all season.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Most nights the final line looks ordinary, just another game in the books.',
+        'On the surface, the pitching line says the bullpen did its job.',
+        'From the outside, nothing about the result stands out.',
+        'A clean pitching line tends to settle the question for most fans.',
+        'The final line rarely shows how the innings were divided.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'The roster lists a full bullpen.',
+        'On paper there are plenty of arms to choose from.',
+        'A full bullpen looks deep from the outside.',
+        'A long list of relievers reads as depth at a glance.',
+        'The roster page suggests there are arms to spare.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'The results have been holding up.',
+        'On the surface, the pattern is working.',
+        'From the outside, the bullpen looks like it is managing fine.',
+        'Good results tend to quiet any questions about how they came.',
+        'When the outs keep coming, few ask which arms are getting them.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'A full bullpen looks the same from the outside on any given night.',
+        'On paper, the late-inning options look unchanged.',
+        'From the stands, depth stays invisible until it is needed.',
+        'A rested bullpen rarely announces itself before a game.',
+        'Late-inning options look the same on paper whether fresh or worn.',
+    ),
+    BEAT_TRUST_LANE: (
+        'On paper, the bullpen has plenty of arms to choose from.',
+        'From the outside, there look to be many late-game options.',
+        'A long bullpen list suggests a lot of choices.',
+        'A deep roster reads as a deep set of late-game choices.',
+        'From the outside, every available arm looks like an option.',
+    ),
+    BEAT_BRIDGE: (
+        'The back of the bullpen draws the attention; the path to it usually goes unnoticed.',
+        'From the outside, the late-inning arms are what people watch.',
+        'On the surface, the end of the bullpen looks set.',
+        'Most eyes go to the closer, not the innings before him.',
+        'A settled ninth inning tends to mask everything ahead of it.',
+    ),
+}
+
+for _beat, _forms in SURFACE_FRAMING_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_SURFACE] = _forms
+
+
+# V2 Story Blueprint baseball lesson ("why it matters"). Each line teaches a
+# transferable, evergreen baseball idea tied to the story type — no specific
+# result, no number, no within-game event, no prediction. Plain public language.
+LESSON_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'Who gets the most important outs is a choice a manager makes night to night, and it shifts before anyone announces it.',
+        'Late-inning roles are rarely fixed; they move with form, rest, and trust.',
+        'The order a bullpen is used in says as much as the names on the roster.',
+        "A bullpen's pecking order is written in pencil, not stone.",
+        'Watch the usage, not the reputation, to see who a team trusts now.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Carrying extra innings works in short bursts, but it quietly narrows how a manager can spread the next few games.',
+        'A bullpen asked to cover innings the rotation usually handles has fewer clean ways to set up the late innings.',
+        'Bullpen workload is borrowed, not free; the bill arrives in the games that follow.',
+        'Innings the rotation skips do not disappear; the bullpen simply inherits them.',
+        'How long the starters last shapes how fresh the bullpen stays.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'A roster count is not the same as a usable group; rest and role decide how many arms a manager can really call on.',
+        'Depth is about who is truly available tonight, not how many names are on the page.',
+        'The bullpen a manager can really use is almost always smaller than the one on paper.',
+        'A bullpen is only as deep as the arms a manager actually trusts to use.',
+        'Names on a roster and arms in the plan are two different counts.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'A pattern that works can still be hard to keep up when it leans on the same few arms.',
+        'Results and staying power are different questions; one is about tonight, the other about the weeks ahead.',
+        'How a bullpen gets its outs matters as much as whether it got them.',
+        'A workload that leans on a few arms is easier to start than to sustain.',
+        'The question is never just whether it is working, but for how long it can.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'Rested, usable arms are what give a manager real choices late in a game.',
+        'Depth shows up not in the headline but in how many good options a manager has in the seventh and eighth.',
+        'The value of a deep bullpen is choice: more clean ways to finish a game.',
+        'Fresh arms are a manager\'s quietest advantage in a close game.',
+        'Depth is measured in clean options, not in roster spots.',
+    ),
+    BEAT_TRUST_LANE: (
+        'Most late-game plans really lean on a small group of trusted arms, smaller than the roster suggests.',
+        'Trust, not the number of arms, decides who a manager actually uses with the game on the line.',
+        'The fewer trusted arms there are, the more each one\'s rest matters.',
+        'A long bullpen and a short list of trusted arms can live side by side.',
+        'Availability is about who can pitch; trust is about who the manager calls.',
+    ),
+    BEAT_BRIDGE: (
+        'Late-inning stability is not only about the final arms; it is about building a clean enough path to reach them.',
+        'The middle innings are the bridge; when the bridge is shaky, even a strong back of the bullpen is hard to use.',
+        'Reaching the trusted arms with a lead intact is its own challenge, separate from who finishes.',
+        'A strong closer means little if the game cannot reach him with a lead.',
+        'The hardest innings to cover are often the ones before the famous ones.',
+    ),
+}
+
+for _beat, _forms in LESSON_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_LESSON] = _forms
+
+
+# Final Story Polish Pass: reader-facing "what to watch next" carry lines for the
+# blueprint's "why it matters tomorrow" section. Fact-free and observational
+# ("watch how / whether / which") — never a prediction, never "will", no
+# within-game claim — so they read as a payoff beat and the feed coordinator can
+# de-duplicate them across a same-beat cluster.
+WATCH_LINES = {
+    BEAT_ROUTE_CHANGE: (
+        'Next close game, watch which arms get the biggest outs now.',
+        'Watch whether the new late-inning order holds.',
+        'Watch who the manager calls in the eighth, not just the ninth.',
+        'Watch whether the late innings keep running through the new group.',
+    ),
+    BEAT_COVERAGE_PRESSURE: (
+        'Next game, watch how early the starter hands the ball to the bullpen.',
+        'Watch how many innings land on the bullpen before the sixth.',
+        'Watch whether the rotation gives the bullpen a lighter night.',
+        'Next start, watch the inning the starter comes out.',
+        'Watch how much of the middle the bullpen has to cover.',
+    ),
+    BEAT_DEPTH_CONSTRAINT: (
+        'Next long game, watch how fast the usable arms run out.',
+        'Watch how few arms the manager actually has to choose from late.',
+        'Watch whether a fresh arm is even left when the game stretches.',
+        'Watch how quickly a long night thins the bullpen.',
+    ),
+    BEAT_SUSTAINABILITY_QUESTION: (
+        'Watch whether the late innings keep funneling to the same few arms.',
+        'Watch whether the workload finally spreads across the bullpen.',
+        'Next week, watch how often the same names are back out there.',
+        'Watch whether anyone new starts sharing the late-inning load.',
+    ),
+    BEAT_AVAILABILITY_DEPTH: (
+        'Next close game, watch how many different rested arms the manager uses.',
+        'Watch the manager mix and match late instead of leaning on one arm.',
+        'Watch how deep into the bullpen a tight game can go.',
+        'Watch whether the late innings stay spread across several arms.',
+    ),
+    BEAT_TRUST_LANE: (
+        'Next tight game, watch how small the trusted group really is.',
+        'Watch whether anyone new earns a high-leverage out.',
+        'Watch how quickly the late innings come back to the same arm.',
+        'Watch who the manager trusts when the lead is thin.',
+    ),
+    BEAT_BRIDGE: (
+        'Next game, watch the path to the closer, not just the closer.',
+        'Watch the sixth and seventh innings, where the trouble is.',
+        'Watch how the bullpen tries to bridge to its late arms.',
+        'Watch whether the middle innings hold long enough to reach the back.',
+    ),
+}
+
+for _beat, _forms in WATCH_LINES.items():
+    VOICE_LIBRARY.setdefault(_beat, {})[PURPOSE_WATCH] = _forms
 
 
 # Approved openings a forward clause may use. The closing beat is recognized by
@@ -399,9 +586,15 @@ __all__ = [
     'ELIGIBILITY_CONTEXT_LINES',
     'FORWARD_CLAUSE_LINES',
     'FORWARD_CLAUSE_OPENERS',
+    'LESSON_LINES',
     'PURPOSE_ELIGIBILITY_CONTEXT',
     'PURPOSE_FORWARD',
+    'PURPOSE_LESSON',
     'PURPOSE_OPENING',
+    'PURPOSE_SURFACE',
+    'PURPOSE_WATCH',
+    'SURFACE_FRAMING_LINES',
+    'WATCH_LINES',
     'VERSION',
     'approved_sentence_forms',
     'contains_banned_public_language',

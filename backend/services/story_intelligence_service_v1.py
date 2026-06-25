@@ -37,6 +37,7 @@ from services.story_four_beat_interpreter_v1 import (
     BEAT_TRUST_LANE,
     interpret_story_candidate,
 )
+from services.story_reasoning_engine_v1 import build_editorial_intent
 from services.story_writer_v1 import validate_written_observation, write_story_frame
 
 
@@ -838,7 +839,15 @@ def select_service_story_candidate(observations, story_frames):
         frame = frames.get(observation_type)
         if not _valid_frame(frame):
             continue
-        writer_output = write_story_frame(frame)
+        # Reasoning layer between Story Construction and the Story Writer: build
+        # the editorial intent from the construction frame, then let the writer
+        # consume it. The intent is carried on the writer output (internal only).
+        editorial_intent = build_editorial_intent(
+            observation_type=observation_type,
+            frame=frame,
+            selected_observation=observation,
+        )
+        writer_output = write_story_frame(frame, editorial_intent=editorial_intent)
         if _dict(writer_output.get('validation')).get('passed') is not True:
             continue
         candidate = {

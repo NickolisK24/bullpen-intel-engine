@@ -146,6 +146,48 @@ export function StorySection({
   )
 }
 
+// V2 Story Blueprint (Phase A): render the backend's labeled teaching sections
+// (what everyone saw / what BaseballOS noticed / evidence / why it matters / why
+// it matters tomorrow). Presentation only — it renders backend-authored copy and
+// invents nothing. Returns null when no usable sections are supplied, so callers
+// fall back to the existing flat narrative.
+export function StoryBlueprint({
+  sections,
+  compact = false,
+  className = '',
+  bodyClassName = '',
+}) {
+  const usable = (Array.isArray(sections) ? sections : [])
+    .map(section => ({
+      key: cleanText(section?.key),
+      label: cleanText(section?.label),
+      paragraphs: storyParagraphs(section?.text),
+    }))
+    .filter(section => section.label && section.paragraphs.length)
+
+  if (!usable.length) return null
+
+  return (
+    <div className={`story-blueprint ${className}`}>
+      {usable.map((section, index) => (
+        <section key={section.key || `blueprint-${index}`} className={index > 0 ? 'mt-3' : ''}>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            {section.label}
+          </div>
+          {section.paragraphs.map((paragraph, paraIndex) => (
+            <p
+              key={`${section.key}-${paraIndex}`}
+              className={`mt-1 ${compact ? 'text-xs' : 'text-sm'} leading-relaxed text-chalk300 ${bodyClassName}`}
+            >
+              {paragraph}
+            </p>
+          ))}
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export function StoryPresentation({
   story,
   observation,
@@ -154,6 +196,8 @@ export function StoryPresentation({
   observationBodyClassName = '',
   forceContext = false,
 }) {
+  const blueprintSections = Array.isArray(story?.blueprint) ? story.blueprint : []
+  const hasBlueprint = blueprintSections.length > 0
   const narrativeText = cleanText(story?.narrative || story?.story_body || observation || story?.body || story?.observation)
   const hasContinuity = Boolean(cleanText(story?.continuity_note))
   const hasContext = forceContext
@@ -163,7 +207,13 @@ export function StoryPresentation({
 
   return (
     <div className={`story-presentation ${className}`}>
-      {baseParagraphs.map((paragraph, index) => (
+      {hasBlueprint ? (
+        <StoryBlueprint
+          sections={blueprintSections}
+          compact={compact}
+          bodyClassName={observationBodyClassName}
+        />
+      ) : baseParagraphs.map((paragraph, index) => (
         <StorySection
           key={`story-paragraph-${index}`}
           text={paragraph}

@@ -24,6 +24,7 @@ from services.story_observation_engine import (
     TYPE_STABLE_CORE,
     TYPE_TRUST_LANE_PRESSURE,
 )
+from services.story_reasoning_engine_v1 import build_editorial_intent
 from services.story_voice_library_v1 import (
     BEAT_AVAILABILITY_DEPTH,
     BEAT_BRIDGE,
@@ -203,8 +204,12 @@ def _count_word(value, singular, plural=None):
     return singular if value == 1 else plural
 
 
-def _voice_opening(frame, beat, *, names=None, extra_parts=()):
+def _voice_opening(frame, beat, *, names=None, extra_parts=(), allow_unnamed=False):
     team = _team(frame)
+    # With allow_unnamed, an empty names leaves the {names} slot empty so the
+    # library excludes name-bearing forms (used when the only names available are
+    # the wrong ones to feature, e.g. inactive/IL arms in a depth story).
+    names_slot = _clean_text(names) if allow_unnamed else (names or 'the bullpen')
     return render_voice_line(
         beat,
         stable_parts=(
@@ -216,7 +221,7 @@ def _voice_opening(frame, beat, *, names=None, extra_parts=()):
         ),
         team=team,
         possessive=_possessive(team),
-        names=names or 'the bullpen',
+        names=names_slot,
     )
 
 
@@ -468,7 +473,10 @@ def _concentration_pressure(frame):
     trend = cause.get('rotation_ip_trend')
     paths = interpretation.get('practical_close_game_paths_count')
     core = _join_names(constraint.get('current_operational_core'))
-    route_names = core or names
+    # Lead with the workload trio the headline and observation already name
+    # (top_three_relievers), so the cause and forward lines do not reference a
+    # different group than the rest of the story (editorial name consistency).
+    route_names = names or core
     band = observed.get('concentration_band') or interpretation.get('concentration_band')
     narrow_route = band in {'narrow', 'concentrated'} or _lte(paths, 3)
     short_starts = _present(trend) and trend < 0
@@ -565,6 +573,12 @@ def _optionality_strength(frame):
     secondary_count = observed.get('secondary_options_count')
     clean_names = _join_names(cause.get('clean_workload_options'))
     secondary_names = _join_names(cause.get('secondary_options'))
+    # A capped list for the carry line so the "tomorrow" thought never piles up a
+    # six-name string; the cause beat above still enumerates the full set.
+    carry_names = (
+        _join_names(cause.get('clean_workload_options'), limit=3)
+        or _join_names(cause.get('secondary_options'), limit=3)
+    )
     concentration = interpretation.get('concentration_band')
     unavailable = constraint.get('unavailable_arms_count')
     has_unavailable = _present(unavailable) and unavailable > 0
@@ -622,7 +636,7 @@ def _optionality_strength(frame):
             _forward_line(
                 frame,
                 BEAT_AVAILABILITY_DEPTH,
-                names=clean_names or secondary_names,
+                names=carry_names,
                 extra_parts=(paths, band),
             ),
             (
@@ -766,7 +780,6 @@ def _depth_pressure(frame):
     observed = _facts(frame, 'observation_facts')
     baseline = _facts(frame, 'baseline_facts')
     cause = _facts(frame, 'cause_facts')
-    interpretation = _facts(frame, 'interpretation_facts')
     constraint = _facts(frame, 'constraint_facts')
 
     inactive = headline.get('inactive_bullpen_arms_count') or observed.get('inactive_bullpen_arms_count')
@@ -775,15 +788,17 @@ def _depth_pressure(frame):
     il_count = cause.get('il_bullpen_arms_count')
     non_il = cause.get('non_il_inactive_bullpen_arms_count')
     inactive_names = _join_names(cause.get('inactive_bullpen_arms'), limit=4)
-    paths = interpretation.get('practical_close_game_paths_count')
-    optionality = interpretation.get('optionality_band')
 
     return _sections(
         headline=_voice_opening(
             frame,
             BEAT_DEPTH_CONSTRAINT,
-            names=inactive_names or 'the relief group',
+            # Never feature the inactive / IL arms in the headline (they are the
+            # ones OUT of the plan). With no safe group to name, use a non-name
+            # headline.
+            names=None,
             extra_parts=(inactive, active, depth_band),
+            allow_unnamed=True,
         ),
         observation_paragraph=_paragraph(
             (
@@ -819,16 +834,11 @@ def _depth_pressure(frame):
                 if _present(non_il) else None
             ),
         ),
+        # One clean carry line (the forward clause), no multi-clause bolt-on. The
+        # close-game-choice count and band read live in the Evidence/observation
+        # sections; the "tomorrow" line stays a single reader-facing thought.
         constraint_paragraph=_paragraph(
-            _forward_line(frame, BEAT_DEPTH_CONSTRAINT, names=inactive_names, extra_parts=(inactive, active)),
-            (
-                f"The current plan has {_fmt(paths)} close-game {_count_word(paths, 'choice')}"
-                if _present(paths) else None
-            ),
-            (
-                _band_phrase(_OPTIONALITY_BAND_SENTENCE, optionality)
-                if _present(optionality) else None
-            ),
+            _forward_line(frame, BEAT_DEPTH_CONSTRAINT, extra_parts=(inactive, active)),
         ),
     )
 
@@ -1050,12 +1060,26 @@ WRITERS = {
 }
 
 
-def write_story_frame(frame):
-    """Write one deterministic BaseballOS observation from one construction frame."""
+def write_story_frame(frame, *, editorial_intent=None):
+    """Write one deterministic BaseballOS observation from one construction frame.
+
+    ``editorial_intent`` is the Story Reasoning Engine's intent object for this
+    frame — the deterministic reasoning the prose embodies (the surface read it
+    corrects, the structural truth, the supporting evidence, the lesson, and the
+    reader shift). When a caller does not supply one, it is built here from the
+    same frame, so every written observation carries it. It is internal only
+    (the writer output is never serialized publicly) and never alters the prose,
+    which keeps existing output byte-stable and backward-compatible.
+    """
     frame = _dict(frame)
     observation_type = frame.get('observation_type')
     writer = WRITERS.get(observation_type)
     written = writer(frame) if writer else _sections()
+    if editorial_intent is None:
+        editorial_intent = build_editorial_intent(
+            observation_type=observation_type,
+            frame=frame,
+        )
     output = {
         'capability': CAPABILITY,
         'version': VERSION,
@@ -1067,6 +1091,7 @@ def write_story_frame(frame):
         'severity': frame.get('severity'),
         'written_observation': written,
         'source_frame': frame,
+        'editorial_intent': editorial_intent,
         'limitations': list(frame.get('limitations') or []),
     }
     output['validation'] = validate_written_observation(output)
