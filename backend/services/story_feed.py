@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from services.story_blueprint_v1 import build_story_blueprint
+from services.story_feed_variety_v1 import apply_feed_variety
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_observation_engine import (
     TYPE_BRIDGE_INSTABILITY,
@@ -687,6 +688,14 @@ def build_canonical_story_feed(
 
     available = [story for story in items if story['story_available']]
     suppressed = [story for story in items if not story['story_available']]
+    # Feed-level editorial variety: de-duplicate high-visibility phrasing
+    # (headline / opener / lesson) across the assembled feed using approved
+    # voice-library alternates. Deterministic and fault-isolated — any error
+    # leaves the stories untouched, never breaking the feed.
+    try:
+        available = apply_feed_variety(available)
+    except Exception:
+        logger.debug('[story_feed] feed variety skipped', exc_info=True)
     suppression_reasons: dict[str, int] = {}
     for story in suppressed:
         reason = story.get('suppression_reason') or 'unknown'
