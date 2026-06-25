@@ -32,6 +32,7 @@ afterEach(() => {
 const {
   recordStoryImpression,
   recordStoryInteracted,
+  recordStoryShareClicked,
   recordStoryTeamBoardOpened,
   recordStoryViewed,
   recordTodayLoaded,
@@ -47,12 +48,14 @@ const {
   STORY_IMPRESSION_THRESHOLD,
   buildStoryImpressionPayload,
   buildStoryInteractedPayload,
+  buildStoryShareClickedPayload,
   buildStoryTeamBoardOpenedPayload,
   buildStoryViewedPayload,
   buildTodayLoadedPayload,
   createStoryImpressionTracker,
   observeStoryImpressionOnce,
   observeStoryInteractedOnce,
+  observeStoryShareClicked,
   observeStoryTeamBoardOpened,
   observeStoryViewedOnce,
   observeTodayLoadedOnce,
@@ -574,4 +577,76 @@ test('Home wires story_team_board_opened on its story CTAs', () => {
   const src = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
   assert.ok(src.includes('observeStoryTeamBoardOpened'))
   assert.ok(src.includes('recordStoryTeamBoardOpened'))
+})
+
+// ── V3-3: story_share_clicked ─────────────────────────────────────────────────
+
+test('story_share_clicked payload carries the canonical identity plus share_target=team', () => {
+  const story = { storyId: '158:2026-06-22', storyType: 'coverage_pressure', teamId: 158 }
+  assert.deepEqual(buildStoryShareClickedPayload(story, { surface: 'stories', anonId: 'anon:test' }), {
+    anon_id: 'anon:test', team_id: 158, story_id: '158:2026-06-22',
+    story_type: 'coverage_pressure', surface: 'stories', share_target: 'team',
+  })
+})
+
+test('observeStoryShareClicked fires on every click (one event per share, not deduped)', async () => {
+  const story = { storyId: '158:2026-06-22', storyType: 'coverage_pressure', teamId: 158 }
+  const calls = []
+  const send = async (payload) => { calls.push(payload) }
+  assert.equal(await observeStoryShareClicked({ story, surface: 'stories', anonId: 'anon:test', send }), true)
+  assert.equal(await observeStoryShareClicked({ story, surface: 'stories', anonId: 'anon:test', send }), true)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].share_target, 'team')
+})
+
+test('observeStoryShareClicked skips a Share with no canonical story identity', async () => {
+  const calls = []
+  const send = async (payload) => { calls.push(payload) }
+  assert.equal(await observeStoryShareClicked({
+    story: { storyId: '', storyType: 'coverage_pressure', teamId: 1 },
+    surface: 'stories', anonId: 'anon:test', send,
+  }), false)
+  assert.equal(calls.length, 0)
+})
+
+test('recordStoryShareClicked posts to the story-event endpoint with its event_name', async () => {
+  const storage = createStorage()
+  installWindow(storage)
+  const calls = installFetch(async () => ({ json: { ok: true } }))
+
+  await recordStoryShareClicked({
+    team_id: 158, story_id: '158:2026-06-22', story_type: 'coverage_pressure',
+    surface: 'stories', share_target: 'team',
+  })
+
+  assert.deepEqual(calls.map(call => call.url), ['/api/product/story-event'])
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    anon_id: readProductAnonId(storage),
+    team_id: 158,
+    story_id: '158:2026-06-22',
+    story_type: 'coverage_pressure',
+    surface: 'stories',
+    share_target: 'team',
+    event_name: 'story_share_clicked',
+  })
+})
+
+test('TeamShareButton fires share-intent tracking before the native share / copy', () => {
+  const src = readFileSync(new URL('../src/components/share/TeamShareButton.jsx', import.meta.url), 'utf8')
+  const onShareIdx = src.indexOf('onShareClick()')
+  const shareIdx = src.indexOf('await shareTeamUrl(team)')
+  assert.ok(onShareIdx > -1)
+  assert.ok(shareIdx > -1)
+  // Intent fires before the native share / clipboard call (not gated on success).
+  assert.ok(onShareIdx < shareIdx)
+})
+
+test('Stories and Home wire story_share_clicked on the Share control', () => {
+  const storiesSrc = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
+  const homeSrc = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+  for (const src of [storiesSrc, homeSrc]) {
+    assert.ok(src.includes('observeStoryShareClicked'))
+    assert.ok(src.includes('recordStoryShareClicked'))
+    assert.ok(src.includes('onShareClick'))
+  }
 })

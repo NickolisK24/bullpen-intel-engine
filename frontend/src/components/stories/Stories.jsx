@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { useStoryImpressionObservations } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
-import { observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
+import { getBullpenDashboard, recordStoryShareClicked, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
+import { observeStoryShareClicked, observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from '../home/BullpenStories'
@@ -265,7 +265,12 @@ function FeedStoryCard({ story, impressionRef }) {
               ? formatTeamLabel({ team_abbreviation: story.abbr, team_name: story.teamName }, 'Around the league')
               : 'Around the league'}
           </span>
-          {hasTeam && <TeamShareButton team={team} />}
+          {hasTeam && (
+            <TeamShareButton
+              team={team}
+              onShareClick={() => observeStoryShareClicked({ story, surface: 'stories', send: recordStoryShareClicked })}
+            />
+          )}
         </div>
       </div>
 

@@ -6,8 +6,8 @@ import {
   useStoryImpressionObservations,
   useTodayLoadedObservation,
 } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams, recordStoryTeamBoardOpened } from '../../utils/api'
-import { observeStoryTeamBoardOpened } from '../../utils/productIntelligence'
+import { getBullpenDashboard, getTeamBullpenBoard, getTeamChanges, getTeams, recordStoryShareClicked, recordStoryTeamBoardOpened } from '../../utils/api'
+import { observeStoryShareClicked, observeStoryTeamBoardOpened } from '../../utils/productIntelligence'
 import {
   buildPreferredTeamHref,
   preferredTeamLabel,
@@ -223,6 +223,7 @@ export function HomeView({
         hero={hero}
         impressionRef={registerStoryImpression(hero)}
         onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: hero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+        onShareClick={() => observeStoryShareClicked({ story: hero, surface: storySurface, send: recordStoryShareClicked })}
       />
     </section>
   )
@@ -279,6 +280,7 @@ export function HomeView({
                   hero={teamHero}
                   impressionRef={registerStoryImpression(teamHero)}
                   onTeamBoardOpen={() => observeStoryTeamBoardOpened({ story: teamHero, surface: storySurface, send: recordStoryTeamBoardOpened })}
+                  onShareClick={() => observeStoryShareClicked({ story: teamHero, surface: storySurface, send: recordStoryShareClicked })}
                 />
               </section>
             </>
@@ -739,7 +741,7 @@ function Masthead({ masthead }) {
 
 // The flagship observation, told the way a baseball writer would lead a
 // column. Stories deliberately explores the observations behind and beyond it.
-function HeroStory({ hero, impressionRef, onTeamBoardOpen }) {
+function HeroStory({ hero, impressionRef, onTeamBoardOpen, onShareClick }) {
   const tone = homeTone(hero.tone)
 
   return (
@@ -810,7 +812,7 @@ function HeroStory({ hero, impressionRef, onTeamBoardOpen }) {
               Step inside the {hero.team.abbr || hero.team.teamName} pen →
             </Link>
           )}
-          {hero.team && <TeamShareButton team={hero.team} />}
+          {hero.team && <TeamShareButton team={hero.team} onShareClick={onShareClick} />}
           <Link
             to="/bullpen"
             className="rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk200 transition-colors hover:border-amber/40 hover:text-amber"

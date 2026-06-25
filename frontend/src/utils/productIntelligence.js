@@ -351,3 +351,31 @@ export function observeStoryTeamBoardOpened({
     return Promise.resolve(false)
   }
 }
+
+// ── Story share click (V3-3) ──────────────────────────────────────────────────
+// The reader hit Share from a story context. Like story_team_board_opened it
+// fires once per physical click (NOT deduped). The payload carries the canonical
+// story identity plus share_target: today's Share shares the TEAM page, so the
+// destination scope is `team` — the event is honest that it is not a unique
+// story URL. Fire on click intent, never on native-share / copy success.
+
+export function buildStoryShareClickedPayload(story, options = {}) {
+  const base = buildStoryViewedPayload(story, options)
+  if (!base) return null
+  return { ...base, share_target: 'team' }
+}
+
+export function observeStoryShareClicked({
+  story,
+  surface = null,
+  anonId = getOrCreateProductAnonId(),
+  send,
+} = {}) {
+  const payload = buildStoryShareClickedPayload(story, { surface, anonId })
+  if (!payload || typeof send !== 'function') return Promise.resolve(false)
+  try {
+    return Promise.resolve(send(payload)).then(() => true).catch(() => false)
+  } catch {
+    return Promise.resolve(false)
+  }
+}

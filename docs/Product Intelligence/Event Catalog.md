@@ -241,6 +241,19 @@ verification only, no rates or time series.
 - **Related Metrics:** Story → Team Board conversion by type / team / surface. **No** engagement or completion is inferred.
 - **Version:** 1.
 
+### story_share_clicked
+
+- **Purpose:** Observe share intent from a story context — the reader chose to share.
+- **Definition:** The user activated the Share control on a story surface. It records the share-**intent** fact only — it does **not** assert that a native share or clipboard copy actually completed (that cannot be reliably interpreted).
+- **Trigger:** `POST /api/product/story-event` with `event_name=story_share_clicked` (owned, anonymous-safe), fired on the Share button click/tap, before (and independent of) `navigator.share` / clipboard. Allowlisted on the same generic seam as `story_impression`.
+- **Share scope:** Today's Share shares the **team page** (`/team/<abbr>`), not a unique story URL. The payload therefore carries `share_target: "team"` so the event is honest about what was shared. (No story-specific permalink system exists; none is introduced here.)
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type, share_target}` (`share_target` is an owned allowlist — currently only `team`; anything else records as null, never fabricated) — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null/unknown).
+- **Frontend Activation:** V3-3. Fired from `TeamShareButton`'s click on the Stories feed card and the Home flagship (the only story surfaces that render Share). Fires **once per physical click** (NOT deduped per session): each share click is a distinct intent signal. A Share with no canonical story identity emits nothing (no malformed event).
+- **Introduced Phase:** V3-3.
+- **Related Metrics:** Story share-intent volume by type / team / surface. **No** share completion or engagement is inferred.
+- **Version:** 1.
+
 ### story_interacted
 
 - **Purpose:** Observe explicit interaction with a rendered story — **the fact only**.
