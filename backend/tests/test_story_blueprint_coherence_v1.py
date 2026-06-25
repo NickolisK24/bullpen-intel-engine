@@ -136,17 +136,21 @@ def _availability_ctx(tid=705, name='Los Angeles Dodgers', abbr='LAD'):
 def test_trust_evidence_lead_differs_from_noticed():
     story = _canon(_trust_ctx())
     noticed, evidence = _sect(story, 'what_baseballos_noticed'), _sect(story, 'evidence')
-    assert evidence.startswith('The dependable late work runs through')   # leads with WHO, not the count
-    assert _overlap(_first_sentence(evidence), _first_sentence(noticed)) < 0.5
+    lead = _first_sentence(evidence)
+    assert 'leclerc' in lead                                              # leads with WHO...
+    assert 'available' not in lead and 'clean and rested' not in lead     # ...not the noticed count contrast
+    assert _overlap(lead, _first_sentence(noticed)) < 0.5
     assert 'Leclerc' in evidence                                          # support preserved
 
 
 def test_bridge_evidence_lead_differs_from_noticed():
     story = _canon(_bridge_ctx())
     noticed, evidence = _sect(story, 'what_baseballos_noticed'), _sect(story, 'evidence')
-    assert 'bridge the gap' in evidence.split('. ')[0]                    # leads with the clean-arm angle
+    lead = _first_sentence(evidence)
+    assert 'bridge' in lead or 'rested' in lead                          # leads with the clean-arm angle
     assert 'is settled, but the path to it runs through' not in evidence  # not the noticed sentence
-    assert _overlap(_first_sentence(evidence), _first_sentence(noticed)) < 0.5
+    assert '%' not in lead                                               # not the noticed early-entry rate
+    assert _overlap(lead, _first_sentence(noticed)) < 0.5
     assert 'innings a game just to reach them' in evidence                # support preserved (coverage)
 
 
