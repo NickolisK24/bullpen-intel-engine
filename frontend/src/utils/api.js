@@ -732,6 +732,12 @@ export const recordStoryViewed = (payload = {}) => request('/product/story-viewe
   silent: true,
 })
 
+export const recordStoryInteracted = (payload = {}) => request('/product/story-interacted', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId(payload)),
+  silent: true,
+})
+
 // ── Digest Preferences ─────────────────────────────────────
 export const getDigestPreferences = () => request('/digest/preferences')
 

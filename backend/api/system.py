@@ -169,6 +169,55 @@ def get_product_events():
     })
 
 
+@system_bp.route('/product-event-heartbeat', methods=['GET'])
+@require_admin_token
+def get_product_event_heartbeat():
+    """Per-event Name / Count / Most-Recent for operator verification.
+
+    Lets an operator confirm at a glance that every Product Intelligence event is
+    still flowing — every canonical event is listed, so a zero count or a stale
+    timestamp surfaces a stopped beacon. Operational verification only: no rates,
+    no rollups, no time series, no analytics.
+    """
+    from models.product_event import ProductEvent
+    from services.product_events import CANONICAL_PRODUCT_EVENTS
+    from utils.db import db
+
+    rows = (
+        db.session.query(
+            ProductEvent.event_name,
+            db.func.count(ProductEvent.id),
+            db.func.max(ProductEvent.occurred_at),
+        )
+        .group_by(ProductEvent.event_name)
+        .all()
+    )
+    seen = {name: (count, most_recent) for name, count, most_recent in rows}
+
+    events = []
+    for name in CANONICAL_PRODUCT_EVENTS:
+        count, most_recent = seen.pop(name, (0, None))
+        events.append({
+            'event_name': name,
+            'count': int(count or 0),
+            'most_recent': _utc_iso(most_recent),
+        })
+    # Defensive: surface any non-canonical names already in the table, too.
+    for name in sorted(seen):
+        count, most_recent = seen[name]
+        events.append({
+            'event_name': name,
+            'count': int(count or 0),
+            'most_recent': _utc_iso(most_recent),
+        })
+
+    return jsonify({
+        'capability': 'product_intelligence_heartbeat',
+        'generated_at': _utc_iso(datetime.now(timezone.utc)),
+        'events': events,
+    })
+
+
 @system_bp.route('/digest-test-send', methods=['POST'])
 @require_admin_token
 def digest_test_send():

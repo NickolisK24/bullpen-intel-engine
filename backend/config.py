@@ -133,6 +133,10 @@ class Config:
     EMAIL_FROM = os.environ.get('EMAIL_FROM')
     EMAIL_API_KEY = os.environ.get('EMAIL_API_KEY')
     EMAIL_SEND_TIMEOUT = float(os.environ.get('EMAIL_SEND_TIMEOUT', '10'))
+    # Signing secret for the provider deliverability webhook (Svix scheme). When
+    # unset, the webhook is accepted in development (with a warning) and disabled
+    # (403) in production, mirroring the admin-token gate. No secret in code.
+    EMAIL_WEBHOOK_SECRET = os.environ.get('EMAIL_WEBHOOK_SECRET')
 
     # ── Team digest scheduling & delivery (Phase D2D) ────────────────────────
     # The daily digest job is registered only when DIGEST_SEND_ENABLED is true,

@@ -25,6 +25,12 @@ function cleanSurface(value) {
   return null
 }
 
+function cleanInteraction(value) {
+  const interaction = cleanText(value)?.toLowerCase()
+  if (interaction === 'expand' || interaction === 'open' || interaction === 'select') return interaction
+  return null
+}
+
 function storyValue(story, ...keys) {
   for (const key of keys) {
     const value = story?.[key]
@@ -85,6 +91,45 @@ export function buildStoryViewedPayload(
     story_id: storyId,
     story_type: storyType,
     surface: cleanSurface(surface),
+  }
+}
+
+export function storyInteractedObservationKey({
+  storyId = null,
+  storyType = null,
+  teamId = null,
+  surface = null,
+  interactionType = null,
+} = {}) {
+  return productObservationKey([
+    'story_interacted',
+    cleanSurface(surface),
+    cleanInteraction(interactionType),
+    cleanTeamId(teamId),
+    cleanText(storyId),
+    cleanText(storyType),
+  ])
+}
+
+export function buildStoryInteractedPayload(
+  story,
+  {
+    surface = null,
+    interactionType = 'select',
+    anonId = getOrCreateProductAnonId(),
+  } = {},
+) {
+  const storyId = cleanText(storyValue(story, 'storyId', 'story_id', 'id'))
+  const storyType = cleanText(storyValue(story, 'storyType', 'story_type'))
+  if (!storyId || !storyType) return null
+
+  return {
+    anon_id: normalizeProductAnonId(anonId),
+    team_id: cleanTeamId(storyValue(story, 'teamId', 'team_id')),
+    story_id: storyId,
+    story_type: storyType,
+    surface: cleanSurface(surface),
+    interaction_type: cleanInteraction(interactionType),
   }
 }
 
@@ -158,4 +203,22 @@ export async function observeStoryViewedOnce({
     if (didSend) sent += 1
   }
   return sent
+}
+
+export function observeStoryInteractedOnce({
+  story,
+  surface = null,
+  interactionType = 'select',
+  anonId = getOrCreateProductAnonId(),
+  send,
+} = {}) {
+  const payload = buildStoryInteractedPayload(story, { surface, interactionType, anonId })
+  if (!payload) return Promise.resolve(false)
+  return sendOnce(storyInteractedObservationKey({
+    storyId: payload.story_id,
+    storyType: payload.story_type,
+    teamId: payload.team_id,
+    surface: payload.surface,
+    interactionType: payload.interaction_type,
+  }), send, payload)
 }

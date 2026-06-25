@@ -71,6 +71,33 @@ STORY_VIEWED = 'story_viewed'
 
 PRODUCT_OBSERVATION_EVENTS = (STORY_VIEWED,)
 
+# ── Product interaction observation (D2A-7) ───────────────────────────────────
+# A user intentionally performed an explicit interaction with a rendered story
+# (e.g. selecting/opening/expanding it via existing UI). It records ONLY that the
+# interaction occurred — never engagement, interest, completion, or understanding.
+STORY_INTERACTED = 'story_interacted'
+
+PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED,)
+
+# ── Digest deliverability (D2A-7, provider-backed) ────────────────────────────
+# Facts reported by the email provider (Resend) about a sent digest's fate. They
+# never change digest behavior or existing metrics; they only observe delivery.
+DIGEST_DELIVERED = 'digest_delivered'
+DIGEST_BOUNCED = 'digest_bounced'
+DIGEST_COMPLAINT = 'digest_complaint'
+
+DIGEST_DELIVERABILITY_EVENTS = (DIGEST_DELIVERED, DIGEST_BOUNCED, DIGEST_COMPLAINT)
+
+# The full canonical vocabulary, used by the operator heartbeat so every event
+# type (including ones not yet seen) is enumerable.
+CANONICAL_PRODUCT_EVENTS = (
+    DIGEST_LIFECYCLE_EVENTS
+    + DIGEST_DELIVERABILITY_EVENTS
+    + PRODUCT_BEHAVIOR_EVENTS
+    + PRODUCT_OBSERVATION_EVENTS
+    + PRODUCT_INTERACTION_EVENTS
+)
+
 # ── Sources (where a fact originated) ─────────────────────────────────────────
 SOURCE_DIGEST_JOB = 'digest_job'
 SOURCE_TRACKING_PIXEL = 'tracking_pixel'
@@ -80,6 +107,8 @@ SOURCE_SETTINGS = 'settings'
 SOURCE_SIGN_IN = 'sign_in'
 # In-product action surface (e.g. team-following changes inside the app).
 SOURCE_APP = 'app'
+# Origin for provider-reported deliverability facts (Resend webhook).
+SOURCE_EMAIL_PROVIDER = 'email_provider'
 
 # Arrival sources for today_loaded — how the user reached the Today view. Kept to
 # a small, owned allowlist; anything else normalizes to 'direct'.
@@ -100,6 +129,14 @@ STORY_SURFACES = (STORY_SURFACE_HOME, STORY_SURFACE_STORIES, STORY_SURFACE_DIGES
 FOLLOW_ACTION_FOLLOW = 'follow'
 FOLLOW_ACTION_UNFOLLOW = 'unfollow'
 FOLLOW_ACTION_SET_PRIMARY = 'set_primary'
+
+# story_interacted interaction kinds (the observable UI action; kept in payload).
+# A small owned allowlist; anything unrecognized is recorded as None rather than
+# fabricated. These name the action only — they assert nothing about engagement.
+STORY_INTERACTION_EXPAND = 'expand'
+STORY_INTERACTION_OPEN = 'open'
+STORY_INTERACTION_SELECT = 'select'
+STORY_INTERACTIONS = (STORY_INTERACTION_EXPAND, STORY_INTERACTION_OPEN, STORY_INTERACTION_SELECT)
 
 # Attribution source for a return (kept in the payload, not promoted to a column).
 RETURN_VIA_CLICK = 'click'
@@ -122,6 +159,13 @@ def normalize_arrival_source(value):
 def normalize_story_surface(value):
     """Coerce a client-supplied story surface to the owned allowlist, else None."""
     if isinstance(value, str) and value.strip().lower() in STORY_SURFACES:
+        return value.strip().lower()
+    return None
+
+
+def normalize_story_interaction(value):
+    """Coerce a client-supplied interaction kind to the owned allowlist, else None."""
+    if isinstance(value, str) and value.strip().lower() in STORY_INTERACTIONS:
         return value.strip().lower()
     return None
 
@@ -342,4 +386,59 @@ def record_story_viewed(*, user_id=None, anon_id=None, team_id=None, story_id=No
         STORY_VIEWED, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
         team_id=team_id, source=surface,
         payload={'story_id': story_id, 'story_type': story_type},
+    )
+
+
+# ── Product interaction observation emitter (D2A-7) ────────────────────────────
+
+def record_story_interacted(*, user_id=None, anon_id=None, team_id=None, story_id=None,
+                            story_type=None, surface=None, interaction_type=None,
+                            occurred_at=None):
+    """A user explicitly interacted with a rendered story (selection/open/expand).
+
+    Observation only: it records WHICH story, on WHICH surface, by WHOM, and the
+    name of the UI action — and nothing about engagement, interest, completion, or
+    understanding. The surface is stored in the source column; story descriptors
+    and the interaction kind live in the payload.
+    """
+    return record_event(
+        STORY_INTERACTED, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        team_id=team_id, source=surface,
+        payload={
+            'story_id': story_id,
+            'story_type': story_type,
+            'interaction_type': interaction_type,
+        },
+    )
+
+
+# ── Digest deliverability emitters (D2A-7, provider-backed) ────────────────────
+
+def record_digest_delivered(*, user_id=None, delivery_id=None, team_id=None,
+                            provider_message_id=None, occurred_at=None):
+    """The provider confirmed a sent digest reached the recipient's mailbox."""
+    return record_event(
+        DIGEST_DELIVERED, occurred_at=occurred_at, user_id=user_id, team_id=team_id,
+        delivery_id=delivery_id, source=SOURCE_EMAIL_PROVIDER,
+        payload={'provider_message_id': provider_message_id},
+    )
+
+
+def record_digest_bounced(*, user_id=None, delivery_id=None, team_id=None,
+                          provider_message_id=None, bounce_type=None, occurred_at=None):
+    """The provider reported a sent digest bounced (undeliverable)."""
+    return record_event(
+        DIGEST_BOUNCED, occurred_at=occurred_at, user_id=user_id, team_id=team_id,
+        delivery_id=delivery_id, source=SOURCE_EMAIL_PROVIDER,
+        payload={'provider_message_id': provider_message_id, 'bounce_type': bounce_type},
+    )
+
+
+def record_digest_complaint(*, user_id=None, delivery_id=None, team_id=None,
+                            provider_message_id=None, occurred_at=None):
+    """The provider reported a spam complaint against a sent digest."""
+    return record_event(
+        DIGEST_COMPLAINT, occurred_at=occurred_at, user_id=user_id, team_id=team_id,
+        delivery_id=delivery_id, source=SOURCE_EMAIL_PROVIDER,
+        payload={'provider_message_id': provider_message_id},
     )

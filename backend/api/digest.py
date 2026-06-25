@@ -9,13 +9,19 @@ Surfaces:
   • /api/digest/open         (no auth) — a 1x1 pixel that records an email open.
   • /api/digest/click        (no auth) — records a deep-link click, attributes a
     return, and redirects to the team's view.
+  • /api/digest/email-events (signature-gated) — provider (Resend) deliverability
+    webhook → canonical digest_delivered / digest_bounced / digest_complaint.
 
 The open/click endpoints are our own (provider-independent) tracking; no email is
-sent here and nothing is scheduled or composed.
+sent here and nothing is scheduled or composed. The webhook only observes
+provider-reported delivery — it never changes digest behavior or existing metrics.
 """
+
+from datetime import timedelta
 
 from flask import Blueprint, Response, current_app, g, jsonify, redirect, request
 
+from models.digest_metrics import STATUS_SENT, DigestDelivery
 from models.user import User
 from services.notification_prefs import (
     VALID_CADENCES,
@@ -27,11 +33,17 @@ from services.digest_metrics import record_click, record_open
 from services.product_events import (
     SOURCE_ONE_CLICK,
     SOURCE_SETTINGS,
+    normalize_short_text,
+    record_digest_bounced,
+    record_digest_complaint,
+    record_digest_delivered,
     record_digest_optin_change,
 )
-from utils.auth_tokens import verify_unsubscribe_token
+from utils.auth_tokens import normalize_email, verify_unsubscribe_token
 from utils.db import db
 from utils.identity import require_authenticated_user
+from utils.time import utc_now_naive
+from utils.webhook_signing import verify_webhook_signature
 
 
 digest_bp = Blueprint('digest', __name__)
@@ -162,3 +174,112 @@ def click_redirect():
     """
     delivery = record_click((request.args.get('t') or '').strip())
     return redirect(_team_deep_link(delivery), code=302)
+
+
+# ── Provider deliverability webhook (Phase D2A-7) ─────────────────────────────
+
+# How far back to correlate a provider event to a sent digest for the recipient.
+# Generous because a spam complaint can arrive days after the send.
+DELIVERABILITY_CORRELATION_WINDOW_DAYS = 30
+
+
+def _first_recipient(data):
+    to = data.get('to')
+    if isinstance(to, list):
+        to = to[0] if to else None
+    return normalize_email(to) if to else None
+
+
+def _user_for_email(email):
+    if not email:
+        return None
+    return User.query.filter_by(email=email).first()
+
+
+def _recent_sent_digest(user):
+    """Most recent SENT digest delivery for the user within the window, or None.
+
+    This both confirms the provider event concerns a DIGEST email (not, e.g., a
+    magic link) and supplies a best-effort delivery_id / team_id for the fact.
+    """
+    if user is None:
+        return None
+    cutoff = utc_now_naive() - timedelta(days=DELIVERABILITY_CORRELATION_WINDOW_DAYS)
+    return (
+        DigestDelivery.query
+        .filter(
+            DigestDelivery.user_id == user.id,
+            DigestDelivery.status == STATUS_SENT,
+            DigestDelivery.sent_at.isnot(None),
+            DigestDelivery.sent_at >= cutoff,
+        )
+        .order_by(DigestDelivery.sent_at.desc())
+        .first()
+    )
+
+
+@digest_bp.route('/email-events', methods=['POST'])
+def email_events_webhook():
+    """Provider (Resend) deliverability webhook → canonical digest events.
+
+    Signature-gated (Svix). Maps email.delivered / email.bounced / email.complained
+    to digest_delivered / digest_bounced / digest_complaint for DIGEST emails only,
+    correlated to a recent sent delivery for the recipient. Resolves the user by
+    email but never stores the email, and never changes digest behavior or existing
+    metrics. Returns 200 for any accepted (validly signed) request so the provider
+    does not retry; an invalid signature is rejected.
+    """
+    raw_body = request.get_data(as_text=True)
+    secret = current_app.config.get('EMAIL_WEBHOOK_SECRET')
+    env = current_app.config.get('APP_ENV', 'development')
+    if secret:
+        valid = verify_webhook_signature(
+            secret,
+            svix_id=request.headers.get('svix-id'),
+            svix_timestamp=request.headers.get('svix-timestamp'),
+            body=raw_body,
+            signature_header=request.headers.get('svix-signature'),
+        )
+        if not valid:
+            return jsonify({'error': 'invalid_signature'}), 400
+    elif env == 'production':
+        # Never accept unsigned provider events in production.
+        return jsonify({'error': 'webhook_not_configured'}), 403
+    else:
+        current_app.logger.warning(
+            '/api/digest/email-events accepted without verification: '
+            'EMAIL_WEBHOOK_SECRET is unset (development).'
+        )
+
+    payload = request.get_json(silent=True) or {}
+    event_type = str(payload.get('type') or '')
+    if event_type not in ('email.delivered', 'email.bounced', 'email.complained'):
+        return jsonify({'ok': True, 'ignored': event_type or 'unknown'}), 200
+
+    data = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    user = _user_for_email(_first_recipient(data))
+    delivery = _recent_sent_digest(user)
+    if user is None or delivery is None:
+        # Not a known digest recipient with a recent send -> not a digest fact.
+        return jsonify({'ok': True, 'ignored': 'no_digest_correlation'}), 200
+
+    provider_message_id = normalize_short_text(data.get('email_id') or data.get('id'))
+    if event_type == 'email.delivered':
+        record_digest_delivered(
+            user_id=user.id, delivery_id=delivery.id, team_id=delivery.team_id,
+            provider_message_id=provider_message_id,
+        )
+    elif event_type == 'email.bounced':
+        bounce = data.get('bounce') if isinstance(data.get('bounce'), dict) else {}
+        record_digest_bounced(
+            user_id=user.id, delivery_id=delivery.id, team_id=delivery.team_id,
+            provider_message_id=provider_message_id,
+            bounce_type=normalize_short_text(bounce.get('type')),
+        )
+    else:  # email.complained
+        record_digest_complaint(
+            user_id=user.id, delivery_id=delivery.id, team_id=delivery.team_id,
+            provider_message_id=provider_message_id,
+        )
+    db.session.commit()
+    return jsonify({'ok': True}), 200
