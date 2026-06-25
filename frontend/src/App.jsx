@@ -11,7 +11,9 @@ import DataTrust from './components/trust/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
 import SignIn from './components/auth/SignIn'
 import VerifySignIn from './components/auth/VerifySignIn'
+import ProductIntelligenceAdmin from './components/admin/ProductIntelligenceAdmin'
 import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
+import { ADMIN_PRODUCT_EVENTS_PATH } from './utils/adminProductEvents'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -24,6 +26,7 @@ export const APP_ROUTES = [
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
   { path: '/auth/verify', Component: VerifySignIn },
+  { path: ADMIN_PRODUCT_EVENTS_PATH, Component: ProductIntelligenceAdmin },
   { path: PRIVATE_POSTS_PATH, Component: PrivatePosts },
   { path: '*', redirectTo: '/' },
 ]
