@@ -354,6 +354,18 @@ def test_deliver_records_and_email_has_tracking(app):
     assert '/api/digest/click?t=' in rec['html']   # CTA wrapped for click tracking
 
 
+def test_tracking_urls_are_fully_qualified(app):
+    # Regression: open/click tracking URLs must carry the backend origin so a
+    # mail client never resolves a host-less path to the invalid
+    # http:///api/digest/click. The origin comes from PUBLIC_API_BASE_URL
+    # (BACKEND_BASE_URL is accepted as its alias at config load).
+    with app.app_context():
+        delivery = _add_sent_delivery(team_id=118)
+        urls = tracking_urls_for(delivery.id)
+    assert urls['open_url'].startswith('https://api.example.com/api/digest/open?t=')
+    assert urls['click_url'].startswith('https://api.example.com/api/digest/click?t=')
+
+
 def test_default_delivery_without_recorder_has_no_tracking(app):
     # D2D behavior preserved: no recorder -> no open pixel and no click wrapping;
     # the raw deep link is carried in the plain-text body.
