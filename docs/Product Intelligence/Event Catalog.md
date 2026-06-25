@@ -54,6 +54,20 @@ Vocabulary, sources, normalizers, and emitters live in
 `backend/api/product_events.py`; digest-lifecycle emission lives at the existing
 digest seams.
 
+## Operator inspection
+
+D2A-5 adds a minimal internal verification surface for recent rows:
+
+- **Backend:** `GET /api/system/product-events`, admin-gated with the existing
+  `X-Admin-Token` pattern.
+- **Frontend:** `/admin/product-intelligence`, a hidden read-only console for the
+  operator to enter the admin token at runtime and inspect recent events.
+
+This surface is not Product Health, a public dashboard, a read model, a rollup,
+or retention analytics. It returns only recent event rows with `anon_id_present`
+instead of raw anonymous identifiers and sanitized payload summaries instead of
+full payloads.
+
 ---
 
 ## Catalog

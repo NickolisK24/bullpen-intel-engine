@@ -18,12 +18,90 @@ from utils.auth import require_admin_token
 
 system_bp = Blueprint('system', __name__)
 
+PRODUCT_EVENTS_DEFAULT_LIMIT = 25
+PRODUCT_EVENTS_MAX_LIMIT = 100
+PRODUCT_EVENT_NAME_MAX_LEN = 64
+PRODUCT_EVENT_PAYLOAD_STRING_MAX_LEN = 120
+PRODUCT_EVENT_PAYLOAD_KEY_LIMIT = 12
+PRODUCT_EVENT_SENSITIVE_KEY_PARTS = ('email', 'token', 'secret', 'address')
+
 
 def _redact_email(email):
     if not email or '@' not in str(email):
         return '***'
     name, _, domain = str(email).partition('@')
     return f'{(name[:1] or "")}***@{domain}'
+
+
+def _int_arg(name, *, default, minimum, maximum):
+    try:
+        value = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _event_name_arg():
+    value = str(request.args.get('event_name') or '').strip()
+    return value[:PRODUCT_EVENT_NAME_MAX_LEN] or None
+
+
+def _utc_iso(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def _payload_value_summary(key, value):
+    key_text = str(key or '').lower()
+    if any(part in key_text for part in PRODUCT_EVENT_SENSITIVE_KEY_PARTS):
+        return '[redacted]'
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if '@' in text:
+            return '[redacted]'
+        if len(text) > PRODUCT_EVENT_PAYLOAD_STRING_MAX_LEN:
+            return f'{text[:PRODUCT_EVENT_PAYLOAD_STRING_MAX_LEN]}...'
+        return text
+    if isinstance(value, list):
+        return {'type': 'array', 'count': len(value)}
+    if isinstance(value, dict):
+        return {
+            'type': 'object',
+            'keys': sorted(str(k) for k in value.keys())[:PRODUCT_EVENT_PAYLOAD_KEY_LIMIT],
+        }
+    return str(type(value).__name__)
+
+
+def _payload_summary(payload):
+    if not isinstance(payload, dict) or not payload:
+        return {}
+    return {
+        str(key)[:PRODUCT_EVENT_NAME_MAX_LEN]: _payload_value_summary(key, value)
+        for key, value in payload.items()
+    }
+
+
+def _product_event_admin_row(event):
+    return {
+        'id': event.id,
+        'event_name': event.event_name,
+        'occurred_at': _utc_iso(event.occurred_at),
+        'created_at': _utc_iso(event.created_at),
+        'schema_version': event.schema_version,
+        'user_id': event.user_id,
+        'anon_id_present': bool(event.anon_id),
+        'team_id': event.team_id,
+        'run_id': event.run_id,
+        'delivery_id': event.delivery_id,
+        'source': event.source,
+        'payload_keys': sorted(str(key) for key in (event.payload or {}).keys()) if isinstance(event.payload, dict) else [],
+        'payload_summary': _payload_summary(event.payload),
+    }
 
 
 @system_bp.route('/digest-status', methods=['GET'])
@@ -52,6 +130,43 @@ def get_digest_metrics():
     """
     from services.digest_metrics import metrics_overview
     return jsonify(metrics_overview())
+
+
+@system_bp.route('/product-events', methods=['GET'])
+@require_admin_token
+def get_product_events():
+    """Recent Product Intelligence events for operator verification.
+
+    Read-only and admin-gated. This endpoint intentionally exposes only the
+    fields needed to confirm that the append-only product_events stream is
+    flowing; it never returns raw anon_id values or email addresses.
+    """
+    from models.product_event import ProductEvent
+
+    limit = _int_arg(
+        'limit',
+        default=PRODUCT_EVENTS_DEFAULT_LIMIT,
+        minimum=1,
+        maximum=PRODUCT_EVENTS_MAX_LIMIT,
+    )
+    event_name = _event_name_arg()
+
+    query = ProductEvent.query
+    if event_name:
+        query = query.filter(ProductEvent.event_name == event_name)
+    events = (
+        query
+        .order_by(ProductEvent.occurred_at.desc(), ProductEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return jsonify({
+        'capability': 'product_intelligence_events',
+        'limit': limit,
+        'filters': {'event_name': event_name},
+        'events': [_product_event_admin_row(event) for event in events],
+    })
 
 
 @system_bp.route('/digest-test-send', methods=['POST'])
