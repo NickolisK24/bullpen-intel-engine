@@ -3,6 +3,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL
   : '/api'
 
 export const PRODUCT_INTELLIGENCE_ADMIN_ROUTE = '/system/product-events'
+export const PRODUCT_INTELLIGENCE_HEARTBEAT_ROUTE = '/system/product-event-heartbeat'
 export const ADMIN_PRODUCT_EVENTS_PATH = '/admin/product-intelligence'
 export const ADMIN_TOKEN_HEADER = 'X-Admin-Token'
 
@@ -58,6 +59,27 @@ export async function fetchProductIntelligenceEvents({
     const message = response.status === 401
       ? 'Admin token required.'
       : `Product Intelligence events request failed with ${response.status}.`
+    throw new Error(message)
+  }
+  return response.json()
+}
+
+export async function fetchProductIntelligenceHeartbeat({
+  adminToken = '',
+  fetchImpl = fetch,
+} = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  const token = cleanText(adminToken)
+  if (token) headers[ADMIN_TOKEN_HEADER] = token
+
+  const response = await fetchImpl(`${API_BASE}${PRODUCT_INTELLIGENCE_HEARTBEAT_ROUTE}`, {
+    method: 'GET',
+    headers,
+  })
+  if (!response.ok) {
+    const message = response.status === 401
+      ? 'Admin token required.'
+      : `Product Intelligence heartbeat request failed with ${response.status}.`
     throw new Error(message)
   }
   return response.json()

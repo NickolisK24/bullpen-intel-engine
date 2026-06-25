@@ -19,11 +19,14 @@ const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const {
   ADMIN_PRODUCT_EVENTS_PATH,
   ADMIN_TOKEN_HEADER,
+  PRODUCT_INTELLIGENCE_HEARTBEAT_ROUTE,
   buildProductEventsQuery,
   fetchProductIntelligenceEvents,
+  fetchProductIntelligenceHeartbeat,
   normalizeProductEventsLimit,
 } = await server.ssrLoadModule('/src/utils/adminProductEvents.js')
 const {
+  ProductEventHeartbeatTable,
   ProductEventsTable,
   ProductIntelligenceAdminView,
   payloadSummaryText,
@@ -81,6 +84,49 @@ test('admin product event fetch reports unauthorized response clearly', async ()
     }),
     /Admin token required/,
   )
+})
+
+test('admin heartbeat fetch uses runtime token and the heartbeat endpoint', async () => {
+  const calls = []
+  const result = await fetchProductIntelligenceHeartbeat({
+    adminToken: 'runtime-secret',
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options })
+      return {
+        ok: true,
+        json: async () => ({ capability: 'product_intelligence_heartbeat', events: [] }),
+      }
+    },
+  })
+
+  assert.deepEqual(result, { capability: 'product_intelligence_heartbeat', events: [] })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, `/api${PRODUCT_INTELLIGENCE_HEARTBEAT_ROUTE}`)
+  assert.equal(calls[0].options.method, 'GET')
+  assert.equal(calls[0].options.headers[ADMIN_TOKEN_HEADER], 'runtime-secret')
+})
+
+test('heartbeat table shows event name, count, and most recent for operator verification', () => {
+  const html = renderToStaticMarkup(React.createElement(ProductEventHeartbeatTable, {
+    rows: [
+      { event_name: 'today_loaded', count: 2, most_recent: '2026-06-25T11:59:00Z' },
+      { event_name: 'digest_complaint', count: 0, most_recent: null },
+    ],
+  }))
+
+  assert.ok(htmlIncludes(html, 'Event name'))
+  assert.ok(htmlIncludes(html, 'Count'))
+  assert.ok(htmlIncludes(html, 'Most recent event'))
+  assert.ok(htmlIncludes(html, 'today_loaded'))
+  assert.ok(htmlIncludes(html, '2026-06-25T11:59:00Z'))
+  // A never-seen event is visibly at zero (an em dash for the missing timestamp).
+  assert.ok(htmlIncludes(html, 'digest_complaint'))
+  assert.equal(/chart/i.test(html), false)
+})
+
+test('heartbeat table renders nothing when there are no rows', () => {
+  const html = renderToStaticMarkup(React.createElement(ProductEventHeartbeatTable, { rows: [] }))
+  assert.equal(html, '')
 })
 
 test('admin console renders operator controls and sanitized event rows', () => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   PRODUCT_INTELLIGENCE_EVENT_NAMES,
   fetchProductIntelligenceEvents,
+  fetchProductIntelligenceHeartbeat,
 } from '../../utils/adminProductEvents'
 import { ErrorState, LoadingPane, SectionHeader } from '../UI'
 
@@ -53,24 +54,31 @@ export default function ProductIntelligenceAdmin() {
   const [eventName, setEventName] = useState('')
   const [limit, setLimit] = useState(25)
   const [data, setData] = useState(null)
+  const [heartbeat, setHeartbeat] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   const rows = useMemo(() => (
     Array.isArray(data?.events) ? data.events : []
   ), [data])
+  const heartbeatRows = useMemo(() => (
+    Array.isArray(heartbeat?.events) ? heartbeat.events : []
+  ), [heartbeat])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const next = await fetchProductIntelligenceEvents({
-        adminToken,
-        eventName,
-        limit,
-      })
-      setData(next)
+      // Load the recent rows and the heartbeat together. The heartbeat is a
+      // best-effort companion: if it fails, the events view still renders.
+      const [eventsResult, heartbeatResult] = await Promise.allSettled([
+        fetchProductIntelligenceEvents({ adminToken, eventName, limit }),
+        fetchProductIntelligenceHeartbeat({ adminToken }),
+      ])
+      if (eventsResult.status !== 'fulfilled') throw eventsResult.reason
+      setData(eventsResult.value)
+      setHeartbeat(heartbeatResult.status === 'fulfilled' ? heartbeatResult.value : null)
     } catch (err) {
       setError(err?.message || 'Product Intelligence events are unavailable.')
     } finally {
@@ -84,6 +92,7 @@ export default function ProductIntelligenceAdmin() {
       eventName={eventName}
       limit={limit}
       rows={rows}
+      heartbeatRows={heartbeatRows}
       loading={loading}
       error={error}
       onAdminTokenChange={setAdminToken}
@@ -99,6 +108,7 @@ export function ProductIntelligenceAdminView({
   eventName = '',
   limit = 25,
   rows = [],
+  heartbeatRows = [],
   loading = false,
   error = null,
   onAdminTokenChange = () => {},
@@ -186,9 +196,44 @@ export function ProductIntelligenceAdminView({
       ) : error ? (
         <ErrorState message={error} />
       ) : (
-        <ProductEventsTable rows={rows} />
+        <>
+          <ProductEventHeartbeatTable rows={heartbeatRows} />
+          <ProductEventsTable rows={rows} />
+        </>
       )}
     </div>
+  )
+}
+
+export function ProductEventHeartbeatTable({ rows = [] }) {
+  if (!rows.length) return null
+
+  return (
+    <section className="mb-5 overflow-hidden rounded-lg border border-dirt bg-dugout">
+      <div className="border-b border-dirt px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Event flow (count &amp; most recent)
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-dirt text-left text-xs">
+          <thead className="bg-field/60 font-mono uppercase tracking-widest text-chalk500">
+            <tr>
+              <th className="px-3 py-2 font-normal">Event name</th>
+              <th className="px-3 py-2 font-normal">Count</th>
+              <th className="px-3 py-2 font-normal">Most recent event</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-dirt">
+            {rows.map(row => (
+              <tr key={row.event_name} className="align-top">
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk200">{cleanValue(row.event_name)}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk300">{cleanValue(row.count)}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-chalk400">{cleanValue(row.most_recent)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

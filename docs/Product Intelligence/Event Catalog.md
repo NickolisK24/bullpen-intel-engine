@@ -56,17 +56,23 @@ digest seams.
 
 ## Operator inspection
 
-D2A-5 adds a minimal internal verification surface for recent rows:
+D2A-5 adds a minimal internal verification surface for recent rows; D2A-7 adds a
+flow heartbeat:
 
-- **Backend:** `GET /api/system/product-events`, admin-gated with the existing
+- **Backend:** `GET /api/system/product-events` — recent rows; and
+  `GET /api/system/product-event-heartbeat` (D2A-7) — per-event Name / Count /
+  Most-Recent across every canonical event. Both admin-gated with the existing
   `X-Admin-Token` pattern.
 - **Frontend:** `/admin/product-intelligence`, a hidden read-only console for the
-  operator to enter the admin token at runtime and inspect recent events.
+  operator to enter the admin token at runtime, inspect recent events, and (D2A-7)
+  see at a glance that every event type is still flowing.
 
 This surface is not Product Health, a public dashboard, a read model, a rollup,
 or retention analytics. It returns only recent event rows with `anon_id_present`
 instead of raw anonymous identifiers and sanitized payload summaries instead of
-full payloads.
+full payloads. The heartbeat returns counts and a latest-timestamp per event so a
+stopped beacon (count 0 or a stale timestamp) is obvious — operational
+verification only, no rates or time series.
 
 ---
 
@@ -206,6 +212,56 @@ full payloads.
 - **Introduced Phase:** D2A-3.
 - **Related Metrics:** Story-presentation volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
 - **Version:** 1.
+
+### story_interacted
+
+- **Purpose:** Observe explicit interaction with a rendered story — **the fact only**.
+- **Definition:** A user intentionally performed an explicit interaction with a rendered story (e.g. selecting / opening / expanding it). It records the interaction fact and **nothing about engagement, interest, completion, or understanding**.
+- **Trigger:** `POST /api/product/story-interacted` (owned, anonymous-safe; client beacon on an existing story UI action).
+- **Owner:** Product ingestion API (`api/product_events.py`).
+- **Payload:** `{story_id, story_type, interaction_type}` — columns: `user_id` (if authenticated), `anon_id` (optional), `team_id`, `source = surface` (`home | stories | digest_web`, else null). `interaction_type` is an owned allowlist (`expand | open | select`); unrecognized values are recorded as null, never fabricated.
+- **Frontend Activation:** D2A-7 fires this from the existing Stories feed card selection (the click-through link) with `interaction_type = select`, `surface = stories`. The client dedupes by `surface + team_id + story_id + story_type + interaction_type` during the browser session.
+- **Introduced Phase:** D2A-7.
+- **Related Metrics:** Story-interaction volume by type / team / surface; a future input to defining Product Understanding. **No** engagement, dwell, or completion is inferred.
+- **Version:** 1.
+
+### digest_delivered
+
+- **Purpose:** Confirm a sent digest reached the recipient — cleans the Return Rate denominator.
+- **Definition:** The email provider confirmed a sent digest was delivered to the recipient's mailbox.
+- **Trigger:** `POST /api/digest/email-events` (Svix-signature-gated provider webhook; `email.delivered`), correlated to a recent sent delivery for the recipient. Digest-scoped: a provider event with no correlated recent send is ignored.
+- **Owner:** Digest API webhook (`api/digest.py`).
+- **Payload:** `{provider_message_id}` — columns: `user_id` (resolved by recipient email; the email is **never stored**), `delivery_id` (best-effort: the most recent sent delivery), `team_id`, `source=email_provider`.
+- **Introduced Phase:** D2A-7.
+- **Related Metrics:** Delivery rate; Return Rate denominator hygiene.
+- **Version:** 1.
+
+### digest_bounced
+
+- **Purpose:** Surface undeliverable digests (list health, sender reputation).
+- **Definition:** The provider reported a sent digest bounced (undeliverable).
+- **Trigger:** `POST /api/digest/email-events` (`email.bounced`), correlated as above.
+- **Owner:** Digest API webhook (`api/digest.py`).
+- **Payload:** `{provider_message_id, bounce_type}` — columns: `user_id`, `delivery_id`, `team_id`, `source=email_provider`.
+- **Introduced Phase:** D2A-7.
+- **Related Metrics:** Bounce rate; list health.
+- **Version:** 1.
+
+### digest_complaint
+
+- **Purpose:** Surface spam complaints (trust, sender reputation).
+- **Definition:** The provider reported a spam complaint against a sent digest.
+- **Trigger:** `POST /api/digest/email-events` (`email.complained`), correlated as above.
+- **Owner:** Digest API webhook (`api/digest.py`).
+- **Payload:** `{provider_message_id}` — columns: `user_id`, `delivery_id`, `team_id`, `source=email_provider`.
+- **Introduced Phase:** D2A-7.
+- **Related Metrics:** Complaint rate; trust / deliverability.
+- **Version:** 1.
+
+> The three deliverability events are provider-backed digest-lifecycle facts. They
+> are signature-gated, digest-scoped by correlation to a recent sent delivery, and
+> resolve the recipient to a `user_id` without ever storing the email. They never
+> change digest behavior or existing metrics.
 
 ---
 

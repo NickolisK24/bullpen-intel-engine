@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { useStoryViewedObservations } from '../../hooks/useProductIntelligence'
-import { getBullpenDashboard } from '../../utils/api'
+import { getBullpenDashboard, recordStoryInteracted } from '../../utils/api'
+import { observeStoryInteractedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
 import { SectionHeading, StoryDisclosureNote } from '../home/BullpenStories'
@@ -299,6 +300,12 @@ function FeedStoryCard({ story }) {
       <Link
         to={story.href}
         aria-label={story.cta || 'Open the full picture'}
+        onClick={() => observeStoryInteractedOnce({
+          story,
+          surface: 'stories',
+          interactionType: 'select',
+          send: recordStoryInteracted,
+        })}
         className="absolute inset-0 z-10"
       />
       <div className="relative z-20 flex flex-1 flex-col pointer-events-none">

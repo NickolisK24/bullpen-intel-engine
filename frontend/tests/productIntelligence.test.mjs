@@ -27,6 +27,7 @@ afterEach(() => {
 })
 
 const {
+  recordStoryInteracted,
   recordStoryViewed,
   recordTodayLoaded,
   verifyMagicLink,
@@ -38,8 +39,10 @@ const {
   readProductAnonId,
 } = await server.ssrLoadModule('/src/utils/productIdentity.js')
 const {
+  buildStoryInteractedPayload,
   buildStoryViewedPayload,
   buildTodayLoadedPayload,
+  observeStoryInteractedOnce,
   observeStoryViewedOnce,
   observeTodayLoadedOnce,
   resetProductObservationDedupeForTests,
@@ -260,6 +263,71 @@ test('story_viewed observation records rendered canonical stories only and dedup
   assert.equal(sent, 1)
   assert.equal(sentAgain, 0)
   assert.deepEqual(calls, [payload])
+})
+
+test('recordStoryInteracted posts to its endpoint with the product anon id', async () => {
+  const storage = createStorage()
+  installWindow(storage)
+  const calls = installFetch(async () => ({ json: { ok: true } }))
+
+  await recordStoryInteracted({
+    team_id: 118,
+    story_id: '118:2026-06-25',
+    story_type: 'coverage_pressure',
+    surface: 'stories',
+    interaction_type: 'select',
+  })
+
+  assert.deepEqual(calls.map(call => call.url), ['/api/product/story-interacted'])
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    anon_id: readProductAnonId(storage),
+    team_id: 118,
+    story_id: '118:2026-06-25',
+    story_type: 'coverage_pressure',
+    surface: 'stories',
+    interaction_type: 'select',
+  })
+})
+
+test('story_interacted observation builds payload and dedupes per story/surface/kind', async () => {
+  const story = { storyId: '118:2026-06-25', storyType: 'coverage_pressure', teamId: 118 }
+  const payload = buildStoryInteractedPayload(story, {
+    surface: 'stories',
+    interactionType: 'select',
+    anonId: 'anon:test',
+  })
+  assert.deepEqual(payload, {
+    anon_id: 'anon:test',
+    team_id: 118,
+    story_id: '118:2026-06-25',
+    story_type: 'coverage_pressure',
+    surface: 'stories',
+    interaction_type: 'select',
+  })
+
+  const calls = []
+  const send = async (next) => { calls.push(next) }
+  assert.equal(await observeStoryInteractedOnce({
+    story, surface: 'stories', interactionType: 'select', anonId: 'anon:test', send,
+  }), true)
+  assert.equal(await observeStoryInteractedOnce({
+    story, surface: 'stories', interactionType: 'select', anonId: 'anon:test', send,
+  }), false)
+  assert.deepEqual(calls, [payload])
+})
+
+test('story_interacted skips stories without ids and never fabricates surface or kind', () => {
+  assert.equal(buildStoryInteractedPayload(
+    { storyId: '', storyType: 'coverage_pressure', teamId: 1 },
+    { surface: 'stories', interactionType: 'select', anonId: 'anon:test' },
+  ), null)
+
+  const payload = buildStoryInteractedPayload(
+    { storyId: 's1', storyType: 'coverage_pressure', teamId: 1 },
+    { surface: 'popup_banner', interactionType: 'hover', anonId: 'anon:test' },
+  )
+  assert.equal(payload.surface, null)
+  assert.equal(payload.interaction_type, null)
 })
 
 test('today and story payload builders normalize unsafe optional fields', () => {
