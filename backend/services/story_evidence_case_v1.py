@@ -65,6 +65,8 @@ MEANING_VARIANTS = {
         'A steady pitching line is sitting on a heavier real workload',
         'The result looks routine; the innings underneath it are not',
         'A clean line can hide how much the bullpen is carrying',
+        'A tidy final line can mask how many innings the bullpen is absorbing',
+        'The surface result and the workload underneath are not the same story',
     ),
     TYPE_CONCENTRATION_PRESSURE: (
         'The late innings are riding a few arms more than the roster spreads them',
@@ -90,16 +92,60 @@ MEANING_VARIANTS = {
         'That leaves the roster looking deeper than the group the manager can actually use',
         'The usable group is smaller than the roster line suggests',
         'On paper the bullpen looks deeper than the arms truly in the plan',
+        'Roster depth and usable depth are not the same number',
+        'Counting arms on the page overstates what the manager can call on',
     ),
     TYPE_TRUST_LANE_PRESSURE: (
         'The trusted lane is narrower than the full board makes it look',
         'The list of arms is long; the list of trusted arms is short',
         'A full board and a short circle of trust are not the same thing',
+        'Depth on the board and trust in the late innings are different things',
+        'Having arms and trusting arms are two different things late in a game',
     ),
     TYPE_BRIDGE_INSTABILITY: (
         'The soft spot is the path to the late arms, not the arms themselves',
         'The challenge is the bridge to the closer, not the closer',
         'Reaching the late arms is harder than the late arms themselves',
+        'A settled ninth means little if the innings before it are shaky',
+        'The back of the bullpen is only as useful as the path that reaches it',
+    ),
+}
+
+# Approved, fact-IDENTICAL lead-sentence phrasings (Evidence Body Variety Pass).
+# Each variant in a bank states exactly the same fact(s) — only the sentence
+# structure differs — so a per-story choice diversifies same-beat cluster leads
+# without changing a number or a name. Variant 0 is the canonical phrasing (used
+# when no variety_key is supplied), keeping output backward-compatible.
+_LEAD_VARIANTS = {
+    'coverage_early': (
+        'The bullpen has been entering before the sixth in {early}% of recent games',
+        'In {early}% of recent games the bullpen has entered before the sixth',
+        'The bullpen has been getting the ball before the sixth in {early}% of recent games',
+    ),
+    'coverage_starts': (
+        'Starts have shortened to {avg7} innings from {avg14} over the prior two weeks',
+        'Over the prior two weeks, starts have shortened from {avg14} to {avg7} innings',
+        'The rotation is down to {avg7}-inning starts from {avg14} two weeks back',
+    ),
+    'trust_lead': (
+        'The dependable late work runs through {names}',
+        'The late innings keep running through {names}',
+        'When the game is on the line, the ball goes to {names}',
+    ),
+    'bridge_clean0': (
+        'Not one fully rested arm is available to bridge the gap',
+        'The bridge has no fully rested arm to lean on',
+        'There is no rested middle arm to carry the bridge',
+    ),
+    'bridge_clean_n': (
+        'Only {clean} clean middle {arm} {be} rested to bridge the gap',
+        'Just {clean} rested middle {arm} {be} on hand to bridge the gap',
+        'The bridge has only {clean} rested middle {arm} to lean on',
+    ),
+    'depth_lead': (
+        '{inactive} {arm} {be} outside the current plan',
+        'The plan is without {inactive} {arm}',
+        '{inactive} {arm} {be} sitting outside the current plan',
     ),
 }
 
@@ -206,9 +252,30 @@ def _meaning(observation_type: Any, variety_key: Any):
     return variants[index]
 
 
+class _SafeDict(dict):
+    def __missing__(self, key: str) -> str:
+        return ''
+
+
+def _pick_form(slot: str, variety_key: Any, **slots: Any):
+    """Render one fact-identical lead phrasing for a slot, deterministically.
+
+    Variant 0 (the canonical phrasing) when no variety_key is supplied; otherwise
+    a stable per-story choice. The slot values carry the facts, so every variant
+    states the same numbers/names — only the wording differs.
+    """
+    forms = _LEAD_VARIANTS.get(slot) or ()
+    if not forms:
+        return None
+    key = _key_text(variety_key)
+    index = 0 if not key else stable_voice_index((CAPABILITY, VERSION, 'lead', slot, key), len(forms))
+    rendered = forms[index].format_map(_SafeDict({k: _clean(v) for k, v in slots.items()}))
+    return _clean(rendered)
+
+
 # ── Per-type evidence cases (factual sentences only; meaning added centrally) ──
 
-def _rotation_pressure(frame: dict) -> list:
+def _rotation_pressure(frame: dict, variety_key: Any) -> list:
     obs = _facts(frame, 'observation_facts')
     cause = _facts(frame, 'cause_facts')
     avg7 = _num(obs.get('rotation_avg_ip_7d'))
@@ -217,7 +284,7 @@ def _rotation_pressure(frame: dict) -> list:
     coverage = _num(cause.get('bullpen_coverage_ip_7d'))
 
     if avg7 is not None and avg14 is not None and (avg14 - avg7) >= MIN_MEANINGFUL_IP_DELTA:
-        starts = f'Starts have shortened to {_fmt(avg7)} innings from {_fmt(avg14)} over the prior two weeks'
+        starts = _pick_form('coverage_starts', variety_key, avg7=_fmt(avg7), avg14=_fmt(avg14))
     elif avg7 is not None:
         starts = f'Starts have run {_fmt(avg7)} innings over the last week'
     else:
@@ -229,7 +296,7 @@ def _rotation_pressure(frame: dict) -> list:
 
     parts = []
     if early is not None:
-        parts.append(f'The bullpen has been entering before the sixth in {_fmt(early)}% of recent games')
+        parts.append(_pick_form('coverage_early', variety_key, early=_fmt(early)))
         parts.append(starts or coverage_line)
     else:
         parts.append(starts)
@@ -237,7 +304,7 @@ def _rotation_pressure(frame: dict) -> list:
     return parts
 
 
-def _concentration_pressure(frame: dict) -> list:
+def _concentration_pressure(frame: dict, variety_key: Any) -> list:
     head = _facts(frame, 'headline_facts')
     base = _facts(frame, 'baseline_facts')
     names = _join_names(head.get('top_three_relievers'))
@@ -254,7 +321,7 @@ def _concentration_pressure(frame: dict) -> list:
     return parts
 
 
-def _optionality_strength(frame: dict) -> list:
+def _optionality_strength(frame: dict, variety_key: Any) -> list:
     obs = _facts(frame, 'observation_facts')
     cause = _facts(frame, 'cause_facts')
     paths = _intval(obs.get('practical_close_game_paths_count'))
@@ -271,7 +338,7 @@ def _optionality_strength(frame: dict) -> list:
     return parts
 
 
-def _stable_core(frame: dict) -> list:
+def _stable_core(frame: dict, variety_key: Any) -> list:
     # Lead with the workload share (a number the "noticed" section does not give)
     # rather than restating "it is the same trusted group as before", which the
     # noticed section already says.
@@ -287,7 +354,7 @@ def _stable_core(frame: dict) -> list:
     return parts
 
 
-def _core_transition(frame: dict) -> list:
+def _core_transition(frame: dict, variety_key: Any) -> list:
     head = _facts(frame, 'headline_facts')
     base = _facts(frame, 'baseline_facts')
     cause = _facts(frame, 'cause_facts')
@@ -311,7 +378,7 @@ def _core_transition(frame: dict) -> list:
     return parts
 
 
-def _depth_pressure(frame: dict) -> list:
+def _depth_pressure(frame: dict, variety_key: Any) -> list:
     obs = _facts(frame, 'observation_facts')
     base = _facts(frame, 'baseline_facts')
     cause = _facts(frame, 'cause_facts')
@@ -321,16 +388,16 @@ def _depth_pressure(frame: dict) -> list:
 
     parts = []
     if inactive is not None:
-        line = f'{inactive} {_arm(inactive)} {_be(inactive)} outside the current plan'
+        line = _pick_form('depth_lead', variety_key, inactive=inactive, arm=_arm(inactive), be=_be(inactive))
         if il:
-            line += f', {il} of them on the IL'
+            line = f'{line}, {il} of them on the IL'
         parts.append(line)
     if active is not None:
         parts.append(f'The live bullpen is down to {active} {_arm(active)}')
     return parts
 
 
-def _trust_lane_pressure(frame: dict) -> list:
+def _trust_lane_pressure(frame: dict, variety_key: Any) -> list:
     # The "noticed" section already states the available-vs-clean count contrast,
     # so the case leads from a different angle: who the trusted lane actually is,
     # then how many of the rest are working back from recent outings.
@@ -343,7 +410,7 @@ def _trust_lane_pressure(frame: dict) -> list:
 
     parts = []
     if clean_names:
-        parts.append(f'The dependable late work runs through {clean_names}')
+        parts.append(_pick_form('trust_lead', variety_key, names=clean_names))
         if secondary:
             parts.append(
                 f'{secondary} more {_arm(secondary)} {_be(secondary)} available '
@@ -358,7 +425,7 @@ def _trust_lane_pressure(frame: dict) -> list:
     return parts
 
 
-def _bridge_instability(frame: dict) -> list:
+def _bridge_instability(frame: dict, variety_key: Any) -> list:
     # The "noticed" section already states the settled core, the volatile-middle
     # count, and the early-entry rate. The case leads from a different angle: how
     # few clean bridge arms there are, then the innings the bullpen covers to get
@@ -372,9 +439,9 @@ def _bridge_instability(frame: dict) -> list:
 
     parts = []
     if clean == 0:
-        parts.append('Not one fully rested arm is available to bridge the gap')
+        parts.append(_pick_form('bridge_clean0', variety_key))
     elif clean is not None:
-        parts.append(f'Only {clean} clean middle {_arm(clean)} {_be(clean)} rested to bridge the gap')
+        parts.append(_pick_form('bridge_clean_n', variety_key, clean=clean, arm=_arm(clean), be=_be(clean)))
     if coverage is not None:
         parts.append(f'The bullpen is covering {_fmt(coverage)} innings a game just to reach them')
     elif monitor is not None and limited is not None:
@@ -428,7 +495,7 @@ def build_evidence_case(frame: Any, *, story_type: Any = None, variety_key: Any 
     builder = _BUILDERS.get(observation_type)
     if builder is None:
         return ''
-    parts = list(builder(frame))
+    parts = list(builder(frame, variety_key))
     parts.append(_meaning(observation_type, variety_key))
     return _assemble(parts)
 
@@ -445,6 +512,7 @@ def evidence_case_report() -> dict:
         'min_meaningful_pct_delta': MIN_MEANINGFUL_PCT_DELTA,
         'supported_observation_types': list(SUPPORTED_OBSERVATION_TYPES),
         'meaning_variant_counts': {k: len(v) for k, v in MEANING_VARIANTS.items()},
+        'lead_variant_slots': {k: len(v) for k, v in _LEAD_VARIANTS.items()},
     }
 
 

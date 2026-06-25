@@ -19,10 +19,13 @@ It is deterministic and conservative:
   * Same input feed -> same output feed: stories are processed in feed order and
     each choice is a stable hash of the story id and slot.
 
-It varies the headline, the "what everyone saw" opener, and the "why it matters"
-lesson. The "why it matters tomorrow" carry line is intentionally left alone — it
-mirrors the constraint beat and is mostly name-bearing — so the blueprint never
-diverges from the underlying beats.
+It varies the headline, the "what everyone saw" opener, the "why it matters"
+lesson, and the fact-free Evidence meaning sentence. The "why it matters
+tomorrow" carry line is intentionally left alone — it mirrors the constraint beat
+and is mostly name-bearing — so the blueprint never diverges from the underlying
+beats. The factual Evidence sentences (numbers and names) are never touched here;
+only the closing meaning line is swapped, and only for another approved line from
+the same bank.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from copy import deepcopy
 from string import Formatter
 from typing import Any
 
+from services.story_evidence_case_v1 import MEANING_VARIANTS
 from services.story_voice_library_v1 import (
     PURPOSE_LESSON,
     PURPOSE_OPENING,
@@ -48,6 +52,16 @@ VERSION = '2026-06-25.v1'
 SLOT_HEADLINE = 'headline'
 SLOT_SAW = 'what_everyone_saw'
 SLOT_WHY = 'why_it_matters'
+SLOT_EVIDENCE = 'evidence'
+
+# Flat lookup from an approved Evidence meaning line to the bank it belongs to.
+# The meaning lines are fact-free and unique per bank, so a feed-wide de-dup can
+# swap one for another approved line in the same bank without touching any fact.
+_MEANING_BY_TEXT = {
+    ' '.join(str(line).split()).lower(): tuple(bank)
+    for bank in MEANING_VARIANTS.values()
+    for line in bank
+}
 
 # (slot key, voice-library purpose). Order = resolution order across the feed.
 VARIETY_SLOTS = (
@@ -158,6 +172,63 @@ def _pick_alternate(candidates: list, used: set, seed_parts: tuple) -> str | Non
     return fresh[start]
 
 
+def _evidence_text(item: dict) -> str:
+    for section in item.get('blueprint') or []:
+        if isinstance(section, dict) and section.get('key') == SLOT_EVIDENCE:
+            return _clean(section.get('text'))
+    return ''
+
+
+def _set_evidence_text(item: dict, text: str) -> None:
+    for section in item.get('blueprint') or []:
+        if isinstance(section, dict) and section.get('key') == SLOT_EVIDENCE:
+            section['text'] = text
+            return
+
+
+def _split_sentences(text: str) -> list:
+    # Evidence sentences are simple declaratives joined by '. '; decimals (e.g.
+    # "4.2") have no following space, so they are never split.
+    return [s.strip().rstrip('.') for s in text.split('. ') if s.strip()]
+
+
+def _vary_evidence_meanings(result: list) -> None:
+    """De-duplicate the Evidence meaning sentence across the feed.
+
+    The meaning sentence is fact-free and a member of an approved bank, so when a
+    later card repeats one already used, swap it for another approved line from
+    the same bank. Facts (the lead and corroborating sentences) are untouched.
+    """
+    used: set = set()
+    for item in result:
+        if not isinstance(item, dict) or item.get('story_available') is not True:
+            continue
+        text = _evidence_text(item)
+        if not text:
+            continue
+        sentences = _split_sentences(text)
+        idx = next(
+            (i for i, s in enumerate(sentences) if _clean(s).lower() in _MEANING_BY_TEXT),
+            None,
+        )
+        if idx is None:
+            continue
+        current = _clean(sentences[idx])
+        key = current.lower()
+        if key not in used:
+            used.add(key)
+            continue
+        bank = _MEANING_BY_TEXT[key]
+        fresh = [v for v in bank if _clean(v).lower() not in used]
+        if fresh:
+            alt = fresh[stable_voice_index((CAPABILITY, SLOT_EVIDENCE, _clean(item.get('story_id'))), len(fresh))]
+            sentences[idx] = _clean(alt)
+            _set_evidence_text(item, '. '.join(sentences) + '.')
+            used.add(_clean(alt).lower())
+        else:
+            used.add(key)  # no approved alternative left: keep, allow repeat
+
+
 def apply_feed_variety(items: Any) -> list:
     """Return a variety-adjusted copy of the ordered canonical story items.
 
@@ -195,6 +266,9 @@ def apply_feed_variety(items: Any) -> list:
                 used.add(alternate)
             else:
                 used.add(current)  # no approved alternative left: keep, allow dup
+
+    # Evidence body: de-duplicate the fact-free meaning sentence across the feed.
+    _vary_evidence_meanings(result)
     return result
 
 
@@ -204,7 +278,7 @@ def feed_variety_report() -> dict:
         'capability': CAPABILITY,
         'version': VERSION,
         'deterministic': True,
-        'varied_slots': [slot for slot, _ in VARIETY_SLOTS],
+        'varied_slots': [slot for slot, _ in VARIETY_SLOTS] + [SLOT_EVIDENCE],
         'reuses_approved_copy_only': True,
         'changes_facts': False,
     }
@@ -216,6 +290,7 @@ __all__ = [
     'SLOT_HEADLINE',
     'SLOT_SAW',
     'SLOT_WHY',
+    'SLOT_EVIDENCE',
     'VARIETY_SLOTS',
     'apply_feed_variety',
     'feed_variety_report',
