@@ -86,6 +86,7 @@ def eligible_bullpen_pitcher_contexts(
     reference_date=None,
     logs_by_pitcher=None,
     use_role_authority=None,
+    include_unknown_roster=False,
 ):
     """
     Return the default-board eligible bullpen population for a pitcher set.
@@ -103,6 +104,19 @@ def eligible_bullpen_pitcher_contexts(
                     share gate excludes a starter-leaning profile.
       - Unknown   → withheld by default; surfaced only in expanded
                     (include_inactive_context) mode, never silently a reliever.
+
+    Roster gate:
+      - Active roster      → always considered (then filtered by role).
+      - Inactive roster    → considered only in expanded (include_inactive_context)
+                             mode.
+      - Unknown roster     → withheld by default; with ``include_unknown_roster`` a
+                             pitcher whose roster status is not yet authoritative is
+                             still considered, and the role filter alone then decides
+                             bullpen eligibility. This is the Roster Authority
+                             completeness path: it surfaces bullpen-eligible arms
+                             BaseballOS can identify by role even before their roster
+                             status is confirmed. Off by default, so every existing
+                             caller is unchanged.
     """
     pitcher_list = list(pitchers or [])
     ref = reference_date or product_current_date()
@@ -123,7 +137,16 @@ def eligible_bullpen_pitcher_contexts(
         roster_status = with_recent_inactive_roster_audit(roster_status, logs, ref)
         roster_statuses.append(roster_status)
         if not allows_default_board(roster_status):
-            if not (include_inactive_context and allows_inactive_context(roster_status)):
+            include_via_inactive = (
+                include_inactive_context and allows_inactive_context(roster_status)
+            )
+            # An unconfirmed roster status (not authoritative) is not inactive context;
+            # surface it only when the caller opts into the completeness path, leaving
+            # the role filter below to decide bullpen eligibility.
+            include_via_unknown = (
+                include_unknown_roster and not roster_status.get('is_authoritative')
+            )
+            if not (include_via_inactive or include_via_unknown):
                 continue
 
         eligibility = _eligibility_for(

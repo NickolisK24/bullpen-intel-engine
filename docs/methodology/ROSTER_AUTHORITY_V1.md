@@ -211,13 +211,76 @@ For a seeded team across the Active and Active+Unavailable/Unavailable board vie
 |---|---|---|---|
 | `bullpen_arms` ↔ `active_mlb_count` | invariant | invariant (active arms are in every view) | **agree** in all views |
 | `inactive_roster_context_count` ↔ `inactive_context_count` | invariant | **view-dependent** (0 in Active, full in expanded) | agree only in the expanded view; the legacy number moves with `include_stale` — the defect the authority removes |
-| `roster_unknown_count` ↔ `unknown_count` | `0` | `>= number of unknown-roster arms` | **differ.** The shared eligible-population helper (`eligible_bullpen_pitcher_contexts`) gates out unknown-roster pitchers before they reach the records, so the authority does not yet see them, while the legacy summary counts them from the full classified statuses. **Observation only.** |
-| `roster_status_coverage` | `1.0` (no unknown in the population) | `< 1.0` when unknown arms exist | differs for the same reason as above |
-| `total_candidates` | active + off-roster (excludes unknown) | active + off-roster + unknown | differs for the same reason |
+| `roster_unknown_count` ↔ `unknown_count` | `0` at Phase 2 | `>= number of unknown-roster arms` | **was a gap at Phase 2; resolved in CRC-3 (§10).** The roster gate dropped unknown-roster pitchers before they reached the records. |
+| `roster_status_coverage` | `1.0` at Phase 2 | `< 1.0` when unknown arms exist | same gap; resolved in CRC-3 |
+| `total_candidates` | active + off-roster at Phase 2 | active + off-roster + unknown | same gap; resolved in CRC-3 |
 
-Root of the `unknown` divergence: the canonical population is currently sourced through
-`eligible_bullpen_pitcher_contexts`, whose roster gate drops unknown-roster arms. CRC-3
-should reconcile this so the authority also accounts for unknown-roster bullpen
-candidates (e.g. by feeding the authority the full classified roster statuses, or by
-adjusting the population helper to surface unknown-roster candidates) — **without**
-changing the legacy path until consumers migrate.
+Root of the Phase 2 `unknown` divergence: the canonical population was sourced through
+`eligible_bullpen_pitcher_contexts`, whose roster gate dropped unknown-roster arms before
+they became records. This is reconciled in CRC-3 (§10) by surfacing bullpen-eligible
+unknown-roster candidates into the authority population — without changing the legacy path.
+
+---
+
+## 10. Phase 3 — completeness (unknown-roster population)
+
+Status: **done.** The authority is now both invariant across views (CRC-2) and complete
+over the canonical bullpen-eligible population (CRC-3). The legacy `roster_status`, the
+board cards, capacity, resource health, story, digest, and the frontend are all unchanged.
+
+### How unknown-roster candidates enter the population
+
+`services/bullpen_population.py::eligible_bullpen_pitcher_contexts` gained an additive
+`include_unknown_roster` flag (default `False`, so every existing caller — board, What
+Changed, Follow My Team, injury context, availability population — is byte-identical).
+When `True`, a pitcher whose roster status is **not yet authoritative** is no longer
+dropped at the roster gate; instead the existing **role filter alone** decides bullpen
+eligibility:
+
+- Reliever / Ambiguous (bullpen-eligible by role) → **included** as an unknown-roster
+  candidate.
+- Starter → **excluded** (BaseballOS can already tell this arm is not a bullpen option).
+- Unknown role → surfaced only in expanded mode, exactly as for active/off-roster arms.
+
+The Roster Authority population is assembled through one shared helper,
+`api/bullpen.py::_roster_authority_records`, which calls `_eligible_records_for_rows`
+with the canonical `include_stale=True` and `include_unknown_roster=True`. Both the board
+payload and the standalone `build_team_roster_authority` entrypoint use this one helper,
+so they produce the same snapshot. (The board no longer reuses `capacity_records` for the
+authority, because the capacity population must not include unknown-roster arms; capacity
+behavior is therefore unchanged.)
+
+### What `roster_unknown_count` means
+
+The number of **bullpen-eligible** candidates whose roster status is not authoritative
+(`is_authoritative is False`, i.e. an unconfirmed / `UNKNOWN` roster state). It is part of
+the three-way partition of the population: `bullpen_arms` (on the active roster) +
+`inactive_roster_context_count` (off the active roster) + `roster_unknown_count` =
+`total_candidates`. `roster_status_coverage = known_count / total_candidates` therefore
+drops below 1.0 whenever unknown candidates exist.
+
+### Why included or excluded
+
+- **Included:** a candidate BaseballOS can identify as bullpen-eligible *by role* belongs
+  in the bullpen picture even before its roster status is confirmed — hiding it would
+  understate the bullpen and erase a real arm.
+- **Excluded (documented):** a candidate that is not bullpen-eligible by role (a clear
+  starter) is not added just because its roster status is unknown. The role filter is the
+  one authority for "is this a bullpen arm", and it is not bypassed.
+
+This is why the authority's `roster_unknown_count` can be **smaller** than the legacy
+`roster_status.unknown_count`: the legacy summary counts the unknown roster status of
+*every active-roster pitcher on the team*, including starters, while the authority counts
+only bullpen-eligible candidates. Over the same bullpen-eligible population the two agree
+(tested); when the team has unknown-roster starters they differ for this documented,
+intended reason.
+
+### Trust and evidence visibility
+
+Every unknown candidate maps to evidence. `evidence['roster_unknown_count']` lists each
+arm as `{ pitcher_id, name, roster_status, roster_status_label, availability, reason }`
+with the reason "Roster status not yet confirmed." The unknown-roster signal is surfaced,
+never hidden: a reader can open the count and see exactly which arms are awaiting roster
+confirmation, with the availability read BaseballOS already has for them. The authority
+remains byte-identical across board views, so this completeness never reintroduces
+filter-driven movement.

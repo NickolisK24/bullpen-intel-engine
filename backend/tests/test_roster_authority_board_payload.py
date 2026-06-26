@@ -112,23 +112,82 @@ def test_authority_is_identical_across_board_views(client):
     )
 
 
-# 5. Parity observation (verify agreement; document differences, do not fix).
-def test_observed_parity_between_authority_and_legacy(client):
+# 5. Parity (CRC-3 reconciled): the unknown-roster gap is closed.
+def test_authority_and_legacy_agree_on_unknown_over_same_population(client):
     with client.application.app_context():
         _seed_team()
+    expanded = _board(client, include_stale=True)
+    authority = expanded['roster_authority']
+    counts = authority['counts']
+    population = authority['population']
+    legacy = expanded['roster_status']
+
+    # AGREES: on-the-active-roster count and (in the expanded view) the off-roster count.
+    assert counts['bullpen_arms'] == legacy['active_mlb_count']
+    assert counts['inactive_roster_context_count'] == legacy['inactive_context_count']
+
+    # RECONCILED: the unknown-roster reliever now enters the authority population, so the
+    # authority and legacy agree on unknown / known / total over this all-bullpen team.
+    assert counts['roster_unknown_count'] == 1
+    assert counts['roster_unknown_count'] == legacy['unknown_count']
+    assert population['total_candidates'] == legacy['total_candidates'] == 6
+    assert population['known_count'] == legacy['known_count'] == 5
+
+
+# CRC-3: unknown-roster bullpen candidate is included WITH evidence.
+def test_unknown_roster_candidate_included_with_evidence(client):
+    with client.application.app_context():
+        _seed_team()
+    authority = _board(client)['roster_authority']
+    counts = authority['counts']
+    evidence = authority['evidence']['roster_unknown_count']
+
+    assert counts['roster_unknown_count'] == 1
+    assert len(evidence) == counts['roster_unknown_count']     # the count maps to evidence
+    entry = evidence[0]
+    assert entry['name'] == 'Quincy Question'
+    assert set(entry) == {'pitcher_id', 'name', 'roster_status', 'roster_status_label', 'availability', 'reason'}
+    assert entry['roster_status'] == 'UNKNOWN'
+    assert entry['roster_status_label']                        # human label present
+    assert entry['reason']                                     # plain-language reason present
+
+
+# CRC-3: total_candidates includes the unknown candidate and coverage drops below 1.0.
+def test_total_candidates_includes_unknown_and_coverage_decreases(client):
+    with client.application.app_context():
+        _seed_team()
+    population = _board(client)['roster_authority']['population']
+    # 3 active + 2 off-roster + 1 unknown = 6.
+    assert population['total_candidates'] == 6
+    assert population['unknown_count'] == 1
+    # Coverage = known / total = 5 / 6 < 1.0 (unknown candidate lowers coverage).
+    assert population['roster_status_coverage'] == round(5 / 6, 4)
+    assert population['roster_status_coverage'] < 1.0
+
+
+# CRC-3: only BULLPEN-ELIGIBLE unknown-roster arms enter the authority. A clear starter
+# with an unconfirmed roster status is excluded by the role filter (and documented).
+def test_unknown_roster_starter_is_excluded_bullpen_eligible_only(client):
+    with client.application.app_context():
+        _seed_team()
+        # A starter (clear gamesStarted signal) with no stored roster status.
+        _seed_pitcher(
+            'Stan Starter', team_id=TEAM_ID, mlb_id=70007, roster_status=None,
+            raw_score=10.0, games=3, innings=[6.0, 6.0, 6.0], games_started=[1, 1, 1],
+        )
     expanded = _board(client, include_stale=True)
     authority = expanded['roster_authority']['counts']
     legacy = expanded['roster_status']
 
-    # AGREES: on-the-active-roster count and (in the expanded view) the off-roster count.
-    assert authority['bullpen_arms'] == legacy['active_mlb_count']
-    assert authority['inactive_roster_context_count'] == legacy['inactive_context_count']
-
-    # DIFFERS (documented, not fixed): the shared eligible-population helper gates out
-    # unknown-roster arms, so the authority does not yet see them, while the legacy
-    # summary counts them from the full classified statuses.
-    assert authority['roster_unknown_count'] == 0
-    assert legacy['unknown_count'] >= 1
+    # The authority counts only the bullpen-eligible unknown-roster arm (the reliever),
+    # not the starter — the role filter still governs bullpen eligibility.
+    assert authority['roster_unknown_count'] == 1
+    unknown_names = {e['name'] for e in expanded['roster_authority']['evidence']['roster_unknown_count']}
+    assert unknown_names == {'Quincy Question'}
+    assert 'Stan Starter' not in unknown_names
+    # The legacy summary counts every active-roster pitcher's unknown status, including
+    # the starter, so it is broader than the bullpen-eligible authority population.
+    assert legacy['unknown_count'] == 2
 
 
 # The standalone entrypoint produces the same authority the board exposes.
