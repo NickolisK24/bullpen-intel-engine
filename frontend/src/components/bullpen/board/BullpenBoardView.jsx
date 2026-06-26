@@ -7,7 +7,7 @@ import {
   getBoardGroups,
   getBoardTotals,
   getDataProvenance,
-  getRosterStatusSummaryView,
+  getRosterAuthorityView,
 } from './tonightsBullpenBoardView'
 import {
   PITCHER_LABEL_KEY_COPY,
@@ -87,46 +87,80 @@ function FreshnessBanner({ freshness }) {
   )
 }
 
-function RosterStatusBanner({ summary }) {
-  const view = getRosterStatusSummaryView(summary)
-  if (!view.shouldShow) return null
-  const isProminent = (
-    view.authority !== 'available'
-    || view.unknownCount > 0
-    || view.unavailablePitchersCount > 0
-    || view.notShownRosterContextCount > 0
-    || view.limitations.length > 0
+// Roster-context banner. CRC Phase 4: this is driven entirely by the canonical
+// Roster Authority (board.roster_authority) — the board displays roster truth, it no
+// longer computes it. Every count is invariant across views; the only view-dependent
+// value is how many off-roster arms are currently rendered as cards.
+function RosterContextEvidence({ heading, entries }) {
+  if (!entries.length) return null
+  return (
+    <div>
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk600">{heading}</div>
+      <ul className="mt-1 space-y-1">
+        {entries.map((entry, index) => (
+          <li key={entry.pitcherId ?? `${entry.name}-${index}`} className="text-xs leading-relaxed text-chalk300">
+            • {entry.name} — {entry.rosterStatusLabel}
+            {entry.availability ? ` · ${entry.availability}` : ''}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
+}
+
+function RosterStatusBanner({ board }) {
+  const renderedCards = getBoardGroups(board).flatMap(group => group.pitchers || [])
+  const view = getRosterAuthorityView(board?.roster_authority, { renderedCards })
+  if (!view.shouldShow) return null
+
+  const shownNote = (view.shownOffActiveRoster != null && view.offActiveRoster > 0)
+    ? ` · showing ${view.shownOffActiveRoster} of ${view.offActiveRoster} here`
+    : ''
+
   const rosterFacts = (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <span className="font-mono text-[11px] uppercase tracking-widest">{view.label}</span>
-      <span className="font-mono text-xs">
-        <span className="text-chalk500">Bullpen Arms</span> {view.activeMlbCount}
+      <span className="font-mono text-[11px] uppercase tracking-widest">{view.statusLabel}</span>
+      <span
+        className="font-mono text-xs"
+        title="Relievers on the team's active MLB roster — the club's current bullpen."
+      >
+        <span className="text-chalk500">Bullpen Arms</span> {view.bullpenArms}
       </span>
       <span
         className="font-mono text-xs"
-        title="Roster-inactive pitchers (injured list, optioned, or 40-man only) shown on the board so you can open each one and see why it is out of the bullpen plan."
+        title="Relievers off the active roster (injured list, optioned, or 40-man only). Open the list below to see every one."
       >
-        <span className="text-chalk500">Unavailable Pitchers</span> {view.unavailablePitchersCount}
+        <span className="text-chalk500">Off the Active Roster</span> {view.offActiveRoster}{shownNote}
       </span>
-      {view.notShownRosterContextCount > 0 && (
-        <span
-          className="font-mono text-xs"
-          title="More roster-inactive arms BaseballOS is aware of but does not show as cards because they are off the active roster. Counted here for roster awareness only, not shown as bullpen options."
-        >
-          <span className="text-chalk500">Off Roster (not shown)</span> {view.notShownRosterContextCount}
-        </span>
-      )}
-      <span className="font-mono text-xs">
+      <span
+        className="font-mono text-xs"
+        title="Share of bullpen candidates with a confirmed roster status."
+      >
         <span className="text-chalk500">Roster Status Coverage</span> {view.coverageLabel}
       </span>
-      <span className="font-mono text-xs">
-        <span className="text-chalk500">Roster Unknown</span> {view.unknownCount}
+      <span
+        className="font-mono text-xs"
+        title="Bullpen candidates whose roster status is not yet confirmed."
+      >
+        <span className="text-chalk500">Roster Status Pending</span> {view.rosterStatusPending}
       </span>
     </div>
   )
 
-  if (!isProminent) {
+  const hasEvidence = view.evidence.offActiveRoster.length > 0 || view.evidence.rosterStatusPending.length > 0
+  const evidenceBlock = hasEvidence ? (
+    <details className="mt-2 rounded border border-dirt/60 bg-dugout/50 p-2" aria-label="Roster context evidence">
+      <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
+        Who is off the active roster?
+      </summary>
+      <div className="mt-2 space-y-3">
+        <RosterContextEvidence heading="Off the active roster" entries={view.evidence.offActiveRoster} />
+        <RosterContextEvidence heading="Roster status pending" entries={view.evidence.rosterStatusPending} />
+      </div>
+    </details>
+  ) : null
+
+  if (!view.isProminent) {
     return (
       <details
         className="mb-3 rounded border border-dirt bg-dugout/35 p-3"
@@ -135,10 +169,10 @@ function RosterStatusBanner({ summary }) {
         <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-widest text-chalk500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60">
           <span>Roster Context</span>
           <span className="normal-case tracking-normal text-chalk400">
-            {view.activeMlbCount} bullpen arms · {view.coverageLabel} coverage
+            {view.bullpenArms} bullpen arms · {view.coverageLabel} coverage
           </span>
         </summary>
-        <div className="mt-2">{rosterFacts}</div>
+        <div className="mt-2">{rosterFacts}{evidenceBlock}</div>
       </details>
     )
   }
@@ -151,6 +185,7 @@ function RosterStatusBanner({ summary }) {
       aria-live="polite"
     >
       {rosterFacts}
+      {evidenceBlock}
       {view.limitations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {view.limitations.map((limitation, index) => (
@@ -455,7 +490,7 @@ export default function BullpenBoardView({
   return (
     <div>
       <FreshnessBanner freshness={board?.freshness} />
-      <RosterStatusBanner summary={board?.roster_status} />
+      <RosterStatusBanner board={board} />
 
       <div className="mb-4">
         <h2 className="font-display text-xl tracking-wide text-chalk100">

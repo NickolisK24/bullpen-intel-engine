@@ -209,3 +209,29 @@ def test_board_route_authority_counts_unchanged_by_include_stale(client):
         _board(client, include_stale=False)['roster_authority']['counts']
         == _board(client, include_stale=True)['roster_authority']['counts']
     )
+
+
+# CRC Phase 4 (board migration) contract: the board banner now reads these exact
+# Roster Authority fields. Guard them so a backend change cannot silently break the
+# migrated board, and confirm no engine field names leak into the evidence the UI shows.
+def test_board_payload_exposes_frontend_banner_contract(client):
+    with client.application.app_context():
+        _seed_team()
+    authority = _board(client)['roster_authority']
+    counts = authority['counts']
+    population = authority['population']
+    evidence = authority['evidence']
+
+    for field in ('bullpen_arms', 'inactive_roster_context_count', 'roster_unknown_count'):
+        assert isinstance(counts.get(field), int)
+        # Every displayed count maps to an evidence list of the same length.
+        assert isinstance(evidence.get(field), list)
+        assert len(evidence[field]) == counts[field]
+        for entry in evidence[field]:
+            # Exactly the presentation fields the banner renders — no engine internals
+            # (is_active_mlb / is_inactive_context) leak to the surface.
+            assert set(entry.keys()) == {
+                'pitcher_id', 'name', 'roster_status', 'roster_status_label',
+                'availability', 'reason',
+            }
+    assert isinstance(population.get('roster_status_coverage'), (int, float))
