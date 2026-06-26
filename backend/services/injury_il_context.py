@@ -235,7 +235,7 @@ def build_injury_il_context_payload(
             .all()
         )
     )
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitcher_list,
         # Current roster-status context should not revive stale historical usage
         # to classify unavailable pitchers into the dashboard bullpen universe.

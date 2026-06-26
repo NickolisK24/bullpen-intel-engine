@@ -393,7 +393,6 @@ def build_board_payload(
     records,
     freshness=None,
     limitations=None,
-    roster_status=None,
     roster_authority=None,
     generated_at=None,
     workload_concentration=None,
@@ -466,10 +465,9 @@ def build_board_payload(
         'total_pitchers': grouped_total,
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),
         'freshness': freshness or {},
-        'roster_status': roster_status or {},
-        # CRC Phase 2: the canonical Roster Authority snapshot, exposed alongside the
-        # legacy roster_status for parallel verification. Additive and view-invariant;
-        # no consumer reads it yet and roster_status is unchanged.
+        # Roster Authority is the single source of roster truth (CRC). The legacy
+        # roster_status board summary was retired in CRC-10; this is the only
+        # roster-context payload, and it is invariant across board views.
         'roster_authority': roster_authority or {},
         'limitations': list(limitations or []),
     }

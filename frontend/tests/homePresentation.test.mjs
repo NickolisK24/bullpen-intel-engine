@@ -18,6 +18,7 @@ const {
   homeTone,
   buildHomeTeamHref,
   getMastheadView,
+  getHomeRosterStatusLine,
 } = await server.ssrLoadModule('/src/components/home/homePresentationView.js')
 
 // ── Tones ───────────────────────────────────────────────────────────────────
@@ -63,4 +64,33 @@ test('the masthead reports the data window in plain language', () => {
   assert.equal(masthead.isLive, true)
   const cold = getMastheadView({}, new Date('2026-06-06T12:00:00Z'))
   assert.equal(cold.dataLine, 'Waiting on the first completed games')
+})
+
+// ── Home roster line (CRC-10: reads Roster Authority, not legacy roster_status) ──
+
+test('the home roster line reads the invariant off-roster count from Roster Authority', () => {
+  const board = { roster_authority: { counts: { inactive_roster_context_count: 3 } } }
+  assert.equal(getHomeRosterStatusLine(board), '3 off the active roster')
+  const one = { roster_authority: { counts: { inactive_roster_context_count: 1 } } }
+  assert.equal(getHomeRosterStatusLine(one), '1 off the active roster')
+})
+
+test('the home roster line reads None when no arms are off the active roster or no board', () => {
+  assert.equal(
+    getHomeRosterStatusLine({ roster_authority: { counts: { inactive_roster_context_count: 0 } } }),
+    'None off the active roster',
+  )
+  assert.equal(getHomeRosterStatusLine(null), 'None off the active roster')
+  assert.equal(getHomeRosterStatusLine({}), 'None off the active roster')
+})
+
+test('the home roster line ignores the retired legacy roster_status summary', () => {
+  // A board carrying a (bogus) legacy roster_status must not affect the line — only Roster
+  // Authority drives the count. This is the CRC-10 correctness fix: the old line read the
+  // default board's legacy roster_status.inactive_context_count, which was always 0.
+  const board = {
+    roster_status: { inactive_context_count: 0, active_mlb_count: 999 },
+    roster_authority: { counts: { inactive_roster_context_count: 5 } },
+  }
+  assert.equal(getHomeRosterStatusLine(board), '5 off the active roster')
 })

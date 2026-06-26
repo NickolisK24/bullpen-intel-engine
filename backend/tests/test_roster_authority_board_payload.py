@@ -70,16 +70,15 @@ def test_roster_authority_present_in_board_payload(client):
     assert 'category_counts' in authority and 'category_evidence' in authority
 
 
-# 2. Legacy payload remains unchanged (still present with its full structure).
-def test_legacy_roster_status_still_present_and_intact(client):
+# 2. CRC-10: the legacy roster_status board summary is retired. Roster Authority is now the
+# single roster-context payload; the board no longer ships a parallel roster_status truth.
+def test_board_payload_no_longer_exposes_legacy_roster_status(client):
     with client.application.app_context():
         _seed_team()
-    legacy = _board(client)['roster_status']
-    for key in (
-        'authority', 'total_candidates', 'known_count', 'unknown_count',
-        'active_mlb_count', 'inactive_context_count', 'excluded_inactive_count',
-    ):
-        assert key in legacy, f'legacy roster_status lost {key}'
+    body = _board(client)
+    assert 'roster_status' not in body
+    # The canonical payload remains and is the only roster-context object on the board.
+    assert 'roster_authority' in body
 
 
 # 3. Invariant fields match expected authority values, each backed by evidence.
@@ -94,46 +93,34 @@ def test_authority_invariant_fields_match_expected(client):
         assert len(authority['evidence'][field]) == count, f'evidence mismatch for {field}'
 
 
-# 4. Different board views expose identical Roster Authority; only legacy may differ.
+# 4. Different board views expose identical Roster Authority (the whole point of CRC).
 def test_authority_is_identical_across_board_views(client):
     with client.application.app_context():
         _seed_team()
     active_view = _board(client, include_stale=False)
     expanded_view = _board(client, include_stale=True)
 
-    # Byte-identical authority regardless of the view filter — the whole point.
+    # Byte-identical authority regardless of the view filter. The legacy roster_status summary
+    # that used to move with the view (the defect the authority fixed) was retired in CRC-10.
     assert active_view['roster_authority'] == expanded_view['roster_authority']
-
-    # The legacy summary is allowed to move with the view (the defect the authority
-    # fixes): off-roster arms are excluded from the count in the Active view.
-    assert active_view['roster_status']['inactive_context_count'] == 0
-    assert expanded_view['roster_status']['inactive_context_count'] == 2
-    assert (
-        active_view['roster_status']['inactive_context_count']
-        != expanded_view['roster_status']['inactive_context_count']
-    )
+    assert 'roster_status' not in active_view and 'roster_status' not in expanded_view
 
 
-# 5. Parity (CRC-3 reconciled): the unknown-roster gap is closed.
-def test_authority_and_legacy_agree_on_unknown_over_same_population(client):
+# 5. CRC-3 completeness, read from the canonical authority alone (the legacy summary it used
+# to be reconciled against was retired in CRC-10).
+def test_authority_population_is_complete_over_the_bullpen_eligible_team(client):
     with client.application.app_context():
         _seed_team()
-    expanded = _board(client, include_stale=True)
-    authority = expanded['roster_authority']
+    authority = _board(client, include_stale=True)['roster_authority']
     counts = authority['counts']
     population = authority['population']
-    legacy = expanded['roster_status']
 
-    # AGREES: on-the-active-roster count and (in the expanded view) the off-roster count.
-    assert counts['bullpen_arms'] == legacy['active_mlb_count']
-    assert counts['inactive_roster_context_count'] == legacy['inactive_context_count']
-
-    # RECONCILED: the unknown-roster reliever now enters the authority population, so the
-    # authority and legacy agree on unknown / known / total over this all-bullpen team.
+    # 3 active + 2 off-roster + 1 unknown over this all-bullpen team.
+    assert counts['bullpen_arms'] == 3
+    assert counts['inactive_roster_context_count'] == 2
     assert counts['roster_unknown_count'] == 1
-    assert counts['roster_unknown_count'] == legacy['unknown_count']
-    assert population['total_candidates'] == legacy['total_candidates'] == 6
-    assert population['known_count'] == legacy['known_count'] == 5
+    assert population['total_candidates'] == 6
+    assert population['known_count'] == 5
 
 
 # CRC-3: unknown-roster bullpen candidate is included WITH evidence.
@@ -184,7 +171,6 @@ def test_unknown_roster_starter_is_excluded_bullpen_eligible_only(client):
         )
     expanded = _board(client, include_stale=True)
     authority = expanded['roster_authority']['counts']
-    legacy = expanded['roster_status']
 
     # The authority counts only the bullpen-eligible unknown-roster arm (the reliever),
     # not the starter — the role filter still governs bullpen eligibility.
@@ -192,9 +178,6 @@ def test_unknown_roster_starter_is_excluded_bullpen_eligible_only(client):
     unknown_names = {e['name'] for e in expanded['roster_authority']['evidence']['roster_unknown_count']}
     assert unknown_names == {'Quincy Question'}
     assert 'Stan Starter' not in unknown_names
-    # The legacy summary counts every active-roster pitcher's unknown status, including
-    # the starter, so it is broader than the bullpen-eligible authority population.
-    assert legacy['unknown_count'] == 2
 
 
 # The standalone entrypoint produces the same authority the board exposes.
@@ -288,29 +271,3 @@ def test_board_payload_category_counts_invariant_across_views(client):
         _board(client, include_stale=False)['roster_authority']['category_counts']
         == _board(client, include_stale=True)['roster_authority']['category_counts']
     )
-
-
-# CRC Phase 9 audit guard. The legacy board ``roster_status`` summary is intentionally
-# RETAINED (not retired) because a live production consumer still reads it: the Home
-# "Tonight's Bullpen Picture" (frontend ``Home.jsx``) reads
-# ``board.roster_status.inactive_context_count``. No behaviour-preserving swap to Roster
-# Authority exists — Home fetches the DEFAULT board, where the legacy count is structurally 0,
-# while the canonical ``inactive_roster_context_count`` is view-invariant (the full off-roster
-# count). Migrating Home to the canonical field would change the displayed value (0 -> N), a
-# user-facing change out of scope for this no-behaviour-change cleanup phase. This guard locks
-# the retain decision so the legacy summary is not removed before Home.jsx is migrated.
-def test_legacy_board_roster_status_retained_pending_home_migration(client):
-    with client.application.app_context():
-        _seed_team()
-    body = _board(client)  # the DEFAULT board — exactly what Home.jsx fetches (no include_stale)
-
-    # Both payloads coexist: the canonical authority AND the retained legacy summary.
-    assert 'roster_authority' in body and 'roster_status' in body
-
-    # The exact divergence that blocks a behaviour-preserving Home.jsx migration: in the default
-    # view the legacy count Home reads is 0, but the canonical invariant count is the full 2.
-    legacy_inactive = body['roster_status']['inactive_context_count']
-    canonical_inactive = body['roster_authority']['counts']['inactive_roster_context_count']
-    assert legacy_inactive == 0
-    assert canonical_inactive == 2
-    assert legacy_inactive != canonical_inactive
