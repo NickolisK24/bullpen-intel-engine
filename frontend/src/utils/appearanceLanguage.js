@@ -59,6 +59,19 @@ export function platformDateFromFreshness(freshness) {
   )
 }
 
+// The user's ACTUAL current calendar day (local), as a baseball-day string (YYYY-MM-DD).
+// This is the anchor for "Today" / "Yesterday" workload labels — distinct from the platform
+// data-through date, the availability reference date, and the latest completed game date.
+// `now` is injectable so the relative-day labels are deterministic in tests.
+export function currentUserBaseballDay(now = new Date()) {
+  const date = now instanceof Date ? now : new Date(now)
+  if (Number.isNaN(date.getTime())) return null
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export function normalizeAppearance(input) {
   if (!input || typeof input !== 'object') return null
   const gameDate = (
