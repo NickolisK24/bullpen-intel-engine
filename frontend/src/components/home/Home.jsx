@@ -25,6 +25,7 @@ import { FeedbackCTA } from '../feedback/FeedbackLink'
 import TeamShareButton from '../share/TeamShareButton'
 import TeamMark from '../team/TeamMark'
 import WhatChangedCard from '../dashboard/WhatChangedCard'
+import IntelligenceSurfacePage from './IntelligenceSurface'
 import {
   getBoardContextView,
   getBullpenStressView,
@@ -42,11 +43,14 @@ import {
   getCanonicalLeagueContext,
 } from './homeCanonicalStoriesView'
 
-// The Morning Bullpen Report — BaseballOS's story-led front page. Curated,
-// not exhaustive: one flagship observation, three things to watch, short
-// league context, and a handoff to Stories. The Stories page carries the
-// browseable feed and the Bullpen page remains the team directory.
+// The / route now renders the Intelligence Surface. The prior Morning Bullpen
+// Report view remains exported below so existing digest and presentation tests
+// can keep covering that surface without keeping it as the homepage.
 export default function Home() {
+  return <IntelligenceSurfacePage />
+}
+
+export function LegacyMorningBullpenReport() {
   const [searchParams, setSearchParams] = useSearchParams()
   const dash = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
