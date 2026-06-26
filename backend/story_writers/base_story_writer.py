@@ -50,17 +50,17 @@ _HEADLINES = {
 }
 _DEFAULT_HEADLINE = 'Bullpen note'
 
-# Natural-language reads of the bullpen-state bands, written as a predicate that
-# follows "The relief corps ...". Supported directly by the snapshot bands.
+# Short descriptors of the bullpen's standing, written so they read after both
+# "the relief corps is ___" and "leaves the relief corps ___". Band-supported.
 _OPTIONALITY_PHRASE = {
-    'thin': 'is down to fewer rested options',
-    'narrow': 'is left with only a short list of clean options',
-    'flexible': 'remains in good shape',
-    'deep': 'has multiple clean options available',
+    'thin': 'down to fewer rested options',
+    'narrow': 'down to a short list of clean arms',
+    'flexible': 'in good shape',
+    'deep': 'deep in fresh arms',
 }
 _CONCENTRATION_PHRASE = {
-    'concentrated': 'has leaned on a few arms',
-    'narrow': 'has leaned heavily on a few arms',
+    'concentrated': 'leaning on a few arms',
+    'narrow': 'leaning heavily on a few arms',
 }
 
 # Plain-language reads of the narrative's observation identifiers. Only the
@@ -69,7 +69,7 @@ _OBSERVATION_PHRASES = {
     'starter_created_game_shape': 'The starter set the bullpen up to finish the game.',
     'deep_start': 'The starter went deep and held down the bullpen workload.',
     'lead_entering_bullpen': 'The bullpen took over with a lead in hand.',
-    'deficit_entering_bullpen': 'The bullpen took over while the club was trailing.',
+    'deficit_entering_bullpen': 'The bullpen took over while trailing.',
     'bullpen_preserved_lead': 'The relievers held the lead.',
     'bullpen_lost_lead': 'The relievers could not hold the lead.',
     'late_runs_allowed': 'The damage came after the starter exited.',
@@ -406,12 +406,18 @@ class BaseStoryWriter:
         )
 
     # ── Composition fact accessors (evidence first, then narrative facts) ──────
-    def _team_subject(self) -> str:
+    def _team_name(self) -> str | None:
+        """The club's display name from the package, or None when absent."""
         completed = self._get('completed_game_context')
         name = completed.get('team_name') if isinstance(completed, dict) else None
-        # Fail closed to "the club" (never the flat "the team") when the package
-        # carries no team name.
-        return name or 'the club'
+        return name or None
+
+    def _team_subject(self) -> str:
+        # Prefer the club name. The story composers go name-led and avoid a generic
+        # noun entirely when the name is missing; only the brief's recap needs a
+        # last-resort subject, and "the club" is the honest one (never invent a name
+        # or assert home/away we may not know).
+        return self._team_name() or 'the club'
 
     def _team_possessive(self) -> str:
         team = self._team_subject()
@@ -471,49 +477,39 @@ class BaseStoryWriter:
         return composer(include_opening, include_consequence)
 
     def _compose_lost(self, include_opening, include_consequence) -> str:
-        team = self._team_subject()
+        # Always a CRITICAL read: build the lead, lose it, name the damage. Varied
+        # rhythm (long, short, medium); no team-noun fallbacks, no "couldn't hold".
+        team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
         lead, late = self._largest_lead_value(), self._late_runs_value()
-        inning = _ordinal(self._entry_inning_value())
         names = self._key_relief_names()
-        sentences = []
 
-        if include_opening and starter and ipw and lead:
-            sentences.append(self._start(
-                f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run '
-                f'lead entering the late innings'))
-            narrative = "but the bullpen couldn't hold it"
+        if not (starter and ipw and lead):
+            base = f'a {_num(lead)}-run lead' if lead else 'a lead'
+            line = f'{base} slipped away in the late innings'
             if late:
-                narrative += f', and {_num(late)} late runs turned the game'
-            sentences.append(_sentence(narrative))
+                line += f', with {_num(late)} runs crossing'
+            return self._start(line)
+
+        if team:
+            opener = f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run lead to protect'
         else:
-            narrative = 'the bullpen inherited '
-            narrative += f'a {_num(lead)}-run lead' if lead else 'a lead'
-            if starter and ipw:
-                narrative += f' after {starter} worked {ipw} innings'
-            elif inning:
-                narrative += f' in the {inning} inning'
-            narrative += " but couldn't protect it"
-            if late:
-                narrative += f', allowing {_num(late)} runs over the late innings'
-            if not include_consequence:
-                narrative += ', turning a strong start into a difficult finish'
-            sentences.append(self._start(narrative))
+            opener = f"{starter}'s {ipw} strong innings staked a {_num(lead)}-run lead heading to the late innings"
+        sentences = [self._start(opener), "It didn't last."]
 
-        if include_consequence:
+        closing = ''
+        if late:
+            closing = f'{_num(late)} late runs turned the game'
             if names:
-                verb = 'combined to allow' if len(names) > 1 else 'allowed'
-                sentences.append(_sentence(
-                    f'{_join_names(names)} {verb} the decisive damage, leaving '
-                    f'{team} unable to protect the game shape they had created'))
-            else:
-                sentences.append(_sentence(
-                    f'the late damage left {team} unable to protect the game shape '
-                    f'they had created'))
+                closing += f', with {_join_names(names)} surrendering the decisive blows'
+        elif names:
+            closing = f'{_join_names(names)} surrendered the decisive blows'
+        if closing:
+            sentences.append(_sentence(closing))
         return ' '.join(sentences)
 
     def _compose_protected(self, include_opening, include_consequence) -> str:
-        team = self._team_subject()
+        team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
         lead, late = self._largest_lead_value(), self._late_runs_value()
         inning = _ordinal(self._entry_inning_value())
@@ -521,77 +517,71 @@ class BaseStoryWriter:
         sentences = []
 
         if include_opening and starter and ipw and lead:
-            sentences.append(self._start(
-                f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'))
-            narrative = 'and the bullpen made it stand'
-            if late == 0:
-                narrative += ', without giving anything back'
-            sentences.append(_sentence(narrative))
+            who = team or 'a lead'
+            opener = (f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'
+                      if team else
+                      f'{starter} worked {ipw} innings and handed off a {_num(lead)}-run lead')
+            sentences.append(self._start(opener))
+            sentences.append('The bullpen brought it home.')
+        elif starter and ipw and lead:
+            opener = (f'{starter} worked {ipw} innings and left with a {_num(lead)}-run lead, '
+                      f'and the bullpen brought it home')
+            sentences.append(self._start(opener))
         else:
-            narrative = 'the bullpen protected '
-            narrative += f'a {_num(lead)}-run lead' if lead else 'the lead'
-            if starter and ipw:
-                narrative += f' after {starter} worked {ipw} innings'
-            elif inning:
-                narrative += f' from the {inning} inning on'
-            if late == 0:
-                narrative += ' without giving anything back'
-            narrative += ', closing out the win'
-            sentences.append(self._start(narrative))
+            line = 'the bullpen protected '
+            line += f'a {_num(lead)}-run lead' if lead else 'the lead'
+            if inning:
+                line += f' from the {inning} inning on'
+            line += ', closing out the win'
+            sentences.append(self._start(line))
 
-        if include_consequence:
-            if names:
-                sentences.append(_sentence(
-                    f'{_join_names(names)} closed the door, protecting the game '
-                    f'shape {team} built'))
-            else:
-                sentences.append(_sentence(
-                    f'{team} protected the game shape they built'))
+        if include_consequence and names:
+            tail = f'{_join_names(names)} slammed the door'
+            if late == 0:
+                tail += ' without a run crossing'
+            sentences.append(_sentence(tail))
         return ' '.join(sentences)
 
     def _compose_kept_alive(self, include_opening, include_consequence) -> str:
-        team = self._team_subject()
+        team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
         deficit = self._entry_deficit_value() or self._largest_deficit_value()
         names = self._key_relief_names()
         sentences = []
 
-        if include_opening and starter and ipw:
-            opening = f'{starter} left {team} trailing'
-            if deficit:
-                opening += f' by {_num(deficit)}'
-            opening += f' after {ipw} innings'
-            sentences.append(self._start(opening))
-            sentences.append(_sentence(
-                'but the bullpen held the line and kept the comeback within reach'))
+        if starter and ipw and deficit:
+            if team:
+                opener = (f"{starter}'s {ipw} innings left {team} chasing a "
+                          f'{_num(deficit)}-run deficit, but the bullpen kept it from growing')
+            else:
+                opener = (f"{starter}'s {ipw} innings left a {_num(deficit)}-run deficit to "
+                          f'erase, but the bullpen kept it from growing')
+            sentences.append(self._start(opener))
         else:
-            narrative = 'the bullpen held the line'
+            line = 'the bullpen kept the game within reach'
             if deficit:
-                narrative += f' after {team} fell behind by {_num(deficit)}'
-            narrative += ', keeping it close enough to complete the comeback'
-            sentences.append(self._start(narrative))
+                line += f' after a {_num(deficit)}-run deficit'
+            sentences.append(self._start(line))
 
         if include_consequence:
             if names:
                 sentences.append(_sentence(
-                    f'{_join_names(names)} kept the deficit manageable, and {team} '
-                    f'finished the comeback'))
+                    f'{_join_names(names)} held the line, and the offense finished the rally'))
             else:
-                sentences.append(_sentence(
-                    f'{team} finished the comeback the bullpen kept alive'))
+                sentences.append('The offense finished the rally.')
         return ' '.join(sentences)
 
     def _compose_overexposed(self, include_opening, include_consequence) -> str:
-        # Overexposed is a MEDIUM read: narrative only, kept compact.
+        # MEDIUM read: matter-of-fact, one sentence, no consequence pile-up.
         starter, ipw = self._starter_name(), self._starter_innings_word()
         late = self._late_runs_value()
         if starter and ipw:
-            narrative = f'a {ipw}-inning start by {starter} forced the bullpen to cover heavy innings'
+            line = (f"{starter}'s {ipw}-inning start left the bullpen to cover the rest")
         else:
-            narrative = 'a short start forced the bullpen to cover heavy innings'
+            line = 'a short start left the bullpen to cover the rest'
         if late:
-            narrative += f', including {_num(late)} late {"run" if late == 1 else "runs"}'
-        return self._start(narrative)
+            line += f', including {_num(late)} late {"run" if late == 1 else "runs"}'
+        return self._start(line)
 
     def _bullpen_state_phrase(self) -> str | None:
         optionality = self.availability_snapshot().get('optionality_band')
@@ -603,15 +593,29 @@ class BaseStoryWriter:
         return None
 
     def bullpen_state_sentence(self) -> str | None:
-        """A natural present-tense read of the bullpen's standing, or None.
-
-        Time-free and band-supported — answers "where does the relief corps
-        stand now" without any future/next-game framing.
-        """
+        """A natural present-tense read of the bullpen's standing, or None."""
         if self.is_low_confidence():
             return None
         phrase = self._bullpen_state_phrase()
-        return f'The relief corps {phrase}.' if phrase else None
+        return f'The relief corps is {phrase}.' if phrase else None
+
+    def story_takeaway(self) -> str | None:
+        """The closing "so what" — a factual baseball consequence, or None.
+
+        Ties the game's finish to where the relief corps now stands. No
+        prediction, no advice; falls back to the plain state read.
+        """
+        descriptor = self._bullpen_state_phrase()
+        if descriptor is None:
+            return None
+        primary = self.primary_narrative()
+        if primary == 'lost_game_shape':
+            return f'That late collapse leaves the relief corps {descriptor}.'
+        if primary == 'protected_game_shape':
+            return f'The clean finish keeps the relief corps {descriptor}.'
+        if primary == 'bullpen_kept_team_alive':
+            return f'The comeback leaned on the bullpen, and the relief corps is {descriptor}.'
+        return f'The relief corps is {descriptor}.'
 
     def brief_recap(self) -> str:
         """A single-sentence game recap for the morning brief (not the full story)."""
@@ -619,24 +623,38 @@ class BaseStoryWriter:
         primary = self.primary_narrative()
         lead = self._largest_lead_value()
         deficit = self._entry_deficit_value() or self._largest_deficit_value()
+        late = self._late_runs_value()
         if primary == 'lost_game_shape':
-            clause = f'{team} built '
+            clause = f'{team} carried '
             clause += f'a {_num(lead)}-run lead' if lead else 'a lead'
-            clause += " but could not protect it late"
+            clause += ' into the late innings and let it get away'
+            if late:
+                clause += f' on {_num(late)} late runs'
         elif primary == 'protected_game_shape':
-            clause = f'{team} protected '
-            clause += f'a {_num(lead)}-run lead' if lead else 'the lead'
-            clause += ' to close out the win'
+            clause = f'{team} turned '
+            clause += f'a {_num(lead)}-run lead' if lead else 'a lead'
+            clause += ' into a win the bullpen never let slip'
         elif primary == 'bullpen_kept_team_alive':
-            clause = f'the bullpen kept {team} close'
-            if deficit:
-                clause += f' after falling behind by {_num(deficit)}'
-            clause += ', and the offense finished the comeback'
+            clause = f'{team} climbed out of'
+            clause += f' a {_num(deficit)}-run hole' if deficit else ' a deficit'
+            clause += ' the bullpen kept from growing'
         elif primary == 'bullpen_overexposed':
-            clause = f'a short start left {self._team_possessive()} bullpen to cover heavy innings'
+            clause = f'a short start put {self._team_possessive()} bullpen to work early'
         else:
             clause = f'{team} {self.short_summary()}'
         return self._start(clause)
+
+    def brief_today_line(self) -> str | None:
+        """The morning brief's bullpen read — causal when yesterday changed it."""
+        descriptor = self._bullpen_state_phrase()
+        if descriptor is None:
+            return None
+        primary = self.primary_narrative()
+        if primary == 'lost_game_shape':
+            return f"Yesterday's late damage leaves the relief corps {descriptor}."
+        if primary == 'bullpen_overexposed':
+            return f'The extra innings leave the relief corps {descriptor}.'
+        return f'The relief corps is {descriptor}.'
 
     def short_summary(self) -> str:
         """A terse clause for compact surfaces (dashboard)."""

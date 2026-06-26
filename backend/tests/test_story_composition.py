@@ -104,9 +104,9 @@ def test_high_story_has_consequence_no_opening():
     draft = TeamStoryWriter(build_story_package(
         1, completed_game_context=_high_ctx(), team_context=_team_context())).write()
     assert draft.story_priority == 'HIGH'
-    # No starter-first opening; consequence sentence present.
-    assert not draft.body.startswith('After their most recent game, Shane Baz gave')
-    assert 'protecting the game shape the Rays built' in draft.body
+    # No CRITICAL "to protect" opening; the relievers close it out as the consequence.
+    assert 'and a four-run lead to protect' not in draft.body
+    assert 'slammed the door' in draft.body
     assert draft.observations and draft.evidence
 
 
@@ -131,7 +131,7 @@ def test_low_story_stays_neutral():
 def test_body_blends_evidence_into_one_paragraph():
     body = _team_story().body
     assert 'Landen Roupp' in body and 'four-run lead' in body
-    assert 'Ryan Walker and Tyler Rogers combined to allow the decisive damage' in body
+    assert 'Ryan Walker and Tyler Rogers surrendering the decisive blows' in body
     # Not the old one-clause "inherited a lead" seam.
     assert 'the bullpen inherited a four-run lead' not in body
 

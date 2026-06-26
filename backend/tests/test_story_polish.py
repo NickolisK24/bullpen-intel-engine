@@ -75,10 +75,12 @@ def test_team_name_used_when_present():
     assert 'the team' not in body
 
 
-def test_fails_closed_to_the_club_without_team_name():
+def test_team_story_avoids_generic_nouns_without_team_name():
+    # No team name -> the story goes name-led (starter), never a generic team noun.
     body = TeamStoryWriter(_pkg({'team_name': None})).write().body
-    assert 'the club' in body
     assert 'the team' not in body
+    assert 'the club' not in body
+    assert 'Landen Roupp' in body
 
 
 def test_team_possessive_grammar_is_correct():
@@ -100,7 +102,8 @@ def test_team_possessive_grammar_is_correct():
 def test_bullpen_state_uses_natural_language_not_profiles_as():
     body = TeamStoryWriter(_pkg()).write().body
     assert 'profiles as' not in body
-    assert 'The relief corps is down to fewer rested options.' in body
+    # The "so what" takeaway closes on the bullpen's standing.
+    assert 'leaves the relief corps down to fewer rested options' in body
 
 
 # ── Observation merging ───────────────────────────────────────────────────────
@@ -152,7 +155,8 @@ def test_morning_brief_differs_from_team_story():
     assert brief.observations == []                 # brief omits the "why" list
     assert len(brief.body) < len(team.body)         # one-sentence recap, not full story
     assert 'Available arms: Erik Miller.' in brief.body
-    assert 'The relief corps is down to fewer rested options.' in brief.body
+    # Brief states why yesterday changed the picture.
+    assert "Yesterday's late damage leaves the relief corps down to fewer rested options." in brief.body
 
 
 def test_dashboard_leads_with_team_and_stays_short():

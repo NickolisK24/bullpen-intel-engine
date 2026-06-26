@@ -19,13 +19,13 @@ class TeamStoryWriter(BaseStoryWriter):
             return self._draft(self.headline_text(), self.lead_sentence())
 
         sentences = [self.compose_body()]
-        # A present-tense bullpen-state read closes the story with "where the relief
-        # corps stands now"; only the higher-priority stories carry it, keeping
-        # MEDIUM stories tight.
+        # A "so what" takeaway closes the flagship story by tying the finish to
+        # where the relief corps now stands; only the higher-priority stories
+        # carry it, keeping MEDIUM stories matter-of-fact.
         if self.wants_observations():
-            state = self.bullpen_state_sentence()
-            if state is not None:
-                sentences.append(state)
+            takeaway = self.story_takeaway()
+            if takeaway is not None:
+                sentences.append(takeaway)
         observations = self.observation_lines() if self.wants_observations() else []
         evidence = self.evidence_lines() if self.wants_evidence() else []
         return self._draft(

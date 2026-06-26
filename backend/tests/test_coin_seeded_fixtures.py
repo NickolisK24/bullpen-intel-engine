@@ -102,7 +102,7 @@ def test_seeded_markdown_renders_real_prose():
     # evidence bullets keep the digits.
     assert 'Landen Roupp gave the Giants six strong innings' in md
     assert 'four-run lead' in md
-    assert 'seven late runs turned the game' in md
+    assert 'Seven late runs turned the game' in md
     assert 'Largest lead: 4' in md
 
 

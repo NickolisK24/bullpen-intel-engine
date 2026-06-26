@@ -33,9 +33,9 @@ class MorningBriefWriter(BaseStoryWriter):
             if isinstance(available, int):
                 sentences.append(f'Available arms: {available}.')
 
-        state = self.bullpen_state_sentence()
-        if state is not None:
-            sentences.append(state)
+        today = self.brief_today_line()
+        if today is not None:
+            sentences.append(today)
 
         # The brief proves its read with evidence but leaves the "why" list to the
         # team story, so the two surfaces stay distinct.

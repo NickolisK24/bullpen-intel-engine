@@ -74,9 +74,9 @@ def test_team_story_renders_observations_and_evidence():
     assert 'Late runs allowed: 7' in draft.evidence
     assert len(draft.evidence) <= 5
     # CRITICAL opening establishes the starter and the lead in natural prose.
-    # No team name in this fixture -> fail closed to "the club".
-    assert 'Logan Webb gave the club six strong innings' in draft.body
-    assert 'four-run lead' in draft.body
+    # No team name in this fixture -> the opening goes starter-led, not generic.
+    assert "Logan Webb's six strong innings staked a four-run lead" in draft.body
+    assert 'the team' not in draft.body and 'the club' not in draft.body
 
 
 def test_rendered_text_includes_sections():
@@ -128,8 +128,8 @@ def test_writers_do_not_mention_starter_when_absent():
     draft = TeamStoryWriter(_package(completed=completed)).write()
     assert 'Logan Webb' not in draft.body
     assert all(not line.startswith('Starter:') for line in draft.evidence)
-    # Falls back to the inning-based handoff phrasing.
-    assert 'in the 7th inning' in draft.body
+    # With no starter, the lead simply slips away in the late innings.
+    assert 'slipped away in the late innings' in draft.body
 
 
 def test_writers_do_not_mention_late_runs_when_absent():

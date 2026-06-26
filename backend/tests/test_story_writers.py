@@ -145,13 +145,13 @@ def test_writers_render_the_same_feed_in_different_styles():
 
 def test_team_story_translates_lost_game_shape_facts():
     # A bare feed (no evidence_blocks) composes from the narrative facts: the
-    # numbers read as words and the entry inning anchors the handoff.
+    # numbers read as words and the lead slips away in the late innings.
     draft = TeamStoryWriter(_feed()).write()
     assert draft.headline == 'Lead surrendered late'
     assert draft.body.startswith('After their most recent game,')
     assert 'four-run lead' in draft.body
     assert 'seven runs' in draft.body
-    assert 'the 7th inning' in draft.body
+    assert 'slipped away in the late innings' in draft.body
 
 
 def test_protected_uses_feed_headline_key():
