@@ -52,7 +52,7 @@ def _current_records(reference_date):
         reference_date=reference_date,
         mode=CURRENT_AVAILABILITY_MODE,
     )
-    dashboard_contexts, _ = eligible_bullpen_pitcher_contexts(
+    dashboard_contexts = eligible_bullpen_pitcher_contexts(
         [record['pitcher'] for record in classified],
         include_stale=True,
         include_inactive_context=False,

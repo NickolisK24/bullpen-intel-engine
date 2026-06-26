@@ -284,57 +284,6 @@ export function getRosterStatusView(rosterStatus) {
   }
 }
 
-export function getRosterStatusSummaryView(summary) {
-  const payload = summary || {}
-  const limitations = Array.isArray(payload.limitations) ? payload.limitations : []
-  const authority = payload.authority || 'none'
-  const totalCandidates = Number(payload.total_candidates || 0)
-  const knownCount = Number(payload.known_count || 0)
-  const unknownCount = Number(payload.included_unknown_count ?? payload.unknown_count ?? 0)
-  const inactiveContextCount = Number(payload.inactive_context_count || 0)
-  const activeMlbCount = Number(payload.active_mlb_count || 0)
-  const excludedInactiveCount = Number(payload.excluded_inactive_count || 0)
-  // Every count the board shows must map to evidence a reader can open. Only the
-  // roster-inactive arms shown on the board as cards (inactiveContextCount) have
-  // that evidence, so the "Unavailable Pitchers" figure reflects exactly those.
-  // Roster-inactive arms BaseballOS is aware of but does not list as cards
-  // (excludedInactiveCount) are reported on their own line rather than folded in,
-  // so a visible count never claims more pitchers than the cards behind it.
-  const unavailablePitchersCount = inactiveContextCount
-  const notShownRosterContextCount = excludedInactiveCount
-  const rosterContextTotalCount = inactiveContextCount + excludedInactiveCount
-  const coveragePct = totalCandidates > 0 ? Math.round((knownCount / totalCandidates) * 100) : null
-  const shouldShow = (
-    totalCandidates > 0
-    || limitations.length > 0
-    || unknownCount > 0
-    || rosterContextTotalCount > 0
-  )
-  return {
-    shouldShow,
-    authority,
-    label: authority === 'available'
-      ? 'Roster context ready'
-      : authority === 'partial'
-        ? 'Roster context partial'
-        : authority === 'unavailable'
-          ? 'Roster context unavailable'
-          : 'Roster context not loaded',
-    activeMlbCount,
-    unknownCount,
-    inactiveContextCount,
-    excludedInactiveCount,
-    unavailablePitchersCount,
-    notShownRosterContextCount,
-    rosterContextTotalCount,
-    coverageLabel: coveragePct == null ? 'Not loaded' : `${coveragePct}%`,
-    limitations,
-    tone: authority === 'available'
-      ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
-      : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
-  }
-}
-
 // Map a canonical Roster Authority evidence list to a presentation-safe shape. Engine
 // field names (is_active_mlb, is_inactive_context, status codes) never reach the UI — the
 // board shows the human roster-status label, the availability read, and a plain reason.

@@ -301,7 +301,7 @@ export function deriveRosterAuthority(cards, { referenceDate = null } = {}) {
   }
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterStatus, rosterAuthority } = {}) {
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterAuthority } = {}) {
   const groups = buildGroups(cardsByStatus)
   const totalPitchers = groups.reduce((sum, g) => sum + g.count, 0)
   const allCards = groups.flatMap(group => group.pitchers)
@@ -336,20 +336,9 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
       label: 'Current baseball data through 2026-06-04.',
       limitations: [],
     },
-    roster_status: rosterStatus || {
-      authority: 'available',
-      total_candidates: totalPitchers,
-      known_count: totalPitchers,
-      unknown_count: 0,
-      included_unknown_count: 0,
-      active_mlb_count: totalPitchers,
-      inactive_context_count: 0,
-      excluded_inactive_count: 0,
-      limitations: [],
-    },
-    // CRC: canonical Roster Authority exposed alongside legacy roster_status. Defaults to
-    // the authority derived from the board's cards; explicit fixtures may override it to
-    // model an authority population larger than the visible cards.
+    // Roster Authority is the single roster-context payload (the legacy roster_status board
+    // summary was retired in CRC-10). Defaults to the authority derived from the board's cards;
+    // explicit fixtures may override it to model an authority population larger than the cards.
     roster_authority: rosterAuthority || deriveRosterAuthority(allCards, { referenceDate: resolvedFreshness.data_through }),
     limitations,
   }
@@ -438,17 +427,6 @@ export const staleBoard = makeBoard({
     label: 'Historical baseball data through 2026-04-01.',
     limitations: ['Latest game date is outside the 14-day freshness window.'],
   },
-  rosterStatus: {
-    authority: 'unavailable',
-    total_candidates: 1,
-    known_count: 0,
-    unknown_count: 1,
-    included_unknown_count: 1,
-    active_mlb_count: 0,
-    inactive_context_count: 0,
-    excluded_inactive_count: 0,
-    limitations: ['Roster status unavailable; bullpen eligibility is based on stored usage and position data.'],
-  },
 })
 
 export const rosterContextBoard = makeBoard({
@@ -506,17 +484,6 @@ export const rosterContextBoard = makeBoard({
         },
       }),
     ],
-  },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 3,
-    known_count: 3,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 0,
-    inactive_context_count: 3,
-    excluded_inactive_count: 0,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
   },
 })
 
@@ -580,17 +547,6 @@ export const rosterContextExcludedBoard = makeBoard({
       }),
     ],
   },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 8,
-    known_count: 8,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 1,
-    inactive_context_count: 1,
-    excluded_inactive_count: 6,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
-  },
   rosterAuthority: {
     capability: 'roster_authority_v1',
     version: 'fixture',
@@ -649,16 +605,5 @@ export const fortyManShownBoard = makeBoard({
       fortyManNotActiveCard(30, 'Milo Marquez'),
       fortyManNotActiveCard(31, 'Nate Nunez'),
     ],
-  },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 8,
-    known_count: 8,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 6,
-    inactive_context_count: 2,
-    excluded_inactive_count: 0,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
   },
 })

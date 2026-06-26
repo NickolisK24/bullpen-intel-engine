@@ -1,10 +1,12 @@
 # Roster Authority V1 — Foundation
 
-Status: **Single source of roster truth (through CRC Phase 8).** Introduced as a pure
+Status: **Single source of roster truth — CRC complete (CRC Phase 10).** Introduced as a pure
 foundation in CRC-1; every roster/category consumer now reads from it (Bullpen Board, the
-Capacity family, the editorial Story/Digest, and the public pitcher labels), and no consumer
-keeps a private roster status set or roster predicate. This document is the governance
-contract for the object; each phase is recorded in its own section below.
+Capacity family, the editorial Story/Digest, the public pitcher labels, and the Home page), no
+consumer keeps a private roster status set or roster predicate, and the legacy board
+`roster_status` summary has been retired (CRC-10) — the board now ships exactly one
+roster-context payload. This document is the governance contract for the object; each phase is
+recorded in its own section below.
 
 Companion audit: `docs/methodology/CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md`.
 
@@ -12,7 +14,9 @@ Module: `backend/services/roster_authority.py`
 Tests: `backend/tests/test_roster_authority.py`,
 `backend/tests/test_roster_authority_categories.py` (CRC-6),
 `backend/tests/test_editorial_roster_authority_migration.py` (CRC-7),
-`backend/tests/test_roster_authority_final_consolidation.py` (CRC-8)
+`backend/tests/test_roster_authority_final_consolidation.py` (CRC-8),
+`backend/tests/test_roster_authority_board_payload.py` and
+`frontend/tests/homePresentation.test.mjs` (CRC-10 legacy retirement)
 
 ---
 
@@ -743,10 +747,9 @@ categories, keep a private status set, or redefine off-roster logic.
 
 ### Legacy retained only where intentionally required
 
-- **`roster_status` legacy summary** on the board payload — retained. The parity / rollback
-  window is closed, but the CRC-9 audit (§17) found one live consumer still reading it
-  (`Home.jsx`), so retirement is deferred — not for rollback, but because a behaviour-preserving
-  removal is not yet possible. It is a payload key, not a private predicate.
+- **`roster_status` legacy summary** on the board payload — **retired in CRC-10 (§18).** It was
+  retained through CRC-8/9 (the CRC-9 audit found `Home.jsx` still read it); CRC-10 migrated Home
+  to Roster Authority and removed the summary. The board now ships only `roster_authority`.
 - **`services/roster_status.py`** — the canonical classification *source* (`classify_roster_status`,
   `INACTIVE_STATUSES`, the `STATUS_*` constants, `STATUS_LABELS`). This is not duplication; it is
   the primitive layer Roster Authority is built on. Reading `INACTIVE_STATUSES` from here, or a
@@ -787,14 +790,15 @@ CRC; document only.
 
 ---
 
-## 17. Phase 9 — legacy board `roster_status` retirement audit (RETAINED, not retired)
+## 17. Phase 9 — legacy board `roster_status` retirement audit (RETAINED, then retired in CRC-10)
 
-Status: **retained, not retired.** CRC-9 set out to retire the legacy board `roster_status`
-summary now that Roster Authority is the single source of roster truth. The required pre-deletion
-audit found **one live production consumer still reading it**, and no behaviour-preserving way to
-remove it this phase, so — per the phase's own rule ("if anything still depends on it, stop and
-document instead of deleting") — the legacy summary is **kept** and its removal is deferred to a
-dedicated, behaviour-aware follow-up. Nothing was deleted; no behaviour changed.
+Status: **retained in CRC-9, retired in CRC-10 (§18).** CRC-9 set out to retire the legacy board
+`roster_status` summary now that Roster Authority is the single source of roster truth. The
+required pre-deletion audit found **one live production consumer still reading it** (`Home.jsx`),
+and no behaviour-preserving way to remove it that phase, so — per the phase's own rule ("if
+anything still depends on it, stop and document instead of deleting") — the legacy summary was
+**kept** and its removal deferred. CRC-10 (§18) migrated that last consumer and completed the
+retirement. Nothing was deleted in CRC-9; no behaviour changed in CRC-9.
 
 ### What the legacy path is
 
@@ -863,3 +867,68 @@ A small, behaviour-aware "retire legacy board roster_status" follow-up:
    `getRosterStatusSummaryView` and its fixtures/tests, and the parity tests that exist only to
    guard the legacy summary.
 3. Then the board ships exactly one roster-context truth and the CRC initiative is fully closed.
+
+---
+
+## 18. Phase 10 — CRC closeout (Home migrated, legacy board `roster_status` retired)
+
+Status: **done. CRC complete.** CRC-10 migrated the one remaining consumer (`Home.jsx`) to Roster
+Authority and retired the legacy board `roster_status` summary path. The board now ships exactly
+one roster-context payload (`roster_authority`); there is no parallel roster-context truth. The
+canonical classifier sources are untouched.
+
+### Home migrated (the intended correctness fix)
+
+The Home "Tonight's Bullpen Picture" roster line previously read
+`board.roster_status.inactive_context_count`. Because Home fetches the **default** board, that
+legacy count was structurally **0**, so the line always read "No roster-status limits" regardless
+of reality. The line now reads the invariant
+`board.roster_authority.counts.inactive_roster_context_count` and renders **"N off the active
+roster"** (or "None off the active roster"). This is the correctness fix CRC-9 (§17) identified
+and CRC audit §5 anticipated — a view-dependent, always-zero number becomes the true, invariant
+off-roster count. The read was extracted into a testable
+`homePresentationView.js::getHomeRosterStatusLine(board)` so the migration is unit-tested.
+
+### Legacy board `roster_status` retired
+
+The pre-deletion audit (all six required proofs) passed: no frontend consumer reads
+`board.roster_status` (Home migrated; the dead `getRosterStatusSummaryView` was the only other
+reader and it was tests-only), no backend consumer reads the board-level summary (it was
+output-only), and the tests that depended on it were migrated to the canonical authority or
+removed. Removed in CRC-10:
+
+| Removed | Where |
+|---|---|
+| `roster_status` board payload key | `services/bullpen_board.py::build_board_payload` (param + key) |
+| `roster_status_summary` builder | `services/roster_status.py` (the summary function only) |
+| Summary plumbing (the 2-tuple return that only carried the summary) | `bullpen_population.eligible_bullpen_pitcher_contexts` / `eligible_bullpen_pitchers` and `api/bullpen.py::_eligible_records_for_rows` now return just the records; the board no longer merges the summary's limitations |
+| Dead `getRosterStatusSummaryView` + its fixtures/tests | `frontend/.../tonightsBullpenBoardView.js`, `frontend/tests/fixtures/bullpenBoardFixtures.mjs`, `frontend/tests/tonightsBullpenBoard.test.mjs` |
+| Legacy-only / parity assertions | board backend tests migrated to assert `roster_authority` (e.g. `inactive_roster_context_count`, `roster_unknown_count`, `bullpen_arms`); a guard now asserts the board exposes **no** `roster_status` |
+
+Board-level roster-context **limitations** (e.g. the roster-unknown caveat) are now carried by
+`roster_authority.limitations`, not the board's top-level `limitations`; the board's top-level
+limitations reflect freshness only.
+
+### Canonical classifier sources retained (never legacy)
+
+`services/roster_status.py` — `classify_roster_status`, the `STATUS_*` constants, `STATUS_LABELS`,
+`INACTIVE_STATUSES`, and `ROSTER_STATUS_UNAVAILABLE_LIMITATION` — is the classifier layer Roster
+Authority is built on. It is untouched; only `roster_status_summary` (the retired board summary
+builder) was removed from it. The per-pitcher `roster_status` on each board card (from
+`classify_roster_status`) is canonical and remains.
+
+### CRC initiative complete
+
+Roster Authority is the single source of roster truth across BaseballOS. Every consumer reads /
+displays / aggregates it; none classify roster status, define categories, keep a private status
+set or predicate, or read a parallel board summary. The board ships one roster-context payload.
+The CRC audit & design (`CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md`) is fully realized.
+
+### Recommended next initiative
+
+With roster truth unified and the board on one payload, the next initiative is the descriptive,
+prediction-free **Authority Completeness + Replacement Readiness** expansion outlined in §16: add
+category-coverage/freshness completeness signals, then a single canonical "reinforcement-eligible"
+predicate over the existing off-roster categories (with an evidence list), so Story and the board
+share one definition of "who could step in" — all as reads over roster facts, never predictions.
+Team Board / Comparison, when they next surface roster context, should read the authority too.

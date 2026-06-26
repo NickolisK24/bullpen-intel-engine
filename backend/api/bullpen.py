@@ -1091,7 +1091,7 @@ def _dashboard_capacity_payload(reference_date):
             reference_date=reference_date,
             calculated_at_lte=_served_score_cutoff(),
         )
-        context_records, _roster_summary = _eligible_records_for_rows(
+        context_records = _eligible_records_for_rows(
             context_rows,
             availability_by_pitcher,
             include_stale=True,
@@ -1148,7 +1148,7 @@ def _dashboard_bullpen_stability_payload(reference_date):
             reference_date=reference_date,
             calculated_at_lte=_served_score_cutoff(),
         )
-        context_records, _roster_summary = _eligible_records_for_rows(
+        context_records = _eligible_records_for_rows(
             context_rows,
             availability_by_pitcher,
             include_stale=True,
@@ -1323,7 +1323,7 @@ def _eligible_records_for_rows(
     yet authoritative — the Roster Authority completeness population.
     """
     ref = reference_date or product_current_date()
-    contexts, roster_summary = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
         # Stale workload can still supply board visibility context. Role labels
         # below come from the bounded role authority, not this population helper.
@@ -1379,7 +1379,7 @@ def _eligible_records_for_rows(
             ),
             'pitcher': pitcher,
         })
-    return records, roster_summary
+    return records
 
 
 def _board_records_from_authority_records(authority_records, reference_date=None):
@@ -1461,7 +1461,7 @@ def _roster_authority_records(rows, availability_by_pitcher, reference_date):
     role filter alone decides their bullpen eligibility. Used by both the board payload
     and the standalone entrypoint so the two produce the same snapshot.
     """
-    records, _roster_summary = _eligible_records_for_rows(
+    records = _eligible_records_for_rows(
         rows,
         availability_by_pitcher,
         include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
@@ -1534,13 +1534,13 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     )
 
     team_info = None
-    context_records, roster_summary = _eligible_records_for_rows(
+    context_records = _eligible_records_for_rows(
         context_rows,
         availability_by_pitcher,
         include_stale=include_stale,
         reference_date=ref,
     )
-    capacity_records, _capacity_roster_summary = _eligible_records_for_rows(
+    capacity_records = _eligible_records_for_rows(
         context_rows,
         availability_by_pitcher,
         include_stale=True,
@@ -1573,9 +1573,11 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     if team_info is None:
         team_info = _team_info_lookup(team_id)
 
+    # Roster-context caveats are carried by the canonical roster_authority.limitations
+    # (built below); the board's top-level limitations no longer merge the retired legacy
+    # roster_status summary's limitations.
     limitations = _merge_limitations(
         freshness.get('limitations'),
-        roster_summary.get('limitations'),
     )
     workload_concentration = summarize_recent_relief_workload(
         logs_by_pitcher,
@@ -1618,7 +1620,6 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         records=records,
         freshness=freshness,
         limitations=limitations,
-        roster_status=roster_summary,
         roster_authority=roster_authority,
         workload_concentration=workload_concentration,
         capacity_intelligence=capacity_intelligence,

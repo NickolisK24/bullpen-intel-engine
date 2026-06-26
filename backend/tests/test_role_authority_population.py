@@ -165,7 +165,7 @@ def _start_share(logs):
 
 def test_default_population_excludes_starters_includes_relievers_and_swing():
     pitchers, lbp = _scenario()
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=True,
     )
     ids = _ids(contexts)
@@ -176,7 +176,7 @@ def test_default_population_excludes_starters_includes_relievers_and_swing():
 
 def test_unknown_surfaced_only_in_expanded_mode():
     pitchers, lbp = _scenario()
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp,
         use_role_authority=True, include_inactive_context=True,
     )
@@ -187,7 +187,7 @@ def test_unknown_surfaced_only_in_expanded_mode():
 
 def test_swingman_carries_caveat_in_population():
     pitchers, lbp = _scenario()
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=True,
     )
     swing = next(ctx for ctx in contexts if ctx['pitcher'].id == 4)
@@ -197,7 +197,7 @@ def test_swingman_carries_caveat_in_population():
 
 def test_legacy_path_still_available_for_rollback():
     pitchers, lbp = _scenario()
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=False,
     )
     ids = _ids(contexts)
@@ -226,22 +226,22 @@ def test_cross_surface_parity_single_definition():
     # The board path and What Changed path both call this one helper, so a fixed
     # input yields one membership set — the anti-drift guarantee.
     pitchers, lbp = _scenario()
-    a, _ = eligible_bullpen_pitcher_contexts(
+    a = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=True)
-    b, _ = eligible_bullpen_pitcher_contexts(
+    b = eligible_bullpen_pitcher_contexts(
         pitchers, reference_date=REF, logs_by_pitcher=lbp, use_role_authority=True)
     assert _ids(a) == _ids(b)
 
 
 def test_role_authority_cutover_named_oracle_current_patterns():
     pitchers, lbp, by_name = _cutover_scenario()
-    role_contexts, _ = eligible_bullpen_pitcher_contexts(
+    role_contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
         use_role_authority=True,
     )
-    legacy_contexts, _ = eligible_bullpen_pitcher_contexts(
+    legacy_contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
@@ -290,13 +290,13 @@ def test_role_authority_cutover_named_oracle_current_patterns():
 
 def test_role_authority_cutover_diff_structural_sanity():
     pitchers, lbp, by_name = _cutover_scenario()
-    role_contexts, _ = eligible_bullpen_pitcher_contexts(
+    role_contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
         use_role_authority=True,
     )
-    legacy_contexts, _ = eligible_bullpen_pitcher_contexts(
+    legacy_contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
@@ -343,13 +343,13 @@ def test_role_authority_cutover_diff_structural_sanity():
 def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
     pitchers, lbp, _by_name = _cutover_scenario()
 
-    explicit_role, _ = eligible_bullpen_pitcher_contexts(
+    explicit_role = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
         use_role_authority=True,
     )
-    explicit_legacy, _ = eligible_bullpen_pitcher_contexts(
+    explicit_legacy = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
@@ -357,7 +357,7 @@ def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
     )
 
     monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'true')
-    default_role, _ = eligible_bullpen_pitcher_contexts(
+    default_role = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
@@ -366,7 +366,7 @@ def test_default_population_uses_flag_and_false_restores_legacy(monkeypatch):
     assert _ids(default_role) == _ids(explicit_role)
 
     monkeypatch.setenv('ROLE_AUTHORITY_ENABLED', 'false')
-    rollback_legacy, _ = eligible_bullpen_pitcher_contexts(
+    rollback_legacy = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,
@@ -382,7 +382,7 @@ def test_ambiguous_threshold_above_one_restores_all_ambiguous_population(monkeyp
         1.01,
     )
     pitchers, lbp, _by_name = _cutover_scenario()
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         reference_date=REF,
         logs_by_pitcher=lbp,

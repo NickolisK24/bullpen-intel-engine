@@ -313,7 +313,8 @@ def test_roster_sync_feeds_default_board_filtering_and_context_labels(client):
     default_body = client.get('/api/bullpen/teams/113/board').get_json()
     default_cards = [card for group in default_body['groups'] for card in group['pitchers']]
     assert [card['name'] for card in default_cards] == ['Reds Active Relief Context']
-    assert default_body['roster_status']['excluded_inactive_count'] == 4
+    # 4 off-roster arms counted by Roster Authority (legacy roster_status summary retired CRC-10).
+    assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 4
 
     context_body = client.get('/api/bullpen/teams/113/board?include_stale=true').get_json()
     context_cards = [card for group in context_body['groups'] for card in group['pitchers']]

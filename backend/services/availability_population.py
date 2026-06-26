@@ -30,7 +30,7 @@ def current_availability_records(rows, reference_date=None):
         mode=CURRENT_AVAILABILITY_MODE,
     )
     ref = reference_date or product_current_date()
-    contexts, _roster_summary = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         [record['pitcher'] for record in classified],
         include_stale=True,
         include_inactive_context=False,
