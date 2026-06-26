@@ -200,7 +200,7 @@ def test_seeded_fixture_drives_evidence_through_orchestrator():
     pkg = build_story_package(137, completed_game_context=fix['completed_game_context'],
                               team_context=fix['team_context'])
     eb = pkg.evidence_blocks
-    assert eb['starter_summary']['name'] == 'Logan Webb'
+    assert eb['starter_summary']['name'] == 'Landen Roupp'
     assert [a['name'] for a in eb['key_relief_appearances']] == ['Ryan Walker', 'Tyler Rogers']
     assert eb['available_relievers'][0]['name'] == 'Erik Miller'
     assert eb['late_runs']['late_runs_allowed'] == 7

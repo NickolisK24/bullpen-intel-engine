@@ -138,13 +138,54 @@ def _runs_word(n) -> str:
 
 
 def _ip(value) -> str | None:
-    """Format innings for prose ('6.0', '0.2') without altering the number."""
+    """Format innings for evidence bullets ('6.0', '0.2') without altering it."""
     if value is None:
         return None
     try:
         return f'{float(value):.1f}'
     except (TypeError, ValueError):
         return None
+
+
+_NUMBER_WORDS = {
+    0: 'no', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six',
+    7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten', 11: 'eleven', 12: 'twelve',
+}
+
+
+def _num(value) -> str | None:
+    """Small counts as words for prose ('four'); larger ones stay numeric."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return _NUMBER_WORDS.get(n, str(n))
+
+
+def _innings_word(value) -> str | None:
+    """Whole innings as a word ('six'); fractional stays as a number ('5.1')."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return _num(int(f)) if f.is_integer() else f'{f:.1f}'
+
+
+def _join_names(names) -> str:
+    names = [n for n in names if n]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f'{names[0]} and {names[1]}'
+    return ', '.join(names[:-1]) + f', and {names[-1]}'
+
+
+def _sentence(text: str) -> str:
+    """Capitalize and terminate a standalone (non-leading) sentence."""
+    text = text.strip()
+    return text[:1].upper() + text[1:] + '.'
 
 
 def _ordinal(n) -> str | None:
@@ -353,6 +394,188 @@ class BaseStoryWriter:
             "bullpen's most recent work"
         )
 
+    # ── Composition fact accessors (evidence first, then narrative facts) ──────
+    def _team_subject(self) -> str:
+        completed = self._get('completed_game_context')
+        name = completed.get('team_name') if isinstance(completed, dict) else None
+        return name or 'the team'
+
+    def _starter_name(self):
+        return self._starter().get('name')
+
+    def _starter_innings_word(self):
+        return _innings_word(self._starter().get('innings'))
+
+    def _key_relief_names(self) -> list[str]:
+        appearances = self.evidence_block('key_relief_appearances') or []
+        return [a['name'] for a in appearances if isinstance(a, dict) and a.get('name')]
+
+    def _largest_lead_value(self):
+        block = (self.evidence_block('largest_lead') or {}).get('runs')
+        return block if block is not None else self.fact('largest_lead')
+
+    def _largest_deficit_value(self):
+        block = (self.evidence_block('largest_deficit') or {}).get('runs')
+        return block if block is not None else self.fact('largest_deficit')
+
+    def _late_runs_value(self):
+        block = (self.evidence_block('late_runs') or {}).get('late_runs_allowed')
+        return block if block is not None else self.fact('late_runs_allowed')
+
+    def _entry_inning_value(self):
+        block = (self.evidence_block('bullpen_entry_situation') or {}).get('inning')
+        return block if block is not None else self.fact('bullpen_entry_inning')
+
+    def _entry_deficit_value(self):
+        block = (self.evidence_block('bullpen_entry_situation') or {}).get('deficit_when_entered')
+        return block if block is not None else self.fact('deficit_when_bullpen_entered')
+
+    # ── Priority-aware body composition ───────────────────────────────────────
+    def compose_body(self) -> str:
+        """Compose a coherent, priority-weighted, evidence-backed story body.
+
+        CRITICAL adds an opening-context sentence and a consequence; HIGH keeps
+        the consequence; MEDIUM stays to the narrative; LOW is the neutral
+        fallback. Every clause is omitted when its fact is absent.
+        """
+        if self.is_low_confidence():
+            return self._lead_insufficient()
+        priority = self.story_priority()
+        include_opening = priority == 'CRITICAL'
+        include_consequence = priority in ('CRITICAL', 'HIGH')
+        composer = {
+            'lost_game_shape': self._compose_lost,
+            'protected_game_shape': self._compose_protected,
+            'bullpen_kept_team_alive': self._compose_kept_alive,
+            'bullpen_overexposed': self._compose_overexposed,
+        }.get(self.primary_narrative())
+        if composer is None:
+            return self.lead_sentence()
+        return composer(include_opening, include_consequence)
+
+    def _compose_lost(self, include_opening, include_consequence) -> str:
+        team = self._team_subject()
+        starter, ipw = self._starter_name(), self._starter_innings_word()
+        lead, late = self._largest_lead_value(), self._late_runs_value()
+        inning = _ordinal(self._entry_inning_value())
+        names = self._key_relief_names()
+        sentences = []
+
+        if include_opening and starter and ipw and lead:
+            sentences.append(self._start(
+                f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run '
+                f'lead entering the late innings'))
+            narrative = "but the bullpen couldn't hold it"
+            if late:
+                narrative += f', and {_num(late)} late runs turned the game'
+            sentences.append(_sentence(narrative))
+        else:
+            narrative = 'the bullpen inherited '
+            narrative += f'a {_num(lead)}-run lead' if lead else 'a lead'
+            if starter and ipw:
+                narrative += f' after {starter} worked {ipw} innings'
+            elif inning:
+                narrative += f' in the {inning} inning'
+            narrative += " but couldn't protect it"
+            if late:
+                narrative += f', allowing {_num(late)} runs over the late innings'
+            if not include_consequence:
+                narrative += ', turning a strong start into a difficult finish'
+            sentences.append(self._start(narrative))
+
+        if include_consequence:
+            if names:
+                verb = 'combined to allow' if len(names) > 1 else 'allowed'
+                sentences.append(_sentence(
+                    f'{_join_names(names)} {verb} the decisive damage, leaving '
+                    f'{team} unable to protect the game shape it had created'))
+            else:
+                sentences.append(_sentence(
+                    f'the late damage left {team} unable to protect the game shape '
+                    f'it had created'))
+        return ' '.join(sentences)
+
+    def _compose_protected(self, include_opening, include_consequence) -> str:
+        team = self._team_subject()
+        starter, ipw = self._starter_name(), self._starter_innings_word()
+        lead, late = self._largest_lead_value(), self._late_runs_value()
+        inning = _ordinal(self._entry_inning_value())
+        names = self._key_relief_names()
+        sentences = []
+
+        if include_opening and starter and ipw and lead:
+            sentences.append(self._start(
+                f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'))
+            narrative = 'and the bullpen made it stand'
+            if late == 0:
+                narrative += ', without giving anything back'
+            sentences.append(_sentence(narrative))
+        else:
+            narrative = 'the bullpen protected '
+            narrative += f'a {_num(lead)}-run lead' if lead else 'the lead'
+            if starter and ipw:
+                narrative += f' after {starter} worked {ipw} innings'
+            elif inning:
+                narrative += f' from the {inning} inning on'
+            if late == 0:
+                narrative += ' without giving anything back'
+            narrative += ', closing out the win'
+            sentences.append(self._start(narrative))
+
+        if include_consequence:
+            if names:
+                sentences.append(_sentence(
+                    f'{_join_names(names)} closed the door, protecting the game '
+                    f'shape {team} built'))
+            else:
+                sentences.append(_sentence(
+                    f'{team} protected the game shape it built'))
+        return ' '.join(sentences)
+
+    def _compose_kept_alive(self, include_opening, include_consequence) -> str:
+        team = self._team_subject()
+        starter, ipw = self._starter_name(), self._starter_innings_word()
+        deficit = self._entry_deficit_value() or self._largest_deficit_value()
+        names = self._key_relief_names()
+        sentences = []
+
+        if include_opening and starter and ipw:
+            opening = f'{starter} left {team} trailing'
+            if deficit:
+                opening += f' by {_num(deficit)}'
+            opening += f' after {ipw} innings'
+            sentences.append(self._start(opening))
+            sentences.append(_sentence(
+                'but the bullpen held the line and kept the comeback within reach'))
+        else:
+            narrative = 'the bullpen held the line'
+            if deficit:
+                narrative += f' after the team fell behind by {_num(deficit)}'
+            narrative += ', keeping it close enough to complete the comeback'
+            sentences.append(self._start(narrative))
+
+        if include_consequence:
+            if names:
+                sentences.append(_sentence(
+                    f'{_join_names(names)} kept the deficit manageable, and {team} '
+                    f'finished the comeback'))
+            else:
+                sentences.append(_sentence(
+                    f'{team} finished the comeback the bullpen kept alive'))
+        return ' '.join(sentences)
+
+    def _compose_overexposed(self, include_opening, include_consequence) -> str:
+        # Overexposed is a MEDIUM read: narrative only, kept compact.
+        starter, ipw = self._starter_name(), self._starter_innings_word()
+        late = self._late_runs_value()
+        if starter and ipw:
+            narrative = f'a {ipw}-inning start by {starter} forced the bullpen to cover heavy innings'
+        else:
+            narrative = 'a short start forced the bullpen to cover heavy innings'
+        if late:
+            narrative += f', including {_num(late)} late {"run" if late == 1 else "runs"}'
+        return self._start(narrative)
+
     def _bullpen_state_phrase(self) -> str | None:
         optionality = self.availability_snapshot().get('optionality_band')
         concentration = self.workload_snapshot().get('concentration_band')
@@ -401,6 +624,15 @@ class BaseStoryWriter:
         if primary == 'starter_covered_bullpen':
             return 'barely used behind a deep start'
         return 'no completed-game read yet'
+
+    # ── Priority-driven section inclusion ─────────────────────────────────────
+    def wants_observations(self) -> bool:
+        # CRITICAL/HIGH carry the "Why BaseballOS sees it" list; MEDIUM does not.
+        return not self.is_low_confidence() and self.story_priority() in ('CRITICAL', 'HIGH')
+
+    def wants_evidence(self) -> bool:
+        # CRITICAL/HIGH/MEDIUM prove the read with evidence; LOW does not.
+        return not self.is_low_confidence() and self.story_priority() in ('CRITICAL', 'HIGH', 'MEDIUM')
 
     # ── Observation / evidence sections ───────────────────────────────────────
     def observation_lines(self) -> list[str]:
@@ -476,7 +708,8 @@ class BaseStoryWriter:
         if names:
             lines.append('Clean options: ' + ', '.join(names[:4]))
 
-        return lines[:5]
+        deduped = list(dict.fromkeys(lines))  # preserve order, drop any repeats
+        return deduped[:5]
 
     def _draft(self, headline: str, body: str, *, observations=None,
                evidence=None) -> StoryDraft:

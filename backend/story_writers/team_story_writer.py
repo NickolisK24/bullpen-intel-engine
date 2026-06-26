@@ -18,13 +18,18 @@ class TeamStoryWriter(BaseStoryWriter):
         if self.is_low_confidence():
             return self._draft(self.headline_text(), self.lead_sentence())
 
-        sentences = [self.lead_sentence()]
-        state = self.bullpen_state_clause()
-        if state is not None:
-            sentences.append(state[:1].upper() + state[1:] + '.')
+        sentences = [self.compose_body()]
+        # A present-tense bullpen-state read reads as a closing consequence; only
+        # the higher-priority stories carry it, keeping MEDIUM stories tight.
+        if self.wants_observations():
+            state = self.bullpen_state_clause()
+            if state is not None:
+                sentences.append(state[:1].upper() + state[1:] + '.')
+        observations = self.observation_lines() if self.wants_observations() else []
+        evidence = self.evidence_lines() if self.wants_evidence() else []
         return self._draft(
             self.headline_text(),
             ' '.join(sentences),
-            observations=self.observation_lines(),
-            evidence=self.evidence_lines(),
+            observations=observations,
+            evidence=evidence,
         )

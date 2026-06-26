@@ -99,8 +99,8 @@ _GIANTS = {
     'expected_primary_story': 'lost_game_shape',
     'completed_game_context': _completed_game_context(
         team_id=137, game_pk=137000, opponent_team_id=135, opponent_name='San Diego Padres',
-        home_away='home', final_score_for=6, final_score_against=9,
-        starter_name='Logan Webb', starter_ip=6.0, starter_pitch_count=95,
+        team_name='the Giants', home_away='home', final_score_for=6, final_score_against=9,
+        starter_name='Landen Roupp', starter_ip=6.0, starter_pitch_count=95,
         starter_exit_inning=6, starter_exit_score_for=6, starter_exit_score_against=2,
         bullpen_entry_inning=7, bullpen_entry_score_for=6, bullpen_entry_score_against=2,
         lead_when_bullpen_entered=4, largest_lead=4, largest_deficit=3,
@@ -108,6 +108,7 @@ _GIANTS = {
         lead_protected=False, lead_lost=True, comeback_completed=False, turning_inning=8,
         game_shape_created='normal_start', game_shape_protected=False,
         bullpen_story_tag='lost_game_shape', confidence='HIGH',
+        # 4 + 3 = the 7 late runs; both arms pitched, so neither is a clean option.
         key_relief_appearances=[
             {'name': 'Ryan Walker', 'innings': 0.2, 'runs_allowed': 4},
             {'name': 'Tyler Rogers', 'innings': 1.0, 'runs_allowed': 3},
@@ -125,24 +126,25 @@ _ATHLETICS = {
     'expected_primary_story': 'bullpen_kept_team_alive',
     'completed_game_context': _completed_game_context(
         team_id=133, game_pk=133000, opponent_team_id=117, opponent_name='Houston Astros',
-        home_away='away', final_score_for=5, final_score_against=4,
+        team_name='the Athletics', home_away='away', final_score_for=5, final_score_against=4,
         starter_name='JP Sears', starter_ip=5.0, starter_pitch_count=84,
         starter_exit_inning=5, starter_exit_score_for=2, starter_exit_score_against=4,
         bullpen_entry_inning=6, bullpen_entry_score_for=2, bullpen_entry_score_against=4,
         deficit_when_bullpen_entered=2, largest_lead=1, largest_deficit=3,
-        late_runs_allowed=1, runs_allowed_innings_7_to_9=1,
+        late_runs_allowed=0, runs_allowed_innings_7_to_9=0,
         comeback_completed=True, turning_inning=8,
         game_shape_created='normal_start',
         bullpen_story_tag='bullpen_kept_team_alive', confidence='HIGH',
+        # Bullpen held the opponent at 4 (0 late runs) while the offense rallied.
         key_relief_appearances=[
             {'name': 'Mason Miller', 'innings': 2.0, 'runs_allowed': 0},
-            {'name': 'Lucas Erceg', 'innings': 1.0, 'runs_allowed': 1},
+            {'name': 'Lucas Erceg', 'innings': 1.0, 'runs_allowed': 0},
         ],
     ),
     'team_context': _team_context(133, optionality_band='flexible',
                                   concentration_band='normal', available_arms_count=5,
-                                  clean_option_names=['Mason Miller', 'Lucas Erceg',
-                                                      'Tyler Ferguson']),
+                                  clean_option_names=['Tyler Ferguson', 'T.J. McFarland',
+                                                      'Michel Otañez']),
 }
 
 # 3) Rays — protected_game_shape: starter handed a lead, bullpen shut the door, no late runs.
@@ -152,7 +154,7 @@ _RAYS = {
     'expected_primary_story': 'protected_game_shape',
     'completed_game_context': _completed_game_context(
         team_id=139, game_pk=139000, opponent_team_id=141, opponent_name='Toronto Blue Jays',
-        home_away='home', final_score_for=4, final_score_against=1,
+        team_name='the Rays', home_away='home', final_score_for=4, final_score_against=1,
         starter_name='Shane Baz', starter_ip=6.0, starter_pitch_count=89,
         starter_exit_inning=6, starter_exit_score_for=3, starter_exit_score_against=1,
         bullpen_entry_inning=7, bullpen_entry_score_for=3, bullpen_entry_score_against=1,
@@ -161,15 +163,16 @@ _RAYS = {
         lead_protected=True, lead_lost=False, comeback_completed=False,
         game_shape_created='normal_start', game_shape_protected=True,
         bullpen_story_tag='protected_game_shape', confidence='HIGH',
+        # The only opponent run was off the starter; the pen gave nothing back.
         key_relief_appearances=[
             {'name': 'Pete Fairbanks', 'innings': 1.0, 'runs_allowed': 0},
-            {'name': 'Jason Adam', 'innings': 1.0, 'runs_allowed': 1},
+            {'name': 'Jason Adam', 'innings': 1.0, 'runs_allowed': 0},
         ],
     ),
     'team_context': _team_context(139, optionality_band='deep',
                                   concentration_band='balanced', available_arms_count=6,
-                                  clean_option_names=['Pete Fairbanks', 'Jason Adam',
-                                                      'Garrett Cleavinger']),
+                                  clean_option_names=['Garrett Cleavinger', 'Colin Poche',
+                                                      'Edwin Uceta']),
 }
 
 # 4) Yankees — bullpen_overexposed: short start forced the pen to cover heavy innings.
@@ -179,7 +182,7 @@ _YANKEES = {
     'expected_primary_story': 'bullpen_overexposed',
     'completed_game_context': _completed_game_context(
         team_id=147, game_pk=147000, opponent_team_id=111, opponent_name='Boston Red Sox',
-        home_away='away', final_score_for=3, final_score_against=5,
+        team_name='the Yankees', home_away='away', final_score_for=3, final_score_against=5,
         starter_name='Carlos Rodon', starter_ip=3.0, starter_pitch_count=62,
         starter_exit_inning=3, starter_exit_score_for=1, starter_exit_score_against=2,
         bullpen_entry_inning=4, bullpen_entry_score_for=1, bullpen_entry_score_against=2,
@@ -187,6 +190,7 @@ _YANKEES = {
         late_runs_allowed=1, runs_allowed_innings_7_to_9=1,
         game_shape_created='short_start',
         bullpen_story_tag='bullpen_overexposed', confidence='MEDIUM',
+        # The pen covered six innings; Hamilton's run is the lone late one.
         key_relief_appearances=[
             {'name': 'Ian Hamilton', 'innings': 2.1, 'runs_allowed': 1},
             {'name': 'Tim Hill', 'innings': 1.2, 'runs_allowed': 0},

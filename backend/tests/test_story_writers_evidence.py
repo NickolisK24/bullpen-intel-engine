@@ -73,8 +73,9 @@ def test_team_story_renders_observations_and_evidence():
     assert 'Largest lead: 4' in draft.evidence
     assert 'Late runs allowed: 7' in draft.evidence
     assert len(draft.evidence) <= 5
-    # Body uses the starter name and exact innings.
-    assert 'Logan Webb worked 6.0 innings' in draft.body
+    # CRITICAL opening establishes the starter and the lead in natural prose.
+    assert 'Logan Webb gave the team six strong innings' in draft.body
+    assert 'four-run lead' in draft.body
 
 
 def test_rendered_text_includes_sections():

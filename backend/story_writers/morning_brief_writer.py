@@ -20,7 +20,7 @@ class MorningBriefWriter(BaseStoryWriter):
         if self.is_low_confidence():
             return self._draft(headline, self.lead_sentence())
 
-        sentences = [self.lead_sentence()]
+        sentences = [self.compose_body()]
 
         # Prefer named rested arms from evidence; fall back to the count.
         names = self.available_reliever_names()
@@ -35,9 +35,11 @@ class MorningBriefWriter(BaseStoryWriter):
         if watch:
             sentences.append(watch)
 
+        observations = self.observation_lines() if self.wants_observations() else []
+        evidence = self.evidence_lines() if self.wants_evidence() else []
         return self._draft(
             headline,
             ' '.join(sentences),
-            observations=self.observation_lines(),
-            evidence=self.evidence_lines(),
+            observations=observations,
+            evidence=evidence,
         )

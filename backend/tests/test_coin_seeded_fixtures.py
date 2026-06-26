@@ -98,9 +98,12 @@ def test_seeded_markdown_has_mode_and_warning():
 
 def test_seeded_markdown_renders_real_prose():
     md = render_markdown(_seeded())
-    # The Giants draft should reflect the seeded facts (4-run lead, 7 late runs).
-    assert '4-run lead' in md
-    assert '7 runs' in md
+    # The Giants draft reflects the seeded facts: composed prose uses words, the
+    # evidence bullets keep the digits.
+    assert 'Landen Roupp gave the Giants six strong innings' in md
+    assert 'four-run lead' in md
+    assert 'seven late runs turned the game' in md
+    assert 'Late runs allowed: 7' in md
 
 
 # ── No DB read / no MLB fetch ─────────────────────────────────────────────────
