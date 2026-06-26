@@ -404,9 +404,11 @@ _MIGRATIONS_DIR = os.path.join(
 )
 _METRICS_REVISION = 'd1f8a3c64b29'
 _IDENTITY_REVISION = 'c7f3a1e9d2b4'
-# D2A-1 adds the canonical product-event log on top of the metrics migration, so
-# the single alembic head is now the event-foundation revision.
+# D2A-1 adds the canonical product-event log on top of the metrics migration.
 _EVENT_FOUNDATION_REVISION = 'e7d2c9a4b6f1'
+# COIN Phase 2 adds the derived completed-game-context table on top of the
+# event-foundation revision, so the single alembic head moves forward to it.
+_COMPLETED_GAME_CONTEXT_REVISION = 'b9e4c1f7a2d6'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -422,7 +424,7 @@ def test_metrics_migration_is_well_formed_and_chains_off_identity():
         assert token in source, token
 
 
-def test_event_foundation_migration_is_the_current_single_head():
+def test_migrations_have_a_single_head():
     revisions = {}
     for path in glob.glob(os.path.join(_MIGRATIONS_DIR, '*.py')):
         text = open(path).read()
@@ -432,4 +434,6 @@ def test_event_foundation_migration_is_the_current_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_EVENT_FOUNDATION_REVISION}
+    assert heads == {_COMPLETED_GAME_CONTEXT_REVISION}
+    # The completed-game-context migration chains directly off the event log.
+    assert revisions[_COMPLETED_GAME_CONTEXT_REVISION] == _EVENT_FOUNDATION_REVISION
