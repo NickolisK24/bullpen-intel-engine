@@ -179,3 +179,45 @@ existing code, and no change to Story, Digest, Board, Capacity, or Resource Heal
 behavior. A thin database-backed entrypoint that assembles the canonical population and
 calls `build_roster_authority` (then an additive `roster_authority` payload key) is the
 first task of the next phase.
+
+---
+
+## 9. Phase 2 — board payload (parallel/additive)
+
+Status: **done.** The canonical authority is now exposed on the bullpen board payload
+alongside the legacy `roster_status`. Nothing is migrated; the board behaves exactly as
+before.
+
+What was added (additive only):
+- `api/bullpen.py::build_team_roster_authority(team_id, reference_date=None)` — the
+  database-backed entrypoint. It assembles the full bullpen-eligible population once via
+  the existing board helpers (`_team_bullpen_rows` + `_eligible_records_for_rows`) with
+  the fixed `CANONICAL_POPULATION_FLAGS`, then calls `build_roster_authority`. It never
+  reads the request's `include_stale`, so its output is invariant across views.
+- `services/bullpen_board.py::build_board_payload` — a new optional `roster_authority`
+  parameter rendered as a `"roster_authority"` key parallel to `"roster_status"`.
+- `api/bullpen.py::_build_team_board` — builds the authority from the full-population
+  records it already assembles (`capacity_records`, `include_stale=True`) and passes it
+  through. Reuses existing assembly; no roster population logic is duplicated.
+
+`roster_status` is unchanged; the comparison (Team Board) output is unaffected because it
+reads only `team` / `context` / `freshness` from board payloads.
+
+### Observed parity (verification, not fixed in this phase)
+
+For a seeded team across the Active and Active+Unavailable/Unavailable board views:
+
+| Field | Authority | Legacy `roster_status` | Notes |
+|---|---|---|---|
+| `bullpen_arms` ↔ `active_mlb_count` | invariant | invariant (active arms are in every view) | **agree** in all views |
+| `inactive_roster_context_count` ↔ `inactive_context_count` | invariant | **view-dependent** (0 in Active, full in expanded) | agree only in the expanded view; the legacy number moves with `include_stale` — the defect the authority removes |
+| `roster_unknown_count` ↔ `unknown_count` | `0` | `>= number of unknown-roster arms` | **differ.** The shared eligible-population helper (`eligible_bullpen_pitcher_contexts`) gates out unknown-roster pitchers before they reach the records, so the authority does not yet see them, while the legacy summary counts them from the full classified statuses. **Observation only.** |
+| `roster_status_coverage` | `1.0` (no unknown in the population) | `< 1.0` when unknown arms exist | differs for the same reason as above |
+| `total_candidates` | active + off-roster (excludes unknown) | active + off-roster + unknown | differs for the same reason |
+
+Root of the `unknown` divergence: the canonical population is currently sourced through
+`eligible_bullpen_pitcher_contexts`, whose roster gate drops unknown-roster arms. CRC-3
+should reconcile this so the authority also accounts for unknown-roster bullpen
+candidates (e.g. by feeding the authority the full classified roster statuses, or by
+adjusting the population helper to surface unknown-roster candidates) — **without**
+changing the legacy path until consumers migrate.
