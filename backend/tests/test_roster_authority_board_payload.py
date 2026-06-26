@@ -66,6 +66,8 @@ def test_roster_authority_present_in_board_payload(client):
     assert authority['capability'] == ROSTER_AUTHORITY_CAPABILITY
     assert authority['invariant'] is True
     assert 'counts' in authority and 'evidence' in authority and 'population' in authority
+    # CRC-6: the canonical roster-status category aggregates ride alongside the counts.
+    assert 'category_counts' in authority and 'category_evidence' in authority
 
 
 # 2. Legacy payload remains unchanged (still present with its full structure).
@@ -146,9 +148,14 @@ def test_unknown_roster_candidate_included_with_evidence(client):
     assert len(evidence) == counts['roster_unknown_count']     # the count maps to evidence
     entry = evidence[0]
     assert entry['name'] == 'Quincy Question'
-    assert set(entry) == {'pitcher_id', 'name', 'roster_status', 'roster_status_label', 'availability', 'reason'}
+    assert set(entry) == {
+        'pitcher_id', 'name', 'roster_status', 'roster_status_label',
+        'roster_status_category', 'roster_status_category_label', 'availability', 'reason',
+    }
     assert entry['roster_status'] == 'UNKNOWN'
     assert entry['roster_status_label']                        # human label present
+    assert entry['roster_status_category'] == 'unknown'        # canonical category for unconfirmed
+    assert entry['roster_status_category_label'] == 'Roster status pending'
     assert entry['reason']                                     # plain-language reason present
 
 
@@ -229,9 +236,55 @@ def test_board_payload_exposes_frontend_banner_contract(client):
         assert len(evidence[field]) == counts[field]
         for entry in evidence[field]:
             # Exactly the presentation fields the banner renders — no engine internals
-            # (is_active_mlb / is_inactive_context) leak to the surface.
+            # (is_active_mlb / is_inactive_context) leak to the surface. The roster-status
+            # category and its baseball label are presentation fields too (CRC-6).
             assert set(entry.keys()) == {
                 'pitcher_id', 'name', 'roster_status', 'roster_status_label',
+                'roster_status_category', 'roster_status_category_label',
                 'availability', 'reason',
             }
     assert isinstance(population.get('roster_status_coverage'), (int, float))
+
+
+# CRC Phase 6: the board payload carries the canonical roster-status category aggregates,
+# they reconcile with the existing counts, and they are invariant across board views.
+def test_board_payload_exposes_category_counts_that_reconcile(client):
+    with client.application.app_context():
+        _seed_team()
+    authority = _board(client)['roster_authority']
+    counts = authority['counts']
+    category_counts = authority['category_counts']
+    category_evidence = authority['category_evidence']
+
+    # The seeded team: 3 active, 1 IL_60 (injured), 1 optioned, 1 unconfirmed.
+    assert category_counts['active'] == 3
+    assert category_counts['injured_list'] == 1
+    assert category_counts['optioned_or_minors'] == 1
+    assert category_counts['unknown'] == 1
+    assert category_counts['forty_man_not_active'] == 0
+    assert category_counts['restricted_or_special_list'] == 0
+    assert category_counts['non_roster_depth'] == 0
+
+    # Reconciles with the roster buckets the authority already publishes.
+    assert category_counts['active'] == counts['bullpen_arms']
+    assert category_counts['unknown'] == counts['roster_unknown_count']
+    off_roster = sum(
+        category_counts[c] for c in (
+            'injured_list', 'optioned_or_minors', 'forty_man_not_active',
+            'restricted_or_special_list', 'non_roster_depth',
+        )
+    )
+    assert off_roster == counts['inactive_roster_context_count']
+
+    # Every category is backed by an evidence list of the same length.
+    for category, count in category_counts.items():
+        assert len(category_evidence[category]) == count, f'category evidence mismatch for {category}'
+
+
+def test_board_payload_category_counts_invariant_across_views(client):
+    with client.application.app_context():
+        _seed_team()
+    assert (
+        _board(client, include_stale=False)['roster_authority']['category_counts']
+        == _board(client, include_stale=True)['roster_authority']['category_counts']
+    )

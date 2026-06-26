@@ -6,7 +6,8 @@ no consumer reads from it yet. This document is the governance contract for the 
 Companion audit: `docs/methodology/CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md`.
 
 Module: `backend/services/roster_authority.py`
-Tests: `backend/tests/test_roster_authority.py`
+Tests: `backend/tests/test_roster_authority.py`,
+`backend/tests/test_roster_authority_categories.py` (CRC-6)
 
 ---
 
@@ -85,17 +86,25 @@ Tonight's availability read is a sub-classification of the **active roster only*
     "roster_status_coverage": float   // known_count / total_candidates, 0..1
   },
   "counts": { <field>: int, ... },
+  "category_counts": { <category>: int, ... },     // CRC-6; one entry per canonical category
   "evidence": { <field>: [ <evidence entry>, ... ], ... },
+  "category_evidence": { <category>: [ <evidence entry>, ... ], ... },   // CRC-6
   "field_invariance": { <field>: true, ... },
   "limitations": [ string, ... ]
 }
 ```
 
-Evidence entry:
+Evidence entry (the same shape in `evidence` and `category_evidence`):
 
 ```
-{ "pitcher_id", "name", "roster_status", "roster_status_label", "availability", "reason" }
+{ "pitcher_id", "name", "roster_status", "roster_status_label",
+  "roster_status_category", "roster_status_category_label",   // CRC-6
+  "availability", "reason" }
 ```
+
+`roster_status` / `roster_status_label` are the **fine** status (e.g. `IL_60` / "60-Day
+IL"); `roster_status_category` / `roster_status_category_label` are the **coarse** baseball
+grouping (e.g. `injured_list` / "Injured list"). See §13.
 
 ---
 
@@ -436,5 +445,136 @@ finer reading of the SAME roster truth the authority already owns:
   the authority is well placed to own once that data is available.
 - **Organizational Relationships.** Parent-club / affiliate linkage is roster context that,
   if modeled, belongs with the authority rather than in each consumer.
+
+These are recommendations only; none are implemented in this phase.
+
+---
+
+## 13. Phase 6 — canonical roster-status categories
+
+Status: **done.** Roster Authority now owns a small set of **roster-status categories** — a
+coarse, baseball-language grouping of the fine-grained statuses. This phase **prepares** the
+Story / Digest / Today migration (CRC-7); it does **not** migrate any consumer. The change is
+**additive only**: existing counts, board behavior, the Capacity family, and the frontend are
+all unchanged (full backend suite green).
+
+### Why the category layer belongs in Roster Authority
+
+A category answers "what *kind* of roster state is this arm in?" — injured vs optioned vs
+40-man vs a special list. That is the same roster truth the authority already owns at the
+status level; the category is just a coarser reading of it. Today several consumers keep
+their own private grouping of statuses — most visibly Resource Health's
+`INJURED_LIST_STATUSES = {IL_10, IL_15, IL_60}` and the injury-context surfaces — and any
+private set drifts the moment a status is added or renamed. Centralizing the grouping in the
+authority means there is exactly **one** definition of "which statuses mean injured", so a
+future consumer groups by calling `roster_status_category()` instead of re-deriving a set.
+
+The categories are a **strict refinement** of the three roster predicates (§12), never a
+second source of truth: every active arm is `active`, every unconfirmed arm is `unknown`, and
+every off-roster arm is exactly one off-roster category. A test asserts this agreement across
+every status, which is what guarantees the Capacity family (which reads the predicates) cannot
+change when categories are added.
+
+### The categories
+
+Owned in `services/roster_authority.py`: the category keys (`ROSTER_STATUS_CATEGORY_*`), their
+reading order (`ROSTER_STATUS_CATEGORY_ORDER`), their user-facing labels
+(`ROSTER_STATUS_CATEGORY_LABELS`), the status→category map (`_CATEGORY_BY_STATUS`), and the
+functions `roster_status_category(roster_status)` / `roster_status_category_label(category)`.
+
+| Category key | Baseball label | Fine statuses it groups | Roster bucket (§3) |
+|---|---|---|---|
+| `active` | **Active roster** | `ACTIVE` | on the active roster |
+| `injured_list` | **Injured list** | `IL_10`, `IL_15`, `IL_60` | off the active roster |
+| `optioned_or_minors` | **Optioned to the minors** | `OPTIONED`, `MINORS` | off the active roster |
+| `forty_man_not_active` | **40-man, not active** | `40_MAN_ONLY` | off the active roster |
+| `restricted_or_special_list` | **Restricted or special list** | `RESTRICTED`, `SUSPENDED`, `BEREAVEMENT`, `PATERNITY` | off the active roster |
+| `non_roster_depth` | **Non-roster depth** | `NON_ROSTER`, `DFA` | off the active roster |
+| `unknown` | **Roster status pending** | `UNKNOWN` / unconfirmed / none | roster status unconfirmed |
+
+`active` and `unknown` are decided by the roster predicates, not by the status map, so there is
+one source of truth for "is this arm active / unknown". An off-roster status with no explicit
+mapping falls back to `non_roster_depth` (never to `active` or `unknown`), so the partition
+always holds even for a future status.
+
+Labels are **baseball language only** — no internal key, no field name, no status code ever
+reaches a label (asserted by test). A surface shows the label; it never invents its own
+wording for a category.
+
+### Aggregates and evidence expectations
+
+`build_roster_authority` now publishes:
+
+- `category_counts` — `{ <category>: int }` for **every** category in
+  `ROSTER_STATUS_CATEGORY_ORDER` (zero when none), over the full population. A stable shape:
+  consumers can read `category_counts['injured_list']` without checking for presence.
+- `category_evidence` — `{ <category>: [ evidence entry, ... ] }`, each list the same length
+  as its count and sorted deterministically (name, then pitcher id), exactly like the existing
+  `evidence`.
+
+Each evidence entry (in both `evidence` and `category_evidence`) now also carries
+`roster_status_category` and `roster_status_category_label`, so any surface can group or label
+an arm without re-deriving the category. No engine internals (`is_active_mlb`,
+`is_inactive_context`) leak into the entry.
+
+The category aggregates **reconcile** with the existing counts by construction (asserted by
+tests):
+
+- `category_counts['active'] == counts['bullpen_arms']`
+- `category_counts['unknown'] == counts['roster_unknown_count']`
+- the five off-roster categories sum to `counts['inactive_roster_context_count']`
+- `sum(category_counts.values()) == population.total_candidates`
+
+The aggregates are invariant across board views (same guarantee as every other authority
+field) and JSON-serializable.
+
+### Remaining duplicated category logic (intentionally not deleted yet)
+
+`services/bullpen_resource_health.py` still defines `INJURED_LIST_STATUSES = {IL_10, IL_15,
+IL_60}` and uses it for its IL-vs-non-IL split. It is **kept** this phase because Resource
+Health still depends on it; deleting it now would break a live consumer for no benefit. The
+`injured_list` category is the canonical replacement — a test pins `category_counts['injured_list']`
+to Resource Health's `injured_reliever_count` over the same population, proving the migration
+can swap the private set for the category **without moving a number**. The deletion happens in
+CRC-7 when Resource Health (and injury context) migrate. (Per the initiative rule: do not
+prematurely delete code while consumers still depend on it.)
+
+### How Story / Digest / Today should consume in CRC-7
+
+The categories exist so these surfaces stop counting statuses themselves:
+
+1. **Group by category, not by status.** Read `category_counts` / `category_evidence` for
+   breakdowns like "3 on the injured list, 2 optioned"; never re-derive which statuses mean
+   injured. Where a surface previously used a private set (e.g. injury context's IL grouping),
+   replace it with `roster_status_category() == 'injured_list'`.
+2. **Label from the authority.** Display `roster_status_category_label` (or
+   `ROSTER_STATUS_CATEGORY_LABELS`); do not hardcode category wording in a consumer.
+3. **Retire the private sets.** Once Resource Health / injury context read the category, delete
+   `INJURED_LIST_STATUSES` and any sibling set, so the grouping lives in exactly one place.
+4. **Keep the legacy path until parity is proven**, then remove it — the same migration shape
+   used for the board (§11) and the Capacity family (§12): diff against the authority, prove
+   invariance and count↔evidence, keep tests green, then retire.
+
+### Future expansion (design only — not implemented)
+
+The categories are the substrate several later reads sit on; each is a finer view of the SAME
+roster truth, so it belongs with the authority rather than in a consumer:
+
+- **Authority Completeness.** Category coverage (how many arms have a *confirmed* category vs
+  `unknown`) is a natural completeness signal alongside `roster_status_coverage`.
+- **Replacement Readiness / Immediate Reinforcements — "who replaces who" without predictions.**
+  The categories already separate "next-up depth" from "unavailable for the season": an
+  `optioned_or_minors` or `forty_man_not_active` arm is a realistic, rules-eligible
+  reinforcement, whereas an `injured_list` (especially 60-day) or `restricted_or_special_list`
+  arm is not currently available. A future read can therefore enumerate *replacement-eligible*
+  off-roster arms **purely from roster facts** — no forecasting, no projection — simply by
+  filtering the off-roster categories to the reinforcement-eligible ones. That is the
+  foundation for "who could replace this arm" expressed as roster eligibility, not prediction.
+- **Bullpen Elasticity.** Combining `forty_man_not_active` / `optioned_or_minors` depth with
+  active-roster headroom describes how easily the bullpen can be reshaped — again, roster facts
+  the authority is best placed to own.
+- **Organizational Relationships.** Parent-club / affiliate linkage would let
+  `optioned_or_minors` arms be tied to where they actually are; that linkage is roster context
+  and belongs with the authority.
 
 These are recommendations only; none are implemented in this phase.

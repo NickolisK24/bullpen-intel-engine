@@ -40,7 +40,22 @@ from services.availability import (
     STATUS_MONITOR,
     STATUS_UNAVAILABLE,
 )
-from services.roster_status import STATUS_LABELS, STATUS_UNKNOWN
+from services.roster_status import (
+    STATUS_40_MAN_ONLY,
+    STATUS_BEREAVEMENT,
+    STATUS_DFA,
+    STATUS_IL_10,
+    STATUS_IL_15,
+    STATUS_IL_60,
+    STATUS_LABELS,
+    STATUS_MINORS,
+    STATUS_NON_ROSTER,
+    STATUS_OPTIONED,
+    STATUS_PATERNITY,
+    STATUS_RESTRICTED,
+    STATUS_SUSPENDED,
+    STATUS_UNKNOWN,
+)
 
 
 CAPABILITY = 'roster_authority_v1'
@@ -123,6 +138,93 @@ def is_roster_status_unknown(roster_status):
     return roster_status.get('status') == STATUS_UNKNOWN or roster_status.get('is_active_mlb') is None
 
 
+# ── Canonical roster-status categories ────────────────────────────────────────
+# A coarse, baseball-language grouping of the fine-grained roster statuses, owned by Roster
+# Authority so no consumer re-derives "which statuses mean injured" or "which mean optioned"
+# (the kind of private set — e.g. resource health's INJURED_LIST_STATUSES — that drifts when
+# duplicated). The fine status (STATUS_IL_60, STATUS_MINORS, …) stays the precise truth; the
+# category is the bucket a surface groups by. Categories are a strict refinement of the three
+# roster predicates above: every active arm is ``active``, every unconfirmed arm is
+# ``unknown``, and every off-roster arm is exactly one off-roster category — so the category
+# layer never becomes a second, conflicting source of roster truth.
+
+ROSTER_STATUS_CATEGORY_ACTIVE = 'active'
+ROSTER_STATUS_CATEGORY_INJURED_LIST = 'injured_list'
+ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS = 'optioned_or_minors'
+ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE = 'forty_man_not_active'
+ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL = 'restricted_or_special_list'
+ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH = 'non_roster_depth'
+ROSTER_STATUS_CATEGORY_UNKNOWN = 'unknown'
+
+# Canonical reading order: active first, the off-roster categories in roughly
+# closest-to-the-active-roster order, unknown last. Aggregates publish every category in this
+# order (zero / empty when none) so consumers read one stable shape.
+ROSTER_STATUS_CATEGORY_ORDER = (
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+    ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
+    ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+)
+
+# User-facing labels — baseball language only, never an internal field name. A surface shows
+# the label; it never invents its own wording for a category.
+ROSTER_STATUS_CATEGORY_LABELS = {
+    ROSTER_STATUS_CATEGORY_ACTIVE: 'Active roster',
+    ROSTER_STATUS_CATEGORY_INJURED_LIST: 'Injured list',
+    ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS: 'Optioned to the minors',
+    ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE: '40-man, not active',
+    ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL: 'Restricted or special list',
+    ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH: 'Non-roster depth',
+    ROSTER_STATUS_CATEGORY_UNKNOWN: 'Roster status pending',
+}
+
+# The fine roster status → category map. It covers only the off-roster statuses: active and
+# unknown are decided by the roster predicates, not by this table, so there is exactly one
+# source of truth for "is this arm active / unknown". An off-roster status absent from this
+# map falls back to ``non_roster_depth`` (the generic off-roster-depth bucket).
+_CATEGORY_BY_STATUS = {
+    STATUS_IL_10: ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    STATUS_IL_15: ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    STATUS_IL_60: ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    STATUS_OPTIONED: ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+    STATUS_MINORS: ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS,
+    STATUS_40_MAN_ONLY: ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE,
+    STATUS_RESTRICTED: ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    STATUS_SUSPENDED: ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    STATUS_BEREAVEMENT: ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    STATUS_PATERNITY: ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL,
+    STATUS_NON_ROSTER: ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+    STATUS_DFA: ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH,
+}
+
+
+def roster_status_category(roster_status):
+    """Canonical category for a classified roster status (one of ROSTER_STATUS_CATEGORY_ORDER).
+
+    A strict refinement of the roster predicates: active arms are ``active``, unconfirmed
+    arms are ``unknown``, and every off-roster arm maps to exactly one off-roster category by
+    its fine status. An off-roster status with no explicit mapping falls back to
+    ``non_roster_depth`` (the generic off-roster-depth bucket) — never to active or unknown,
+    so the partition is never violated.
+    """
+    rs = roster_status or {}
+    if is_on_active_roster(rs):
+        return ROSTER_STATUS_CATEGORY_ACTIVE
+    if is_off_active_roster(rs):
+        return _CATEGORY_BY_STATUS.get(rs.get('status'), ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH)
+    return ROSTER_STATUS_CATEGORY_UNKNOWN
+
+
+def roster_status_category_label(category):
+    """User-facing baseball label for a category key (falls back to the unknown label)."""
+    return ROSTER_STATUS_CATEGORY_LABELS.get(
+        category, ROSTER_STATUS_CATEGORY_LABELS[ROSTER_STATUS_CATEGORY_UNKNOWN]
+    )
+
+
 def _roster_status_of(record):
     value = record.get('roster_status')
     return value if isinstance(value, dict) else {}
@@ -165,11 +267,14 @@ def _reason_for(roster_status, availability_status):
 def _evidence_entry(record):
     roster_status = _roster_status_of(record)
     availability_status = _availability_status_of(record)
+    category = roster_status_category(roster_status)
     return {
         'pitcher_id': record.get('pitcher_id'),
         'name': _name_of(record),
         'roster_status': roster_status.get('status') or STATUS_UNKNOWN,
         'roster_status_label': roster_status.get('label') or STATUS_LABELS[STATUS_UNKNOWN],
+        'roster_status_category': category,
+        'roster_status_category_label': roster_status_category_label(category),
         'availability': availability_status,
         'reason': _reason_for(roster_status, availability_status),
     }
@@ -263,6 +368,25 @@ def build_roster_authority(records, *, team=None, reference_date=None):
 
     counts = {field: len(evidence[field]) for field in FIELD_INVARIANCE}
 
+    # Canonical roster-status categories over the full population — a coarse, baseball-
+    # language grouping that refines the three roster buckets. Every category in
+    # ROSTER_STATUS_CATEGORY_ORDER is present (zero / empty when none) so the shape is stable,
+    # and each category is backed by its own evidence list the same way the counts above are.
+    # The category aggregates reconcile with the existing counts by construction: ``active``
+    # equals ``bullpen_arms``, ``unknown`` equals ``roster_unknown_count``, and the off-roster
+    # categories sum to ``inactive_roster_context_count``.
+    category_members = {category: [] for category in ROSTER_STATUS_CATEGORY_ORDER}
+    for record in rows:
+        category_members[roster_status_category(_roster_status_of(record))].append(record)
+    category_evidence = {
+        category: _evidence(category_members[category])
+        for category in ROSTER_STATUS_CATEGORY_ORDER
+    }
+    category_counts = {
+        category: len(category_evidence[category])
+        for category in ROSTER_STATUS_CATEGORY_ORDER
+    }
+
     limitations = []
     if availability_unknown:
         limitations.append(
@@ -291,7 +415,9 @@ def build_roster_authority(records, *, team=None, reference_date=None):
             'roster_status_coverage': round(len(known) / total, 4) if total else 0.0,
         },
         'counts': counts,
+        'category_counts': category_counts,
         'evidence': evidence,
+        'category_evidence': category_evidence,
         'field_invariance': dict(FIELD_INVARIANCE),
         'limitations': limitations,
     }
@@ -302,8 +428,19 @@ __all__ = [
     'VERSION',
     'CANONICAL_POPULATION_FLAGS',
     'FIELD_INVARIANCE',
+    'ROSTER_STATUS_CATEGORY_ORDER',
+    'ROSTER_STATUS_CATEGORY_LABELS',
+    'ROSTER_STATUS_CATEGORY_ACTIVE',
+    'ROSTER_STATUS_CATEGORY_INJURED_LIST',
+    'ROSTER_STATUS_CATEGORY_OPTIONED_OR_MINORS',
+    'ROSTER_STATUS_CATEGORY_FORTY_MAN_NOT_ACTIVE',
+    'ROSTER_STATUS_CATEGORY_RESTRICTED_OR_SPECIAL',
+    'ROSTER_STATUS_CATEGORY_NON_ROSTER_DEPTH',
+    'ROSTER_STATUS_CATEGORY_UNKNOWN',
     'build_roster_authority',
     'is_on_active_roster',
     'is_off_active_roster',
     'is_roster_status_unknown',
+    'roster_status_category',
+    'roster_status_category_label',
 ]
