@@ -19,6 +19,7 @@ from services.bullpen_eligibility_vocabulary import (
     record_is_bullpen_eligible,
     record_is_swing_bulk,
 )
+from services.roster_authority import is_off_active_roster, is_on_active_roster
 
 
 CAPABILITY = 'bullpen_trust_hierarchy_v1'
@@ -184,16 +185,6 @@ def _availability_status(record: dict[str, Any]) -> str:
     return str(_availability(record).get('availability_status') or '')
 
 
-def _is_active_mlb(record: dict[str, Any]) -> bool:
-    return _roster_status(record).get('is_active_mlb') is True
-
-
-def _is_roster_unavailable(record: dict[str, Any]) -> bool:
-    roster_status = _roster_status(record)
-    return (
-        roster_status.get('is_inactive_context') is True
-        or roster_status.get('is_active_mlb') is False
-    )
 
 
 def _is_availability_unavailable(record: dict[str, Any]) -> bool:
@@ -275,7 +266,7 @@ def _relief_outs(relief_outs_by_pitcher: dict[int, int] | None, pitcher_id: int)
 
 
 def _availability_state(record: dict[str, Any]) -> str:
-    if _is_roster_unavailable(record) or _is_availability_unavailable(record):
+    if is_off_active_roster(_roster_status(record)) or _is_availability_unavailable(record):
         return 'unavailable'
     if _read_key(record) == READ_CLEAN:
         return 'clean'
@@ -314,9 +305,9 @@ def _bucket_for(record: dict[str, Any], season_relief_outs: int) -> tuple[str, s
     clean = _is_clean_option(record)
     trusted_workload = _has_trusted_workload(record, season_relief_outs)
 
-    if not _is_active_mlb(record):
+    if not is_on_active_roster(_roster_status(record)):
         return BUCKET_UNKNOWN, 'Not an active MLB bullpen resource.'
-    if _is_roster_unavailable(record) or _is_availability_unavailable(record):
+    if is_off_active_roster(_roster_status(record)) or _is_availability_unavailable(record):
         return BUCKET_UNKNOWN, 'Unavailable resources are not assigned active trust buckets.'
     if observed_key == OBSERVED_INSUFFICIENT:
         return BUCKET_UNKNOWN, 'Insufficient observed usage prevents a stronger bucket.'
@@ -367,8 +358,8 @@ def classify_trust_bucket(record: dict[str, Any], *, relief_outs_by_pitcher=None
     season_relief_outs = _relief_outs(relief_outs_by_pitcher, pitcher_id)
     bucket, reason = _bucket_for(record, season_relief_outs)
     active_resource = (
-        _is_active_mlb(record)
-        and not _is_roster_unavailable(record)
+        is_on_active_roster(_roster_status(record))
+        and not is_off_active_roster(_roster_status(record))
         and not _is_availability_unavailable(record)
     )
     clean = _is_clean_option(record)

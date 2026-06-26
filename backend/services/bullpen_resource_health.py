@@ -16,11 +16,11 @@ from typing import Any
 
 from services.availability import STATUS_AVAILABLE, STATUS_UNAVAILABLE
 from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
+from services.roster_authority import is_off_active_roster, is_roster_status_unknown
 from services.roster_status import (
     STATUS_IL_10,
     STATUS_IL_15,
     STATUS_IL_60,
-    STATUS_UNKNOWN,
 )
 
 
@@ -149,25 +149,8 @@ def _roster_status(record: dict[str, Any]) -> dict[str, Any]:
     return status if isinstance(status, dict) else {}
 
 
-def _is_roster_unknown(roster_status: dict[str, Any]) -> bool:
-    status = roster_status.get('status')
-    active_mlb = roster_status.get('is_active_mlb')
-    return (
-        not roster_status
-        or status == STATUS_UNKNOWN
-        or active_mlb is None
-    )
-
-
 def _is_availability_unknown(record: dict[str, Any]) -> bool:
     return not _availability_status(record)
-
-
-def _is_roster_unavailable(roster_status: dict[str, Any]) -> bool:
-    return (
-        roster_status.get('is_inactive_context') is True
-        or roster_status.get('is_active_mlb') is False
-    )
 
 
 def _is_availability_unavailable(record: dict[str, Any]) -> bool:
@@ -331,7 +314,7 @@ def build_bullpen_resource_health(
         total_count += 1
         roster_status = _roster_status(record)
 
-        if _is_roster_unknown(roster_status):
+        if is_roster_status_unknown(roster_status):
             unknown_count += 1
             active_unknown_count += 1
             continue
@@ -341,7 +324,7 @@ def build_bullpen_resource_health(
             injured_count += 1
             continue
 
-        roster_unavailable = _is_roster_unavailable(roster_status)
+        roster_unavailable = is_off_active_roster(roster_status)
         if roster_unavailable:
             unavailable_count += 1
             roster_unavailable_count += 1

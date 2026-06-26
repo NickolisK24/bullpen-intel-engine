@@ -353,3 +353,88 @@ Remaining consumers to migrate (CRC-5+): capacity, resource health, stability, s
 digest, and the team-board / comparison surfaces — one at a time, each diffed against the
 authority and kept green until its legacy path is retired. `roster_status` is removed only
 after the last consumer migrates.
+
+---
+
+## 12. Phase 5 — capacity family migration (Capacity / Resource Health / Stability)
+
+Status: **done.** The internal Capacity family no longer interprets roster state on its
+own; it reads the single canonical roster predicates from Roster Authority. No user-facing
+behavior changed (the full backend suite is green and every consumer result is unchanged).
+
+### Root cause of the duplication
+
+The same predicate — "off the active roster" — was copied verbatim into four engine files
+as `_is_roster_unavailable` (`is_inactive_context is True or is_active_mlb is False`):
+`bullpen_capacity.py`, `bullpen_resource_health.py`, `bullpen_stability.py`, and
+`bullpen_trust_hierarchy.py` (a sub-component of Bullpen Capacity, assembled at
+`bullpen_capacity.py` → `build_bullpen_trust_hierarchy`). Resource Health additionally
+defined its own `_is_roster_unknown`, and Trust Hierarchy its own `_is_active_mlb`. Each
+record-level pass (capacity, health, stability, trust) needed a per-pitcher roster verdict
+and, before Roster Authority existed, had nowhere canonical to get it — so each module
+re-derived roster truth.
+
+### What was added to Roster Authority (and why it belongs there)
+
+Three canonical predicates now live in `services/roster_authority.py`, exported and used by
+the authority's own population partition as well as by the consumers:
+
+- `is_on_active_roster(roster_status)` — `is_active_mlb is True`.
+- `is_off_active_roster(roster_status)` — `is_inactive_context is True or is_active_mlb is
+  False` (the historical consumer predicate, byte-for-byte; equivalent to the authority's
+  off-roster bucket for authoritative data).
+- `is_roster_status_unknown(roster_status)` — no authoritative read (`status == UNKNOWN` or
+  `is_active_mlb is None` or no roster status).
+
+These belong in Roster Authority, not the consumers, because they ARE the per-pitcher
+roster-bucket interpretation the authority already owns: `build_roster_authority` now
+partitions its population with the same `is_on_active_roster` / `is_off_active_roster`
+predicates, so the count-level authority and the record-level consumers share one
+definition. A predicate is the smallest unit of "roster truth"; leaving copies in consumers
+is exactly the drift the initiative exists to remove.
+
+### Consumers migrated
+
+- **Bullpen Capacity** — `_capacity_state` and the per-record `roster_unavailable` flag now
+  call `is_off_active_roster`.
+- **Resource Health** — the roster-unknown / off-roster branches now call
+  `is_roster_status_unknown` and `is_off_active_roster`. (It keeps its own IL-vs-non-IL
+  split, which is a finer health classification the authority does not yet model — see
+  below.)
+- **Bullpen Stability** — `_is_fully_unavailable` and the per-record `roster_unavailable`
+  flag now call `is_off_active_roster`.
+- **Trust Hierarchy** (capacity sub-component) — `_is_active_mlb` → `is_on_active_roster`,
+  `_is_roster_unavailable` → `is_off_active_roster`.
+
+All four local predicate functions were removed. A regression guard
+(`tests/test_authority_capacity_unification.py`) asserts no consumer still defines its own
+roster predicate and that each reads the authority's.
+
+### Remaining consumers / remaining roster logic
+
+- Story, Digest, Today, Team Board, Comparison, and the Bullpen Board still consume their
+  own roster context where applicable (the Bullpen Board banner already reads the authority
+  per CRC-4); they are out of this phase's scope.
+- `roster_status` (legacy summary) remains in the board payload for parity/rollback.
+- Resource Health and the injury-context services still classify Injured-List membership
+  (`INJURED_LIST_STATUSES`) themselves — a finer sub-classification of "off the active
+  roster" the authority does not model yet (a candidate for the extension below).
+
+### Future Roster Authority extensions (design only — not implemented)
+
+Observed while unifying the family; each naturally belongs in the authority because it is a
+finer reading of the SAME roster truth the authority already owns:
+
+- **Roster status category / Authority Completeness.** Extend the off-roster bucket with a
+  category (injured list vs optioned vs designated vs 40-man-only). Resource Health and the
+  injury-context surfaces could then stop maintaining `INJURED_LIST_STATUSES` independently.
+- **Immediate Reinforcements / Replacement Readiness.** The authority already enumerates the
+  off-roster arms; a future read of which of them are realistically next-up (e.g. optioned
+  arms on the 40-man) would let consumers reason about reinforcements without re-deriving
+  roster eligibility.
+- **Bullpen Elasticity.** Active-roster headroom (open 40-man/active spots) is roster truth
+  the authority is well placed to own once that data is available.
+- **Organizational Relationships.** Parent-club / affiliate linkage is roster context that,
+  if modeled, belongs with the authority rather than in each consumer.
+
+These are recommendations only; none are implemented in this phase.
