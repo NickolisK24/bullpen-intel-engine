@@ -16,11 +16,11 @@ from typing import Any
 
 from services.availability import STATUS_AVAILABLE, STATUS_UNAVAILABLE
 from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
-from services.roster_authority import is_off_active_roster, is_roster_status_unknown
-from services.roster_status import (
-    STATUS_IL_10,
-    STATUS_IL_15,
-    STATUS_IL_60,
+from services.roster_authority import (
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    is_off_active_roster,
+    is_roster_status_unknown,
+    roster_status_category,
 )
 
 
@@ -37,12 +37,6 @@ RESOURCE_STATE_STRONG = 'strong'
 RESOURCE_STATE_MODERATE = 'moderate'
 RESOURCE_STATE_STRAINED = 'strained'
 RESOURCE_STATE_DEPLETED = 'depleted'
-
-INJURED_LIST_STATUSES = {
-    STATUS_IL_10,
-    STATUS_IL_15,
-    STATUS_IL_60,
-}
 
 BULLPEN_CAPACITY_HEALTHY_MIN_ACTIVE = 8
 BULLPEN_CAPACITY_REDUCED_MIN_ACTIVE = 7
@@ -319,8 +313,9 @@ def build_bullpen_resource_health(
             active_unknown_count += 1
             continue
 
-        status = roster_status.get('status')
-        if status in INJURED_LIST_STATUSES:
+        # Injured-list arms are Roster Authority's injured_list category — a finer read of
+        # "off the active roster". Resource Health reads the category; it keeps no IL set.
+        if roster_status_category(roster_status) == ROSTER_STATUS_CATEGORY_INJURED_LIST:
             injured_count += 1
             continue
 

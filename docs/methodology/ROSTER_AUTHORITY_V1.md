@@ -1,14 +1,18 @@
 # Roster Authority V1 — Foundation
 
-Status: **Foundation (CRC Phase 1).** The authority object and its pure builder exist;
-no consumer reads from it yet. This document is the governance contract for the object.
+Status: **Single source of roster truth (through CRC Phase 8).** Introduced as a pure
+foundation in CRC-1; every roster/category consumer now reads from it (Bullpen Board, the
+Capacity family, the editorial Story/Digest, and the public pitcher labels), and no consumer
+keeps a private roster status set or roster predicate. This document is the governance
+contract for the object; each phase is recorded in its own section below.
 
 Companion audit: `docs/methodology/CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md`.
 
 Module: `backend/services/roster_authority.py`
 Tests: `backend/tests/test_roster_authority.py`,
 `backend/tests/test_roster_authority_categories.py` (CRC-6),
-`backend/tests/test_editorial_roster_authority_migration.py` (CRC-7)
+`backend/tests/test_editorial_roster_authority_migration.py` (CRC-7),
+`backend/tests/test_roster_authority_final_consolidation.py` (CRC-8)
 
 ---
 
@@ -681,3 +685,101 @@ Surfaced while migrating the editorial layer; each is roster truth a Story shoul
   natural consumer once these land in the authority.
 
 These are recommendations only; none are implemented in this phase.
+
+---
+
+## 15. Phase 8 — final roster-category consolidation
+
+Status: **done.** CRC-8 is the cleanup that makes Roster Authority the **single source of
+roster truth** across BaseballOS. The last two consumers holding private roster grouping were
+migrated; there are now **no private roster status sets and no private roster predicates** left
+in any consumer. No new capability, no UI change, no behaviour change — only the source of
+roster truth was unified (the full backend suite is green).
+
+### Remaining duplicated logic removed
+
+| Module | Removed (private roster logic) | Now reads |
+|---|---|---|
+| `services/bullpen_resource_health.py` | `INJURED_LIST_STATUSES = {IL_10, IL_15, IL_60}` | `roster_status_category(roster_status) == ROSTER_STATUS_CATEGORY_INJURED_LIST` — the injured count is the authority's `injured_list` category (a finer read of off-roster) |
+| `services/pitcher_public_labels.py` | `INACTIVE_ROSTER_STATUSES` (12-status set) **and** the private `_roster_unavailable` predicate body | `is_off_active_roster` for a classified status, `roster_status_category_for_status` for a bare status code — `_roster_unavailable` is now a thin adapter over the authority, not its own predicate |
+
+Both migrations are behaviour-preserving: a CRC-8 test pins Resource Health's
+`injured_reliever_count` to the authority's `category_counts['injured_list']` (and the non-IL
+off-roster count to the sum of the other off-roster categories), and the public label's
+`_roster_unavailable` is proven equal to `is_off_active_roster` for every classified status while
+still honouring bare status codes exactly as the old set did.
+
+### Roster Authority now owns all roster/category interpretation
+
+There is exactly one canonical interpretation of each of these, all in
+`services/roster_authority.py` (over the classification primitives in
+`services/roster_status.py`):
+
+| Concept | Canonical owner |
+|---|---|
+| Active roster | `is_on_active_roster` |
+| Off the active roster | `is_off_active_roster` |
+| Roster unknown | `is_roster_status_unknown` |
+| Roster categories | `roster_status_category` / `roster_status_category_for_status` / `ROSTER_STATUS_CATEGORY_*` |
+| Injured list | the `injured_list` category |
+| Optioned | the `optioned_or_minors` category |
+| 40-man not active | the `forty_man_not_active` category |
+| Restricted / special list | the `restricted_or_special_list` category |
+| Per-team / per-population counts + evidence | `build_roster_authority` (`counts`, `category_counts`, `evidence`, `category_evidence`) |
+
+Consumers across the board (Bullpen Board, Bullpen Capacity, Resource Health, Bullpen
+Stability, Trust Hierarchy, the editorial Story/Digest contexts, and the public pitcher
+labels) **read / display / aggregate** the authority. None classify roster status, define
+categories, keep a private status set, or redefine off-roster logic.
+
+### Remaining consumers not yet migrated (intentionally out of scope)
+
+- **Team Board / Comparison** — explicitly out of scope for CRC (constraint). They read only
+  `team` / `context` / `freshness` from board payloads and do not compute roster counts, so
+  there is no private roster logic to migrate; whenever they surface roster context, they should
+  read the authority.
+- **Frontend** — unchanged by design; the board banner already reads `roster_authority` (CRC-4),
+  and other surfaces consume backend-authored fields.
+
+### Legacy retained only where intentionally required
+
+- **`roster_status` legacy summary** on the board payload — kept for parity / rollback (CRC
+  audit §4 Phase 5 removes it only after every consumer has migrated and the parity window has
+  closed). It is a payload key, not a private predicate.
+- **`services/roster_status.py`** — the canonical classification *source* (`classify_roster_status`,
+  `INACTIVE_STATUSES`, the `STATUS_*` constants, `STATUS_LABELS`). This is not duplication; it is
+  the primitive layer Roster Authority is built on. Reading `INACTIVE_STATUSES` from here, or a
+  single classified field (`is_inactive_context`) off an authority-produced dict, is canonical
+  consumption, not a private set.
+
+---
+
+## 16. Future Authority Expansion
+
+Observations only — **none implemented.** Each is roster truth that, when BaseballOS is ready
+to model it, belongs *inside* Roster Authority so every surface shares one definition and no
+consumer re-derives it. Listed here so the next initiative starts from the authority, not from
+scattered private logic (the exact failure CRC removed).
+
+- **Authority Completeness.** A first-class read of how completely roster reality is known:
+  category coverage (confirmed category vs `unknown`) alongside `roster_status_coverage`, plus
+  per-source freshness of the classification. The natural next increment on the authority itself,
+  and a prerequisite for trusting any of the reads below.
+- **Replacement Readiness.** Which off-roster arms are *rules-eligible* to return to the active
+  roster — `optioned_or_minors` and `forty_man_not_active` are realistically next-up;
+  `injured_list` (especially 60-day) and `restricted_or_special_list` are not currently
+  available. Purely roster eligibility, no forecasting. Belongs in the authority as one shared
+  "reinforcement-eligible" predicate over the existing categories.
+- **Immediate Reinforcements.** The specific, named arms behind a Replacement-Readiness count —
+  the evidence list (who, in which category) for "who could step in", expressed as roster facts,
+  not predictions.
+- **Organizational Relationships.** Parent-club ↔ affiliate linkage, so an `optioned_or_minors`
+  arm is tied to where it actually is. Roster context the Story would narrate but must not own.
+- **Bullpen Elasticity.** How easily a bullpen can be reshaped — `forty_man_not_active` /
+  `optioned_or_minors` depth combined with active-roster headroom (open 40-man / active spots).
+  Roster facts the authority is best placed to own once that data is available.
+
+**Guardrail for all of the above:** these are reads *over* roster facts (categories, eligibility,
+counts, evidence) — not predictions, rankings, or recommendations. They extend the authority's
+descriptive contract; they do not turn it into a projection engine. Implement none of them in
+CRC; document only.
