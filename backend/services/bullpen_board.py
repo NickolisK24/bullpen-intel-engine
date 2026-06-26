@@ -394,6 +394,7 @@ def build_board_payload(
     freshness=None,
     limitations=None,
     roster_status=None,
+    roster_authority=None,
     generated_at=None,
     workload_concentration=None,
     capacity_intelligence=None,
@@ -466,5 +467,9 @@ def build_board_payload(
         'ungrouped_pitchers': max(len(cards) - grouped_total, 0),
         'freshness': freshness or {},
         'roster_status': roster_status or {},
+        # CRC Phase 2: the canonical Roster Authority snapshot, exposed alongside the
+        # legacy roster_status for parallel verification. Additive and view-invariant;
+        # no consumer reads it yet and roster_status is unchanged.
+        'roster_authority': roster_authority or {},
         'limitations': list(limitations or []),
     }

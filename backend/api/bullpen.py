@@ -104,6 +104,10 @@ from services.roster_status import (
     apply_roster_status_to_availability,
     classify_roster_status,
 )
+from services.roster_authority import (
+    CANONICAL_POPULATION_FLAGS,
+    build_roster_authority,
+)
 from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
@@ -1440,6 +1444,42 @@ def _inactive_context_records(records, authority_pitcher_ids):
     return context
 
 
+def build_team_roster_authority(team_id, reference_date=None):
+    """Canonical Roster Authority snapshot for a team (CRC Phase 2 entrypoint).
+
+    Assembles the full bullpen-eligible population ONCE, independent of any board view
+    or filter, by reusing the shared board population helpers with the fixed canonical
+    flags, then delegates to ``services.roster_authority.build_roster_authority``.
+    ``_team_bullpen_rows`` already selects candidates without regard to ``include_stale``,
+    and ``_eligible_records_for_rows`` derives ``include_inactive_context`` from
+    ``include_stale``; passing the canonical ``include_stale`` therefore yields the full
+    active + off-roster population described by ``CANONICAL_POPULATION_FLAGS``. The
+    snapshot never depends on the request's ``include_stale``, so it is invariant across
+    views.
+
+    Parallel/foundation only: the board exposes this alongside the legacy roster_status;
+    no consumer reads it yet. This entrypoint exists for future consumers to call directly.
+    """
+    ref = reference_date or _public_availability_reference_date(_board_freshness_block())
+    rows, availability_by_pitcher = _team_bullpen_rows(
+        team_id,
+        include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
+        reference_date=ref,
+        calculated_at_lte=_served_score_cutoff(),
+    )
+    records, _roster_summary = _eligible_records_for_rows(
+        rows,
+        availability_by_pitcher,
+        include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
+        reference_date=ref,
+    )
+    return build_roster_authority(
+        records,
+        team=_team_info_lookup(team_id),
+        reference_date=ref,
+    )
+
+
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
@@ -1544,12 +1584,23 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         rotation_support_pressure,
         bullpen_stability,
     )
+    # CRC Phase 2 (additive, parallel): build the canonical Roster Authority from the
+    # full bullpen-eligible population. ``capacity_records`` is already assembled with
+    # the canonical include_stale=True (matching CANONICAL_POPULATION_FLAGS), so the
+    # authority is independent of the request's ``include_stale`` and is invariant
+    # across board views. It is exposed alongside — never instead of — roster_status.
+    roster_authority = build_roster_authority(
+        capacity_records,
+        team=team_info,
+        reference_date=ref,
+    )
     return build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
         limitations=limitations,
         roster_status=roster_summary,
+        roster_authority=roster_authority,
         workload_concentration=workload_concentration,
         capacity_intelligence=capacity_intelligence,
         rotation_support_pressure=rotation_support_pressure,
