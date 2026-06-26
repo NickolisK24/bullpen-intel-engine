@@ -33,6 +33,9 @@ def _parse_args(argv=None):
     parser.add_argument('--include-unpublishable', dest='include_unpublishable',
                         action='store_true',
                         help='Render drafts even when a package is not publishable.')
+    parser.add_argument('--seeded-fixtures', dest='seeded_fixtures', action='store_true',
+                        help='Build the corpus from deterministic seeded review fixtures '
+                             '(no DB read, no MLB fetch). Labeled SEEDED_FIXTURE_REVIEW.')
     parser.add_argument('--strict', dest='strict', action='store_true',
                         help='Abort on the first team failure instead of recording it.')
     parser.add_argument('--output-json', dest='output_json',
@@ -57,16 +60,26 @@ def main(argv=None):
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
 
-    from app import app
     from services import coin_story_corpus
 
+    # Seeded fixture mode never reads the DB or fetches MLB data, so it does not
+    # need the Flask app/database; the live path does.
+    app = None
+    team_ids = args.team_ids
+    if args.seeded_fixtures:
+        team_ids = None  # seeded mode uses the fixed review fixtures
+    else:
+        from app import app as live_app
+        app = live_app
+
     corpus = coin_story_corpus.generate_corpus(
-        args.team_ids,
+        team_ids,
         app=app,
         reference_date=_parse_date(args.reference_date),
         writer=args.writer,
         include_unpublishable=bool(args.include_unpublishable),
         strict=bool(args.strict),
+        seeded=bool(args.seeded_fixtures),
     )
 
     if args.output_json:

@@ -93,13 +93,33 @@ def generate_corpus(
     strict=False,
     generated_at=None,
     inspect_fn=inspect_team_story,
+    seeded=False,
 ) -> dict:
     """Build the review corpus for ``team_ids`` (defaults to the four target teams).
 
     Reuses the inspection path per team. Per-team failures become error entries
     and the corpus continues, unless ``strict`` re-raises. ``inspect_fn`` is
     injectable for tests; ``generated_at`` is injectable for deterministic output.
+
+    When ``seeded`` is True the corpus is built from the deterministic review
+    fixtures instead of the database/MLB: the team list and inspection function
+    come from ``coin_seeded_fixtures``, every entry is tagged with its
+    fixture_name / expected_primary_story, and the corpus carries a
+    ``mode = SEEDED_FIXTURE_REVIEW`` marker. The non-seeded shape is unchanged.
     """
+    meta_fn = None
+    if seeded:
+        from services.coin_seeded_fixtures import (
+            SEEDED_TEAM_IDS,
+            build_seeded_inspect_fn,
+            fixture_meta,
+        )
+        if team_ids is None:
+            team_ids = list(SEEDED_TEAM_IDS)
+        if inspect_fn is inspect_team_story:
+            inspect_fn = build_seeded_inspect_fn()
+        meta_fn = fixture_meta
+
     team_ids = list(team_ids) if team_ids else list(DEFAULT_TEAM_IDS)
 
     entries = []
@@ -112,13 +132,16 @@ def generate_corpus(
                 writer=writer,
                 include_unpublishable=include_unpublishable,
             )
-            entries.append(_entry_from_inspection(team_id, result))
+            entry = _entry_from_inspection(team_id, result)
         except Exception as exc:  # noqa: BLE001 — per-team fail-closed
             if strict:
                 raise
-            entries.append(_error_entry(team_id, str(exc)))
+            entry = _error_entry(team_id, str(exc))
+        if meta_fn is not None:
+            entry.update(meta_fn(team_id))
+        entries.append(entry)
 
-    return {
+    corpus = {
         'generated_at': _isoformat(generated_at or utc_now_naive()),
         'reference_date': _isoformat(reference_date),
         'team_ids': team_ids,
@@ -126,13 +149,26 @@ def generate_corpus(
         'writer_filter': writer,
         'entries': entries,
     }
+    if seeded:
+        from services.coin_seeded_fixtures import MODE_SEEDED_FIXTURE_REVIEW
+        # Mode marker leads the dict; non-seeded corpora are left unchanged.
+        corpus = {'mode': MODE_SEEDED_FIXTURE_REVIEW, **corpus}
+    return corpus
 
 
 def render_markdown(corpus: dict) -> str:
     """Render a human-readable Markdown review of a corpus dict."""
-    lines = [
-        '# COIN Story Corpus',
-        '',
+    mode = corpus.get('mode')
+    lines = ['# COIN Story Corpus', '']
+    if mode:
+        lines += [f'Mode: {mode}', '']
+        from services.coin_seeded_fixtures import (
+            MODE_SEEDED_FIXTURE_REVIEW,
+            SEEDED_REVIEW_WARNING,
+        )
+        if mode == MODE_SEEDED_FIXTURE_REVIEW:
+            lines += [f'> {SEEDED_REVIEW_WARNING}', '']
+    lines += [
         f"Generated at: {corpus.get('generated_at') or 'unknown'}",
         f"Reference date: {corpus.get('reference_date') or 'none'}",
         f"Teams: {', '.join(str(t) for t in corpus.get('team_ids', []))}",
@@ -146,6 +182,12 @@ def render_markdown(corpus: dict) -> str:
         if label:
             header += f' — {label}'
         lines += [header, '']
+
+        if entry.get('fixture_name'):
+            lines += [
+                f"Fixture: {entry['fixture_name']}",
+                f"Expected primary story: {entry.get('expected_primary_story')}",
+            ]
 
         if entry.get('error'):
             lines += [f"Error: {entry['error']}", '']
