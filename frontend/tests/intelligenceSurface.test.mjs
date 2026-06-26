@@ -206,7 +206,7 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   ])
 })
 
-test('Intelligence Surface renders the flagship story without raw JSON fields', () => {
+test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     dashboard,
@@ -217,6 +217,7 @@ test('Intelligence Surface renders the flagship story without raw JSON fields', 
   assert.ok(htmlIncludes(html, 'What BaseballOS Sees'))
   assert.ok(htmlIncludes(html, 'Every morning BaseballOS watches every bullpen in baseball'))
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
   assert.ok(htmlIncludes(html, 'The relievers could not hold the lead.'))
   assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
@@ -226,6 +227,9 @@ test('Intelligence Surface renders the flagship story without raw JSON fields', 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
   for (const raw of ['lead_story', 'story_priority', 'lost_game_shape', 'public_headline']) {
     assert.equal(html.includes(raw), false, raw)
+  }
+  for (const implementationCopy of ['existing dashboard snapshot', 'existing landscape endpoint', 'internal adapter']) {
+    assert.equal(html.includes(implementationCopy), false, implementationCopy)
   }
 })
 
@@ -243,11 +247,12 @@ test('empty Intelligence Surface response shows a graceful story fallback', () =
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'BaseballOS is still watching today'))
+  assert.ok(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'))
+  assert.ok(htmlIncludes(html, 'will only surface a lead story when the evidence is strong enough.'))
   assert.ok(htmlIncludes(html, 'No publishable bullpen story is available from the current completed-game context.'))
 })
 
-test('Around Baseball uses dashboard observations, excludes the lead team, and caps at three', () => {
+test('Around Baseball editorializes dashboard observations, excludes the lead team, and caps at three', () => {
   const lead = getLeadStoryView(intelligenceOk, teams)
   const items = getAroundBaseballItems(dashboard, lead)
 
@@ -255,6 +260,11 @@ test('Around Baseball uses dashboard observations, excludes the lead team, and c
     'New York Mets',
     'Milwaukee Brewers',
     'Toronto Blue Jays',
+  ])
+  assert.deepEqual(items.map(item => item.title), [
+    'New York Mets added 2 rested arms',
+    'Milwaukee Brewers lost 2 rested arms',
+    'Toronto Blue Jays held steady',
   ])
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
@@ -265,8 +275,10 @@ test('Around Baseball uses dashboard observations, excludes the lead team, and c
   }))
 
   assert.ok(htmlIncludes(html, 'Around Baseball'))
+  assert.ok(htmlIncludes(html, 'Other bullpen movement BaseballOS is tracking across the league.'))
   assert.equal(htmlIncludes(html, 'Giants bullpen moved from 4 to 2 rested relievers.'), false)
-  assert.ok(htmlIncludes(html, 'Mets bullpen moved from 3 to 5 rested relievers.'))
+  assert.equal(htmlIncludes(html, 'Mets bullpen moved from 3 to 5 rested relievers.'), false)
+  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
   assert.ok(htmlIncludes(html, 'Toronto still has 4 rested relievers today.'))
 })
 
@@ -278,7 +290,7 @@ test('Around Baseball falls back when there is no existing dashboard observation
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'League-wide secondary observations are not available in this snapshot yet.'))
+  assert.ok(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'))
 })
 
 test('Bullpen Picture renders existing landscape lanes and handles missing data', () => {
@@ -298,12 +310,15 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   }))
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
+  assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested, constrained, or worth monitoring.'))
   assert.ok(htmlIncludes(html, 'Most Available'))
   assert.ok(htmlIncludes(html, 'Most Constrained'))
   assert.ok(htmlIncludes(html, 'Worth Watching'))
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))
   assert.ok(htmlIncludes(html, 'TOR'))
+  assert.ok(htmlIncludes(html, 'flex-col items-start gap-1'))
+  assert.ok(htmlIncludes(html, 'max-w-full break-words font-mono text-xs'))
 
   const emptyHtml = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,

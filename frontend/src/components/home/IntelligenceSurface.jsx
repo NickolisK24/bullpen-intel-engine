@@ -10,7 +10,7 @@ import { ErrorState, LoadingPane, StaleDataNotice } from '../UI'
 import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
-  'League-wide secondary observations are not available in this snapshot yet.'
+  'No other league bullpen movement is ready to show yet.'
 
 const EMPTY_REASON_COPY = {
   no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
@@ -72,6 +72,10 @@ function cleanTeamName(value) {
   const text = textValue(value)
   if (!text) return null
   return text.replace(/^the\s+/i, '')
+}
+
+function aroundTeamLabel(team) {
+  return cleanTeamName(team?.teamName) || textValue(team?.teamAbbr) || 'This bullpen'
 }
 
 function teamIdOf(value) {
@@ -241,6 +245,50 @@ function sameTeam(left, right) {
   return Boolean(leftAbbr && rightAbbr && leftAbbr.toLowerCase() === rightAbbr.toLowerCase())
 }
 
+function restedMovement(item) {
+  const text = [
+    item?.public_headline,
+    item?.public_summary,
+  ].map(textValue).filter(Boolean).join(' ')
+
+  const moved = /\bmoved\s+from\s+(\d+)\s+to\s+(\d+)\s+rested\s+relievers?\b/i.exec(text)
+  if (moved) {
+    const from = numberValue(moved[1])
+    const to = numberValue(moved[2])
+    if (from != null && to != null) return { from, to, delta: to - from }
+  }
+
+  const more = /\b(\d+)\s+more\s+rested\s+relievers?\b/i.exec(text)
+  if (more) {
+    const delta = numberValue(more[1])
+    if (delta != null) return { from: null, to: null, delta }
+  }
+
+  const fewer = /\b(\d+)\s+fewer\s+rested\s+relievers?\b/i.exec(text)
+  if (fewer) {
+    const delta = numberValue(fewer[1])
+    if (delta != null) return { from: null, to: null, delta: -delta }
+  }
+
+  return null
+}
+
+function aroundBaseballTitle(item, team) {
+  const label = aroundTeamLabel(team)
+  const movement = restedMovement(item)
+  if (movement) {
+    if (movement.delta > 1) return `${label} added ${movement.delta} rested arms`
+    if (movement.delta === 1) return `${label} added a rested arm`
+    if (movement.delta < -1) return `${label} lost ${Math.abs(movement.delta)} rested arms`
+    if (movement.delta === -1) return `${label} lost a rested arm`
+    return `${label} held steady`
+  }
+
+  const rawTitle = textValue(item?.public_headline)
+  if (rawTitle && !/\bmoved\s+from\b/i.test(rawTitle)) return rawTitle
+  return `${label} bullpen movement`
+}
+
 export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
   const rawItems = dashboard?.what_changed_since_yesterday?.items
   const items = Array.isArray(rawItems) ? rawItems : []
@@ -250,7 +298,7 @@ export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
     .filter(item => !sameTeam(item, leadTeam))
     .map(item => {
       const team = teamOptionValue(item)
-      const title = textValue(item.public_headline)
+      const title = aroundBaseballTitle(item, team)
       const body = textValue(item.public_summary)
       if (!title || !body) return null
       return {
@@ -360,8 +408,11 @@ function StoryEmptyState({ intelligence }) {
   return (
     <div className="border border-dirt bg-dugout p-5 sm:p-7" aria-live="polite">
       <h3 className="font-display text-3xl leading-none tracking-wide text-chalk100">
-        BaseballOS is still watching today's bullpen picture.
+        No lead bullpen story has cleared the bar yet.
       </h3>
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-chalk400">
+        BaseballOS is still reviewing the latest completed-game context and will only surface a lead story when the evidence is strong enough.
+      </p>
       {emptyReason && (
         <p className="mt-3 font-mono text-xs uppercase tracking-wider text-chalk500">
           {emptyReason}
@@ -527,7 +578,7 @@ function AroundBaseball({
       id="around-baseball"
       eyebrow="Around Baseball"
       title="Around Baseball"
-      subtitle="Smaller league observations from the existing dashboard snapshot."
+      subtitle="Other bullpen movement BaseballOS is tracking across the league."
     >
       {loading && !dashboard ? (
         <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">
@@ -554,7 +605,7 @@ function AroundBaseball({
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="Around Baseball is using the last loaded dashboard snapshot because the latest refresh failed."
+              message="Around Baseball is using the last loaded league read because the latest refresh failed."
               onRetry={onRetry}
             />
           )}
@@ -602,7 +653,7 @@ function BullpenPicture({
       id="bullpen-picture"
       eyebrow="Today's Bullpen Picture"
       title="Today's Bullpen Picture"
-      subtitle="A compact league reference strip from the existing landscape endpoint."
+      subtitle="A quick look at which bullpens look rested, constrained, or worth monitoring."
     >
       {loading && !landscape ? (
         <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">
@@ -635,7 +686,7 @@ function BullpenPicture({
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="The bullpen picture is from the last loaded landscape response because the latest refresh failed."
+              message="The bullpen picture is from the last loaded league read because the latest refresh failed."
               onRetry={onRetry}
             />
           )}
@@ -662,13 +713,13 @@ function BullpenPicture({
                         <li key={entry.teamId ?? entry.label}>
                           <Link
                             to={entry.teamHref || '/bullpen'}
-                            className="group flex min-w-0 items-baseline justify-between gap-2 rounded px-1 py-0.5 transition-colors hover:bg-amber/5"
+                            className="group flex min-w-0 flex-col items-start gap-1 rounded px-1 py-1 transition-colors hover:bg-amber/5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2"
                             aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
                           >
                             <span className="truncate text-sm text-chalk200 group-hover:text-amber">
                               {entry.label}
                             </span>
-                            <span className="shrink-0 font-mono text-xs text-chalk400">
+                            <span className="max-w-full break-words font-mono text-xs leading-snug text-chalk400 sm:shrink-0 sm:text-right">
                               {entry[column.metric]} <span className="text-chalk600">{column.suffix}</span>
                             </span>
                           </Link>
