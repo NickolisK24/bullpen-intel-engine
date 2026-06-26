@@ -191,11 +191,20 @@ def test_surface_team_page_for_medium_importance_medium_story():
 def test_writers_consume_story_package_drop_in():
     pkg = _package()
     feed = _feed()
-    # A StoryPackage is a drop-in wherever a NarrativeFeed was accepted.
+    # A StoryPackage is a drop-in wherever a NarrativeFeed was accepted: the
+    # narrative core (headline, body, observations) is identical. The package
+    # additionally carries evidence_blocks, so its render is evidence-richer.
     for writer_cls in (TeamStoryWriter, DashboardStoryWriter, MorningBriefWriter):
-        from_package = writer_cls(pkg).write().to_dict()
-        from_feed = writer_cls(feed).write().to_dict()
-        assert from_package == from_feed
+        from_package = writer_cls(pkg).write()
+        from_feed = writer_cls(feed).write()
+        assert from_package.headline == from_feed.headline
+        assert from_package.body == from_feed.body
+        assert from_package.observations == from_feed.observations
+        # The bare feed has no evidence_blocks, so it produces no evidence bullets;
+        # the package does.
+        assert from_feed.evidence == []
+    # Team story from the package proves its observations with evidence bullets.
+    assert TeamStoryWriter(pkg).write().evidence
 
 
 def test_writer_makes_no_publication_decision():

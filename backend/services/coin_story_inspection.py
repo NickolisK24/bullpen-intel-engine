@@ -66,7 +66,10 @@ def _render_draft(package: StoryPackage, name: str) -> dict:
         'writer': draft.writer,
         'headline': draft.headline,
         'body': draft.body,
+        'observations': list(draft.observations),
+        'evidence': list(draft.evidence),
         'text': draft.text,
+        'rendered_text': draft.rendered_text,
         'metadata': draft.to_dict(),
         'is_internal_preview': is_internal_preview,
     }

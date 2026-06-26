@@ -21,7 +21,23 @@ class MorningBriefWriter(BaseStoryWriter):
             return self._draft(headline, self.lead_sentence())
 
         sentences = [self.lead_sentence()]
-        available = self.availability_snapshot().get('available_arms_count')
-        if isinstance(available, int):
-            sentences.append(f'Available arms: {available}.')
-        return self._draft(headline, ' '.join(sentences))
+
+        # Prefer named rested arms from evidence; fall back to the count.
+        names = self.available_reliever_names()
+        if names:
+            sentences.append(f"Available arms: {', '.join(names)}.")
+        else:
+            available = self.availability_snapshot().get('available_arms_count')
+            if isinstance(available, int):
+                sentences.append(f'Available arms: {available}.')
+
+        watch = self.watch_sentence()
+        if watch:
+            sentences.append(watch)
+
+        return self._draft(
+            headline,
+            ' '.join(sentences),
+            observations=self.observation_lines(),
+            evidence=self.evidence_lines(),
+        )

@@ -22,4 +22,9 @@ class TeamStoryWriter(BaseStoryWriter):
         state = self.bullpen_state_clause()
         if state is not None:
             sentences.append(state[:1].upper() + state[1:] + '.')
-        return self._draft(self.headline_text(), ' '.join(sentences))
+        return self._draft(
+            self.headline_text(),
+            ' '.join(sentences),
+            observations=self.observation_lines(),
+            evidence=self.evidence_lines(),
+        )

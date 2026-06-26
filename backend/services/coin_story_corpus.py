@@ -207,10 +207,20 @@ def render_markdown(corpus: dict) -> str:
         for writer_name, title in _MARKDOWN_WRITERS:
             lines += [f'### {title}', '']
             draft = drafts_by_writer.get(writer_name)
-            if draft:
-                lines += [f"**{draft.get('headline', '')}**", '', draft.get('body', ''), '']
-            else:
+            if not draft:
                 lines += ['No draft rendered.', '']
+                continue
+            lines += [f"**{draft.get('headline', '')}**", '', draft.get('body', ''), '']
+            observations = draft.get('observations') or []
+            if observations:
+                lines += ['Why BaseballOS sees it:']
+                lines += [f'- {line}' for line in observations]
+                lines += ['']
+            evidence = draft.get('evidence') or []
+            if evidence:
+                lines += ['Evidence:']
+                lines += [f'- {line}' for line in evidence]
+                lines += ['']
 
     return '\n'.join(lines)
 
