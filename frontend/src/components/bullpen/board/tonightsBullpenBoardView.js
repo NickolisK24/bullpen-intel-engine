@@ -335,6 +335,89 @@ export function getRosterStatusSummaryView(summary) {
   }
 }
 
+// Map a canonical Roster Authority evidence list to a presentation-safe shape. Engine
+// field names (is_active_mlb, is_inactive_context, status codes) never reach the UI — the
+// board shows the human roster-status label, the availability read, and a plain reason.
+function rosterAuthorityEvidenceList(list) {
+  return (Array.isArray(list) ? list : []).map(entry => ({
+    pitcherId: entry?.pitcher_id ?? null,
+    name: entry?.name || '—',
+    rosterStatusLabel: entry?.roster_status_label || 'Roster status',
+    availability: entry?.availability || null,
+    reason: entry?.reason || null,
+  }))
+}
+
+// Canonical Roster Authority view-model for the board banner (CRC Phase 4 migration).
+//
+// The board no longer computes roster truth — it displays it. Every count here comes
+// straight from the backend ``roster_authority`` object, which is invariant across the
+// Active / Active+Unavailable / Unavailable views. The ONLY view-dependent value is
+// ``shownOffActiveRoster`` (how many off-roster arms are rendered as cards in the current
+// filter), derived from the supplied rendered cards — never from the canonical counts.
+export function getRosterAuthorityView(rosterAuthority, { renderedCards = null } = {}) {
+  const authority = rosterAuthority && typeof rosterAuthority === 'object' ? rosterAuthority : {}
+  const counts = authority.counts || {}
+  const population = authority.population || {}
+  const evidence = authority.evidence || {}
+  const limitations = Array.isArray(authority.limitations) ? authority.limitations : []
+  const hasAuthority = Boolean(authority.capability || authority.counts || authority.population)
+
+  const bullpenArms = Number(counts.bullpen_arms || 0)
+  const offActiveRoster = Number(counts.inactive_roster_context_count || 0)
+  const rosterStatusPending = Number(counts.roster_unknown_count || 0)
+  const totalCandidates = Number(population.total_candidates || 0)
+  const coverage = typeof population.roster_status_coverage === 'number'
+    ? population.roster_status_coverage
+    : null
+
+  const offRosterEvidence = rosterAuthorityEvidenceList(evidence.inactive_roster_context_count)
+  const pendingEvidence = rosterAuthorityEvidenceList(evidence.roster_unknown_count)
+  const bullpenEvidence = rosterAuthorityEvidenceList(evidence.bullpen_arms)
+
+  // Presentation-only: how many off-roster arms have a card in the current view.
+  const renderedIds = Array.isArray(renderedCards)
+    ? new Set(renderedCards.map(card => card?.pitcher_id).filter(id => id != null))
+    : null
+  const shownOffActiveRoster = renderedIds == null
+    ? null
+    : offRosterEvidence.filter(entry => entry.pitcherId != null && renderedIds.has(entry.pitcherId)).length
+
+  const statusLabel = coverage == null
+    ? 'Roster status not loaded'
+    : coverage >= 1
+      ? 'Roster status confirmed'
+      : coverage > 0
+        ? 'Roster status partial'
+        : 'Roster status unavailable'
+  const isComplete = coverage != null && coverage >= 1 && rosterStatusPending === 0
+
+  return {
+    hasAuthority,
+    invariant: authority.invariant === true,
+    shouldShow: hasAuthority && (
+      totalCandidates > 0 || offActiveRoster > 0 || rosterStatusPending > 0 || limitations.length > 0
+    ),
+    isProminent: !isComplete || offActiveRoster > 0 || limitations.length > 0,
+    statusLabel,
+    bullpenArms,
+    offActiveRoster,
+    shownOffActiveRoster,
+    rosterStatusPending,
+    coverage,
+    coverageLabel: coverage == null ? 'Not loaded' : `${Math.round(coverage * 100)}%`,
+    evidence: {
+      bullpenArms: bullpenEvidence,
+      offActiveRoster: offRosterEvidence,
+      rosterStatusPending: pendingEvidence,
+    },
+    limitations,
+    tone: isComplete
+      ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
+      : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
+  }
+}
+
 export function getRoleView(role) {
   if (!role) return null
   const key = role.role_key || 'insufficient_data'

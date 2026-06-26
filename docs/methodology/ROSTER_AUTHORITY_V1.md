@@ -284,3 +284,72 @@ never hidden: a reader can open the count and see exactly which arms are awaitin
 confirmation, with the availability read BaseballOS already has for them. The authority
 remains byte-identical across board views, so this completeness never reintroduces
 filter-driven movement.
+
+---
+
+## 11. Phase 4 — first consumer migration (Bullpen Board banner)
+
+Status: **done.** Tonight's Bullpen Board is the first consumer to read Roster Authority.
+The board now *displays* roster truth; it no longer *computes* it. The legacy
+`roster_status` object remains in the payload for parity and rollback.
+
+### What migrated
+
+The board's roster-context banner (`frontend/.../board/BullpenBoardView.jsx` →
+`RosterStatusBanner`) previously read the legacy `board.roster_status` through
+`getRosterStatusSummaryView`. It now reads `board.roster_authority` through a new
+`getRosterAuthorityView` (`frontend/.../board/tonightsBullpenBoardView.js`). Every
+roster-context value on the board is sourced from the authority:
+
+| Banner element | Source field (Roster Authority) |
+|---|---|
+| Bullpen Arms | `counts.bullpen_arms` |
+| Off the Active Roster | `counts.inactive_roster_context_count` |
+| Roster Status Coverage | `population.roster_status_coverage` |
+| Roster Status Pending | `counts.roster_unknown_count` |
+| Evidence (who is off the roster / pending) | `evidence.inactive_roster_context_count`, `evidence.roster_unknown_count` |
+
+`getRosterStatusSummaryView` (legacy) is retained and still exported/tested for rollback;
+the banner simply no longer calls it.
+
+### The board no longer owns roster truth
+
+The only view-dependent value the banner now computes is **how many off-roster arms are
+rendered as cards in the current filter** ("showing X of N here"), derived from the
+rendered card list — never from the canonical counts. The canonical counts are
+byte-identical across Active / Active+Unavailable / Unavailable, because they come from
+`roster_authority`, which the backend already guarantees is invariant across views.
+Filters change presentation; they can no longer change a roster number.
+
+### Wording (baseball language)
+
+- "Unavailable Pitchers" + "Off Roster (not shown)" → one invariant **"Off the Active
+  Roster"** count with an expandable evidence list and a view-only "showing X of N here".
+  This removes the legacy "(not shown)" framing, which fused a roster fact with a UI state.
+- "Roster Unknown" → **"Roster Status Pending"** (an arm awaiting confirmation, not an
+  error).
+- Engine field names (`is_active_mlb`, `is_inactive_context`, status codes) never reach
+  the surface — the banner and its evidence use human roster-status labels only.
+
+### Evidence
+
+Every displayed count is inspectable: an expandable "Who is off the active roster?"
+section lists each arm (name + roster-status label + availability) straight from the
+authority's evidence — the board recomputes nothing. If the banner says "Off the Active
+Roster: 7", all seven are discoverable even when only one is rendered as a card.
+
+### The pattern for later consumers
+
+Every later migration follows this shape:
+1. Read the needed fields from `roster_authority` (counts / population / evidence); never
+   recompute roster truth in the consumer.
+2. Keep any genuinely view-dependent presentation number derived locally from what is
+   rendered, clearly separated from the canonical counts.
+3. Leave the legacy source in place (parity / rollback) until every consumer is migrated.
+4. Add tests proving canonical values are invariant across views, evidence matches counts,
+   and the legacy payload is still present.
+
+Remaining consumers to migrate (CRC-5+): capacity, resource health, stability, story,
+digest, and the team-board / comparison surfaces — one at a time, each diffed against the
+authority and kept green until its legacy path is retired. `roster_status` is removed only
+after the last consumer migrates.
