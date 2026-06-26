@@ -1,10 +1,12 @@
-"""Morning Brief Writer (COIN Phase 4).
+"""Morning Brief Writer (COIN).
 
-Produces daily brief text from a NarrativeFeed: a labeled headline, the game
-narrative sentence, and a data-forward availability line drawn straight from the
-feed's availability snapshot. The available-arms count is a present-tense read
-with no temporal claim, so it never implies a schedule the feed has not
-confirmed. Translation only.
+The morning brief answers a different question than the team story: "what does
+yesterday mean for today's bullpen?" It leads with a one-sentence recap of the
+game (not the full narrative), then turns to the bullpen itself — the available
+arms (named whenever the package provides names, otherwise a count) and where the
+relief corps now stands. It does not repeat the team story's observation list.
+All of it is present-tense and time-free; nothing implies a schedule the package
+has not confirmed. Translation only.
 """
 
 from __future__ import annotations
@@ -20,9 +22,9 @@ class MorningBriefWriter(BaseStoryWriter):
         if self.is_low_confidence():
             return self._draft(headline, self.lead_sentence())
 
-        sentences = [self.compose_body()]
+        # One-sentence recap, then the bullpen-for-today picture.
+        sentences = [self.brief_recap()]
 
-        # Prefer named rested arms from evidence; fall back to the count.
         names = self.available_reliever_names()
         if names:
             sentences.append(f"Available arms: {', '.join(names)}.")
@@ -31,15 +33,11 @@ class MorningBriefWriter(BaseStoryWriter):
             if isinstance(available, int):
                 sentences.append(f'Available arms: {available}.')
 
-        watch = self.watch_sentence()
-        if watch:
-            sentences.append(watch)
+        state = self.bullpen_state_sentence()
+        if state is not None:
+            sentences.append(state)
 
-        observations = self.observation_lines() if self.wants_observations() else []
+        # The brief proves its read with evidence but leaves the "why" list to the
+        # team story, so the two surfaces stay distinct.
         evidence = self.evidence_lines() if self.wants_evidence() else []
-        return self._draft(
-            headline,
-            ' '.join(sentences),
-            observations=observations,
-            evidence=evidence,
-        )
+        return self._draft(headline, ' '.join(sentences), observations=[], evidence=evidence)

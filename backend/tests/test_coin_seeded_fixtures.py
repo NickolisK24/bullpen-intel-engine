@@ -103,7 +103,7 @@ def test_seeded_markdown_renders_real_prose():
     assert 'Landen Roupp gave the Giants six strong innings' in md
     assert 'four-run lead' in md
     assert 'seven late runs turned the game' in md
-    assert 'Late runs allowed: 7' in md
+    assert 'Largest lead: 4' in md
 
 
 # ── No DB read / no MLB fetch ─────────────────────────────────────────────────

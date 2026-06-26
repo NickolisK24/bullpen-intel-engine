@@ -50,33 +50,44 @@ _HEADLINES = {
 }
 _DEFAULT_HEADLINE = 'Bullpen note'
 
-# Plain-language reads of the bullpen-state bands carried on the feed snapshots.
+# Natural-language reads of the bullpen-state bands, written as a predicate that
+# follows "The relief corps ...". Supported directly by the snapshot bands.
 _OPTIONALITY_PHRASE = {
-    'thin': 'thin on rested arms',
-    'narrow': 'short on clean options',
-    'flexible': 'in flexible shape',
-    'deep': 'deep on options',
+    'thin': 'is down to fewer rested options',
+    'narrow': 'is left with only a short list of clean options',
+    'flexible': 'remains in good shape',
+    'deep': 'has multiple clean options available',
 }
 _CONCENTRATION_PHRASE = {
-    'concentrated': 'leaning on a few arms',
-    'narrow': 'leaning heavily on a few arms',
+    'concentrated': 'has leaned on a few arms',
+    'narrow': 'has leaned heavily on a few arms',
 }
 
 # Plain-language reads of the narrative's observation identifiers. Only the
 # identifiers actually present on the feed are translated; nothing is invented.
 _OBSERVATION_PHRASES = {
-    'starter_created_game_shape': 'The starter created the conditions for the bullpen to finish the game.',
-    'deep_start': 'The starter reduced the bullpen burden.',
-    'lead_entering_bullpen': 'The bullpen entered with a lead.',
-    'deficit_entering_bullpen': 'The bullpen entered while trailing.',
-    'bullpen_preserved_lead': 'The bullpen protected the lead.',
-    'bullpen_lost_lead': 'The bullpen did not protect the lead.',
-    'late_runs_allowed': 'Runs came after the starter exited.',
-    'multiple_late_runs': 'Damage accumulated late rather than from one isolated moment.',
-    'comeback_completed': 'The team completed its comeback.',
+    'starter_created_game_shape': 'The starter set the bullpen up to finish the game.',
+    'deep_start': 'The starter went deep and held down the bullpen workload.',
+    'lead_entering_bullpen': 'The bullpen took over with a lead in hand.',
+    'deficit_entering_bullpen': 'The bullpen took over while the club was trailing.',
+    'bullpen_preserved_lead': 'The relievers held the lead.',
+    'bullpen_lost_lead': 'The relievers could not hold the lead.',
+    'late_runs_allowed': 'The damage came after the starter exited.',
+    'multiple_late_runs': 'The runs piled up late rather than in one moment.',
+    'comeback_completed': 'The offense finished the comeback the bullpen kept alive.',
     'bullpen_worked_long': 'The bullpen was asked to cover a long runway.',
-    'turning_point_identified': 'The game turned on a specific late inning.',
+    'turning_point_identified': 'One late inning swung the game.',
 }
+
+# Near-duplicate observations are merged into a single line so the "why" section
+# explains rather than repeats. Each group fires only when 2+ of its members are
+# present; its members are then consumed and not emitted individually.
+_OBSERVATION_GROUPS = (
+    (frozenset({'starter_created_game_shape', 'deep_start'}),
+     'The starter went deep and set the bullpen up to finish the game.'),
+    (frozenset({'late_runs_allowed', 'multiple_late_runs'}),
+     'The damage came after the starter exited and piled up late.'),
+)
 
 
 @dataclass(frozen=True)
@@ -360,7 +371,7 @@ class BaseStoryWriter:
         deficit = self.fact('largest_deficit')
         clause = 'the bullpen held the line'
         if deficit:
-            clause += f' after the team fell behind by {deficit}'
+            clause += f' after {self._team_subject()} fell behind by {deficit}'
         clause += ', keeping it close enough to complete the comeback'
         return self._start(clause)
 
@@ -398,7 +409,13 @@ class BaseStoryWriter:
     def _team_subject(self) -> str:
         completed = self._get('completed_game_context')
         name = completed.get('team_name') if isinstance(completed, dict) else None
-        return name or 'the team'
+        # Fail closed to "the club" (never the flat "the team") when the package
+        # carries no team name.
+        return name or 'the club'
+
+    def _team_possessive(self) -> str:
+        team = self._team_subject()
+        return team + "'" if team.endswith('s') else team + "'s"
 
     def _starter_name(self):
         return self._starter().get('name')
@@ -488,11 +505,11 @@ class BaseStoryWriter:
                 verb = 'combined to allow' if len(names) > 1 else 'allowed'
                 sentences.append(_sentence(
                     f'{_join_names(names)} {verb} the decisive damage, leaving '
-                    f'{team} unable to protect the game shape it had created'))
+                    f'{team} unable to protect the game shape they had created'))
             else:
                 sentences.append(_sentence(
                     f'the late damage left {team} unable to protect the game shape '
-                    f'it had created'))
+                    f'they had created'))
         return ' '.join(sentences)
 
     def _compose_protected(self, include_opening, include_consequence) -> str:
@@ -529,7 +546,7 @@ class BaseStoryWriter:
                     f'shape {team} built'))
             else:
                 sentences.append(_sentence(
-                    f'{team} protected the game shape it built'))
+                    f'{team} protected the game shape they built'))
         return ' '.join(sentences)
 
     def _compose_kept_alive(self, include_opening, include_consequence) -> str:
@@ -550,7 +567,7 @@ class BaseStoryWriter:
         else:
             narrative = 'the bullpen held the line'
             if deficit:
-                narrative += f' after the team fell behind by {_num(deficit)}'
+                narrative += f' after {team} fell behind by {_num(deficit)}'
             narrative += ', keeping it close enough to complete the comeback'
             sentences.append(self._start(narrative))
 
@@ -585,24 +602,41 @@ class BaseStoryWriter:
             return _CONCENTRATION_PHRASE[concentration]
         return None
 
-    def bullpen_state_clause(self) -> str | None:
-        """A present-tense, time-free read of the bullpen-state bands, or None."""
-        phrase = self._bullpen_state_phrase()
-        return f'the bullpen profiles as {phrase}' if phrase else None
+    def bullpen_state_sentence(self) -> str | None:
+        """A natural present-tense read of the bullpen's standing, or None.
 
-    def watch_sentence(self) -> str | None:
-        """One safe, present-tense consequence line when late damage warrants it.
-
-        No future/next-game framing — it states the current bullpen state left by
-        the most recent late-game damage, and only fires when both are known.
+        Time-free and band-supported — answers "where does the relief corps
+        stand now" without any future/next-game framing.
         """
         if self.is_low_confidence():
             return None
-        late = (self.evidence_block('late_runs') or {}).get('late_runs_allowed')
         phrase = self._bullpen_state_phrase()
-        if late and phrase:
-            return f'Recent late damage leaves the bullpen {phrase}.'
-        return None
+        return f'The relief corps {phrase}.' if phrase else None
+
+    def brief_recap(self) -> str:
+        """A single-sentence game recap for the morning brief (not the full story)."""
+        team = self._team_subject()
+        primary = self.primary_narrative()
+        lead = self._largest_lead_value()
+        deficit = self._entry_deficit_value() or self._largest_deficit_value()
+        if primary == 'lost_game_shape':
+            clause = f'{team} built '
+            clause += f'a {_num(lead)}-run lead' if lead else 'a lead'
+            clause += " but could not protect it late"
+        elif primary == 'protected_game_shape':
+            clause = f'{team} protected '
+            clause += f'a {_num(lead)}-run lead' if lead else 'the lead'
+            clause += ' to close out the win'
+        elif primary == 'bullpen_kept_team_alive':
+            clause = f'the bullpen kept {team} close'
+            if deficit:
+                clause += f' after falling behind by {_num(deficit)}'
+            clause += ', and the offense finished the comeback'
+        elif primary == 'bullpen_overexposed':
+            clause = f'a short start left {self._team_possessive()} bullpen to cover heavy innings'
+        else:
+            clause = f'{team} {self.short_summary()}'
+        return self._start(clause)
 
     def short_summary(self) -> str:
         """A terse clause for compact surfaces (dashboard)."""
@@ -636,14 +670,25 @@ class BaseStoryWriter:
 
     # ── Observation / evidence sections ───────────────────────────────────────
     def observation_lines(self) -> list[str]:
-        """Translate the present supporting observations into plain-language bullets."""
+        """Translate present observations to plain language, merging near-duplicates."""
         if self.is_low_confidence():
             return []
+        present = [o for o in self.supporting_observations() if o in _OBSERVATION_PHRASES]
+        present_set = set(present)
+        consumed: set[str] = set()
         lines: list[str] = []
-        for observation in self.supporting_observations():
-            phrase = _OBSERVATION_PHRASES.get(observation)
-            if phrase and phrase not in lines:
-                lines.append(phrase)
+        for observation in present:
+            if observation in consumed:
+                continue
+            merged = None
+            for members, phrase in _OBSERVATION_GROUPS:
+                if observation in members and len(members & present_set) >= 2:
+                    merged = phrase
+                    consumed |= members
+                    break
+            line = merged if merged is not None else _OBSERVATION_PHRASES[observation]
+            if line not in lines:
+                lines.append(line)
         return lines[:4]
 
     def _appearance_line(self, appearance) -> str | None:
@@ -659,7 +704,12 @@ class BaseStoryWriter:
         return f"{appearance['name']}{suffix}"
 
     def evidence_lines(self) -> list[str]:
-        """Compact, prioritized evidence bullets drawn only from evidence_blocks."""
+        """Compact evidence bullets that tell the baseball story, in order.
+
+        Order: starter -> largest lead/deficit -> bullpen entry -> turning point
+        -> late runs -> key relief -> clean options. Drawn only from
+        evidence_blocks; capped at five.
+        """
         if self.is_low_confidence():
             return []
         blocks = self.evidence_blocks()
@@ -674,6 +724,20 @@ class BaseStoryWriter:
                 bits.append(f"{starter['pitch_count']} pitches")
             lines.append('Starter: ' + ', '.join(bits))
 
+        # "Largest lead / deficit" is one tier: show the side the story turns on,
+        # so the bullet count stays tight and the key late facts survive.
+        largest_lead = (blocks.get('largest_lead') or {}).get('runs')
+        largest_deficit = (blocks.get('largest_deficit') or {}).get('runs')
+        primary = self.primary_narrative()
+        if primary in ('lost_game_shape', 'protected_game_shape') and largest_lead:
+            lines.append(f'Largest lead: {largest_lead}')
+        elif primary == 'bullpen_kept_team_alive' and largest_deficit:
+            lines.append(f'Largest deficit: {largest_deficit}')
+        elif largest_lead:
+            lines.append(f'Largest lead: {largest_lead}')
+        elif largest_deficit:
+            lines.append(f'Largest deficit: {largest_deficit}')
+
         entry = blocks.get('bullpen_entry_situation') or {}
         if entry.get('inning') is not None:
             text = f"Bullpen entered in the {_ordinal(entry['inning'])}"
@@ -683,20 +747,13 @@ class BaseStoryWriter:
                 text += f" trailing by {entry['deficit_when_entered']}"
             lines.append(text)
 
-        largest_lead = (blocks.get('largest_lead') or {}).get('runs')
-        if largest_lead:
-            lines.append(f'Largest lead: {largest_lead}')
-        largest_deficit = (blocks.get('largest_deficit') or {}).get('runs')
-        if largest_deficit:
-            lines.append(f'Largest deficit: {largest_deficit}')
+        turning = (blocks.get('turning_point') or {}).get('inning')
+        if turning is not None:
+            lines.append(f'Turning point: {_ordinal(turning)} inning')
 
         late = (blocks.get('late_runs') or {}).get('late_runs_allowed')
         if late is not None:
             lines.append(f'Late runs allowed: {late}')
-
-        turning = (blocks.get('turning_point') or {}).get('inning')
-        if turning is not None:
-            lines.append(f'Turning point: {_ordinal(turning)} inning')
 
         appearances = blocks.get('key_relief_appearances') or []
         formatted = [self._appearance_line(a) for a in appearances[:3]]

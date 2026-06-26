@@ -65,16 +65,17 @@ def _package(completed=None, team=None):
 
 def test_team_story_renders_observations_and_evidence():
     draft = TeamStoryWriter(_package()).write()
-    # Observation section, translated to plain language.
-    assert 'The bullpen did not protect the lead.' in draft.observations
-    assert 'The starter created the conditions for the bullpen to finish the game.' in draft.observations
+    # Observation section, translated to plain language (starter pair merged).
+    assert 'The relievers could not hold the lead.' in draft.observations
+    assert 'The starter went deep and set the bullpen up to finish the game.' in draft.observations
     # Evidence section, real facts only.
     assert 'Starter: Logan Webb, 6.0 IP, 95 pitches' in draft.evidence
     assert 'Largest lead: 4' in draft.evidence
     assert 'Late runs allowed: 7' in draft.evidence
     assert len(draft.evidence) <= 5
     # CRITICAL opening establishes the starter and the lead in natural prose.
-    assert 'Logan Webb gave the team six strong innings' in draft.body
+    # No team name in this fixture -> fail closed to "the club".
+    assert 'Logan Webb gave the club six strong innings' in draft.body
     assert 'four-run lead' in draft.body
 
 

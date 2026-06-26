@@ -16,8 +16,9 @@ class DashboardStoryWriter(BaseStoryWriter):
     def write(self):
         if self.is_low_confidence():
             return self._draft(self.headline_text(), 'No completed-game read yet.')
-        summary = self.short_summary()
-        body = summary[:1].upper() + summary[1:] + '.'
+        # Lead with the club so the one-liner never reads generically.
+        team = self._team_subject()
+        body = f'{team[:1].upper() + team[1:]} {self.short_summary()}.'
         # Stay concise: at most one evidence-backed detail, no observation list.
         evidence = self.evidence_lines()[:1]
         return self._draft(self.headline_text(), body, evidence=evidence)
