@@ -288,3 +288,29 @@ def test_board_payload_category_counts_invariant_across_views(client):
         _board(client, include_stale=False)['roster_authority']['category_counts']
         == _board(client, include_stale=True)['roster_authority']['category_counts']
     )
+
+
+# CRC Phase 9 audit guard. The legacy board ``roster_status`` summary is intentionally
+# RETAINED (not retired) because a live production consumer still reads it: the Home
+# "Tonight's Bullpen Picture" (frontend ``Home.jsx``) reads
+# ``board.roster_status.inactive_context_count``. No behaviour-preserving swap to Roster
+# Authority exists — Home fetches the DEFAULT board, where the legacy count is structurally 0,
+# while the canonical ``inactive_roster_context_count`` is view-invariant (the full off-roster
+# count). Migrating Home to the canonical field would change the displayed value (0 -> N), a
+# user-facing change out of scope for this no-behaviour-change cleanup phase. This guard locks
+# the retain decision so the legacy summary is not removed before Home.jsx is migrated.
+def test_legacy_board_roster_status_retained_pending_home_migration(client):
+    with client.application.app_context():
+        _seed_team()
+    body = _board(client)  # the DEFAULT board — exactly what Home.jsx fetches (no include_stale)
+
+    # Both payloads coexist: the canonical authority AND the retained legacy summary.
+    assert 'roster_authority' in body and 'roster_status' in body
+
+    # The exact divergence that blocks a behaviour-preserving Home.jsx migration: in the default
+    # view the legacy count Home reads is 0, but the canonical invariant count is the full 2.
+    legacy_inactive = body['roster_status']['inactive_context_count']
+    canonical_inactive = body['roster_authority']['counts']['inactive_roster_context_count']
+    assert legacy_inactive == 0
+    assert canonical_inactive == 2
+    assert legacy_inactive != canonical_inactive
