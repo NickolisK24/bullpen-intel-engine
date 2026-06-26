@@ -92,6 +92,37 @@ FIELD_INVARIANCE = {
 }
 
 
+# ── Canonical roster predicates ───────────────────────────────────────────────
+# The single authoritative interpretation of a pitcher's roster bucket, read from the
+# per-pitcher classification (services.roster_status.classify_roster_status). Roster
+# Authority owns roster truth; engine consumers (capacity, resource health, stability,
+# trust hierarchy) call these instead of redefining their own predicate. Each accepts the
+# classified ``roster_status`` dict (or None).
+
+def is_on_active_roster(roster_status):
+    """True when the pitcher is on the active MLB roster."""
+    return (roster_status or {}).get('is_active_mlb') is True
+
+
+def is_off_active_roster(roster_status):
+    """True when the pitcher is off the active roster (IL, optioned, 40-man, DFA, ...).
+
+    ``is_inactive_context`` carries the off-roster fact; ``is_active_mlb is False`` is the
+    equivalent signal from the same authoritative classification (a status is inactive
+    exactly when it is not active MLB). Both are accepted so this one predicate matches
+    every historical consumer byte-for-byte.
+    """
+    rs = roster_status or {}
+    return rs.get('is_inactive_context') is True or rs.get('is_active_mlb') is False
+
+
+def is_roster_status_unknown(roster_status):
+    """True when the pitcher's roster status is not yet confirmed (no authoritative read)."""
+    if not roster_status:
+        return True
+    return roster_status.get('status') == STATUS_UNKNOWN or roster_status.get('is_active_mlb') is None
+
+
 def _roster_status_of(record):
     value = record.get('roster_status')
     return value if isinstance(value, dict) else {}
@@ -186,15 +217,15 @@ def build_roster_authority(records, *, team=None, reference_date=None):
     """
     rows = [record for record in (records or []) if isinstance(record, dict)]
 
-    # Each candidate falls in exactly one roster bucket, using the canonical per-pitcher
-    # classification fields (no new predicate is defined here). These three buckets
+    # Each candidate falls in exactly one roster bucket, using the canonical roster
+    # predicates above (the same ones the engine consumers call). These three buckets
     # partition the population: on the active roster, off the active roster, or unconfirmed.
     active, inactive, unknown = [], [], []
     for record in rows:
         roster_status = _roster_status_of(record)
-        if roster_status.get('is_active_mlb') is True:
+        if is_on_active_roster(roster_status):
             active.append(record)
-        elif roster_status.get('is_inactive_context') is True:
+        elif is_off_active_roster(roster_status):
             inactive.append(record)
         else:
             unknown.append(record)
@@ -272,4 +303,7 @@ __all__ = [
     'CANONICAL_POPULATION_FLAGS',
     'FIELD_INVARIANCE',
     'build_roster_authority',
+    'is_on_active_roster',
+    'is_off_active_roster',
+    'is_roster_status_unknown',
 ]

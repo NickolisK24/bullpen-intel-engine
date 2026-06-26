@@ -22,6 +22,7 @@ from services.bullpen_eligibility_vocabulary import (
 from services.bullpen_identity import build_bullpen_identity
 from services.bullpen_resource_health import build_bullpen_resource_health
 from services.bullpen_trust_hierarchy import build_bullpen_trust_hierarchy
+from services.roster_authority import is_off_active_roster
 from utils.innings import decimal_innings_to_outs, log_innings_outs
 
 
@@ -108,14 +109,6 @@ def _is_bullpen_record(record: dict[str, Any]) -> bool:
     return record_is_bullpen_eligible(record)
 
 
-def _is_roster_unavailable(record: dict[str, Any]) -> bool:
-    roster_status = record.get('roster_status') or {}
-    return (
-        roster_status.get('is_inactive_context') is True
-        or roster_status.get('is_active_mlb') is False
-    )
-
-
 def _availability_status(record: dict[str, Any]) -> str:
     return str((record.get('availability') or {}).get('availability_status') or '')
 
@@ -140,7 +133,7 @@ def _is_limited_read(record: dict[str, Any]) -> bool:
 
 
 def _capacity_state(record: dict[str, Any]) -> tuple[str, str]:
-    if _is_roster_unavailable(record):
+    if is_off_active_roster(record.get('roster_status')):
         return 'unavailable', 'roster'
     if _read_key(record) == 'unavailable' or _availability_status(record) == STATUS_UNAVAILABLE:
         return 'unavailable', 'availability'
@@ -333,7 +326,7 @@ def _records(records):
             'read_key': _read_key(record),
             'state': state,
             'state_reason': reason,
-            'roster_unavailable': _is_roster_unavailable(record),
+            'roster_unavailable': is_off_active_roster(record.get('roster_status')),
             'availability_status': _availability_status(record),
             'is_swing_bulk': record_is_swing_bulk(record),
         })
