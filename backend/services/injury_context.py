@@ -18,22 +18,17 @@ from services.role_authority import (
     ROLE_UNKNOWN,
     classify_role,
 )
+from services.roster_authority import (
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_ORDER,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+    roster_status_category_for_status,
+)
 from services.roster_status import (
     INACTIVE_STATUSES,
-    STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
-    STATUS_BEREAVEMENT,
-    STATUS_DFA,
-    STATUS_IL_10,
-    STATUS_IL_15,
-    STATUS_IL_60,
     STATUS_LABELS,
-    STATUS_MINORS,
-    STATUS_NON_ROSTER,
-    STATUS_OPTIONED,
-    STATUS_PATERNITY,
-    STATUS_RESTRICTED,
-    STATUS_SUSPENDED,
     STATUS_UNKNOWN,
     classify_roster_status,
 )
@@ -57,17 +52,16 @@ STATUS_TYPE_NON_IL_INACTIVE = 'NON_IL_INACTIVE'
 
 PITCHING_POSITIONS = {'P', 'SP', 'RP', 'CL'}
 STARTER_POSITIONS = {'SP'}
-IL_STATUSES = {STATUS_IL_10, STATUS_IL_15, STATUS_IL_60}
-NON_IL_INACTIVE_STATUSES = {
-    STATUS_MINORS,
-    STATUS_OPTIONED,
-    STATUS_DFA,
-    STATUS_NON_ROSTER,
-    STATUS_40_MAN_ONLY,
-    STATUS_BEREAVEMENT,
-    STATUS_PATERNITY,
-    STATUS_SUSPENDED,
-    STATUS_RESTRICTED,
+
+# IL vs non-IL inactive is a split of Roster Authority's off-roster categories — the authority
+# owns which statuses are injured vs otherwise off the roster, so this module no longer keeps
+# its own status sets. Non-IL inactive = every off-roster category except the injured list
+# (active and unknown are not off-roster). Deriving it from ROSTER_STATUS_CATEGORY_ORDER means
+# a new off-roster category the authority adds is counted as non-IL depth here automatically.
+_OFF_ROSTER_NON_IL_CATEGORIES = frozenset(ROSTER_STATUS_CATEGORY_ORDER) - {
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
 }
 
 ROSTER_STATUS_CONTEXT_LIMITATION = (
@@ -162,9 +156,10 @@ def _inactive_share(active_count, inactive_count, *, context_available=True):
 
 
 def _status_type(status):
-    if status in IL_STATUSES:
+    category = roster_status_category_for_status(status)
+    if category == ROSTER_STATUS_CATEGORY_INJURED_LIST:
         return STATUS_TYPE_IL
-    if status in NON_IL_INACTIVE_STATUSES:
+    if category in _OFF_ROSTER_NON_IL_CATEGORIES:
         return STATUS_TYPE_NON_IL_INACTIVE
     return None
 

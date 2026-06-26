@@ -38,6 +38,7 @@ from services.roster_authority import (
     is_on_active_roster,
     is_roster_status_unknown,
     roster_status_category,
+    roster_status_category_for_status,
     roster_status_category_label,
 )
 from services.roster_status import (
@@ -124,6 +125,25 @@ def _mixed_population():
 @pytest.mark.parametrize('status_code, expected_category', sorted(EXPECTED_CATEGORY.items()))
 def test_every_roster_status_maps_to_its_canonical_category(status_code, expected_category):
     assert roster_status_category(_classified(status_code)) == expected_category
+
+
+# ── Status-code companion (CRC-7): read by the editorial contexts ─────────────
+
+@pytest.mark.parametrize('status_code, expected_category', sorted(EXPECTED_CATEGORY.items()))
+def test_status_code_helper_agrees_with_dict_classifier(status_code, expected_category):
+    # roster_status_category_for_status reads the same _CATEGORY_BY_STATUS table, so a bare
+    # status code yields the same category the dict classifier gives for that classified status.
+    assert roster_status_category_for_status(status_code) == expected_category
+    assert roster_status_category_for_status(status_code) == roster_status_category(_classified(status_code))
+
+
+def test_status_code_helper_handles_active_unknown_and_unmapped_codes():
+    # ACTIVE is active; a missing / unrecognized code is unknown (a bare code carries no
+    # off-roster signal, so the off-roster table never decides active or unknown here).
+    assert roster_status_category_for_status(STATUS_ACTIVE) == ROSTER_STATUS_CATEGORY_ACTIVE
+    assert roster_status_category_for_status(STATUS_UNKNOWN) == ROSTER_STATUS_CATEGORY_UNKNOWN
+    assert roster_status_category_for_status(None) == ROSTER_STATUS_CATEGORY_UNKNOWN
+    assert roster_status_category_for_status('SOME_FUTURE_CODE') == ROSTER_STATUS_CATEGORY_UNKNOWN
 
 
 def test_category_set_is_exactly_the_published_order():

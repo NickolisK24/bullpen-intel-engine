@@ -7,7 +7,8 @@ Companion audit: `docs/methodology/CANONICAL_ROSTER_CONTEXT_AUDIT_AND_DESIGN.md`
 
 Module: `backend/services/roster_authority.py`
 Tests: `backend/tests/test_roster_authority.py`,
-`backend/tests/test_roster_authority_categories.py` (CRC-6)
+`backend/tests/test_roster_authority_categories.py` (CRC-6),
+`backend/tests/test_editorial_roster_authority_migration.py` (CRC-7)
 
 ---
 
@@ -576,5 +577,107 @@ roster truth, so it belongs with the authority rather than in a consumer:
 - **Organizational Relationships.** Parent-club / affiliate linkage would let
   `optioned_or_minors` arms be tied to where they actually are; that linkage is roster context
   and belongs with the authority.
+
+These are recommendations only; none are implemented in this phase.
+
+---
+
+## 14. Phase 7 — editorial system migration (Story / Digest / Today)
+
+Status: **done.** The editorial roster-context family now consumes Roster Authority's
+categories instead of keeping its own status sets. Stories explain baseball; the authority
+explains roster reality — and the editorial layer no longer redefines roster truth, it reads
+it. Story and digest **output is unchanged** (the full backend suite is green); only the
+source of the injured-vs-otherwise-off-roster split moved.
+
+### What was migrated
+
+`injury_context` and `injury_il_context` are the editorial layer's roster-context builders;
+Story reads `injury_context` (depth-pressure observation), and the Digest and Today/feed
+surfaces read the Story. Each builder previously kept a private copy of "which statuses mean
+injured" and "which mean otherwise off the roster":
+
+| Module | Removed (private roster sets) | Now reads |
+|---|---|---|
+| `services/injury_context.py` | `IL_STATUSES`, `NON_IL_INACTIVE_STATUSES` | `roster_status_category_for_status` — IL = `injured_list`; non-IL inactive = every off-roster category except `injured_list` (derived from `ROSTER_STATUS_CATEGORY_ORDER`) |
+| `services/injury_il_context.py` | `INJURED_LIST_STATUSES`, `INACTIVE_ROSTER_STATUSES` | `roster_status_category_for_status` — `injured_list` → injured-list group; `active`/`unknown` map across; every other off-roster category → the inactive-roster group |
+
+`bullpen_context` assembles `injury_context` unchanged; Story (`story_observation_engine`
+depth-pressure observation), Digest (`digest_composer`), and the Today/feed surfaces carry the
+authority-sourced counts through without computing any roster grouping of their own.
+
+### New authority API: `roster_status_category_for_status(status)`
+
+The editorial contexts key off a roster **status code** (and accept partial
+`{'status': ...}` dicts), not a fully classified dict, so CRC-7 adds the status-code companion
+to `roster_status_category`:
+
+- `roster_status_category(roster_status)` — for a classified dict (predicate-driven); used where
+  the full classification is in hand (the board population, the capacity family).
+- `roster_status_category_for_status(status)` — for a bare status code. It reads the **same**
+  `_CATEGORY_BY_STATUS` table, so the status→category mapping lives in exactly one place; for any
+  fully classified status it returns the category `roster_status_category` would. `ACTIVE` is
+  `active`; a missing / unrecognized code is `unknown`.
+
+A test asserts the two agree for every status, so the editorial layer and the
+count-level authority can never drift.
+
+### Story / Digest now consume the authority (counts match)
+
+Tested in `test_editorial_roster_authority_migration.py`:
+
+- **Injury context ↔ authority.** Over a shared all-reliever population,
+  `il_bullpen_arms_count == category_counts['injured_list']`,
+  `non_il_inactive_bullpen_arms_count ==` the sum of the other off-roster categories, and
+  `inactive_bullpen_arms_count == counts['inactive_roster_context_count']`. The injury-IL
+  league `injured_list_count` / `inactive_count` reconcile the same way.
+- **Story ↔ authority.** The depth-pressure observation's `cause_inputs` IL / non-IL counts —
+  and the full story's `selected_observation` counts — equal the authority's `category_counts`
+  over the same population.
+- **Digest ↔ authority.** The digest is composed from the authority-sourced story: it carries
+  the same `story_type` and passes the story's narrative through unchanged (it computes no
+  roster truth of its own).
+- **Output stability.** A golden test pins the depth-pressure story's headline and the inactive
+  arms named in its cause paragraph — the migration moved the source of roster truth, not the
+  story.
+
+### Today surface
+
+There is no dedicated "today" roster builder. The Today/feed and What-Changed surfaces consume
+the Story (and team changes); they hold no independent roster grouping, so they inherit the
+authority's categories transitively through the migrated Story. Nothing to migrate there beyond
+Story/Digest.
+
+### Remaining consumers / remaining duplicated roster logic
+
+Legacy retained because a **live** consumer still depends on it (per the initiative rule — do
+not remove duplicated logic while a consumer needs it):
+
+- `services/bullpen_resource_health.py::INJURED_LIST_STATUSES` — the capacity family's IL split,
+  not the editorial layer. A CRC-7 test pins `category_counts['injured_list']` to Resource
+  Health's `injured_reliever_count`, proving the swap to the `injured_list` category will move no
+  number; the deletion belongs to a capacity-family follow-up (CRC-8), not this editorial phase.
+- `services/pitcher_public_labels.py::INACTIVE_ROSTER_STATUSES` / `_roster_unavailable` — a
+  public-label off-roster **predicate** (the CRC-5 `is_off_active_roster` shape), outside the
+  editorial roster-context family. A candidate for the same CRC-8 predicate/category cleanup.
+
+The legacy summary `roster_status` remains on the board payload for parity / rollback, as in
+CRC-2..6.
+
+### Future Roster Authority observations (design only — not implemented)
+
+Surfaced while migrating the editorial layer; each is roster truth a Story should *read*, never
+*invent*:
+
+- **Replacement Readiness / Immediate Reinforcements — "who replaces who" without predictions.**
+  The editorial depth-pressure story already says *how many* arms are off the roster; the
+  categories let a future read say *which* off-roster arms are realistically next-up
+  (`optioned_or_minors`, `forty_man_not_active`) versus out-of-reach (`injured_list` 60-day,
+  `restricted_or_special_list`) — purely from roster eligibility, no forecasting. That belongs
+  in the authority so every surface shares one "reinforcement-eligible" definition.
+- **Organizational Relationships.** Tying `optioned_or_minors` arms to their current affiliate is
+  roster context the Story would narrate but should not own.
+- **Bullpen Elasticity / Authority Completeness.** As noted in §12–13; the editorial layer is a
+  natural consumer once these land in the authority.
 
 These are recommendations only; none are implemented in this phase.
