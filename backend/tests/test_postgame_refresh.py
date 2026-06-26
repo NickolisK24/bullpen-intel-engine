@@ -147,8 +147,9 @@ def _boxscore():
     }
 
 
-def _patch_mlb(monkeypatch, schedule_games, boxscore=None):
-    calls = {'schedule': 0, 'boxscore': []}
+def _patch_mlb(monkeypatch, schedule_games, boxscore=None, linescore=None,
+               play_by_play=None):
+    calls = {'schedule': 0, 'boxscore': [], 'linescore': [], 'play_by_play': []}
 
     def fake_schedule(start_date=None, end_date=None, team_id=None):
         calls['schedule'] += 1
@@ -161,8 +162,18 @@ def _patch_mlb(monkeypatch, schedule_games, boxscore=None):
         calls['boxscore'].append(game_pk)
         return boxscore if boxscore is not None else _boxscore()
 
+    def fake_linescore(game_pk):
+        calls['linescore'].append(game_pk)
+        return linescore
+
+    def fake_play_by_play(game_pk):
+        calls['play_by_play'].append(game_pk)
+        return play_by_play
+
     monkeypatch.setattr(sync_service.mlb_client, 'get_schedule', fake_schedule)
     monkeypatch.setattr(sync_service.mlb_client, 'get_game_boxscore', fake_boxscore)
+    monkeypatch.setattr(sync_service.mlb_client, 'get_game_linescore', fake_linescore)
+    monkeypatch.setattr(sync_service.mlb_client, 'get_game_play_by_play', fake_play_by_play)
     sync_service.mlb_client.metrics.reset()
     return calls
 
