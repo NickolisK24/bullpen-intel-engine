@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from services.evidence_composition_service import compose_evidence_blocks
 from services.narrative_feed_builder import build_narrative_feed
 from utils.time import utc_now_naive
 
@@ -85,6 +86,7 @@ class StoryPackage:
     summary_key: str
     narrative_feed: dict
     metadata: dict
+    evidence_blocks: dict = field(default_factory=dict)
     generated_at: Any = None
 
     def to_dict(self) -> dict:
@@ -110,6 +112,7 @@ class StoryPackage:
             'summary_key': self.summary_key,
             'narrative_feed': self.narrative_feed,
             'metadata': dict(self.metadata),
+            'evidence_blocks': dict(self.evidence_blocks),
         })
         return payload
 
@@ -224,5 +227,6 @@ def build_story_package(
         summary_key=feed.get('summary_key', PRIMARY_INSUFFICIENT),
         narrative_feed=feed,
         metadata=metadata,
+        evidence_blocks=compose_evidence_blocks(feed),
         generated_at=generated_at or utc_now_naive(),
     )

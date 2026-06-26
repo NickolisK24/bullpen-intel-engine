@@ -54,8 +54,13 @@ def _completed_game_context(**over) -> dict:
 
 
 def _team_context(team_id, *, optionality_band, concentration_band,
-                  available_arms_count, stability_band='stable',
+                  available_arms_count, clean_option_names=(),
+                  stability_band='stable',
                   depth_pressure_band='moderate', workload_total=240):
+    clean_options = [
+        {'player_id': 1000 + index, 'name': name, 'availability': 'Available'}
+        for index, name in enumerate(clean_option_names)
+    ]
     return {
         'team_id': team_id,
         'bullpen_optionality_context': {
@@ -66,8 +71,9 @@ def _team_context(team_id, *, optionality_band, concentration_band,
             'restricted_arms_count': 1,
             'unavailable_arms_count': 1,
             'unknown_status_count': 0,
-            'clean_workload_options': [{'player_id': i} for i in range(available_arms_count)],
-            'secondary_options': [{'player_id': 99}],
+            'clean_workload_options': clean_options,
+            'secondary_options': [{'player_id': 99, 'name': 'Secondary Arm',
+                                   'availability': 'Monitor'}],
             'practical_close_game_paths_count': max(0, available_arms_count - 1),
             'optionality_band': optionality_band,
         },
@@ -102,9 +108,14 @@ _GIANTS = {
         lead_protected=False, lead_lost=True, comeback_completed=False, turning_inning=8,
         game_shape_created='normal_start', game_shape_protected=False,
         bullpen_story_tag='lost_game_shape', confidence='HIGH',
+        key_relief_appearances=[
+            {'name': 'Ryan Walker', 'innings': 0.2, 'runs_allowed': 4},
+            {'name': 'Tyler Rogers', 'innings': 1.0, 'runs_allowed': 3},
+        ],
     ),
     'team_context': _team_context(137, optionality_band='thin',
-                                  concentration_band='concentrated', available_arms_count=3),
+                                  concentration_band='concentrated', available_arms_count=3,
+                                  clean_option_names=['Erik Miller']),
 }
 
 # 2) Athletics — bullpen_kept_team_alive: entered down, held it, offense completed comeback.
@@ -123,9 +134,15 @@ _ATHLETICS = {
         comeback_completed=True, turning_inning=8,
         game_shape_created='normal_start',
         bullpen_story_tag='bullpen_kept_team_alive', confidence='HIGH',
+        key_relief_appearances=[
+            {'name': 'Mason Miller', 'innings': 2.0, 'runs_allowed': 0},
+            {'name': 'Lucas Erceg', 'innings': 1.0, 'runs_allowed': 1},
+        ],
     ),
     'team_context': _team_context(133, optionality_band='flexible',
-                                  concentration_band='normal', available_arms_count=5),
+                                  concentration_band='normal', available_arms_count=5,
+                                  clean_option_names=['Mason Miller', 'Lucas Erceg',
+                                                      'Tyler Ferguson']),
 }
 
 # 3) Rays — protected_game_shape: starter handed a lead, bullpen shut the door, no late runs.
@@ -144,9 +161,15 @@ _RAYS = {
         lead_protected=True, lead_lost=False, comeback_completed=False,
         game_shape_created='normal_start', game_shape_protected=True,
         bullpen_story_tag='protected_game_shape', confidence='HIGH',
+        key_relief_appearances=[
+            {'name': 'Pete Fairbanks', 'innings': 1.0, 'runs_allowed': 0},
+            {'name': 'Jason Adam', 'innings': 1.0, 'runs_allowed': 1},
+        ],
     ),
     'team_context': _team_context(139, optionality_band='deep',
-                                  concentration_band='balanced', available_arms_count=6),
+                                  concentration_band='balanced', available_arms_count=6,
+                                  clean_option_names=['Pete Fairbanks', 'Jason Adam',
+                                                      'Garrett Cleavinger']),
 }
 
 # 4) Yankees — bullpen_overexposed: short start forced the pen to cover heavy innings.
@@ -164,9 +187,14 @@ _YANKEES = {
         late_runs_allowed=1, runs_allowed_innings_7_to_9=1,
         game_shape_created='short_start',
         bullpen_story_tag='bullpen_overexposed', confidence='MEDIUM',
+        key_relief_appearances=[
+            {'name': 'Ian Hamilton', 'innings': 2.1, 'runs_allowed': 1},
+            {'name': 'Tim Hill', 'innings': 1.2, 'runs_allowed': 0},
+        ],
     ),
     'team_context': _team_context(147, optionality_band='narrow',
-                                  concentration_band='concentrated', available_arms_count=2),
+                                  concentration_band='concentrated', available_arms_count=2,
+                                  clean_option_names=['Luke Weaver']),
 }
 
 SEEDED_FIXTURES = [_GIANTS, _ATHLETICS, _RAYS, _YANKEES]

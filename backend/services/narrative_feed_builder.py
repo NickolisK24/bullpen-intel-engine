@@ -179,6 +179,10 @@ def _bullpen_snapshot(team_context) -> dict:
         'context_available': bool(opt.get('context_available')),
         'clean_options_count': len(clean) if isinstance(clean, list) else None,
         'secondary_options_count': len(secondary) if isinstance(secondary, list) else None,
+        # Named lists passed through verbatim (facts the optionality layer already
+        # produced) so the evidence layer can organize relievers by name.
+        'clean_options': clean if isinstance(clean, list) else [],
+        'secondary_options': secondary if isinstance(secondary, list) else [],
         'practical_close_game_paths_count': opt.get('practical_close_game_paths_count'),
         'optionality_band': opt.get('optionality_band'),
         'stability_band': stability.get('stability_band'),
