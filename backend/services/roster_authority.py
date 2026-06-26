@@ -42,6 +42,7 @@ from services.availability import (
 )
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
+    STATUS_ACTIVE,
     STATUS_BEREAVEMENT,
     STATUS_DFA,
     STATUS_IL_10,
@@ -223,6 +224,23 @@ def roster_status_category_label(category):
     return ROSTER_STATUS_CATEGORY_LABELS.get(
         category, ROSTER_STATUS_CATEGORY_LABELS[ROSTER_STATUS_CATEGORY_UNKNOWN]
     )
+
+
+def roster_status_category_for_status(status):
+    """Canonical category for a bare roster status code (one of ROSTER_STATUS_CATEGORY_ORDER).
+
+    The status-code companion to ``roster_status_category`` for callers that hold a roster
+    status code but not a full classified dict — the editorial roster contexts key off the
+    status code (and accept partial ``{'status': ...}`` dicts), so they read this. It reads
+    the same ``_CATEGORY_BY_STATUS`` table, so the status→category mapping lives in exactly
+    one place; for any fully classified status it returns the same category
+    ``roster_status_category`` would. ``ACTIVE`` is ``active``; a missing / unrecognized code
+    is ``unknown`` (a bare code carries no off-roster signal, so the off-roster table never
+    decides active or unknown here).
+    """
+    if status == STATUS_ACTIVE:
+        return ROSTER_STATUS_CATEGORY_ACTIVE
+    return _CATEGORY_BY_STATUS.get(status, ROSTER_STATUS_CATEGORY_UNKNOWN)
 
 
 def _roster_status_of(record):
@@ -442,5 +460,6 @@ __all__ = [
     'is_off_active_roster',
     'is_roster_status_unknown',
     'roster_status_category',
+    'roster_status_category_for_status',
     'roster_status_category_label',
 ]
