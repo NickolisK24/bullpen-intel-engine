@@ -6,6 +6,7 @@ import {
   appearancePitchReason,
   compactAppearanceLabel,
   compactWorkloadAppearanceLabel,
+  currentUserBaseballDay,
   dayAwareAppearanceReason,
   latestWorkloadAppearanceFromLogs,
   platformDateFromFreshness,
@@ -103,4 +104,22 @@ test('latest workload appearance skips newer zero-pitch raw rows', () => {
     gameDate: '2026-06-17',
     pitches: 14,
   })
+})
+
+test('currentUserBaseballDay returns the user local calendar day and is injectable', () => {
+  // Deterministic with an injected Date — this is the anchor for "Today" / "Yesterday".
+  assert.equal(currentUserBaseballDay(new Date(2026, 5, 26, 6, 0, 0)), '2026-06-26')
+  assert.equal(currentUserBaseballDay(new Date(2026, 0, 3, 23, 59, 0)), '2026-01-03')
+
+  // It is the user's real day, NOT the platform data-through date. On June 26, a June 25
+  // workload is one day before today, so it reads "yesterday" against this anchor.
+  const userDay = currentUserBaseballDay(new Date(2026, 5, 26))
+  assert.equal(userDay, '2026-06-26')
+  assert.equal(relativeAppearanceLabel('2026-06-25', userDay), 'yesterday')
+  assert.equal(relativeAppearanceLabel('2026-06-26', userDay), 'today')
+
+  // No argument → uses the real current day (a valid YYYY-MM-DD string).
+  assert.match(currentUserBaseballDay(), /^\d{4}-\d{2}-\d{2}$/)
+  // An invalid date is handled safely.
+  assert.equal(currentUserBaseballDay(new Date('not-a-date')), null)
 })

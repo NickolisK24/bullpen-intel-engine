@@ -131,7 +131,9 @@ test('normal freshness, roster context, and pitcher label key are collapsed by d
 })
 
 test('renders pitcher cards with name, status, fatigue, confidence and short reason', () => {
-  const html = render(populatedBoard)
+  // "Today" / "Yesterday" workload labels are relative to the user's current day, injected here
+  // for a deterministic test (the populated fixture dates its workloads relative to June 4).
+  const html = renderWithOptions({ board: populatedBoard, now: new Date(2026, 5, 4) })
   assert.ok(htmlIncludes(html, 'Larry Limited'))
   assert.ok(htmlIncludes(html, 'Availability status: Limited'))
   assert.ok(htmlIncludes(html, 'Last workload: Today (18 pitches)'))
@@ -155,15 +157,64 @@ test('compact card skips zero-pitch rows for last workload context', () => {
     last_appearance: { game_date: '2026-06-17', pitches: 14 },
   }, {
     data_through: '2026-06-20',
-  })
+  }, new Date(2026, 5, 20))
 
   assert.equal(cardView.lastAppearanceLabel, 'Last workload: Jun 17 (14 pitches)')
   assert.equal(cardView.shortReason, 'Last workload: Jun 17 (14 pitches)')
   assert.notEqual(cardView.shortReason, 'Last workload: Yesterday (0 pitches)')
 })
 
+// Day-aware workload labels (the reported bug): the "Today" / "Yesterday" anchor is the user's
+// ACTUAL current day, never the platform data-through date. Scenario: synced at 6am ET on
+// June 26 with data through completed games on June 25.
+test('last-workload label reads Yesterday for a June 25 workload viewed on June 26', () => {
+  const card = {
+    pitcher_id: 1,
+    name: 'Jane Reliever',
+    availability_status: 'Available',
+    last_workload_appearance: { game_date: '2026-06-25', pitches: 22 },
+  }
+  // The platform data-through date is June 25 (it lags one day behind the user's real day).
+  // Anchoring on it would wrongly read "Today"; anchoring on the user day (June 26) reads Yesterday.
+  const view26 = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
+  assert.equal(view26.lastAppearanceLabel, 'Last workload: Yesterday (22 pitches)')
+  assert.notEqual(view26.lastAppearanceLabel, 'Last workload: Today (22 pitches)')
+})
+
+test('last-workload label reads Today for a June 26 workload viewed on June 26', () => {
+  const card = {
+    pitcher_id: 2,
+    name: 'Joe Reliever',
+    availability_status: 'Available',
+    last_workload_appearance: { game_date: '2026-06-26', pitches: 15 },
+  }
+  const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
+  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Today (15 pitches)')
+})
+
+test('last-workload label shows a stable date for workloads older than yesterday', () => {
+  const card = {
+    pitcher_id: 3,
+    name: 'Old Reliever',
+    availability_status: 'Available',
+    last_workload_appearance: { game_date: '2026-06-24', pitches: 31 },
+  }
+  const cardView = view.getBoardCardView(card, { data_through: '2026-06-25' }, new Date(2026, 5, 26))
+  assert.equal(cardView.lastAppearanceLabel, 'Last workload: Jun 24 (31 pitches)')
+})
+
+test('the data-through provenance still shows the platform date, not the user current day', () => {
+  // The fix changes only the workload-label anchor; the "Data through" provenance is unchanged
+  // and continues to reflect the platform data date (June 25), independent of the user's day.
+  const provenance = view.getDataProvenance({
+    data_through: '2026-06-25', is_current: true, sync_status: 'success',
+  })
+  assert.ok(/Jun 25|2026-06-25|25/.test(provenance.dataThrough))
+  assert.ok(!/Jun 26|June 26/.test(provenance.dataThrough))
+})
+
 test('Why? disclosure surfaces engine reasons and limitations', () => {
-  const html = render(populatedBoard)
+  const html = renderWithOptions({ board: populatedBoard, now: new Date(2026, 5, 4) })
   assert.ok(htmlIncludes(html, 'Why?'))
   assert.ok(htmlIncludes(html, '18 pitches today'))
   assert.ok(htmlIncludes(html, '29 pitches yesterday'))

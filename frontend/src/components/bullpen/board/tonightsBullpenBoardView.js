@@ -6,10 +6,10 @@ import {
 import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import {
   compactWorkloadAppearanceLabel,
+  currentUserBaseballDay,
   dayAwareAppearanceReason,
   dayAwareAppearanceReasons,
   isWorkloadAppearance,
-  platformDateFromFreshness,
 } from '../../../utils/appearanceLanguage'
 import { getPitcherLabels } from '../../../utils/pitcherLabels'
 
@@ -412,18 +412,21 @@ export function getRolesSummaryView(roles) {
   }
 }
 
-export function getBoardCardView(card, freshness = null) {
+export function getBoardCardView(card, freshness = null, now = new Date()) {
   const badge = getAvailabilityBadgeView(card?.availability_status)
   const dataState = String(card?.data_state || 'unknown').toLowerCase()
   const showDataNote = dataState && !['fresh', 'unknown'].includes(dataState)
-  const platformDate = platformDateFromFreshness(freshness)
+  // "Today" / "Yesterday" on a workload label are relative to the user's actual current day,
+  // NOT the platform data-through date (which can lag behind the real day after a morning sync).
+  // The platform date stays separate, in the Data Freshness / "Data through" provenance below.
+  const userDay = currentUserBaseballDay(now)
   const lastAppearance = [
     card?.last_workload_appearance,
     card?.lastWorkloadAppearance,
     card?.last_appearance,
     card?.lastAppearance,
   ].find(isWorkloadAppearance) || null
-  const lastAppearanceLabel = compactWorkloadAppearanceLabel(lastAppearance, platformDate)
+  const lastAppearanceLabel = compactWorkloadAppearanceLabel(lastAppearance, userDay)
   return {
     pitcherId: card?.pitcher_id,
     name: card?.name || '—',
@@ -431,12 +434,12 @@ export function getBoardCardView(card, freshness = null) {
     badge,
     fatigueScore: card?.fatigue_score != null ? Math.round(card.fatigue_score) : null,
     confidenceLabel: formatConfidence(card?.confidence),
-    shortReason: lastAppearanceLabel || dayAwareAppearanceReason(card?.short_reason, lastAppearance, platformDate) || null,
+    shortReason: lastAppearanceLabel || dayAwareAppearanceReason(card?.short_reason, lastAppearance, userDay) || null,
     lastAppearance,
     lastAppearanceLabel,
     dataState,
     dataStateView: showDataNote ? getDataStateView(dataState) : null,
-    reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, platformDate),
+    reasons: dayAwareAppearanceReasons(card?.reasons, lastAppearance, userDay),
     limitations: Array.isArray(card?.limitations) ? card.limitations : [],
     pitcherLabels: getPitcherLabels(card),
     role: getRoleView(card?.role),
