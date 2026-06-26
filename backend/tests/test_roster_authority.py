@@ -225,8 +225,14 @@ def test_evidence_entries_are_inspectable_and_sorted():
     # Sorted deterministically by name then pitcher id.
     assert [entry['name'] for entry in bullpen] == sorted(entry['name'] for entry in bullpen)
     sample = authority['evidence']['inactive_roster_context_count'][0]
-    assert set(sample) == {'pitcher_id', 'name', 'roster_status', 'roster_status_label', 'availability', 'reason'}
+    assert set(sample) == {
+        'pitcher_id', 'name', 'roster_status', 'roster_status_label',
+        'roster_status_category', 'roster_status_category_label', 'availability', 'reason',
+    }
     assert sample['reason']  # plain-language, non-empty
+    # The first off-roster arm is the 60-day IL pitcher, grouped under the injured-list category.
+    assert sample['roster_status_category'] == 'injured_list'
+    assert sample['roster_status_category_label'] == 'Injured list'
 
 
 # ── Coverage & unknown ────────────────────────────────────────────────────────
