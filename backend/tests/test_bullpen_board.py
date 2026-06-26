@@ -38,7 +38,6 @@ from services.rotation_support_pressure import LIMITED_SAMPLE_LIMITATION as ROTA
 from services.availability_population import current_availability_records
 from services.availability_snapshot import latest_fatigue_rows as availability_latest_fatigue_rows
 from services.roster_status import (
-    ROSTER_STATUS_UNAVAILABLE_LIMITATION,
     STATUS_ACTIVE,
     STATUS_BEREAVEMENT,
     STATUS_IL_15,
@@ -809,7 +808,9 @@ class TestBoardEndpoint:
         assert names == ['Reds Active Relief Context']
         assert body['total_pitchers'] == 1
         assert body['context']['metrics']['total_relievers'] == 1
-        assert body['roster_status']['excluded_inactive_count'] == 3
+        # The 3 off-roster arms (IL_60, IL_15, MINORS) are counted by Roster Authority and
+        # excluded from the active cards (the legacy roster_status summary was retired in CRC-10).
+        assert body['roster_authority']['counts']['inactive_roster_context_count'] == 3
         capacity = body['capacity_intelligence']['capacity_loss']
         assert body['capacity_intelligence']['capability'] == 'bullpen_capacity_intelligence_v1'
         assert capacity['total_bullpen_pitcher_count'] == 4
@@ -906,7 +907,7 @@ class TestBoardEndpoint:
 
         assert default_cards == []
         assert default_body['total_pitchers'] == 0
-        assert default_body['roster_status']['excluded_inactive_count'] == 1
+        assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
 
         expanded_body = client.get('/api/bullpen/teams/135/board?include_stale=true').get_json()
         cards = [card for group in expanded_body['groups'] for card in group['pitchers']]
@@ -948,7 +949,7 @@ class TestBoardEndpoint:
         ]
 
         assert default_names == []
-        assert default_body['roster_status']['excluded_inactive_count'] == 1
+        assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
 
         expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
         expanded_cards = [
@@ -993,8 +994,8 @@ class TestBoardEndpoint:
 
         assert default_cards == []
         assert default_body['total_pitchers'] == 0
-        assert default_body['roster_status']['unknown_count'] == 1
-        assert default_body['roster_status']['active_mlb_count'] == 0
+        assert default_body['roster_authority']['counts']['roster_unknown_count'] == 1
+        assert default_body['roster_authority']['counts']['bullpen_arms'] == 0
 
         expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
         expanded_cards = [
@@ -1004,8 +1005,8 @@ class TestBoardEndpoint:
         ]
 
         assert expanded_cards == []
-        assert expanded_body['roster_status']['unknown_count'] == 1
-        assert expanded_body['roster_status']['active_mlb_count'] == 0
+        assert expanded_body['roster_authority']['counts']['roster_unknown_count'] == 1
+        assert expanded_body['roster_authority']['counts']['bullpen_arms'] == 0
 
     def test_full_roster_sync_active_label_is_not_active_mlb_on_board(self, client):
         with client.application.app_context():
@@ -1034,8 +1035,8 @@ class TestBoardEndpoint:
 
         assert default_cards == []
         assert default_body['total_pitchers'] == 0
-        assert default_body['roster_status']['active_mlb_count'] == 0
-        assert default_body['roster_status']['excluded_inactive_count'] == 1
+        assert default_body['roster_authority']['counts']['bullpen_arms'] == 0
+        assert default_body['roster_authority']['counts']['inactive_roster_context_count'] == 1
 
         expanded_body = client.get('/api/bullpen/teams/115/board?include_stale=true').get_json()
         expanded_cards = [
@@ -1096,8 +1097,10 @@ class TestBoardEndpoint:
         assert by_name['Pierce Johnson']['roster_status']['label'] == '15-Day IL'
         assert by_name['Jose Franco']['roster_status']['label'] == 'Optioned / Minors'
         assert all(card['availability_status'] != 'Available' for card in cards)
-        assert body['roster_status']['inactive_context_count'] == 3
-        assert any('not counted as active bullpen options' in limitation for limitation in body['limitations'])
+        # The 3 off-roster arms are counted by Roster Authority. (The legacy roster_status summary
+        # and its "not counted as active bullpen options" board limitation were retired in CRC-10;
+        # the off-roster context is now carried by the authority's categories and evidence.)
+        assert body['roster_authority']['counts']['inactive_roster_context_count'] == 3
 
     def test_unknown_roster_status_surfaces_limitation_without_claiming_active(self, client):
         with client.application.app_context():
@@ -1116,11 +1119,14 @@ class TestBoardEndpoint:
 
         assert cards == []
         assert body['total_pitchers'] == 0
-        assert ROSTER_STATUS_UNAVAILABLE_LIMITATION in body['limitations']
-        assert body['roster_status']['authority'] == 'unavailable'
-        assert body['roster_status']['unknown_count'] == 1
-        assert body['roster_status']['included_unknown_count'] == 0
-        assert body['roster_status']['active_mlb_count'] == 0
+        # CRC-10: the unknown-roster arm is surfaced by Roster Authority (the legacy roster_status
+        # summary was retired), without being claimed as an active bullpen arm. The roster-context
+        # caveat now lives on roster_authority.limitations, not the board's top-level limitations.
+        authority = body['roster_authority']
+        assert authority['counts']['roster_unknown_count'] == 1
+        assert authority['counts']['bullpen_arms'] == 0
+        assert authority['population']['roster_status_coverage'] < 1.0
+        assert any('unconfirmed roster status' in limitation for limitation in authority['limitations'])
 
     def test_pitcher_detail_endpoint_includes_roster_status_without_500(self, client):
         with client.application.app_context():

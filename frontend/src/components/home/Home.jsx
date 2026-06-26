@@ -32,6 +32,7 @@ import {
 import BullpenStories, { SectionHeading, StoryPresentation } from './BullpenStories'
 import DigestReturnNotice from './DigestReturnNotice'
 import {
+  getHomeRosterStatusLine,
   getMastheadView,
   homeTone,
 } from './homePresentationView'
@@ -590,7 +591,6 @@ function TonightsTeamBullpenPicture({
   const avoid = hasBoard ? boardSnapshotCount(board, 'Avoid') : 0
   const unavailable = hasBoard ? boardSnapshotCount(board, 'Unavailable') : 0
   const needingRest = limited + avoid + unavailable
-  const inactiveCount = Number(board?.roster_status?.inactive_context_count || 0)
 
   return (
     <section className="mb-9" aria-label="Tonight's bullpen picture">
@@ -648,7 +648,7 @@ function TonightsTeamBullpenPicture({
                 {stress.summary || 'No current bullpen health read is available.'}
               </p>
               <p className="mt-5 border-t border-dirt/60 pt-3 font-mono text-[11px] uppercase tracking-wider text-chalk500">
-                {rosterStatusLine(inactiveCount)}
+                {getHomeRosterStatusLine(board)}
               </p>
             </TeamPictureSlot>
           </div>
@@ -665,11 +665,6 @@ function TonightsTeamBullpenPicture({
       </div>
     </section>
   )
-}
-
-function rosterStatusLine(count) {
-  if (!Number.isFinite(count) || count < 1) return 'No roster-status limits'
-  return `${count} roster-status ${count === 1 ? 'limit' : 'limits'}`
 }
 
 function TeamPictureSlot({ label, tone = 'rest', className = '', surface = 'card', children }) {

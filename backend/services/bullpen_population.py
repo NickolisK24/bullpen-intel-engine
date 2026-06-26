@@ -20,7 +20,6 @@ from services.roster_status import (
     allows_default_board,
     allows_inactive_context,
     classify_roster_status,
-    roster_status_summary,
 )
 from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.swing_bulk_eligibility import refine_swing_bulk_eligibility
@@ -86,6 +85,7 @@ def eligible_bullpen_pitcher_contexts(
     reference_date=None,
     logs_by_pitcher=None,
     use_role_authority=None,
+    include_unknown_roster=False,
 ):
     """
     Return the default-board eligible bullpen population for a pitcher set.
@@ -103,6 +103,19 @@ def eligible_bullpen_pitcher_contexts(
                     share gate excludes a starter-leaning profile.
       - Unknown   → withheld by default; surfaced only in expanded
                     (include_inactive_context) mode, never silently a reliever.
+
+    Roster gate:
+      - Active roster      → always considered (then filtered by role).
+      - Inactive roster    → considered only in expanded (include_inactive_context)
+                             mode.
+      - Unknown roster     → withheld by default; with ``include_unknown_roster`` a
+                             pitcher whose roster status is not yet authoritative is
+                             still considered, and the role filter alone then decides
+                             bullpen eligibility. This is the Roster Authority
+                             completeness path: it surfaces bullpen-eligible arms
+                             BaseballOS can identify by role even before their roster
+                             status is confirmed. Off by default, so every existing
+                             caller is unchanged.
     """
     pitcher_list = list(pitchers or [])
     ref = reference_date or product_current_date()
@@ -116,14 +129,21 @@ def eligible_bullpen_pitcher_contexts(
         )
 
     contexts = []
-    roster_statuses = []
     for pitcher in pitcher_list:
         roster_status = classify_roster_status(pitcher)
         logs = logs_by_pitcher.get(pitcher.id, [])
         roster_status = with_recent_inactive_roster_audit(roster_status, logs, ref)
-        roster_statuses.append(roster_status)
         if not allows_default_board(roster_status):
-            if not (include_inactive_context and allows_inactive_context(roster_status)):
+            include_via_inactive = (
+                include_inactive_context and allows_inactive_context(roster_status)
+            )
+            # An unconfirmed roster status (not authoritative) is not inactive context;
+            # surface it only when the caller opts into the completeness path, leaving
+            # the role filter below to decide bullpen eligibility.
+            include_via_unknown = (
+                include_unknown_roster and not roster_status.get('is_authoritative')
+            )
+            if not (include_via_inactive or include_via_unknown):
                 continue
 
         eligibility = _eligibility_for(
@@ -147,7 +167,7 @@ def eligible_bullpen_pitcher_contexts(
             'roster_status': roster_status,
         })
 
-    return contexts, roster_status_summary(roster_statuses, contexts)
+    return contexts
 
 
 def population_diagnostic(
@@ -170,11 +190,11 @@ def population_diagnostic(
             reference_date=ref,
         )
 
-    legacy_contexts, _ = eligible_bullpen_pitcher_contexts(
+    legacy_contexts = eligible_bullpen_pitcher_contexts(
         pitcher_list, include_stale=include_stale, reference_date=ref,
         logs_by_pitcher=logs_by_pitcher, use_role_authority=False,
     )
-    role_contexts, _ = eligible_bullpen_pitcher_contexts(
+    role_contexts = eligible_bullpen_pitcher_contexts(
         pitcher_list, include_stale=include_stale, reference_date=ref,
         logs_by_pitcher=logs_by_pitcher, use_role_authority=True,
     )
@@ -234,9 +254,9 @@ def eligible_bullpen_pitchers(team_id, include_stale=False, reference_date=None)
         .order_by(Pitcher.full_name)
         .all()
     )
-    contexts, roster_summary = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitchers,
         include_stale=include_stale,
         reference_date=reference_date,
     )
-    return [context['pitcher'] for context in contexts], roster_summary
+    return [context['pitcher'] for context in contexts]

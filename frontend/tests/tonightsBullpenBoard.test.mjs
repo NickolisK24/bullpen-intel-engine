@@ -191,8 +191,8 @@ test('stale data surfaces existing trust messaging', () => {
   assert.ok(htmlIncludes(html, 'Overall Availability: No Read'))
   assert.ok(htmlIncludes(html, 'Availability note is limited by data freshness.'))
   assert.ok(htmlIncludes(html, 'Limited read - review freshness before treating this as current.'))
-  assert.ok(htmlIncludes(html, 'Roster Unknown'))
-  assert.ok(htmlIncludes(html, 'Roster context unavailable'))
+  assert.ok(htmlIncludes(html, 'Roster Status Pending'))
+  assert.ok(htmlIncludes(html, 'Roster status unavailable'))
   assert.ok(htmlIncludes(html, 'Bullpen Arms'))
   assert.ok(htmlIncludes(html, 'Roster Status Coverage'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
@@ -218,39 +218,102 @@ test('unavailable roster pitchers render status labels without active availabili
 })
 
 test('STL-like: broad roster-context count is separated from the shown unavailable cards', () => {
-  const summary = view.getRosterStatusSummaryView(rosterContextExcludedBoard.roster_status)
-  // The headline "Unavailable Pitchers" figure counts only the inactive arm that
-  // is actually shown as a card, never the broader roster-context total.
-  assert.equal(summary.unavailablePitchersCount, 1)
-  assert.equal(summary.notShownRosterContextCount, 6)
-  assert.equal(summary.rosterContextTotalCount, 7)
-
-  // The shown count maps exactly to the inspectable Unavailable cards on the board.
+  // The shown count maps exactly to the inspectable Unavailable cards on the board (1); the
+  // broader off-roster total (7) lives on Roster Authority. The legacy roster_status summary
+  // and getRosterStatusSummaryView that used to carry the shown/not-shown split were retired in CRC-10.
   const unavailableGroup = view.getBoardGroups(rosterContextExcludedBoard)
     .find(group => group.status === 'Unavailable')
-  assert.equal(unavailableGroup.pitchers.length, summary.unavailablePitchersCount)
+  assert.equal(unavailableGroup.pitchers.length, 1)
 
+  // CRC Phase 4: the migrated banner is driven by Roster Authority. It shows ONE
+  // invariant "Off the Active Roster" count (7) with a view-only "showing 1 of 7 here",
+  // and every one of the seven arms is inspectable in the evidence list.
   const html = render(rosterContextExcludedBoard)
-  assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
-  assert.ok(htmlIncludes(html, 'Ike Injured'))            // the single shown card
-  // The broader roster-context arms are surfaced on their own clearly labeled
-  // line, so the board never claims more unavailable cards than it shows.
-  assert.ok(htmlIncludes(html, 'Off Roster (not shown)'))
+  assert.ok(htmlIncludes(html, 'Off the Active Roster'))
+  assert.ok(htmlIncludes(html, 'showing 1 of 7 here'))
+  for (const name of [
+    'Ike Injured', 'Cal Optioned', 'Dom Designated', 'Ned Nonroster',
+    'Saul Suspended', 'Pat Paternity', 'Rex Restricted',
+  ]) {
+    assert.ok(htmlIncludes(html, name), `evidence missing ${name}`)
+  }
+  // The legacy "(not shown)" framing is gone — one canonical count plus a view note.
+  assert.ok(!htmlIncludes(html, 'Off Roster (not shown)'))
 })
 
 test('NYY-like: 40-man (not active) arms shown as cards back the unavailable count', () => {
-  const summary = view.getRosterStatusSummaryView(fortyManShownBoard.roster_status)
-  // Both inactive arms are shown as cards, so the count maps fully to evidence
-  // and no separate "not shown" line is needed.
-  assert.equal(summary.unavailablePitchersCount, 2)
-  assert.equal(summary.notShownRosterContextCount, 0)
-
+  // Both inactive arms are shown as cards and are inspectable in the canonical banner; no
+  // separate "not shown" line is needed. (The legacy getRosterStatusSummaryView was retired in CRC-10.)
   const html = render(fortyManShownBoard)
   assert.ok(htmlIncludes(html, 'Unavailable Pitchers'))
   assert.ok(htmlIncludes(html, '40-Man (not active)'))
   assert.ok(htmlIncludes(html, 'Milo Marquez'))
   assert.ok(htmlIncludes(html, 'Nate Nunez'))
   assert.ok(!htmlIncludes(html, 'Off Roster (not shown)'))
+})
+
+// ── CRC Phase 4: Roster Authority drives the board banner ─────────────────────
+
+test('Roster Authority counts are invariant across board views; only "shown" changes', () => {
+  const modes = [
+    view.BULLPEN_VIEW_MODE_ACTIVE,
+    view.BULLPEN_VIEW_MODE_ACTIVE_PLUS_UNAVAILABLE,
+    view.BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY,
+  ]
+  const authViews = modes.map(mode => {
+    const filtered = view.filterBoardForViewMode(rosterContextBoard, mode)
+    const rendered = view.getBoardGroups(filtered).flatMap(group => group.pitchers)
+    return view.getRosterAuthorityView(filtered.roster_authority, { renderedCards: rendered })
+  })
+
+  // Canonical roster counts are byte-identical across every view — filters never move them.
+  for (const av of authViews) {
+    assert.equal(av.offActiveRoster, 3)
+    assert.equal(av.bullpenArms, 0)
+    assert.equal(av.rosterStatusPending, 0)
+    assert.equal(av.coverageLabel, '100%')
+  }
+  // The ONLY value that changes with the view is how many off-roster arms are shown.
+  assert.equal(authViews[0].shownOffActiveRoster, 0)   // Active hides off-roster cards
+  assert.equal(authViews[1].shownOffActiveRoster, 3)   // Active + Unavailable
+  assert.equal(authViews[2].shownOffActiveRoster, 3)   // Unavailable Only
+})
+
+test('Roster Authority evidence lists match the displayed counts and are inspectable', () => {
+  const av = view.getRosterAuthorityView(rosterContextExcludedBoard.roster_authority)
+  assert.equal(av.evidence.offActiveRoster.length, av.offActiveRoster)        // 7 == 7
+  assert.equal(av.evidence.rosterStatusPending.length, av.rosterStatusPending)
+  // The rendered banner exposes every off-roster arm behind the count.
+  const html = render(rosterContextExcludedBoard)
+  for (const entry of av.evidence.offActiveRoster) {
+    assert.ok(htmlIncludes(html, entry.name), `evidence missing ${entry.name}`)
+  }
+})
+
+test('the board ships no legacy roster_status and the banner reads only Roster Authority', () => {
+  // CRC-10: the legacy roster_status board summary is retired. The board carries only the
+  // canonical roster_authority, which here describes 1 active arm.
+  const board = makeBoard({
+    cardsByStatus: { Available: [populatedBoard.groups[0].pitchers[0]] },
+  })
+  assert.ok(!('roster_status' in board))
+  // The banner reflects the AUTHORITY (1 active arm).
+  assert.equal(view.getRosterAuthorityView(board.roster_authority).bullpenArms, 1)
+  const html = render(board)
+  assert.ok(!htmlIncludes(html, '999'))
+  assert.ok(htmlIncludes(html, 'Bullpen Arms'))
+})
+
+test('getRosterAuthorityView derives shown-in-view without changing canonical counts', () => {
+  const onlyIkeRendered = view.getRosterAuthorityView(rosterContextExcludedBoard.roster_authority, {
+    renderedCards: [{ pitcher_id: 21 }],
+  })
+  assert.equal(onlyIkeRendered.offActiveRoster, 7)          // canonical, invariant
+  assert.equal(onlyIkeRendered.shownOffActiveRoster, 1)     // view-dependent presentation
+
+  const noCardsSupplied = view.getRosterAuthorityView(rosterContextExcludedBoard.roster_authority)
+  assert.equal(noCardsSupplied.offActiveRoster, 7)
+  assert.equal(noCardsSupplied.shownOffActiveRoster, null)
 })
 
 test('Active view shows active relievers and hides roster-status unavailable relievers', () => {
@@ -370,11 +433,6 @@ test('view helpers group, total, and detect stale freshness deterministically', 
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).rosterStatus.label, '60-Day IL')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[0]).pitcherLabels.read.label, 'Unavailable')
   assert.equal(view.getBoardCardView(rosterContextBoard.groups[4].pitchers[1]).rosterStatus.label, '40-Man (not active)')
-  assert.equal(view.getRosterStatusSummaryView(staleBoard.roster_status).label, 'Roster context unavailable')
-  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).unavailablePitchersCount, 3)
-  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).notShownRosterContextCount, 0)
-  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).rosterContextTotalCount, 3)
-  assert.equal(view.getRosterStatusSummaryView(rosterContextBoard.roster_status).coverageLabel, '100%')
 })
 
 test('role authority eligibility caveats render plain labels', () => {

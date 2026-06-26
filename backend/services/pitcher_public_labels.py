@@ -2,6 +2,13 @@
 
 import re
 
+from services.roster_authority import (
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+    is_off_active_roster,
+    roster_status_category_for_status,
+)
+
 
 ROLE_PUBLIC_LABELS = {
     'trust_arm': {
@@ -99,21 +106,6 @@ COVERAGE_ROLE_KEYS = {
     'multi_inning',
     'bulk',
     'coverage',
-}
-
-INACTIVE_ROSTER_STATUSES = {
-    'IL_10',
-    'IL_15',
-    'IL_60',
-    'MINORS',
-    'OPTIONED',
-    'DFA',
-    'NON_ROSTER',
-    '40_MAN_ONLY',
-    'BEREAVEMENT',
-    'PATERNITY',
-    'SUSPENDED',
-    'RESTRICTED',
 }
 
 FRESH_DATA_STATES = {'fresh', 'current', 'ok'}
@@ -225,12 +217,20 @@ def _is_mixed_starter_reliever(role, eligibility):
 
 
 def _roster_unavailable(roster_status):
+    """True when the pitcher is off the active roster — read from Roster Authority.
+
+    Roster Authority owns "off the active roster": ``is_off_active_roster`` decides a
+    classified status, and ``roster_status_category_for_status`` decides a bare status code
+    (a status with no classification flags is off-roster when its category is neither the
+    active roster nor unknown). This label keeps no private roster set or predicate.
+    """
     roster_status = roster_status or {}
+    if is_off_active_roster(roster_status):
+        return True
     status = roster_status.get('status') or roster_status.get('roster_status')
-    return (
-        status in INACTIVE_ROSTER_STATUSES
-        or roster_status.get('is_active_mlb') is False
-        or roster_status.get('is_inactive_context') is True
+    return roster_status_category_for_status(status) not in (
+        ROSTER_STATUS_CATEGORY_ACTIVE,
+        ROSTER_STATUS_CATEGORY_UNKNOWN,
     )
 
 

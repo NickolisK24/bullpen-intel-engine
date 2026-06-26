@@ -4,21 +4,14 @@ from models.pitcher import Pitcher
 from services.availability_reference_date import product_current_date
 from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
 from services.bullpen_population import eligible_bullpen_pitcher_contexts
+from services.roster_authority import (
+    ROSTER_STATUS_CATEGORY_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_UNKNOWN,
+    roster_status_category_for_status,
+)
 from services.roster_status import (
-    STATUS_40_MAN_ONLY,
-    STATUS_ACTIVE,
-    STATUS_BEREAVEMENT,
-    STATUS_DFA,
-    STATUS_IL_10,
-    STATUS_IL_15,
-    STATUS_IL_60,
     STATUS_LABELS,
-    STATUS_MINORS,
-    STATUS_NON_ROSTER,
-    STATUS_OPTIONED,
-    STATUS_PATERNITY,
-    STATUS_RESTRICTED,
-    STATUS_SUSPENDED,
     STATUS_UNKNOWN,
     classify_roster_status,
 )
@@ -31,22 +24,16 @@ STATUS_GROUP_INACTIVE_ROSTER = 'inactive_roster'
 STATUS_GROUP_ACTIVE = 'active'
 STATUS_GROUP_UNKNOWN = 'unknown'
 
-INJURED_LIST_STATUSES = {
-    STATUS_IL_10,
-    STATUS_IL_15,
-    STATUS_IL_60,
-}
-
-INACTIVE_ROSTER_STATUSES = {
-    STATUS_MINORS,
-    STATUS_OPTIONED,
-    STATUS_DFA,
-    STATUS_NON_ROSTER,
-    STATUS_40_MAN_ONLY,
-    STATUS_BEREAVEMENT,
-    STATUS_PATERNITY,
-    STATUS_SUSPENDED,
-    STATUS_RESTRICTED,
+# Roster-status groups are a coarsening of Roster Authority's canonical categories — the
+# authority owns which statuses are injured vs otherwise off the roster, so this module reads
+# its categories instead of keeping its own status sets. Every off-roster category other than
+# the injured list (optioned/minors, 40-man, restricted/special, non-roster depth) collapses
+# into the single "inactive roster" group via the default below, so a new off-roster category
+# the authority adds lands in inactive_roster automatically.
+_STATUS_GROUP_BY_CATEGORY = {
+    ROSTER_STATUS_CATEGORY_ACTIVE: STATUS_GROUP_ACTIVE,
+    ROSTER_STATUS_CATEGORY_INJURED_LIST: STATUS_GROUP_INJURED_LIST,
+    ROSTER_STATUS_CATEGORY_UNKNOWN: STATUS_GROUP_UNKNOWN,
 }
 
 EXPLANATORY_LIMITATION = (
@@ -59,13 +46,8 @@ UNKNOWN_STATUS_LIMITATION = (
 
 def status_group_for_roster_status(roster_status):
     status = (roster_status or {}).get('status') or STATUS_UNKNOWN
-    if status in INJURED_LIST_STATUSES:
-        return STATUS_GROUP_INJURED_LIST
-    if status in INACTIVE_ROSTER_STATUSES:
-        return STATUS_GROUP_INACTIVE_ROSTER
-    if status == STATUS_ACTIVE:
-        return STATUS_GROUP_ACTIVE
-    return STATUS_GROUP_UNKNOWN
+    category = roster_status_category_for_status(status)
+    return _STATUS_GROUP_BY_CATEGORY.get(category, STATUS_GROUP_INACTIVE_ROSTER)
 
 
 def _pitcher_attr(pitcher, attr, default=None):
@@ -253,7 +235,7 @@ def build_injury_il_context_payload(
             .all()
         )
     )
-    contexts, _ = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         pitcher_list,
         # Current roster-status context should not revive stale historical usage
         # to classify unavailable pitchers into the dashboard bullpen universe.

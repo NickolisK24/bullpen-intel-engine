@@ -213,9 +213,98 @@ function stressFromContext(context) {
   }
 }
 
-export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterStatus } = {}) {
+// Mirror services/roster_authority.build_roster_authority over the fixture cards so the
+// board payload carries a realistic, invariant roster_authority. Each card partitions
+// into exactly one roster bucket; the availability breakdown applies to active arms only.
+const USABLE_AVAILABILITY = ['Available', 'Monitor', 'Limited', 'Avoid']
+
+function rosterBucketOf(card) {
+  const rs = card.roster_status || {}
+  if (rs.is_inactive_context === true || rs.is_active_mlb === false || INACTIVE_ROSTER_STATUSES.has(rs.status)) {
+    return 'inactive'
+  }
+  if (rs.is_authoritative === false || rs.status === 'UNKNOWN') return 'unknown'
+  return 'active'
+}
+
+function authorityReason(card, bucket) {
+  const rs = card.roster_status || {}
+  if (bucket === 'inactive') return `Off the active roster (${rs.label || rs.status || 'inactive'}).`
+  if (bucket === 'unknown') return 'Roster status not yet confirmed.'
+  return card.availability_status === 'Unavailable'
+    ? 'On the active roster; read Unavailable for tonight.'
+    : 'On the active roster.'
+}
+
+function authorityEvidence(cards, bucket) {
+  return cards
+    .map(card => ({
+      pitcher_id: card.pitcher_id,
+      name: card.name,
+      roster_status: (card.roster_status || {}).status || 'UNKNOWN',
+      roster_status_label: (card.roster_status || {}).label || 'Roster Unknown',
+      availability: card.availability_status || null,
+      reason: authorityReason(card, bucket),
+    }))
+    .sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase())
+      || (a.pitcher_id || 0) - (b.pitcher_id || 0))
+}
+
+export function deriveRosterAuthority(cards, { referenceDate = null } = {}) {
+  const active = [], inactive = [], unknown = []
+  for (const card of cards) {
+    const bucket = rosterBucketOf(card)
+    if (bucket === 'inactive') inactive.push(card)
+    else if (bucket === 'unknown') unknown.push(card)
+    else active.push(card)
+  }
+  const byAvailability = { Available: [], Monitor: [], Limited: [], Avoid: [], Unavailable: [] }
+  const availabilityUnknown = []
+  for (const card of active) {
+    const status = card.availability_status
+    if (byAvailability[status]) byAvailability[status].push(card)
+    else availabilityUnknown.push(card)
+  }
+  const usable = USABLE_AVAILABILITY.flatMap(status => byAvailability[status])
+  const total = cards.length
+  const known = active.length + inactive.length
+  const evidence = {
+    bullpen_arms: authorityEvidence(active, 'active'),
+    active_bullpen_arms: authorityEvidence(usable, 'active'),
+    inactive_roster_context_count: authorityEvidence(inactive, 'inactive'),
+    roster_unknown_count: authorityEvidence(unknown, 'unknown'),
+    available_count: authorityEvidence(byAvailability.Available, 'active'),
+    monitor_count: authorityEvidence(byAvailability.Monitor, 'active'),
+    limited_count: authorityEvidence(byAvailability.Limited, 'active'),
+    avoid_count: authorityEvidence(byAvailability.Avoid, 'active'),
+    unavailable_count: authorityEvidence(byAvailability.Unavailable, 'active'),
+    availability_unknown_count: authorityEvidence(availabilityUnknown, 'active'),
+  }
+  const counts = Object.fromEntries(Object.entries(evidence).map(([key, list]) => [key, list.length]))
+  return {
+    capability: 'roster_authority_v1',
+    version: 'fixture',
+    source: 'backend',
+    invariant: true,
+    reference_date: referenceDate,
+    team: null,
+    population: {
+      total_candidates: total,
+      known_count: known,
+      unknown_count: unknown.length,
+      roster_status_coverage: total ? Math.round((known / total) * 10000) / 10000 : 0.0,
+    },
+    counts,
+    evidence,
+    field_invariance: Object.fromEntries(Object.keys(counts).map(key => [key, true])),
+    limitations: [],
+  }
+}
+
+export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [], context, stress, rosterAuthority } = {}) {
   const groups = buildGroups(cardsByStatus)
   const totalPitchers = groups.reduce((sum, g) => sum + g.count, 0)
+  const allCards = groups.flatMap(group => group.pitchers)
   const resolvedFreshness = freshness || {
     data_through: '2026-06-04',
     latest_workload_date: '2026-06-04',
@@ -247,17 +336,10 @@ export function makeBoard({ team, cardsByStatus = {}, freshness, limitations = [
       label: 'Current baseball data through 2026-06-04.',
       limitations: [],
     },
-    roster_status: rosterStatus || {
-      authority: 'available',
-      total_candidates: totalPitchers,
-      known_count: totalPitchers,
-      unknown_count: 0,
-      included_unknown_count: 0,
-      active_mlb_count: totalPitchers,
-      inactive_context_count: 0,
-      excluded_inactive_count: 0,
-      limitations: [],
-    },
+    // Roster Authority is the single roster-context payload (the legacy roster_status board
+    // summary was retired in CRC-10). Defaults to the authority derived from the board's cards;
+    // explicit fixtures may override it to model an authority population larger than the cards.
+    roster_authority: rosterAuthority || deriveRosterAuthority(allCards, { referenceDate: resolvedFreshness.data_through }),
     limitations,
   }
 }
@@ -345,17 +427,6 @@ export const staleBoard = makeBoard({
     label: 'Historical baseball data through 2026-04-01.',
     limitations: ['Latest game date is outside the 14-day freshness window.'],
   },
-  rosterStatus: {
-    authority: 'unavailable',
-    total_candidates: 1,
-    known_count: 0,
-    unknown_count: 1,
-    included_unknown_count: 1,
-    active_mlb_count: 0,
-    inactive_context_count: 0,
-    excluded_inactive_count: 0,
-    limitations: ['Roster status unavailable; bullpen eligibility is based on stored usage and position data.'],
-  },
 })
 
 export const rosterContextBoard = makeBoard({
@@ -414,17 +485,6 @@ export const rosterContextBoard = makeBoard({
       }),
     ],
   },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 3,
-    known_count: 3,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 0,
-    inactive_context_count: 3,
-    excluded_inactive_count: 0,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
-  },
 })
 
 // STL-like case: the roster summary knows about more roster-inactive arms than
@@ -432,6 +492,36 @@ export const rosterContextBoard = makeBoard({
 // open); the other six are off the active roster and not listed. The visible
 // "Unavailable Pitchers" count must stay at the one shown card, with the rest
 // reported separately — never folded into a single "7" that has no cards behind it.
+// STL-like canonical case: the authority knows about 7 off-roster arms, but only one of
+// them (Ike Injured) is rendered as a card. The banner must show the invariant count of 7
+// with evidence for all seven, plus a view-only "showing 1 of 7 here" — never a roster
+// number that shifts with the filter.
+function offRosterEvidenceEntry(pitcherId, name, status, label) {
+  return {
+    pitcher_id: pitcherId,
+    name,
+    roster_status: status,
+    roster_status_label: label,
+    availability: 'Unavailable',
+    reason: `Off the active roster (${label}).`,
+  }
+}
+
+const STL_OFF_ROSTER_EVIDENCE = [
+  offRosterEvidenceEntry(21, 'Ike Injured', 'IL_60', '60-Day IL'),
+  offRosterEvidenceEntry(22, 'Cal Optioned', 'MINORS', 'Optioned / Minors'),
+  offRosterEvidenceEntry(23, 'Dom Designated', 'DFA', 'DFA'),
+  offRosterEvidenceEntry(24, 'Ned Nonroster', 'NON_ROSTER', 'Non-Roster'),
+  offRosterEvidenceEntry(25, 'Saul Suspended', 'SUSPENDED', 'Suspended List'),
+  offRosterEvidenceEntry(26, 'Pat Paternity', 'PATERNITY', 'Paternity List'),
+  offRosterEvidenceEntry(27, 'Rex Restricted', 'RESTRICTED', 'Restricted List'),
+]
+
+const STL_ACTIVE_EVIDENCE = [{
+  pitcher_id: 20, name: 'Andre Active', roster_status: 'ACTIVE',
+  roster_status_label: 'Active MLB', availability: 'Available', reason: 'On the active roster.',
+}]
+
 export const rosterContextExcludedBoard = makeBoard({
   cardsByStatus: {
     Available: [
@@ -457,16 +547,32 @@ export const rosterContextExcludedBoard = makeBoard({
       }),
     ],
   },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 8,
-    known_count: 8,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 1,
-    inactive_context_count: 1,
-    excluded_inactive_count: 6,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
+  rosterAuthority: {
+    capability: 'roster_authority_v1',
+    version: 'fixture',
+    source: 'backend',
+    invariant: true,
+    reference_date: '2026-06-04',
+    team: null,
+    population: { total_candidates: 8, known_count: 8, unknown_count: 0, roster_status_coverage: 1.0 },
+    counts: {
+      bullpen_arms: 1, active_bullpen_arms: 1, inactive_roster_context_count: 7, roster_unknown_count: 0,
+      available_count: 1, monitor_count: 0, limited_count: 0, avoid_count: 0, unavailable_count: 0, availability_unknown_count: 0,
+    },
+    evidence: {
+      bullpen_arms: STL_ACTIVE_EVIDENCE,
+      active_bullpen_arms: STL_ACTIVE_EVIDENCE,
+      inactive_roster_context_count: STL_OFF_ROSTER_EVIDENCE,
+      roster_unknown_count: [],
+      available_count: STL_ACTIVE_EVIDENCE,
+      monitor_count: [], limited_count: [], avoid_count: [], unavailable_count: [], availability_unknown_count: [],
+    },
+    field_invariance: {
+      bullpen_arms: true, active_bullpen_arms: true, inactive_roster_context_count: true,
+      roster_unknown_count: true, available_count: true, monitor_count: true, limited_count: true,
+      avoid_count: true, unavailable_count: true, availability_unknown_count: true,
+    },
+    limitations: [],
   },
 })
 
@@ -499,16 +605,5 @@ export const fortyManShownBoard = makeBoard({
       fortyManNotActiveCard(30, 'Milo Marquez'),
       fortyManNotActiveCard(31, 'Nate Nunez'),
     ],
-  },
-  rosterStatus: {
-    authority: 'available',
-    total_candidates: 8,
-    known_count: 8,
-    unknown_count: 0,
-    included_unknown_count: 0,
-    active_mlb_count: 6,
-    inactive_context_count: 2,
-    excluded_inactive_count: 0,
-    limitations: ['Unavailable pitchers are shown for roster awareness and are not counted as active bullpen options.'],
   },
 })

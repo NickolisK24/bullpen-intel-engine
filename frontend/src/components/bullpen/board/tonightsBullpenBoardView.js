@@ -284,52 +284,84 @@ export function getRosterStatusView(rosterStatus) {
   }
 }
 
-export function getRosterStatusSummaryView(summary) {
-  const payload = summary || {}
-  const limitations = Array.isArray(payload.limitations) ? payload.limitations : []
-  const authority = payload.authority || 'none'
-  const totalCandidates = Number(payload.total_candidates || 0)
-  const knownCount = Number(payload.known_count || 0)
-  const unknownCount = Number(payload.included_unknown_count ?? payload.unknown_count ?? 0)
-  const inactiveContextCount = Number(payload.inactive_context_count || 0)
-  const activeMlbCount = Number(payload.active_mlb_count || 0)
-  const excludedInactiveCount = Number(payload.excluded_inactive_count || 0)
-  // Every count the board shows must map to evidence a reader can open. Only the
-  // roster-inactive arms shown on the board as cards (inactiveContextCount) have
-  // that evidence, so the "Unavailable Pitchers" figure reflects exactly those.
-  // Roster-inactive arms BaseballOS is aware of but does not list as cards
-  // (excludedInactiveCount) are reported on their own line rather than folded in,
-  // so a visible count never claims more pitchers than the cards behind it.
-  const unavailablePitchersCount = inactiveContextCount
-  const notShownRosterContextCount = excludedInactiveCount
-  const rosterContextTotalCount = inactiveContextCount + excludedInactiveCount
-  const coveragePct = totalCandidates > 0 ? Math.round((knownCount / totalCandidates) * 100) : null
-  const shouldShow = (
-    totalCandidates > 0
-    || limitations.length > 0
-    || unknownCount > 0
-    || rosterContextTotalCount > 0
-  )
+// Map a canonical Roster Authority evidence list to a presentation-safe shape. Engine
+// field names (is_active_mlb, is_inactive_context, status codes) never reach the UI — the
+// board shows the human roster-status label, the availability read, and a plain reason.
+function rosterAuthorityEvidenceList(list) {
+  return (Array.isArray(list) ? list : []).map(entry => ({
+    pitcherId: entry?.pitcher_id ?? null,
+    name: entry?.name || '—',
+    rosterStatusLabel: entry?.roster_status_label || 'Roster status',
+    availability: entry?.availability || null,
+    reason: entry?.reason || null,
+  }))
+}
+
+// Canonical Roster Authority view-model for the board banner (CRC Phase 4 migration).
+//
+// The board no longer computes roster truth — it displays it. Every count here comes
+// straight from the backend ``roster_authority`` object, which is invariant across the
+// Active / Active+Unavailable / Unavailable views. The ONLY view-dependent value is
+// ``shownOffActiveRoster`` (how many off-roster arms are rendered as cards in the current
+// filter), derived from the supplied rendered cards — never from the canonical counts.
+export function getRosterAuthorityView(rosterAuthority, { renderedCards = null } = {}) {
+  const authority = rosterAuthority && typeof rosterAuthority === 'object' ? rosterAuthority : {}
+  const counts = authority.counts || {}
+  const population = authority.population || {}
+  const evidence = authority.evidence || {}
+  const limitations = Array.isArray(authority.limitations) ? authority.limitations : []
+  const hasAuthority = Boolean(authority.capability || authority.counts || authority.population)
+
+  const bullpenArms = Number(counts.bullpen_arms || 0)
+  const offActiveRoster = Number(counts.inactive_roster_context_count || 0)
+  const rosterStatusPending = Number(counts.roster_unknown_count || 0)
+  const totalCandidates = Number(population.total_candidates || 0)
+  const coverage = typeof population.roster_status_coverage === 'number'
+    ? population.roster_status_coverage
+    : null
+
+  const offRosterEvidence = rosterAuthorityEvidenceList(evidence.inactive_roster_context_count)
+  const pendingEvidence = rosterAuthorityEvidenceList(evidence.roster_unknown_count)
+  const bullpenEvidence = rosterAuthorityEvidenceList(evidence.bullpen_arms)
+
+  // Presentation-only: how many off-roster arms have a card in the current view.
+  const renderedIds = Array.isArray(renderedCards)
+    ? new Set(renderedCards.map(card => card?.pitcher_id).filter(id => id != null))
+    : null
+  const shownOffActiveRoster = renderedIds == null
+    ? null
+    : offRosterEvidence.filter(entry => entry.pitcherId != null && renderedIds.has(entry.pitcherId)).length
+
+  const statusLabel = coverage == null
+    ? 'Roster status not loaded'
+    : coverage >= 1
+      ? 'Roster status confirmed'
+      : coverage > 0
+        ? 'Roster status partial'
+        : 'Roster status unavailable'
+  const isComplete = coverage != null && coverage >= 1 && rosterStatusPending === 0
+
   return {
-    shouldShow,
-    authority,
-    label: authority === 'available'
-      ? 'Roster context ready'
-      : authority === 'partial'
-        ? 'Roster context partial'
-        : authority === 'unavailable'
-          ? 'Roster context unavailable'
-          : 'Roster context not loaded',
-    activeMlbCount,
-    unknownCount,
-    inactiveContextCount,
-    excludedInactiveCount,
-    unavailablePitchersCount,
-    notShownRosterContextCount,
-    rosterContextTotalCount,
-    coverageLabel: coveragePct == null ? 'Not loaded' : `${coveragePct}%`,
+    hasAuthority,
+    invariant: authority.invariant === true,
+    shouldShow: hasAuthority && (
+      totalCandidates > 0 || offActiveRoster > 0 || rosterStatusPending > 0 || limitations.length > 0
+    ),
+    isProminent: !isComplete || offActiveRoster > 0 || limitations.length > 0,
+    statusLabel,
+    bullpenArms,
+    offActiveRoster,
+    shownOffActiveRoster,
+    rosterStatusPending,
+    coverage,
+    coverageLabel: coverage == null ? 'Not loaded' : `${Math.round(coverage * 100)}%`,
+    evidence: {
+      bullpenArms: bullpenEvidence,
+      offActiveRoster: offRosterEvidence,
+      rosterStatusPending: pendingEvidence,
+    },
     limitations,
-    tone: authority === 'available'
+    tone: isComplete
       ? { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7' }
       : { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623' },
   }

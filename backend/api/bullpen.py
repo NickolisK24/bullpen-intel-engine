@@ -104,6 +104,10 @@ from services.roster_status import (
     apply_roster_status_to_availability,
     classify_roster_status,
 )
+from services.roster_authority import (
+    CANONICAL_POPULATION_FLAGS,
+    build_roster_authority,
+)
 from services.roster_status_audit import with_recent_inactive_roster_audit
 from services.baseline_distribution import build_baseline_payload
 from services.season_era import build_season_era_payload
@@ -1087,7 +1091,7 @@ def _dashboard_capacity_payload(reference_date):
             reference_date=reference_date,
             calculated_at_lte=_served_score_cutoff(),
         )
-        context_records, _roster_summary = _eligible_records_for_rows(
+        context_records = _eligible_records_for_rows(
             context_rows,
             availability_by_pitcher,
             include_stale=True,
@@ -1144,7 +1148,7 @@ def _dashboard_bullpen_stability_payload(reference_date):
             reference_date=reference_date,
             calculated_at_lte=_served_score_cutoff(),
         )
-        context_records, _roster_summary = _eligible_records_for_rows(
+        context_records = _eligible_records_for_rows(
             context_rows,
             availability_by_pitcher,
             include_stale=True,
@@ -1308,19 +1312,25 @@ def _eligible_records_for_rows(
     availability_by_pitcher,
     include_stale=False,
     reference_date=None,
+    include_unknown_roster=False,
 ):
     """
     Convert (Pitcher, FatigueScore) rows into board records after applying the
     reusable bullpen eligibility filter.
+
+    ``include_unknown_roster`` (default False, so the board/changes paths are
+    unchanged) additionally surfaces bullpen-eligible arms whose roster status is not
+    yet authoritative — the Roster Authority completeness population.
     """
     ref = reference_date or product_current_date()
-    contexts, roster_summary = eligible_bullpen_pitcher_contexts(
+    contexts = eligible_bullpen_pitcher_contexts(
         [pitcher for pitcher, _score in rows],
         # Stale workload can still supply board visibility context. Role labels
         # below come from the bounded role authority, not this population helper.
         include_stale=True,
         include_inactive_context=include_stale,
         reference_date=ref,
+        include_unknown_roster=include_unknown_roster,
     )
     contexts_by_pitcher = {
         context['pitcher'].id: context
@@ -1369,7 +1379,7 @@ def _eligible_records_for_rows(
             ),
             'pitcher': pitcher,
         })
-    return records, roster_summary
+    return records
 
 
 def _board_records_from_authority_records(authority_records, reference_date=None):
@@ -1440,6 +1450,54 @@ def _inactive_context_records(records, authority_pitcher_ids):
     return context
 
 
+def _roster_authority_records(rows, availability_by_pitcher, reference_date):
+    """Assemble the full canonical Roster Authority population from a team's rows.
+
+    The canonical population is every bullpen-eligible candidate, regardless of board
+    view: on the active roster, off the active roster, AND with an unconfirmed roster
+    status (CRC-3 completeness). ``include_stale`` is fixed to the canonical value so
+    candidate selection never depends on the request, and ``include_unknown_roster``
+    surfaces bullpen-eligible arms whose roster status is not yet authoritative — the
+    role filter alone decides their bullpen eligibility. Used by both the board payload
+    and the standalone entrypoint so the two produce the same snapshot.
+    """
+    records = _eligible_records_for_rows(
+        rows,
+        availability_by_pitcher,
+        include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
+        include_unknown_roster=True,
+        reference_date=reference_date,
+    )
+    return records
+
+
+def build_team_roster_authority(team_id, reference_date=None):
+    """Canonical Roster Authority snapshot for a team (CRC entrypoint).
+
+    Assembles the full bullpen-eligible population ONCE — active, off-roster, and
+    unknown-roster candidates — independent of any board view or filter, by reusing the
+    shared board population helpers via ``_roster_authority_records``, then delegates to
+    ``services.roster_authority.build_roster_authority``. ``_team_bullpen_rows`` selects
+    candidates without regard to ``include_stale``, so the snapshot never depends on the
+    request's ``include_stale`` and is invariant across views.
+
+    Parallel only: the board exposes this alongside the legacy roster_status; no consumer
+    reads it yet. This entrypoint exists for future consumers to call directly.
+    """
+    ref = reference_date or _public_availability_reference_date(_board_freshness_block())
+    rows, availability_by_pitcher = _team_bullpen_rows(
+        team_id,
+        include_stale=CANONICAL_POPULATION_FLAGS['include_stale'],
+        reference_date=ref,
+        calculated_at_lte=_served_score_cutoff(),
+    )
+    return build_roster_authority(
+        _roster_authority_records(rows, availability_by_pitcher, ref),
+        team=_team_info_lookup(team_id),
+        reference_date=ref,
+    )
+
+
 def _build_team_board(team_id, include_stale=False, freshness=None, reference_date=None):
     """
     Build a Tonight's Bullpen Board payload for one team.
@@ -1476,13 +1534,13 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     )
 
     team_info = None
-    context_records, roster_summary = _eligible_records_for_rows(
+    context_records = _eligible_records_for_rows(
         context_rows,
         availability_by_pitcher,
         include_stale=include_stale,
         reference_date=ref,
     )
-    capacity_records, _capacity_roster_summary = _eligible_records_for_rows(
+    capacity_records = _eligible_records_for_rows(
         context_rows,
         availability_by_pitcher,
         include_stale=True,
@@ -1515,9 +1573,11 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
     if team_info is None:
         team_info = _team_info_lookup(team_id)
 
+    # Roster-context caveats are carried by the canonical roster_authority.limitations
+    # (built below); the board's top-level limitations no longer merge the retired legacy
+    # roster_status summary's limitations.
     limitations = _merge_limitations(
         freshness.get('limitations'),
-        roster_summary.get('limitations'),
     )
     workload_concentration = summarize_recent_relief_workload(
         logs_by_pitcher,
@@ -1544,12 +1604,23 @@ def _build_team_board(team_id, include_stale=False, freshness=None, reference_da
         rotation_support_pressure,
         bullpen_stability,
     )
+    # CRC (additive, parallel): build the canonical Roster Authority from the full
+    # bullpen-eligible population — active, off-roster, AND unknown-roster candidates
+    # (the CRC-3 completeness population), assembled independently of the request's
+    # ``include_stale`` so the snapshot is invariant across board views. This reuses the
+    # already-fetched ``context_rows`` (no extra row query) and is exposed alongside —
+    # never instead of — roster_status. The board cards and roster_status are unchanged.
+    roster_authority = build_roster_authority(
+        _roster_authority_records(context_rows, availability_by_pitcher, ref),
+        team=team_info,
+        reference_date=ref,
+    )
     return build_board_payload(
         team=team_info,
         records=records,
         freshness=freshness,
         limitations=limitations,
-        roster_status=roster_summary,
+        roster_authority=roster_authority,
         workload_concentration=workload_concentration,
         capacity_intelligence=capacity_intelligence,
         rotation_support_pressure=rotation_support_pressure,

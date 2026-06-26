@@ -42,3 +42,13 @@ export function getMastheadView(dashboard, now = new Date()) {
     isLive,
   }
 }
+
+// Home "Tonight's Bullpen Picture" roster line. Reads the off-the-active-roster count from
+// Roster Authority — the single source of roster truth (CRC). This count is invariant across
+// board views; the legacy roster_status board summary it used to read (which was 0 on Home's
+// default board regardless of reality) was retired in CRC-10.
+export function getHomeRosterStatusLine(board) {
+  const count = Number(board?.roster_authority?.counts?.inactive_roster_context_count || 0)
+  if (!Number.isFinite(count) || count < 1) return 'None off the active roster'
+  return `${count} off the active roster`
+}

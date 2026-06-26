@@ -15,6 +15,7 @@ from models.game_log import GameLog
 from services.availability import STATUS_UNAVAILABLE
 from services.availability_reference_date import product_current_date
 from services.bullpen_eligibility_vocabulary import record_is_bullpen_eligible
+from services.roster_authority import is_off_active_roster
 from utils.games_started import RELIEF, UNKNOWN, games_started_state
 from utils.innings import decimal_innings_to_outs, log_innings_outs
 
@@ -179,17 +180,9 @@ def _availability_status(record: dict[str, Any]) -> str:
     return str((record.get('availability') or {}).get('availability_status') or '')
 
 
-def _is_roster_unavailable(record: dict[str, Any]) -> bool:
-    roster_status = record.get('roster_status') or {}
-    return (
-        roster_status.get('is_inactive_context') is True
-        or roster_status.get('is_active_mlb') is False
-    )
-
-
 def _is_fully_unavailable(record: dict[str, Any]) -> bool:
     return (
-        _is_roster_unavailable(record)
+        is_off_active_roster(record.get('roster_status'))
         or _read_key(record) == 'unavailable'
         or _availability_status(record) == STATUS_UNAVAILABLE
     )
@@ -248,7 +241,7 @@ def _records(records):
             'pitcher_id': int(pitcher_id),
             'name': record.get('name') or _value(_pitcher(record), 'full_name'),
             'inactive_or_unavailable': _is_fully_unavailable(record),
-            'roster_unavailable': _is_roster_unavailable(record),
+            'roster_unavailable': is_off_active_roster(record.get('roster_status')),
             'availability_status': _availability_status(record),
         })
     return normalized
