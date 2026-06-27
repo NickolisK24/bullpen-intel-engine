@@ -29,15 +29,23 @@ const currentFreshness = {
 const forbiddenTerms = [
   'backend',
   'endpoint',
+  'source',
   'snapshot',
   'COIN',
   'V2',
   'V3',
   'V4',
+  '2.0',
   'deterministic',
   'recommendation engine',
   'baseline distribution',
+  'baseline',
   'governance layer',
+  'governance',
+  'coverageSafetyVersion',
+  'capacityState',
+  'resourceHealthState',
+  'thresholds',
   'sample state',
 ]
 
@@ -79,10 +87,62 @@ function modelFor(payload, options = {}) {
   return toOperatingStateReadModel(payload, options)
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function forbiddenPattern(term) {
+  const escaped = escapeRegExp(term)
+  return /^[a-z0-9]+$/i.test(term)
+    ? new RegExp(`\\b${escaped}\\b`, 'i')
+    : new RegExp(escaped, 'i')
+}
+
 function assertNoForbiddenLanguage(value) {
   const json = JSON.stringify(value)
   for (const term of forbiddenTerms) {
-    assert.equal(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(json), false, `leaked ${term}`)
+    assert.equal(forbiddenPattern(term).test(json), false, `leaked ${term}`)
+  }
+}
+
+function trustedTeamShape(overrides = {}) {
+  return {
+    source: 'backend:test_fixture',
+    coverageSafetyVersion: 'V4',
+    capacityState: 'available',
+    resourceHealthState: 'strained',
+    thresholds: { cleanOptions: 3 },
+    supportingCounts: {
+      cleanOptionCount: 2,
+      activeBullpenArms: 7,
+    },
+    byKey: {
+      cleanOptions: {
+        key: 'cleanOptions',
+        label: 'Thin Clean Options',
+        explanation: 'Cleanly available options are limited right now.',
+        reasons: ['2 clean options are available.'],
+        supportingCounts: { cleanOptionCount: 2 },
+        source: 'backend',
+      },
+      coverageSafety: {
+        key: 'coverageSafety',
+        label: 'Stable Coverage Safety',
+        explanation: 'There is still enough coverage for ordinary bullpen length.',
+        reasons: ['4 coverage arms are available.'],
+        supportingCounts: { coverageArms: 4 },
+        source: 'backend',
+      },
+      workloadConcentration: {
+        key: 'workloadConcentration',
+        label: 'Some Workload Concentration',
+        explanation: 'Recent workload is carried by a small part of the bullpen.',
+        reasons: ['The top three relief arms carried most recent relief work.'],
+        supportingCounts: { topThreeShare: 0.58 },
+        source: 'backend',
+      },
+      ...overrides,
+    },
   }
 }
 
@@ -207,6 +267,95 @@ test('freshness is attached to the read model', () => {
   assert.equal(model.freshness.hasFreshness, true)
 })
 
+test('team context reads map safe labels, explanations, and reasons only', () => {
+  const board = teamOperatingBoard({ freshness: currentFreshness })
+  board.team_shape = trustedTeamShape()
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.deepEqual(model.cleanOptions, {
+    label: 'Thin Clean Options',
+    summary: 'Cleanly available options are limited right now.',
+    reasons: ['2 clean options are available.'],
+  })
+  assert.deepEqual(model.coverageSafety, {
+    label: 'Stable Coverage Safety',
+    summary: 'There is still enough coverage for ordinary bullpen length.',
+    reasons: ['4 coverage arms are available.'],
+  })
+  assert.deepEqual(model.workloadConcentration, {
+    label: 'Some Workload Concentration',
+    summary: 'Recent workload is carried by a small part of the bullpen.',
+    reasons: ['The top three relief arms carried most recent relief work.'],
+  })
+  assert.equal(JSON.stringify(model).includes('supportingCounts'), false)
+  assert.equal(JSON.stringify(model).includes('team_shape'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(model.cleanOptions, 'key'), false)
+  assertNoForbiddenLanguage(model)
+})
+
+test('team context reads can map direct team_shape fields', () => {
+  const board = teamOperatingBoard()
+  board.team_shape = {
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Healthy Clean Options',
+      explanation: 'Enough arms are cleanly available right now.',
+      reasons: ['5 clean options are available.'],
+    },
+  }
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.deepEqual(model.cleanOptions, {
+    label: 'Healthy Clean Options',
+    summary: 'Enough arms are cleanly available right now.',
+    reasons: ['5 clean options are available.'],
+  })
+  assert.equal(model.coverageSafety, null)
+  assert.equal(model.workloadConcentration, null)
+})
+
+test('team context reads omit limited, missing, and unsafe read copy', () => {
+  const board = teamOperatingBoard()
+  board.team_shape = trustedTeamShape({
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Limited Read',
+      explanation: 'Backend team bullpen shape was not returned.',
+      reasons: ['Backend team bullpen shape was not returned.'],
+    },
+    coverageSafety: {
+      key: 'coverageSafety',
+      label: 'Stable Coverage Safety',
+      explanation: 'backend endpoint source snapshot V4 deterministic detail',
+      reasons: ['COIN source detail should not render.'],
+    },
+    workloadConcentration: {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+    },
+  })
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.equal(model.cleanOptions, null)
+  assert.equal(model.coverageSafety, null)
+  assert.equal(model.workloadConcentration, null)
+  assertNoForbiddenLanguage(model)
+})
+
+test('missing team_shape leaves team context reads null without adding trend', () => {
+  const model = modelFor(teamOperatingBoard(), { scope: 'team' })
+
+  assert.equal(model.cleanOptions, null)
+  assert.equal(model.coverageSafety, null)
+  assert.equal(model.workloadConcentration, null)
+  assert.equal(Object.prototype.hasOwnProperty.call(model, 'trendSinceYesterday'), false)
+  assert.ok(model.unsupportedFields.includes('Trend Since Yesterday'))
+  assertNoUndefined(model)
+})
+
 test('stale and fail-closed freshness carries degraded flags and limitations', () => {
   const model = modelFor(teamOperatingBoard({
     freshness: {
@@ -259,8 +408,10 @@ test('unsupported fields are named for awareness but not rendered as placeholder
   const model = modelFor(teamOperatingBoard(), { scope: 'team' })
   const visible = [...model.evidence, ...model.limitations].join(' ')
 
-  for (const field of ['Clean Options', 'Coverage Safety', 'Workload Concentration', 'Trend Since Yesterday']) {
-    assert.ok(model.unsupportedFields.includes(field))
+  assert.deepEqual(model.unsupportedFields, ['Trend Since Yesterday'])
+  assert.equal(visible.includes('Trend Since Yesterday'), false)
+  for (const field of ['Clean Options', 'Coverage Safety', 'Workload Concentration']) {
+    assert.equal(model.unsupportedFields.includes(field), false)
     assert.equal(visible.includes(field), false)
   }
   assert.equal(/unknown|null placeholder|not available yet/i.test(visible), false)

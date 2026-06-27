@@ -84,13 +84,12 @@ const TEAM_SCOPE_LIMITATION = 'BaseballOS does not know manager intent, bullpen 
 const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
 const ROTATION_SUPPORT_LIMITED_STATUSES = new Set(['limited_read', 'no_data'])
 const UNSUPPORTED_FIELDS = [
-  'Clean Options',
-  'Coverage Safety',
-  'Workload Concentration',
   'Trend Since Yesterday',
 ]
 
-const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
+const TEAM_CONTEXT_READ_KEYS = ['cleanOptions', 'coverageSafety', 'workloadConcentration']
+
+const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|sample state|coverageSafetyVersion|capacityState|resourceHealthState|thresholds)\b|2\.0/i
 const LIMITATION_COPY_PATTERN = /\b(workload-based only|does not include|not a team-specific|manager intent|bullpen phone activity|private medical|outside the active freshness window|may not reflect|treat this|limitation)\b/i
 
 function normalizeStateKey(state) {
@@ -118,6 +117,56 @@ function safeTextList(list) {
   return (Array.isArray(list) ? list : [])
     .map(safeText)
     .filter(Boolean)
+}
+
+function emptyTeamContextReads() {
+  return {
+    cleanOptions: null,
+    coverageSafety: null,
+    workloadConcentration: null,
+  }
+}
+
+function getTeamShape(payload) {
+  if (payload?.team_shape && typeof payload.team_shape === 'object') return payload.team_shape
+  if (payload?.teamShape && typeof payload.teamShape === 'object') return payload.teamShape
+  return null
+}
+
+function getTeamShapeRead(shape, key) {
+  if (!shape || typeof shape !== 'object') return null
+  const byKey = shape.byKey && typeof shape.byKey === 'object'
+    ? shape.byKey
+    : shape.by_key && typeof shape.by_key === 'object'
+      ? shape.by_key
+      : null
+  const byKeyRead = byKey?.[key]
+  if (byKeyRead && typeof byKeyRead === 'object') return byKeyRead
+  const directRead = shape[key]
+  if (directRead && typeof directRead === 'object') return directRead
+  const arrayRead = Array.isArray(shape.reads)
+    ? shape.reads.find(read => read?.key === key)
+    : null
+  return arrayRead && typeof arrayRead === 'object' ? arrayRead : null
+}
+
+function buildTeamContextRead(read) {
+  if (!read || typeof read !== 'object') return null
+  const label = safeText(read.label)
+  if (!label || normalizeStateKey(label) === 'limited_read') return null
+  const summary = safeText(read.explanation)
+  const reasons = safeTextList(read.reasons)
+  if (!summary && reasons.length === 0) return null
+  return { label, summary, reasons }
+}
+
+function buildTeamContextReads(payload, scope) {
+  if (scope !== 'team') return emptyTeamContextReads()
+  const shape = getTeamShape(payload)
+  if (!shape) return emptyTeamContextReads()
+  return Object.fromEntries(
+    TEAM_CONTEXT_READ_KEYS.map(key => [key, buildTeamContextRead(getTeamShapeRead(shape, key))]),
+  )
 }
 
 function isLimitationCopy(value) {
@@ -509,6 +558,7 @@ function buildUnavailableReadModel({ scope, teamInfo, freshness, cta, density })
     secondaryConcern: null,
     rosterPressure: null,
     starterSupportPressure: null,
+    ...emptyTeamContextReads(),
     evidence: [],
     freshness,
     hasFreshness: freshness.hasFreshness,
@@ -550,6 +600,7 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
   const stateSummary = isLeague && stateMeta.leagueSummary ? stateMeta.leagueSummary : stateMeta.summary
   const rosterPressure = resolvedScope === 'team' ? buildRosterPressure(payload?.roster_authority) : null
   const starterSupportPressure = resolvedScope === 'team' ? buildStarterSupportPressure(payload?.rotation_support_pressure) : null
+  const teamContextReads = buildTeamContextReads(payload, resolvedScope)
   const primaryConcern = safeConcern(getWorkloadConcern(context, stateKey))
   const secondaryConcern = resolvedScope === 'team'
     ? safeConcern(rosterPressure?.concern)
@@ -595,6 +646,7 @@ export function toOperatingStateReadModel(payload, { scope = 'league', team = nu
     secondaryConcern,
     rosterPressure,
     starterSupportPressure,
+    ...teamContextReads,
     evidence,
     freshness,
     hasFreshness: freshness.hasFreshness,
