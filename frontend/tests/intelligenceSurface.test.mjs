@@ -204,6 +204,27 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   ])
 })
 
+test('Intelligence Surface shell and lead story skeleton render before data resolves', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligenceLoading: true,
+    dashboardLoading: true,
+    landscapeLoading: true,
+    teams: [],
+  }))
+
+  assert.ok(htmlIncludes(html, 'What BaseballOS Sees'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s Story'))
+  assert.ok(htmlIncludes(html, 'Reading the latest completed-game context...'))
+  assert.ok(htmlIncludes(html, 'Loading today'))
+  assert.ok(htmlIncludes(html, 'min-h-[28rem]'))
+  assert.ok(htmlIncludes(html, 'Around Baseball'))
+  assert.ok(htmlIncludes(html, 'Loading secondary observations...'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
+  assert.ok(htmlIncludes(html, 'Loading bullpen picture...'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen"'))
+  assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
+})
+
 test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -291,6 +312,36 @@ test('Around Baseball falls back when there is no existing dashboard observation
   }))
 
   assert.ok(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'))
+})
+
+test('Around Baseball failure does not prevent Today story rendering', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard: null,
+    dashboardError: 'Dashboard unavailable',
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
+  assert.ok(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'))
+  assert.ok(htmlIncludes(html, 'Most Available'))
+})
+
+test('Bullpen Picture failure does not prevent Today story rendering', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard,
+    landscape: null,
+    landscapeError: 'Landscape unavailable',
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is unavailable right now.'))
+  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
 })
 
 test('Bullpen Picture renders existing landscape lanes and handles missing data', () => {

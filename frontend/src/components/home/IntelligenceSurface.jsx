@@ -6,7 +6,7 @@ import {
   getTeams,
   getTodayIntelligence,
 } from '../../utils/api'
-import { ErrorState, LoadingPane, StaleDataNotice } from '../UI'
+import { ErrorState, StaleDataNotice } from '../UI'
 import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
@@ -420,6 +420,45 @@ function StoryEmptyState({ intelligence }) {
   )
 }
 
+function StoryLoadingState() {
+  return (
+    <article
+      className="relative min-h-[28rem] overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-5 sm:p-7 lg:min-h-[30rem] lg:p-8"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-50" />
+      <div className="relative z-10">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+          Today's Story
+        </div>
+        <h3 className="mt-4 max-w-3xl font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl lg:text-6xl">
+          Reading the latest completed-game context...
+        </h3>
+        <p className="mt-5 max-w-2xl text-sm leading-relaxed text-chalk400 sm:text-base">
+          Loading today's lead story...
+        </p>
+        <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+          <div className="space-y-3" aria-hidden="true">
+            <div className="h-3 w-32 animate-pulse bg-dirt" />
+            <div className="h-3 w-full max-w-xl animate-pulse bg-dirt" />
+            <div className="h-3 w-11/12 max-w-lg animate-pulse bg-dirt" />
+            <div className="h-3 w-2/3 max-w-md animate-pulse bg-dirt" />
+          </div>
+          <div className="border border-dirt/80 bg-field/50 p-4" aria-hidden="true">
+            <div className="h-3 w-36 animate-pulse bg-dirt" />
+            <div className="mt-4 space-y-3">
+              <div className="h-3 w-4/5 animate-pulse bg-dirt" />
+              <div className="h-3 w-3/5 animate-pulse bg-dirt" />
+              <div className="h-3 w-2/3 animate-pulse bg-dirt" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function LeadMetadata({ items }) {
   if (!items.length) return null
   return (
@@ -454,9 +493,7 @@ function TodaysStory({
       className="mb-12"
     >
       {loading && !intelligence ? (
-        <div className="border border-dirt bg-dugout">
-          <LoadingPane message="Loading today's lead story..." />
-        </div>
+        <StoryLoadingState />
       ) : error && !intelligence ? (
         <ErrorState message={error} onRetry={onRetry} />
       ) : (
