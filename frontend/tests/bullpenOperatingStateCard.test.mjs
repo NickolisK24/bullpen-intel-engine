@@ -69,12 +69,15 @@ test('renders the current bullpen state in baseball-facing language', () => {
   assert.ok(htmlIncludes(html, 'Primary Concern'))
   assert.ok(htmlIncludes(html, 'Not every arm is cleanly available'))
   assert.equal(htmlIncludes(html, 'clean board'), false)
+  assert.equal(htmlIncludes(html, 'normal board'), false)
+  assert.equal(htmlIncludes(html, 'less clean room'), false)
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees This'))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, '8 of 10 relievers are classified Available.'))
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'))
+  assert.equal((html.match(/Availability classifications are workload-based only/g) || []).length, 1)
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
 })
 
@@ -214,7 +217,7 @@ test('separates limitation copy from evidence', () => {
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
-  const html = render({ context, freshness: currentFreshness })
+  const html = render({ teamLabel: 'NYY', context, freshness: currentFreshness })
   const evidenceStart = html.indexOf('Evidence')
   const freshnessStart = html.indexOf('Freshness')
   const evidenceBlock = html.slice(evidenceStart, freshnessStart)
@@ -223,6 +226,35 @@ test('separates limitation copy from evidence', () => {
   assert.equal(htmlIncludes(evidenceBlock, 'Availability classifications are workload-based only.'), false)
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
+})
+
+test('deduplicates league-wide workload limitation copy', () => {
+  const context = {
+    hasContext: true,
+    state: 'manageable',
+    label: 'Bullpen workload appears manageable.',
+    reasons: [
+      '5 of 8 relievers are classified Available.',
+      'Availability classifications are workload-based only.',
+    ],
+    limitations: [],
+    metrics: { total: 8 },
+    snapshot: [
+      { status: 'Available', label: 'Available', count: 5 },
+      { status: 'Monitor', label: 'Monitor', count: 1 },
+      { status: 'Limited', label: 'Limited', count: 1 },
+      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Unavailable', label: 'Unavailable', count: 0 },
+    ],
+  }
+  const html = render({
+    teamLabel: 'League-Wide',
+    scope: 'league',
+    context,
+    freshness: currentFreshness,
+  })
+
+  assert.equal((html.match(/Availability classifications are workload-based only/g) || []).length, 1)
 })
 
 test('view model exposes only supported operating state labels', () => {

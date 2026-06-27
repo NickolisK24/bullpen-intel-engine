@@ -39,12 +39,12 @@ const STATE_META = {
   },
   elevated: {
     label: 'Thin',
-    detail: 'The bullpen has less clean room than a normal board.',
+    detail: 'The bullpen has fewer cleanly available arms than usual.',
     tone: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
   },
   thin: {
     label: 'Thin',
-    detail: 'The bullpen has less clean room than a normal board.',
+    detail: 'The bullpen has fewer cleanly available arms than usual.',
     tone: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
   },
   constrained: {
@@ -92,10 +92,18 @@ function isLimitationCopy(value) {
   return LIMITATION_COPY_PATTERN.test(String(value || ''))
 }
 
+function limitationKey(value) {
+  const normalized = String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  if (normalized.includes('availability classifications are workload-based only')) {
+    return 'availability-classifications-workload-based-only'
+  }
+  return normalized
+}
+
 function uniqueList(list) {
   const seen = new Set()
   return list.filter(item => {
-    const key = String(item || '').toLowerCase()
+    const key = limitationKey(item)
     if (!key || seen.has(key)) return false
     seen.add(key)
     return true
