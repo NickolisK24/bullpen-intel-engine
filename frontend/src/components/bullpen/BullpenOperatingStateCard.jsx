@@ -39,12 +39,14 @@ const STATE_META = {
   },
   elevated: {
     label: 'Thin',
-    detail: 'The bullpen has fewer cleanly available arms than usual.',
+    detail: 'Cleanly available arms are limited right now.',
+    leagueDetail: 'Fewer bullpen-eligible arms are cleanly available right now.',
     tone: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
   },
   thin: {
     label: 'Thin',
-    detail: 'The bullpen has fewer cleanly available arms than usual.',
+    detail: 'Cleanly available arms are limited right now.',
+    leagueDetail: 'Fewer bullpen-eligible arms are cleanly available right now.',
     tone: { borderColor: '#f9731655', backgroundColor: '#f9731612', color: '#fdba74', dot: '#f97316' },
   },
   constrained: {
