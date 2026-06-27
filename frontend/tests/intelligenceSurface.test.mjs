@@ -201,8 +201,6 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   assert.deepEqual(view.metadata.map(item => item.label), [
     'Priority',
     'Confidence',
-    'Primary story',
-    'Why selected',
   ])
 })
 
@@ -223,9 +221,11 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
   assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
   assert.ok(htmlIncludes(html, 'Priority'))
+  assert.ok(htmlIncludes(html, 'Confidence'))
   assert.ok(htmlIncludes(html, 'Critical'))
+  assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
-  for (const raw of ['lead_story', 'story_priority', 'lost_game_shape', 'public_headline']) {
+  for (const raw of ['lead_story', 'story_priority', 'lost_game_shape', 'public_headline', 'Primary story', 'Why selected']) {
     assert.equal(html.includes(raw), false, raw)
   }
   for (const implementationCopy of ['existing dashboard snapshot', 'existing landscape endpoint', 'internal adapter']) {
@@ -319,6 +319,18 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(html, 'TOR'))
   assert.ok(htmlIncludes(html, 'flex-col items-start gap-1'))
   assert.ok(htmlIncludes(html, 'max-w-full break-words font-mono text-xs'))
+
+  const emptyLaneHtml = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard,
+    landscape: {
+      ...landscape,
+      constrained_bullpens: [],
+    },
+    teams,
+  }))
+  assert.ok(htmlIncludes(emptyLaneHtml, 'No bullpen currently meets this threshold.'))
+  assert.equal(htmlIncludes(emptyLaneHtml, 'No entries in this lane.'), false)
 
   const emptyHtml = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,

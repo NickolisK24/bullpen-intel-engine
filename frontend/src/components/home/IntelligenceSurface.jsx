@@ -194,8 +194,6 @@ function buildSelectionMetadata(selection = {}) {
   return [
     ['Priority', displayKey(selection.story_priority)],
     ['Confidence', displayKey(selection.confidence)],
-    ['Primary story', displayKey(selection.primary_story)],
-    ['Why selected', displayKey(selection.reason)],
   ]
     .filter(([, value]) => Boolean(value))
     .map(([label, value]) => ({ label, value }))
@@ -425,7 +423,7 @@ function StoryEmptyState({ intelligence }) {
 function LeadMetadata({ items }) {
   if (!items.length) return null
   return (
-    <dl className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <dl className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
       {items.map(item => (
         <div key={item.label} className="border border-dirt/70 bg-field/45 px-3 py-2">
           <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
@@ -727,7 +725,9 @@ function BullpenPicture({
                       ))}
                     </ol>
                   ) : (
-                    <p className="mt-3 text-xs text-chalk600">No entries in this lane.</p>
+                    <p className="mt-3 text-xs text-chalk600">
+                      No bullpen currently meets this threshold.
+                    </p>
                   )}
                 </div>
               ))}
