@@ -26,6 +26,11 @@ from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import sync_metadata
 from services.availability_reference_date import PRODUCT_TIMEZONE
+from services.completed_game_context_payload_adapter import build_completed_game_payload
+from services.completed_game_context_service import (
+    extract_completed_game_contexts,
+    upsert_completed_game_context,
+)
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
 from services.roster_status_sync import sync_roster_statuses
@@ -41,6 +46,7 @@ from utils.games_started import parse_games_started
 logger = logging.getLogger(__name__)
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
+POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
 FINAL_GAME_STATUS_CODES = frozenset({'F', 'O', 'FR', 'FT'})
 FINAL_GAME_DETAILED_STATES = frozenset({
@@ -354,7 +360,111 @@ def process_completed_game_for_postgame_refresh(
         'pitchers_touched': len(touched_pitcher_ids),
         'skipped': False,
         'reason': None,
+        # Passed back so completed-game context can reuse the boxscore that was
+        # already fetched, without a second API call. Not persisted.
+        'boxscore': boxscore,
     }
+
+
+def generate_completed_game_context(
+    game: dict,
+    *,
+    boxscore: dict | None,
+    game_date: date,
+) -> dict:
+    """Derive and upsert per-team Completed Game Context for one completed game.
+
+    Consumes linescore and play-by-play transiently (raw responses are never
+    stored), normalizes them with the boxscore into the service payload, and
+    upserts one derived row per team keyed by (team_id, game_pk). Adds rows to
+    the current session but does not commit — the caller owns the transaction.
+
+    Network failures for the optional context endpoints degrade gracefully:
+    a missing linescore/play-by-play simply lowers confidence rather than
+    failing the game.
+    """
+    game_pk = _game_pk(game)
+    linescore = None
+    play_by_play = None
+    if game_pk:
+        try:
+            linescore = mlb_client.get_game_linescore(game_pk)
+        except Exception as exc:  # noqa: BLE001 — optional input, degrade not fail
+            logger.warning('Linescore fetch failed for game_pk=%s: %s', game_pk, exc)
+        try:
+            play_by_play = mlb_client.get_game_play_by_play(game_pk)
+        except Exception as exc:  # noqa: BLE001 — optional input, degrade not fail
+            logger.warning('Play-by-play fetch failed for game_pk=%s: %s', game_pk, exc)
+
+    payload = build_completed_game_payload(
+        game,
+        boxscore=boxscore,
+        linescore=linescore,
+        play_by_play=play_by_play,
+        game_date=game_date,
+    )
+    if not payload:
+        return {'contexts_upserted': 0, 'confidences': [], 'reason': 'no_payload'}
+
+    contexts = extract_completed_game_contexts(payload)
+    for context in contexts:
+        upsert_completed_game_context(context)
+    return {
+        'contexts_upserted': len(contexts),
+        'confidences': [c.get('confidence') for c in contexts],
+        'reason': None,
+    }
+
+
+def _safe_generate_completed_game_context(
+    game: dict,
+    *,
+    boxscore: dict | None,
+    schedule_date: date,
+    sync_run_id=None,
+    status: dict,
+    run_logger,
+) -> None:
+    """Run completed-game context generation without ever breaking the refresh.
+
+    Fail-closed wrapper: commits the derived rows on success; on any failure it
+    rolls back only the context work (the game logs are already committed),
+    records a dead-letter entry, and lets the refresh continue.
+    """
+    game_pk = _game_pk(game)
+    try:
+        result = generate_completed_game_context(
+            game,
+            boxscore=boxscore,
+            game_date=_game_date(game, schedule_date),
+        )
+        db.session.commit()
+        status['completed_game_contexts_upserted'] += result['contexts_upserted']
+        if result['contexts_upserted']:
+            run_logger.info(
+                'Completed-game context for game %s: %s row(s) %s.',
+                game_pk,
+                result['contexts_upserted'],
+                '/'.join(result['confidences']) or 'none',
+            )
+    except Exception as exc:  # noqa: BLE001 — context is best-effort, never fatal
+        db.session.rollback()
+        status['completed_game_context_errors'] += 1
+        dead_letter.record_failure(
+            POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE,
+            exc,
+            entity_ref=game_pk,
+            payload={
+                'game_pk': game_pk,
+                'schedule_date': schedule_date.isoformat(),
+            },
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        )
+        db.session.commit()
+        run_logger.warning(
+            'Completed-game context failed for game_pk=%s: %s', game_pk, exc
+        )
 
 
 def sync_recent_logs(
@@ -792,6 +902,8 @@ def run_postgame_refresh(
         'pitchers_updated': 0,
         'errors': 0,
         'records_failed': 0,
+        'completed_game_contexts_upserted': 0,
+        'completed_game_context_errors': 0,
         'message': '',
     }
     run_logger.info('── Postgame refresh starting (schedule_date=%s) ──', schedule_date)
@@ -837,6 +949,16 @@ def run_postgame_refresh(
                         game_pk,
                         result['logs_added'],
                         result['pitchers_touched'],
+                    )
+                    # Derive completed-game context in its own transaction so a
+                    # context failure can never undo the committed game logs.
+                    _safe_generate_completed_game_context(
+                        game,
+                        boxscore=result.get('boxscore'),
+                        schedule_date=schedule_date,
+                        sync_run_id=sync_run_id,
+                        status=status,
+                        run_logger=run_logger,
                     )
                 except Exception as exc:
                     db.session.rollback()

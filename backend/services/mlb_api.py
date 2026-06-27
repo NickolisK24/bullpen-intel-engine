@@ -368,6 +368,25 @@ class MLBApiClient:
         data = self._get(f'/game/{game_pk}/boxscore')
         return data
 
+    def get_game_linescore(self, game_pk):
+        """Get the inning-by-inning linescore for a specific game.
+
+        Used to derive coarse completed-game context (final score, runs by
+        inning, late runs) when play-by-play is unavailable. The raw response is
+        consumed transiently and never persisted.
+        """
+        return self._get(f'/game/{game_pk}/linescore')
+
+    def get_game_play_by_play(self, game_pk):
+        """Get the play-by-play feed for a specific game.
+
+        Each play carries the cumulative score after it (``result.awayScore`` /
+        ``result.homeScore``), the inning/half, and the pitcher of record, which
+        is enough to reconstruct the bullpen-handoff score state. The raw
+        response is consumed transiently and never persisted.
+        """
+        return self._get(f'/game/{game_pk}/playByPlay')
+
     def get_game_pitching_lines(self, game_pk):
         """Extract pitcher lines from a game boxscore."""
         boxscore = self.get_game_boxscore(game_pk)

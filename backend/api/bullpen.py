@@ -81,6 +81,7 @@ from services.bullpen_population import (
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.injury_il_context import build_injury_il_context_payload
+from services.intelligence_surface_service import build_today_lead_story
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -1725,6 +1726,49 @@ def get_team_story(team_id):
     return jsonify(_story_api_payload(
         build_story_intelligence_team_story(team_id, as_of_date=as_of_date)
     ))
+
+
+def _lead_story_reference_date_from_request():
+    raw = request.args.get('reference_date')
+    if raw in (None, ''):
+        return None, None
+    parsed = parse_reference_date(raw)
+    if parsed is None:
+        return None, QueryParamError(
+            'reference_date',
+            'reference_date must be an ISO date in YYYY-MM-DD format.',
+        )
+    return parsed, None
+
+
+@bullpen_bp.route('/intelligence/today', methods=['GET'])
+def get_today_lead_story():
+    """League Today's Lead Story — the one bullpen story BaseballOS sees first.
+
+    Read-only. Builds COIN StoryPackages for the teams with a completed-game
+    context on the reference date, keeps the publishable ones, ranks them
+    deterministically, and returns the single lead story with its rendered
+    writer drafts and the metadata explaining the choice. Returns an honest
+    empty state when nothing is publishable. Optional ``reference_date``
+    (YYYY-MM-DD); defaults to the latest date with available context.
+    """
+    reference_date, error = _lead_story_reference_date_from_request()
+    if error:
+        return query_param_error_response(error)
+    try:
+        payload = build_today_lead_story(reference_date=reference_date)
+    except Exception:  # pragma: no cover - defensive; service already fails closed
+        current_app.logger.exception('today lead story build failed')
+        return jsonify({
+            'status': 'error',
+            'reference_date': reference_date.isoformat() if reference_date else None,
+            'lead_story': None,
+            'candidates_considered': 0,
+            'publishable_candidates': 0,
+            'errors': 0,
+            'empty_reason': 'lead_story_unavailable',
+        }), 503
+    return jsonify(payload)
 
 
 @bullpen_bp.route('/teams/compare', methods=['GET'])

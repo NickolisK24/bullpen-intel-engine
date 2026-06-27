@@ -852,6 +852,10 @@ export const getBullpenOverview = () => request('/bullpen/stats/overview')
 export const getBullpenDashboard = () => request('/bullpen/dashboard')
 // Tonight's Bullpen Landscape — league-wide bullpen context (descriptive only).
 export const getBullpenLandscape = () => request('/bullpen/landscape')
+// Intelligence Surface — the single league lead story for the homepage.
+export const getTodayIntelligence = (params = {}) => (
+  request(`/bullpen/intelligence/today${buildQuery(params)}`)
+)
 // Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
 export const getSyncStatus     = () => request('/bullpen/sync/status')
