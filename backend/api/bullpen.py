@@ -82,6 +82,7 @@ from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.injury_il_context import build_injury_il_context_payload
 from services.intelligence_surface_snapshot import serve_today_lead_story
+from services.tonight_intelligence_service import serve_tonight
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -1768,6 +1769,49 @@ def get_today_lead_story():
             'publishable_candidates': 0,
             'errors': 0,
             'empty_reason': 'lead_story_unavailable',
+        }), 503
+    return jsonify(payload)
+
+
+def _tonight_reference_date_from_request():
+    raw = request.args.get('reference_date')
+    if raw in (None, ''):
+        return None, None
+    parsed = parse_reference_date(raw)
+    if parsed is None:
+        return None, QueryParamError(
+            'reference_date',
+            'reference_date must be an ISO date in YYYY-MM-DD format.',
+        )
+    return parsed, None
+
+
+@bullpen_bp.route('/intelligence/tonight', methods=['GET'])
+def get_tonight_intelligence():
+    """Tonight — bullpen situations BaseballOS is watching before first pitch.
+
+    Read-only, pregame intelligence. Joins the stored schedule with the existing
+    bullpen context to surface up to three diverse situations for the reference
+    date (the product current day by default; optional ``reference_date``
+    YYYY-MM-DD for inspection). Returns an honest empty state when no team is
+    playing or no situation clears a signal. Descriptive and evidence-backed —
+    no predictions, no ranking, no recommendations. Separate from the COIN
+    completed-game stories and from ``/intelligence/today``.
+    """
+    reference_date, error = _tonight_reference_date_from_request()
+    if error:
+        return query_param_error_response(error)
+    try:
+        payload = serve_tonight(reference_date=reference_date)
+    except Exception:  # pragma: no cover - defensive; service isolates failures
+        current_app.logger.exception('tonight intelligence build failed')
+        return jsonify({
+            'status': 'error',
+            'reference_date': reference_date.isoformat() if reference_date else None,
+            'cards': [],
+            'card_count': 0,
+            'empty_reason': 'schedule_data_unavailable',
+            'limitations': [],
         }), 503
     return jsonify(payload)
 
