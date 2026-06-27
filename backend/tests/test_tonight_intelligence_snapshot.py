@@ -187,6 +187,28 @@ def test_generate_snapshot_for_date_warms_cache(app):
         assert read_snapshot(REF) == response
 
 
+def test_warming_overwrites_stale_no_schedule_context_snapshot(app):
+    # Reproduces the production bug: a stale empty snapshot cached before schedule
+    # rows existed must be overwritten once the schedule is ingested and warmed.
+    with app.app_context():
+        write_snapshot({'status': 'empty', 'reference_date': REF.isoformat(),
+                        'cards': [], 'card_count': 0,
+                        'empty_reason': 'no_schedule_context', 'limitations': []},
+                       source='on_demand')
+        assert read_snapshot(REF)['empty_reason'] == 'no_schedule_context'
+
+        # Schedule arrives, then warm.
+        _seed_playing_stretch(116)
+        generate_tonight_snapshot_for_date(REF, source='tonight_refresh')
+
+        refreshed = read_snapshot(REF)
+        assert refreshed['status'] == 'ok'
+        assert refreshed['empty_reason'] is None
+        assert refreshed['card_count'] >= 1
+        # Still one row for the slate — overwritten in place, not duplicated.
+        assert TonightIntelligenceSnapshot.query.filter_by(reference_date=REF).count() == 1
+
+
 # ── write_snapshot hygiene ────────────────────────────────────────────────────
 
 def test_write_snapshot_skips_when_no_reference_date(app):
