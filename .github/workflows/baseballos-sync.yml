@@ -79,6 +79,22 @@ jobs:
           fi
           python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions
 
+      - name: Refresh schedule and warm Tonight
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
+          AUTO_SYNC: 'false'
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
+            exit 1
+          fi
+          python backend/scripts/run_tonight_refresh.py --source github_actions
+
       - name: Run direct postgame refresh
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
         env:
