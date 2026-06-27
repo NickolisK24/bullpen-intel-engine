@@ -856,6 +856,10 @@ export const getBullpenLandscape = () => request('/bullpen/landscape')
 export const getTodayIntelligence = (params = {}) => (
   request(`/bullpen/intelligence/today${buildQuery(params)}`)
 )
+// Intelligence Surface — pregame bullpen cards for the homepage Tonight rail.
+export const getTonightIntelligence = (params = {}) => (
+  request(`/bullpen/intelligence/tonight${buildQuery(params)}`)
+)
 // Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)
 export const getSyncStatus     = () => request('/bullpen/sync/status')

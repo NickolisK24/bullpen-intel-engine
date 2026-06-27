@@ -27,18 +27,24 @@ const {
   getAroundBaseballItems,
   getBullpenPictureView,
   getLeadStoryView,
+  getTonightCards,
 } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
-const { getTodayIntelligence } = await server.ssrLoadModule('/src/utils/api.js')
+const {
+  getTodayIntelligence,
+  getTonightIntelligence,
+} = await server.ssrLoadModule('/src/utils/api.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
+const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 
 const teams = [
   { team_id: 137, team_name: 'San Francisco Giants', team_abbreviation: 'SF' },
   { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM' },
   { team_id: 158, team_name: 'Milwaukee Brewers', team_abbreviation: 'MIL' },
   { team_id: 141, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR' },
+  { team_id: 112, team_name: 'Chicago Cubs', team_abbreviation: 'CHC' },
 ]
 
 const intelligenceOk = {
@@ -145,6 +151,55 @@ const dashboard = {
   },
 }
 
+const tonightOk = {
+  status: 'ok',
+  reference_date: '2026-06-25',
+  card_count: 2,
+  empty_reason: null,
+  limitations: ['Schedule and bullpen context can still change before first pitch.'],
+  cards: [
+    {
+      key: 'CHC-tonight',
+      team_id: 112,
+      team_name: 'Chicago Cubs',
+      team_abbreviation: 'CHC',
+      headline: 'Cubs have a narrow late-game path before first pitch',
+      summary: 'Chicago has 2 clean bullpen paths available with another game on the schedule tonight.',
+      evidence: [
+        'Clean options: 2',
+        'Games before next off day: 5',
+      ],
+      limitations: [],
+      signal_family: 'schedule_pressure',
+      internal_strength: 87,
+      recommendation: 'Do not render this field.',
+    },
+    {
+      key: 'SF-tonight',
+      team_id: 137,
+      team_name: 'San Francisco Giants',
+      team_abbreviation: 'SF',
+      headline: 'Giants are thinner than usual behind the first lane',
+      summary: 'San Francisco has fewer clean options than a fully open bullpen entering tonight.',
+      evidence: [
+        'Clean options: 1',
+        'On watch: 1',
+      ],
+      limitations: ['Schedule context can change before lineup lock.'],
+      ranking_score: 91,
+    },
+  ],
+}
+
+const tonightEmpty = {
+  status: 'empty',
+  reference_date: '2026-06-25',
+  card_count: 0,
+  cards: [],
+  empty_reason: 'no_cards_cleared_bar',
+  limitations: [],
+}
+
 const landscape = {
   capability: 'tonights_bullpen_landscape',
   reference_date: '2026-06-25',
@@ -188,6 +243,24 @@ test('getTodayIntelligence calls the Intelligence Surface endpoint', async () =>
   assert.equal(calls[0].url, '/api/bullpen/intelligence/today?reference_date=2026-06-25')
 })
 
+test('getTonightIntelligence calls the Tonight Intelligence endpoint', async () => {
+  const calls = []
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options })
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ status: 'empty', cards: [] }),
+    }
+  }
+
+  await getTonightIntelligence({ reference_date: '2026-06-25' })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].url, '/api/bullpen/intelligence/tonight?reference_date=2026-06-25')
+})
+
 test('lead story view resolves team, prose, evidence, metadata, and snapshot', () => {
   const view = getLeadStoryView(intelligenceOk, teams)
 
@@ -207,6 +280,7 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
 test('Intelligence Surface shell and lead story skeleton render before data resolves', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligenceLoading: true,
+    tonightLoading: true,
     dashboardLoading: true,
     landscapeLoading: true,
     teams: [],
@@ -217,8 +291,8 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
   assert.ok(htmlIncludes(html, 'Reading the latest completed-game context...'))
   assert.ok(htmlIncludes(html, 'Loading today'))
   assert.ok(htmlIncludes(html, 'min-h-[28rem]'))
-  assert.ok(htmlIncludes(html, 'Around Baseball'))
-  assert.ok(htmlIncludes(html, 'Loading secondary observations...'))
+  assert.ok(htmlIncludes(html, 'Tonight'))
+  assert.ok(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'Loading bullpen picture...'))
   assert.ok(htmlIncludes(html, 'href="/bullpen"'))
@@ -228,6 +302,7 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
 test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightOk,
     dashboard,
     landscape,
     teams,
@@ -246,6 +321,9 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Critical'))
   assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
+  assert.ok(htmlIncludes(html, 'Tonight'))
+  assert.ok(htmlIncludes(html, 'Bullpen situations BaseballOS is watching before first pitch.'))
+  assert.ok(htmlIncludes(html, 'Cubs have a narrow late-game path before first pitch'))
   for (const raw of ['lead_story', 'story_priority', 'lost_game_shape', 'public_headline', 'Primary story', 'Why selected']) {
     assert.equal(html.includes(raw), false, raw)
   }
@@ -273,6 +351,118 @@ test('empty Intelligence Surface response shows a graceful story fallback', () =
   assert.ok(htmlIncludes(html, 'No publishable bullpen story is available from the current completed-game context.'))
 })
 
+test('Tonight renders endpoint cards without exposing internal fields', () => {
+  const cards = getTonightCards(tonightOk, teams)
+  assert.equal(cards.length, 2)
+  assert.equal(cards[0].href, '/bullpen?view=board&team=CHC&source=intelligence-tonight')
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight'))
+  assert.ok(htmlIncludes(html, 'Bullpen situations BaseballOS is watching before first pitch.'))
+  assert.ok(htmlIncludes(html, 'Chicago Cubs'))
+  assert.ok(htmlIncludes(html, 'Cubs have a narrow late-game path before first pitch'))
+  assert.ok(htmlIncludes(html, 'Chicago has 2 clean bullpen paths available with another game on the schedule tonight.'))
+  assert.ok(htmlIncludes(html, 'Clean options: 2'))
+  assert.ok(htmlIncludes(html, 'Schedule and bullpen context can still change before first pitch.'))
+  assert.ok(htmlIncludes(html, 'Schedule context can change before lineup lock.'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=intelligence-tonight"'))
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+  for (const raw of ['signal_family', 'schedule_pressure', 'internal_strength', 'ranking_score', 'recommendation', 'Do not render this field.']) {
+    assert.equal(html.includes(raw), false, raw)
+  }
+})
+
+test('Tonight renders only returned cards and does not backfill from Around Baseball', () => {
+  const oneCardTonight = {
+    ...tonightOk,
+    card_count: 1,
+    cards: tonightOk.cards.slice(0, 1),
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: oneCardTonight,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Cubs have a narrow late-game path before first pitch'))
+  assert.equal(htmlIncludes(html, 'Giants are thinner than usual behind the first lane'), false)
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+  assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
+  assert.equal(countOccurrences(html, 'source=intelligence-tonight'), 1)
+})
+
+test('Tonight empty response falls back to Around Baseball when dashboard observations exist', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightEmpty,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Around Baseball'))
+  assert.ok(htmlIncludes(html, 'Other bullpen movement BaseballOS is tracking across the league.'))
+  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
+  assert.equal(htmlIncludes(html, 'No Tonight bullpen read has cleared the bar yet.'), false)
+})
+
+test('Tonight empty response shows a muted empty state when fallback has no items', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightEmpty,
+    dashboard: {},
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'No Tonight bullpen read has cleared the bar yet.'))
+  assert.ok(htmlIncludes(html, 'will only surface a pregame card when schedule context and bullpen evidence are strong enough.'))
+  assert.equal(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'), false)
+})
+
+test('Tonight error falls back to Around Baseball when dashboard observations exist', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: null,
+    tonightError: 'Tonight unavailable',
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Around Baseball'))
+  assert.ok(htmlIncludes(html, 'Milwaukee Brewers lost 2 rested arms'))
+  assert.equal(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'), false)
+})
+
+test('Tonight error shows a graceful error state when fallback also fails', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: null,
+    tonightError: 'Tonight unavailable',
+    dashboard: null,
+    dashboardError: 'Dashboard unavailable',
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
+  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.ok(htmlIncludes(html, 'Most Available'))
+})
+
 test('Around Baseball editorializes dashboard observations, excludes the lead team, and caps at three', () => {
   const lead = getLeadStoryView(intelligenceOk, teams)
   const items = getAroundBaseballItems(dashboard, lead)
@@ -290,6 +480,7 @@ test('Around Baseball editorializes dashboard observations, excludes the lead te
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightEmpty,
     dashboard,
     landscape,
     teams,
@@ -303,20 +494,23 @@ test('Around Baseball editorializes dashboard observations, excludes the lead te
   assert.ok(htmlIncludes(html, 'Toronto still has 4 rested relievers today.'))
 })
 
-test('Around Baseball falls back when there is no existing dashboard observation payload', () => {
+test('Tonight empty state renders when neither Tonight nor fallback observations are available', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightEmpty,
     dashboard: {},
     landscape,
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'))
+  assert.ok(htmlIncludes(html, 'No Tonight bullpen read has cleared the bar yet.'))
+  assert.ok(htmlIncludes(html, 'will only surface a pregame card when schedule context and bullpen evidence are strong enough.'))
 })
 
-test('Around Baseball failure does not prevent Today story rendering', () => {
+test('fallback dashboard failure does not prevent Today story rendering', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightEmpty,
     dashboard: null,
     dashboardError: 'Dashboard unavailable',
     landscape,
@@ -325,13 +519,14 @@ test('Around Baseball failure does not prevent Today story rendering', () => {
 
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
-  assert.ok(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'))
+  assert.ok(htmlIncludes(html, 'No Tonight bullpen read has cleared the bar yet.'))
   assert.ok(htmlIncludes(html, 'Most Available'))
 })
 
 test('Bullpen Picture failure does not prevent Today story rendering', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightOk,
     dashboard,
     landscape: null,
     landscapeError: 'Landscape unavailable',
@@ -341,7 +536,7 @@ test('Bullpen Picture failure does not prevent Today story rendering', () => {
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is unavailable right now.'))
-  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
+  assert.ok(htmlIncludes(html, 'Cubs have a narrow late-game path before first pitch'))
 })
 
 test('Bullpen Picture renders existing landscape lanes and handles missing data', () => {
@@ -355,6 +550,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightOk,
     dashboard,
     landscape,
     teams,
@@ -373,6 +569,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
 
   const emptyLaneHtml = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightOk,
     dashboard,
     landscape: {
       ...landscape,
@@ -385,6 +582,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
 
   const emptyHtml = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
+    tonight: tonightOk,
     dashboard,
     landscape: null,
     teams,

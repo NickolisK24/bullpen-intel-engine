@@ -5,12 +5,21 @@ import {
   getBullpenLandscape,
   getTeams,
   getTodayIntelligence,
+  getTonightIntelligence,
 } from '../../utils/api'
 import { ErrorState, StaleDataNotice } from '../UI'
 import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
   'No other league bullpen movement is ready to show yet.'
+const TONIGHT_EMPTY_TITLE =
+  'No Tonight bullpen read has cleared the bar yet.'
+const TONIGHT_EMPTY_BODY =
+  'BaseballOS will only surface a pregame card when schedule context and bullpen evidence are strong enough.'
+const TONIGHT_ERROR_TITLE =
+  "Tonight's bullpen reads are temporarily unavailable."
+const TONIGHT_ERROR_BODY =
+  'The rest of the Intelligence Surface can still be used.'
 
 const EMPTY_REASON_COPY = {
   no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
@@ -108,6 +117,19 @@ function teamBoardHref(team, source = 'intelligence-surface') {
   return `/bullpen?${query.toString()}`
 }
 
+function teamBoardHrefIfResolvable(team, source = 'intelligence-surface') {
+  const teamParam = textValue(team?.teamAbbr) || (
+    team?.teamId != null ? String(team.teamId) : null
+  )
+  if (!teamParam) return null
+  const query = new URLSearchParams({
+    view: 'board',
+    team: teamParam,
+    source,
+  })
+  return `/bullpen?${query.toString()}`
+}
+
 function buildTeamsById(teams = []) {
   const byId = new Map()
   for (const team of (Array.isArray(teams) ? teams : [])) {
@@ -115,6 +137,29 @@ function buildTeamsById(teams = []) {
     if (option?.teamId != null) byId.set(option.teamId, option)
   }
   return byId
+}
+
+function normalizeTeamName(value) {
+  return cleanTeamName(value)
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim() || null
+}
+
+function findTeamByName(name, teams = []) {
+  const normalized = normalizeTeamName(name)
+  if (!normalized) return null
+  const options = (Array.isArray(teams) ? teams : [])
+    .map(teamOptionValue)
+    .filter(Boolean)
+  const exact = options.find(team => normalizeTeamName(team.teamName) === normalized)
+  if (exact) return exact
+  return options.find(team => {
+    const candidate = normalizeTeamName(team.teamName)
+    return candidate && (
+      candidate.endsWith(` ${normalized}`) || normalized.endsWith(` ${candidate}`)
+    )
+  }) || null
 }
 
 function resolveLeadTeam(leadStory, teams = []) {
@@ -305,6 +350,45 @@ export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
         body,
         teamName: team?.teamName || team?.teamAbbr || 'Team',
         href: teamBoardHref(team, 'intelligence-around-baseball'),
+      }
+    })
+    .filter(Boolean)
+    .slice(0, limit)
+}
+
+function resolveTonightTeam(card, teams = []) {
+  const direct = teamOptionValue(card)
+  const byId = buildTeamsById(teams)
+  const fromId = direct?.teamId != null ? byId.get(direct.teamId) : null
+  if (fromId) return fromId
+  if (direct?.teamAbbr) return direct
+  return findTeamByName(direct?.teamName ?? card?.team_name, teams) || direct
+}
+
+export function getTonightCards(response, teams = [], limit = 3) {
+  if (!response || response.status !== 'ok') return []
+  const rawCards = Array.isArray(response.cards) ? response.cards : []
+
+  return rawCards
+    .map(card => {
+      const team = resolveTonightTeam(card, teams)
+      const teamName = cleanTeamName(card?.team_name ?? card?.teamName ?? team?.teamName)
+      const headline = textValue(card?.headline)
+      const summary = textValue(card?.summary)
+      if (!teamName || !headline || !summary) return null
+      return {
+        key: textValue(card?.key) || [
+          team?.teamId,
+          team?.teamAbbr,
+          teamName,
+          headline,
+        ].filter(Boolean).join('-'),
+        teamName,
+        headline,
+        summary,
+        evidence: cleanDraftList(card?.evidence),
+        limitations: cleanDraftList(card?.limitations),
+        href: teamBoardHrefIfResolvable(team, 'intelligence-tonight'),
       }
     })
     .filter(Boolean)
@@ -675,6 +759,200 @@ function AroundBaseball({
   )
 }
 
+function TonightLoadingState() {
+  return (
+    <div className="min-h-40 border border-amber/20 bg-dugout p-4 sm:p-5" role="status" aria-live="polite">
+      <p className="font-mono text-xs uppercase tracking-widest text-chalk500">
+        Reading tonight's bullpen context...
+      </p>
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3" aria-hidden="true">
+        {[0, 1, 2].map(index => (
+          <div key={index} className="border border-dirt/80 bg-field/40 p-4">
+            <div className="h-3 w-20 animate-pulse bg-dirt" />
+            <div className="mt-4 h-4 w-4/5 animate-pulse bg-dirt" />
+            <div className="mt-3 h-3 w-full animate-pulse bg-dirt" />
+            <div className="mt-2 h-3 w-2/3 animate-pulse bg-dirt" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TonightEmptyState({ isError, onRetry }) {
+  return (
+    <div className="border border-dirt bg-dugout p-4 sm:p-5" aria-live="polite">
+      <h3 className="font-display text-2xl leading-tight tracking-wide text-chalk100">
+        {isError ? TONIGHT_ERROR_TITLE : TONIGHT_EMPTY_TITLE}
+      </h3>
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
+        {isError ? TONIGHT_ERROR_BODY : TONIGHT_EMPTY_BODY}
+      </p>
+      {isError && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 rounded border border-dirt px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+        >
+          Try Again
+        </button>
+      )}
+    </div>
+  )
+}
+
+function TonightCard({ card }) {
+  return (
+    <article className="flex min-w-0 flex-col border border-dirt bg-dugout p-4 sm:p-5">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
+        {card.teamName}
+      </div>
+      <h3 className="mt-3 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
+        {card.headline}
+      </h3>
+      <p className="mt-3 text-sm leading-relaxed text-chalk400">
+        {card.summary}
+      </p>
+      {card.evidence.length > 0 && (
+        <div className="mt-4">
+          <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Evidence
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {card.evidence.map(item => (
+              <li key={item} className="flex gap-2 text-xs leading-relaxed text-chalk400">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" aria-hidden="true" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {card.limitations.length > 0 && (
+        <div className="mt-4 border-t border-dirt/80 pt-3">
+          <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Limitations
+          </h4>
+          <ul className="mt-2 space-y-1">
+            {card.limitations.map(item => (
+              <li key={item} className="text-xs leading-relaxed text-chalk500">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {card.href && (
+        <Link
+          to={card.href}
+          className="mt-5 inline-flex min-h-10 w-fit items-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+          aria-label={`Open the bullpen board for ${card.teamName}`}
+        >
+          View Team Bullpen State
+        </Link>
+      )}
+    </article>
+  )
+}
+
+function TonightSection({
+  tonight,
+  teams,
+  loading,
+  error,
+  staleWithError,
+  onRetry,
+  dashboard,
+  leadStory,
+  dashboardLoading,
+  dashboardError,
+  dashboardStaleWithError,
+  onRetryDashboard,
+}) {
+  const cards = getTonightCards(tonight, teams)
+  const sectionLimitations = cleanDraftList(tonight?.limitations)
+  const fallbackItems = getAroundBaseballItems(dashboard, leadStory)
+  const canShowFallback = !loading && (
+    fallbackItems.length > 0 ||
+    (dashboardLoading && !dashboard) ||
+    (dashboardStaleWithError && dashboard)
+  )
+
+  if (loading && !tonight) {
+    return (
+      <SectionShell
+        id="tonight"
+        eyebrow="Tonight"
+        title="Tonight"
+        subtitle="Bullpen situations BaseballOS is watching before first pitch."
+      >
+        <TonightLoadingState />
+      </SectionShell>
+    )
+  }
+
+  if (cards.length > 0) {
+    return (
+      <SectionShell
+        id="tonight"
+        eyebrow="Tonight"
+        title="Tonight"
+        subtitle="Bullpen situations BaseballOS is watching before first pitch."
+      >
+        {staleWithError && (
+          <StaleDataNotice
+            message="Tonight is using the last loaded bullpen read because the latest refresh failed."
+            onRetry={onRetry}
+          />
+        )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {cards.map(card => (
+            <TonightCard key={card.key} card={card} />
+          ))}
+        </div>
+        {sectionLimitations.length > 0 && (
+          <div className="mt-3 border border-dirt bg-dugout p-4">
+            <h3 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+              Limitations
+            </h3>
+            <ul className="mt-2 space-y-1">
+              {sectionLimitations.map(item => (
+                <li key={item} className="text-xs leading-relaxed text-chalk500">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </SectionShell>
+    )
+  }
+
+  if (canShowFallback) {
+    return (
+      <AroundBaseball
+        dashboard={dashboard}
+        leadStory={leadStory}
+        loading={dashboardLoading}
+        error={dashboardError}
+        staleWithError={dashboardStaleWithError}
+        onRetry={onRetryDashboard}
+      />
+    )
+  }
+
+  return (
+    <SectionShell
+      id="tonight"
+      eyebrow="Tonight"
+      title="Tonight"
+      subtitle="Bullpen situations BaseballOS is watching before first pitch."
+    >
+      <TonightEmptyState isError={Boolean(error && !tonight)} onRetry={onRetry} />
+    </SectionShell>
+  )
+}
+
 function BullpenPicture({
   landscape,
   loading,
@@ -811,6 +1089,11 @@ export function IntelligenceSurfaceView({
   intelligenceError = null,
   intelligenceStaleWithError = false,
   onRetryIntelligence,
+  tonight = null,
+  tonightLoading = false,
+  tonightError = null,
+  tonightStaleWithError = false,
+  onRetryTonight,
   landscape = null,
   landscapeLoading = false,
   landscapeError = null,
@@ -835,13 +1118,19 @@ export function IntelligenceSurfaceView({
         staleWithError={intelligenceStaleWithError}
         onRetry={onRetryIntelligence}
       />
-      <AroundBaseball
+      <TonightSection
+        tonight={tonight}
+        teams={teams}
+        loading={tonightLoading}
+        error={tonightError}
+        staleWithError={tonightStaleWithError}
+        onRetry={onRetryTonight}
         dashboard={dashboard}
         leadStory={leadStory}
-        loading={dashboardLoading}
-        error={dashboardError}
-        staleWithError={dashboardStaleWithError}
-        onRetry={onRetryDashboard}
+        dashboardLoading={dashboardLoading}
+        dashboardError={dashboardError}
+        dashboardStaleWithError={dashboardStaleWithError}
+        onRetryDashboard={onRetryDashboard}
       />
       <BullpenPicture
         landscape={landscape}
@@ -857,6 +1146,7 @@ export function IntelligenceSurfaceView({
 
 export default function IntelligenceSurfacePage() {
   const intelligence = useFetch(getTodayIntelligence)
+  const tonight = useFetch(getTonightIntelligence)
   const landscape = useFetch(getBullpenLandscape)
   const dashboard = useFetch(getBullpenDashboard)
   const teams = useFetch(getTeams)
@@ -868,6 +1158,11 @@ export default function IntelligenceSurfacePage() {
       intelligenceError={intelligence.error}
       intelligenceStaleWithError={intelligence.staleWithError}
       onRetryIntelligence={intelligence.refetch}
+      tonight={tonight.data}
+      tonightLoading={tonight.loading}
+      tonightError={tonight.error}
+      tonightStaleWithError={tonight.staleWithError}
+      onRetryTonight={tonight.refetch}
       landscape={landscape.data}
       landscapeLoading={landscape.loading}
       landscapeError={landscape.error}
