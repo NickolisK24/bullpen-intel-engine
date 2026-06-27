@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -39,6 +40,7 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 const renderWithOptions = (props) => renderToStaticMarkup(React.createElement(BullpenBoardView, props))
+const tonightsBullpenBoardSource = readFileSync('src/components/bullpen/board/TonightsBullpenBoard.jsx', 'utf8')
 const detailsTagFor = (html, ariaLabel) => (
   html.match(new RegExp(`<details[^>]*aria-label="${escapeRegExp(ariaLabel)}"[^>]*>`))?.[0] || ''
 )
@@ -80,6 +82,7 @@ const staleActivatedAssignmentBoard = makeBoard({
 
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
+  assert.ok(htmlIncludes(html, 'id="pitcher-lanes"'))
   for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
@@ -101,6 +104,12 @@ test('board view mode control defaults to Active and replaces show-unavailable c
   assert.ok(htmlIncludes(html, 'Unavailable Only'))
   assert.ok(htmlIncludes(html, 'aria-pressed="true"'))
   assert.ok(!htmlIncludes(html, 'Show unavailable pitchers'))
+})
+
+test('team board uses compact operating card density', () => {
+  assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
+  assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))
+  assert.ok(tonightsBullpenBoardSource.includes('ctaHref="#pitcher-lanes"'))
 })
 
 test('renders bullpen stress from the backend payload', () => {

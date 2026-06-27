@@ -68,6 +68,7 @@ test('bullpen state is clearly league-wide, not a single team', () => {
   assert.equal(htmlIncludes(html, "Open Bullpen for one team's current state"), false)
   // The aggregate card itself carries league-wide scope and operating state.
   assert.ok(htmlIncludes(html, 'Scope'))
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
   assert.ok(htmlIncludes(html, 'Stable Overall'))

@@ -22,7 +22,11 @@ const {
   default: BullpenOperatingStateCard,
   getBullpenOperatingStateView,
 } = await server.ssrLoadModule('/src/components/bullpen/BullpenOperatingStateCard.jsx')
-const { getBoardContextView } = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
+const {
+  getBoardContextView,
+  getTeamOperatingStateContext,
+  teamOperatingStateFreshnessIsDegraded,
+} = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -45,6 +49,61 @@ function contextFor(cardsByStatus) {
   return getBoardContextView(makeBoard({ cardsByStatus }))
 }
 
+function teamOperatingBoard(overrides = {}) {
+  return makeBoard({
+    team: { team_id: 121, team_name: 'New York Mets', team_abbreviation: 'NYM' },
+    cardsByStatus: {
+      Available: Array.from({ length: 5 }, (_, i) => ({
+        pitcher_id: i + 1,
+        name: `Mets Available ${i}`,
+        availability_status: 'Available',
+      })),
+      Monitor: [{ pitcher_id: 20, name: 'Mets Monitor', availability_status: 'Monitor' }],
+    },
+    rosterAuthority: {
+      capability: 'roster_authority_v1',
+      invariant: true,
+      category_counts: { injured_list: 2 },
+      counts: {
+        bullpen_arms: 6,
+        active_bullpen_arms: 6,
+        inactive_roster_context_count: 3,
+        roster_unknown_count: 0,
+      },
+      population: { total_candidates: 9, known_count: 9, unknown_count: 0, roster_status_coverage: 1 },
+      evidence: {
+        bullpen_arms: [],
+        active_bullpen_arms: [],
+        inactive_roster_context_count: [],
+        roster_unknown_count: [],
+      },
+      limitations: ['Roster status reflects the latest loaded roster context.'],
+    },
+    ...overrides,
+  })
+}
+
+function renderTeamOperatingCard(board, props = {}) {
+  return render({
+    teamLabel: board?.team?.team_name,
+    scope: 'team',
+    context: getTeamOperatingStateContext(board),
+    freshness: board?.freshness,
+    staleWithError: teamOperatingStateFreshnessIsDegraded(board?.freshness),
+    ctaHref: '#pitcher-lanes',
+    ctaLabel: 'Review pitcher lanes',
+    lastSyncLabel: 'Bullpen read synced',
+    ...props,
+  })
+}
+
+function renderCompactTeamOperatingCard(board, props = {}) {
+  return renderTeamOperatingCard(board, {
+    density: 'compact',
+    ...props,
+  })
+}
+
 test('renders the current bullpen state in baseball-facing language', () => {
   const context = contextFor({
     Available: Array.from({ length: 8 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
@@ -62,6 +121,7 @@ test('renders the current bullpen state in baseball-facing language', () => {
   })
 
   assert.ok(htmlIncludes(html, 'Scope'))
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
   assert.ok(htmlIncludes(html, 'Stable Overall'))
@@ -197,6 +257,181 @@ test('renders stale and sample freshness as distinct trust states', () => {
   })
   assert.ok(htmlIncludes(sample, 'Sample intelligence state'))
   assert.ok(htmlIncludes(sample, 'Not live MLB data.'))
+})
+
+test('renders a team operating card from a team-board fixture', () => {
+  const board = teamOperatingBoard()
+  const html = renderTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'Team'))
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
+  assert.ok(htmlIncludes(html, 'New York Mets'))
+  assert.equal(htmlIncludes(html, 'Scope'), false)
+  assert.equal(htmlIncludes(html, 'League-Wide'), false)
+  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Stable'))
+  assert.ok(htmlIncludes(html, 'Why BaseballOS Sees This'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
+  assert.ok(htmlIncludes(html, 'href="#pitcher-lanes"'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+})
+
+test('renders compact team operating card density with the core read intact', () => {
+  const board = teamOperatingBoard()
+  const html = renderCompactTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'data-density="compact"'))
+  assert.ok(htmlIncludes(html, 'Team'))
+  assert.ok(htmlIncludes(html, 'New York Mets'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State: Stable'))
+  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.'))
+  assert.ok(htmlIncludes(html, 'Primary Concern'))
+  assert.ok(htmlIncludes(html, 'Active workload is usable'))
+  assert.ok(htmlIncludes(html, 'Secondary Concern'))
+  assert.ok(htmlIncludes(html, 'Roster pressure remains part of the story'))
+  assert.ok(htmlIncludes(html, '5 of 6 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, '3 bullpen arms are inactive or unavailable.'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+  assert.ok(htmlIncludes(html, 'Limitations:'))
+  assert.ok(htmlIncludes(html, 'workload-based only; excludes manager intent, bullpen phone activity, private medical availability, unreported injuries, and final game-day decisions.'))
+  assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
+  assert.ok(htmlIncludes(html, 'href="#pitcher-lanes"'))
+  assert.equal(htmlIncludes(html, 'BaseballOS does not know manager intent'), false)
+  assert.equal(htmlIncludes(html, 'Why BaseballOS Sees This'), false)
+})
+
+test('team card separates usable active workload from roster pressure', () => {
+  const html = renderTeamOperatingCard(teamOperatingBoard())
+
+  assert.ok(htmlIncludes(html, 'Active workload is usable'))
+  assert.ok(htmlIncludes(html, '5 of 6 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, 'Roster pressure remains part of the story'))
+  assert.ok(htmlIncludes(html, '3 bullpen arms are on the injured list or inactive.'))
+  assert.ok(htmlIncludes(html, '2 bullpen arms are on the injured list.'))
+  assert.ok(htmlIncludes(html, '3 bullpen arms are inactive or unavailable.'))
+  assert.equal(htmlIncludes(html, 'Nobody is hurt'), false)
+  assert.equal(htmlIncludes(html, 'No injuries'), false)
+})
+
+test('team card keeps factual evidence separate from limitations', () => {
+  const html = renderTeamOperatingCard(teamOperatingBoard())
+  const evidenceStart = html.indexOf('Evidence')
+  const freshnessStart = html.indexOf('Freshness')
+  const evidenceBlock = html.slice(evidenceStart, freshnessStart)
+
+  assert.ok(htmlIncludes(evidenceBlock, '5 of 6 relievers are classified Available.'))
+  assert.ok(htmlIncludes(evidenceBlock, '2 bullpen arms are on the injured list.'))
+  assert.equal(htmlIncludes(evidenceBlock, 'BaseballOS does not know manager intent'), false)
+  assert.equal(htmlIncludes(evidenceBlock, 'workload-based only'), false)
+  assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent'))
+  assert.ok(htmlIncludes(html, 'Roster status reflects the latest loaded roster context.'))
+  assert.equal(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'), false)
+})
+
+test('team card carries degraded freshness limitations when freshness fails closed', () => {
+  const board = teamOperatingBoard({
+    freshness: {
+      data_through: '2026-06-01',
+      last_successful_sync: '2026-06-01T10:04:00Z',
+      is_current: false,
+      is_stale: true,
+      fail_closed: true,
+      freshness_state: 'stale',
+      limitations: ['Latest workload data is outside the active freshness window.'],
+    },
+  })
+  const html = renderTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'Refresh delayed'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 1'))
+  assert.ok(htmlIncludes(html, 'Latest workload data is outside the active freshness window.'))
+  assert.equal(teamOperatingStateFreshnessIsDegraded(board.freshness), true)
+})
+
+test('team card omits unsupported rows and gates starter support by sample size', () => {
+  const limitedStarterBoard = {
+    ...teamOperatingBoard(),
+    rotation_support_pressure: {
+      status: 'limited_read',
+      games_analyzed: 1,
+      summary: 'Low-sample starter support should not render.',
+      limitations: ['Rotation support sample is limited.'],
+    },
+  }
+  const limitedHtml = renderTeamOperatingCard(limitedStarterBoard)
+
+  const zeroMonitorBoard = teamOperatingBoard()
+  zeroMonitorBoard.context = {
+    ...zeroMonitorBoard.context,
+    health: {
+      ...zeroMonitorBoard.context.health,
+      reasons: [
+        ...zeroMonitorBoard.context.health.reasons,
+        '0 of 6 relievers are in the Monitor group.',
+      ],
+    },
+  }
+  const zeroMonitorHtml = renderTeamOperatingCard(zeroMonitorBoard)
+  const zeroMonitorCompactHtml = renderCompactTeamOperatingCard(zeroMonitorBoard)
+  assert.equal(htmlIncludes(zeroMonitorHtml, '0 of 6 relievers are in the Monitor group.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, '0 of 6 relievers are in the Monitor group.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Avoid or Unavailable.'), false)
+
+  for (const phrase of [
+    'Clean Options',
+    'Coverage Safety',
+    'Workload Concentration',
+    'Trend Since Yesterday',
+    'Low-sample starter support should not render.',
+    'Rotation support sample is limited.',
+  ]) {
+    assert.equal(htmlIncludes(limitedHtml, phrase), false, `rendered unsupported copy: ${phrase}`)
+    assert.equal(htmlIncludes(renderCompactTeamOperatingCard(limitedStarterBoard), phrase), false, `rendered unsupported compact copy: ${phrase}`)
+  }
+
+  const supportedStarterBoard = {
+    ...teamOperatingBoard(),
+    rotation_support_pressure: {
+      status: 'neutral',
+      games_analyzed: 3,
+      summary: 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.',
+      limitations: ['Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'],
+    },
+  }
+  const supportedHtml = renderTeamOperatingCard(supportedStarterBoard)
+
+  assert.ok(htmlIncludes(supportedHtml, 'Starter support: The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
+  assert.ok(htmlIncludes(supportedHtml, 'Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'))
+})
+
+test('team operating card does not expose internal vocabulary', () => {
+  const html = renderTeamOperatingCard(teamOperatingBoard())
+  const compactHtml = renderCompactTeamOperatingCard(teamOperatingBoard())
+  for (const term of [
+    'backend',
+    'endpoint',
+    'snapshot',
+    'COIN',
+    'V2',
+    'V3',
+    'V4',
+    'deterministic',
+    'recommendation engine',
+    'baseline distribution',
+    'governance layer',
+    'sample state',
+  ]) {
+    assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
+    assert.equal(new RegExp(escapeRegExp(term), 'i').test(compactHtml), false, `leaked compact ${term}`)
+  }
 })
 
 test('omits internal language from visible card copy', () => {

@@ -638,6 +638,211 @@ export function getBoardContextView(board) {
   }
 }
 
+const TEAM_SCOPE_LIMITATION = (
+  'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
+)
+const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
+const ROTATION_SUPPORT_LIMITED_STATUSES = new Set(['limited_read', 'no_data'])
+
+function numericCount(value) {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : 0
+}
+
+function pluralArms(count) {
+  return count === 1 ? 'arm' : 'arms'
+}
+
+function pluralRelievers(count) {
+  return count === 1 ? 'reliever' : 'relievers'
+}
+
+function uniqueTextList(list) {
+  const seen = new Set()
+  return list.filter(item => {
+    const text = typeof item === 'string' ? item.trim() : ''
+    const key = text.toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function isEmptyMonitorEvidence(text) {
+  return /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(String(text || '').trim())
+}
+
+function supportingTeamReasons(reasons) {
+  return Array.isArray(reasons)
+    ? reasons.filter(reason => !isEmptyMonitorEvidence(reason))
+    : []
+}
+
+function contextCount(context, status) {
+  const row = (Array.isArray(context?.snapshot) ? context.snapshot : [])
+    .find(item => item.status === status || item.label === status)
+  return numericCount(row?.count)
+}
+
+function getTeamWorkloadConcern(context) {
+  const total = numericCount(context?.metrics?.total)
+  if (!total) return null
+  const available = contextCount(context, 'Available')
+  const monitor = contextCount(context, 'Monitor')
+  const limited = contextCount(context, 'Limited')
+  const avoid = contextCount(context, 'Avoid')
+  const unavailable = contextCount(context, 'Unavailable')
+  const narrowed = limited + avoid + unavailable
+  const state = context?.state || 'no_data'
+
+  if (state === 'constrained' || available === 0) {
+    return {
+      label: 'Clean options are tight',
+      body: `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
+    }
+  }
+  if (state === 'elevated' || narrowed > 0) {
+    return {
+      label: 'Not every arm is cleanly available',
+      body: `${narrowed} of ${total} ${pluralRelievers(total)} are Limited, Avoid, or Unavailable.`,
+    }
+  }
+  if (state === 'monitoring') {
+    return {
+      label: 'Several arms are worth watching',
+      body: `${monitor} of ${total} ${pluralRelievers(total)} are in the Monitor lane.`,
+    }
+  }
+  return {
+    label: 'Active workload is usable',
+    body: `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
+  }
+}
+
+function getTeamWorkloadEvidence(context) {
+  const total = numericCount(context?.metrics?.total)
+  if (!total) return []
+  const available = contextCount(context, 'Available')
+  const monitor = contextCount(context, 'Monitor')
+  const limited = contextCount(context, 'Limited')
+  const avoid = contextCount(context, 'Avoid')
+  const unavailable = contextCount(context, 'Unavailable')
+  const narrowed = limited + avoid + unavailable
+  return [
+    `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
+    monitor > 0 ? `${monitor} of ${total} ${pluralRelievers(total)} are in the Monitor group.` : null,
+    narrowed > 0 ? `${narrowed} of ${total} ${pluralRelievers(total)} are Limited, Avoid, or Unavailable.` : null,
+  ].filter(Boolean)
+}
+
+function getTeamRosterPressure(authority) {
+  const counts = authority?.counts || {}
+  const categories = authority?.category_counts || {}
+  const injuredList = numericCount(categories.injured_list)
+  const inactive = numericCount(counts.inactive_roster_context_count)
+  const unknown = numericCount(counts.roster_unknown_count)
+  const pressureCount = inactive || injuredList || unknown
+  const evidence = []
+
+  if (injuredList > 0) {
+    evidence.push(`${injuredList} bullpen ${pluralArms(injuredList)} ${injuredList === 1 ? 'is' : 'are'} on the injured list.`)
+  }
+  if (inactive > 0) {
+    evidence.push(`${inactive} bullpen ${pluralArms(inactive)} ${inactive === 1 ? 'is' : 'are'} inactive or unavailable.`)
+  }
+  if (unknown > 0) {
+    evidence.push(`${unknown} bullpen ${pluralArms(unknown)} ${unknown === 1 ? 'has' : 'have'} unconfirmed roster status.`)
+  }
+
+  let concern = null
+  if (pressureCount > 0) {
+    const body = inactive > 0
+      ? `${inactive} bullpen ${pluralArms(inactive)} ${inactive === 1 ? 'is' : 'are'} on the injured list or inactive.`
+      : injuredList > 0
+        ? `${injuredList} bullpen ${pluralArms(injuredList)} ${injuredList === 1 ? 'is' : 'are'} on the injured list.`
+        : `${unknown} bullpen ${pluralArms(unknown)} ${unknown === 1 ? 'has' : 'have'} unconfirmed roster status.`
+    concern = {
+      label: 'Roster pressure remains part of the story',
+      body,
+    }
+  }
+
+  return {
+    concern,
+    evidence,
+    limitations: Array.isArray(authority?.limitations) ? authority.limitations : [],
+  }
+}
+
+function getStarterSupportEvidence(rotationSupport) {
+  if (!rotationSupport || typeof rotationSupport !== 'object') {
+    return { shouldShow: false, evidence: [], limitations: [] }
+  }
+  const gamesAnalyzed = numericCount(rotationSupport.games_analyzed)
+  const status = String(rotationSupport.status || '').toLowerCase()
+  const summary = typeof rotationSupport.summary === 'string' ? rotationSupport.summary.trim() : ''
+  const shouldShow = (
+    gamesAnalyzed >= ROTATION_SUPPORT_MIN_ANALYZED_GAMES
+    && summary
+    && !ROTATION_SUPPORT_LIMITED_STATUSES.has(status)
+  )
+  if (!shouldShow) {
+    return { shouldShow: false, evidence: [], limitations: [] }
+  }
+  return {
+    shouldShow: true,
+    evidence: [`Starter support: ${summary}`],
+    limitations: Array.isArray(rotationSupport.limitations) ? rotationSupport.limitations : [],
+  }
+}
+
+function freshnessIsLimited(freshness) {
+  const state = String(freshness?.freshness_state || freshness?.state || '').toLowerCase()
+  return Boolean(
+    freshness?.is_stale === true
+    || freshness?.is_current === false
+    || freshness?.fail_closed === true
+    || state === 'stale'
+    || state === 'historical'
+    || state === 'failed'
+  )
+}
+
+export function teamOperatingStateFreshnessIsDegraded(freshness) {
+  return freshnessIsLimited(freshness)
+}
+
+export function getTeamOperatingStateContext(board) {
+  const context = getBoardContextView(board)
+  if (!context.hasContext) return context
+
+  const rosterPressure = getTeamRosterPressure(board?.roster_authority)
+  const starterSupport = getStarterSupportEvidence(board?.rotation_support_pressure)
+  const freshnessLimitations = freshnessIsLimited(board?.freshness) && Array.isArray(board?.freshness?.limitations)
+    ? board.freshness.limitations
+    : []
+
+  return {
+    ...context,
+    reasons: uniqueTextList([
+      ...supportingTeamReasons(context.reasons),
+      ...getTeamWorkloadEvidence(context),
+      ...rosterPressure.evidence,
+      ...starterSupport.evidence,
+    ]),
+    limitations: uniqueTextList([
+      TEAM_SCOPE_LIMITATION,
+      ...context.limitations,
+      ...rosterPressure.limitations,
+      ...starterSupport.limitations,
+      ...freshnessLimitations,
+      ...(Array.isArray(board?.limitations) ? board.limitations : []),
+    ]),
+    primaryConcern: getTeamWorkloadConcern(context),
+    secondaryConcern: rosterPressure.concern,
+  }
+}
+
 export function getBoardTotals(board) {
   const groups = getBoardGroups(board)
   const total = typeof board?.total_pitchers === 'number'

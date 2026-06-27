@@ -37,6 +37,7 @@ function normalizeFreshnessState(state, freshness) {
 
   if (freshness.sample === true || freshnessState === 'sample') return 'sample'
   if (
+    freshness.fail_closed === true ||
     freshness.is_stale === true ||
     freshness.is_current === false ||
     freshnessState === 'stale' ||
