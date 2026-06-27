@@ -76,6 +76,14 @@ function compactLimitationList(view, staleWithError) {
   return uniqueList(compact).slice(0, 3)
 }
 
+function getTeamContextReadRows(view) {
+  return [
+    { key: 'cleanOptions', label: 'Clean options', read: view.cleanOptions },
+    { key: 'coverageSafety', label: 'Coverage safety', read: view.coverageSafety },
+    { key: 'workloadConcentration', label: 'Workload concentration', read: view.workloadConcentration },
+  ].filter(row => row.read?.label || row.read?.summary || row.read?.reasons?.length)
+}
+
 export function getBullpenOperatingStateView({
   readModel,
   team,
@@ -224,6 +232,13 @@ export default function BullpenOperatingStateCard({
                 title={view.why}
               />
             )}
+            {getTeamContextReadRows(view).map(row => (
+              <OperatingContextReadRow
+                key={row.key}
+                label={row.label}
+                read={row.read}
+              />
+            ))}
           </div>
 
           {view.evidence.length > 0 && (
@@ -370,6 +385,8 @@ function CompactBullpenOperatingStateCard({
             </div>
           )}
 
+          <CompactContextReads view={view} />
+
           {evidence.length > 0 && (
             <section className="mt-2" aria-label="Evidence">
               <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
@@ -476,6 +493,32 @@ function CompactConcern({ label, concern }) {
   )
 }
 
+function CompactContextReads({ view }) {
+  const rows = getTeamContextReadRows(view)
+  if (rows.length === 0) return null
+  return (
+    <section className="mt-2 grid gap-1.5 sm:grid-cols-3" aria-label="Bullpen context">
+      {rows.map(row => (
+        <div key={row.key} className="rounded border border-dirt/70 bg-field/25 px-2.5 py-1.5">
+          <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+            {row.label}
+          </div>
+          {row.read?.label && (
+            <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
+              {row.read.label}
+            </div>
+          )}
+          {row.read?.summary && (
+            <p className="mt-1 text-[11px] leading-snug text-chalk400">
+              {row.read.summary}
+            </p>
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
 function OperatingStateCta({ view, compact = false }) {
   const className = `inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 font-mono uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber ${
     compact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
@@ -510,6 +553,42 @@ function OperatingStateRow({ label, title, body }) {
         <p className="mt-1 text-xs leading-relaxed text-chalk400">
           {body}
         </p>
+      )}
+    </div>
+  )
+}
+
+function OperatingContextReadRow({ label, read }) {
+  if (!read?.label && !read?.summary && !read?.reasons?.length) return null
+  const reasons = Array.isArray(read.reasons) ? read.reasons.filter(Boolean) : []
+  return (
+    <div className="border-t border-dirt/70 pt-3">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        {label}
+      </div>
+      {read.label && (
+        <div className="mt-1 break-words font-display text-lg leading-tight tracking-wide text-chalk100">
+          {read.label}
+        </div>
+      )}
+      {read.summary && (
+        <p className="mt-1 text-xs leading-relaxed text-chalk400">
+          {read.summary}
+        </p>
+      )}
+      {reasons.length > 0 && (
+        <div className="mt-2">
+          <div className="font-mono text-[9px] uppercase tracking-widest text-chalk600">
+            Evidence
+          </div>
+          <ul className="mt-1 space-y-1">
+            {reasons.map((item, index) => (
+              <li key={`${index}-${item}`} className="text-xs leading-relaxed text-chalk400">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

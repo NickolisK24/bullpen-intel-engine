@@ -31,6 +31,39 @@ const {
 } = await server.ssrLoadModule('/src/adapters/operatingStateReadModel.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const internalTerms = [
+  'backend',
+  'endpoint',
+  'source',
+  'snapshot',
+  'COIN',
+  'V2',
+  'V3',
+  'V4',
+  '2.0',
+  'deterministic',
+  'recommendation engine',
+  'baseline distribution',
+  'baseline',
+  'governance layer',
+  'governance',
+  'coverageSafetyVersion',
+  'capacityState',
+  'resourceHealthState',
+  'thresholds',
+  'Trust Arms',
+  'Depth Arms',
+  'top trust bucket',
+  'resource health',
+  'trust structure',
+  'active capacity',
+]
+const forbiddenPattern = (term) => {
+  const escaped = escapeRegExp(term)
+  return /^[a-z0-9]+$/i.test(term)
+    ? new RegExp(`\\b${escaped}\\b`, 'i')
+    : new RegExp(escaped, 'i')
+}
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (props) => renderToStaticMarkup(
   React.createElement(
@@ -107,6 +140,55 @@ function renderCompactTeamOperatingCard(board, props = {}) {
     density: 'compact',
     ...props,
   })
+}
+
+function trustedTeamShape(overrides = {}) {
+  return {
+    source: 'backend:test_fixture',
+    coverageSafetyVersion: 'V4',
+    capacityState: 'available',
+    resourceHealthState: 'strained',
+    thresholds: { cleanOptions: 3 },
+    supportingCounts: {
+      cleanOptionCount: 2,
+      activeBullpenArms: 7,
+    },
+    byKey: {
+      cleanOptions: {
+        key: 'cleanOptions',
+        label: 'Thin Clean Options',
+        explanation: '2 Clean Options out of 8 active bullpen arms - 1 Trust, 1 Bridge, 0 Coverage, 0 Depth. Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        reasons: [
+          '2 clean options are available.',
+          'Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        ],
+        supportingCounts: { cleanOptionCount: 2 },
+        source: 'backend',
+      },
+      coverageSafety: {
+        key: 'coverageSafety',
+        label: 'Stable Coverage Safety',
+        explanation: 'Coverage margin combines active capacity, resource health, and trust structure.',
+        reasons: ['The top trust bucket still has one available arm.'],
+        supportingCounts: { coverageArms: 4 },
+        source: 'backend',
+      },
+      workloadConcentration: {
+        key: 'workloadConcentration',
+        label: 'Some Workload Concentration',
+        explanation: 'Recent workload concentration uses coverageSafetyVersion 2.0 thresholds.',
+        reasons: ['capacityState and resourceHealthState should not render.'],
+        supportingCounts: { topThreeShare: 0.58 },
+        source: 'backend',
+      },
+      ...overrides,
+    },
+  }
+}
+
+function withTeamShape(board, teamShape) {
+  board.team_shape = teamShape
+  return board
 }
 
 test('renders the current bullpen state in baseball-facing language', () => {
@@ -235,20 +317,8 @@ test('renders league-wide Thin summary without implied baseline language', () =>
     assert.ok(htmlIncludes(html, section), `missing section: ${section}`)
   }
 
-  for (const term of [
-    'COIN',
-    'V2',
-    'V3',
-    'V4',
-    'deterministic',
-    'snapshot',
-    'endpoint',
-    'backend',
-    'recommendation engine',
-    'baseline distribution',
-    'governance layer',
-  ]) {
-    assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
+  for (const term of internalTerms) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
   }
 })
 
@@ -331,6 +401,110 @@ test('renders compact team operating card density with the core read intact', ()
   assert.ok(htmlIncludes(html, 'href="#pitcher-lanes"'))
   assert.equal(htmlIncludes(html, 'BaseballOS does not know manager intent'), false)
   assert.equal(htmlIncludes(html, 'Why BaseballOS Sees This'), false)
+})
+
+test('renders safe team context reads without changing freshness or limitations', () => {
+  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape())
+  const html = renderTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Thin Clean Options'))
+  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
+  assert.ok(htmlIncludes(html, '2 clean options are available.'))
+  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
+  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
+  assert.equal(htmlIncludes(html, 'The top trust bucket still has one available arm.'), false)
+  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent'))
+  assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms above clean Depth Arms.'), false)
+  assert.equal(htmlIncludes(html, 'Coverage margin combines active capacity'), false)
+  assert.equal(htmlIncludes(html, 'capacityState and resourceHealthState should not render.'), false)
+
+  for (const term of internalTerms) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
+  }
+  assert.equal(htmlIncludes(html, 'supportingCounts'), false)
+})
+
+test('renders compact team context reads without overwhelming the team board card', () => {
+  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape())
+  const html = renderCompactTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'data-density="compact"'))
+  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Thin Clean Options'))
+  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
+  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
+  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
+  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Limitations:'))
+  assert.equal(htmlIncludes(html, '2 clean options are available.'), false)
+  assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms'), false)
+
+  for (const term of internalTerms) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked compact ${term}`)
+  }
+})
+
+test('omits limited reads and filters unsafe team context copy', () => {
+  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Limited Read',
+      explanation: 'Backend team bullpen shape was not returned.',
+      reasons: ['Backend team bullpen shape was not returned.'],
+    },
+    coverageSafety: {
+      key: 'coverageSafety',
+      label: 'Stable Coverage Safety',
+      explanation: 'backend endpoint source snapshot V4 deterministic detail',
+      reasons: ['COIN source detail should not render.'],
+      supportingCounts: { coverageArms: 4 },
+    },
+    workloadConcentration: {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+    },
+  }))
+  const html = renderTeamOperatingCard(board)
+  const compactHtml = renderCompactTeamOperatingCard(board)
+
+  for (const phrase of [
+    'Coverage safety',
+    'Stable Coverage Safety',
+    'The current group appears to have enough coverage for a normal game state.',
+    'Workload concentration',
+    'Some Workload Concentration',
+    'Recent relief work has flowed through a smaller group of arms.',
+  ]) {
+    assert.ok(htmlIncludes(html, phrase), `missing safe full copy: ${phrase}`)
+    assert.ok(htmlIncludes(compactHtml, phrase), `missing safe compact copy: ${phrase}`)
+  }
+
+  for (const phrase of [
+    'Clean options',
+    'Limited Read',
+    'Backend team bullpen shape was not returned.',
+    'COIN source detail should not render.',
+  ]) {
+    assert.equal(htmlIncludes(html, phrase), false, `rendered unsafe full copy: ${phrase}`)
+    assert.equal(htmlIncludes(compactHtml, phrase), false, `rendered unsafe compact copy: ${phrase}`)
+  }
+
+  for (const term of internalTerms) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
+    assert.equal(forbiddenPattern(term).test(compactHtml), false, `leaked compact ${term}`)
+  }
 })
 
 test('team card separates usable active workload from roster pressure', () => {
@@ -440,22 +614,9 @@ test('team card omits unsupported rows and gates starter support by sample size'
 test('team operating card does not expose internal vocabulary', () => {
   const html = renderTeamOperatingCard(teamOperatingBoard())
   const compactHtml = renderCompactTeamOperatingCard(teamOperatingBoard())
-  for (const term of [
-    'backend',
-    'endpoint',
-    'snapshot',
-    'COIN',
-    'V2',
-    'V3',
-    'V4',
-    'deterministic',
-    'recommendation engine',
-    'baseline distribution',
-    'governance layer',
-    'sample state',
-  ]) {
-    assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
-    assert.equal(new RegExp(escapeRegExp(term), 'i').test(compactHtml), false, `leaked compact ${term}`)
+  for (const term of [...internalTerms, 'sample state']) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
+    assert.equal(forbiddenPattern(term).test(compactHtml), false, `leaked compact ${term}`)
   }
 })
 
@@ -490,20 +651,8 @@ test('omits internal language from visible card copy', () => {
   assert.ok(htmlIncludes(html, '5 of 8 relievers are classified Available.'))
   assert.ok(htmlIncludes(html, 'this bullpen read may not reflect current bullpen planning.'))
 
-  for (const term of [
-    'COIN',
-    'V2',
-    'V3',
-    'V4',
-    'deterministic',
-    'snapshot',
-    'endpoint',
-    'backend',
-    'recommendation engine',
-    'baseline distribution',
-    'governance layer',
-  ]) {
-    assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
+  for (const term of internalTerms) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
   }
 })
 

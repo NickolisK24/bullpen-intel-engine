@@ -29,15 +29,29 @@ const currentFreshness = {
 const forbiddenTerms = [
   'backend',
   'endpoint',
+  'source',
   'snapshot',
   'COIN',
   'V2',
   'V3',
   'V4',
+  '2.0',
   'deterministic',
   'recommendation engine',
   'baseline distribution',
+  'baseline',
   'governance layer',
+  'governance',
+  'coverageSafetyVersion',
+  'capacityState',
+  'resourceHealthState',
+  'thresholds',
+  'Trust Arms',
+  'Depth Arms',
+  'top trust bucket',
+  'resource health',
+  'trust structure',
+  'active capacity',
   'sample state',
 ]
 
@@ -79,10 +93,65 @@ function modelFor(payload, options = {}) {
   return toOperatingStateReadModel(payload, options)
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function forbiddenPattern(term) {
+  const escaped = escapeRegExp(term)
+  return /^[a-z0-9]+$/i.test(term)
+    ? new RegExp(`\\b${escaped}\\b`, 'i')
+    : new RegExp(escaped, 'i')
+}
+
 function assertNoForbiddenLanguage(value) {
   const json = JSON.stringify(value)
   for (const term of forbiddenTerms) {
-    assert.equal(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(json), false, `leaked ${term}`)
+    assert.equal(forbiddenPattern(term).test(json), false, `leaked ${term}`)
+  }
+}
+
+function trustedTeamShape(overrides = {}) {
+  return {
+    source: 'backend:test_fixture',
+    coverageSafetyVersion: 'V4',
+    capacityState: 'available',
+    resourceHealthState: 'strained',
+    thresholds: { cleanOptions: 3 },
+    supportingCounts: {
+      cleanOptionCount: 2,
+      activeBullpenArms: 7,
+    },
+    byKey: {
+      cleanOptions: {
+        key: 'cleanOptions',
+        label: 'Thin Clean Options',
+        explanation: '2 Clean Options out of 8 active bullpen arms - 1 Trust, 1 Bridge, 0 Coverage, 0 Depth. Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        reasons: [
+          '2 clean options are available.',
+          'Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        ],
+        supportingCounts: { cleanOptionCount: 2 },
+        source: 'backend',
+      },
+      coverageSafety: {
+        key: 'coverageSafety',
+        label: 'Stable Coverage Safety',
+        explanation: 'Coverage margin combines active capacity, resource health, and trust structure.',
+        reasons: ['The top trust bucket still has one available arm.'],
+        supportingCounts: { coverageArms: 4 },
+        source: 'backend',
+      },
+      workloadConcentration: {
+        key: 'workloadConcentration',
+        label: 'Some Workload Concentration',
+        explanation: 'Recent workload concentration uses coverageSafetyVersion 2.0 thresholds.',
+        reasons: ['capacityState and resourceHealthState should not render.'],
+        supportingCounts: { topThreeShare: 0.58 },
+        source: 'backend',
+      },
+      ...overrides,
+    },
   }
 }
 
@@ -207,6 +276,106 @@ test('freshness is attached to the read model', () => {
   assert.equal(model.freshness.hasFreshness, true)
 })
 
+test('team context reads map safe labels, explanations, and reasons only', () => {
+  const board = teamOperatingBoard({ freshness: currentFreshness })
+  board.team_shape = trustedTeamShape()
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.deepEqual(model.cleanOptions, {
+    label: 'Thin Clean Options',
+    summary: 'Cleanly available choices are thinner than raw availability may suggest.',
+    reasons: ['2 clean options are available.'],
+  })
+  assert.deepEqual(model.coverageSafety, {
+    label: 'Stable Coverage Safety',
+    summary: 'The current group appears to have enough coverage for a normal game state.',
+    reasons: [],
+  })
+  assert.deepEqual(model.workloadConcentration, {
+    label: 'Some Workload Concentration',
+    summary: 'Recent relief work has flowed through a smaller group of arms.',
+    reasons: [],
+  })
+  assert.equal(JSON.stringify(model).includes('supportingCounts'), false)
+  assert.equal(JSON.stringify(model).includes('team_shape'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(model.cleanOptions, 'key'), false)
+  assert.equal(JSON.stringify(model).includes('Interpretation weighs clean Trust Arms'), false)
+  assert.equal(JSON.stringify(model).includes('active capacity'), false)
+  assert.equal(JSON.stringify(model).includes('top trust bucket'), false)
+  assertNoForbiddenLanguage(model)
+})
+
+test('team context reads can map direct team_shape fields with public summaries', () => {
+  const board = teamOperatingBoard()
+  board.team_shape = {
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Healthy Clean Options',
+      explanation: 'Enough arms are cleanly available right now.',
+      reasons: ['5 clean options are available.'],
+    },
+  }
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.deepEqual(model.cleanOptions, {
+    label: 'Healthy Clean Options',
+    summary: 'This bullpen has enough cleanly available choices for normal coverage.',
+    reasons: ['5 clean options are available.'],
+  })
+  assert.equal(model.coverageSafety, null)
+  assert.equal(model.workloadConcentration, null)
+})
+
+test('team context reads omit limited reads but keep safe labels when copy is filtered', () => {
+  const board = teamOperatingBoard()
+  board.team_shape = trustedTeamShape({
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Limited Read',
+      explanation: 'Backend team bullpen shape was not returned.',
+      reasons: ['Backend team bullpen shape was not returned.'],
+    },
+    coverageSafety: {
+      key: 'coverageSafety',
+      label: 'Stable Coverage Safety',
+      explanation: 'backend endpoint source snapshot V4 deterministic detail',
+      reasons: ['COIN source detail should not render.'],
+    },
+    workloadConcentration: {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+    },
+  })
+
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.equal(model.cleanOptions, null)
+  assert.deepEqual(model.coverageSafety, {
+    label: 'Stable Coverage Safety',
+    summary: 'The current group appears to have enough coverage for a normal game state.',
+    reasons: [],
+  })
+  assert.deepEqual(model.workloadConcentration, {
+    label: 'Some Workload Concentration',
+    summary: 'Recent relief work has flowed through a smaller group of arms.',
+    reasons: [],
+  })
+  assertNoForbiddenLanguage(model)
+})
+
+test('missing team_shape leaves team context reads null without adding trend', () => {
+  const model = modelFor(teamOperatingBoard(), { scope: 'team' })
+
+  assert.equal(model.cleanOptions, null)
+  assert.equal(model.coverageSafety, null)
+  assert.equal(model.workloadConcentration, null)
+  assert.equal(Object.prototype.hasOwnProperty.call(model, 'trendSinceYesterday'), false)
+  assert.ok(model.unsupportedFields.includes('Trend Since Yesterday'))
+  assertNoUndefined(model)
+})
+
 test('stale and fail-closed freshness carries degraded flags and limitations', () => {
   const model = modelFor(teamOperatingBoard({
     freshness: {
@@ -259,8 +428,10 @@ test('unsupported fields are named for awareness but not rendered as placeholder
   const model = modelFor(teamOperatingBoard(), { scope: 'team' })
   const visible = [...model.evidence, ...model.limitations].join(' ')
 
-  for (const field of ['Clean Options', 'Coverage Safety', 'Workload Concentration', 'Trend Since Yesterday']) {
-    assert.ok(model.unsupportedFields.includes(field))
+  assert.deepEqual(model.unsupportedFields, ['Trend Since Yesterday'])
+  assert.equal(visible.includes('Trend Since Yesterday'), false)
+  for (const field of ['Clean Options', 'Coverage Safety', 'Workload Concentration']) {
+    assert.equal(model.unsupportedFields.includes(field), false)
     assert.equal(visible.includes(field), false)
   }
   assert.equal(/unknown|null placeholder|not available yet/i.test(visible), false)
