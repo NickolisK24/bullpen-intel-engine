@@ -467,6 +467,38 @@ def _safe_generate_completed_game_context(
         )
 
 
+def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_logger):
+    """Refresh the Intelligence Surface snapshot for a slate without ever
+    breaking the refresh.
+
+    Fail-closed wrapper around the homepage cache: rebuilds the stored
+    GET /api/bullpen/intelligence/today response from the completed-game contexts
+    just derived for ``schedule_date``. The completed-game contexts are already
+    committed, so a snapshot failure here costs only a stale homepage cache (the
+    endpoint falls back to live generation) and never undoes context work or
+    fails the postgame refresh.
+    """
+    try:
+        from services.intelligence_surface_snapshot import generate_snapshot_for_date
+
+        response = generate_snapshot_for_date(
+            schedule_date, source='postgame_refresh')
+        status['intelligence_snapshot'] = response.get('status') or 'generated'
+        run_logger.info(
+            'Intelligence surface snapshot refreshed for %s: status=%s, publishable=%s.',
+            schedule_date,
+            response.get('status'),
+            response.get('publishable_candidates'),
+        )
+    except Exception as exc:  # noqa: BLE001 — snapshot is best-effort, never fatal
+        db.session.rollback()
+        status['intelligence_snapshot'] = 'failed'
+        run_logger.warning(
+            'Intelligence surface snapshot failed for schedule_date=%s: %s',
+            schedule_date, exc,
+        )
+
+
 def sync_recent_logs(
     days_back: int = 7,
     reference_date: date | None = None,
@@ -904,6 +936,7 @@ def run_postgame_refresh(
         'records_failed': 0,
         'completed_game_contexts_upserted': 0,
         'completed_game_context_errors': 0,
+        'intelligence_snapshot': 'skipped',
         'message': '',
     }
     run_logger.info('── Postgame refresh starting (schedule_date=%s) ──', schedule_date)
@@ -984,6 +1017,12 @@ def run_postgame_refresh(
                 pitchers_updated = recalculate_all_fatigue()
                 status['pitchers_updated'] = pitchers_updated
                 run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+
+            # Refresh the Intelligence Surface homepage cache from the freshly
+            # derived contexts. Best-effort: it never blocks or fails the refresh.
+            if status['completed_game_contexts_upserted'] > 0:
+                _safe_generate_intelligence_surface_snapshot(
+                    schedule_date, status=status, run_logger=run_logger)
 
             if status['records_failed']:
                 status['status'] = (

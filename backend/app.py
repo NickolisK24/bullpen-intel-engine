@@ -129,6 +129,7 @@ def create_app(config_name=None):
     from models.availability_backtest_result import AvailabilityBacktestResult
     from models.postgame_processed_game import PostgameProcessedGame
     from models.completed_game_context import CompletedGameContext
+    from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
     from models.user import User, UserFollowedTeam
     from models.digest_metrics import DigestRun, DigestDelivery
     from models.product_event import ProductEvent
