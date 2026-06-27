@@ -151,40 +151,63 @@ function buildConcern(label, body) {
   return { label, body }
 }
 
+function safeConcern(concern) {
+  if (!concern || typeof concern !== 'object') return null
+  const label = safeText(concern.label)
+  const body = safeText(concern.body)
+  if (!label && !body) return null
+  return { label, body }
+}
+
+function pushUniqueConcern(rows, concern) {
+  if (!concern) return
+  const key = `${concern.label || ''}|${concern.body || ''}`.toLowerCase()
+  if (rows.some(row => `${row.label || ''}|${row.body || ''}`.toLowerCase() === key)) return
+  rows.push(concern)
+}
+
 function getConcernRows(context, stateKey) {
+  const explicitPrimary = safeConcern(context?.primaryConcern || context?.primary_concern)
+  const explicitSecondary = safeConcern(context?.secondaryConcern || context?.secondary_concern)
   const counts = getCounts(context)
-  if (!counts.total || !counts.hasRows) return []
+  if (!counts.total || !counts.hasRows) {
+    return [explicitPrimary, explicitSecondary].filter(Boolean)
+  }
 
   const rows = []
-  if (stateKey === 'constrained' || counts.available === 0) {
-    rows.push(buildConcern(
+  if (explicitPrimary) {
+    pushUniqueConcern(rows, explicitPrimary)
+  } else if (stateKey === 'constrained' || counts.available === 0) {
+    pushUniqueConcern(rows, buildConcern(
       'Clean options are tight',
       `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     ))
   } else if (stateKey === 'elevated' || counts.narrowed > 0) {
-    rows.push(buildConcern(
+    pushUniqueConcern(rows, buildConcern(
       'Not every arm is cleanly available',
       `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited, Avoid, or Unavailable.`,
     ))
   } else {
-    rows.push(buildConcern(
+    pushUniqueConcern(rows, buildConcern(
       'No clear pressure point',
       `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     ))
   }
 
-  if (counts.monitor > 0) {
-    rows.push(buildConcern(
+  if (explicitSecondary) {
+    pushUniqueConcern(rows, explicitSecondary)
+  } else if (counts.monitor > 0) {
+    pushUniqueConcern(rows, buildConcern(
       'Several arms are worth watching',
       `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the Monitor lane.`,
     ))
   } else if (counts.unavailableOrAvoid > 0) {
-    rows.push(buildConcern(
+    pushUniqueConcern(rows, buildConcern(
       'Some arms are out of the normal plan',
       `${counts.unavailableOrAvoid} of ${counts.total} ${pluralRelievers(counts.total)} are Avoid or Unavailable.`,
     ))
   } else if (counts.limited > 0) {
-    rows.push(buildConcern(
+    pushUniqueConcern(rows, buildConcern(
       'Some usage lanes are narrowed',
       `${counts.limited} of ${counts.total} ${pluralRelievers(counts.total)} are in the Limited lane.`,
     ))
@@ -284,6 +307,7 @@ export default function BullpenOperatingStateCard({
   onRetry,
   ctaHref,
   ctaLabel,
+  lastSyncLabel = 'Dashboard read synced',
   className = '',
 }) {
   const view = getBullpenOperatingStateView({
@@ -401,7 +425,7 @@ export default function BullpenOperatingStateCard({
               <FreshnessBadge freshness={view.freshness} />
               <DataThroughStamp date={view.freshness?.data_through} />
               <LastSyncLabel
-                label="Dashboard read synced"
+                label={lastSyncLabel}
                 value={view.freshness?.last_successful_sync}
               />
             </>
@@ -433,12 +457,21 @@ export default function BullpenOperatingStateCard({
 
       {view.ctaHref && (
         <div className="mt-4 border-t border-dirt/70 pt-3">
-          <Link
-            to={view.ctaHref}
-            className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-          >
-            {view.ctaLabel}
-          </Link>
+          {String(view.ctaHref).startsWith('#') ? (
+            <a
+              href={view.ctaHref}
+              className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+            >
+              {view.ctaLabel}
+            </a>
+          ) : (
+            <Link
+              to={view.ctaHref}
+              className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
+            >
+              {view.ctaLabel}
+            </Link>
+          )}
         </div>
       )}
     </article>

@@ -3,6 +3,7 @@ import { useFetch } from '../../../hooks/useFetch'
 import { usePreferredTeamPreference } from '../../../hooks/usePreferredTeamPreference'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
+import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
 import BullpenBoardView from './BullpenBoardView'
 import TeamGameContextCard from './TeamGameContextCard'
 import StoryCard from './StoryCard'
@@ -14,6 +15,8 @@ import {
   bullpenViewModeRequiresUnavailableContext,
   filterBoardForViewMode,
   getBullpenViewModeEmptyState,
+  getTeamOperatingStateContext,
+  teamOperatingStateFreshnessIsDegraded,
 } from './tonightsBullpenBoardView'
 
 // Resolve a deep-link `team` param (abbreviation like "SF", a team id, or a name)
@@ -106,8 +109,10 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   )
   const filteredBoard = filterBoardForViewMode(board.data, boardViewMode)
   const selectedViewMode = BULLPEN_VIEW_MODES.find(mode => mode.id === boardViewMode)
+  const teamOperatingContext = getTeamOperatingStateContext(board.data)
+  const selectedTeamLabel = board.data?.team?.team_name || board.data?.team?.team_abbreviation || 'Selected Team'
 
-  // The Team Board's single story surface is the canonical StoryCard above the
+  // The Team Board's single story surface is the canonical StoryCard near the
   // board. The board strips render compact alongside it, except in the
   // unavailable-only view mode.
   const compactBoardContext = boardViewMode !== BULLPEN_VIEW_MODE_UNAVAILABLE_ONLY
@@ -179,17 +184,29 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
       ) : (
         <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
           <div className="min-w-0 flex-1">
-            <StoryCard
-              story={story.data}
-              loading={story.loading}
-              error={story.error}
-              onRetry={story.refetch}
+            <BullpenOperatingStateCard
+              teamLabel={selectedTeamLabel}
+              scope="team"
+              context={teamOperatingContext}
+              freshness={board.data?.freshness}
+              staleWithError={teamOperatingStateFreshnessIsDegraded(board.data?.freshness)}
+              onRetry={board.refetch}
+              ctaHref="#pitcher-lanes"
+              ctaLabel="Review pitcher lanes"
+              lastSyncLabel="Bullpen read synced"
+              className="mb-4"
             />
             <BullpenBoardView
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
               compact={compactBoardContext}
               emptyState={getBullpenViewModeEmptyState(boardViewMode)}
+            />
+            <StoryCard
+              story={story.data}
+              loading={story.loading}
+              error={story.error}
+              onRetry={story.refetch}
             />
             <TeamGameContextCard
               gameContext={gameContext.data}

@@ -489,7 +489,7 @@ export default function BullpenBoardView({
   const hasStress = Boolean(board?.stress)
 
   return (
-    <div>
+    <div id="pitcher-lanes">
       <FreshnessBanner freshness={board?.freshness} />
       <RosterStatusBanner board={board} />
 
