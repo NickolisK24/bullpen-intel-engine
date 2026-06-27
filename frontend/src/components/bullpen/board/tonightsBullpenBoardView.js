@@ -566,6 +566,24 @@ const STRESS_TONE = {
   muted: HEALTH_TONE.no_data,
 }
 
+const IMPLIED_COMPARISON_STRESS_COPY = /\b(less room than usual|than usual|normal board|baseline|clean room|expected)\b/i
+
+function getCurrentStateStressSummary(summary, state) {
+  const text = typeof summary === 'string' ? summary.trim() : ''
+  if (!IMPLIED_COMPARISON_STRESS_COPY.test(text)) return text
+
+  if (state === 'manageable') {
+    return 'This pen has usable coverage right now.'
+  }
+  if (state === 'monitoring') {
+    return 'This pen is usable, but a few arms are already in the yellow.'
+  }
+  if (state === 'constrained') {
+    return 'Clean options are tight right now.'
+  }
+  return 'Cleanly available options are limited right now.'
+}
+
 export function getBullpenStressView(stress) {
   if (!stress) {
     return {
@@ -589,7 +607,7 @@ export function getBullpenStressView(stress) {
     conceptLabel: 'Overall Availability',
     state: stress.state || 'no_data',
     label: stress.label || 'No Read',
-    summary: stress.summary || 'Not enough current bullpen data to assess stress.',
+    summary: getCurrentStateStressSummary(stress.summary, stress.state) || 'Not enough current bullpen data to assess stress.',
     reasons,
     limitations,
     reasonCodes: Array.isArray(stress.reason_codes) ? stress.reason_codes : [],
