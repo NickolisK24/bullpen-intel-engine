@@ -51,6 +51,12 @@ const internalTerms = [
   'capacityState',
   'resourceHealthState',
   'thresholds',
+  'Trust Arms',
+  'Depth Arms',
+  'top trust bucket',
+  'resource health',
+  'trust structure',
+  'active capacity',
 ]
 const forbiddenPattern = (term) => {
   const escaped = escapeRegExp(term)
@@ -151,24 +157,27 @@ function trustedTeamShape(overrides = {}) {
       cleanOptions: {
         key: 'cleanOptions',
         label: 'Thin Clean Options',
-        explanation: 'Cleanly available options are limited right now.',
-        reasons: ['2 clean options are available.'],
+        explanation: '2 Clean Options out of 8 active bullpen arms - 1 Trust, 1 Bridge, 0 Coverage, 0 Depth. Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        reasons: [
+          '2 clean options are available.',
+          'Interpretation weighs clean Trust Arms above clean Depth Arms.',
+        ],
         supportingCounts: { cleanOptionCount: 2 },
         source: 'backend',
       },
       coverageSafety: {
         key: 'coverageSafety',
         label: 'Stable Coverage Safety',
-        explanation: 'There is still enough coverage for ordinary bullpen length.',
-        reasons: ['4 coverage arms are available.'],
+        explanation: 'Coverage margin combines active capacity, resource health, and trust structure.',
+        reasons: ['The top trust bucket still has one available arm.'],
         supportingCounts: { coverageArms: 4 },
         source: 'backend',
       },
       workloadConcentration: {
         key: 'workloadConcentration',
         label: 'Some Workload Concentration',
-        explanation: 'Recent workload is carried by a small part of the bullpen.',
-        reasons: ['The top three relief arms carried most recent relief work.'],
+        explanation: 'Recent workload concentration uses coverageSafetyVersion 2.0 thresholds.',
+        reasons: ['capacityState and resourceHealthState should not render.'],
         supportingCounts: { topThreeShare: 0.58 },
         source: 'backend',
       },
@@ -400,20 +409,22 @@ test('renders safe team context reads without changing freshness or limitations'
 
   assert.ok(htmlIncludes(html, 'Clean options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'Cleanly available options are limited right now.'))
+  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
   assert.ok(htmlIncludes(html, '2 clean options are available.'))
   assert.ok(htmlIncludes(html, 'Coverage safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
-  assert.ok(htmlIncludes(html, 'There is still enough coverage for ordinary bullpen length.'))
-  assert.ok(htmlIncludes(html, '4 coverage arms are available.'))
+  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
+  assert.equal(htmlIncludes(html, 'The top trust bucket still has one available arm.'), false)
   assert.ok(htmlIncludes(html, 'Workload concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
-  assert.ok(htmlIncludes(html, 'Recent workload is carried by a small part of the bullpen.'))
-  assert.ok(htmlIncludes(html, 'The top three relief arms carried most recent relief work.'))
+  assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4'))
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent'))
+  assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms above clean Depth Arms.'), false)
+  assert.equal(htmlIncludes(html, 'Coverage margin combines active capacity'), false)
+  assert.equal(htmlIncludes(html, 'capacityState and resourceHealthState should not render.'), false)
 
   for (const term of internalTerms) {
     assert.equal(forbiddenPattern(term).test(html), false, `leaked ${term}`)
@@ -428,20 +439,24 @@ test('renders compact team context reads without overwhelming the team board car
   assert.ok(htmlIncludes(html, 'data-density="compact"'))
   assert.ok(htmlIncludes(html, 'Clean options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
+  assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
   assert.ok(htmlIncludes(html, 'Coverage safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
+  assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
   assert.ok(htmlIncludes(html, 'Workload concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
+  assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Limitations:'))
   assert.equal(htmlIncludes(html, '2 clean options are available.'), false)
+  assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms'), false)
 
   for (const term of internalTerms) {
     assert.equal(forbiddenPattern(term).test(html), false, `leaked compact ${term}`)
   }
 })
 
-test('omits limited and unsafe team context reads from visible card copy', () => {
+test('omits limited reads and filters unsafe team context copy', () => {
   const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
     cleanOptions: {
       key: 'cleanOptions',
@@ -465,12 +480,21 @@ test('omits limited and unsafe team context reads from visible card copy', () =>
   const compactHtml = renderCompactTeamOperatingCard(board)
 
   for (const phrase of [
-    'Clean options',
     'Coverage safety',
+    'Stable Coverage Safety',
+    'The current group appears to have enough coverage for a normal game state.',
     'Workload concentration',
+    'Some Workload Concentration',
+    'Recent relief work has flowed through a smaller group of arms.',
+  ]) {
+    assert.ok(htmlIncludes(html, phrase), `missing safe full copy: ${phrase}`)
+    assert.ok(htmlIncludes(compactHtml, phrase), `missing safe compact copy: ${phrase}`)
+  }
+
+  for (const phrase of [
+    'Clean options',
     'Limited Read',
     'Backend team bullpen shape was not returned.',
-    'Stable Coverage Safety',
     'COIN source detail should not render.',
   ]) {
     assert.equal(htmlIncludes(html, phrase), false, `rendered unsafe full copy: ${phrase}`)
