@@ -994,11 +994,12 @@ function TonightSection({
       title="Tonight"
       subtitle="Bullpen situations BaseballOS is watching before first pitch."
     >
-      <SectionFreshnessRow
-        dataThrough={dataThrough}
-        lastSync={lastSync}
-        stale={Boolean(error && !tonight)}
-      />
+      {!Boolean(error && !tonight) && (
+        <SectionFreshnessRow
+          dataThrough={dataThrough}
+          lastSync={lastSync}
+        />
+      )}
       <TonightEmptyState isError={Boolean(error && !tonight)} onRetry={onRetry} />
     </SectionShell>
   )
