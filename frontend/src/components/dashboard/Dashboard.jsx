@@ -16,6 +16,7 @@ import {
   getDataProvenance,
   getRolesSummaryView,
 } from '../bullpen/board/tonightsBullpenBoardView'
+import BullpenOperatingStateCard from '../bullpen/BullpenOperatingStateCard'
 
 // BaseballOS landing. Centered on the bullpen: availability, workload, health,
 // and usage-role composition. Trust/freshness summaries are shown; the deep
@@ -126,34 +127,15 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             title="League-Wide Bullpen State"
             subtitle="League-wide context across bullpen-eligible arms — not a single team. Open Bullpen for one team's current state."
           >
-            <div className="card p-4" style={context.tone} role="status" aria-live="polite">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="flex items-center gap-2 font-display text-lg tracking-wide">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: context.tone.dot }} aria-hidden="true" />
-                  {context.label || 'Bullpen context unavailable.'}
-                </h3>
-                <span className="font-mono text-[10px] uppercase tracking-widest">
-                  League-Wide · Workload Read: {context.confidenceLabel}
-                </span>
-              </div>
-              {context.isDegraded && (
-                <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-                  Unclear read — treat this bullpen read with caution.
-                </p>
-              )}
-              {context.reasons.length > 0 && (
-                <details className="mt-3 rounded border border-dirt/60 bg-dugout/50 p-2" open>
-                  <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                    Why?
-                  </summary>
-                  <ul className="mt-2 space-y-1">
-                    {context.reasons.map((reason, index) => (
-                      <li key={index} className="text-xs leading-relaxed text-chalk300">• {reason}</li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </div>
+            <BullpenOperatingStateCard
+              teamLabel="League-Wide"
+              context={context}
+              freshness={freshness}
+              staleWithError={staleWithError}
+              onRetry={onRetry}
+              ctaHref="/bullpen?view=board"
+              ctaLabel="Open Team Bullpen Board"
+            />
           </Section>
 
           {/* Section 4 — Usage Roles Summary */}

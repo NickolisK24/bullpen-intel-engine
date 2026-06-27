@@ -64,8 +64,9 @@ test('bullpen state is clearly league-wide, not a single team', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen State'))
   assert.ok(htmlIncludes(html, 'not a single team'))
-  // The aggregate statement itself carries a league-wide qualifier inline.
-  assert.ok(htmlIncludes(html, 'League-Wide · Workload Read:'))
+  // The aggregate card itself carries a league-wide team label and operating state.
+  assert.ok(htmlIncludes(html, 'League-Wide'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
 })
 
 test('usage roles are described as a league-wide distribution', () => {
