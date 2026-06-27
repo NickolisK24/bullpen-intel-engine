@@ -125,7 +125,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           {/* Section 3 — Bullpen State */}
           <Section
             title="League-Wide Bullpen State"
-            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open Bullpen for one team's current state."
+            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open the Bullpen Board for a team-specific read."
           >
             <BullpenOperatingStateCard
               teamLabel="League-Wide"

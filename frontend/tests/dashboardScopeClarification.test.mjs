@@ -64,6 +64,8 @@ test('bullpen state is clearly league-wide, not a single team', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen State'))
   assert.ok(htmlIncludes(html, 'not a single team'))
+  assert.ok(htmlIncludes(html, 'Open the Bullpen Board for a team-specific read.'))
+  assert.equal(htmlIncludes(html, "Open Bullpen for one team's current state"), false)
   // The aggregate card itself carries league-wide scope and operating state.
   assert.ok(htmlIncludes(html, 'Scope'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
