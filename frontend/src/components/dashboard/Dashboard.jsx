@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { toOperatingStateReadModel } from '../../adapters/operatingStateReadModel'
 import { useFetch } from '../../hooks/useFetch'
 import { getBullpenDashboard } from '../../utils/api'
 import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
@@ -36,6 +37,10 @@ export default function Dashboard() {
 
 export function DashboardView({ data, loading = false, error = null, staleWithError = false, onRetry }) {
   const context = getBoardContextView(data || {})
+  const operatingStateRead = toOperatingStateReadModel(data || {}, {
+    scope: 'league',
+    cta: { href: '/bullpen?view=board', label: 'Open Bullpen Board' },
+  })
   const roles = getRolesSummaryView(data?.roles)
   const injuryIlContext = normalizeInjuryIlContext(data)
 
@@ -128,15 +133,9 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             subtitle="League-wide context across bullpen-eligible arms — not a single team. Open the Bullpen Board for a team-specific read."
           >
             <BullpenOperatingStateCard
-              teamLabel="League-Wide"
-              scope="league"
-              scopeLabel="Scope"
-              context={context}
-              freshness={freshness}
+              readModel={operatingStateRead}
               staleWithError={staleWithError}
               onRetry={onRetry}
-              ctaHref="/bullpen?view=board"
-              ctaLabel="Open Bullpen Board"
             />
           </Section>
 

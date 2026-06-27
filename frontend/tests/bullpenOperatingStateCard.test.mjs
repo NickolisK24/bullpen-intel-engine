@@ -24,9 +24,11 @@ const {
 } = await server.ssrLoadModule('/src/components/bullpen/BullpenOperatingStateCard.jsx')
 const {
   getBoardContextView,
-  getTeamOperatingStateContext,
   teamOperatingStateFreshnessIsDegraded,
 } = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
+const {
+  toOperatingStateReadModel,
+} = await server.ssrLoadModule('/src/adapters/operatingStateReadModel.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -84,15 +86,18 @@ function teamOperatingBoard(overrides = {}) {
 }
 
 function renderTeamOperatingCard(board, props = {}) {
-  return render({
-    teamLabel: board?.team?.team_name,
+  const density = props.density || 'full'
+  const readModel = toOperatingStateReadModel(board, {
     scope: 'team',
-    context: getTeamOperatingStateContext(board),
-    freshness: board?.freshness,
-    staleWithError: teamOperatingStateFreshnessIsDegraded(board?.freshness),
-    ctaHref: '#pitcher-lanes',
-    ctaLabel: 'Review pitcher lanes',
+    team: board?.team,
+    cta: { href: '#pitcher-lanes', label: 'Review pitcher lanes' },
+    density,
+  })
+  return render({
+    readModel,
+    staleWithError: teamOperatingStateFreshnessIsDegraded(readModel.freshness),
     lastSyncLabel: 'Bullpen read synced',
+    density,
     ...props,
   })
 }
@@ -138,6 +143,26 @@ test('renders the current bullpen state in baseball-facing language', () => {
   assert.ok(htmlIncludes(html, 'Limitations'))
   assert.ok(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'))
   assert.equal((html.match(/Availability classifications are workload-based only/g) || []).length, 1)
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
+})
+
+test('renders a fixed operating-state read model without raw context props', () => {
+  const board = makeBoard({
+    cardsByStatus: {
+      Available: Array.from({ length: 5 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
+    },
+    freshness: currentFreshness,
+  })
+  const readModel = toOperatingStateReadModel(board, {
+    scope: 'league',
+    cta: { href: '/bullpen?view=board', label: 'Open Bullpen Board' },
+  })
+  const html = render({ readModel })
+
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
+  assert.ok(htmlIncludes(html, 'League-Wide'))
+  assert.ok(htmlIncludes(html, 'Stable Overall'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
 })
 

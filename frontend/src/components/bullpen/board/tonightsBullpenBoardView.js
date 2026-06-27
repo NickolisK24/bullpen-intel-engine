@@ -3,6 +3,11 @@ import {
   getAvailabilityBadgeView,
   getDataStateView,
 } from '../availabilityView'
+import {
+  getBoardContextView as getOperatingBoardContextView,
+  getTeamOperatingStateContext as getOperatingTeamStateContext,
+  teamOperatingStateFreshnessIsDegraded as operatingStateFreshnessIsDegraded,
+} from '../../../adapters/operatingStateReadModel'
 import { completedGamesDataLine, fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import {
   compactWorkloadAppearanceLabel,
@@ -594,253 +599,16 @@ export function getBullpenStressView(stress) {
   }
 }
 
-// Snapshot rows mirror the board's five groups, in the same reading order.
-const SNAPSHOT_ROWS = [
-  { status: 'Available', label: 'Available', key: 'available' },
-  { status: 'Monitor', label: 'Monitor', key: 'monitor' },
-  { status: 'Limited', label: 'Limited', key: 'limited' },
-  { status: 'Avoid', label: 'Avoid', key: 'avoid' },
-  { status: 'Unavailable', label: 'Unavailable', key: 'unavailable' },
-]
-
 export function getBoardContextView(board) {
-  const context = board?.context || {}
-  const metrics = context.metrics || {}
-  const health = context.health || {}
-  const state = health.state || 'no_data'
-  const tone = HEALTH_TONE[state] || HEALTH_TONE.no_data
-  const confidence = context.confidence || 'high'
-
-  const snapshot = SNAPSHOT_ROWS.map(row => ({
-    status: row.status,
-    label: row.label,
-    count: typeof metrics[row.key] === 'number' ? metrics[row.key] : 0,
-    badge: getAvailabilityBadgeView(row.status),
-  }))
-
-  return {
-    hasContext: Boolean(board?.context),
-    state,
-    label: health.label || null,
-    reasons: Array.isArray(health.reasons) ? health.reasons : [],
-    confidence,
-    confidenceLabel: formatConfidence(confidence),
-    isDegraded: confidence === 'low',
-    limitations: Array.isArray(context.limitations) ? context.limitations : [],
-    metrics: {
-      total: typeof metrics.total_relievers === 'number' ? metrics.total_relievers : 0,
-      pctAvailable: typeof metrics.pct_available === 'number' ? metrics.pct_available : 0,
-      pctUnavailable: typeof metrics.pct_unavailable === 'number' ? metrics.pct_unavailable : 0,
-      pctRestricted: typeof metrics.pct_restricted === 'number' ? metrics.pct_restricted : 0,
-    },
-    snapshot,
-    tone,
-  }
-}
-
-const TEAM_SCOPE_LIMITATION = (
-  'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
-)
-const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
-const ROTATION_SUPPORT_LIMITED_STATUSES = new Set(['limited_read', 'no_data'])
-
-function numericCount(value) {
-  const number = Number(value)
-  return Number.isFinite(number) && number > 0 ? number : 0
-}
-
-function pluralArms(count) {
-  return count === 1 ? 'arm' : 'arms'
-}
-
-function pluralRelievers(count) {
-  return count === 1 ? 'reliever' : 'relievers'
-}
-
-function uniqueTextList(list) {
-  const seen = new Set()
-  return list.filter(item => {
-    const text = typeof item === 'string' ? item.trim() : ''
-    const key = text.toLowerCase()
-    if (!key || seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-function isEmptyMonitorEvidence(text) {
-  return /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(String(text || '').trim())
-}
-
-function supportingTeamReasons(reasons) {
-  return Array.isArray(reasons)
-    ? reasons.filter(reason => !isEmptyMonitorEvidence(reason))
-    : []
-}
-
-function contextCount(context, status) {
-  const row = (Array.isArray(context?.snapshot) ? context.snapshot : [])
-    .find(item => item.status === status || item.label === status)
-  return numericCount(row?.count)
-}
-
-function getTeamWorkloadConcern(context) {
-  const total = numericCount(context?.metrics?.total)
-  if (!total) return null
-  const available = contextCount(context, 'Available')
-  const monitor = contextCount(context, 'Monitor')
-  const limited = contextCount(context, 'Limited')
-  const avoid = contextCount(context, 'Avoid')
-  const unavailable = contextCount(context, 'Unavailable')
-  const narrowed = limited + avoid + unavailable
-  const state = context?.state || 'no_data'
-
-  if (state === 'constrained' || available === 0) {
-    return {
-      label: 'Clean options are tight',
-      body: `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
-    }
-  }
-  if (state === 'elevated' || narrowed > 0) {
-    return {
-      label: 'Not every arm is cleanly available',
-      body: `${narrowed} of ${total} ${pluralRelievers(total)} are Limited, Avoid, or Unavailable.`,
-    }
-  }
-  if (state === 'monitoring') {
-    return {
-      label: 'Several arms are worth watching',
-      body: `${monitor} of ${total} ${pluralRelievers(total)} are in the Monitor lane.`,
-    }
-  }
-  return {
-    label: 'Active workload is usable',
-    body: `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
-  }
-}
-
-function getTeamWorkloadEvidence(context) {
-  const total = numericCount(context?.metrics?.total)
-  if (!total) return []
-  const available = contextCount(context, 'Available')
-  const monitor = contextCount(context, 'Monitor')
-  const limited = contextCount(context, 'Limited')
-  const avoid = contextCount(context, 'Avoid')
-  const unavailable = contextCount(context, 'Unavailable')
-  const narrowed = limited + avoid + unavailable
-  return [
-    `${available} of ${total} ${pluralRelievers(total)} are classified Available.`,
-    monitor > 0 ? `${monitor} of ${total} ${pluralRelievers(total)} are in the Monitor group.` : null,
-    narrowed > 0 ? `${narrowed} of ${total} ${pluralRelievers(total)} are Limited, Avoid, or Unavailable.` : null,
-  ].filter(Boolean)
-}
-
-function getTeamRosterPressure(authority) {
-  const counts = authority?.counts || {}
-  const categories = authority?.category_counts || {}
-  const injuredList = numericCount(categories.injured_list)
-  const inactive = numericCount(counts.inactive_roster_context_count)
-  const unknown = numericCount(counts.roster_unknown_count)
-  const pressureCount = inactive || injuredList || unknown
-  const evidence = []
-
-  if (injuredList > 0) {
-    evidence.push(`${injuredList} bullpen ${pluralArms(injuredList)} ${injuredList === 1 ? 'is' : 'are'} on the injured list.`)
-  }
-  if (inactive > 0) {
-    evidence.push(`${inactive} bullpen ${pluralArms(inactive)} ${inactive === 1 ? 'is' : 'are'} inactive or unavailable.`)
-  }
-  if (unknown > 0) {
-    evidence.push(`${unknown} bullpen ${pluralArms(unknown)} ${unknown === 1 ? 'has' : 'have'} unconfirmed roster status.`)
-  }
-
-  let concern = null
-  if (pressureCount > 0) {
-    const body = inactive > 0
-      ? `${inactive} bullpen ${pluralArms(inactive)} ${inactive === 1 ? 'is' : 'are'} on the injured list or inactive.`
-      : injuredList > 0
-        ? `${injuredList} bullpen ${pluralArms(injuredList)} ${injuredList === 1 ? 'is' : 'are'} on the injured list.`
-        : `${unknown} bullpen ${pluralArms(unknown)} ${unknown === 1 ? 'has' : 'have'} unconfirmed roster status.`
-    concern = {
-      label: 'Roster pressure remains part of the story',
-      body,
-    }
-  }
-
-  return {
-    concern,
-    evidence,
-    limitations: Array.isArray(authority?.limitations) ? authority.limitations : [],
-  }
-}
-
-function getStarterSupportEvidence(rotationSupport) {
-  if (!rotationSupport || typeof rotationSupport !== 'object') {
-    return { shouldShow: false, evidence: [], limitations: [] }
-  }
-  const gamesAnalyzed = numericCount(rotationSupport.games_analyzed)
-  const status = String(rotationSupport.status || '').toLowerCase()
-  const summary = typeof rotationSupport.summary === 'string' ? rotationSupport.summary.trim() : ''
-  const shouldShow = (
-    gamesAnalyzed >= ROTATION_SUPPORT_MIN_ANALYZED_GAMES
-    && summary
-    && !ROTATION_SUPPORT_LIMITED_STATUSES.has(status)
-  )
-  if (!shouldShow) {
-    return { shouldShow: false, evidence: [], limitations: [] }
-  }
-  return {
-    shouldShow: true,
-    evidence: [`Starter support: ${summary}`],
-    limitations: Array.isArray(rotationSupport.limitations) ? rotationSupport.limitations : [],
-  }
-}
-
-function freshnessIsLimited(freshness) {
-  const state = String(freshness?.freshness_state || freshness?.state || '').toLowerCase()
-  return Boolean(
-    freshness?.is_stale === true
-    || freshness?.is_current === false
-    || freshness?.fail_closed === true
-    || state === 'stale'
-    || state === 'historical'
-    || state === 'failed'
-  )
+  return getOperatingBoardContextView(board)
 }
 
 export function teamOperatingStateFreshnessIsDegraded(freshness) {
-  return freshnessIsLimited(freshness)
+  return operatingStateFreshnessIsDegraded(freshness)
 }
 
 export function getTeamOperatingStateContext(board) {
-  const context = getBoardContextView(board)
-  if (!context.hasContext) return context
-
-  const rosterPressure = getTeamRosterPressure(board?.roster_authority)
-  const starterSupport = getStarterSupportEvidence(board?.rotation_support_pressure)
-  const freshnessLimitations = freshnessIsLimited(board?.freshness) && Array.isArray(board?.freshness?.limitations)
-    ? board.freshness.limitations
-    : []
-
-  return {
-    ...context,
-    reasons: uniqueTextList([
-      ...supportingTeamReasons(context.reasons),
-      ...getTeamWorkloadEvidence(context),
-      ...rosterPressure.evidence,
-      ...starterSupport.evidence,
-    ]),
-    limitations: uniqueTextList([
-      TEAM_SCOPE_LIMITATION,
-      ...context.limitations,
-      ...rosterPressure.limitations,
-      ...starterSupport.limitations,
-      ...freshnessLimitations,
-      ...(Array.isArray(board?.limitations) ? board.limitations : []),
-    ]),
-    primaryConcern: getTeamWorkloadConcern(context),
-    secondaryConcern: rosterPressure.concern,
-  }
+  return getOperatingTeamStateContext(board)
 }
 
 export function getBoardTotals(board) {
