@@ -412,6 +412,9 @@ _COMPLETED_GAME_CONTEXT_REVISION = 'b9e4c1f7a2d6'
 # The Intelligence Surface snapshot cache chains off the completed-game-context
 # table, advancing the single alembic head once more.
 _INTELLIGENCE_SURFACE_SNAPSHOT_REVISION = 'a7f2c1d4e9b6'
+# Schedule Storage V1 adds the scheduled_games table on top of the snapshot
+# revision, advancing the single alembic head once more.
+_SCHEDULED_GAMES_REVISION = 'c5b1e9a2f7d4'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -437,9 +440,11 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION}
-    # The completed-game-context migration chains directly off the event log,
-    # and the snapshot migration chains directly off completed-game-context.
+    assert heads == {_SCHEDULED_GAMES_REVISION}
+    # The completed-game-context migration chains off the event log, the snapshot
+    # migration off completed-game-context, and scheduled_games off the snapshot.
     assert revisions[_COMPLETED_GAME_CONTEXT_REVISION] == _EVENT_FOUNDATION_REVISION
     assert (revisions[_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION]
             == _COMPLETED_GAME_CONTEXT_REVISION)
+    assert (revisions[_SCHEDULED_GAMES_REVISION]
+            == _INTELLIGENCE_SURFACE_SNAPSHOT_REVISION)
