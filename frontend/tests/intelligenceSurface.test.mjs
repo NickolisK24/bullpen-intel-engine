@@ -326,7 +326,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Confidence'))
   assert.ok(htmlIncludes(html, 'Critical'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
-  assert.ok(htmlIncludes(html, 'Data through Jun 25'))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
   assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
   assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
@@ -339,6 +339,70 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   for (const implementationCopy of ['existing dashboard snapshot', 'existing landscape endpoint', 'internal adapter']) {
     assert.equal(html.includes(implementationCopy), false, implementationCopy)
   }
+})
+
+test('homepage freshness separates Tonight slate from completed-game bullpen data', () => {
+  const slateTonight = {
+    ...tonightOk,
+    reference_date: '2026-06-27',
+  }
+  const completedDashboard = {
+    ...dashboard,
+    freshness: {
+      ...dashboard.freshness,
+      data_through: '2026-06-26',
+      last_successful_sync: '2026-06-27T15:04:00Z',
+    },
+  }
+  const completedLandscape = {
+    ...landscape,
+    reference_date: '2026-06-27',
+    games: {
+      ...landscape.games,
+      as_of_date: '2026-06-26',
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: { ...intelligenceOk, reference_date: '2026-06-26' },
+    tonight: slateTonight,
+    dashboard: completedDashboard,
+    landscape: completedLandscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight slate: Jun 27'))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 26'))
+  assert.ok(htmlIncludes(html, 'Last synced 11:04 AM ET'))
+  assert.equal(htmlIncludes(html, 'Data through Jun 27'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen data through Jun 27'), false)
+})
+
+test('Bullpen Picture omits data-through when no trusted completed-game date exists', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard: {},
+    landscape: {
+      ...landscape,
+      reference_date: '2026-06-27',
+      games: {
+        ...landscape.games,
+        as_of_date: null,
+      },
+    },
+    teams,
+  }))
+
+  const pictureStart = html.indexOf('Today&#x27;s Bullpen Picture')
+  const exploreStart = html.indexOf('Explore', pictureStart)
+  const pictureHtml = html.slice(pictureStart, exploreStart)
+
+  assert.equal(htmlIncludes(pictureHtml, 'Bullpen data through'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'Data through Jun 27'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'Invalid Date'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'undefined'), false)
+  assert.equal(htmlIncludes(pictureHtml, 'null'), false)
 })
 
 test('empty Intelligence Surface response shows a graceful story fallback', () => {
@@ -568,6 +632,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested, constrained, or worth monitoring.'))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
   assert.ok(htmlIncludes(html, 'Most Available'))
   assert.ok(htmlIncludes(html, 'Most Constrained'))
   assert.ok(htmlIncludes(html, 'Worth Watching'))

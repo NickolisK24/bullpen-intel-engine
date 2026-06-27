@@ -11,6 +11,7 @@ import {
   DataThroughStamp,
   FreshnessBadge,
   LastSyncLabel,
+  SlateDateStamp,
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
@@ -223,13 +224,33 @@ function SectionFreshnessRow({
   dataThrough,
   lastSync,
   stale = false,
+  dataThroughLabel = 'Bullpen data through',
   className = '',
 }) {
   if (!dataThrough && !lastSync && !stale) return null
   return (
     <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
       <FreshnessBadge state={stale ? 'stale' : 'current'} />
-      <DataThroughStamp date={dataThrough} />
+      <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
+      <LastSyncLabel value={lastSync} />
+    </div>
+  )
+}
+
+function TonightFreshnessRow({
+  slateDate,
+  dataThrough,
+  lastSync,
+  stale = false,
+}) {
+  if (!slateDate && !dataThrough && !lastSync && !stale) return null
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <SlateDateStamp date={slateDate} />
+      {(dataThrough || lastSync || stale) && (
+        <FreshnessBadge state={stale ? 'stale' : 'current'} />
+      )}
+      <DataThroughStamp date={dataThrough} label="Bullpen data through" />
       <LastSyncLabel value={lastSync} />
     </div>
   )
@@ -910,7 +931,8 @@ function TonightSection({
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanDraftList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
-  const dataThrough = firstTextValue(tonight?.reference_date, freshness?.data_through)
+  const slateDate = textValue(tonight?.reference_date)
+  const dataThrough = textValue(freshness?.data_through)
   const lastSync = textValue(freshness?.last_successful_sync)
   const fallbackItems = getAroundBaseballItems(dashboard, leadStory)
   const canShowFallback = !loading && (
@@ -946,7 +968,8 @@ function TonightSection({
             onRetry={onRetry}
           />
         )}
-        <SectionFreshnessRow
+        <TonightFreshnessRow
+          slateDate={slateDate}
           dataThrough={dataThrough}
           lastSync={lastSync}
           stale={staleWithError}
@@ -995,7 +1018,8 @@ function TonightSection({
       subtitle="Bullpen situations BaseballOS is watching before first pitch."
     >
       {!Boolean(error && !tonight) && (
-        <SectionFreshnessRow
+        <TonightFreshnessRow
+          slateDate={slateDate}
           dataThrough={dataThrough}
           lastSync={lastSync}
         />
@@ -1016,7 +1040,6 @@ function BullpenPicture({
   const picture = getBullpenPictureView(landscape)
   const dataThrough = firstTextValue(
     landscape?.games?.as_of_date,
-    landscape?.reference_date,
     freshness?.data_through,
   )
   const lastSync = textValue(freshness?.last_successful_sync)

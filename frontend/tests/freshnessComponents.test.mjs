@@ -19,6 +19,7 @@ const {
   DataThroughStamp,
   FreshnessBadge,
   LastSyncLabel,
+  SlateDateStamp,
   StaleDataNotice,
   UnavailableDataState,
 } = await server.ssrLoadModule('/src/components/UI/index.js')
@@ -43,6 +44,18 @@ test('data-through and last-sync labels format trusted payload values', () => {
   }))
   assert.ok(htmlIncludes(dataThrough, 'Data through Jun 26'))
   assert.equal(htmlIncludes(dataThrough, 'Jun 26, 2026'), false)
+
+  const bullpenDataThrough = render(React.createElement(DataThroughStamp, {
+    date: '2026-06-26',
+    label: 'Bullpen data through',
+  }))
+  assert.ok(htmlIncludes(bullpenDataThrough, 'Bullpen data through Jun 26'))
+
+  const slate = render(React.createElement(SlateDateStamp, {
+    date: '2026-06-27',
+  }))
+  assert.ok(htmlIncludes(slate, 'Tonight slate: Jun 27'))
+  assert.equal(htmlIncludes(slate, 'Data through Jun 27'), false)
 
   const lastSync = render(React.createElement(LastSyncLabel, {
     value: '2026-06-26T10:04:00Z',
