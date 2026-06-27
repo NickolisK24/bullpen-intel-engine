@@ -145,8 +145,8 @@ function getModeCopy(mode, isCurrentAvailability) {
   }
 
   return {
-    modeLabel: 'Non-current workload snapshot',
-    title: 'Workload Snapshot',
+    modeLabel: 'Non-current workload read',
+    title: 'Workload Read',
     distributionTitle: 'Workload Read Mix',
     distributionAriaLabel: 'Workload read mix',
     detailsOpenLabel: 'Hide Workload Detail',

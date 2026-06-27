@@ -112,6 +112,12 @@ const intelligenceOk = {
 }
 
 const dashboard = {
+  freshness: {
+    data_through: '2026-06-25',
+    last_successful_sync: '2026-06-26T10:04:00Z',
+    is_current: true,
+    sync_status: 'success',
+  },
   what_changed_since_yesterday: {
     capability: 'what_changed_since_yesterday_public_v1',
     items: [
@@ -315,10 +321,13 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
   assert.ok(htmlIncludes(html, 'The relievers could not hold the lead.'))
   assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
   assert.ok(htmlIncludes(html, 'Priority'))
   assert.ok(htmlIncludes(html, 'Confidence'))
   assert.ok(htmlIncludes(html, 'Critical'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 25'))
+  assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
   assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
   assert.ok(htmlIncludes(html, 'Tonight'))
@@ -535,7 +544,8 @@ test('Bullpen Picture failure does not prevent Today story rendering', () => {
 
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
-  assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is unavailable right now.'))
+  assert.ok(htmlIncludes(html, 'No current bullpen read available.'))
+  assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'Cubs have a narrow late-game path before first pitch'))
 })
 
@@ -587,7 +597,7 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
     landscape: null,
     teams,
   }))
-  assert.ok(htmlIncludes(emptyHtml, 'No league bullpen picture is available in the current payload.'))
+  assert.ok(htmlIncludes(emptyHtml, 'No league bullpen picture is available for the current view.'))
 })
 
 test('Explore links render to existing routes', () => {

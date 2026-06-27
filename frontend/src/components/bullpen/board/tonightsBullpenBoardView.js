@@ -513,7 +513,7 @@ export function getDataProvenance(freshness) {
     detail: `through ${dataThrough}`,
     dataThrough,
     completedGamesLine,
-    throughHint: 'Data coverage uses the most recent completed game in the dataset (historical snapshot, not live).',
+    throughHint: 'Data coverage uses the most recent completed game in the dataset (historical data, not live).',
     isLive: false,
     tone: { borderColor: '#f5a62355', backgroundColor: '#f5a62312', color: '#f5a623', dot: '#f5a623' },
   }

@@ -111,7 +111,7 @@ export function PrivatePostsView({
     || dashboard?.freshness?.latest_workload_date
     || dashboard?.freshness?.generated_at
     || dashboard?.generated_at
-    || 'latest snapshot'
+    || 'latest read'
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-5 lg:p-6" data-private-posts-path={PRIVATE_POSTS_PATH}>
@@ -142,7 +142,7 @@ export function PrivatePostsView({
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="Using the last loaded dashboard snapshot because the latest refresh failed."
+              dataThrough={dashboard?.freshness?.data_through}
               onRetry={onRetry}
             />
           )}
@@ -161,7 +161,7 @@ export function PrivatePostsView({
 
           {takes.length === 0 ? (
             <div className="card p-5">
-              <p className="font-semibold text-chalk100">No four-beat team stories are available in this snapshot.</p>
+              <p className="font-semibold text-chalk100">No four-beat team stories are available in this read.</p>
               <p className="mt-2 text-sm leading-relaxed text-chalk400">
                 The private board stays empty instead of inventing a post angle.
               </p>

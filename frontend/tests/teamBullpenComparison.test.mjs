@@ -34,7 +34,7 @@ const render = (payload) => renderToStaticMarkup(React.createElement(BullpenComp
 
 test('renders side-by-side snapshot with both teams and their counts', () => {
   const html = render(differingComparison)
-  assert.ok(htmlIncludes(html, 'Side-by-side Snapshot'))
+  assert.ok(htmlIncludes(html, 'Side-by-side Bullpen Read'))
   assert.ok(htmlIncludes(html, 'Aces'))
   assert.ok(htmlIncludes(html, 'Bears'))
   assert.ok(htmlIncludes(html, 'Available'))

@@ -22,7 +22,7 @@ test('explains when freshness excludes available workload data', () => {
   assert.doesNotMatch(state.subtitle, /seed\.py/)
 })
 
-test('keeps setup guidance for a genuinely empty database', () => {
+test('keeps public no-data guidance for a genuinely empty database', () => {
   const state = getBullpenEmptyState({
     allRowsCount: 0,
     visibleRowsCount: 0,
@@ -36,7 +36,8 @@ test('keeps setup guidance for a genuinely empty database', () => {
   })
 
   assert.equal(state.title, 'No pitcher workload data found')
-  assert.match(state.subtitle, /python seed\.py/)
+  assert.equal(state.subtitle, 'No pitcher workload data is loaded for this view.')
+  assert.doesNotMatch(state.subtitle, /backend|seed\.py/)
 })
 
 test('reports visible filter misses separately from data availability', () => {

@@ -13,7 +13,7 @@ export default function BullpenContextSummary({ board, showHealthSummary = true,
     : 'mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'
 
   return (
-    <section className="mb-6" aria-label={showHealthSummary ? 'Team bullpen context' : 'Bullpen availability snapshot'}>
+    <section className="mb-6" aria-label={showHealthSummary ? 'Team bullpen context' : 'Bullpen availability read'}>
       {showHealthSummary && (
         <div className="rounded-lg border p-4" style={view.tone} role="status" aria-live="polite">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -28,7 +28,7 @@ export default function BullpenContextSummary({ board, showHealthSummary = true,
 
           {view.isDegraded && (
             <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-              Unclear read - treat this snapshot with caution.
+              Unclear read - treat this bullpen read with caution.
             </p>
           )}
 
@@ -55,10 +55,10 @@ export default function BullpenContextSummary({ board, showHealthSummary = true,
         </div>
       )}
 
-      {/* Bullpen Snapshot — descriptive counts only. */}
+      {/* Bullpen read - descriptive counts only. */}
       <div className={showHealthSummary ? `mt-4 ${snapshotClass}` : snapshotClass}>
         <div className="flex items-baseline justify-between">
-          <h4 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Snapshot</h4>
+          <h4 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Read</h4>
           <span className="font-mono text-[11px] text-chalk500">
             {view.metrics.total} reliever{view.metrics.total === 1 ? '' : 's'}
             {view.metrics.total > 0 ? ` · ${view.metrics.pctAvailable}% available` : ''}
