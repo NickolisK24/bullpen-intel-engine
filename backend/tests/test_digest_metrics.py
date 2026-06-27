@@ -409,6 +409,9 @@ _EVENT_FOUNDATION_REVISION = 'e7d2c9a4b6f1'
 # COIN Phase 2 adds the derived completed-game-context table on top of the
 # event-foundation revision, so the single alembic head moves forward to it.
 _COMPLETED_GAME_CONTEXT_REVISION = 'b9e4c1f7a2d6'
+# The Intelligence Surface snapshot cache chains off the completed-game-context
+# table, advancing the single alembic head once more.
+_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION = 'a7f2c1d4e9b6'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -434,6 +437,9 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_COMPLETED_GAME_CONTEXT_REVISION}
-    # The completed-game-context migration chains directly off the event log.
+    assert heads == {_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION}
+    # The completed-game-context migration chains directly off the event log,
+    # and the snapshot migration chains directly off completed-game-context.
     assert revisions[_COMPLETED_GAME_CONTEXT_REVISION] == _EVENT_FOUNDATION_REVISION
+    assert (revisions[_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION]
+            == _COMPLETED_GAME_CONTEXT_REVISION)

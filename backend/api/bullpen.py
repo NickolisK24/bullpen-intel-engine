@@ -81,7 +81,7 @@ from services.bullpen_population import (
 from services.bullpen_visibility import build_visibility_contract
 from services.game_context import build_landscape, build_team_game_context
 from services.injury_il_context import build_injury_il_context_payload
-from services.intelligence_surface_service import build_today_lead_story
+from services.intelligence_surface_snapshot import serve_today_lead_story
 from services.narrative_memory import (
     DEFAULT_WINDOWS as NARRATIVE_MEMORY_WINDOWS,
     build_team_bullpen_recovery_continuity,
@@ -1745,18 +1745,19 @@ def _lead_story_reference_date_from_request():
 def get_today_lead_story():
     """League Today's Lead Story — the one bullpen story BaseballOS sees first.
 
-    Read-only. Builds COIN StoryPackages for the teams with a completed-game
-    context on the reference date, keeps the publishable ones, ranks them
-    deterministically, and returns the single lead story with its rendered
-    writer drafts and the metadata explaining the choice. Returns an honest
-    empty state when nothing is publishable. Optional ``reference_date``
-    (YYYY-MM-DD); defaults to the latest date with available context.
+    Read-only. Serves a precomputed Intelligence Surface snapshot for the
+    resolved slate when one exists (the fast path), otherwise builds it live —
+    COIN StoryPackages for the teams with a completed-game context on the
+    reference date, ranked deterministically — and stores the result. Returns an
+    honest empty state when nothing is publishable. Optional ``reference_date``
+    (YYYY-MM-DD); defaults to the latest non-future date with available context.
+    The response shape is identical whether served from snapshot or built live.
     """
     reference_date, error = _lead_story_reference_date_from_request()
     if error:
         return query_param_error_response(error)
     try:
-        payload = build_today_lead_story(reference_date=reference_date)
+        payload = serve_today_lead_story(reference_date=reference_date)
     except Exception:  # pragma: no cover - defensive; service already fails closed
         current_app.logger.exception('today lead story build failed')
         return jsonify({

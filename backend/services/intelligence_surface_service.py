@@ -122,17 +122,9 @@ def _load_candidate_contexts(reference_date, current_date=None):
 
     ref_date = _coerce_date(reference_date)
     if ref_date is None:
-        today = current_date or product_current_date()
-        latest = (
-            CompletedGameContext.query
-            .filter(CompletedGameContext.game_date.isnot(None))
-            .filter(CompletedGameContext.game_date <= today)
-            .order_by(CompletedGameContext.game_date.desc())
-            .first()
-        )
-        if latest is None:
+        ref_date = _latest_non_future_context_date(current_date)
+        if ref_date is None:
             return None, []
-        ref_date = latest.game_date
 
     rows = (
         CompletedGameContext.query
@@ -142,6 +134,40 @@ def _load_candidate_contexts(reference_date, current_date=None):
         .all()
     )
     return ref_date, rows
+
+
+def _latest_non_future_context_date(current_date=None):
+    """The most recent completed-game-context ``game_date`` that is not future.
+
+    Shared by the on-demand builder and the snapshot layer so both resolve the
+    default slate identically (and both honor the future-date cap from the
+    default-date fix). Returns ``None`` when no eligible context exists.
+    """
+    from models.completed_game_context import CompletedGameContext
+
+    today = current_date or product_current_date()
+    latest = (
+        CompletedGameContext.query
+        .filter(CompletedGameContext.game_date.isnot(None))
+        .filter(CompletedGameContext.game_date <= today)
+        .order_by(CompletedGameContext.game_date.desc())
+        .first()
+    )
+    return latest.game_date if latest is not None else None
+
+
+def resolve_default_reference_date(reference_date=None, current_date=None):
+    """Resolve the slate date the endpoint will use, for snapshot lookups.
+
+    Mirrors the builder's date resolution exactly: an explicit ``reference_date``
+    is returned as-is (coerced to a ``date``); when omitted the latest non-future
+    context date is used. Returns ``None`` when omitted and no eligible context
+    exists. Read-only; must be called inside an app context for the default path.
+    """
+    coerced = _coerce_date(reference_date)
+    if coerced is not None:
+        return coerced
+    return _latest_non_future_context_date(current_date)
 
 
 # ── Selection ─────────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.sync_failure import SyncFailure
+from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 
@@ -324,3 +325,43 @@ def test_extra_innings_keep_7_to_9_window_separate(app, monkeypatch):
     assert home.confidence == 'HIGH'
     assert home.runs_allowed_innings_7_to_9 == 1   # only the 8th counts
     assert home.late_runs_allowed == 2             # 8th + 10th
+
+
+# ── Intelligence Surface snapshot generation after postgame refresh ───────────
+
+def test_postgame_refresh_generates_intelligence_surface_snapshot(app, monkeypatch):
+    # A real completed slate -> contexts derived -> homepage snapshot refreshed.
+    _patch_mlb(monkeypatch, [_game()], linescore=_linescore(), play_by_play=_play_by_play())
+
+    status = _run(app)
+
+    assert status['completed_game_contexts_upserted'] == 2
+    assert status['intelligence_snapshot'] in ('ok', 'empty')
+    with app.app_context():
+        snap = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=SCHEDULE_DATE).one()
+        assert snap.snapshot_version
+        assert snap.source == 'postgame_refresh'
+        assert snap.response_json['reference_date'] == SCHEDULE_DATE.isoformat()
+        assert snap.status == snap.response_json['status']
+
+
+def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(app, monkeypatch):
+    _patch_mlb(monkeypatch, [_game()], linescore=_linescore(), play_by_play=_play_by_play())
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError('snapshot build exploded')
+
+    # Make the homepage snapshot generation fail; the refresh must shrug it off.
+    monkeypatch.setattr(
+        'services.intelligence_surface_snapshot.generate_snapshot_for_date', _boom)
+
+    status = _run(app)
+
+    # Contexts were still derived and committed; the run still succeeds.
+    assert status['completed_game_contexts_upserted'] == 2
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['intelligence_snapshot'] == 'failed'
+    with app.app_context():
+        assert CompletedGameContext.query.count() == 2
+        assert IntelligenceSurfaceSnapshot.query.count() == 0
