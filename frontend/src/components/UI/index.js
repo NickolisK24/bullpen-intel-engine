@@ -5,6 +5,7 @@ export { default as StaleDataNotice } from './StaleDataNotice'
 export {
   FreshnessBadge,
   DataThroughStamp,
+  SlateDateStamp,
   LastSyncLabel,
   UnavailableDataState,
 } from './Freshness'

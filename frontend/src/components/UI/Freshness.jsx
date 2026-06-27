@@ -85,6 +85,21 @@ export function DataThroughStamp({
   )
 }
 
+export function SlateDateStamp({
+  date,
+  label = 'Tonight slate',
+  includeYear = false,
+  className = '',
+}) {
+  const formatted = formatFreshnessDate(date, { includeYear })
+  if (!formatted) return null
+  return (
+    <span className={`inline-flex min-h-7 items-center rounded border border-dirt bg-field/50 px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest text-chalk400 ${className}`}>
+      {label}: {formatted}
+    </span>
+  )
+}
+
 export function LastSyncLabel({
   value,
   label = 'Last synced',

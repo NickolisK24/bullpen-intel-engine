@@ -260,7 +260,10 @@ export default function BullpenOperatingStateCard({
           {view.hasFreshness ? (
             <>
               <FreshnessBadge freshness={view.freshness} />
-              <DataThroughStamp date={view.freshness?.data_through} />
+              <DataThroughStamp
+                date={view.freshness?.data_through}
+                label="Bullpen data through"
+              />
               <LastSyncLabel
                 label={lastSyncLabel}
                 value={view.freshness?.last_successful_sync}
@@ -404,7 +407,11 @@ function CompactBullpenOperatingStateCard({
           {view.hasFreshness ? (
             <>
               <FreshnessBadge freshness={view.freshness} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
-              <DataThroughStamp date={view.freshness?.data_through} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+              <DataThroughStamp
+                date={view.freshness?.data_through}
+                label="Bullpen data through"
+                className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
+              />
               <LastSyncLabel
                 label={lastSyncLabel}
                 value={view.freshness?.last_successful_sync}
