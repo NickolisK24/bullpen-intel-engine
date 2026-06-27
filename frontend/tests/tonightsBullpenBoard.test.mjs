@@ -109,7 +109,7 @@ test('board view mode control defaults to Active and replaces show-unavailable c
 test('team board uses compact operating card density', () => {
   assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
   assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))
-  assert.ok(tonightsBullpenBoardSource.includes('ctaHref="#pitcher-lanes"'))
+  assert.ok(tonightsBullpenBoardSource.includes("href: '#pitcher-lanes'"))
 })
 
 test('renders bullpen stress from the backend payload', () => {
