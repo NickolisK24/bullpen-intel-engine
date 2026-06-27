@@ -194,6 +194,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               ctaHref="#pitcher-lanes"
               ctaLabel="Review pitcher lanes"
               lastSyncLabel="Bullpen read synced"
+              density="compact"
               className="mb-4"
             />
             <BullpenBoardView

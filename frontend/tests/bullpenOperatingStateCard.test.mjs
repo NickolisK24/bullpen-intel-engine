@@ -97,6 +97,13 @@ function renderTeamOperatingCard(board, props = {}) {
   })
 }
 
+function renderCompactTeamOperatingCard(board, props = {}) {
+  return renderTeamOperatingCard(board, {
+    density: 'compact',
+    ...props,
+  })
+}
+
 test('renders the current bullpen state in baseball-facing language', () => {
   const context = contextFor({
     Available: Array.from({ length: 8 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
@@ -114,6 +121,7 @@ test('renders the current bullpen state in baseball-facing language', () => {
   })
 
   assert.ok(htmlIncludes(html, 'Scope'))
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
   assert.ok(htmlIncludes(html, 'Stable Overall'))
@@ -256,6 +264,7 @@ test('renders a team operating card from a team-board fixture', () => {
   const html = renderTeamOperatingCard(board)
 
   assert.ok(htmlIncludes(html, 'Team'))
+  assert.ok(htmlIncludes(html, 'data-density="full"'))
   assert.ok(htmlIncludes(html, 'New York Mets'))
   assert.equal(htmlIncludes(html, 'Scope'), false)
   assert.equal(htmlIncludes(html, 'League-Wide'), false)
@@ -270,6 +279,33 @@ test('renders a team operating card from a team-board fixture', () => {
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Data through Jun 4'))
   assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+})
+
+test('renders compact team operating card density with the core read intact', () => {
+  const board = teamOperatingBoard()
+  const html = renderCompactTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'data-density="compact"'))
+  assert.ok(htmlIncludes(html, 'Team'))
+  assert.ok(htmlIncludes(html, 'New York Mets'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State: Stable'))
+  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.'))
+  assert.ok(htmlIncludes(html, 'Primary Concern'))
+  assert.ok(htmlIncludes(html, 'Active workload is usable'))
+  assert.ok(htmlIncludes(html, 'Secondary Concern'))
+  assert.ok(htmlIncludes(html, 'Roster pressure remains part of the story'))
+  assert.ok(htmlIncludes(html, '5 of 6 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, '3 bullpen arms are inactive or unavailable.'))
+  assert.ok(htmlIncludes(html, 'Freshness'))
+  assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Data through Jun 4'))
+  assert.ok(htmlIncludes(html, 'Bullpen read synced 8:00 AM ET'))
+  assert.ok(htmlIncludes(html, 'Limitations:'))
+  assert.ok(htmlIncludes(html, 'workload-based only; excludes manager intent, bullpen phone activity, private medical availability, unreported injuries, and final game-day decisions.'))
+  assert.ok(htmlIncludes(html, 'Review pitcher lanes'))
+  assert.ok(htmlIncludes(html, 'href="#pitcher-lanes"'))
+  assert.equal(htmlIncludes(html, 'BaseballOS does not know manager intent'), false)
+  assert.equal(htmlIncludes(html, 'Why BaseballOS Sees This'), false)
 })
 
 test('team card separates usable active workload from roster pressure', () => {
@@ -344,7 +380,10 @@ test('team card omits unsupported rows and gates starter support by sample size'
     },
   }
   const zeroMonitorHtml = renderTeamOperatingCard(zeroMonitorBoard)
+  const zeroMonitorCompactHtml = renderCompactTeamOperatingCard(zeroMonitorBoard)
   assert.equal(htmlIncludes(zeroMonitorHtml, '0 of 6 relievers are in the Monitor group.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, '0 of 6 relievers are in the Monitor group.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Avoid or Unavailable.'), false)
 
   for (const phrase of [
     'Clean Options',
@@ -355,6 +394,7 @@ test('team card omits unsupported rows and gates starter support by sample size'
     'Rotation support sample is limited.',
   ]) {
     assert.equal(htmlIncludes(limitedHtml, phrase), false, `rendered unsupported copy: ${phrase}`)
+    assert.equal(htmlIncludes(renderCompactTeamOperatingCard(limitedStarterBoard), phrase), false, `rendered unsupported compact copy: ${phrase}`)
   }
 
   const supportedStarterBoard = {
@@ -374,6 +414,7 @@ test('team card omits unsupported rows and gates starter support by sample size'
 
 test('team operating card does not expose internal vocabulary', () => {
   const html = renderTeamOperatingCard(teamOperatingBoard())
+  const compactHtml = renderCompactTeamOperatingCard(teamOperatingBoard())
   for (const term of [
     'backend',
     'endpoint',
@@ -389,6 +430,7 @@ test('team operating card does not expose internal vocabulary', () => {
     'sample state',
   ]) {
     assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
+    assert.equal(new RegExp(escapeRegExp(term), 'i').test(compactHtml), false, `leaked compact ${term}`)
   }
 })
 

@@ -216,6 +216,56 @@ function getConcernRows(context, stateKey) {
   return rows.slice(0, 2)
 }
 
+function isLowValueZeroEvidence(item) {
+  const text = String(item || '').trim()
+  return (
+    /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
+    /^No relievers? are marked Avoid or Unavailable\.$/i.test(text)
+  )
+}
+
+function compactEvidenceList(view) {
+  const compactPatterns = [
+    /\b\d+ of \d+ relievers? are classified Available\./i,
+    /\b\d+ of \d+ relievers? are Limited, Avoid, or Unavailable\./i,
+    /\b\d+ of \d+ relievers? are Avoid or Unavailable\./i,
+    /\bbullpen arms? (is|are) on the injured list\./i,
+    /\bbullpen arms? (is|are) inactive or unavailable\./i,
+    /\bbullpen arms? (has|have) unconfirmed roster status\./i,
+  ]
+
+  return uniqueList(view.evidence.filter(item => (
+    !isLowValueZeroEvidence(item) &&
+    compactPatterns.some(pattern => pattern.test(item))
+  ))).slice(0, 5)
+}
+
+function compactLimitationList(view, staleWithError) {
+  if (view.isUnavailable || staleWithError) return view.limitations
+
+  const compact = []
+  const represented = new Set()
+  const hasWorkloadBoundary = view.limitations.some(item => (
+    /workload-based only/i.test(item) ||
+    /manager intent|bullpen phone activity|private medical|unreported injuries|final game-day/i.test(item)
+  ))
+  if (hasWorkloadBoundary) {
+    compact.push('workload-based only; excludes manager intent, bullpen phone activity, private medical availability, unreported injuries, and final game-day decisions.')
+    represented.add('workload')
+  }
+
+  for (const item of view.limitations) {
+    const coveredByWorkload = (
+      /workload-based only/i.test(item) ||
+      /manager intent|bullpen phone activity|private medical|unreported injuries|final game-day/i.test(item)
+    )
+    if (coveredByWorkload && represented.has('workload')) continue
+    compact.push(item)
+  }
+
+  return uniqueList(compact).slice(0, 3)
+}
+
 function hasFreshnessValues(freshness) {
   return Boolean(
     freshness &&
@@ -308,6 +358,7 @@ export default function BullpenOperatingStateCard({
   ctaHref,
   ctaLabel,
   lastSyncLabel = 'Dashboard read synced',
+  density = 'full',
   className = '',
 }) {
   const view = getBullpenOperatingStateView({
@@ -320,9 +371,23 @@ export default function BullpenOperatingStateCard({
     ctaHref,
     ctaLabel,
   })
+  const isCompact = density === 'compact'
+
+  if (isCompact) {
+    return (
+      <CompactBullpenOperatingStateCard
+        view={view}
+        staleWithError={staleWithError}
+        onRetry={onRetry}
+        lastSyncLabel={lastSyncLabel}
+        className={className}
+      />
+    )
+  }
 
   return (
     <article
+      data-density="full"
       className={`card p-4 ${className}`}
       style={{
         borderColor: view.tone.borderColor,
@@ -341,13 +406,7 @@ export default function BullpenOperatingStateCard({
           </h3>
         </div>
         {view.stateLabel && (
-          <div
-            className="inline-flex min-h-8 max-w-full items-center gap-2 rounded border px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest"
-            style={{ borderColor: view.tone.borderColor, color: view.tone.color }}
-          >
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: view.tone.dot }} aria-hidden="true" />
-            <span className="min-w-0 break-words">Current Bullpen State: {view.stateLabel}</span>
-          </div>
+          <StateBadge view={view} />
         )}
       </div>
 
@@ -457,24 +516,196 @@ export default function BullpenOperatingStateCard({
 
       {view.ctaHref && (
         <div className="mt-4 border-t border-dirt/70 pt-3">
-          {String(view.ctaHref).startsWith('#') ? (
-            <a
-              href={view.ctaHref}
-              className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-            >
-              {view.ctaLabel}
-            </a>
-          ) : (
-            <Link
-              to={view.ctaHref}
-              className="inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-            >
-              {view.ctaLabel}
-            </Link>
-          )}
+          <OperatingStateCta view={view} />
         </div>
       )}
     </article>
+  )
+}
+
+function CompactBullpenOperatingStateCard({
+  view,
+  staleWithError,
+  onRetry,
+  lastSyncLabel,
+  className = '',
+}) {
+  const evidence = compactEvidenceList(view)
+  const limitations = compactLimitationList(view, staleWithError)
+
+  return (
+    <article
+      data-density="compact"
+      className={`card p-2.5 sm:p-3.5 ${className}`}
+      style={{
+        borderColor: view.tone.borderColor,
+        backgroundColor: view.tone.backgroundColor,
+      }}
+      role="region"
+      aria-label={`${view.teamLabel} bullpen operating state`}
+    >
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            {view.scopeLabel}
+          </div>
+          <h3 className="mt-0.5 break-words font-display text-lg leading-tight tracking-wide text-chalk100 sm:text-xl">
+            {view.teamLabel}
+          </h3>
+        </div>
+        {view.stateLabel && <StateBadge view={view} compact />}
+      </div>
+
+      {view.isUnavailable ? (
+        <UnavailableDataState
+          title="No current bullpen read available."
+          message="BaseballOS will show this card when enough current bullpen context is available."
+          onRetry={onRetry}
+          className="mt-3 border-dirt/70 bg-field/35 p-3"
+          titleClassName="font-display text-lg leading-tight tracking-wide text-chalk100"
+          messageClassName="mt-1 text-xs leading-relaxed text-chalk500"
+        />
+      ) : (
+        <>
+          <div className="mt-2 text-xs leading-snug text-chalk400">
+            {view.stateDetail && (
+              <p>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                  Current Bullpen State:
+                </span>{' '}
+                {view.stateDetail}
+              </p>
+            )}
+          </div>
+
+          {(view.primaryConcern || view.secondaryConcern) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {view.primaryConcern && (
+                <CompactConcern label="Primary Concern" concern={view.primaryConcern} />
+              )}
+              {view.secondaryConcern && (
+                <CompactConcern label="Secondary Concern" concern={view.secondaryConcern} />
+              )}
+            </div>
+          )}
+
+          {evidence.length > 0 && (
+            <section className="mt-2" aria-label="Evidence">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                Evidence
+              </div>
+              <ul className="mt-1 flex flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:gap-1.5">
+                {evidence.map((item, index) => (
+                  <li
+                    key={`${index}-${item}`}
+                    className="text-[11px] leading-snug text-chalk300 sm:rounded sm:border sm:border-dirt/70 sm:bg-field/40 sm:px-2 sm:py-1 sm:leading-relaxed"
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+
+      <section className="mt-2 border-t border-dirt/60 pt-1.5" aria-label="Freshness">
+        {staleWithError && (
+          <div className="mb-2">
+            <StaleDataNotice
+              dataThrough={view.freshness?.data_through}
+              onRetry={onRetry}
+              compact
+            />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Freshness
+          </span>
+          {view.hasFreshness ? (
+            <>
+              <FreshnessBadge freshness={view.freshness} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+              <DataThroughStamp date={view.freshness?.data_through} className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+              <LastSyncLabel
+                label={lastSyncLabel}
+                value={view.freshness?.last_successful_sync}
+                className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]"
+              />
+            </>
+          ) : (
+            <FreshnessBadge state="unavailable" label="Freshness unavailable" className="min-h-5 px-1.5 py-0.5 text-[9px] sm:min-h-6 sm:px-2 sm:text-[10px]" />
+          )}
+        </div>
+        {view.isSample && (
+          <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            Not live MLB data.
+          </p>
+        )}
+      </section>
+
+      {limitations.length > 0 && (
+        <section className="mt-1.5 text-[11px] leading-snug text-chalk400" aria-label="Limitations">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+            Limitations:
+          </span>{' '}
+          {limitations.join('; ')}
+        </section>
+      )}
+
+      {view.ctaHref && (
+        <div className="mt-2">
+          <OperatingStateCta view={view} compact />
+        </div>
+      )}
+    </article>
+  )
+}
+
+function StateBadge({ view, compact = false }) {
+  return (
+    <div
+      className={`inline-flex max-w-full items-center gap-2 rounded border font-mono uppercase tracking-widest ${
+        compact ? 'min-h-7 px-2.5 py-1 text-[10px]' : 'min-h-8 px-3 py-1.5 text-[11px]'
+      }`}
+      style={{ borderColor: view.tone.borderColor, color: view.tone.color }}
+    >
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: view.tone.dot }} aria-hidden="true" />
+      <span className="min-w-0 break-words">Current Bullpen State: {view.stateLabel}</span>
+    </div>
+  )
+}
+
+function CompactConcern({ label, concern }) {
+  return (
+    <div className="min-w-[10.5rem] flex-1 rounded border border-dirt/70 bg-field/25 px-2.5 py-1">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        {label}
+      </div>
+      {concern.label && (
+        <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
+          {concern.label}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OperatingStateCta({ view, compact = false }) {
+  const className = `inline-flex min-h-9 items-center justify-center rounded border border-dirt bg-field/60 font-mono uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber ${
+    compact ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
+  }`
+  if (String(view.ctaHref).startsWith('#')) {
+    return (
+      <a href={view.ctaHref} className={className}>
+        {view.ctaLabel}
+      </a>
+    )
+  }
+  return (
+    <Link to={view.ctaHref} className={className}>
+      {view.ctaLabel}
+    </Link>
   )
 }
 
