@@ -21,7 +21,7 @@ export function getBullpenEmptyState({
   if (!hasWorkloadData) {
     return {
       title: 'No pitcher workload data found',
-      subtitle: 'Run python seed.py in the backend to load pitcher workload data.',
+      subtitle: 'No pitcher workload data is loaded for this view.',
     }
   }
 

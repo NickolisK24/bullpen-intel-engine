@@ -54,9 +54,9 @@ test('hero states the dashboard is a league-wide / MLB-wide view', () => {
   assert.ok(htmlIncludes(html, 'for a single team'))
 })
 
-test('snapshot is scoped to the governed bullpen-eligible set', () => {
+test('bullpen read is scoped to the bullpen-eligible set', () => {
   const html = renderDashboard()
-  assert.ok(htmlIncludes(html, 'League-Wide Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'League-Wide Bullpen Read'))
   assert.ok(htmlIncludes(html, 'bullpen-eligible relievers in the current bullpen availability set'))
 })
 
@@ -83,7 +83,7 @@ test('quick actions reinforce the league -> team / matchup / pitcher hierarchy',
 
 test('existing realignment headings remain (substrings preserved for stability)', () => {
   const html = renderDashboard()
-  for (const heading of ['Bullpen Overview', 'Bullpen Snapshot', 'Bullpen State', 'Usage Roles', 'Quick Actions']) {
+  for (const heading of ['Bullpen Overview', 'Bullpen Read', 'Bullpen State', 'Usage Roles', 'Quick Actions']) {
     assert.ok(htmlIncludes(html, heading), `missing heading substring: ${heading}`)
   }
 })

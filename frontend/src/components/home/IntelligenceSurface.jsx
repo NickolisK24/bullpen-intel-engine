@@ -7,7 +7,13 @@ import {
   getTodayIntelligence,
   getTonightIntelligence,
 } from '../../utils/api'
-import { ErrorState, StaleDataNotice } from '../UI'
+import {
+  DataThroughStamp,
+  FreshnessBadge,
+  LastSyncLabel,
+  StaleDataNotice,
+  UnavailableDataState,
+} from '../UI'
 import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
@@ -199,6 +205,34 @@ function cleanDraftList(value) {
   return (Array.isArray(value) ? value : [])
     .map(textValue)
     .filter(Boolean)
+}
+
+function firstTextValue(...values) {
+  return values.map(textValue).find(Boolean) || null
+}
+
+function firstObjectValue(...values) {
+  return values.find(value => value && typeof value === 'object') || null
+}
+
+function dashboardFreshness(dashboard) {
+  return firstObjectValue(dashboard?.freshness)
+}
+
+function SectionFreshnessRow({
+  dataThrough,
+  lastSync,
+  stale = false,
+  className = '',
+}) {
+  if (!dataThrough && !lastSync && !stale) return null
+  return (
+    <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
+      <FreshnessBadge state={stale ? 'stale' : 'current'} />
+      <DataThroughStamp date={dataThrough} />
+      <LastSyncLabel value={lastSync} />
+    </div>
+  )
 }
 
 function cleanOptionNames(items) {
@@ -488,19 +522,14 @@ function SeesHeader() {
 function StoryEmptyState({ intelligence }) {
   const emptyReason = emptyReasonText(intelligence?.empty_reason)
   return (
-    <div className="border border-dirt bg-dugout p-5 sm:p-7" aria-live="polite">
-      <h3 className="font-display text-3xl leading-none tracking-wide text-chalk100">
-        No lead bullpen story has cleared the bar yet.
-      </h3>
-      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-chalk400">
-        BaseballOS is still reviewing the latest completed-game context and will only surface a lead story when the evidence is strong enough.
-      </p>
-      {emptyReason && (
-        <p className="mt-3 font-mono text-xs uppercase tracking-wider text-chalk500">
-          {emptyReason}
-        </p>
-      )}
-    </div>
+    <UnavailableDataState
+      title="No lead bullpen story has cleared the bar yet."
+      message="BaseballOS is still reviewing the latest completed-game context and will only surface a lead story when the evidence is strong enough."
+      detail={emptyReason}
+      className="p-5 sm:p-7"
+      titleClassName="font-display text-3xl leading-none tracking-wide text-chalk100"
+      messageClassName="mt-3 max-w-3xl text-sm leading-relaxed text-chalk400"
+    />
   )
 }
 
@@ -566,8 +595,11 @@ function TodaysStory({
   error,
   staleWithError,
   onRetry,
+  freshness,
 }) {
   const story = getLeadStoryView(intelligence, teams)
+  const dataThrough = firstTextValue(intelligence?.reference_date, freshness?.data_through)
+  const lastSync = textValue(freshness?.last_successful_sync)
   return (
     <SectionShell
       id="todays-story"
@@ -579,15 +611,24 @@ function TodaysStory({
       {loading && !intelligence ? (
         <StoryLoadingState />
       ) : error && !intelligence ? (
-        <ErrorState message={error} onRetry={onRetry} />
+        <UnavailableDataState
+          title="No current bullpen read available."
+          message="Today's lead story is temporarily unavailable."
+          onRetry={onRetry}
+        />
       ) : (
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="This story is from the last loaded Intelligence Surface response because the latest refresh failed."
+              dataThrough={dataThrough}
               onRetry={onRetry}
             />
           )}
+          <SectionFreshnessRow
+            dataThrough={dataThrough}
+            lastSync={lastSync}
+            stale={staleWithError}
+          />
 
           {!story.hasStory ? (
             <StoryEmptyState intelligence={intelligence} />
@@ -621,7 +662,7 @@ function TodaysStory({
                   </div>
                   <div className="min-w-0 border border-dirt/80 bg-field/50 p-4">
                     <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                      Bullpen Snapshot
+                      Bullpen Read
                     </h4>
                     {story.snapshot.length ? (
                       <ul className="mt-3 space-y-2">
@@ -633,7 +674,7 @@ function TodaysStory({
                       </ul>
                     ) : (
                       <p className="mt-3 text-sm leading-relaxed text-chalk500">
-                        Current bullpen standing is unavailable in this story package.
+                        No current bullpen read is included with this story.
                       </p>
                     )}
                   </div>
@@ -692,6 +733,9 @@ function AroundBaseball({
   onRetry,
 }) {
   const items = getAroundBaseballItems(dashboard, leadStory)
+  const freshness = dashboardFreshness(dashboard)
+  const dataThrough = textValue(freshness?.data_through)
+  const lastSync = textValue(freshness?.last_successful_sync)
   return (
     <SectionShell
       id="around-baseball"
@@ -724,10 +768,15 @@ function AroundBaseball({
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="Around Baseball is using the last loaded league read because the latest refresh failed."
+              dataThrough={dataThrough}
               onRetry={onRetry}
             />
           )}
+          <SectionFreshnessRow
+            dataThrough={dataThrough}
+            lastSync={lastSync}
+            stale={staleWithError}
+          />
           {items.length ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {items.map(item => (
@@ -781,23 +830,12 @@ function TonightLoadingState() {
 
 function TonightEmptyState({ isError, onRetry }) {
   return (
-    <div className="border border-dirt bg-dugout p-4 sm:p-5" aria-live="polite">
-      <h3 className="font-display text-2xl leading-tight tracking-wide text-chalk100">
-        {isError ? TONIGHT_ERROR_TITLE : TONIGHT_EMPTY_TITLE}
-      </h3>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk500">
-        {isError ? TONIGHT_ERROR_BODY : TONIGHT_EMPTY_BODY}
-      </p>
-      {isError && onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 rounded border border-dirt px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-        >
-          Try Again
-        </button>
-      )}
-    </div>
+    <UnavailableDataState
+      title={isError ? TONIGHT_ERROR_TITLE : TONIGHT_EMPTY_TITLE}
+      message={isError ? TONIGHT_ERROR_BODY : TONIGHT_EMPTY_BODY}
+      onRetry={isError ? onRetry : null}
+      className="sm:p-5"
+    />
   )
 }
 
@@ -871,6 +909,9 @@ function TonightSection({
 }) {
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanDraftList(tonight?.limitations)
+  const freshness = dashboardFreshness(dashboard)
+  const dataThrough = firstTextValue(tonight?.reference_date, freshness?.data_through)
+  const lastSync = textValue(freshness?.last_successful_sync)
   const fallbackItems = getAroundBaseballItems(dashboard, leadStory)
   const canShowFallback = !loading && (
     fallbackItems.length > 0 ||
@@ -901,10 +942,15 @@ function TonightSection({
       >
         {staleWithError && (
           <StaleDataNotice
-            message="Tonight is using the last loaded bullpen read because the latest refresh failed."
+            dataThrough={dataThrough}
             onRetry={onRetry}
           />
         )}
+        <SectionFreshnessRow
+          dataThrough={dataThrough}
+          lastSync={lastSync}
+          stale={staleWithError}
+        />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map(card => (
             <TonightCard key={card.key} card={card} />
@@ -948,6 +994,12 @@ function TonightSection({
       title="Tonight"
       subtitle="Bullpen situations BaseballOS is watching before first pitch."
     >
+      {!Boolean(error && !tonight) && (
+        <SectionFreshnessRow
+          dataThrough={dataThrough}
+          lastSync={lastSync}
+        />
+      )}
       <TonightEmptyState isError={Boolean(error && !tonight)} onRetry={onRetry} />
     </SectionShell>
   )
@@ -959,8 +1011,15 @@ function BullpenPicture({
   error,
   staleWithError,
   onRetry,
+  freshness,
 }) {
   const picture = getBullpenPictureView(landscape)
+  const dataThrough = firstTextValue(
+    landscape?.games?.as_of_date,
+    landscape?.reference_date,
+    freshness?.data_through,
+  )
+  const lastSync = textValue(freshness?.last_successful_sync)
   return (
     <SectionShell
       id="bullpen-picture"
@@ -975,34 +1034,29 @@ function BullpenPicture({
           </p>
         </div>
       ) : error && !landscape ? (
-        <div className="border border-dirt bg-dugout p-4">
-          <p className="text-sm leading-relaxed text-chalk500">
-            Today's bullpen picture is unavailable right now.
-          </p>
-          {onRetry && (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-3 rounded border border-dirt px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-            >
-              Try Again
-            </button>
-          )}
-        </div>
+        <UnavailableDataState
+          title="No current bullpen read available."
+          message="Today's bullpen picture is temporarily unavailable."
+          onRetry={onRetry}
+        />
       ) : !picture.hasLandscape ? (
-        <div className="border border-dirt bg-dugout p-4">
-          <p className="text-sm leading-relaxed text-chalk500">
-            No league bullpen picture is available in the current payload.
-          </p>
-        </div>
+        <UnavailableDataState
+          title="No current bullpen read available."
+          message="No league bullpen picture is available for the current view."
+        />
       ) : (
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="The bullpen picture is from the last loaded league read because the latest refresh failed."
+              dataThrough={dataThrough}
               onRetry={onRetry}
             />
           )}
+          <SectionFreshnessRow
+            dataThrough={dataThrough}
+            lastSync={lastSync}
+            stale={staleWithError}
+          />
           <div className="border border-dirt bg-dugout p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
@@ -1107,6 +1161,7 @@ export function IntelligenceSurfaceView({
   teams = [],
 }) {
   const leadStory = getLeadStoryView(intelligence, teams)
+  const pageFreshness = dashboardFreshness(dashboard)
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <SeesHeader />
@@ -1117,6 +1172,7 @@ export function IntelligenceSurfaceView({
         error={intelligenceError}
         staleWithError={intelligenceStaleWithError}
         onRetry={onRetryIntelligence}
+        freshness={pageFreshness}
       />
       <TonightSection
         tonight={tonight}
@@ -1138,6 +1194,7 @@ export function IntelligenceSurfaceView({
         error={landscapeError}
         staleWithError={landscapeStaleWithError}
         onRetry={onRetryLandscape}
+        freshness={pageFreshness}
       />
       <Explore />
     </div>

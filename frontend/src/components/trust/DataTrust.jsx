@@ -160,7 +160,7 @@ export function DataTrustView({
         )}
         {dashboard?.staleWithError && (
           <StaleDataNotice
-            message="Data-through detail is from the last loaded dashboard snapshot because the latest refresh failed."
+            dataThrough={servedFreshness?.data_through}
             onRetry={dashboard.refetch}
           />
         )}

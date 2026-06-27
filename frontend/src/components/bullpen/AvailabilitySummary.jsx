@@ -105,7 +105,7 @@ export default function AvailabilitySummary({
           </div>
           <FactList
             items={reasons}
-            emptyText="No workload restriction reasons were reported by the backend."
+            emptyText="No workload restriction reasons are available."
           />
         </div>
         <div>
@@ -115,7 +115,7 @@ export default function AvailabilitySummary({
           </div>
           <FactList
             items={summary.limitations}
-            emptyText="No additional limitations were reported by the backend."
+            emptyText="No additional limitations are available."
             variant="limitation"
           />
         </div>

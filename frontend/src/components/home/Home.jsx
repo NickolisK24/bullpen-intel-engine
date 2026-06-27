@@ -245,7 +245,7 @@ export function HomeView({
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="This briefing is from the last loaded dashboard snapshot because the latest refresh failed."
+              dataThrough={dashboard?.freshness?.data_through}
               onRetry={onRetry}
             />
           )}

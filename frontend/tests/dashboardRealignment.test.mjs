@@ -62,16 +62,16 @@ test('dashboard leads with bullpen language, not operations/governance language'
 
 test('dashboard renders the five bullpen sections', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
   assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'Usage Roles'))
   assert.ok(htmlIncludes(html, 'Quick Actions'))
 })
 
-test('snapshot cards show the five availability counts', () => {
+test('bullpen read cards show the five availability counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
   for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
-    assert.ok(htmlIncludes(html, label), `missing snapshot label: ${label}`)
+    assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
   }
 })
 
@@ -106,7 +106,7 @@ test('dashboard links to the Data & Trust destination instead of exposing it inl
 test('dashboard renders the hero without data and does not crash', () => {
   const html = inRouter(React.createElement(DashboardView, { data: null, loading: true }))
   assert.ok(htmlIncludes(html, 'Bullpen Overview'))
-  assert.ok(!htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(!htmlIncludes(html, 'Bullpen Read'))
 })
 
 test('dashboard labels retained data when the latest refresh failed', () => {
@@ -117,8 +117,8 @@ test('dashboard labels retained data when the latest refresh failed', () => {
   }))
 
   assert.ok(htmlIncludes(html, 'Refresh delayed'))
-  assert.ok(htmlIncludes(html, 'Dashboard data is still the last loaded snapshot'))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'showing last loaded data from Jun 4.'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
 })
 
 test('Data & Trust page hosts the relocated trust and governance detail', () => {

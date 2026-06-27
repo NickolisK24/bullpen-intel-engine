@@ -113,9 +113,9 @@ export default function BullpenComparisonView({ payload }) {
         </div>
       </section>
 
-      {/* 3. Side-by-side snapshot */}
-      <section aria-label="Side-by-side bullpen snapshot">
-        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Snapshot</h3>
+      {/* 3. Side-by-side bullpen read */}
+      <section aria-label="Side-by-side bullpen read">
+        <h3 className="mb-2 font-mono text-xs uppercase tracking-widest text-chalk400">Side-by-side Bullpen Read</h3>
         <SnapshotTable view={view} />
       </section>
 

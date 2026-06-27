@@ -93,11 +93,11 @@ const DATA_STATE_COPY = {
   },
   historical: {
     label: 'Historical',
-    message: 'This status is based on an older workload snapshot.',
+    message: 'This status is based on an older workload read.',
   },
   unknown: {
     label: 'Unknown',
-    message: 'The backend did not report a workload data state.',
+    message: 'BaseballOS does not have a workload data state for this pitcher.',
   },
 }
 

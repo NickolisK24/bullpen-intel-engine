@@ -38,7 +38,7 @@ const firstDetailsTag = (html) => html.match(/<details[^>]*>/)?.[0] || ''
 const renderSummary = (board) => renderToStaticMarkup(React.createElement(BullpenContextSummary, { board }))
 const renderBoard = (board) => renderToStaticMarkup(React.createElement(BullpenBoardView, { board }))
 
-test('summary renders a health statement and the bullpen snapshot counts', () => {
+test('summary renders a health statement and the bullpen read counts', () => {
   // 5 available, 3 monitor, 2 limited → manageable.
   const board = makeBoard({
     cardsByStatus: {
@@ -49,7 +49,7 @@ test('summary renders a health statement and the bullpen snapshot counts', () =>
   })
   const html = renderSummary(board)
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'Unavailable'))
   assert.ok(htmlIncludes(html, '10 relievers'))
@@ -71,7 +71,7 @@ test('every context statement explains itself with real counts', () => {
 test('stale data degrades confidence and communicates limitations', () => {
   const html = renderSummary(staleBoard)
   assert.ok(htmlIncludes(html, 'Workload Read: Unclear Read'))
-  assert.ok(htmlIncludes(html, 'treat this snapshot with caution'))
+  assert.ok(htmlIncludes(html, 'treat this bullpen read with caution'))
   assert.ok(htmlIncludes(html, 'outside the active freshness window'))
 })
 
@@ -79,7 +79,7 @@ test('empty bullpen renders the no-data context without implying availability', 
   const html = renderSummary(emptyBoard)
   assert.ok(htmlIncludes(html, 'No bullpen availability to summarize from the latest completed data.'))
   assert.ok(htmlIncludes(html, 'Workload Read: No Read'))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
 })
 
 test('summary renders nothing when the board carries no context', () => {
@@ -89,16 +89,16 @@ test('summary renders nothing when the board carries no context', () => {
 
 test('context summary appears above the availability groups on the full board', () => {
   const html = renderBoard(populatedBoard)
-  const summaryIdx = html.indexOf('Bullpen Snapshot')
+  const summaryIdx = html.indexOf('Bullpen Read')
   const groupIdx = html.indexOf('Available group')
   assert.ok(summaryIdx > -1 && groupIdx > -1)
-  assert.ok(summaryIdx < groupIdx, 'snapshot should render before the groups')
+  assert.ok(summaryIdx < groupIdx, 'bullpen read should render before the groups')
 })
 
 test('full board uses stress read instead of a duplicate health statement', () => {
   const html = renderBoard(populatedBoard)
   assert.ok(htmlIncludes(html, 'Overall Availability: Elevated'))
-  assert.ok(htmlIncludes(html, 'Bullpen Snapshot'))
+  assert.ok(htmlIncludes(html, 'Bullpen Read'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are classified Available.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload is elevated.'))
 })

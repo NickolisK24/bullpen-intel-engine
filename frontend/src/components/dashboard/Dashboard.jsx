@@ -96,7 +96,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
         <>
           {staleWithError && (
             <StaleDataNotice
-              message="Dashboard data is still the last loaded snapshot because the latest refresh failed."
+              dataThrough={freshness.data_through}
               onRetry={onRetry}
             />
           )}
@@ -106,8 +106,8 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
 
           <InjuryIlContextSection context={injuryIlContext} />
 
-          {/* Section 2 — Bullpen Snapshot */}
-          <Section title="League-Wide Bullpen Snapshot" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
+          {/* Section 2 — Bullpen Read */}
+          <Section title="League-Wide Bullpen Read" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {context.snapshot.map(row => (
                 <div key={row.status} className="card p-4">
@@ -138,7 +138,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
               </div>
               {context.isDegraded && (
                 <p className="mt-2 font-mono text-[11px] uppercase tracking-wider">
-                  Unclear read — treat this snapshot with caution.
+                  Unclear read — treat this bullpen read with caution.
                 </p>
               )}
               {context.reasons.length > 0 && (
