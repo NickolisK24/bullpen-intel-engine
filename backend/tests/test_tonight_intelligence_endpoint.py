@@ -15,6 +15,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 
 import services.sync as sync_service
 import services.tonight_intelligence_service as tonight_svc
+import services.tonight_intelligence_snapshot as tonight_snap
 import services.tonight_candidate_selection as tcs
 from utils.db import db
 from models.scheduled_game import ScheduledGame
@@ -42,7 +43,9 @@ def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0, name='Detr
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
-    # Pin "today" so the default-date path is deterministic.
+    # Pin "today" so the default-date path is deterministic. The cache layer
+    # resolves the date now, so pin it there (and on the builder for safety).
+    monkeypatch.setattr(tonight_snap, 'product_current_date', lambda: _FIXED_TODAY)
     monkeypatch.setattr(tonight_svc, 'product_current_date', lambda: _FIXED_TODAY)
     # Stub the bullpen context so cards do not depend on roster seeding.
     monkeypatch.setattr(

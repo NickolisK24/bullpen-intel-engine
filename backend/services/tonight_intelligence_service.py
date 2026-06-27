@@ -21,7 +21,6 @@ story builder) with no contract change.
 from __future__ import annotations
 
 import logging
-from time import perf_counter
 
 from services.availability_reference_date import product_current_date
 from services.schedule_context import build_schedule_contexts_for_date
@@ -49,17 +48,16 @@ def serve_tonight(reference_date=None, *, limit=DEFAULT_LIMIT, current_date=None
     ``reference_date`` is a ``date``/ISO string, or ``None`` to use the product
     current day (``current_date`` overrides that default for tests). Read-only.
     ``schedule_contexts`` and ``bullpen_context_builder`` are injectable for
-    tests/pure use. Returns the public envelope dict.
+    tests/pure use. Returns the public envelope dict. This is the live builder;
+    the cache-aware entry point (timing / served_from logging) lives in
+    ``tonight_intelligence_snapshot.serve_tonight_cached``.
     """
-    start = perf_counter()
     ref = _resolve_reference_date(reference_date, current_date)
 
     if schedule_contexts is None:
         schedule_contexts = build_schedule_contexts_for_date(ref)
 
-    response = _build_response(ref, schedule_contexts, limit, bullpen_context_builder)
-    _log_timing(response, start)
-    return response
+    return _build_response(ref, schedule_contexts, limit, bullpen_context_builder)
 
 
 def _build_response(ref, schedule_contexts, limit, bullpen_context_builder):
@@ -137,13 +135,3 @@ def _iso(value):
     if callable(isoformat) and not isinstance(value, str):
         return isoformat()
     return value
-
-
-def _log_timing(response, start):
-    elapsed_ms = round((perf_counter() - start) * 1000, 1)
-    logger.info(
-        'tonight_intelligence served_from=on_demand reference_date=%s '
-        'elapsed_ms=%s status=%s card_count=%s',
-        response.get('reference_date'), elapsed_ms,
-        response.get('status'), response.get('card_count'),
-    )
