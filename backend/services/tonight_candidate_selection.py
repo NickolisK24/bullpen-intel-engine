@@ -144,15 +144,17 @@ def _signal_thin_before_off_day(team_id, team_name, sc, pen, limitations):
         evidence.append(f'Next off day in {days} {_plural(days, "day")}')
     if games_until is not None:
         evidence.append(f'{games_until} {_plural(games_until, "game")} before the next off day')
-    if band and band != _INSUFFICIENT:
+    if band in _THIN_BANDS:
         evidence.append(f'{band.capitalize()} bullpen optionality')
 
-    summary = (f'{team_name} enters tonight with {_clean_summary(clean)} and '
-               f'{_games_summary(games_until)} before its next off day.')
+    # Team-neutral copy: the card carries team_name separately, so the prose never
+    # makes a (often plural) team name the grammatical subject.
+    summary = (f'{_clean_summary_cap(clean)} {_be(clean)} available, '
+               f'with {_games_phrase(games_until)} before the next off day.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_SCHEDULE_PRESSURE, signal=SIGNAL_THIN_BEFORE_OFF_DAY,
-        headline=f'{team_name} has little margin before its next rest day',
+        headline='Little margin before the next rest day',
         summary=summary, evidence=evidence, strength=min(strength, 100))
 
 
@@ -175,15 +177,15 @@ def _signal_no_clean_margin(team_id, team_name, sc, pen, limitations):
         evidence.append(_clean_phrase(clean))
     if paths is not None:
         evidence.append(f'{paths} practical close-game {_plural(paths, "path")}')
-    if pen['optionality_band'] and pen['optionality_band'] != _INSUFFICIENT:
+    if pen['optionality_band'] in _THIN_BANDS:
         evidence.append(f"{pen['optionality_band'].capitalize()} bullpen optionality")
 
-    summary = (f'{team_name} has {_clean_summary(clean)} and '
-               f'{_paths_summary(paths)} tonight.')
+    summary = (f'{_clean_summary_cap(clean)} and {_paths_summary(paths)} '
+               f'are available tonight.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_LATE_GAME_PATH, signal=SIGNAL_NO_CLEAN_MARGIN,
-        headline=f'{team_name} enters tonight with almost no clean margin',
+        headline='Almost no clean margin tonight',
         summary=summary, evidence=evidence, strength=min(strength, 100))
 
 
@@ -202,22 +204,31 @@ def _signal_heavy_workload_ahead(team_id, team_name, sc, pen, limitations):
         strength += int(min(max(share - _TOP_THREE_SHARE_ELEVATED, 0), 30))
     strength += min(games_next3 or 0, 3) * 5
 
+    # The workload share is the strongest fact when present; lead the evidence
+    # with it. Only cite the concentration band when the band itself signals
+    # pressure (concentrated / narrow) — never "normal", which would undercut the
+    # card it is attached to.
     evidence = []
-    if band and band != _INSUFFICIENT:
-        evidence.append(f'{band.capitalize()} bullpen workload concentration')
     if share is not None:
         evidence.append(f'Top three relievers at {_round1(share)}% of recent bullpen workload')
     evidence.append(f'{games_next3} {_plural(games_next3, "game")} in the next three days')
+    if band in _ELEVATED_CONCENTRATION:
+        evidence.append(f'{band.capitalize()} bullpen workload concentration')
     last3 = sc.get('games_played_last_3_days')
     if last3:
         evidence.append(f'{last3} {_plural(last3, "game")} played in the last three days')
 
-    summary = (f'{team_name} leans on a {_band_word(band)} bullpen with '
-               f'{games_next3} {_plural(games_next3, "game")} in the next three days.')
+    if share is not None:
+        summary = (f'The top three relievers have handled {_round1(share)}% of recent '
+                   f'bullpen workload, with {_games_phrase(games_next3)} scheduled over '
+                   f'the next three days.')
+    else:
+        summary = (f'A {band} bullpen workload faces {_games_phrase(games_next3)} over '
+                   f'the next three days.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_WORKLOAD_PRESSURE, signal=SIGNAL_HEAVY_WORKLOAD_AHEAD,
-        headline=f'{team_name} is carrying workload into another busy stretch',
+        headline='Top-heavy workload before another busy stretch',
         summary=summary, evidence=evidence, strength=min(strength, 100))
 
 
@@ -242,16 +253,16 @@ def _signal_off_day_relief(team_id, team_name, sc, pen, limitations):
     evidence = []
     if clean is not None:
         evidence.append(_clean_phrase(clean))
-    if band and band != _INSUFFICIENT:
+    if band in _THIN_BANDS:
         evidence.append(f'{band.capitalize()} bullpen optionality')
     evidence.append('Off day tomorrow' if days == 1 else 'Last game before an off day')
 
-    summary = (f'{team_name} carries some bullpen pressure into tonight, but an '
-               f'off day right after eases what comes next.')
+    summary = ('Pressure remains, but the next off day limits how long the '
+               'bullpen has to carry it.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_OFF_DAY_RELIEF, signal=SIGNAL_OFF_DAY_RELIEF,
-        headline=f'{team_name} gets a softer landing after tonight',
+        headline='A softer landing after tonight',
         summary=summary, evidence=evidence, strength=min(strength, 100))
 
 
@@ -389,20 +400,27 @@ def _clean_summary(n):
     return f'{n} clean bullpen paths'
 
 
+def _clean_summary_cap(n):
+    text = _clean_summary(n)
+    return text[:1].upper() + text[1:]
+
+
+def _be(n):
+    # Subject-verb agreement for the clean-paths phrase ("path is" / "paths are";
+    # the singular "set" also takes "is").
+    return 'is' if n in (None, 1) else 'are'
+
+
 def _paths_summary(paths):
     if paths is None:
         return 'few practical close-game paths'
     return f'{paths} practical close-game {_plural(paths, "path")}'
 
 
-def _games_summary(games):
+def _games_phrase(games, noun='game'):
     if games is None:
-        return 'multiple games'
-    return f'{games} {_plural(games, "game")}'
-
-
-def _band_word(band):
-    return band if band and band != _INSUFFICIENT else 'leaned-on'
+        return f'multiple {noun}s'
+    return f'{games} {_plural(games, noun)}'
 
 
 def _plural(n, word):

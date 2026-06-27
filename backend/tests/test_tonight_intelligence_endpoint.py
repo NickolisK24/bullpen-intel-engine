@@ -146,6 +146,23 @@ def test_public_cards_omit_strength_and_include_public_fields(client):
         assert key in card
 
 
+# ── Public-copy polish: served cards are team-neutral in prose ────────────────
+
+def test_served_cards_do_not_put_team_name_in_prose(client, monkeypatch):
+    # A plural team name must not become the grammatical subject of the copy.
+    monkeypatch.setattr(
+        tcs, '_default_bullpen_context_builder',
+        lambda team_id, reference_date: _pen(name='Chicago Cubs', clean=1, band='thin'))
+    with client.application.app_context():
+        _seed_playing_stretch(116)
+    cards = client.get('/api/bullpen/intelligence/tonight').get_json()['cards']
+    assert cards
+    for card in cards:
+        assert card['team_name'] == 'Chicago Cubs'        # name on the card
+        assert 'Chicago Cubs' not in card['headline']      # never in the prose
+        assert 'Chicago Cubs' not in card['summary']
+
+
 # ── 10. No ranking / recommendation language ──────────────────────────────────
 
 def test_endpoint_response_has_no_forbidden_language(client):

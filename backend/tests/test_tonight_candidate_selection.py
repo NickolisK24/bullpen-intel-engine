@@ -134,7 +134,10 @@ def test_heavy_workload_candidate():
                                                     name='Milwaukee Brewers')}))
     c = next(c for c in out if c['signal_type'] == 'heavy_recent_workload_with_games_ahead')
     assert c['signal_family'] == 'workload_pressure'
-    assert 'carrying workload' in c['headline'].lower()
+    assert 'workload' in c['headline'].lower()
+    assert c['team_name'] == 'Milwaukee Brewers'   # name lives on the card, not the prose
+    assert 'Milwaukee Brewers' not in c['headline']
+    assert 'Milwaukee Brewers' not in c['summary']
 
 
 # ── 6. off_day_relief_pressure_reduced ────────────────────────────────────────
@@ -370,3 +373,73 @@ def test_module_does_not_import_coin_story_services():
     for forbidden in ('completed_game_context', 'narrative_context', 'narrative_feed',
                       'story_orchestrator', 'story_writers', 'evidence_composition'):
         assert forbidden not in source, forbidden
+
+
+# ── Public-copy polish: team-neutral grammar ──────────────────────────────────
+
+_PLURAL_TEAMS = {
+    112: 'Chicago Cubs',
+    115: 'Colorado Rockies',
+    158: 'Milwaukee Brewers',
+}
+
+
+def test_copy_never_makes_the_team_name_the_subject():
+    # Each plural-named team triggers a different signal family.
+    schedule = [
+        _sc(112, days_until=6, games_until=6),                       # schedule pressure
+        _sc(115, games_next3=3, days_until=4, games_until=4),        # workload pressure
+        _sc(158, days_until=1, games_until=1),                       # late-game path
+    ]
+    pens = {
+        112: _pen(clean=1, band='thin', paths=3, conc='normal', share=30.0,
+                  name=_PLURAL_TEAMS[112]),
+        115: _pen(clean=3, band='flexible', paths=4, conc='normal', share=59.2,
+                  name=_PLURAL_TEAMS[115]),
+        158: _pen(clean=1, band='thin', paths=1, conc='normal', share=30.0,
+                  name=_PLURAL_TEAMS[158]),
+    }
+    out = build_tonight_candidates(REF, limit=3, schedule_contexts=schedule,
+                                   bullpen_context_builder=_builder(pens))
+    assert out
+    for c in out:
+        name = c['team_name']
+        assert name in _PLURAL_TEAMS.values()
+        # The (often plural) team name must never appear in the generated prose;
+        # the frontend renders the team separately.
+        assert name not in c['headline'], c
+        assert name not in c['summary'], c
+        for awkward in (f'{name} has', f'{name} is', f'{name} enters', f'{name} leans',
+                        f'{name} gets', f'{name} carries'):
+            assert awkward not in c['headline']
+            assert awkward not in c['summary']
+
+
+# ── Public-copy polish: workload share drives the workload card ───────────────
+
+def test_workload_card_focuses_on_share_when_band_is_normal():
+    # Triggered purely by the elevated top-three share while the band is "normal".
+    c = build_team_tonight_candidate(
+        115, REF,
+        schedule_context=_sc(115, games_next3=3, days_until=4, games_until=4),
+        bullpen_context=_pen(clean=3, band='flexible', paths=4, conc='normal',
+                             share=59.2, name='Colorado Rockies'))
+    assert c['signal_type'] == 'heavy_recent_workload_with_games_ahead'
+    assert '59.2%' in c['summary']
+    assert 'top three relievers' in c['summary'].lower()
+    # A "normal" band must never be sold as a pressure signal.
+    assert 'normal' not in c['summary'].lower()
+    assert not any('normal' in b.lower() for b in c['evidence'])
+    assert not any('Normal bullpen workload concentration' == b for b in c['evidence'])
+    # The share leads the evidence.
+    assert c['evidence'][0] == 'Top three relievers at 59.2% of recent bullpen workload'
+
+
+def test_workload_card_cites_band_only_when_meaningful():
+    c = build_team_tonight_candidate(
+        158, REF,
+        schedule_context=_sc(158, games_next3=3, days_until=4, games_until=4),
+        bullpen_context=_pen(clean=3, band='flexible', paths=4, conc='narrow',
+                             share=52.0, name='Milwaukee Brewers'))
+    # A meaningful band ("narrow") is allowed as an evidence bullet.
+    assert any('narrow' in b.lower() for b in c['evidence'])
