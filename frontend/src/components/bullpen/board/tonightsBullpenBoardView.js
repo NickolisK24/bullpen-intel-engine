@@ -94,11 +94,11 @@ function normalizeGroup(group) {
 // neutral styling so a role never reads as "better" than another. Defined roles
 // share one neutral tone; low/insufficient roles are muted.
 const ROLE_SHORT_LABELS = {
-  late_high_leverage: 'Trust Arm',
-  setup_bridge: 'Bridge Arm',
-  middle_relief: 'Bridge Arm',
+  late_high_leverage: 'Trusted Arm',
+  setup_bridge: 'Setup Arm',
+  middle_relief: 'Middle Relief Arm',
   long_multi_inning: 'Coverage Arm',
-  low_unclear: 'Limited Read',
+  low_unclear: 'Unclear Role',
   insufficient_data: 'Limited Read',
 }
 

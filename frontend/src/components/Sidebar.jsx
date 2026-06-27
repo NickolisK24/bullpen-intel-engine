@@ -67,8 +67,8 @@ export function SidebarDataFreshnessCard({ freshness }) {
         Data Freshness
       </div>
       <div className="space-y-3">
-        <SidebarFreshnessItem label="Last checked" value={freshness.lastChecked} />
-        <SidebarFreshnessItem label="Last data update" value={freshness.lastDataUpdate} />
+        <SidebarFreshnessItem label="Page checked" value={freshness.lastChecked} />
+        <SidebarFreshnessItem label="Latest data update" value={freshness.lastDataUpdate} />
         <SidebarFreshnessItem label="Data through" value={freshness.dataThrough} />
       </div>
     </div>
