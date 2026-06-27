@@ -115,9 +115,9 @@ test('Sidebar Data Freshness renders sync status timestamps in ET', () => {
   const html = render(React.createElement(SidebarDataFreshnessCard, { freshness }))
 
   assert.ok(htmlIncludes(html, 'Data Freshness'))
-  assert.ok(htmlIncludes(html, 'Last checked'))
+  assert.ok(htmlIncludes(html, 'Page checked'))
   assert.ok(htmlIncludes(html, '6:00 AM ET'))
-  assert.ok(htmlIncludes(html, 'Last data update'))
+  assert.ok(htmlIncludes(html, 'Latest data update'))
   assert.ok(htmlIncludes(html, '6:02 AM ET'))
   assert.ok(htmlIncludes(html, 'Data through'))
   assert.ok(htmlIncludes(html, 'June 23, 2026'))

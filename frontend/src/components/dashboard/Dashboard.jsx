@@ -129,12 +129,14 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           >
             <BullpenOperatingStateCard
               teamLabel="League-Wide"
+              scope="league"
+              scopeLabel="Scope"
               context={context}
               freshness={freshness}
               staleWithError={staleWithError}
               onRetry={onRetry}
               ctaHref="/bullpen?view=board"
-              ctaLabel="Open Team Bullpen Board"
+              ctaLabel="Open Bullpen Board"
             />
           </Section>
 
@@ -302,7 +304,7 @@ function FreshnessPill({ provenance, lastSync, confidenceLabel }) {
       <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span>{provenance.label}</span>
         <span>{dataLine}</span>
-        {lastSync && <span className="text-chalk500">· Last synced: {lastSync}</span>}
+        {lastSync && <span className="text-chalk500">· Latest data update: {lastSync}</span>}
         <span className="text-chalk500">· Workload Read: {confidenceLabel}</span>
       </span>
     </div>

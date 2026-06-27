@@ -64,15 +64,25 @@ test('bullpen state is clearly league-wide, not a single team', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Bullpen State'))
   assert.ok(htmlIncludes(html, 'not a single team'))
-  // The aggregate card itself carries a league-wide team label and operating state.
+  // The aggregate card itself carries league-wide scope and operating state.
+  assert.ok(htmlIncludes(html, 'Scope'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Stable Overall'))
+  assert.ok(htmlIncludes(html, 'Open Bullpen Board'))
+  assert.equal(htmlIncludes(html, 'Open Team Bullpen Board'), false)
 })
 
 test('usage roles are described as a league-wide distribution', () => {
   const html = renderDashboard()
   assert.ok(htmlIncludes(html, 'League-Wide Usage Roles'))
   assert.ok(htmlIncludes(html, 'across bullpen-eligible MLB arms'))
+  assert.ok(htmlIncludes(html, 'Trusted Arm'))
+  assert.ok(htmlIncludes(html, 'Setup Arm'))
+  assert.ok(htmlIncludes(html, 'Middle Relief Arm'))
+  assert.ok(htmlIncludes(html, 'Unclear Role'))
+  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
 })
 
 test('quick actions reinforce the league -> team / matchup / pitcher hierarchy', () => {

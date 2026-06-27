@@ -11,11 +11,15 @@ const STATE_META = {
   manageable: {
     label: 'Stable',
     detail: 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.',
+    leagueLabel: 'Stable Overall',
+    leagueDetail: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
     tone: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
   },
   stable: {
     label: 'Stable',
     detail: 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.',
+    leagueLabel: 'Stable Overall',
+    leagueDetail: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
     tone: { borderColor: '#10b98155', backgroundColor: '#10b98112', color: '#6ee7b7', dot: '#10b981' },
   },
   usable: {
@@ -63,6 +67,8 @@ const STATE_META = {
 const DEFAULT_TONE = { borderColor: '#94a3b855', backgroundColor: '#94a3b812', color: '#cbd5e1', dot: '#94a3b8' }
 
 const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|recommendation engine|baseline distribution|governance layer)\b/i
+const LEAGUE_SCOPE_LIMITATION = 'This is a league-wide read, not a team-specific diagnosis. Availability classifications are workload-based only and do not include manager intent, bullpen phone activity, or private medical availability.'
+const LIMITATION_COPY_PATTERN = /\b(workload-based only|does not include|not a team-specific|manager intent|bullpen phone activity|private medical|outside the active freshness window|may not reflect|treat this|limitation)\b/i
 
 function normalizeStateKey(state) {
   return String(state || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
@@ -80,6 +86,20 @@ function safeTextList(list) {
   return (Array.isArray(list) ? list : [])
     .map(safeText)
     .filter(Boolean)
+}
+
+function isLimitationCopy(value) {
+  return LIMITATION_COPY_PATTERN.test(String(value || ''))
+}
+
+function uniqueList(list) {
+  const seen = new Set()
+  return list.filter(item => {
+    const key = String(item || '').toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function rowCount(context, status) {
@@ -133,7 +153,7 @@ function getConcernRows(context, stateKey) {
     ))
   } else if (stateKey === 'elevated' || counts.narrowed > 0) {
     rows.push(buildConcern(
-      'Usable options are thinner than a clean board',
+      'Not every arm is cleanly available',
       `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited, Avoid, or Unavailable.`,
     ))
   } else {
@@ -187,14 +207,20 @@ function isSampleFreshness(freshness) {
 export function getBullpenOperatingStateView({
   team,
   teamLabel,
+  scope,
+  scopeLabel,
   context,
   freshness,
   ctaHref,
   ctaLabel,
 } = {}) {
   const resolvedTeam = safeText(teamLabel) || safeText(team?.team_name) || safeText(team?.name) || 'League-Wide'
+  const isLeagueWide = normalizeStateKey(scope) === 'league' || normalizeStateKey(resolvedTeam) === 'league_wide'
+  const resolvedScopeLabel = safeText(scopeLabel) || (isLeagueWide ? 'Scope' : 'Team')
   const stateKey = normalizeStateKey(context?.state)
   const stateMeta = STATE_META[stateKey] || null
+  const stateLabel = isLeagueWide && stateMeta?.leagueLabel ? stateMeta.leagueLabel : stateMeta?.label
+  const stateDetail = isLeagueWide && stateMeta?.leagueDetail ? stateMeta.leagueDetail : stateMeta?.detail
   const hasContext = context?.hasContext !== false && Boolean(context)
   const isNoData = !hasContext || stateKey === 'no_data' || !stateMeta
   const why = safeText(context?.label) || (
@@ -202,8 +228,15 @@ export function getBullpenOperatingStateView({
       ? 'BaseballOS is reading the current bullpen mix from available workload context.'
       : null
   )
-  const evidence = safeTextList(context?.reasons)
-  const limitations = safeTextList(context?.limitations)
+  const reasonCopy = safeTextList(context?.reasons)
+  const evidence = reasonCopy.filter(item => !isLimitationCopy(item))
+  const reasonLimitations = reasonCopy.filter(isLimitationCopy)
+  const contextLimitations = safeTextList(context?.limitations)
+  const limitations = uniqueList([
+    ...(isLeagueWide ? [LEAGUE_SCOPE_LIMITATION] : []),
+    ...contextLimitations,
+    ...reasonLimitations,
+  ])
   const concerns = isNoData ? [] : getConcernRows(context, stateKey)
   const tone = {
     ...(stateMeta?.tone || DEFAULT_TONE),
@@ -212,8 +245,9 @@ export function getBullpenOperatingStateView({
 
   return {
     teamLabel: resolvedTeam,
-    stateLabel: stateMeta?.label || null,
-    stateDetail: stateMeta?.detail || null,
+    scopeLabel: resolvedScopeLabel,
+    stateLabel: stateLabel || null,
+    stateDetail: stateDetail || null,
     why,
     evidence,
     limitations,
@@ -232,6 +266,8 @@ export function getBullpenOperatingStateView({
 export default function BullpenOperatingStateCard({
   team,
   teamLabel,
+  scope,
+  scopeLabel,
   context,
   freshness,
   staleWithError = false,
@@ -243,6 +279,8 @@ export default function BullpenOperatingStateCard({
   const view = getBullpenOperatingStateView({
     team,
     teamLabel,
+    scope,
+    scopeLabel,
     context,
     freshness,
     ctaHref,
@@ -262,7 +300,7 @@ export default function BullpenOperatingStateCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Team
+            {view.scopeLabel}
           </div>
           <h3 className="mt-1 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
             {view.teamLabel}
@@ -352,7 +390,10 @@ export default function BullpenOperatingStateCard({
             <>
               <FreshnessBadge freshness={view.freshness} />
               <DataThroughStamp date={view.freshness?.data_through} />
-              <LastSyncLabel value={view.freshness?.last_successful_sync} />
+              <LastSyncLabel
+                label="Dashboard read synced"
+                value={view.freshness?.last_successful_sync}
+              />
             </>
           ) : (
             <FreshnessBadge state="unavailable" label="Freshness unavailable" />

@@ -49,25 +49,32 @@ test('renders the current bullpen state in baseball-facing language', () => {
   const context = contextFor({
     Available: Array.from({ length: 8 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
     Monitor: [{ pitcher_id: 20, name: 'M1', availability_status: 'Monitor' }],
+    Limited: [{ pitcher_id: 30, name: 'L1', availability_status: 'Limited' }],
   })
 
   const html = render({
     teamLabel: 'League-Wide',
+    scope: 'league',
+    scopeLabel: 'Scope',
     context,
     freshness: currentFreshness,
     ctaHref: '/bullpen?view=board',
   })
 
-  assert.ok(htmlIncludes(html, 'Team'))
+  assert.ok(htmlIncludes(html, 'Scope'))
   assert.ok(htmlIncludes(html, 'League-Wide'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State'))
-  assert.ok(htmlIncludes(html, 'Stable'))
+  assert.ok(htmlIncludes(html, 'Stable Overall'))
+  assert.ok(htmlIncludes(html, 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.'))
   assert.ok(htmlIncludes(html, 'Primary Concern'))
-  assert.ok(htmlIncludes(html, 'No clear pressure point'))
+  assert.ok(htmlIncludes(html, 'Not every arm is cleanly available'))
+  assert.equal(htmlIncludes(html, 'clean board'), false)
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees This'))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Evidence'))
-  assert.ok(htmlIncludes(html, '8 of 9 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, '8 of 10 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
 })
 
@@ -105,7 +112,7 @@ test('renders trusted freshness values without inventing per-card freshness', ()
 
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Data through Jun 26'))
-  assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
+  assert.ok(htmlIncludes(html, 'Dashboard read synced 6:04 AM ET'))
 })
 
 test('renders stale and sample freshness as distinct trust states', () => {
@@ -186,6 +193,36 @@ test('omits internal language from visible card copy', () => {
   ]) {
     assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
   }
+})
+
+test('separates limitation copy from evidence', () => {
+  const context = {
+    hasContext: true,
+    state: 'manageable',
+    label: 'Bullpen workload appears manageable.',
+    reasons: [
+      '5 of 8 relievers are classified Available.',
+      'Availability classifications are workload-based only.',
+    ],
+    limitations: [],
+    metrics: { total: 8 },
+    snapshot: [
+      { status: 'Available', label: 'Available', count: 5 },
+      { status: 'Monitor', label: 'Monitor', count: 1 },
+      { status: 'Limited', label: 'Limited', count: 1 },
+      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Unavailable', label: 'Unavailable', count: 0 },
+    ],
+  }
+  const html = render({ context, freshness: currentFreshness })
+  const evidenceStart = html.indexOf('Evidence')
+  const freshnessStart = html.indexOf('Freshness')
+  const evidenceBlock = html.slice(evidenceStart, freshnessStart)
+
+  assert.ok(htmlIncludes(evidenceBlock, '5 of 8 relievers are classified Available.'))
+  assert.equal(htmlIncludes(evidenceBlock, 'Availability classifications are workload-based only.'), false)
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
 })
 
 test('view model exposes only supported operating state labels', () => {

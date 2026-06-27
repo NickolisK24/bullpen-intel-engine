@@ -77,15 +77,26 @@ test('bullpen read cards show the five availability counts', () => {
 
 test('bullpen state reuses the Team Context Layer statement and confidence', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+  assert.ok(htmlIncludes(html, 'Scope'))
+  assert.ok(htmlIncludes(html, 'League-Wide'))
+  assert.ok(htmlIncludes(html, 'Stable Overall'))
   assert.ok(htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Workload Read:'))
   assert.ok(htmlIncludes(html, 'of 12 relievers are classified Available.'))
+  assert.ok(htmlIncludes(html, 'This is a league-wide read, not a team-specific diagnosis.'))
+  assert.equal(htmlIncludes(html, 'Open Team Bullpen Board'), false)
+  assert.ok(htmlIncludes(html, 'Open Bullpen Board'))
 })
 
-test('usage-roles summary shows role composition counts', () => {
+test('usage-roles summary shows distinct role composition counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Bridge Arm'))
+  assert.ok(htmlIncludes(html, 'Trusted Arm'))
+  assert.ok(htmlIncludes(html, 'Setup Arm'))
+  assert.ok(htmlIncludes(html, 'Middle Relief Arm'))
   assert.ok(htmlIncludes(html, 'Coverage Arm'))
+  assert.ok(htmlIncludes(html, 'Unclear Role'))
+  assert.ok(htmlIncludes(html, 'Limited Read'))
+  assert.equal((html.match(/Bridge Arm/g) || []).length, 0)
 })
 
 test('quick actions deep-link into the bullpen workflow and methodology', () => {
