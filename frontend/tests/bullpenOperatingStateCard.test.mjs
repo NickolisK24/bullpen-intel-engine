@@ -118,6 +118,55 @@ test('renders trusted freshness values without inventing per-card freshness', ()
   assert.ok(htmlIncludes(html, 'Dashboard read synced 6:04 AM ET'))
 })
 
+test('renders league-wide Thin summary without implied baseline language', () => {
+  const context = contextFor({
+    Available: Array.from({ length: 6 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
+    Monitor: [{ pitcher_id: 20, name: 'M1', availability_status: 'Monitor' }],
+    Avoid: Array.from({ length: 2 }, (_, i) => ({ pitcher_id: 40 + i, name: `X${i}`, availability_status: 'Avoid' })),
+    Unavailable: [{ pitcher_id: 60, name: 'U1', availability_status: 'Unavailable' }],
+  })
+
+  const html = render({
+    teamLabel: 'League-Wide',
+    scope: 'league',
+    scopeLabel: 'Scope',
+    context,
+    freshness: currentFreshness,
+  })
+
+  assert.ok(htmlIncludes(html, 'Scope'))
+  assert.ok(htmlIncludes(html, 'League-Wide'))
+  assert.ok(htmlIncludes(html, 'Current Bullpen State'))
+  assert.ok(htmlIncludes(html, 'Thin'))
+  assert.ok(htmlIncludes(html, 'Fewer bullpen-eligible arms are cleanly available right now.'))
+  assert.ok(htmlIncludes(html, 'Not every arm is cleanly available'))
+  assert.equal(htmlIncludes(html, 'The bullpen has fewer cleanly available arms than usual.'), false)
+
+  for (const phrase of ['than usual', 'normal board', 'baseline', 'expected']) {
+    assert.equal(new RegExp(escapeRegExp(phrase), 'i').test(html), false, `rendered implied comparison: ${phrase}`)
+  }
+
+  for (const section of ['Evidence', 'Freshness', 'Limitations']) {
+    assert.ok(htmlIncludes(html, section), `missing section: ${section}`)
+  }
+
+  for (const term of [
+    'COIN',
+    'V2',
+    'V3',
+    'V4',
+    'deterministic',
+    'snapshot',
+    'endpoint',
+    'backend',
+    'recommendation engine',
+    'baseline distribution',
+    'governance layer',
+  ]) {
+    assert.equal(new RegExp(escapeRegExp(term), 'i').test(html), false, `leaked ${term}`)
+  }
+})
+
 test('renders stale and sample freshness as distinct trust states', () => {
   const context = contextFor({
     Available: Array.from({ length: 3 }, (_, i) => ({ pitcher_id: i + 1, name: `A${i}`, availability_status: 'Available' })),
