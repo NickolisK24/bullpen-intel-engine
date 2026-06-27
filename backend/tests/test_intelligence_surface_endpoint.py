@@ -3,8 +3,8 @@
 Exercises the real database enumeration path: completed-game-context rows for a
 date become candidates, the publishable COIN stories are ranked, and the single
 lead story is returned. Also covers the honest empty state, the reference_date
-parameter, a bad-parameter rejection, and that the legacy team story endpoint is
-left untouched.
+parameter, a bad-parameter rejection, the default-date future cap, and that the
+legacy team story endpoint is left untouched.
 """
 
 from datetime import date
@@ -13,13 +13,22 @@ import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
+import services.intelligence_surface_service as surface
 import services.sync as sync_service
 from utils.db import db
 from models.completed_game_context import CompletedGameContext
 import models.prospect  # noqa: F401  (ensure model registry is fully loaded)
 from api.bullpen import bullpen_bp
 
-_REF = date(2026, 6, 25)
+# Pin "today" so the default-date cap is deterministic regardless of wall clock.
+_FIXED_TODAY = date(2026, 6, 26)
+_REF = date(2026, 6, 25)        # a valid, non-future slate (<= _FIXED_TODAY)
+_FUTURE = date(2026, 7, 23)     # a stray future-dated artifact (> _FIXED_TODAY)
+
+
+@pytest.fixture(autouse=True)
+def _pin_today(monkeypatch):
+    monkeypatch.setattr(surface, 'product_current_date', lambda: _FIXED_TODAY)
 
 
 @pytest.fixture
@@ -125,6 +134,58 @@ def test_rejects_malformed_reference_date(client):
     body = resp.get_json()
     assert body['reason_code'] == 'invalid_query_parameter'
     assert body['parameter'] == 'reference_date'
+
+
+# ── Default date ignores future-dated artifacts ───────────────────────────────
+
+def test_default_ignores_future_dated_context(client):
+    # A future CRITICAL story must not be chosen as the default slate, even
+    # though it would outrank the past story on priority.
+    with client.application.app_context():
+        _seed_lost_game_shape(137, 137000, game_date=_FUTURE)   # future CRITICAL
+        _seed_overexposed(147, 147000, game_date=date(2026, 6, 24))  # past MEDIUM
+
+    body = client.get('/api/bullpen/intelligence/today').get_json()
+    assert body['status'] == 'ok'
+    assert body['reference_date'] == '2026-06-24'   # the latest non-future date
+    assert body['lead_story']['team_id'] == 147
+    assert body['candidates_considered'] == 1       # the future row is not a candidate
+
+
+def test_default_selects_latest_non_future_date(client):
+    with client.application.app_context():
+        _seed_lost_game_shape(137, 137000, game_date=date(2026, 6, 20))
+        _seed_overexposed(147, 147000, game_date=date(2026, 6, 24))   # latest non-future
+        _seed_lost_game_shape(141, 141000, game_date=_FUTURE)          # ignored
+
+    body = client.get('/api/bullpen/intelligence/today').get_json()
+    assert body['reference_date'] == '2026-06-24'
+    assert body['lead_story']['team_id'] == 147
+    assert body['candidates_considered'] == 1
+
+
+def test_only_future_context_yields_empty_default(client):
+    # If the only context is in the future, the default finds no candidates and
+    # returns the honest empty state rather than locking onto the future date.
+    with client.application.app_context():
+        _seed_lost_game_shape(137, 137000, game_date=_FUTURE)
+
+    body = client.get('/api/bullpen/intelligence/today').get_json()
+    assert body['status'] == 'empty'
+    assert body['empty_reason'] == 'no_completed_game_contexts'
+    assert body['candidates_considered'] == 0
+
+
+def test_explicit_future_reference_date_is_still_honored(client):
+    # An operator can still evaluate a future date when they ask for it directly.
+    with client.application.app_context():
+        _seed_lost_game_shape(137, 137000, game_date=_FUTURE)
+
+    body = client.get('/api/bullpen/intelligence/today?reference_date=2026-07-23').get_json()
+    assert body['status'] == 'ok'
+    assert body['reference_date'] == '2026-07-23'
+    assert body['lead_story']['team_id'] == 137
+    assert body['lead_story']['selection']['story_priority'] == 'CRITICAL'
 
 
 # ── Legacy story endpoint is unchanged ────────────────────────────────────────

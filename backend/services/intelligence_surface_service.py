@@ -35,6 +35,7 @@ fatal; if nothing is publishable the service returns an honest empty state.
 
 from __future__ import annotations
 
+from services.availability_reference_date import product_current_date
 from services.coin_story_inspection import inspect_team_story
 
 # ── Ranking vocabularies ──────────────────────────────────────────────────────
@@ -66,22 +67,29 @@ def build_today_lead_story(
     *,
     app=None,
     reference_date=None,
+    current_date=None,
     candidate_contexts=None,
     inspect_fn=None,
 ):
     """Return the single most important publishable COIN story for a date.
 
     Read-only. ``reference_date`` is an ISO ``YYYY-MM-DD`` string or a ``date``;
-    when omitted the latest available completed-game-context date is used. Pass
-    ``candidate_contexts`` (a list of completed-game-context dicts) to inject the
-    candidate set for tests/pure use and skip the database entirely. ``app`` (a
-    Flask app) wraps the database reads in an app context for the real path; when
-    the service is already called inside an app/request context, leave it ``None``.
+    when omitted the default is the latest completed-game-context date that is
+    not in the future relative to ``current_date`` (the product "today",
+    defaulting to ``product_current_date()``). Capping at today keeps a stray
+    future-dated context (seeded or local test artifact) from being chosen as
+    the homepage's default slate. An explicit ``reference_date`` is always
+    honored as requested, future or not. Pass ``candidate_contexts`` (a list of
+    completed-game-context dicts) to inject the candidate set for tests/pure use
+    and skip the database entirely. ``app`` (a Flask app) wraps the database
+    reads in an app context for the real path; when the service is already
+    called inside an app/request context, leave it ``None``.
     """
     inspect_fn = inspect_fn or inspect_team_story
 
     def _run():
-        ref_iso, contexts = _resolve_candidates(reference_date, candidate_contexts)
+        ref_iso, contexts = _resolve_candidates(
+            reference_date, candidate_contexts, current_date)
         return _select_lead_story(ref_iso, contexts, inspect_fn)
 
     if app is not None and candidate_contexts is None:
@@ -92,27 +100,33 @@ def build_today_lead_story(
 
 # ── Candidate enumeration ─────────────────────────────────────────────────────
 
-def _resolve_candidates(reference_date, candidate_contexts):
+def _resolve_candidates(reference_date, candidate_contexts, current_date=None):
     """Resolve (reference_date_iso, candidate completed-context dicts)."""
     if candidate_contexts is not None:
         return _iso(reference_date), [c for c in candidate_contexts if c]
-    ref_date, rows = _load_candidate_contexts(reference_date)
+    ref_date, rows = _load_candidate_contexts(reference_date, current_date)
     return _iso(ref_date), [r.to_dict() for r in rows]
 
 
-def _load_candidate_contexts(reference_date):
+def _load_candidate_contexts(reference_date, current_date=None):
     """Read completed-game-context rows for the reference date (single date).
 
-    With no reference date, anchor on the most recent ``game_date`` present so
-    the homepage shows the latest day BaseballOS actually has context for.
+    With no reference date, anchor on the most recent ``game_date`` that is not
+    in the future relative to today (``current_date`` or
+    ``product_current_date()``). The cap matters because a local database can
+    hold a stray future-dated context (a seeded or test artifact); without it
+    the homepage default would lock onto that future date and render empty.
+    An explicit ``reference_date`` is honored as requested and never capped.
     """
     from models.completed_game_context import CompletedGameContext
 
     ref_date = _coerce_date(reference_date)
     if ref_date is None:
+        today = current_date or product_current_date()
         latest = (
             CompletedGameContext.query
             .filter(CompletedGameContext.game_date.isnot(None))
+            .filter(CompletedGameContext.game_date <= today)
             .order_by(CompletedGameContext.game_date.desc())
             .first()
         )
