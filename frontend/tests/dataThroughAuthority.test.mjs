@@ -20,7 +20,7 @@ after(async () => {
 })
 
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
-const { HomeView } = await server.ssrLoadModule('/src/components/home/LegacyMorningBullpenReport.jsx')
+const { IntelligenceSurfaceView } = await server.ssrLoadModule('/src/components/home/IntelligenceSurface.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')
@@ -106,6 +106,8 @@ const comparison = makeComparison(
 
 const expectedLine = 'Updated after completed games through Jun 16, 2026'
 const syncAheadLine = 'Updated after completed games through Jun 17, 2026'
+const todayExpectedLine = 'Bullpen data through Jun 16'
+const todaySyncAheadLine = 'Bullpen data through Jun 17'
 
 function assertUsesServedFreshness(surface, html) {
   assert.ok(html.includes(expectedLine), `${surface} did not show served freshness data-through`)
@@ -123,13 +125,26 @@ test('user-facing data-through surfaces use served freshness when sync is ahead 
       teamOperationsReadiness: fetchState(null),
     })),
     Dashboard: render(React.createElement(DashboardView, { data: dashboard })),
-    Home: render(React.createElement(HomeView, { dashboard })),
+    Today: render(React.createElement(IntelligenceSurfaceView, {
+      intelligence: {
+        status: 'empty',
+        reference_date: servedFreshness.data_through,
+        empty_reason: 'lead_story_unavailable',
+      },
+      dashboard,
+      landscape: dashboard.landscape,
+    })),
     Stories: render(React.createElement(StoriesView, { dashboard })),
     Bullpen: render(React.createElement(BullpenBoardView, { board })),
     Comparison: render(React.createElement(BullpenComparisonView, { payload: comparison })),
   }
 
   for (const [surface, html] of Object.entries(surfaces)) {
-    assertUsesServedFreshness(surface, html)
+    if (surface === 'Today') {
+      assert.ok(html.includes(todayExpectedLine), `${surface} did not show served freshness data-through`)
+      assert.equal(html.includes(todaySyncAheadLine), false, `${surface} leaked raw sync data-through`)
+    } else {
+      assertUsesServedFreshness(surface, html)
+    }
   }
 })

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test, { after } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -159,6 +159,20 @@ test('Data & Trust owns the full availability backtest without duplicate page se
   assert.equal(text.includes('Secondary Exploratory ERA Study'), false)
   assert.equal(text.includes('Digest Preferences'), false)
   assert.equal(text.includes('Bullpen State + Team Readiness'), false)
+})
+
+test('off-lane and dead frontend surfaces are not present for remounting', () => {
+  for (const rel of [
+    '../src/components/prospects/Prospects.jsx',
+    '../src/components/prospects/ProspectCard.jsx',
+    '../src/components/trust/DigestPreferencesCard.jsx',
+    '../src/components/home/LegacyMorningBullpenReport.jsx',
+    '../src/components/home/homeCanonicalStoriesView.js',
+    '../src/components/home/DigestReturnNotice.jsx',
+    '../src/utils/todayDigestReturn.js',
+  ]) {
+    assert.equal(existsSync(new URL(rel, import.meta.url)), false, rel)
+  }
 })
 
 test('Methodology and Data & Trust rendered text does not leak internal labels', () => {

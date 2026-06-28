@@ -1,6 +1,6 @@
 import { completedGamesDataLine } from '../dashboard/syncStatusView'
 
-// Shared presentation helpers for the Morning Bullpen Report homepage: neutral
+// Shared presentation helpers for Today surfaces: neutral
 // display tones, the team deep-link builder, and the masthead view-model.
 
 // Neutral display tones shared across the homepage. Tones describe the

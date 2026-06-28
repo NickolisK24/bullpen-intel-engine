@@ -762,23 +762,6 @@ export const recordStoryShareClicked = (payload = {}) => request('/product/story
   silent: true,
 })
 
-// ── Digest Preferences ─────────────────────────────────────
-export const getDigestPreferences = () => request('/digest/preferences')
-
-export const updateDigestPreferences = (preferences = {}) => {
-  const payload = {}
-  if (preferences.digest_enabled !== undefined) {
-    payload.digest_enabled = preferences.digest_enabled
-  }
-  if (preferences.digest_cadence !== undefined) {
-    payload.digest_cadence = preferences.digest_cadence
-  }
-  return request('/digest/preferences', {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  })
-}
-
 // ── User Team Following ────────────────────────────────────
 export const getFollowedTeams = () => request('/me/teams')
 
@@ -1708,17 +1691,6 @@ export const getTeamReadinessExplanation = async (params = {}) => {
   })}`)
   return normalizeV4ExplanationApiResponse(response)
 }
-
-// ── Prospects ───────────────────────────────────────────────
-export const getProspects        = (params = {}) => {
-  const q = new URLSearchParams(params).toString()
-  return request(`/prospects/${q ? `?${q}` : ''}`)
-}
-export const getProspect         = (id) => request(`/prospects/${id}`)
-export const getProspectsByTeam  = () => request('/prospects/by-team')
-export const getProspectPipeline = () => request('/prospects/pipeline')
-export const compareProspects    = (id1, id2) => request(`/prospects/compare?id1=${id1}&id2=${id2}`)
-export const getPipelineOverview = () => request('/prospects/stats/overview')
 
 // ── Methodology ───────────────────────────────────────────────
 export const getMethodology = () => request('/methodology/')

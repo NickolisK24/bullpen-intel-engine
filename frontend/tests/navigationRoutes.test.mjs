@@ -39,6 +39,7 @@ const internalShareTitleLabels = [
   'Hidden Capacity Loss',
   'Thinning Trust Lane',
 ]
+const publicProductRoutes = ['/', '/dashboard', '/bullpen', '/stories', '/methodology', '/trust']
 
 function routeByPath(path) {
   return APP_ROUTES.find(route => route.path === path)
@@ -50,22 +51,36 @@ test('/today redirects to the Today surface and catch-all routes home', () => {
   assert.equal(routeByPath('*')?.redirectTo, '/')
 })
 
-test('existing primary routes remain registered, including direct Prospects URL access', () => {
-  const paths = new Set(APP_ROUTES.map(route => route.path))
-  for (const path of ['/', '/stories', '/dashboard', '/bullpen', '/prospects', '/methodology', '/trust']) {
-    assert.ok(paths.has(path), `missing route: ${path}`)
+test('public product routes stay on the single bullpen operating lane', () => {
+  const directProductRoutes = APP_ROUTES
+    .filter(route => route.Component && publicProductRoutes.includes(route.path))
+    .map(route => route.path)
+
+  assert.deepEqual(directProductRoutes, publicProductRoutes)
+  assert.equal(routeByPath('/prospects'), undefined)
+})
+
+test('hidden technical and auth routes stay registered but outside primary product navigation', () => {
+  for (const path of ['/signin', '/auth/verify', '/admin/product-intelligence', '/posts-bpen-7f3d9c']) {
+    assert.ok(routeByPath(path)?.Component, `missing technical route: ${path}`)
   }
 })
 
-test('Pipeline is demoted from primary nav while Today remains the first destination', () => {
+test('sidebar preserves public route order and excludes Prospects', () => {
   const html = render(React.createElement(Sidebar))
+  const labels = ['Today', 'Dashboard', 'Bullpen', 'Stories', 'Methodology', 'Data &amp; Trust']
+  const routeIndexes = publicProductRoutes.map(route => html.indexOf(`href="${route}"`))
 
   assert.ok(htmlIncludes(html, 'href="/"'))
-  assert.ok(htmlIncludes(html, 'Today'))
-  assert.ok(htmlIncludes(html, 'href="/stories"'))
-  assert.ok(html.indexOf('Today') < html.indexOf('Stories'))
+  assert.deepEqual([...routeIndexes].sort((a, b) => a - b), routeIndexes)
+  for (const label of labels) {
+    assert.ok(htmlIncludes(html, label), label)
+  }
+  for (const route of publicProductRoutes) {
+    assert.ok(htmlIncludes(html, `href="${route}"`), route)
+  }
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
-  assert.equal(htmlIncludes(html, 'Pipeline'), false)
+  assert.equal(htmlIncludes(html, 'Prospects'), false)
 })
 
 test('Sidebar Following card renders the resolved team name, not a generic placeholder', () => {

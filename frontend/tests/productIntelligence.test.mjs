@@ -503,13 +503,10 @@ test('impression tracker disconnects its observer on teardown', () => {
   assert.equal(instances[0].elements.size, 0)
 })
 
-test('Legacy report and Stories track impressions on screen, not story_viewed on render', () => {
-  const homeSrc = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
+test('Stories tracks impressions on screen, not story_viewed on render', () => {
   const storiesSrc = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
-  for (const src of [homeSrc, storiesSrc]) {
-    assert.equal(src.includes('useStoryViewedObservations'), false)
-    assert.ok(src.includes('useStoryImpressionObservations'))
-  }
+  assert.equal(storiesSrc.includes('useStoryViewedObservations'), false)
+  assert.ok(storiesSrc.includes('useStoryImpressionObservations'))
 })
 
 // ── V3-2: story_viewed-on-expand + story_team_board_opened ────────────────────
@@ -571,12 +568,6 @@ test('Stories wires expand to story_viewed and the CTA to story_team_board_opene
   assert.ok(src.includes('observeStoryTeamBoardOpened'))
   assert.equal(src.includes('observeStoryInteractedOnce'), false)
   assert.equal(src.includes('recordStoryInteracted'), false)
-})
-
-test('Legacy report wires story_team_board_opened on its story CTAs', () => {
-  const src = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
-  assert.ok(src.includes('observeStoryTeamBoardOpened'))
-  assert.ok(src.includes('recordStoryTeamBoardOpened'))
 })
 
 // ── V3-3: story_share_clicked ─────────────────────────────────────────────────
@@ -641,12 +632,9 @@ test('TeamShareButton fires share-intent tracking before the native share / copy
   assert.ok(onShareIdx < shareIdx)
 })
 
-test('Stories and legacy report wire story_share_clicked on the Share control', () => {
+test('Stories wires story_share_clicked on the Share control', () => {
   const storiesSrc = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
-  const homeSrc = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
-  for (const src of [storiesSrc, homeSrc]) {
-    assert.ok(src.includes('observeStoryShareClicked'))
-    assert.ok(src.includes('recordStoryShareClicked'))
-    assert.ok(src.includes('onShareClick'))
-  }
+  assert.ok(storiesSrc.includes('observeStoryShareClicked'))
+  assert.ok(storiesSrc.includes('recordStoryShareClicked'))
+  assert.ok(storiesSrc.includes('onShareClick'))
 })

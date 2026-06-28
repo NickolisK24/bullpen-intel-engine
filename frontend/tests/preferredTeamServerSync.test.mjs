@@ -209,7 +209,6 @@ test('claim is skipped when server teams already exist or local team lacks an id
 test('existing UI consumers stay on the preferred-team hook contract', async () => {
   const files = [
     'src/components/Sidebar.jsx',
-    'src/components/home/LegacyMorningBullpenReport.jsx',
     'src/components/dashboard/FollowMyTeam.jsx',
     'src/components/bullpen/board/TonightsBullpenBoard.jsx',
   ]

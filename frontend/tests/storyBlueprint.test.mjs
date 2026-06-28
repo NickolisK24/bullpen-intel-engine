@@ -21,9 +21,6 @@ const { StoryBlueprint, StoryPresentation } = await server.ssrLoadModule(
 const { getCanonicalStoryFeed } = await server.ssrLoadModule(
   '/src/components/stories/storiesCanonicalFeedView.js',
 )
-const { getCanonicalHeroStory } = await server.ssrLoadModule(
-  '/src/components/home/homeCanonicalStoriesView.js',
-)
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -96,29 +93,6 @@ test('canonical feed adapter passes the backend blueprint through to the card', 
   const feed = getCanonicalStoryFeed(dashboard)
   assert.equal(feed.items.length, 1)
   assert.deepEqual(feed.items[0].blueprint, SECTIONS)
-})
-
-
-test('home hero adapter passes the backend blueprint through', () => {
-  const dashboard = {
-    stories: {
-      items: [{
-        story_available: true,
-        story_id: '118:2026-06-25',
-        team_id: 118,
-        team_abbreviation: 'KC',
-        team_name: 'Kansas City Royals',
-        headline: 'H',
-        narrative: 'N',
-        story_type: 'coverage_pressure',
-        blueprint: SECTIONS,
-      }],
-      league_context: null,
-    },
-  }
-  const hero = getCanonicalHeroStory(dashboard)
-  assert.equal(hero.hasStory, true)
-  assert.deepEqual(hero.blueprint, SECTIONS)
 })
 
 

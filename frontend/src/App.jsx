@@ -5,7 +5,6 @@ import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
-import Prospects from './components/prospects/Prospects'
 import Methodology from './components/methodology/Methodology'
 import DataTrust from './components/trust/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
@@ -18,10 +17,9 @@ import { ADMIN_PRODUCT_EVENTS_PATH } from './utils/adminProductEvents'
 export const APP_ROUTES = [
   { path: '/', Component: Home },
   { path: '/today', redirectTo: '/' },
-  { path: '/stories', Component: Stories },
   { path: '/dashboard', Component: Dashboard },
   { path: '/bullpen', Component: Bullpen },
-  { path: '/prospects', Component: Prospects },
+  { path: '/stories', Component: Stories },
   { path: '/methodology', Component: Methodology },
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
