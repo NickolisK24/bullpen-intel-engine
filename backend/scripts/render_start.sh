@@ -74,9 +74,5 @@ else
   GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-60}"
   GUNICORN_GRACEFUL_TIMEOUT="${GUNICORN_GRACEFUL_TIMEOUT:-30}"
   echo "[render_start] Starting server: gunicorn app:app --bind 0.0.0.0:${PORT} --workers ${GUNICORN_WORKERS} --timeout ${GUNICORN_TIMEOUT} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT}"
-  exec gunicorn app:app \
-    --bind "0.0.0.0:${PORT}" \
-    --workers "${GUNICORN_WORKERS}" \
-    --timeout "${GUNICORN_TIMEOUT}" \
-    --graceful-timeout "${GUNICORN_GRACEFUL_TIMEOUT}"
+  exec gunicorn app:app --bind "0.0.0.0:${PORT}" --workers "${GUNICORN_WORKERS}" --timeout "${GUNICORN_TIMEOUT}" --graceful-timeout "${GUNICORN_GRACEFUL_TIMEOUT}"
 fi
