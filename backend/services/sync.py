@@ -467,6 +467,21 @@ def _safe_generate_completed_game_context(
         )
 
 
+def _postgame_snapshot_refresh_enabled() -> bool:
+    """Whether the postgame refresh rebuilds the homepage lead-story cache.
+
+    On by default. Set POSTGAME_REFRESH_SNAPSHOT to a falsey value to skip the
+    in-refresh rebuild — an operational lever for the case where this optional
+    tail is the slow/hanging step. Skipping it never affects correctness: the
+    completed-game data is already committed, the homepage endpoint falls back to
+    live generation, and the daily warm still refreshes the cache.
+    """
+    raw = os.environ.get('POSTGAME_REFRESH_SNAPSHOT')
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {'0', 'false', 'no', 'off', ''}
+
+
 def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_logger):
     """Refresh the Intelligence Surface snapshot for a slate without ever
     breaking the refresh.
@@ -477,25 +492,47 @@ def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_l
     committed, so a snapshot failure here costs only a stale homepage cache (the
     endpoint falls back to live generation) and never undoes context work or
     fails the postgame refresh.
+
+    This is the most expensive optional tail of the refresh (it rebuilds the
+    lead-story for every team with a completed-game context). It logs a start
+    line and an elapsed_ms so a slow build is visible in the job log instead of
+    appearing as a silent gap, and it can be skipped via POSTGAME_REFRESH_SNAPSHOT.
     """
+    if not _postgame_snapshot_refresh_enabled():
+        status['intelligence_snapshot'] = 'skipped_by_config'
+        run_logger.info(
+            'Intelligence surface snapshot skipped for %s '
+            '(POSTGAME_REFRESH_SNAPSHOT disabled); homepage uses live fallback.',
+            schedule_date,
+        )
+        return
+
+    started = time.perf_counter()
+    run_logger.info(
+        'Intelligence surface snapshot refresh starting for %s.', schedule_date)
     try:
         from services.intelligence_surface_snapshot import generate_snapshot_for_date
 
         response = generate_snapshot_for_date(
             schedule_date, source='postgame_refresh')
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         status['intelligence_snapshot'] = response.get('status') or 'generated'
         run_logger.info(
-            'Intelligence surface snapshot refreshed for %s: status=%s, publishable=%s.',
+            'Intelligence surface snapshot refreshed for %s: status=%s, '
+            'publishable=%s, elapsed_ms=%s.',
             schedule_date,
             response.get('status'),
             response.get('publishable_candidates'),
+            elapsed_ms,
         )
     except Exception as exc:  # noqa: BLE001 — snapshot is best-effort, never fatal
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         db.session.rollback()
         status['intelligence_snapshot'] = 'failed'
         run_logger.warning(
-            'Intelligence surface snapshot failed for schedule_date=%s: %s',
-            schedule_date, exc,
+            'Intelligence surface snapshot failed for schedule_date=%s '
+            '(elapsed_ms=%s): %s',
+            schedule_date, elapsed_ms, exc,
         )
 
 
@@ -929,6 +966,7 @@ def run_postgame_refresh(
         'newly_completed_games': 0,
         'games_already_processed': 0,
         'games_processed': 0,
+        'games_skipped': 0,
         'new_logs_added': 0,
         'pitchers_touched': 0,
         'pitchers_updated': 0,
@@ -940,6 +978,7 @@ def run_postgame_refresh(
         'message': '',
     }
     run_logger.info('── Postgame refresh starting (schedule_date=%s) ──', schedule_date)
+    refresh_started = time.perf_counter()
 
     try:
         with app.app_context():
@@ -965,6 +1004,8 @@ def run_postgame_refresh(
 
             for game in unprocessed_games:
                 game_pk = _game_pk(game)
+                game_started = time.perf_counter()
+                outcome = 'processed'
                 try:
                     result = process_completed_game_for_postgame_refresh(
                         game,
@@ -973,6 +1014,8 @@ def run_postgame_refresh(
                     )
                     db.session.commit()
                     if result.get('skipped'):
+                        status['games_skipped'] += 1
+                        outcome = 'skipped'
                         continue
                     status['games_processed'] += 1
                     status['new_logs_added'] += result['logs_added']
@@ -994,6 +1037,7 @@ def run_postgame_refresh(
                         run_logger=run_logger,
                     )
                 except Exception as exc:
+                    outcome = 'failed'
                     db.session.rollback()
                     status['errors'] += 1
                     status['records_failed'] += 1
@@ -1011,6 +1055,13 @@ def run_postgame_refresh(
                     )
                     db.session.commit()
                     run_logger.warning('Postgame processing failed for game_pk=%s: %s', game_pk, exc)
+                finally:
+                    run_logger.info(
+                        'postgame_refresh game_done game_pk=%s outcome=%s elapsed_ms=%s',
+                        game_pk,
+                        outcome,
+                        round((time.perf_counter() - game_started) * 1000, 1),
+                    )
 
             if status['new_logs_added'] > 0:
                 sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
@@ -1107,7 +1158,21 @@ def run_postgame_refresh(
                 )
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
+    status['elapsed_ms'] = round((time.perf_counter() - refresh_started) * 1000, 1)
     write_status(status)
+    run_logger.info(
+        'postgame_refresh completed status=%s games_found=%s already_processed=%s '
+        'processed=%s skipped=%s failed=%s contexts=%s snapshot=%s elapsed_ms=%s',
+        status['status'],
+        status['completed_games_found'],
+        status['games_already_processed'],
+        status['games_processed'],
+        status['games_skipped'],
+        status['records_failed'],
+        status['completed_game_contexts_upserted'],
+        status['intelligence_snapshot'],
+        status['elapsed_ms'],
+    )
     run_logger.info('── Postgame refresh finished: %s ──', status['status'])
     run_logger.removeHandler(file_handler)
     file_handler.close()

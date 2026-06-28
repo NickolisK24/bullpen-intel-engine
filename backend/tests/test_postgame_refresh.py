@@ -304,3 +304,84 @@ def test_existing_workload_row_is_not_duplicated_when_marker_is_missing(app, mon
 def test_postgame_schedule_date_keeps_late_cleanup_on_prior_baseball_date():
     assert sync_service.postgame_schedule_date(datetime(2026, 6, 21, 6, 30)).isoformat() == '2026-06-20'
     assert sync_service.postgame_schedule_date(datetime(2026, 6, 20, 20, 0)).isoformat() == '2026-06-20'
+
+
+# ── Observability: phase/per-game/summary logging ─────────────────────────────
+
+def test_postgame_refresh_logs_per_game_and_final_summary(app, monkeypatch, caplog):
+    import logging
+    with app.app_context():
+        _seed_pitchers()
+    _patch_mlb(monkeypatch, [_game()])
+
+    with caplog.at_level(logging.INFO, logger='baseballos.postgame_refresh'):
+        status = _run(app)
+
+    messages = [r.getMessage() for r in caplog.records]
+    # Per-game elapsed/outcome line for the one processed game.
+    assert any(
+        'postgame_refresh game_done game_pk=7001 outcome=processed elapsed_ms=' in m
+        for m in messages
+    ), messages
+    # Final summary line with the counters + elapsed_ms.
+    assert any(
+        m.startswith('postgame_refresh completed status=') and 'elapsed_ms=' in m
+        and 'processed=1' in m
+        for m in messages
+    ), messages
+    assert status['elapsed_ms'] >= 0
+    assert status['games_skipped'] == 0
+
+
+def test_intelligence_surface_snapshot_skipped_by_config(app, monkeypatch):
+    """The expensive homepage rebuild can be skipped via env without affecting
+    completed-game correctness (it is the optional tail)."""
+    import services.intelligence_surface_snapshot as iss
+
+    called = {'n': 0}
+    monkeypatch.setattr(
+        iss, 'generate_snapshot_for_date',
+        lambda *a, **k: called.__setitem__('n', called['n'] + 1))
+    monkeypatch.setenv('POSTGAME_REFRESH_SNAPSHOT', 'false')
+
+    status = {}
+    run_logger = sync_service.logging.getLogger('baseballos.postgame_refresh')
+    with app.app_context():
+        sync_service._safe_generate_intelligence_surface_snapshot(
+            date(2026, 6, 20), status=status, run_logger=run_logger)
+
+    assert called['n'] == 0
+    assert status['intelligence_snapshot'] == 'skipped_by_config'
+
+
+def test_intelligence_surface_snapshot_logs_start_and_elapsed(app, monkeypatch, caplog):
+    import logging
+    import services.intelligence_surface_snapshot as iss
+
+    monkeypatch.delenv('POSTGAME_REFRESH_SNAPSHOT', raising=False)
+    monkeypatch.setattr(
+        iss, 'generate_snapshot_for_date',
+        lambda *a, **k: {'status': 'ok', 'publishable_candidates': 1})
+
+    status = {}
+    run_logger = sync_service.logging.getLogger('baseballos.postgame_refresh')
+    with caplog.at_level(logging.INFO, logger='baseballos.postgame_refresh'):
+        with app.app_context():
+            sync_service._safe_generate_intelligence_surface_snapshot(
+                date(2026, 6, 20), status=status, run_logger=run_logger)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any('Intelligence surface snapshot refresh starting' in m for m in messages), messages
+    assert any('elapsed_ms=' in m and 'snapshot refreshed' in m for m in messages), messages
+    assert status['intelligence_snapshot'] == 'ok'
+
+
+def test_postgame_sync_workflow_job_timeout_is_25_minutes():
+    """Static guard: the sync job timeout must give the postgame path enough
+    headroom for the homepage rebuild (regression lock for the 15m cancellation)."""
+    from pathlib import Path
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
+    data = yaml.safe_load(workflow.read_text(encoding='utf-8'))
+    assert data['jobs']['sync']['timeout-minutes'] == 25

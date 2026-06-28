@@ -48,7 +48,14 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The postgame path legitimately includes the homepage lead-story rebuild
+    # (one story per team with a completed-game context), the dashboard snapshot
+    # verify, and — on the daily run — the static story export. 15 minutes was
+    # too tight for that expected work and canceled mid-rebuild. 25 gives
+    # headroom; the refresh now logs phase/elapsed timings (and the lead-story
+    # rebuild can be skipped via POSTGAME_REFRESH_SNAPSHOT) so a genuine hang is
+    # diagnosable rather than a silent cancellation.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
