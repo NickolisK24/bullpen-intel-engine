@@ -20,7 +20,6 @@ after(async () => {
 const { APP_ROUTES } = await server.ssrLoadModule('/src/App.jsx')
 const {
   SidebarDataFreshnessCard,
-  SidebarFollowingCard,
   sidebarFreshness,
   default: Sidebar,
 } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
@@ -93,34 +92,10 @@ test('sidebar preserves public route order and excludes Prospects', () => {
   }
   assert.equal(htmlIncludes(html, 'href="/prospects"'), false)
   assert.equal(htmlIncludes(html, 'Prospects'), false)
-})
-
-test('Sidebar Following card renders the resolved team name, not a generic placeholder', () => {
-  const html = render(React.createElement(SidebarFollowingCard, {
-    preferredTeam: {
-      team_id: 118,
-      team_name: 'Kansas City Royals',
-      team_abbreviation: 'KC',
-    },
-  }))
-
-  assert.ok(htmlIncludes(html, 'Following'))
-  assert.ok(htmlIncludes(html, 'Kansas City Royals'))
-  assert.equal(htmlIncludes(html, 'your team'), false)
-  assert.equal(htmlIncludes(html, '>118<'), false)
-})
-
-test('Sidebar Following card falls back to a safe abbreviation label', () => {
-  const html = render(React.createElement(SidebarFollowingCard, {
-    preferredTeam: {
-      team_id: 118,
-      team_abbreviation: 'KC',
-    },
-  }))
-
-  assert.ok(htmlIncludes(html, 'KC'))
-  assert.equal(htmlIncludes(html, 'your team'), false)
-  assert.equal(htmlIncludes(html, '>118<'), false)
+  assert.equal(htmlIncludes(html, 'Following'), false)
+  assert.equal(htmlIncludes(html, 'Account'), false)
+  assert.equal(htmlIncludes(html, 'Sign in'), false)
+  assert.equal(htmlIncludes(html, 'href="/signin"'), false)
 })
 
 test('Sidebar Data Freshness renders sync status timestamps in ET', () => {

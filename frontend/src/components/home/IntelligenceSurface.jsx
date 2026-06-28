@@ -30,7 +30,7 @@ const TONIGHT_ERROR_BODY =
 const LEAD_STORY_LIMITATIONS_FALLBACK =
   'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
 const WEEKLY_NOTES_MAILTO =
-  'mailto:nickoliskacludis@gmail.com?subject=BaseballOS%20weekly%20bullpen%20notes&body=I%27d%20like%20weekly%20bullpen%20notes.%0A%0AFavorite%20team%3A%20'
+  'mailto:baseballoshq@gmail.com?subject=BaseballOS%20weekly%20bullpen%20notes&body=I%27d%20like%20weekly%20bullpen%20notes.%0A%0AFavorite%20team%3A%20'
 
 const INTERNAL_TODAY_COPY_PATTERN =
   /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i

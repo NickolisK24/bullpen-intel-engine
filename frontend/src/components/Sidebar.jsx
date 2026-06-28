@@ -1,15 +1,8 @@
 import { useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
-import { useAuthState } from '../hooks/useAuthState'
+import { NavLink } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
-import { usePreferredTeamPreference } from '../hooks/usePreferredTeamPreference'
-import { getSyncStatus, getTeams } from '../utils/api'
-import {
-  buildPreferredTeamHref,
-  preferredTeamLabel,
-} from '../utils/preferredTeam'
+import { getSyncStatus } from '../utils/api'
 import { getSyncStatusView } from './dashboard/syncStatusView'
-import TeamMark from './team/TeamMark'
 
 const NAV = [
   { to: '/',            icon: '☀',  label: 'Today'       },
@@ -75,97 +68,11 @@ export function SidebarDataFreshnessCard({ freshness }) {
   )
 }
 
-export function SidebarAccountBlock({ authState, onNavigate }) {
-  if (authState?.authenticated) {
-    return (
-      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-        <div className="font-mono text-[9px] uppercase tracking-widest text-amber/80">
-          Signed in
-        </div>
-        <div className="mt-2 truncate text-xs text-chalk300">
-          {authState.user?.email || 'Account active'}
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            authState.signOut?.()
-            onNavigate?.()
-          }}
-          className="mt-3 w-full rounded border border-dirt bg-dugout px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-        >
-          Sign out
-        </button>
-      </div>
-    )
-  }
-
-  if (authState?.loading) {
-    return (
-      <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-        <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-          Account
-        </div>
-        <div className="mt-2 font-mono text-[11px] text-chalk500">
-          Checking sign-in...
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-lg border border-dirt/80 bg-field/45 p-3">
-      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-        Account
-      </div>
-      <Link
-        to="/signin"
-        onClick={onNavigate}
-        className="mt-3 inline-flex w-full justify-center rounded border border-amber/35 bg-amber/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15"
-      >
-        Sign in
-      </Link>
-    </div>
-  )
-}
-
-export function SidebarFollowingCard({ preferredTeam, onNavigate }) {
-  if (!preferredTeam) return null
-
-  const preferredHref = buildPreferredTeamHref(preferredTeam, 'nav-my-team')
-  const teamLabel = preferredTeamLabel(preferredTeam, 'Team')
-
-  return (
-    <NavLink
-      to={preferredHref}
-      onClick={onNavigate}
-      className="mt-3 rounded-lg border border-dirt bg-field/40 px-3 py-2.5 text-left transition-colors hover:border-amber/30 hover:bg-amber/5"
-    >
-      <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-        Following
-      </div>
-      <div className="mt-1.5 flex min-w-0 items-center gap-2">
-        <TeamMark
-          team={preferredTeam}
-          className="h-8 w-8 border-amber/20 bg-white/[0.04] p-1"
-          fallbackClassName="text-[10px]"
-        />
-        <span className="min-w-0 truncate text-sm text-chalk200">
-          {teamLabel}
-        </span>
-      </div>
-    </NavLink>
-  )
-}
-
 export default function Sidebar() {
   // Mobile-only collapsible nav. On lg+ the nav is always shown and this
   // state is irrelevant (the hamburger is hidden and `lg:flex` forces it open).
   const [open, setOpen] = useState(false)
-  const authState = useAuthState()
   const syncStatus = useFetch(getSyncStatus)
-  const teams = useFetch(getTeams)
-  const teamList = teams.data || []
-  const { preferredTeam } = usePreferredTeamPreference(teamList)
   const freshness = sidebarFreshness(
     syncStatus.data,
     syncStatus.loading,
@@ -216,19 +123,11 @@ export default function Sidebar() {
             )}
           </NavLink>
         ))}
-        <SidebarFollowingCard
-          preferredTeam={preferredTeam}
-          onNavigate={() => setOpen(false)}
-        />
       </nav>
 
       {/* Footer — follows the nav's mobile visibility, always shown on lg+ */}
       <div className={`${open ? 'block' : 'hidden'} lg:block mt-auto px-4 py-4 border-t border-dirt`}>
         <div className="space-y-3">
-          <SidebarAccountBlock
-            authState={authState}
-            onNavigate={() => setOpen(false)}
-          />
           <SidebarDataFreshnessCard freshness={freshness} />
         </div>
       </div>

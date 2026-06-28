@@ -44,7 +44,6 @@ const {
   safeVerifyRedirect,
   verifySignInToken,
 } = await server.ssrLoadModule('/src/components/auth/VerifySignIn.jsx')
-const { SidebarAccountBlock } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
 const {
   AUTH_TOKEN_STORAGE_KEY,
   isAuthTokenStorageEvent,
@@ -308,50 +307,6 @@ test('auth storage refresh is limited to bearer token changes', () => {
   assert.equal(isAuthTokenStorageEvent({ key: null }), true)
   assert.equal(isAuthTokenStorageEvent({ key: 'baseballos.preferredTeam' }), false)
   assert.equal(isAuthTokenStorageEvent(preferredTeamEvent), false)
-})
-
-test('Sidebar anonymous state shows the sign-in entry', () => {
-  const html = render(React.createElement(SidebarAccountBlock, {
-    authState: {
-      loading: false,
-      authenticated: false,
-      user: null,
-    },
-  }))
-
-  assert.ok(htmlIncludes(html, 'Account'))
-  assert.ok(htmlIncludes(html, 'href="/signin"'))
-  assert.ok(htmlIncludes(html, 'Sign in'))
-})
-
-test('Sidebar authenticated state shows email and sign out', () => {
-  const html = render(React.createElement(SidebarAccountBlock, {
-    authState: {
-      loading: false,
-      authenticated: true,
-      user: { email: 'fan@example.com' },
-      signOut: () => {},
-    },
-  }))
-
-  assert.ok(htmlIncludes(html, 'Signed in'))
-  assert.ok(htmlIncludes(html, 'fan@example.com'))
-  assert.ok(htmlIncludes(html, 'Sign out'))
-})
-
-test('Sidebar keeps signed-in account visible during background refresh', () => {
-  const html = render(React.createElement(SidebarAccountBlock, {
-    authState: {
-      loading: true,
-      authenticated: true,
-      user: { email: 'fan@example.com' },
-      signOut: () => {},
-    },
-  }))
-
-  assert.ok(htmlIncludes(html, 'Signed in'))
-  assert.ok(htmlIncludes(html, 'fan@example.com'))
-  assert.ok(!htmlIncludes(html, 'Checking sign-in...'))
 })
 
 test('sign-out auth state clears the stored bearer token', async () => {
