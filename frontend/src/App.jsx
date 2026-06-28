@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
@@ -13,6 +14,7 @@ import VerifySignIn from './components/auth/VerifySignIn'
 import ProductIntelligenceAdmin from './components/admin/ProductIntelligenceAdmin'
 import { PRIVATE_POSTS_PATH } from './components/posts/privatePostsView'
 import { ADMIN_PRODUCT_EVENTS_PATH } from './utils/adminProductEvents'
+import { cleanupLaunchPreferredTeamStorage } from './utils/preferredTeam'
 
 export const APP_ROUTES = [
   { path: '/', Component: Home },
@@ -44,6 +46,10 @@ export function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    cleanupLaunchPreferredTeamStorage()
+  }, [])
+
   return (
     <BrowserRouter>
       <div className="app-shell bg-noise flex-col lg:flex-row">

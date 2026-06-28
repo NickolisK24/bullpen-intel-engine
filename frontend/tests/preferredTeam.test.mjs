@@ -6,6 +6,7 @@ import {
   PREFERRED_TEAM_STORAGE_KEY,
   PREFERRED_TEAM_CHANGED_EVENT,
   buildPreferredTeamHref,
+  cleanupLaunchPreferredTeamStorage,
   clearPreferredTeamPreference,
   dismissPreferredTeamPrompt,
   isPreferredTeamStorageEvent,
@@ -161,4 +162,17 @@ test('preferred team change event is preserved for existing consumers', () => {
     globalThis.window = originalWindow
     globalThis.CustomEvent = originalCustomEvent
   }
+})
+
+test('launch cleanup removes stale preferred team keys from browser storage', () => {
+  const local = createStorage()
+  const session = createStorage()
+  local.setItem(PREFERRED_TEAM_STORAGE_KEY, JSON.stringify({ team: teams[0] }))
+  local.setItem(LEGACY_FOLLOWED_TEAM_STORAGE_KEY, JSON.stringify(teams[1]))
+  session.setItem(LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY, 'team:147')
+
+  assert.equal(cleanupLaunchPreferredTeamStorage([local, session]), true)
+  assert.equal(local.has(PREFERRED_TEAM_STORAGE_KEY), false)
+  assert.equal(local.has(LEGACY_FOLLOWED_TEAM_STORAGE_KEY), false)
+  assert.equal(session.has(LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY), false)
 })

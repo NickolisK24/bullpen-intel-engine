@@ -115,15 +115,15 @@ test('dashboard renders compact league bullpen availability context', () => {
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based.'))
 })
 
-test('dashboard renders followed team unavailable pitcher context when present', () => {
+test('dashboard does not render followed team context on the Phase 0 launch surface', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: { ...dashboardData, injury_il_context: injuryIlContext },
   }))
 
-  assert.ok(htmlIncludes(html, 'Followed Team'))
-  assert.ok(htmlIncludes(html, 'Padres'))
-  assert.ok(htmlIncludes(html, 'Padres IL Arm'))
-  assert.ok(htmlIncludes(html, 'Padres Optioned Arm'))
+  assert.ok(!htmlIncludes(html, 'Followed Team'))
+  assert.ok(!htmlIncludes(html, 'Padres'))
+  assert.ok(!htmlIncludes(html, 'Padres IL Arm'))
+  assert.ok(!htmlIncludes(html, 'Padres Optioned Arm'))
 })
 
 test('dashboard suppresses injury il section when payload is missing', () => {

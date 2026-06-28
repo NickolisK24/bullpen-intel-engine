@@ -62,6 +62,12 @@ test('/today redirects to the Today surface and catch-all routes home', () => {
   assert.equal(routeByPath('*')?.redirectTo, '/')
 })
 
+test('app startup clears stale preferred team launch storage', () => {
+  const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+
+  assert.ok(source.includes('cleanupLaunchPreferredTeamStorage'))
+})
+
 test('public product routes stay on the single bullpen operating lane', () => {
   const directProductRoutes = APP_ROUTES
     .filter(route => route.Component && publicProductRoutes.includes(route.path))

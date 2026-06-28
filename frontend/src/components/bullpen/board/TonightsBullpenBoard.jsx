@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
-import { usePreferredTeamPreference } from '../../../hooks/usePreferredTeamPreference'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
@@ -43,8 +42,6 @@ export function resolveTeamId(teamList, requested) {
 // `requestedTeam` deep-link (e.g. from the landscape drilldown) preselects a team.
 export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   const teamList = teams?.data || []
-  const { preferredTeam } = usePreferredTeamPreference(teamList)
-  const preferredTeamId = preferredTeam?.team_id ?? null
   const [selectedTeam, setSelectedTeam] = useState(null)
   const [boardViewMode, setBoardViewMode] = useState(DEFAULT_BULLPEN_VIEW_MODE)
   // Opening a pitcher's detail reuses the existing PitcherDetail panel — the
@@ -69,22 +66,6 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
       appliedRequestRef.current = requestedTeam
     }
   }, [requestedTeam, teamList])
-
-  // If the user has picked a preferred team, make the board open there unless
-  // the URL explicitly requested another club.
-  useEffect(() => {
-    if (requestedTeam || selectedTeam != null || teamList.length === 0 || preferredTeamId == null) return
-    setSelectedTeam(preferredTeamId)
-  }, [preferredTeamId, requestedTeam, selectedTeam, teamList.length])
-
-  // Default to the first team once the list loads so the board shows a bullpen
-  // immediately — unless a resolvable deep link is pending (avoids a flash).
-  useEffect(() => {
-    if (selectedTeam != null || teamList.length === 0) return
-    if (requestedTeam && resolveTeamId(teamList, requestedTeam) != null) return
-    if (preferredTeamId != null) return
-    setSelectedTeam(teamList[0].team_id)
-  }, [teamList, selectedTeam, requestedTeam, preferredTeamId])
 
   const board = useFetch(
     () => {

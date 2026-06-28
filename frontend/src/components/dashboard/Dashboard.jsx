@@ -206,8 +206,6 @@ function InjuryIlContextSection({ context }) {
       detail: 'Clubs with multiple unavailable bullpen arms',
     },
   ]
-  const followed = context.followedTeam
-
   return (
     <Section
       title="Bullpen Availability Context"
@@ -239,34 +237,6 @@ function InjuryIlContextSection({ context }) {
             </div>
           ))}
         </div>
-
-        {followed && (
-          <div className="mt-3 rounded border border-dirt/70 bg-dugout/45 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                  Followed Team
-                </div>
-                <div className="mt-0.5 font-display text-base tracking-wide text-chalk100">
-                  {followed.teamName}
-                </div>
-              </div>
-              <div className="font-mono text-[11px] uppercase tracking-wider text-chalk400">
-                {followed.injuredListCount} IL · {followed.inactiveCount} inactive
-              </div>
-            </div>
-            {followed.unavailablePitchers.length > 0 && (
-              <ul className="mt-2 grid gap-1 sm:grid-cols-2">
-                {followed.unavailablePitchers.slice(0, 4).map(pitcher => (
-                  <li key={`${pitcher.playerId || pitcher.name}-${pitcher.status}`} className="min-w-0 text-xs leading-relaxed text-chalk300">
-                    <span className="break-words text-chalk200">{pitcher.name}</span>
-                    <span className="text-chalk500"> - {pitcher.statusLabel}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
 
         <p className="mt-3 text-[11px] leading-relaxed text-chalk500">
           <span className="text-chalk300">Why it matters:</span> Bullpen workload can become concentrated when active relief depth is reduced.

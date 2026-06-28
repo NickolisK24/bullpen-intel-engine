@@ -106,6 +106,26 @@ test('board view mode control defaults to Active and replaces show-unavailable c
   assert.ok(!htmlIncludes(html, 'Show unavailable pitchers'))
 })
 
+test('team board launch landing is neutral and ignores stale preferred team state', () => {
+  const html = renderToStaticMarkup(React.createElement(TonightsBullpenBoard, {
+    teams: {
+      loading: false,
+      data: [
+        { team_id: 1, team_name: 'Aces', team_abbreviation: 'ACE' },
+        { team_id: 147, team_name: 'New York Yankees', team_abbreviation: 'NYY' },
+      ],
+    },
+  }))
+
+  assert.ok(htmlIncludes(html, 'Pick a team'))
+  assert.ok(htmlIncludes(html, 'Select a team above to see its current bullpen board.'))
+  assert.equal(tonightsBullpenBoardSource.includes('usePreferredTeamPreference'), false)
+  assert.equal(tonightsBullpenBoardSource.includes('preferredTeam'), false)
+  assert.equal(tonightsBullpenBoardSource.includes('setSelectedTeam(teamList[0].team_id)'), false)
+  assert.equal(tonightsBullpenBoardSource.includes('readPreferredTeam'), false)
+  assert.equal(tonightsBullpenBoardSource.includes('baseballos.preferredTeam'), false)
+})
+
 test('team board uses compact operating card density', () => {
   assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
   assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))

@@ -141,6 +141,61 @@ function clearLegacyPreferredTeamKeys(storage) {
   }
 }
 
+function preferredTeamStorageKeys() {
+  return [
+    PREFERRED_TEAM_STORAGE_KEY,
+    LEGACY_FOLLOWED_TEAM_STORAGE_KEY,
+    LEGACY_WHAT_CHANGED_TEAM_STORAGE_KEY,
+  ]
+}
+
+function getLaunchCleanupStorages() {
+  if (typeof window === 'undefined') return []
+  const storages = []
+  for (const key of ['localStorage', 'sessionStorage']) {
+    try {
+      if (window[key]) storages.push(window[key])
+    } catch {
+      // Storage can be blocked by browser policy.
+    }
+  }
+  return storages
+}
+
+export function cleanupLaunchPreferredTeamStorage(storages = getLaunchCleanupStorages()) {
+  const targets = Array.isArray(storages) ? storages : [storages]
+  let removed = false
+
+  for (const storage of targets) {
+    if (!storage?.removeItem) continue
+    for (const key of preferredTeamStorageKeys()) {
+      try {
+        if (storage.getItem && storage.getItem(key) == null) continue
+        storage.removeItem(key)
+        removed = true
+      } catch {
+        try {
+          storage.removeItem(key)
+          removed = true
+        } catch {
+          // Best-effort launch cleanup only.
+        }
+      }
+    }
+  }
+
+  if (removed) {
+    emitPreferredTeamChange({
+      team: null,
+      promptDismissed: false,
+      savedAt: null,
+      dismissedAt: null,
+    })
+  }
+
+  return removed
+}
+
 function emitPreferredTeamChange(state) {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
   try {
