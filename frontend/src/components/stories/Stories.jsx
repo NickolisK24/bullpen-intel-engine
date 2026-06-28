@@ -5,12 +5,20 @@ import { useStoryImpressionObservations } from '../../hooks/useProductIntelligen
 import { getBullpenDashboard, recordStoryShareClicked, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
 import { observeStoryShareClicked, observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
-import { LoadingPane, ErrorState, StaleDataNotice } from '../UI'
+import {
+  DataThroughStamp,
+  ErrorState,
+  FreshnessBadge,
+  LastSyncLabel,
+  LoadingPane,
+  StaleDataNotice,
+} from '../UI'
 import { SectionHeading, StoryBlueprint, StoryDisclosureNote } from '../home/BullpenStories'
 import {
   getMastheadView,
   homeTone,
 } from '../home/homePresentationView'
+import { completedGamesDataLine } from '../dashboard/syncStatusView'
 import TeamShareButton from '../share/TeamShareButton'
 import {
   DEFAULT_STORY_FILTER,
@@ -82,7 +90,6 @@ export function StoriesView({
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-chalk400">
-            <span className="rounded border border-dirt bg-dugout px-2 py-1">{masthead.dataLine}</span>
             <span className="rounded border border-amber/30 bg-amber/5 px-2 py-1 text-amber/80">
               Descriptive bullpen notes.
             </span>
@@ -105,6 +112,13 @@ export function StoriesView({
               onRetry={onRetry}
             />
           )}
+
+          <StoriesTrustStrip
+            feed={feed}
+            isLive={masthead.isLive}
+          />
+
+          <StoriesLimitationsStrip limitations={feed.limitations} />
 
           <FeedScope
             feed={feed}
@@ -163,6 +177,64 @@ export function StoriesView({
         </>
       )}
     </div>
+  )
+}
+
+function StoriesTrustStrip({ feed, isLive }) {
+  const freshness = feed?.freshness || null
+  const dataThrough = freshness?.data_through || null
+  const lastSync = freshness?.last_successful_sync || null
+  const hasFreshness = Boolean(freshness || dataThrough || lastSync)
+  const hasLiveState = typeof isLive === 'boolean' && hasFreshness
+  const dataLine = completedGamesDataLine(dataThrough)
+  if (!hasFreshness && !hasLiveState) return null
+
+  return (
+    <section
+      className="mb-4 border border-dirt bg-dugout p-3 sm:p-4"
+      aria-label={dataLine ? `Stories trust status. ${dataLine}` : 'Stories trust status'}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {hasFreshness && <FreshnessBadge freshness={freshness} />}
+        <DataThroughStamp date={dataThrough} label="Bullpen data through" />
+        <LastSyncLabel value={lastSync} />
+        {hasLiveState && (
+          <span className={`inline-flex min-h-7 items-center rounded border px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest ${
+            isLive
+              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
+              : 'border-amber/35 bg-amber/10 text-amber'
+          }`}>
+            {isLive ? 'Current MLB data' : 'Review-only intelligence — not live MLB data'}
+          </span>
+        )}
+        <Link
+          to="/trust"
+          className="inline-flex min-h-7 items-center rounded border border-dirt bg-field/50 px-2.5 py-1 font-mono text-[11px] uppercase tracking-widest text-chalk400 transition-colors hover:border-amber/40 hover:text-amber"
+        >
+          Data &amp; Trust
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+function StoriesLimitationsStrip({ limitations }) {
+  const items = Array.isArray(limitations) ? limitations.filter(Boolean) : []
+  if (!items.length) return null
+
+  return (
+    <section className="mb-6 border border-dirt bg-field/40 p-3 sm:p-4" aria-label="Stories limitations">
+      <h2 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Limitations
+      </h2>
+      <ul className="mt-2 space-y-1">
+        {items.map(item => (
+          <li key={item} className="text-xs leading-relaxed text-chalk500">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -281,6 +353,17 @@ function FeedStoryCard({ story, impressionRef }) {
         >
           <span className="h-1 w-1 rounded-full" style={{ backgroundColor: homeTone(story.read.tone).dot }} aria-hidden="true" />
           {story.read.display}
+        </div>
+      )}
+
+      {story.reviewNote && (
+        <div className="mt-3 border border-amber/25 bg-amber/5 px-3 py-2">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-amber/80">
+            {story.reviewNote.label}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-chalk500">
+            {story.reviewNote.helper}
+          </p>
         </div>
       )}
 

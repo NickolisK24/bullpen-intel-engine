@@ -11,6 +11,11 @@
 
 export const CANONICAL_STORIES_FALLBACK =
   'No bullpen story has enough movement yet today.'
+export const STORIES_LIMITATIONS_FALLBACK =
+  'Stories are descriptive bullpen reads. BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
+
+const INTERNAL_STORIES_COPY_PATTERN =
+  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state|review state|sample intelligence|raw feed|canonical feed|model output|quality_status|suppression_reason|source)\b/i
 
 function canonicalFeed(dashboard) {
   const feed = dashboard?.stories
@@ -27,6 +32,128 @@ export function hasUsableCanonicalStoriesFeed(dashboard) {
 
 function cleanText(value) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function limitationText(value) {
+  if (typeof value === 'string') return cleanText(value)
+  if (isObject(value)) {
+    return cleanText(value.summary || value.text || value.body || value.label)
+  }
+  return ''
+}
+
+function cleanLimitations(values) {
+  const raw = (Array.isArray(values) ? values : [])
+    .map(limitationText)
+    .filter(Boolean)
+  const hasUnsafe = raw.some(text => INTERNAL_STORIES_COPY_PATTERN.test(text))
+  if (raw.length === 0 || hasUnsafe) {
+    return {
+      items: [STORIES_LIMITATIONS_FALLBACK],
+      source: 'fallback',
+    }
+  }
+  return {
+    items: [...new Set(raw)].slice(0, 4),
+    source: 'payload',
+  }
+}
+
+function combinedLimitations(feed, cards) {
+  const feedLimitations = Array.isArray(feed?.limitations) ? feed.limitations : []
+  const cardLimitations = cards.flatMap(card => (
+    Array.isArray(card.limitations) ? card.limitations : []
+  ))
+  return cleanLimitations([...feedLimitations, ...cardLimitations])
+}
+
+function cleanFreshness(value) {
+  return isObject(value) ? value : null
+}
+
+function sharedCardFreshness(cards) {
+  const freshnessValues = cards
+    .map(card => cleanFreshness(card.freshness))
+    .filter(Boolean)
+  if (freshnessValues.length === 0) return null
+  const dataThroughValues = new Set(freshnessValues.map(item => cleanText(item.data_through)).filter(Boolean))
+  if (dataThroughValues.size > 1) return null
+  return freshnessValues[0]
+}
+
+function pageFreshness(dashboard, feed, cards) {
+  return (
+    cleanFreshness(dashboard?.freshness)
+    || cleanFreshness(feed?.freshness)
+    || sharedCardFreshness(cards)
+  )
+}
+
+function qualityStatusOf(item) {
+  const status = cleanText(item?.quality_status).toLowerCase()
+  if (['published', 'review', 'suppressed', 'neutral'].includes(status)) return status
+  return null
+}
+
+function isRenderableStory(item) {
+  if (!item || item.story_available !== true) return false
+  const status = qualityStatusOf(item)
+  return status !== 'suppressed' && status !== 'neutral'
+}
+
+function reviewNoteOf(item) {
+  return qualityStatusOf(item) === 'review'
+    ? {
+        label: 'Under review',
+        helper: 'Shown as a developing read while BaseballOS continues checking the signal.',
+      }
+    : null
+}
+
+function storyIdentity(value) {
+  const teamId = Number(value?.team_id ?? value?.teamId)
+  const storyType = cleanText(value?.story_type ?? value?.storyType)
+  if (!Number.isInteger(teamId) || !storyType) return null
+  return { teamId, storyType }
+}
+
+function storyMatchesIdentity(story, identity) {
+  if (!identity) return false
+  const candidate = storyIdentity(story)
+  return Boolean(
+    candidate
+    && candidate.teamId === identity.teamId
+    && candidate.storyType === identity.storyType
+  )
+}
+
+function todayFlagshipIdentity(dashboard, feed, explicit) {
+  return storyIdentity(explicit)
+    || storyIdentity(feed?.today_flagship)
+    || storyIdentity(feed?.todayFlagship)
+    || storyIdentity(feed?.flagship_story)
+    || storyIdentity(dashboard?.today_flagship)
+    || storyIdentity(dashboard?.todayFlagship)
+}
+
+function deemphasizeTodayMatch(cards, identity) {
+  if (!identity || cards.length < 2) {
+    return { items: cards, deEmphasized: false }
+  }
+  const matched = []
+  const others = []
+  for (const card of cards) {
+    if (storyMatchesIdentity(card, identity)) matched.push(card)
+    else others.push(card)
+  }
+  if (matched.length === 0 || others.length === 0) {
+    return { items: cards, deEmphasized: false }
+  }
+  return { items: [...others, ...matched], deEmphasized: true }
 }
 
 const VALID_TONES = new Set(['stress', 'rest', 'watch', 'neutral'])
@@ -88,6 +215,9 @@ function leagueTone(mode) {
 
 // One canonical published story -> a Stories feed card (FeedStoryCard shape).
 function toFeedCard(item) {
+  const limitations = Array.isArray(item?.limitations)
+    ? item.limitations.map(limitationText).filter(Boolean)
+    : []
   return {
     storyId: item.story_id || null,
     storyType: item.story_type || null,
@@ -106,6 +236,10 @@ function toFeedCard(item) {
     cta: 'Open the team board',
     read: continuityRead(item.continuity),
     continuity: item.continuity || null,
+    freshness: cleanFreshness(item.freshness),
+    limitations,
+    qualityStatus: qualityStatusOf(item),
+    reviewNote: reviewNoteOf(item),
     source: 'canonical',
   }
 }
@@ -130,24 +264,41 @@ function leagueContextCard(league) {
     read: null,
     mode: league.mode || null,
     dayClass: league.day_class || null,
+    freshness: cleanFreshness(league.freshness),
+    limitations: Array.isArray(league.limitations)
+      ? league.limitations.map(limitationText).filter(Boolean)
+      : [],
+    qualityStatus: qualityStatusOf(league),
+    reviewNote: reviewNoteOf(league),
     source: 'canonical_league',
   }
 }
 
 // The full canonical feed in the page's expected shape. Publishable team stories
 // first, then the league card; suppressed stories are not rendered.
-export function getCanonicalStoryFeed(dashboard) {
+export function getCanonicalStoryFeed(dashboard, options = {}) {
   const feed = canonicalFeed(dashboard)
   const rawItems = feed && Array.isArray(feed.items) ? feed.items : []
   const teamCards = rawItems
-    .filter(item => item && item.story_available === true)
+    .filter(isRenderableStory)
     .map(toFeedCard)
   const leagueCard = leagueContextCard(feed?.league_context)
-  const items = leagueCard ? [...teamCards, leagueCard] : teamCards
+  const withLeague = leagueCard ? [...teamCards, leagueCard] : teamCards
+  const identity = todayFlagshipIdentity(dashboard, feed, options.todayFlagship)
+  const { items, deEmphasized } = deemphasizeTodayMatch(withLeague, identity)
+  const limitations = combinedLimitations(feed, items)
   return {
     hasStories: items.length > 0,
     items,
     fallback: CANONICAL_STORIES_FALLBACK,
+    freshness: pageFreshness(dashboard, feed, items),
+    limitations: limitations.items,
+    limitationsSource: limitations.source,
+    todayFlagshipDeemphasized: deEmphasized,
     source: 'canonical',
   }
+}
+
+export function storiesTextHasInternalLanguage(value) {
+  return INTERNAL_STORIES_COPY_PATTERN.test(String(value || ''))
 }
