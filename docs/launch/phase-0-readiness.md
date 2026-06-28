@@ -3,8 +3,47 @@
 ## Analytics
 
 - Vercel Analytics is installed and mounted in the frontend app.
-- No additional analytics provider or secret-bearing config was added in Phase 0.
-- Search Console ownership, sitemap submission, and any GA4 or PostHog decision should be handled as deployment/account work outside this branch.
+- The mounted integration is `@vercel/analytics/react` in `frontend/src/App.jsx`.
+- No GA4 or PostHog script, ID, API key, or secret-bearing config was added in Phase 0.
+- GA4 or PostHog should be added only after the production account exists and the public measurement ID or public project key is available through the deployment environment. Do not hardcode analytics IDs or private keys.
+
+## Search Console
+
+- No real Google Search Console verification token is present in repo config, so Phase 0 does not add verification metadata.
+- After `https://baseballos.app` is deployed, add the site in Google Search Console as either a Domain property or URL-prefix property.
+- Preferred verification path: use DNS verification for the domain through the domain host. If HTML tag verification is chosen instead, add the real token only after it is issued by Search Console.
+- `frontend/public/robots.txt` exists. A sitemap is not currently generated in `frontend/public`; submit a sitemap only after a real sitemap file or generated sitemap route exists.
+- Do not commit placeholder verification tokens or example ownership tags.
+
+## UTM Rules
+
+Use UTM parameters on public launch, social, newsletter, and creator-outreach links so traffic is readable in Vercel Analytics and any later analytics provider.
+
+Standard fields:
+
+- `utm_source`: the channel, such as `x`, `linkedin`, `instagram`, `reddit`, `newsletter`, or `outreach`.
+- `utm_medium`: the distribution type, such as `social`, `email`, `community`, or `dm`.
+- `utm_campaign`: use `phase0_launch` for public launch links and `weekly_bullpen_notes` for recurring weekly notes.
+- `utm_content`: a short descriptor for the specific post or link placement, such as `pinned_intro`, `weekend_watch`, `team_card`, or `methodology`.
+
+Examples:
+
+| Channel | Example URL |
+| --- | --- |
+| X/Twitter | `https://baseballos.app/?utm_source=x&utm_medium=social&utm_campaign=phase0_launch&utm_content=pinned_intro` |
+| LinkedIn | `https://baseballos.app/methodology?utm_source=linkedin&utm_medium=social&utm_campaign=phase0_launch&utm_content=methodology` |
+| Instagram | `https://baseballos.app/?utm_source=instagram&utm_medium=social&utm_campaign=phase0_launch&utm_content=profile_link` |
+| Reddit | `https://baseballos.app/trust?utm_source=reddit&utm_medium=community&utm_campaign=phase0_launch&utm_content=data_trust` |
+| Newsletter | `https://baseballos.app/?utm_source=newsletter&utm_medium=email&utm_campaign=weekly_bullpen_notes&utm_content=weekend_watch` |
+| Direct creator outreach | `https://baseballos.app/team/TOR?utm_source=outreach&utm_medium=dm&utm_campaign=phase0_launch&utm_content=team_card` |
+
+Rules:
+
+- Keep canonical URLs clean in metadata; add UTM parameters only to distributed links.
+- Use lowercase values with underscores.
+- Use one `utm_content` value per distinct post, card, or placement.
+- Do not use UTM parameters to imply a paid campaign, newsletter provider, user account, or follow feature.
+- If a shared link already has query parameters, append UTM parameters with `&` instead of starting a second query string.
 
 ## Weekly Notes Interest
 
