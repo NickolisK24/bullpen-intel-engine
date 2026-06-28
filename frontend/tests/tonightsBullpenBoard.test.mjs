@@ -110,6 +110,7 @@ test('team board uses compact operating card density', () => {
   assert.ok(tonightsBullpenBoardSource.includes('<BullpenOperatingStateCard'))
   assert.ok(tonightsBullpenBoardSource.includes('density="compact"'))
   assert.ok(tonightsBullpenBoardSource.includes("href: '#pitcher-lanes'"))
+  assert.ok(tonightsBullpenBoardSource.includes('showRoutineFreshness={false}'))
 })
 
 test('renders bullpen stress from the backend payload', () => {
@@ -139,6 +140,25 @@ test('normal freshness, roster context, and pitcher label key are collapsed by d
   assert.ok(htmlIncludes(html, 'Data Freshness'))
   assert.ok(htmlIncludes(html, 'Roster Context'))
   assert.ok(htmlIncludes(html, 'Role and read definitions'))
+})
+
+test('team board can delegate routine freshness to the operating card while preserving stale warnings', () => {
+  const currentHtml = renderWithOptions({
+    board: populatedBoard,
+    showRoutineFreshness: false,
+  })
+  const staleHtml = renderWithOptions({
+    board: staleBoard,
+    showRoutineFreshness: false,
+  })
+
+  assert.equal(htmlIncludes(currentHtml, 'Data Freshness'), false)
+  assert.equal(htmlIncludes(currentHtml, 'Current baseball data through'), false)
+  assert.ok(htmlIncludes(currentHtml, 'Tonight&#x27;s Bullpen Board'))
+
+  assert.ok(htmlIncludes(staleHtml, 'Historical baseball data through 2026-04-01.'))
+  assert.ok(htmlIncludes(staleHtml, 'Latest workload data is outside the active freshness window'))
+  assert.ok(htmlIncludes(staleHtml, 'read with caution'))
 })
 
 test('renders pitcher cards with name, status, fatigue, confidence and short reason', () => {

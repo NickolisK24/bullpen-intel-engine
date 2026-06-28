@@ -199,6 +199,7 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
               board={filteredBoard}
               onSelectPitcher={setDetailPitcherId}
               compact={compactBoardContext}
+              showRoutineFreshness={false}
               emptyState={getBullpenViewModeEmptyState(boardViewMode)}
             />
             <StoryCard

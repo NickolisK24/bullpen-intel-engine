@@ -57,6 +57,8 @@ const internalTerms = [
   'resource health',
   'trust structure',
   'active capacity',
+  'trustAvailability',
+  'bullpenPressure',
 ]
 const forbiddenPattern = (term) => {
   const escaped = escapeRegExp(term)
@@ -433,22 +435,41 @@ test('renders safe team context reads without changing freshness or limitations'
 })
 
 test('renders compact team context reads without overwhelming the team board card', () => {
-  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape())
+  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Thin Clean Options',
+      reasons: ['2 clean options are available.'],
+    },
+    coverageSafety: {
+      key: 'coverageSafety',
+      label: 'Stable Coverage Safety',
+      reasons: ['Coverage options remain playable for a normal game state.'],
+    },
+    workloadConcentration: {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+      reasons: ['Recent relief work has leaned on three arms.'],
+    },
+  }))
   const html = renderCompactTeamOperatingCard(board)
 
   assert.ok(htmlIncludes(html, 'data-density="compact"'))
   assert.ok(htmlIncludes(html, 'Clean options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
   assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
+  assert.ok(htmlIncludes(html, '2 clean options are available.'))
   assert.ok(htmlIncludes(html, 'Coverage safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
   assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
+  assert.ok(htmlIncludes(html, 'Coverage options remain playable for a normal game state.'))
   assert.ok(htmlIncludes(html, 'Workload concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
+  assert.ok(htmlIncludes(html, 'Recent relief work has leaned on three arms.'))
+  assert.ok(htmlIncludes(html, 'Evidence'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Limitations:'))
-  assert.equal(htmlIncludes(html, '2 clean options are available.'), false)
   assert.equal(htmlIncludes(html, 'Interpretation weighs clean Trust Arms'), false)
 
   for (const term of internalTerms) {
@@ -599,16 +620,76 @@ test('team card omits unsupported rows and gates starter support by sample size'
   const supportedStarterBoard = {
     ...teamOperatingBoard(),
     rotation_support_pressure: {
-      status: 'neutral',
+      status: 'moderate_pressure',
       games_analyzed: 3,
       summary: 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.',
       limitations: ['Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'],
     },
   }
   const supportedHtml = renderTeamOperatingCard(supportedStarterBoard)
+  const supportedCompactHtml = renderCompactTeamOperatingCard(supportedStarterBoard)
 
-  assert.ok(htmlIncludes(supportedHtml, 'Starter support: The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
+  assert.ok(htmlIncludes(supportedHtml, 'Starter support'))
+  assert.ok(htmlIncludes(supportedHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
+  assert.ok(htmlIncludes(supportedHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Starter support'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
   assert.ok(htmlIncludes(supportedHtml, 'Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'))
+})
+
+test('team card renders stable starter support only when safe', () => {
+  const stableBoard = {
+    ...teamOperatingBoard(),
+    rotation_support_pressure: {
+      status: 'supportive',
+      games_analyzed: 4,
+      summary: 'The rotation averaged 6.1 innings per start over the last 7 days.',
+    },
+  }
+  const stableHtml = renderCompactTeamOperatingCard(stableBoard)
+
+  assert.ok(htmlIncludes(stableHtml, 'Starter support'))
+  assert.ok(htmlIncludes(stableHtml, 'Recent starter length has not added a major coverage warning.'))
+  assert.ok(htmlIncludes(stableHtml, 'The rotation averaged 6.1 innings per start over the last 7 days.'))
+  assert.equal(htmlIncludes(stableHtml, 'Unknown'), false)
+  assert.equal(htmlIncludes(stableHtml, 'N/A'), false)
+  assert.equal(htmlIncludes(stableHtml, 'No data'), false)
+})
+
+test('compact evidence omits unsafe reasons without placeholders', () => {
+  const board = withTeamShape(teamOperatingBoard(), trustedTeamShape({
+    cleanOptions: {
+      key: 'cleanOptions',
+      label: 'Thin Clean Options',
+      reasons: ['backend endpoint source snapshot should not render.'],
+    },
+    coverageSafety: {
+      key: 'coverageSafety',
+      label: 'Stable Coverage Safety',
+      reasons: ['COIN V4 deterministic detail should not render.'],
+    },
+    workloadConcentration: {
+      key: 'workloadConcentration',
+      label: 'Some Workload Concentration',
+      reasons: ['trustAvailability and bullpenPressure should not render.'],
+    },
+  }))
+  const html = renderCompactTeamOperatingCard(board)
+
+  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Thin Clean Options'))
+  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
+  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
+  assert.equal(htmlIncludes(html, 'Unknown'), false)
+  assert.equal(htmlIncludes(html, 'N/A'), false)
+  assert.equal(htmlIncludes(html, 'No data'), false)
+  assert.equal(htmlIncludes(html, 'supportingCounts'), false)
+  for (const term of [...internalTerms, 'sample state']) {
+    assert.equal(forbiddenPattern(term).test(html), false, `leaked compact evidence ${term}`)
+  }
 })
 
 test('team operating card does not expose internal vocabulary', () => {

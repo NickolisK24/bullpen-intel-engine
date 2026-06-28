@@ -83,14 +83,16 @@ const LEAGUE_SCOPE_LIMITATION = 'This is a league-wide read, not a team-specific
 const TEAM_SCOPE_LIMITATION = 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, unreported injuries, or final game-day availability decisions.'
 const ROTATION_SUPPORT_MIN_ANALYZED_GAMES = 3
 const ROTATION_SUPPORT_LIMITED_STATUSES = new Set(['limited_read', 'no_data'])
+const ROTATION_SUPPORT_PRESSURE_STATUSES = new Set(['heavy_pressure', 'moderate_pressure'])
+const ROTATION_SUPPORT_STABLE_STATUSES = new Set(['neutral', 'supportive'])
 const UNSUPPORTED_FIELDS = [
   'Trend Since Yesterday',
 ]
 
 const TEAM_CONTEXT_READ_KEYS = ['cleanOptions', 'coverageSafety', 'workloadConcentration']
 
-const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|sample state|coverageSafetyVersion|capacityState|resourceHealthState|thresholds)\b|2\.0/i
-const TEAM_CONTEXT_INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|governance|coverageSafetyVersion|capacityState|resourceHealthState|thresholds|Trust Arms?|Depth Arms?|top trust bucket|resource health|trust structure|active capacity|Interpretation weighs)\b|2\.0|\b\d+\s+(Trust|Bridge|Depth)\b/i
+const INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|sample state|coverageSafetyVersion|capacityState|resourceHealthState|thresholds|trustAvailability|bullpenPressure)\b|2\.0/i
+const TEAM_CONTEXT_INTERNAL_COPY_PATTERN = /\b(COIN|V2|V3|V4|deterministic|endpoint|backend|source|snapshot|recommendation engine|baseline distribution|baseline|governance layer|governance|coverageSafetyVersion|capacityState|resourceHealthState|thresholds|Trust Arms?|Depth Arms?|top trust bucket|resource health|trust structure|active capacity|Interpretation weighs|trustAvailability|bullpenPressure)\b|2\.0|\b\d+\s+(Trust|Bridge|Depth)\b/i
 const LIMITATION_COPY_PATTERN = /\b(workload-based only|does not include|not a team-specific|manager intent|bullpen phone activity|private medical|outside the active freshness window|may not reflect|treat this|limitation)\b/i
 
 function normalizeStateKey(state) {
@@ -408,18 +410,25 @@ function buildStarterSupportPressure(rotationSupport) {
   if (!rotationSupport || typeof rotationSupport !== 'object') return null
   const gamesAnalyzed = numericCount(rotationSupport.games_analyzed)
   const status = normalizeStateKey(rotationSupport.status)
-  const summary = safeText(rotationSupport.summary)
+  const sourceSummary = safeText(rotationSupport.summary)
   const shouldShow = (
     gamesAnalyzed >= ROTATION_SUPPORT_MIN_ANALYZED_GAMES &&
-    summary &&
-    !ROTATION_SUPPORT_LIMITED_STATUSES.has(status)
+    sourceSummary &&
+    !ROTATION_SUPPORT_LIMITED_STATUSES.has(status) &&
+    (ROTATION_SUPPORT_PRESSURE_STATUSES.has(status) || ROTATION_SUPPORT_STABLE_STATUSES.has(status))
   )
   if (!shouldShow) return null
+  const summary = ROTATION_SUPPORT_PRESSURE_STATUSES.has(status)
+    ? 'Recent starter length has increased the chance this bullpen needs to cover more outs.'
+    : 'Recent starter length has not added a major coverage warning.'
+
   return {
     status,
     gamesAnalyzed,
+    label: null,
     summary,
-    evidence: [`Starter support: ${summary}`],
+    reasons: [sourceSummary],
+    evidence: [sourceSummary],
     limitations: safeTextList(rotationSupport.limitations),
   }
 }

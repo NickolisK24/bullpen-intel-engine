@@ -53,6 +53,8 @@ const forbiddenTerms = [
   'trust structure',
   'active capacity',
   'sample state',
+  'trustAvailability',
+  'bullpenPressure',
 ]
 
 function teamOperatingBoard(overrides = {}) {
@@ -412,16 +414,58 @@ test('starter support is omitted when sample is insufficient', () => {
 test('starter support renders when sample and status are safe', () => {
   const board = teamOperatingBoard()
   board.rotation_support_pressure = {
-    status: 'neutral',
+    status: 'moderate_pressure',
     games_analyzed: 3,
     summary: 'The rotation averaged 5.4 innings per start over the last 7 days.',
     limitations: ['Some recent team games are excluded because starter workload data is incomplete.'],
   }
   const model = modelFor(board, { scope: 'team' })
 
-  assert.ok(model.starterSupportPressure)
-  assert.ok(model.evidence.includes('Starter support: The rotation averaged 5.4 innings per start over the last 7 days.'))
+  assert.deepEqual(model.starterSupportPressure, {
+    status: 'moderate_pressure',
+    gamesAnalyzed: 3,
+    label: null,
+    summary: 'Recent starter length has increased the chance this bullpen needs to cover more outs.',
+    reasons: ['The rotation averaged 5.4 innings per start over the last 7 days.'],
+    evidence: ['The rotation averaged 5.4 innings per start over the last 7 days.'],
+    limitations: ['Some recent team games are excluded because starter workload data is incomplete.'],
+  })
+  assert.ok(model.evidence.includes('The rotation averaged 5.4 innings per start over the last 7 days.'))
   assert.ok(model.limitations.includes('Some recent team games are excluded because starter workload data is incomplete.'))
+})
+
+test('starter support renders stable copy for neutral or supportive reads', () => {
+  const board = teamOperatingBoard()
+  board.rotation_support_pressure = {
+    status: 'supportive',
+    games_analyzed: 4,
+    summary: 'The rotation averaged 6.1 innings per start over the last 7 days.',
+  }
+  const model = modelFor(board, { scope: 'team' })
+
+  assert.equal(model.starterSupportPressure.summary, 'Recent starter length has not added a major coverage warning.')
+  assert.deepEqual(model.starterSupportPressure.reasons, ['The rotation averaged 6.1 innings per start over the last 7 days.'])
+  assertNoForbiddenLanguage(model)
+})
+
+test('starter support is omitted for unsupported status or unsafe copy', () => {
+  const unsupportedBoard = teamOperatingBoard()
+  unsupportedBoard.rotation_support_pressure = {
+    status: 'experimental_status',
+    games_analyzed: 4,
+    summary: 'The rotation averaged 5.4 innings per start.',
+  }
+  assert.equal(modelFor(unsupportedBoard, { scope: 'team' }).starterSupportPressure, null)
+
+  const unsafeBoard = teamOperatingBoard()
+  unsafeBoard.rotation_support_pressure = {
+    status: 'moderate_pressure',
+    games_analyzed: 4,
+    summary: 'backend endpoint snapshot should not render.',
+  }
+  const unsafeModel = modelFor(unsafeBoard, { scope: 'team' })
+  assert.equal(unsafeModel.starterSupportPressure, null)
+  assert.equal(JSON.stringify(unsafeModel).includes('backend endpoint snapshot should not render.'), false)
 })
 
 test('unsupported fields are named for awareness but not rendered as placeholders', () => {

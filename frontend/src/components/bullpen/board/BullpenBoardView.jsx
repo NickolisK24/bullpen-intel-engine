@@ -15,7 +15,7 @@ import {
   PITCHER_ROLE_LABELS,
 } from '../../../utils/pitcherLabels'
 
-function FreshnessBanner({ freshness }) {
+function FreshnessBanner({ freshness, showRoutine = true }) {
   const view = getBoardFreshnessView(freshness)
   const provenance = getDataProvenance(freshness)
   const isProminent = view.isStale || view.limitations.length > 0 || !view.dataThrough
@@ -24,6 +24,8 @@ function FreshnessBanner({ freshness }) {
     : 'No completed MLB data loaded'
 
   if (!isProminent) {
+    if (!showRoutine) return null
+
     return (
       <details
         className="mb-3 rounded border border-dirt bg-dugout/35 p-3"
@@ -480,6 +482,7 @@ export default function BullpenBoardView({
   board,
   onSelectPitcher,
   compact = false,
+  showRoutineFreshness = true,
   emptyState = null,
   now,
 }) {
@@ -490,7 +493,7 @@ export default function BullpenBoardView({
 
   return (
     <div id="pitcher-lanes">
-      <FreshnessBanner freshness={board?.freshness} />
+      <FreshnessBanner freshness={board?.freshness} showRoutine={showRoutineFreshness} />
       <RosterStatusBanner board={board} />
 
       <div className="mb-4">

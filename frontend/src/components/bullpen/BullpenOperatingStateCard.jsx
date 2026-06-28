@@ -81,6 +81,7 @@ function getTeamContextReadRows(view) {
     { key: 'cleanOptions', label: 'Clean options', read: view.cleanOptions },
     { key: 'coverageSafety', label: 'Coverage safety', read: view.coverageSafety },
     { key: 'workloadConcentration', label: 'Workload concentration', read: view.workloadConcentration },
+    { key: 'starterSupport', label: 'Starter support', read: view.starterSupportPressure },
   ].filter(row => row.read?.label || row.read?.summary || row.read?.reasons?.length)
 }
 
@@ -497,24 +498,44 @@ function CompactContextReads({ view }) {
   const rows = getTeamContextReadRows(view)
   if (rows.length === 0) return null
   return (
-    <section className="mt-2 grid gap-1.5 sm:grid-cols-3" aria-label="Bullpen context">
-      {rows.map(row => (
-        <div key={row.key} className="rounded border border-dirt/70 bg-field/25 px-2.5 py-1.5">
-          <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
-            {row.label}
-          </div>
-          {row.read?.label && (
-            <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
-              {row.read.label}
+    <section className="mt-2 grid gap-1.5 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Bullpen context">
+      {rows.map(row => {
+        const reasons = Array.isArray(row.read?.reasons)
+          ? row.read.reasons.filter(Boolean).slice(0, 2)
+          : []
+
+        return (
+          <div key={row.key} className="rounded border border-dirt/70 bg-field/25 px-2.5 py-1.5">
+            <div className="font-mono text-[9px] uppercase tracking-widest text-chalk500">
+              {row.label}
             </div>
-          )}
-          {row.read?.summary && (
-            <p className="mt-1 text-[11px] leading-snug text-chalk400">
-              {row.read.summary}
-            </p>
-          )}
-        </div>
-      ))}
+            {row.read?.label && (
+              <div className="mt-1 break-words font-display text-sm leading-tight tracking-wide text-chalk100">
+                {row.read.label}
+              </div>
+            )}
+            {row.read?.summary && (
+              <p className="mt-1 text-[11px] leading-snug text-chalk400">
+                {row.read.summary}
+              </p>
+            )}
+            {reasons.length > 0 && (
+              <div className="mt-1.5">
+                <div className="font-mono text-[8px] uppercase tracking-widest text-chalk600">
+                  Evidence
+                </div>
+                <ul className="mt-0.5 space-y-0.5">
+                  {reasons.map((item, index) => (
+                    <li key={`${index}-${item}`} className="text-[10px] leading-snug text-chalk500">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </section>
   )
 }
