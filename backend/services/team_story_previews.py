@@ -308,11 +308,12 @@ def render_team_story_html(preview):
 
 
 def render_invalid_team_html(site_url=DEFAULT_SITE_URL, og_image_path=DEFAULT_OG_IMAGE_PATH):
+    fallback_url = _absolute_url(f'{TEAM_PAGE_ROOT}/', site_url=site_url)
     preview = {
         'og_title': 'BaseballOS | Team Story Preview',
         'og_description': 'Open BaseballOS for current bullpen availability and trust reads.',
-        'og_url': _absolute_url(TEAM_PAGE_ROOT, site_url=site_url),
-        'canonical_url': _absolute_url('/', site_url=site_url),
+        'og_url': fallback_url,
+        'canonical_url': fallback_url,
         'og_image': _absolute_url(og_image_path, site_url=site_url),
         'twitter_card': TWITTER_CARD,
         'redirect_path': '/',

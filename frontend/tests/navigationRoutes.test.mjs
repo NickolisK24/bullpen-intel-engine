@@ -189,7 +189,7 @@ test('invalid team share fallback and generic OG card are static public assets',
 
   const fallback = readFileSync(fallbackUrl, 'utf8')
   assert.ok(fallback.includes('<meta property="og:title" content="BaseballOS | Team Story Preview" />'))
-  assert.ok(fallback.includes('<meta property="og:url" content="https://baseballos.app/team" />'))
+  assert.ok(fallback.includes('<meta property="og:url" content="https://baseballos.app/team/" />'))
   assert.ok(fallback.includes('<meta name="twitter:title" content="BaseballOS | Team Story Preview" />'))
   assert.ok(fallback.includes('<meta name="twitter:description" content="Open BaseballOS for current bullpen availability and trust reads." />'))
   assert.ok(fallback.includes('window.location.replace("/")'))
