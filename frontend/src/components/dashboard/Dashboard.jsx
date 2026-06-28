@@ -110,9 +110,21 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
           {/* Tonight's Bullpen Landscape — first-time league orientation */}
           <BullpenLandscape landscape={data.landscape} />
 
+          {/* Section 2 — Bullpen State */}
+          <Section
+            title="League-Wide Bullpen State"
+            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open the Bullpen Board for a team-specific read."
+          >
+            <BullpenOperatingStateCard
+              readModel={operatingStateRead}
+              staleWithError={staleWithError}
+              onRetry={onRetry}
+            />
+          </Section>
+
           <InjuryIlContextSection context={injuryIlContext} />
 
-          {/* Section 2 — Bullpen Read */}
+          {/* Section 3 — Bullpen Read */}
           <Section title="League-Wide Bullpen Read" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {context.snapshot.map(row => (
@@ -125,18 +137,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
                 </div>
               ))}
             </div>
-          </Section>
-
-          {/* Section 3 — Bullpen State */}
-          <Section
-            title="League-Wide Bullpen State"
-            subtitle="League-wide context across bullpen-eligible arms — not a single team. Open the Bullpen Board for a team-specific read."
-          >
-            <BullpenOperatingStateCard
-              readModel={operatingStateRead}
-              staleWithError={staleWithError}
-              onRetry={onRetry}
-            />
           </Section>
 
           {/* Section 4 — Usage Roles Summary */}
@@ -159,13 +159,15 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
             title="Quick Actions"
             subtitle="From the league-wide view, drill into a single team, a matchup, or a pitcher."
           >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <ActionCard to="/bullpen?view=board" icon="🔥" title="Team Bullpen Board"
                 desc="One team's current availability read" />
               <ActionCard to="/bullpen?view=compare" icon="⚖️" title="Compare Bullpens"
                 desc="Two teams, side-by-side" />
               <ActionCard to="/bullpen?view=pitchers" icon="📋" title="Pitcher Details"
                 desc="One pitcher's fatigue & workload" />
+              <ActionCard to="/stories" icon="📰" title="Read bullpen stories"
+                desc="Follow deeper bullpen trends and developing workload stories." />
               <ActionCard to="/methodology" icon="📐" title="Methodology"
                 desc="How every number is computed" />
             </div>

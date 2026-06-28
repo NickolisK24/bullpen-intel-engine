@@ -48,10 +48,10 @@ export function getLandscapeView(landscape) {
     gamesLabel = games.message || 'Schedule data unavailable'
   } else if (games.is_today && games.today_count > 0) {
     const count = games.today_count
-    gamesLabel = `Today's MLB slate: ${count} game${count === 1 ? '' : 's'}`
+    gamesLabel = `Scheduled MLB games today: ${count} game${count === 1 ? '' : 's'}`
   } else if (asOfDate) {
     const count = games.as_of_count || 0
-    gamesLabel = `Showing bullpen intelligence using latest completed MLB slate: ${asOfDate} (${count} game${count === 1 ? '' : 's'})`
+    gamesLabel = `Bullpen data through ${asOfDate} (${count} completed MLB game${count === 1 ? '' : 's'})`
   } else {
     gamesLabel = 'Schedule data unavailable'
   }
@@ -68,11 +68,11 @@ export function getLandscapeView(landscape) {
       asOfDate,
     },
     columns: [
-      { key: 'constrained', title: 'Thinnest late-inning margins', metric: 'restricted',
+      { key: 'constrained', title: 'Most Constrained', subtitle: 'Thinnest late-inning margins', metric: 'restricted',
         suffix: 'needing rest or unavailable', tone: COLUMN_TONE.constrained, entries: mapEntries(landscape.constrained_bullpens) },
-      { key: 'available', title: 'Most room to maneuver', metric: 'available',
+      { key: 'available', title: 'Most Stable', subtitle: 'Most room to maneuver', metric: 'available',
         suffix: 'rested enough to use', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
-      { key: 'monitoring', title: 'Workload watch groups', metric: 'monitor',
+      { key: 'monitoring', title: 'Worth Watching', subtitle: 'Workload watch groups', metric: 'monitor',
         suffix: 'on watch', tone: COLUMN_TONE.monitoring, entries: mapEntries(landscape.monitoring_concentration) },
     ],
     notes: Array.isArray(landscape.notes) ? landscape.notes : [],

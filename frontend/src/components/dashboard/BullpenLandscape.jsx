@@ -1,15 +1,15 @@
 import { Link } from 'react-router-dom'
 import { getLandscapeView, getStorylines } from './bullpenLandscapeView'
 
-// Tonight's Storylines — a compact, scannable recap of the most notable bullpen
+// Bullpen Storylines — a compact, scannable recap of the most notable bullpen
 // situations, summarized from the same landscape data in plain baseball language.
 // Descriptive only: no charts, rankings, recommendations, or predictions.
 function Storylines({ storylines }) {
   return (
-    <div className="card mb-4 p-4" aria-label="Tonight's Storylines">
+    <div className="card mb-4 p-4" aria-label="Bullpen Storylines">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
-        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Tonight's Storylines</h3>
+        <h3 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Storylines</h3>
       </div>
       {storylines.hasStorylines ? (
         <ul className="mt-3 space-y-1.5">
@@ -60,7 +60,7 @@ function EntryRow({ entry, column }) {
   )
 }
 
-// Tonight's Bullpen Landscape — league-wide orientation for first-time users.
+// Bullpen Landscape — league-wide orientation for first-time users.
 // Descriptive context only: it surfaces which bullpens are most constrained /
 // most available / carrying the most monitoring. It is NOT a ranking, a
 // scoreboard, or a game forecast.
@@ -71,6 +71,9 @@ function Column({ column }) {
         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: column.tone.dot }} aria-hidden="true" />
         <h4 className="font-mono text-xs uppercase tracking-widest text-chalk400">{column.title}</h4>
       </div>
+      {column.subtitle && (
+        <p className="mt-1 text-xs leading-relaxed text-chalk600">{column.subtitle}</p>
+      )}
       {column.entries.length === 0 ? (
         <p className="mt-3 text-xs text-chalk600">None right now.</p>
       ) : (
@@ -86,7 +89,8 @@ function Column({ column }) {
 
 function displayLandscapeNote(note) {
   return String(note ?? '')
-    .replace(/\bSorted deterministically by\b/gi, 'Sorted by')
+    .replace(/\bSorted deterministically by count, then percentage, then team name\./gi, 'Groups reflect the current bullpen counts for each team.')
+    .replace(/\bSorted deterministically by\b/gi, 'Grouped by')
     .replace(/\bdeterministically\b/gi, 'consistently')
     .replace(/\bdeterministic\b/gi, 'consistent')
     .replace(/\bendpoints\b/gi, 'data feeds')
@@ -102,9 +106,9 @@ export default function BullpenLandscape({ landscape }) {
   const storylines = getStorylines(landscape)
 
   return (
-    <section className="mb-6" aria-label="Tonight's Bullpen Landscape">
+    <section className="mb-6" aria-label="Bullpen Landscape">
       <div className="mb-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Tonight's Bullpen Landscape</h2>
+        <h2 className="font-mono text-xs uppercase tracking-widest text-chalk400">Bullpen Landscape</h2>
         <p className="mt-1 text-xs leading-relaxed text-chalk600">
           League-wide bullpen state across {view.teamsEvaluated} tracked team{view.teamsEvaluated === 1 ? '' : 's'}.
           This is bullpen context, not a game prediction.

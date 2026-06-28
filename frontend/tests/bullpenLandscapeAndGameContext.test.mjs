@@ -53,9 +53,12 @@ const landscape = {
 
 // ── Tonight's Bullpen Landscape ────────────────────────────────────────────
 
-test('landscape renders title and the three descriptive callout columns', () => {
+test('landscape renders canonical callout titles with descriptive subtitles', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
+  assert.ok(htmlIncludes(html, 'Most Constrained'))
+  assert.ok(htmlIncludes(html, 'Most Stable'))
+  assert.ok(htmlIncludes(html, 'Worth Watching'))
   assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
   assert.ok(htmlIncludes(html, 'Workload watch groups'))
@@ -66,7 +69,9 @@ test('landscape renders title and the three descriptive callout columns', () => 
 
 test('landscape shows the stored-games anchor honestly (not a live schedule)', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
-  assert.ok(htmlIncludes(html, 'latest completed MLB slate'))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4, 2026'))
+  assert.equal(htmlIncludes(html, 'Tonight slate'), false)
+  assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
   assert.ok(htmlIncludes(html, 'not a game prediction'))   // required disclaimer
 })
 
@@ -90,6 +95,7 @@ test('dashboard surfaces the landscape section near the top', () => {
   }
   const html = render(React.createElement(DashboardView, { data }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
+  assert.ok(htmlIncludes(html, 'Most Constrained'))
   assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
 })
 

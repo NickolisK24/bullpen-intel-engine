@@ -185,7 +185,8 @@ test('dashboard landscape notes soften internal sorting language', () => {
   }))
   const text = visibleText(html)
 
-  assert.ok(text.includes('Sorted by count, then percentage, then team name.'))
+  assert.ok(text.includes('Groups reflect the current bullpen counts for each team.'))
+  assert.equal(text.includes('Sorted by count'), false)
   assert.equal(forbiddenVisibleTerms.test(text), false)
 })
 

@@ -25,6 +25,15 @@ const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const inRouter = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
+const visibleText = (html) => html
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const forbiddenVisibleTerms =
+  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
 
 // Dashboard payload: league-wide context + roles + freshness.
 const board = makeBoard({
@@ -50,6 +59,22 @@ const dashboardData = {
     counts: { late_high_leverage: 2, setup_bridge: 3, middle_relief: 5, long_multi_inning: 1, low_unclear: 1, insufficient_data: 0 },
     total: 12,
   },
+  landscape: {
+    capability: 'tonights_bullpen_landscape',
+    reference_date: '2026-06-05',
+    teams_evaluated: 3,
+    games: { available: true, data_state: 'historical', today_count: 0, as_of_date: '2026-06-04', as_of_count: 5, is_today: false, message: null },
+    constrained_bullpens: [
+      { team_id: 1, team_name: 'Chicago Cubs', team_abbreviation: 'CHC', total_relievers: 8, available: 2, monitor: 2, restricted: 4 },
+    ],
+    available_bullpens: [
+      { team_id: 2, team_name: 'Washington Nationals', team_abbreviation: 'WSH', total_relievers: 8, available: 6, monitor: 1, restricted: 1 },
+    ],
+    monitoring_concentration: [
+      { team_id: 3, team_name: 'Toronto Blue Jays', team_abbreviation: 'TOR', total_relievers: 8, available: 3, monitor: 4, restricted: 1 },
+    ],
+    notes: [],
+  },
 }
 
 test('dashboard leads with bullpen language, not operations/governance language', () => {
@@ -66,6 +91,52 @@ test('dashboard renders the five bullpen sections', () => {
   assert.ok(htmlIncludes(html, 'Bullpen State'))
   assert.ok(htmlIncludes(html, 'Usage Roles'))
   assert.ok(htmlIncludes(html, 'Quick Actions'))
+})
+
+test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
+  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+  assert.ok(htmlIncludes(html, 'Most Constrained'))
+  assert.ok(htmlIncludes(html, 'Most Stable'))
+  assert.ok(htmlIncludes(html, 'Worth Watching'))
+  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most room to maneuver'))
+  assert.ok(htmlIncludes(html, 'Workload watch groups'))
+})
+
+test('dashboard landscape preserves team-board deep links and honest empty groups', () => {
+  const emptyLandscapeData = {
+    ...dashboardData,
+    landscape: {
+      ...dashboardData.landscape,
+      constrained_bullpens: [],
+    },
+  }
+  const html = inRouter(React.createElement(DashboardView, { data: emptyLandscapeData }))
+
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
+  assert.ok(htmlIncludes(html, 'Most Constrained'))
+  assert.ok(htmlIncludes(html, 'None right now.'))
+  assert.equal(htmlIncludes(html, 'CHC'), false)
+})
+
+test('dashboard uses completed-game freshness wording for the landscape', () => {
+  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+  assert.ok(htmlIncludes(html, 'Bullpen data through Jun 4, 2026'))
+  assert.equal(htmlIncludes(html, 'Tonight slate'), false)
+  assert.equal(htmlIncludes(html, "Tonight's Bullpen Landscape"), false)
+  assert.equal(htmlIncludes(html, 'latest completed MLB slate'), false)
+})
+
+test('league-wide bullpen state sits directly after the landscape', () => {
+  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+  const landscapeIndex = html.indexOf('Bullpen Landscape')
+  const stateIndex = html.indexOf('League-Wide Bullpen State')
+  const readIndex = html.indexOf('League-Wide Bullpen Read')
+
+  assert.ok(landscapeIndex >= 0)
+  assert.ok(stateIndex > landscapeIndex)
+  assert.ok(readIndex > stateIndex)
 })
 
 test('bullpen read cards show the five availability counts', () => {
@@ -107,6 +178,9 @@ test('quick actions deep-link into the bullpen workflow and methodology', () => 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=compare"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=pitchers"'))
+  assert.ok(htmlIncludes(html, 'href="/stories"'))
+  assert.ok(htmlIncludes(html, 'Read bullpen stories'))
+  assert.ok(htmlIncludes(html, 'Follow deeper bullpen trends and developing workload stories.'))
   assert.ok(htmlIncludes(html, 'href="/methodology"'))
 })
 
@@ -115,6 +189,15 @@ test('dashboard links to the Data & Trust destination instead of exposing it inl
   assert.ok(htmlIncludes(html, 'href="/trust"'))
   // Governance/diagnostic panels are NOT inline on the dashboard.
   assert.ok(!htmlIncludes(html, 'Operational readiness partially unavailable'))
+})
+
+test('dashboard avoids story-feed duplication, trend modules, and internal language', () => {
+  const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
+  const text = visibleText(html)
+
+  assert.equal(text.includes('What Changed Since Yesterday'), false)
+  assert.equal(text.includes('Trend Since Yesterday'), false)
+  assert.equal(forbiddenVisibleTerms.test(text), false)
 })
 
 test('dashboard renders the hero without data and does not crash', () => {
