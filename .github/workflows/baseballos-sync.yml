@@ -21,11 +21,10 @@ on:
     # Cron is always UTC and does NOT observe DST. 10:00 UTC is ~6 AM ET during
     # daylight time (most of the MLB season) and ~5 AM ET during standard time.
     - cron: '0 10 * * *'
-    # Lightweight postgame refreshes. During daylight time these roughly cover
-    # 6 PM-2 AM ET, plus one late cleanup run after most games are complete.
-    - cron: '*/30 22-23 * * *'
-    - cron: '*/30 0-6 * * *'
-    - cron: '30 7 * * *'
+    # Targeted postgame refreshes after most games are complete. 02:00/04:00/06:00
+    # UTC is ~10 PM/12 AM/2 AM ET during daylight time, covering the overnight
+    # window with a few passes instead of an every-30-minute cadence.
+    - cron: '0 2,4,6 * * *'
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
     inputs:
