@@ -323,6 +323,18 @@ def test_postgame_refresh_logs_per_game_and_final_summary(app, monkeypatch, capl
         'postgame_refresh game_done game_pk=7001 outcome=processed elapsed_ms=' in m
         for m in messages
     ), messages
+    assert any(
+        m.startswith('Postgame ingestion complete for 2026-06-20:')
+        and 'processed=1' in m
+        and 'logs_added=2' in m
+        for m in messages
+    ), messages
+    assert any(
+        m.startswith('Fatigue recalculation complete:')
+        and 'pitchers_updated=2' in m
+        and 'elapsed_ms=' in m
+        for m in messages
+    ), messages
     # Final summary line with the counters + elapsed_ms.
     assert any(
         m.startswith('postgame_refresh completed status=') and 'elapsed_ms=' in m
@@ -372,8 +384,48 @@ def test_intelligence_surface_snapshot_logs_start_and_elapsed(app, monkeypatch, 
 
     messages = [r.getMessage() for r in caplog.records]
     assert any('Intelligence surface snapshot refresh starting' in m for m in messages), messages
-    assert any('elapsed_ms=' in m and 'snapshot refreshed' in m for m in messages), messages
+    assert any(
+        'Intelligence surface snapshot refresh completed' in m and 'elapsed_ms=' in m
+        for m in messages
+    ), messages
     assert status['intelligence_snapshot'] == 'ok'
+
+
+def test_intelligence_surface_snapshot_timeout_is_logged_and_fail_soft(
+    app,
+    monkeypatch,
+    caplog,
+):
+    import logging
+
+    def _timeout(*args, **kwargs):
+        raise sync_service._PostgameSnapshotTimeout(
+            'Intelligence surface snapshot exceeded 0.25s')
+
+    monkeypatch.delenv('POSTGAME_REFRESH_SNAPSHOT', raising=False)
+    monkeypatch.setenv('POSTGAME_REFRESH_SNAPSHOT_TIMEOUT_SECONDS', '0.25')
+    monkeypatch.setattr(
+        sync_service,
+        '_run_intelligence_surface_snapshot_with_timeout',
+        _timeout,
+    )
+
+    status = {}
+    run_logger = sync_service.logging.getLogger('baseballos.postgame_refresh')
+    with caplog.at_level(logging.WARNING, logger='baseballos.postgame_refresh'):
+        with app.app_context():
+            sync_service._safe_generate_intelligence_surface_snapshot(
+                date(2026, 6, 20), status=status, run_logger=run_logger)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert status['intelligence_snapshot'] == 'timed_out'
+    assert status['intelligence_snapshot_error'] == (
+        'Intelligence surface snapshot exceeded 0.25s')
+    assert any(
+        'Intelligence surface snapshot refresh timed out' in m
+        and 'postgame refresh will continue' in m
+        for m in messages
+    ), messages
 
 
 def test_postgame_sync_workflow_job_timeout_is_25_minutes():
