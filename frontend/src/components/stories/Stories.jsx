@@ -118,8 +118,6 @@ export function StoriesView({
             isLive={masthead.isLive}
           />
 
-          <StoriesLimitationsStrip limitations={feed.limitations} />
-
           <FeedScope
             feed={feed}
             counts={counts}
@@ -218,23 +216,23 @@ function StoriesTrustStrip({ feed, isLive }) {
   )
 }
 
-function StoriesLimitationsStrip({ limitations }) {
+function StoriesScopeNote({ limitations }) {
   const items = Array.isArray(limitations) ? limitations.filter(Boolean) : []
   if (!items.length) return null
 
   return (
-    <section className="mb-6 border border-dirt bg-field/40 p-3 sm:p-4" aria-label="Stories limitations">
-      <h2 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-        Limitations
-      </h2>
-      <ul className="mt-2 space-y-1">
+    <div className="mt-3 max-w-4xl border-l border-amber/25 pl-3" aria-label="Stories scope note">
+      <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+        Scope
+      </div>
+      <div className="mt-1 space-y-1">
         {items.map(item => (
-          <li key={item} className="text-xs leading-relaxed text-chalk500">
+          <p key={item} className="text-xs leading-relaxed text-chalk500">
             {item}
-          </li>
+          </p>
         ))}
-      </ul>
-    </section>
+      </div>
+    </div>
   )
 }
 
@@ -261,6 +259,7 @@ function FeedScope({ feed, counts }) {
               ? `${feed.items.length} bullpen storylines in play today, from single pens to the league picture.`
               : feed.fallback}
           </p>
+          <StoriesScopeNote limitations={feed.limitations} />
         </div>
         <Link
           to="/"

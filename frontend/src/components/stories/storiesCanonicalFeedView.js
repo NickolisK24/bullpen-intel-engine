@@ -12,10 +12,11 @@
 export const CANONICAL_STORIES_FALLBACK =
   'No bullpen story has enough movement yet today.'
 export const STORIES_LIMITATIONS_FALLBACK =
-  'Stories are descriptive bullpen reads. BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
+  'Stories are descriptive bullpen reads based on completed-game data. BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
 
 const INTERNAL_STORIES_COPY_PATTERN =
-  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state|review state|sample intelligence|raw feed|canonical feed|model output|quality_status|suppression_reason|source)\b/i
+  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance|sample state|review state|sample intelligence|story_intelligence|canonical|raw feed|model output|atomic|extraction|deferred|mirror|feed_team_set|no_new_prose|metrics_created|quality_status|suppression_reason|source)\b/i
+const SNAKE_CASE_COPY_PATTERN = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/i
 
 function canonicalFeed(dashboard) {
   const feed = dashboard?.stories
@@ -50,7 +51,7 @@ function cleanLimitations(values) {
   const raw = (Array.isArray(values) ? values : [])
     .map(limitationText)
     .filter(Boolean)
-  const hasUnsafe = raw.some(text => INTERNAL_STORIES_COPY_PATTERN.test(text))
+  const hasUnsafe = raw.some(text => storiesTextHasInternalLanguage(text))
   if (raw.length === 0 || hasUnsafe) {
     return {
       items: [STORIES_LIMITATIONS_FALLBACK],
@@ -300,5 +301,6 @@ export function getCanonicalStoryFeed(dashboard, options = {}) {
 }
 
 export function storiesTextHasInternalLanguage(value) {
-  return INTERNAL_STORIES_COPY_PATTERN.test(String(value || ''))
+  const text = String(value || '')
+  return INTERNAL_STORIES_COPY_PATTERN.test(text) || SNAKE_CASE_COPY_PATTERN.test(text)
 }

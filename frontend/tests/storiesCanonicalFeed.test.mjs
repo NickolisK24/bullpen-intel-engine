@@ -174,12 +174,20 @@ test('feed maps freshness, limitations, and review status without exposing raw s
   assert.equal(feed.items.find(item => item.teamId === 137).reviewNote, null)
   assert.equal(feed.items.find(item => item.teamId === 158).reviewNote.label, 'Under review')
   assert.equal(storiesTextHasInternalLanguage('quality_status'), true)
+  assert.equal(storiesTextHasInternalLanguage('wraps_story_intelligence_v1_per_team'), true)
+  assert.equal(storiesTextHasInternalLanguage('feed_team_set_and_order_mirror_four_beat_feed'), true)
+  assert.equal(storiesTextHasInternalLanguage('Game-day availability can still change before first pitch.'), false)
 })
 
 test('unsafe or missing story limitations fall back to the standard Stories caveat', () => {
   const unsafe = getCanonicalStoryFeed(dashboardFixture({
     stories: canonicalStories({
-      limitations: ['backend snapshot detail should not be public.'],
+      limitations: [
+        'wraps_story_intelligence_v1_per_team',
+        'feed_team_set_and_order_mirror_four_beat_feed',
+        'atomic_evidence_extraction_deferred',
+        'no_new_prose_or_metrics_created',
+      ],
     }),
   }))
   const missing = getCanonicalStoryFeed(dashboardFixture({
@@ -293,7 +301,7 @@ test('Stories renders page-level freshness, live state, limitations, and trust l
   assert.ok(htmlIncludes(html, 'Last synced 4:15 AM ET'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Current MLB data'))
-  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'Scope'))
   assert.ok(htmlIncludes(html, 'Stories reflect completed-game bullpen context, not private game-day decisions.'))
   assert.ok(htmlIncludes(html, 'href="/trust"'))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust'))
@@ -324,14 +332,22 @@ test('Stories renders safe payload limitations and falls back when payload limit
   const unsafeHtml = render(React.createElement(StoriesView, {
     dashboard: dashboardFixture({
       stories: canonicalStories({
-        limitations: ['backend snapshot detail should not be public.'],
+        limitations: [
+          'wraps_story_intelligence_v1_per_team',
+          'feed_team_set_and_order_mirror_four_beat_feed',
+          'atomic_evidence_extraction_deferred',
+          'no_new_prose_or_metrics_created',
+        ],
       }),
     }),
   }))
 
   assert.ok(htmlIncludes(safeHtml, 'Stories reflect completed-game bullpen context, not private game-day decisions.'))
   assert.ok(htmlIncludes(unsafeHtml, STORIES_LIMITATIONS_FALLBACK))
-  assert.equal(htmlIncludes(unsafeHtml, 'backend snapshot detail should not be public.'), false)
+  assert.equal(htmlIncludes(unsafeHtml, 'wraps_story_intelligence_v1_per_team'), false)
+  assert.equal(htmlIncludes(unsafeHtml, 'feed_team_set_and_order_mirror_four_beat_feed'), false)
+  assert.equal(htmlIncludes(unsafeHtml, 'atomic_evidence_extraction_deferred'), false)
+  assert.equal(htmlIncludes(unsafeHtml, 'no_new_prose_or_metrics_created'), false)
 })
 
 test('Stories marks review stories subtly while published stories render normally', () => {
@@ -411,12 +427,22 @@ test('Stories visible text avoids internal terms and prediction, betting, or fan
     'recommendation engine',
     'baseline distribution',
     'governance layer',
+    'governance',
     'sample state',
     'review state',
     'sample intelligence',
+    'story_intelligence',
     'raw feed',
+    'canonical',
     'canonical feed',
     'model output',
+    'atomic',
+    'extraction',
+    'deferred',
+    'mirror',
+    'feed_team_set',
+    'no_new_prose',
+    'metrics_created',
     'quality_status',
     'suppression_reason',
     'source',
