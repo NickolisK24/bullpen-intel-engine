@@ -27,6 +27,11 @@ const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
   'The rest of the Intelligence Surface can still be used.'
+const LEAD_STORY_LIMITATIONS_FALLBACK =
+  'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
+
+const INTERNAL_TODAY_COPY_PATTERN =
+  /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
 
 const EMPTY_REASON_COPY = {
   no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
@@ -36,24 +41,24 @@ const EMPTY_REASON_COPY = {
 
 const EXPLORE_LINKS = [
   {
-    title: 'Teams',
-    body: 'Open the team bullpen board.',
+    title: 'Dashboard',
+    body: 'Scan the league board.',
+    to: '/dashboard',
+  },
+  {
+    title: 'Bullpen',
+    body: 'Open team bullpen board.',
     to: '/bullpen',
   },
   {
-    title: 'Compare',
-    body: 'Compare two bullpen pictures side by side.',
-    to: '/bullpen?view=compare',
+    title: 'Stories',
+    body: 'Read bullpen stories.',
+    to: '/stories',
   },
   {
-    title: 'Trust',
-    body: 'Review data freshness and evidence.',
+    title: 'Data & Trust',
+    body: 'Check data freshness.',
     to: '/trust',
-  },
-  {
-    title: 'Methodology',
-    body: 'See how the bullpen read is built.',
-    to: '/methodology',
   },
 ]
 
@@ -208,6 +213,19 @@ function cleanDraftList(value) {
     .filter(Boolean)
 }
 
+function cleanStoryCopy(value) {
+  const text = textValue(value)
+  if (!text || INTERNAL_TODAY_COPY_PATTERN.test(text)) return null
+  return text
+}
+
+function cleanStoryList(...values) {
+  return values
+    .flatMap(value => (Array.isArray(value) ? value : [value]))
+    .map(cleanStoryCopy)
+    .filter(Boolean)
+}
+
 function firstTextValue(...values) {
   return values.map(textValue).find(Boolean) || null
 }
@@ -312,8 +330,8 @@ export function getLeadStoryView(response, teams = []) {
   const lead = response.lead_story
   const draft = firstAvailableDraft(lead.drafts)
   const packagePayload = lead.package || {}
-  const headline = textValue(draft?.headline) || 'BaseballOS is watching this bullpen story.'
-  const body = textValue(draft?.body || draft?.text) || ''
+  const headline = cleanStoryCopy(draft?.headline) || 'BaseballOS is watching this bullpen story.'
+  const body = cleanStoryCopy(draft?.body || draft?.text) || ''
   const team = resolveLeadTeam(lead, teams)
 
   return {
@@ -321,8 +339,14 @@ export function getLeadStoryView(response, teams = []) {
     team,
     headline,
     body,
-    observations: cleanDraftList(draft?.observations),
-    evidence: cleanDraftList(draft?.evidence),
+    observations: cleanStoryList(draft?.observations),
+    evidence: cleanStoryList(draft?.evidence),
+    limitations: cleanStoryList(
+      draft?.limitations,
+      lead.limitations,
+      packagePayload.limitations,
+      packagePayload.public_limitations,
+    ).slice(0, 3),
     snapshot: buildBullpenSnapshot(packagePayload),
     metadata: buildSelectionMetadata(lead.selection || {}),
     referenceDate: textValue(response.reference_date),
@@ -680,6 +704,10 @@ function TodaysStory({
                   <div className="min-w-0">
                     <StoryList title="Why BaseballOS Sees It" items={story.observations} />
                     <StoryList title="Evidence" items={story.evidence} mono />
+                    <StoryList
+                      title="Limitations"
+                      items={story.limitations.length ? story.limitations : [LEAD_STORY_LIMITATIONS_FALLBACK]}
+                    />
                   </div>
                   <div className="min-w-0 border border-dirt/80 bg-field/50 p-4">
                     <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
@@ -1123,6 +1151,14 @@ function BullpenPicture({
                   )}
                 </div>
               ))}
+            </div>
+            <div className="mt-4 flex justify-start">
+              <Link
+                to="/dashboard"
+                className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
+              >
+                View full league board
+              </Link>
             </div>
           </div>
         </>

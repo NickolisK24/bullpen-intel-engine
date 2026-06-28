@@ -38,6 +38,7 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
+const clone = (value) => JSON.parse(JSON.stringify(value))
 
 const teams = [
   { team_id: 137, team_name: 'San Francisco Giants', team_abbreviation: 'SF' },
@@ -275,12 +276,39 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   assert.equal(view.headline, 'Giants bullpen let a four-run lead get away')
   assert.equal(view.observations.length, 2)
   assert.equal(view.evidence.length, 3)
+  assert.deepEqual(view.limitations, [])
   assert.ok(view.snapshot.includes('Available arms: 3'))
   assert.ok(view.snapshot.includes('Named clean options: Erik Miller'))
   assert.deepEqual(view.metadata.map(item => item.label), [
     'Priority',
     'Confidence',
   ])
+})
+
+test('lead story view renders payload limitations safely', () => {
+  const intelligenceWithLimitations = clone(intelligenceOk)
+  intelligenceWithLimitations.lead_story.drafts.team_story.limitations = [
+    'Lineup cards and final availability can still change before first pitch.',
+    'Backend snapshot detail should not be public.',
+  ]
+
+  const view = getLeadStoryView(intelligenceWithLimitations, teams)
+
+  assert.deepEqual(view.limitations, [
+    'Lineup cards and final availability can still change before first pitch.',
+  ])
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceWithLimitations,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'Lineup cards and final availability can still change before first pitch.'))
+  assert.equal(htmlIncludes(html, 'Backend snapshot detail should not be public.'), false)
 })
 
 test('Intelligence Surface shell and lead story skeleton render before data resolves', () => {
@@ -321,6 +349,8 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
   assert.ok(htmlIncludes(html, 'The relievers could not hold the lead.'))
   assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
+  assert.ok(htmlIncludes(html, 'Limitations'))
+  assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'))
   assert.ok(htmlIncludes(html, 'Bullpen Read'))
   assert.ok(htmlIncludes(html, 'Priority'))
   assert.ok(htmlIncludes(html, 'Confidence'))
@@ -641,6 +671,8 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.ok(htmlIncludes(html, 'TOR'))
   assert.ok(htmlIncludes(html, 'flex-col items-start gap-1'))
   assert.ok(htmlIncludes(html, 'max-w-full break-words font-mono text-xs'))
+  assert.ok(htmlIncludes(html, 'href="/dashboard"'))
+  assert.ok(htmlIncludes(html, 'View full league board'))
 
   const emptyLaneHtml = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -674,11 +706,48 @@ test('Explore links render to existing routes', () => {
   }))
 
   for (const href of [
+    'href="/dashboard"',
     'href="/bullpen"',
-    'href="/bullpen?view=compare"',
+    'href="/stories"',
     'href="/trust"',
-    'href="/methodology"',
   ]) {
     assert.ok(htmlIncludes(html, href), href)
+  }
+
+  assert.ok(htmlIncludes(html, 'Scan the league board.'))
+  assert.ok(htmlIncludes(html, 'Read bullpen stories.'))
+  assert.equal(countOccurrences(html, 'href="/bullpen"'), 1)
+  assert.equal(htmlIncludes(html, 'href="/bullpen?view=compare"'), false)
+})
+
+test('Today visible text avoids internal platform terms', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  const visibleText = html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+
+  for (const term of [
+    'COIN',
+    'V2',
+    'V3',
+    'V4',
+    'deterministic',
+    'snapshot',
+    'endpoint',
+    'backend',
+    'recommendation engine',
+    'baseline distribution',
+    'governance layer',
+    'sample state',
+  ]) {
+    assert.equal(new RegExp(escapeRegExp(term), 'i').test(visibleText), false, term)
   }
 })
