@@ -563,7 +563,7 @@ function SeesHeader() {
         See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.
       </p>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
-        BaseballOS reads public MLB workload, availability, usage, and game context after completed games. It is descriptive intelligence, not betting advice.
+        BaseballOS reads public MLB workload, availability, usage, and game context after completed games. It stays descriptive and evidence-backed.
       </p>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         <a

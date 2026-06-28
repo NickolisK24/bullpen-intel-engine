@@ -304,8 +304,7 @@ export function MethodologyView({ data }) {
         </div>
         <p className="max-w-3xl text-sm leading-relaxed text-chalk300">
           BaseballOS describes current bullpen context from public MLB data. It reads workload,
-          availability, usage, and recent game context; it does not know the future and it is
-          not betting advice.
+          availability, usage, and recent game context; it stays descriptive and evidence-backed.
         </p>
         <ul className="mt-4 space-y-2 text-sm leading-relaxed text-chalk400">
           <li>

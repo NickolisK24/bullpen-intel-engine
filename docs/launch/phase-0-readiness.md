@@ -54,5 +54,5 @@ Rules:
 ## Public Boundaries
 
 - BaseballOS is positioned as descriptive MLB bullpen intelligence from public data.
-- Public copy should not claim manager intent, private medical availability, final game-day decisions, betting advice, or future outcomes.
+- Public copy should not claim manager intent, private medical availability, final game-day decisions, unsupported action guidance, or future outcomes.
 - Injury and injured-list context should be described only as public roster/injury signals unless the page shows a more specific modeled source.

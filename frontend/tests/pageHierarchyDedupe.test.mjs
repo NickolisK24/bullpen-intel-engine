@@ -149,7 +149,7 @@ test('Methodology explains the reliability check and links to Data & Trust inste
   assert.ok(htmlIncludes(html, 'id="known-limitations"'))
   assert.ok(htmlIncludes(html, 'Known Limitations'))
   assert.ok(text.includes('public MLB data'))
-  assert.ok(text.includes('not betting advice'))
+  assert.ok(text.includes('descriptive and evidence-backed'))
   assert.ok(text.includes('not a health claim'))
   assert.ok(html.includes('The live reliability read belongs in Data &amp; Trust'))
   assert.equal(text.includes('Operational Backtest'), false)

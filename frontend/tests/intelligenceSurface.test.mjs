@@ -350,7 +350,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
   assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
   assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB workload, availability, usage, and game context after completed games.'))
-  assert.ok(htmlIncludes(html, 'not betting advice'))
+  assert.ok(htmlIncludes(html, 'It stays descriptive and evidence-backed.'))
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
