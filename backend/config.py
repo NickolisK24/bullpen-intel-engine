@@ -51,6 +51,40 @@ def _database_url_for_env(app_env):
     return os.environ.get('DATABASE_URL')
 
 
+def _engine_options_for_url(database_url):
+    """SQLAlchemy engine options tuned for the resolved database.
+
+    Postgres (production/CI) gets stale-connection protection and bounded
+    timeouts: ``pool_pre_ping`` validates a pooled connection before use so a
+    connection the server has closed (e.g. Render's ``SSL SYSCALL error: EOF
+    detected`` on an idle connection) is detected and replaced instead of
+    failing a query mid-flight; ``pool_recycle`` proactively retires
+    connections before the host's idle cutoff; and the psycopg2 ``connect_args``
+    add a connect timeout, a server-side ``statement_timeout`` (well under the
+    Gunicorn worker timeout so a stuck query fails fast instead of being
+    SIGKILLed), and TCP keepalives so dead sockets surface promptly.
+
+    SQLite (local/test) keeps the existing default behavior — the psycopg2
+    connect_args do not apply there — so test environments are unaffected.
+    """
+    scheme = urlparse(database_url or '').scheme.lower()
+    if scheme in {'postgres', 'postgresql'}:
+        return {
+            'pool_pre_ping': True,
+            'pool_recycle': 300,
+            'pool_timeout': 30,
+            'connect_args': {
+                'connect_timeout': 10,
+                'options': '-c statement_timeout=15000',
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 5,
+            },
+        }
+    return {}
+
+
 def _configure_database(app, app_env):
     database_url = _database_url_for_env(app_env)
     if not database_url:
@@ -68,6 +102,7 @@ def _configure_database(app, app_env):
         )
 
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _engine_options_for_url(database_url)
 
 
 class Config:

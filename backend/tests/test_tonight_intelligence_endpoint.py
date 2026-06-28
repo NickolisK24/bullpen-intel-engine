@@ -199,3 +199,30 @@ def test_today_endpoint_still_returns_its_own_contract(client):
     assert 'cards' not in body
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_completed_game_contexts'
+
+
+# ── Fail-closed: a snapshot read connection failure ───────────────────────────
+
+def test_read_failure_returns_honest_503_without_leaking_db_error(client, monkeypatch):
+    """A SnapshotReadUnavailable from the cache read surfaces as the existing
+    honest 503 envelope — no rebuild, no raw DB error in the public JSON."""
+    import api.bullpen as bullpen_api
+    from services.snapshot_read_guard import SnapshotReadUnavailable
+
+    def _raise(*a, **k):
+        raise SnapshotReadUnavailable('tonight', _FIXED_TODAY, 'tonight_v1')
+
+    monkeypatch.setattr(bullpen_api, 'serve_tonight_cached', _raise)
+
+    resp = client.get('/api/bullpen/intelligence/tonight')
+    assert resp.status_code == 503
+    body = resp.get_json()
+    assert set(body) >= {'status', 'reference_date', 'cards', 'card_count',
+                         'empty_reason', 'limitations'}
+    assert body['status'] == 'error'
+    assert body['cards'] == []
+    assert body['card_count'] == 0
+
+    raw = resp.get_data(as_text=True)
+    for leak in ('SSL SYSCALL', 'OperationalError', 'SnapshotReadUnavailable', 'Traceback'):
+        assert leak not in raw

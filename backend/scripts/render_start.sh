@@ -62,6 +62,21 @@ if [ "$#" -gt 0 ]; then
   exec "$@"
 else
   PORT="${PORT:-10000}"
-  echo "[render_start] Starting server: gunicorn app:app --bind 0.0.0.0:${PORT}"
-  exec gunicorn app:app --bind "0.0.0.0:${PORT}"
+  # Conservative production tuning. A single default worker with the default
+  # 30s timeout means one slow/blocked request (e.g. a stalled DB socket) can
+  # SIGKILL the only worker and briefly take the whole service down. Two workers
+  # give headroom; --timeout 60 leaves room above the DB statement timeout (15s)
+  # so a fast-failing query returns an honest error instead of a worker kill;
+  # --graceful-timeout 30 bounds shutdown. Worker count is intentionally small
+  # to stay within Render instance memory; override by passing an explicit
+  # gunicorn invocation as arguments, or tune via env without a code change.
+  GUNICORN_WORKERS="${GUNICORN_WORKERS:-2}"
+  GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-60}"
+  GUNICORN_GRACEFUL_TIMEOUT="${GUNICORN_GRACEFUL_TIMEOUT:-30}"
+  echo "[render_start] Starting server: gunicorn app:app --bind 0.0.0.0:${PORT} --workers ${GUNICORN_WORKERS} --timeout ${GUNICORN_TIMEOUT} --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT}"
+  exec gunicorn app:app \
+    --bind "0.0.0.0:${PORT}" \
+    --workers "${GUNICORN_WORKERS}" \
+    --timeout "${GUNICORN_TIMEOUT}" \
+    --graceful-timeout "${GUNICORN_GRACEFUL_TIMEOUT}"
 fi

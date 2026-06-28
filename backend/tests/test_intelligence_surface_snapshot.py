@@ -252,3 +252,32 @@ def test_safe_write_snapshot_never_raises(app, monkeypatch):
         monkeypatch.setattr(snap, 'write_snapshot', boom)
         # Should swallow the error and return without raising.
         snap._safe_write_snapshot({'reference_date': _REF.isoformat()}, source='test')
+
+
+# ── Fail-closed: a read-level DB connection failure ───────────────────────────
+
+def test_read_failure_propagates_and_skips_synchronous_rebuild(app, monkeypatch):
+    """A connection-level read failure (SnapshotReadUnavailable) must propagate
+    and must NOT fall through to the expensive synchronous build_today_lead_story
+    rebuild — a dead connection is not a cache miss."""
+    from services.snapshot_read_guard import SnapshotReadUnavailable
+
+    def _raise_unavailable(*a, **k):
+        raise SnapshotReadUnavailable('intelligence_surface', _REF, SNAPSHOT_VERSION)
+
+    built = {'called': False}
+
+    def _track_build(*a, **k):
+        built['called'] = True
+        return {'status': 'ok', 'reference_date': _REF.isoformat(), 'lead_story': None,
+                'candidates_considered': 0, 'publishable_candidates': 0,
+                'errors': 0, 'empty_reason': None}
+
+    monkeypatch.setattr(snap, 'read_snapshot_first', _raise_unavailable)
+    monkeypatch.setattr(snap, 'build_today_lead_story', _track_build)
+
+    with app.app_context():
+        with pytest.raises(SnapshotReadUnavailable):
+            serve_today_lead_story(reference_date=_REF)
+
+    assert built['called'] is False

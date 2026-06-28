@@ -211,3 +211,31 @@ def test_endpoint_does_not_mutate_rows(client):
         row = CompletedGameContext.query.filter_by(team_id=137).first()
     assert after == before == 1
     assert row.bullpen_story_tag == 'lost_game_shape'
+
+
+# ── Fail-closed: a snapshot read connection failure ───────────────────────────
+
+def test_read_failure_returns_honest_503_without_leaking_db_error(client, monkeypatch):
+    """A SnapshotReadUnavailable from the cache read surfaces as the existing
+    honest 503 envelope — no rebuild, no raw DB error in the public JSON."""
+    import api.bullpen as bullpen_api
+    from services.snapshot_read_guard import SnapshotReadUnavailable
+
+    def _raise(*a, **k):
+        raise SnapshotReadUnavailable('intelligence_surface', _FIXED_TODAY,
+                                      'intelligence_surface_v1')
+
+    monkeypatch.setattr(bullpen_api, 'serve_today_lead_story', _raise)
+
+    resp = client.get('/api/bullpen/intelligence/today')
+    assert resp.status_code == 503
+    body = resp.get_json()
+    assert set(body) >= {'status', 'reference_date', 'lead_story',
+                         'candidates_considered', 'publishable_candidates',
+                         'errors', 'empty_reason'}
+    assert body['status'] == 'error'
+    assert body['lead_story'] is None
+
+    raw = resp.get_data(as_text=True)
+    for leak in ('SSL SYSCALL', 'OperationalError', 'SnapshotReadUnavailable', 'Traceback'):
+        assert leak not in raw

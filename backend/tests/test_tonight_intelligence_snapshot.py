@@ -228,3 +228,31 @@ def test_deterministic_served_response(app):
     with app.app_context():
         second = serve_tonight_cached(REF)   # from snapshot now
     assert first == second
+
+
+# ── Fail-closed: a read-level DB connection failure ───────────────────────────
+
+def test_read_failure_propagates_and_skips_synchronous_rebuild(app, monkeypatch):
+    """A connection-level read failure (SnapshotReadUnavailable) must propagate
+    and must NOT fall through to the expensive synchronous serve_tonight build —
+    a dead connection is not a cache miss."""
+    from services.snapshot_read_guard import SnapshotReadUnavailable
+
+    def _raise_unavailable(*a, **k):
+        raise SnapshotReadUnavailable('tonight', REF, TONIGHT_SNAPSHOT_VERSION)
+
+    built = {'called': False}
+
+    def _track_build(*a, **k):
+        built['called'] = True
+        return {'status': 'ok', 'reference_date': REF.isoformat(), 'cards': [],
+                'card_count': 0, 'empty_reason': None, 'limitations': []}
+
+    monkeypatch.setattr(snap, 'read_snapshot_first', _raise_unavailable)
+    monkeypatch.setattr(snap, 'serve_tonight', _track_build)
+
+    with app.app_context():
+        with pytest.raises(SnapshotReadUnavailable):
+            serve_tonight_cached(REF)
+
+    assert built['called'] is False

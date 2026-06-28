@@ -20,6 +20,7 @@ from time import perf_counter
 
 from models.tonight_intelligence_snapshot import TonightIntelligenceSnapshot
 from services.availability_reference_date import product_current_date
+from services.snapshot_read_guard import read_snapshot_first
 from services.tonight_intelligence_service import serve_tonight
 from utils.db import db
 from utils.time import utc_now_naive
@@ -73,14 +74,24 @@ def generate_tonight_snapshot_for_date(reference_date, *, source, limit=None):
 # ── Storage ───────────────────────────────────────────────────────────────────
 
 def read_snapshot(reference_date, version=TONIGHT_SNAPSHOT_VERSION):
-    """Return the stored response_json for a slate, or None when absent."""
+    """Return the stored response_json for a slate, or None when absent.
+
+    A normal miss (no stored row) returns None. A transient DB connection
+    failure raises SnapshotReadUnavailable (it is not a miss), so the caller
+    fails closed instead of rebuilding on a broken connection.
+    """
     ref_date = _as_date(reference_date)
     if ref_date is None:
         return None
-    row = (
+    query = (
         TonightIntelligenceSnapshot.query
         .filter_by(reference_date=ref_date, snapshot_version=version)
-        .first()
+    )
+    row = read_snapshot_first(
+        query,
+        snapshot_type='tonight',
+        reference_date=ref_date,
+        snapshot_version=version,
     )
     return row.response_json if row is not None else None
 
