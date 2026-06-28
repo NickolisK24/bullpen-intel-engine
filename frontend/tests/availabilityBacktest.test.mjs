@@ -119,11 +119,8 @@ test('backtest display contains no audited-result literals', () => {
   assert.equal(componentSource.includes('58k'), false)
 })
 
-test('Data & Trust renders the backtest before the secondary ERA study', () => {
+test('Data & Trust renders the backtest and does not duplicate the secondary ERA study', () => {
   assert.ok(dataTrustSource.includes('AvailabilityBacktestCard'))
-  assert.ok(dataTrustSource.includes('Secondary Exploratory ERA Study'))
-  assert.ok(
-    dataTrustSource.indexOf('AvailabilityBacktestCard')
-      < dataTrustSource.indexOf('Secondary Exploratory ERA Study'),
-  )
+  assert.equal(dataTrustSource.includes('Secondary Exploratory ERA Study'), false)
+  assert.equal(dataTrustSource.includes('FatigueInsightCard'), false)
 })

@@ -33,9 +33,6 @@ const {
   saveFollowedTeamSelection,
 } = await server.ssrLoadModule('/src/components/trust/DigestPreferencesCard.jsx')
 const {
-  shouldFocusDigestPreferences,
-} = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
-const {
   getDigestPreferences,
   updateDigestPreferences,
 } = await server.ssrLoadModule('/src/utils/api.js')
@@ -189,21 +186,6 @@ test('followed team picker cancel has a visible escape path and does not save by
   assert.equal(called, false)
 })
 
-test('Data Trust focus targets support query param and hash forms', () => {
-  assert.equal(shouldFocusDigestPreferences({
-    searchParams: new URLSearchParams('focus=digest-preferences'),
-    hash: '',
-  }), true)
-  assert.equal(shouldFocusDigestPreferences({
-    searchParams: new URLSearchParams(''),
-    hash: '#digest-preferences',
-  }), true)
-  assert.equal(shouldFocusDigestPreferences({
-    searchParams: new URLSearchParams('focus=other'),
-    hash: '',
-  }), false)
-})
-
 test('digest preference helpers enable, disable, and save cadence changes', async () => {
   assert.deepEqual(normalizeDigestPreferences({
     notification_prefs: {
@@ -319,7 +301,7 @@ test('digest preference API helpers use authenticated preference endpoints only'
   })
 })
 
-test('Digest Preferences integration does not call the digest test-send endpoint', () => {
+test('Digest Preferences module stays isolated from Data & Trust and the test-send endpoint', () => {
   const apiSource = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
   const cardSource = readFileSync(
     new URL('../src/components/trust/DigestPreferencesCard.jsx', import.meta.url),
@@ -327,7 +309,7 @@ test('Digest Preferences integration does not call the digest test-send endpoint
   )
   const dataTrustSource = readFileSync(new URL('../src/components/trust/DataTrust.jsx', import.meta.url), 'utf8')
 
-  assert.ok(dataTrustSource.includes('DigestPreferencesCard'))
+  assert.equal(dataTrustSource.includes('DigestPreferencesCard'), false)
   assert.equal(apiSource.includes('digest-test-send'), false)
   assert.equal(cardSource.includes('digest-test-send'), false)
 })

@@ -27,7 +27,7 @@ const {
   DigestReturnNoticeView,
   followDigestReturnTeam,
 } = await server.ssrLoadModule('/src/components/home/DigestReturnNotice.jsx')
-const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { HomeView } = await server.ssrLoadModule('/src/components/home/LegacyMorningBullpenReport.jsx')
 
 const htmlIncludes = (html, text) => html.includes(text)
 const render = (element) => renderToStaticMarkup(

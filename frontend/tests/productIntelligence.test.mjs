@@ -503,8 +503,8 @@ test('impression tracker disconnects its observer on teardown', () => {
   assert.equal(instances[0].elements.size, 0)
 })
 
-test('Home and Stories track impressions on screen, not story_viewed on render', () => {
-  const homeSrc = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+test('Legacy report and Stories track impressions on screen, not story_viewed on render', () => {
+  const homeSrc = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
   const storiesSrc = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
   for (const src of [homeSrc, storiesSrc]) {
     assert.equal(src.includes('useStoryViewedObservations'), false)
@@ -573,8 +573,8 @@ test('Stories wires expand to story_viewed and the CTA to story_team_board_opene
   assert.equal(src.includes('recordStoryInteracted'), false)
 })
 
-test('Home wires story_team_board_opened on its story CTAs', () => {
-  const src = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+test('Legacy report wires story_team_board_opened on its story CTAs', () => {
+  const src = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
   assert.ok(src.includes('observeStoryTeamBoardOpened'))
   assert.ok(src.includes('recordStoryTeamBoardOpened'))
 })
@@ -641,9 +641,9 @@ test('TeamShareButton fires share-intent tracking before the native share / copy
   assert.ok(onShareIdx < shareIdx)
 })
 
-test('Stories and Home wire story_share_clicked on the Share control', () => {
+test('Stories and legacy report wire story_share_clicked on the Share control', () => {
   const storiesSrc = readFileSync(new URL('../src/components/stories/Stories.jsx', import.meta.url), 'utf8')
-  const homeSrc = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+  const homeSrc = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
   for (const src of [storiesSrc, homeSrc]) {
     assert.ok(src.includes('observeStoryShareClicked'))
     assert.ok(src.includes('recordStoryShareClicked'))

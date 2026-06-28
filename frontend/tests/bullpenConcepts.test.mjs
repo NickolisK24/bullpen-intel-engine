@@ -18,7 +18,7 @@ after(async () => {
 
 const { getBullpenReads, getReadsForLandscapeEntry, CONCEPT_DEFINITIONS, LIMITED_READ_LABEL } =
   await server.ssrLoadModule('/src/utils/bullpenConcepts.js')
-const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { HomeView } = await server.ssrLoadModule('/src/components/home/LegacyMorningBullpenReport.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

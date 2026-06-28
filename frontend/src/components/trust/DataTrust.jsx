@@ -1,63 +1,23 @@
-import { useEffect, useState } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
   getBullpenDashboard,
   getBullpenOverview,
-  getRecommendationV2BullpenState,
   getSyncStatus,
-  getTeamOperationsBullpenReadiness,
 } from '../../utils/api'
 import { SectionHeader, StaleDataNotice } from '../UI'
 import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
-import OperationalReadinessSection from '../dashboard/OperationalReadinessSection'
-import FatigueInsightCard from '../dashboard/FatigueInsightCard'
 import AvailabilityBacktestCard from './AvailabilityBacktestCard'
-import DigestPreferencesCard from './DigestPreferencesCard'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
-// Data & Trust — the home for freshness, confidence, operational evidence,
-// limitations, and diagnostics. The dashboard shows the summaries; the full
-// depth lives here behind intentional navigation.
+// Data & Trust owns freshness, reliability checks, and data limitations.
 export default function DataTrust() {
-  const location = useLocation()
-  const [searchParams] = useSearchParams()
-  const [digestPreferencesFocused, setDigestPreferencesFocused] = useState(false)
   const backtest = useFetch(getAvailabilityBacktest)
   const dashboard = useFetch(getBullpenDashboard)
   const overview = useFetch(getBullpenOverview)
   const sync = useFetch(getSyncStatus)
-  const v2BullpenState = useFetch(() => getRecommendationV2BullpenState({ limit: 750 }))
-  const teamOperationsReadiness = useFetch(() => getTeamOperationsBullpenReadiness({ include_details: true }))
-  const focusSearch = searchParams.toString()
-
-  useEffect(() => {
-    if (!shouldFocusDigestPreferences({
-      searchParams: new URLSearchParams(focusSearch),
-      hash: location.hash,
-    })) return undefined
-
-    setDigestPreferencesFocused(true)
-    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
-
-    const scrollTimer = window.setTimeout(() => {
-      const target = document.getElementById('digest-preferences')
-      if (!target) return
-      target.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-      target.focus?.({ preventScroll: true })
-    }, 0)
-    const clearTimer = window.setTimeout(() => {
-      setDigestPreferencesFocused(false)
-    }, 2600)
-
-    return () => {
-      window.clearTimeout(scrollTimer)
-      window.clearTimeout(clearTimer)
-    }
-  }, [focusSearch, location.hash])
 
   return (
     <DataTrustView
@@ -65,20 +25,7 @@ export default function DataTrust() {
       dashboard={dashboard}
       overview={overview}
       sync={sync}
-      v2BullpenState={v2BullpenState}
-      teamOperationsReadiness={teamOperationsReadiness}
-      digestPreferencesFocused={digestPreferencesFocused}
     />
-  )
-}
-
-export function shouldFocusDigestPreferences({ searchParams, hash } = {}) {
-  const params = searchParams instanceof URLSearchParams
-    ? searchParams
-    : new URLSearchParams(String(searchParams || ''))
-  return (
-    params.get('focus') === 'digest-preferences'
-    || String(hash || '') === '#digest-preferences'
   )
 }
 
@@ -87,9 +34,6 @@ export function DataTrustView({
   dashboard,
   overview,
   sync,
-  v2BullpenState,
-  teamOperationsReadiness,
-  digestPreferencesFocused = false,
 }) {
   const servedFreshness = dashboard?.data?.freshness || null
 
@@ -97,14 +41,14 @@ export function DataTrustView({
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <SectionHeader
         title="Data & Trust"
-        subtitle="Freshness, workload reads, source boundaries, and evidence behind the bullpen picture"
+        subtitle="Freshness, sync health, reliability checks, and data limitations behind the bullpen picture"
       />
 
       <p className="mb-6 max-w-3xl text-sm leading-relaxed text-chalk400">
         The bullpen views show the summary you need to act. This page keeps the
-        full depth — how fresh the data is, how clear each workload read is,
-        the operational backtest behind the availability tiers, and the
-        supporting evidence and limitations.
+        reliability layer: how fresh the data is, what completed games are
+        included, whether sync is healthy, and how availability tiers have
+        matched completed-game usage.
       </p>
 
       <AvailabilityBacktestCard
@@ -172,8 +116,6 @@ export function DataTrustView({
         />
       </section>
 
-      <DigestPreferencesCard focused={digestPreferencesFocused} />
-
       {/* Pitcher workload inventory */}
       <section className="mb-6" aria-label="Pitcher workload inventory">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Pitcher Workload Inventory</h2>
@@ -184,33 +126,6 @@ export function DataTrustView({
           />
         )}
         <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
-      </section>
-
-      {/* Operational context */}
-      <OperationalReadinessSection
-        v2State={v2BullpenState.data}
-        v2Loading={v2BullpenState.loading}
-        v2Error={v2BullpenState.staleWithError ? null : v2BullpenState.error}
-        onRetryV2={v2BullpenState.refetch}
-        readinessState={teamOperationsReadiness.data}
-        readinessLoading={teamOperationsReadiness.loading}
-        readinessError={teamOperationsReadiness.staleWithError ? null : teamOperationsReadiness.error}
-        onRetryReadiness={teamOperationsReadiness.refetch}
-      />
-      {(v2BullpenState.staleWithError || teamOperationsReadiness.staleWithError) && (
-        <StaleDataNotice
-          message="Operational readiness detail is from the last loaded bullpen context because the latest refresh failed."
-          onRetry={() => {
-            if (v2BullpenState.staleWithError) v2BullpenState.refetch()
-            if (teamOperationsReadiness.staleWithError) teamOperationsReadiness.refetch()
-          }}
-        />
-      )}
-
-      {/* Secondary exploratory study */}
-      <section className="mb-6" aria-label="Exploratory workload insight">
-        <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Secondary Exploratory ERA Study</h2>
-        <FatigueInsightCard embedded />
       </section>
 
       <FeedbackCTA

@@ -20,7 +20,7 @@ after(async () => {
 })
 
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
-const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { HomeView } = await server.ssrLoadModule('/src/components/home/LegacyMorningBullpenReport.jsx')
 const { StoriesView } = await server.ssrLoadModule('/src/components/stories/Stories.jsx')
 const { DataTrustView } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: BullpenBoardView } = await server.ssrLoadModule('/src/components/bullpen/board/BullpenBoardView.jsx')

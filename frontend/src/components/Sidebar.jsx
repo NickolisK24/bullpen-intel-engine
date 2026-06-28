@@ -13,9 +13,9 @@ import TeamMark from './team/TeamMark'
 
 const NAV = [
   { to: '/',            icon: '☀',  label: 'Today'       },
-  { to: '/stories',     icon: '📰', label: 'Stories'     },
   { to: '/dashboard',   icon: '⬡',  label: 'Dashboard'   },
   { to: '/bullpen',     icon: '🔥', label: 'Bullpen'     },
+  { to: '/stories',     icon: '📰', label: 'Stories'     },
   { to: '/methodology', icon: '📐', label: 'Methodology' },
   { to: '/trust',       icon: '🛡', label: 'Data & Trust' },
 ]

@@ -84,6 +84,17 @@ function Column({ column }) {
   )
 }
 
+function displayLandscapeNote(note) {
+  return String(note ?? '')
+    .replace(/\bSorted deterministically by\b/gi, 'Sorted by')
+    .replace(/\bdeterministically\b/gi, 'consistently')
+    .replace(/\bdeterministic\b/gi, 'consistent')
+    .replace(/\bendpoints\b/gi, 'data feeds')
+    .replace(/\bendpoint\b/gi, 'data feed')
+    .replace(/\bbackend\b/gi, 'BaseballOS service')
+    .replace(/\bsnapshot\b/gi, 'read')
+}
+
 export default function BullpenLandscape({ landscape }) {
   const view = getLandscapeView(landscape)
   if (!view.hasLandscape) return null
@@ -118,7 +129,7 @@ export default function BullpenLandscape({ landscape }) {
       {view.notes.length > 0 && (
         <ul className="mt-3 space-y-1">
           {view.notes.map((note, index) => (
-            <li key={index} className="text-[11px] leading-relaxed text-chalk600">• {note}</li>
+            <li key={index} className="text-[11px] leading-relaxed text-chalk600">• {displayLandscapeNote(note)}</li>
           ))}
         </ul>
       )}

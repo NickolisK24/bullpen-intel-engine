@@ -135,12 +135,14 @@ test('dashboard labels retained data when the latest refresh failed', () => {
   assert.ok(htmlIncludes(html, 'Bullpen Read'))
 })
 
-test('Data & Trust page hosts the relocated trust and governance detail', () => {
+test('Data & Trust page hosts trust detail without duplicate operational sections', () => {
   const html = inRouter(React.createElement(DataTrust))
   assert.ok(htmlIncludes(html, 'Data &amp; Trust') || htmlIncludes(html, 'Data & Trust'))
   assert.ok(htmlIncludes(html, 'Freshness'))
   assert.ok(htmlIncludes(html, 'Pitcher Workload Inventory'))
-  assert.ok(htmlIncludes(html, 'Secondary Exploratory ERA Study'))
+  assert.equal(htmlIncludes(html, 'Secondary Exploratory ERA Study'), false)
+  assert.equal(htmlIncludes(html, 'Digest Preferences'), false)
+  assert.equal(htmlIncludes(html, 'Bullpen State + Team Readiness'), false)
   // The Bullpen Intelligence surface fails closed without a live source, so it
   // is not mounted on the live Trust page until it is wired to live MLB data.
   assert.ok(!htmlIncludes(html, 'Bullpen Intelligence'))

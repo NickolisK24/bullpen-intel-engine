@@ -393,14 +393,11 @@ test('does not render unsafe guidance language outside required governance flags
   assert.equal(/\brank\b|\branking\b|\bselect\b|\bselection\b/i.test(text), false)
 })
 
-test('Data & Trust page wires the Team Operations readiness panel and V2 state', () => {
-  // The operational readiness / governance panel relocated from the Dashboard
-  // to the Data & Trust page during the dashboard realignment. The Dashboard
-  // still loads as a component; the panel wiring now lives on Data & Trust.
+test('Data & Trust page no longer wires the Team Operations readiness panel or V2 state', () => {
   assert.equal(typeof Dashboard, 'function')
-  assert.ok(dataTrustSource.includes('OperationalReadinessSection'))
-  assert.ok(dataTrustSource.includes('getTeamOperationsBullpenReadiness'))
-  assert.ok(dataTrustSource.includes('getRecommendationV2BullpenState'))
+  assert.equal(dataTrustSource.includes('OperationalReadinessSection'), false)
+  assert.equal(dataTrustSource.includes('getTeamOperationsBullpenReadiness'), false)
+  assert.equal(dataTrustSource.includes('getRecommendationV2BullpenState'), false)
 })
 
 test('derives unavailable view state for unsafe normalized payloads', () => {

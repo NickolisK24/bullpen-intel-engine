@@ -1,8 +1,8 @@
+import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
-import { getAvailabilityBacktest, getMethodology } from '../../utils/api'
+import { getMethodology } from '../../utils/api'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
 import { FeedbackCTA } from '../feedback/FeedbackLink'
-import AvailabilityBacktestCard from '../trust/AvailabilityBacktestCard'
 
 const TIER_HEX = {
   LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
@@ -11,9 +11,24 @@ const TIER_HEX = {
   CRITICAL: { bg: '#2a0f0f', border: '#ef4444', text: '#fca5a5' },
 }
 
+function displayCopy(value) {
+  return String(value ?? '')
+    .replace(/\bgameLog endpoint\b/gi, 'game log feed')
+    .replace(/\bendpoints\b/gi, 'data feeds')
+    .replace(/\bendpoint\b/gi, 'data feed')
+    .replace(/\bbackend\b/gi, 'BaseballOS service')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\bdeterministically\b/gi, 'consistently')
+    .replace(/\bdeterministic\b/gi, 'consistent')
+    .replace(/\bRecommendation V2\b/gi, 'BaseballOS read')
+    .replace(/\bV[2-4]\b/gi, 'BaseballOS')
+    .replace(/\bCOIN\b/gi, 'BaseballOS')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
+    .replace(/\bgovernance layer\b/gi, 'review layer')
+}
+
 export default function Methodology() {
   const { data, loading, error, refetch } = useFetch(getMethodology)
-  const backtest = useFetch(getAvailabilityBacktest)
 
   if (loading) {
     return (
@@ -31,6 +46,10 @@ export default function Methodology() {
     )
   }
 
+  return <MethodologyView data={data} />
+}
+
+export function MethodologyView({ data }) {
   const fe       = data?.fatigue_engine
   const insights = data?.insights
   const sources  = data?.data_sources ?? []
@@ -43,12 +62,20 @@ export default function Methodology() {
         subtitle="How availability, workload, trust, and readiness reads are computed"
       />
 
-      <AvailabilityBacktestCard
-        data={backtest.data}
-        loading={backtest.loading}
-        error={backtest.error}
-        onRetry={backtest.refetch}
-      />
+      <section className="card p-5 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+        <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
+          Reliability Check
+        </div>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
+          BaseballOS checks whether availability tiers match real bullpen usage after games are completed. The live reliability read belongs in Data &amp; Trust so methodology stays focused on definitions and interpretation.
+        </p>
+        <Link
+          to="/trust"
+          className="mt-4 inline-flex rounded border border-amber/35 px-3 py-2 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:bg-amber/10"
+        >
+          View Data &amp; Trust
+        </Link>
+      </section>
 
       {/* ── Workload Read ──────────────────────────────────────────────── */}
       {fe && (
@@ -57,10 +84,10 @@ export default function Methodology() {
           style={{ animationDelay: '100ms', animationFillMode: 'forwards' }}
         >
           <div className="font-display text-2xl tracking-wider text-chalk100 mb-2">
-            {fe.title}
+            {displayCopy(fe.title)}
           </div>
           <p className="text-chalk300 text-sm leading-relaxed mb-6 max-w-3xl">
-            {fe.summary}
+            {displayCopy(fe.summary)}
           </p>
 
           <Divider label="Components" />
@@ -75,10 +102,10 @@ export default function Methodology() {
                 </div>
                 <div>
                   <div className="font-mono text-chalk100 text-sm font-semibold mb-1">
-                    {c.name}
+                    {displayCopy(c.name)}
                   </div>
                   <div className="text-chalk400 text-xs leading-relaxed">
-                    {c.rationale}
+                    {displayCopy(c.rationale)}
                   </div>
                 </div>
               </div>
@@ -111,7 +138,7 @@ export default function Methodology() {
                     {t.range}
                   </div>
                   <div className="text-chalk400 text-xs leading-relaxed">
-                    {t.interpretation}
+                    {displayCopy(t.interpretation)}
                   </div>
                 </div>
               )
@@ -123,10 +150,10 @@ export default function Methodology() {
               <Divider label="Excluded Component" />
               <div className="p-4 rounded border border-dirt bg-chalk/10">
                 <div className="font-mono text-chalk100 text-sm font-semibold mb-2">
-                  {fe.excluded.name}
+                  {displayCopy(fe.excluded.name)}
                 </div>
                 <div className="text-chalk400 text-xs leading-relaxed">
-                  {fe.excluded.reason}
+                  {displayCopy(fe.excluded.reason)}
                 </div>
               </div>
             </>
@@ -141,10 +168,10 @@ export default function Methodology() {
           style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}
         >
           <div className="font-display text-2xl tracking-wider text-chalk100 mb-2">
-            {insights.title}
+            {displayCopy(insights.title)}
           </div>
           <p className="text-chalk300 text-sm leading-relaxed mb-4 max-w-3xl">
-            {insights.summary}
+            {displayCopy(insights.summary)}
           </p>
 
           <div
@@ -158,7 +185,7 @@ export default function Methodology() {
               Finding
             </div>
             <div className="text-chalk100 text-sm leading-relaxed">
-              {insights.finding}
+              {displayCopy(insights.finding)}
             </div>
           </div>
 
@@ -183,7 +210,7 @@ export default function Methodology() {
                   <ul className="space-y-1">
                     {insights.measured.map((m) => (
                       <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
-                        <span className="text-emerald-400">✓</span>{m}
+                        <span className="text-emerald-400">✓</span>{displayCopy(m)}
                       </li>
                     ))}
                   </ul>
@@ -197,7 +224,7 @@ export default function Methodology() {
                   <ul className="space-y-1">
                     {insights.not_measured.map((m) => (
                       <li key={m} className="text-chalk400 text-xs leading-relaxed flex gap-2">
-                        <span className="text-chalk600">—</span>{m}
+                        <span className="text-chalk600">—</span>{displayCopy(m)}
                       </li>
                     ))}
                   </ul>
@@ -208,7 +235,7 @@ export default function Methodology() {
 
           {insights.caveat && (
             <div className="text-chalk500 text-xs leading-relaxed italic max-w-3xl">
-              {insights.caveat}
+              {displayCopy(insights.caveat)}
             </div>
           )}
         </section>
@@ -236,7 +263,7 @@ export default function Methodology() {
                     {s.name}
                   </a>
                   <div className="text-chalk400 text-xs mt-0.5 leading-relaxed">
-                    {s.use}
+                    {displayCopy(s.use)}
                   </div>
                 </div>
               ))}
@@ -258,7 +285,7 @@ export default function Methodology() {
                     border:          '1px solid #242b35',
                   }}
                 >
-                  {s}
+                  {displayCopy(s)}
                 </span>
               ))}
             </div>

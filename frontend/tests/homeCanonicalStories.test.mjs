@@ -23,7 +23,7 @@ const {
   getCanonicalHeroStory,
   getCanonicalLeagueContext,
 } = await server.ssrLoadModule('/src/components/home/homeCanonicalStoriesView.js')
-const { HomeView } = await server.ssrLoadModule('/src/components/home/Home.jsx')
+const { HomeView } = await server.ssrLoadModule('/src/components/home/LegacyMorningBullpenReport.jsx')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -452,7 +452,7 @@ test('missing dashboard.stories still renders a neutral Home without throwing', 
 
 test('Home reuses the existing team changes API contract', () => {
   const apiSource = readFileSync(new URL('../src/utils/api.js', import.meta.url), 'utf8')
-  const homeSource = readFileSync(new URL('../src/components/home/Home.jsx', import.meta.url), 'utf8')
+  const homeSource = readFileSync(new URL('../src/components/home/LegacyMorningBullpenReport.jsx', import.meta.url), 'utf8')
 
   assert.match(apiSource, /export const getTeamChanges = \(teamId\) => request\(`\/bullpen\/teams\/\$\{teamId\}\/changes`\)/)
   assert.match(homeSource, /getTeamChanges\(activeTeamId\)/)
