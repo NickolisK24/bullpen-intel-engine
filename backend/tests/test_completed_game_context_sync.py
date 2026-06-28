@@ -7,6 +7,7 @@ refresh or undo the ingested game logs. No raw play-by-play is persisted.
 """
 
 from datetime import date
+import logging
 
 import pytest
 from flask import Flask
@@ -346,7 +347,11 @@ def test_postgame_refresh_generates_intelligence_surface_snapshot(app, monkeypat
         assert snap.status == snap.response_json['status']
 
 
-def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(app, monkeypatch):
+def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(
+    app,
+    monkeypatch,
+    caplog,
+):
     _patch_mlb(monkeypatch, [_game()], linescore=_linescore(), play_by_play=_play_by_play())
 
     def _boom(*args, **kwargs):
@@ -356,12 +361,58 @@ def test_snapshot_failure_does_not_fail_postgame_or_weaken_contexts(app, monkeyp
     monkeypatch.setattr(
         'services.intelligence_surface_snapshot.generate_snapshot_for_date', _boom)
 
-    status = _run(app)
+    with caplog.at_level(logging.WARNING, logger='baseballos.postgame_refresh'):
+        status = _run(app)
 
     # Contexts were still derived and committed; the run still succeeds.
     assert status['completed_game_contexts_upserted'] == 2
     assert status['status'] == sync_metadata.STATUS_SUCCESS
     assert status['intelligence_snapshot'] == 'failed'
+    assert status['intelligence_snapshot_error'] == 'snapshot build exploded'
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        'Intelligence surface snapshot refresh failed' in m
+        and 'postgame refresh will continue' in m
+        and 'snapshot build exploded' in m
+        for m in messages
+    ), messages
+    with app.app_context():
+        assert CompletedGameContext.query.count() == 2
+        assert IntelligenceSurfaceSnapshot.query.count() == 0
+
+
+def test_snapshot_timeout_does_not_fail_postgame_or_weaken_contexts(
+    app,
+    monkeypatch,
+    caplog,
+):
+    _patch_mlb(monkeypatch, [_game()], linescore=_linescore(), play_by_play=_play_by_play())
+
+    def _timeout(*args, **kwargs):
+        raise sync_service._PostgameSnapshotTimeout(
+            'Intelligence surface snapshot exceeded 0.25s')
+
+    monkeypatch.setenv('POSTGAME_REFRESH_SNAPSHOT_TIMEOUT_SECONDS', '0.25')
+    monkeypatch.setattr(
+        sync_service,
+        '_run_intelligence_surface_snapshot_with_timeout',
+        _timeout,
+    )
+
+    with caplog.at_level(logging.WARNING, logger='baseballos.postgame_refresh'):
+        status = _run(app)
+
+    assert status['completed_game_contexts_upserted'] == 2
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['intelligence_snapshot'] == 'timed_out'
+    assert status['intelligence_snapshot_error'] == (
+        'Intelligence surface snapshot exceeded 0.25s')
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(
+        'Intelligence surface snapshot refresh timed out' in m
+        and 'postgame refresh will continue' in m
+        for m in messages
+    ), messages
     with app.app_context():
         assert CompletedGameContext.query.count() == 2
         assert IntelligenceSurfaceSnapshot.query.count() == 0

@@ -234,7 +234,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
-          BASEBALLOS_SITE_URL: https://baseballos.vercel.app
+          BASEBALLOS_SITE_URL: https://baseballos.app
         run: |
           set -euo pipefail
           python backend/scripts/export_team_story_pages.py --output frontend/public --site-url "$BASEBALLOS_SITE_URL"

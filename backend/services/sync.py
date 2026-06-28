@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import logging
 import os
+import signal
+import threading
 import time
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -55,6 +57,7 @@ FINAL_GAME_DETAILED_STATES = frozenset({
     'completed early',
     'final: tied',
 })
+POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -482,11 +485,87 @@ def _postgame_snapshot_refresh_enabled() -> bool:
     return raw.strip().lower() not in {'0', 'false', 'no', 'off', ''}
 
 
+class _PostgameSnapshotTimeout(TimeoutError):
+    """Raised when the optional postgame snapshot tail exceeds its time budget."""
+
+
+def _postgame_snapshot_timeout_seconds() -> float | None:
+    raw = os.environ.get('POSTGAME_REFRESH_SNAPSHOT_TIMEOUT_SECONDS')
+    if raw is None:
+        return POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS
+
+    value = raw.strip().lower()
+    if value in {'0', 'false', 'no', 'off', ''}:
+        return None
+
+    try:
+        seconds = float(value)
+    except ValueError:
+        return POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS
+
+    return seconds if seconds > 0 else None
+
+
+def _snapshot_timeout_supported() -> bool:
+    return (
+        threading.current_thread() is threading.main_thread()
+        and hasattr(signal, 'SIGALRM')
+        and hasattr(signal, 'setitimer')
+        and hasattr(signal, 'ITIMER_REAL')
+    )
+
+
+def _run_intelligence_surface_snapshot_with_timeout(
+    schedule_date,
+    *,
+    timeout_seconds,
+    run_logger,
+):
+    from services.intelligence_surface_snapshot import generate_snapshot_for_date
+
+    if timeout_seconds is None:
+        return generate_snapshot_for_date(
+            schedule_date,
+            source='postgame_refresh',
+            step_logger=run_logger,
+        )
+
+    if not _snapshot_timeout_supported():
+        run_logger.warning(
+            'Intelligence surface snapshot timeout unavailable on this runtime; '
+            'continuing without a hard bound (timeout_seconds=%s).',
+            timeout_seconds,
+        )
+        return generate_snapshot_for_date(
+            schedule_date,
+            source='postgame_refresh',
+            step_logger=run_logger,
+        )
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _raise_timeout(_signum, _frame):
+        raise _PostgameSnapshotTimeout(
+            f'Intelligence surface snapshot exceeded {timeout_seconds:g}s')
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return generate_snapshot_for_date(
+            schedule_date,
+            source='postgame_refresh',
+            step_logger=run_logger,
+        )
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_logger):
     """Refresh the Intelligence Surface snapshot for a slate without ever
     breaking the refresh.
 
-    Fail-closed wrapper around the homepage cache: rebuilds the stored
+    Fail-soft wrapper around the homepage cache: rebuilds the stored
     GET /api/bullpen/intelligence/today response from the completed-game contexts
     just derived for ``schedule_date``. The completed-game contexts are already
     committed, so a snapshot failure here costs only a stale homepage cache (the
@@ -496,7 +575,8 @@ def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_l
     This is the most expensive optional tail of the refresh (it rebuilds the
     lead-story for every team with a completed-game context). It logs a start
     line and an elapsed_ms so a slow build is visible in the job log instead of
-    appearing as a silent gap, and it can be skipped via POSTGAME_REFRESH_SNAPSHOT.
+    appearing as a silent gap. It can be skipped via POSTGAME_REFRESH_SNAPSHOT
+    and bounded via POSTGAME_REFRESH_SNAPSHOT_TIMEOUT_SECONDS.
     """
     if not _postgame_snapshot_refresh_enabled():
         status['intelligence_snapshot'] = 'skipped_by_config'
@@ -507,31 +587,52 @@ def _safe_generate_intelligence_surface_snapshot(schedule_date, *, status, run_l
         )
         return
 
+    timeout_seconds = _postgame_snapshot_timeout_seconds()
     started = time.perf_counter()
+    status.pop('intelligence_snapshot_error', None)
     run_logger.info(
-        'Intelligence surface snapshot refresh starting for %s.', schedule_date)
+        'Intelligence surface snapshot refresh starting for %s '
+        '(timeout_seconds=%s).',
+        schedule_date,
+        timeout_seconds if timeout_seconds is not None else 'disabled',
+    )
     try:
-        from services.intelligence_surface_snapshot import generate_snapshot_for_date
-
-        response = generate_snapshot_for_date(
-            schedule_date, source='postgame_refresh')
+        response = _run_intelligence_surface_snapshot_with_timeout(
+            schedule_date,
+            timeout_seconds=timeout_seconds,
+            run_logger=run_logger,
+        )
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         status['intelligence_snapshot'] = response.get('status') or 'generated'
         run_logger.info(
-            'Intelligence surface snapshot refreshed for %s: status=%s, '
+            'Intelligence surface snapshot refresh completed for %s: status=%s, '
             'publishable=%s, elapsed_ms=%s.',
             schedule_date,
             response.get('status'),
             response.get('publishable_candidates'),
             elapsed_ms,
         )
+    except _PostgameSnapshotTimeout as exc:
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        db.session.rollback()
+        status['intelligence_snapshot'] = 'timed_out'
+        status['intelligence_snapshot_error'] = str(exc)
+        run_logger.warning(
+            'Intelligence surface snapshot refresh timed out for '
+            'schedule_date=%s after %ss (elapsed_ms=%s); postgame refresh will '
+            'continue.',
+            schedule_date,
+            timeout_seconds,
+            elapsed_ms,
+        )
     except Exception as exc:  # noqa: BLE001 — snapshot is best-effort, never fatal
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         db.session.rollback()
         status['intelligence_snapshot'] = 'failed'
+        status['intelligence_snapshot_error'] = str(exc)
         run_logger.warning(
-            'Intelligence surface snapshot failed for schedule_date=%s '
-            '(elapsed_ms=%s): %s',
+            'Intelligence surface snapshot refresh failed for schedule_date=%s '
+            '(elapsed_ms=%s); postgame refresh will continue: %s',
             schedule_date, elapsed_ms, exc,
         )
 
@@ -1063,11 +1164,35 @@ def run_postgame_refresh(
                         round((time.perf_counter() - game_started) * 1000, 1),
                     )
 
+            run_logger.info(
+                'Postgame ingestion complete for %s: processed=%s skipped=%s '
+                'failed=%s contexts=%s logs_added=%s.',
+                schedule_date,
+                status['games_processed'],
+                status['games_skipped'],
+                status['records_failed'],
+                status['completed_game_contexts_upserted'],
+                status['new_logs_added'],
+            )
+
             if status['new_logs_added'] > 0:
                 sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
+                fatigue_started = time.perf_counter()
+                run_logger.info(
+                    'Fatigue recalculation starting after postgame ingestion.'
+                )
                 pitchers_updated = recalculate_all_fatigue()
                 status['pitchers_updated'] = pitchers_updated
-                run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+                run_logger.info(
+                    'Fatigue recalculation complete: pitchers_updated=%s '
+                    'elapsed_ms=%s.',
+                    pitchers_updated,
+                    round((time.perf_counter() - fatigue_started) * 1000, 1),
+                )
+            else:
+                run_logger.info(
+                    'Fatigue recalculation skipped: no new postgame logs added.'
+                )
 
             # Refresh the Intelligence Surface homepage cache from the freshly
             # derived contexts. Best-effort: it never blocks or fails the refresh.

@@ -71,7 +71,13 @@ def serve_today_lead_story(
     return response
 
 
-def generate_snapshot_for_date(reference_date, *, source, current_date=None):
+def generate_snapshot_for_date(
+    reference_date,
+    *,
+    source,
+    current_date=None,
+    step_logger=None,
+):
     """Build and store the snapshot for one explicit slate date.
 
     Used by postgame refresh after completed-game contexts are derived. Honors
@@ -79,9 +85,37 @@ def generate_snapshot_for_date(reference_date, *, source, current_date=None):
     Returns the built response. Raises on failure so the caller can decide how to
     report; postgame wraps this so a snapshot failure never breaks the refresh.
     """
+    log = step_logger or logger
+    started = perf_counter()
+    log.info(
+        'Intelligence surface snapshot build step starting for %s.',
+        reference_date,
+    )
     response = build_today_lead_story(
         reference_date=reference_date, current_date=current_date)
+    build_elapsed_ms = round((perf_counter() - started) * 1000, 1)
+    log.info(
+        'Intelligence surface snapshot build step completed for %s: '
+        'status=%s candidates=%s publishable=%s elapsed_ms=%s.',
+        reference_date,
+        response.get('status'),
+        response.get('candidates_considered'),
+        response.get('publishable_candidates'),
+        build_elapsed_ms,
+    )
+
+    write_started = perf_counter()
+    log.info(
+        'Intelligence surface snapshot write step starting for %s.',
+        reference_date,
+    )
     write_snapshot(response, source=source)
+    log.info(
+        'Intelligence surface snapshot write step completed for %s: '
+        'elapsed_ms=%s.',
+        reference_date,
+        round((perf_counter() - write_started) * 1000, 1),
+    )
     return response
 
 

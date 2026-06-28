@@ -312,5 +312,6 @@ def test_writer_emits_one_static_page_per_team_and_invalid_team_fallback(tmp_pat
     fallback = Path(result['fallback'])
     assert fallback.exists()
     fallback_html = fallback.read_text(encoding='utf-8')
-    assert '<meta property="og:url" content="https://baseballos.app/team" />' in fallback_html
+    assert '<meta property="og:url" content="https://baseballos.app/team/" />' in fallback_html
+    assert '<link rel="canonical" href="https://baseballos.app/team/" />' in fallback_html
     assert 'window.location.replace("/")' in fallback_html
