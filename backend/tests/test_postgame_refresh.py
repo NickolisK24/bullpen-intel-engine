@@ -380,8 +380,20 @@ def test_postgame_sync_workflow_job_timeout_is_25_minutes():
     """Static guard: the sync job timeout must give the postgame path enough
     headroom for the homepage rebuild (regression lock for the 15m cancellation)."""
     from pathlib import Path
-    import yaml
 
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
-    data = yaml.safe_load(workflow.read_text(encoding='utf-8'))
-    assert data['jobs']['sync']['timeout-minutes'] == 25
+    text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    jobs_section = text.split('\njobs:\n', 1)[1]
+    sync_body = jobs_section.split('  sync:\n', 1)[1]
+    sync_lines = []
+    for line in sync_body.splitlines():
+        if line.startswith('  ') and not line.startswith('    '):
+            break
+        sync_lines.append(line)
+    sync_block = '\n'.join(sync_lines)
+
+    assert '    timeout-minutes: 25' in sync_block
+    assert "    - cron: '0 10 * * *'" in text
+    assert "    - cron: '0 2,4,6 * * *'" in text
+    assert '\nconcurrency:\n  group: baseballos-sync\n  cancel-in-progress: false\n' in text
