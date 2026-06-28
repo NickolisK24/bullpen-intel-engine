@@ -1,4 +1,4 @@
-export const TEAM_SHARE_ORIGIN = 'https://baseballos.vercel.app'
+export const TEAM_SHARE_ORIGIN = 'https://baseballos.app'
 
 export function normalizeTeamShareAbbreviation(team) {
   const value = typeof team === 'string'

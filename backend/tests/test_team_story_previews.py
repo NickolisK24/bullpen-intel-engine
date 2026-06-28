@@ -93,7 +93,7 @@ def test_pressure_story_uses_canonical_share_copy_with_tension_framing():
     assert preview['og_title'] == share_title
     assert preview['og_description'] == share_summary
     assert preview['og_title'] != preview['og_description']
-    assert preview['og_url'] == 'https://baseballos.vercel.app/team/TOR'
+    assert preview['og_url'] == 'https://baseballos.app/team/TOR'
     assert preview['story_type'] == 'coverage_pressure'
     assert preview['category'] == 'stressed'
     assert preview['tone'] == 'stress'
@@ -188,7 +188,7 @@ def test_no_story_team_uses_neutral_shape_preview_only():
     )
     assert 'story' not in preview['og_title'].lower()
     assert preview['og_title'] != preview['og_description']
-    assert preview['og_url'] == 'https://baseballos.vercel.app/team/QUT'
+    assert preview['og_url'] == 'https://baseballos.app/team/QUT'
 
 
 def test_build_team_story_previews_consumes_canonical_stories_by_team_identity():
@@ -260,7 +260,7 @@ def test_static_html_contains_canonical_story_og_tags_and_human_redirect():
         '<meta property="og:description" content="Most of the Blue Jays pen is available and rested tonight." />'
         in html
     )
-    assert '<meta property="og:url" content="https://baseballos.vercel.app/team/TOR" />' in html
+    assert '<meta property="og:url" content="https://baseballos.app/team/TOR" />' in html
     assert '<meta name="twitter:title" content="Toronto Blue Jays bullpen: availability depth" />' in html
     assert 'window.location.replace("/bullpen?view=board&amp;team=TOR&amp;source=share")' not in html
     assert 'window.location.replace("/bullpen?view=board&team=TOR&source=share")' in html
@@ -312,5 +312,5 @@ def test_writer_emits_one_static_page_per_team_and_invalid_team_fallback(tmp_pat
     fallback = Path(result['fallback'])
     assert fallback.exists()
     fallback_html = fallback.read_text(encoding='utf-8')
-    assert '<meta property="og:url" content="https://baseballos.vercel.app/team" />' in fallback_html
+    assert '<meta property="og:url" content="https://baseballos.app/team" />' in fallback_html
     assert 'window.location.replace("/")' in fallback_html

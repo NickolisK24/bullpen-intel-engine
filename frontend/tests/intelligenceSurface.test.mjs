@@ -320,7 +320,10 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
     teams: [],
   }))
 
-  assert.ok(htmlIncludes(html, 'What BaseballOS Sees'))
+  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'Get weekly bullpen notes'))
+  assert.ok(htmlIncludes(html, 'Favorite%20team%3A%20'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Story'))
   assert.ok(htmlIncludes(html, 'Reading the latest completed-game context...'))
   assert.ok(htmlIncludes(html, 'Loading today'))
@@ -342,8 +345,10 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'What BaseballOS Sees'))
-  assert.ok(htmlIncludes(html, 'Every morning BaseballOS watches every bullpen in baseball'))
+  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
+  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB workload, availability, usage, and game context after completed games.'))
+  assert.ok(htmlIncludes(html, 'not betting advice'))
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))

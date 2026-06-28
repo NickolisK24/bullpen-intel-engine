@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-DEFAULT_SITE_URL = 'https://baseballos.vercel.app'
+DEFAULT_SITE_URL = 'https://baseballos.app'
 DEFAULT_OG_IMAGE_PATH = '/og/baseballos-card.svg'
 TEAM_PAGE_ROOT = '/team'
 TEAM_SHARE_SOURCE = 'share'

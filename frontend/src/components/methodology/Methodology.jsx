@@ -62,7 +62,7 @@ export function MethodologyView({ data }) {
         subtitle="How availability, workload, trust, and readiness reads are computed"
       />
 
-      <section className="card p-5 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
+      <section id="methodology" className="card p-5 animate-fade-up opacity-0" style={{ animationFillMode: 'forwards' }}>
         <div className="font-mono text-xs uppercase tracking-widest text-amber/75">
           Reliability Check
         </div>
@@ -243,6 +243,7 @@ export function MethodologyView({ data }) {
 
       {/* ── Data Sources & Stack ───────────────────────────────────────── */}
       <section
+        id="data-sources"
         className="card p-6 animate-fade-up opacity-0"
         style={{ animationDelay: '300ms', animationFillMode: 'forwards' }}
       >
@@ -293,11 +294,41 @@ export function MethodologyView({ data }) {
         </div>
       </section>
 
-      <FeedbackCTA
-        eyebrow="Methodology Feedback"
-        title="Questions or feedback on the methodology?"
-        body="BaseballOS is being refined through real user feedback."
-      />
+      <section
+        id="known-limitations"
+        className="card p-6 animate-fade-up opacity-0"
+        style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}
+      >
+        <div className="font-mono text-chalk400 text-xs uppercase tracking-widest mb-3">
+          Known Limitations
+        </div>
+        <p className="max-w-3xl text-sm leading-relaxed text-chalk300">
+          BaseballOS describes current bullpen context from public MLB data. It reads workload,
+          availability, usage, and recent game context; it does not know the future and it is
+          not betting advice.
+        </p>
+        <ul className="mt-4 space-y-2 text-sm leading-relaxed text-chalk400">
+          <li>
+            Manager intent, bullpen phone activity, private medical availability, and final
+            game-day decisions are not known to BaseballOS.
+          </li>
+          <li>
+            Injury and injured-list context is limited to public roster and injury signals.
+            The absence of a public flag is not a health claim.
+          </li>
+          <li>
+            Freshness labels show the latest completed-game bullpen data available to the page.
+          </li>
+        </ul>
+      </section>
+
+      <div id="contact">
+        <FeedbackCTA
+          eyebrow="Methodology Feedback"
+          title="Questions or feedback on the methodology?"
+          body="BaseballOS is being refined through real user feedback."
+        />
+      </div>
     </div>
   )
 }

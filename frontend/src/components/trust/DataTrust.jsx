@@ -13,6 +13,14 @@ import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
 // Data & Trust owns freshness, reliability checks, and data limitations.
+const TRUST_LINKS = [
+  { href: '/methodology#methodology', label: 'Methodology' },
+  { href: '/methodology#data-sources', label: 'Data Sources' },
+  { href: '/methodology#known-limitations', label: 'Known Limitations' },
+  { href: '#freshness-update-schedule', label: 'Freshness / Update Schedule' },
+  { href: '#contact', label: 'Contact' },
+]
+
 export default function DataTrust() {
   const backtest = useFetch(getAvailabilityBacktest)
   const dashboard = useFetch(getBullpenDashboard)
@@ -51,6 +59,23 @@ export function DataTrustView({
         matched completed-game usage.
       </p>
 
+      <section className="mb-6 rounded border border-dirt bg-dugout/50 p-4" aria-label="Public trust links">
+        <div className="font-mono text-xs uppercase tracking-widest text-chalk500">
+          Public Trust
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {TRUST_LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className="inline-flex rounded border border-dirt px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/50 hover:text-amber"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </section>
+
       <AvailabilityBacktestCard
         data={backtest.data}
         loading={backtest.loading}
@@ -65,11 +90,12 @@ export function DataTrustView({
       )}
 
       {/* Freshness & sync */}
-      <section className="mb-6" aria-label="Data freshness and sync detail">
+      <section id="freshness-update-schedule" className="mb-6" aria-label="Data freshness and sync detail">
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-chalk400">Freshness &amp; Sync</h2>
         <p className="mb-3 max-w-3xl text-xs leading-relaxed text-chalk500">
           Last checked means BaseballOS ran. Last data update means new baseball data was written.
           Data through is the latest completed MLB date included in the bullpen picture.
+          BaseballOS updates after completed MLB games and when the latest sync succeeds.
         </p>
         {(() => {
           const provenance = getDataProvenance({
@@ -128,12 +154,14 @@ export function DataTrustView({
         <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
       </section>
 
-      <FeedbackCTA
-        className="mb-2"
-        eyebrow="Trust Feedback"
-        title="Help improve BaseballOS"
-        body="Tell us what works, what does not, and what would make this more useful."
-      />
+      <div id="contact">
+        <FeedbackCTA
+          className="mb-2"
+          eyebrow="Trust Feedback"
+          title="Help improve BaseballOS"
+          body="Tell us what works, what does not, and what would make this more useful."
+        />
+      </div>
     </div>
   )
 }

@@ -29,6 +29,8 @@ const TONIGHT_ERROR_BODY =
   'The rest of the Intelligence Surface can still be used.'
 const LEAD_STORY_LIMITATIONS_FALLBACK =
   'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
+const WEEKLY_NOTES_MAILTO =
+  'mailto:nickoliskacludis@gmail.com?subject=BaseballOS%20weekly%20bullpen%20notes&body=I%27d%20like%20weekly%20bullpen%20notes.%0A%0AFavorite%20team%3A%20'
 
 const INTERNAL_TODAY_COPY_PATTERN =
   /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
@@ -555,11 +557,25 @@ function SeesHeader() {
         Intelligence Surface
       </div>
       <h1 className="mt-3 font-display text-5xl leading-none tracking-wide text-chalk100 sm:text-6xl lg:text-7xl">
-        What BaseballOS Sees
+        MLB Bullpen Intelligence
       </h1>
       <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
-        Every morning BaseballOS watches every bullpen in baseball and surfaces the bullpen story that mattered most.
+        See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.
       </p>
+      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
+        BaseballOS reads public MLB workload, availability, usage, and game context after completed games. It is descriptive intelligence, not betting advice.
+      </p>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <a
+          href={WEEKLY_NOTES_MAILTO}
+          className="inline-flex w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
+        >
+          Get weekly bullpen notes
+        </a>
+        <span className="max-w-xl text-xs leading-relaxed text-chalk500">
+          Join the launch interest list and include your favorite team.
+        </span>
+      </div>
     </header>
   )
 }

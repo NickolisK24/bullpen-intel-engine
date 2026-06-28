@@ -45,6 +45,18 @@ function routeByPath(path) {
   return APP_ROUTES.find(route => route.path === path)
 }
 
+test('root HTML uses the public BaseballOS domain for canonical and social metadata', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+
+  assert.ok(htmlIncludes(html, '<title>BaseballOS | MLB Bullpen Intelligence</title>'))
+  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, '<link rel="canonical" href="https://baseballos.app/" />'))
+  assert.ok(htmlIncludes(html, '<meta property="og:url" content="https://baseballos.app/" />'))
+  assert.ok(htmlIncludes(html, '<meta property="og:image" content="https://baseballos.app/og/baseballos-card.svg" />'))
+  assert.ok(htmlIncludes(html, '<meta name="twitter:image" content="https://baseballos.app/og/baseballos-card.svg" />'))
+  assert.equal(htmlIncludes(html, 'baseballos.vercel.app'), false)
+})
+
 test('/today redirects to the Today surface and catch-all routes home', () => {
   assert.equal(routeByPath('/')?.Component?.name, 'Home')
   assert.equal(routeByPath('/today')?.redirectTo, '/')
@@ -196,7 +208,7 @@ test('invalid team share fallback and generic OG card are static public assets',
 
   const fallback = readFileSync(fallbackUrl, 'utf8')
   assert.ok(fallback.includes('<meta property="og:title" content="BaseballOS | Team Story Preview" />'))
-  assert.ok(fallback.includes('<meta property="og:url" content="https://baseballos.vercel.app/team" />'))
+  assert.ok(fallback.includes('<meta property="og:url" content="https://baseballos.app/team" />'))
   assert.ok(fallback.includes('<meta name="twitter:title" content="BaseballOS | Team Story Preview" />'))
   assert.ok(fallback.includes('<meta name="twitter:description" content="Open BaseballOS for current bullpen availability and trust reads." />'))
   assert.ok(fallback.includes('window.location.replace("/")'))
@@ -229,7 +241,7 @@ test('generated team share pages use absolute URLs and non-duplicated card text'
       false,
       `${team} uses the old neutral share title`,
     )
-    assert.equal(ogUrl, `https://baseballos.vercel.app/team/${team}`)
+    assert.equal(ogUrl, `https://baseballos.app/team/${team}`)
     assert.equal(metaContent(html, 'twitter:title'), title)
     assert.equal(metaContent(html, 'twitter:description'), description)
     assert.equal(html.includes('<div id="root"></div>'), false)

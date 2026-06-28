@@ -13,11 +13,11 @@ test('team share helper builds the canonical pre-rendered team URL', () => {
   assert.equal(buildTeamSharePath({ teamAbbreviation: 'sd' }), '/team/SD')
   assert.equal(
     buildTeamShareUrl({ team_abbreviation: 'TOR' }),
-    'https://baseballos.vercel.app/team/TOR',
+    'https://baseballos.app/team/TOR',
   )
   assert.equal(
     buildTeamShareUrl({ abbr: 'SD' }),
-    'https://baseballos.vercel.app/team/SD',
+    'https://baseballos.app/team/SD',
   )
   assert.equal(existsSync(new URL('../public/team/TOR/index.html', import.meta.url)), true)
   assert.equal(existsSync(new URL('../public/team/SD/index.html', import.meta.url)), true)
@@ -36,8 +36,8 @@ test('native share receives only the clean team URL', async () => {
   )
 
   assert.equal(result.status, 'shared')
-  assert.deepEqual(calls, [{ url: 'https://baseballos.vercel.app/team/SD' }])
-  assert.notEqual(calls[0].url, 'https://baseballos.vercel.app/bullpen?view=board&team=SD')
+  assert.deepEqual(calls, [{ url: 'https://baseballos.app/team/SD' }])
+  assert.notEqual(calls[0].url, 'https://baseballos.app/bullpen?view=board&team=SD')
 })
 
 test('clipboard fallback copies the clean team URL when native share is unavailable', async () => {
@@ -52,7 +52,7 @@ test('clipboard fallback copies the clean team URL when native share is unavaila
   )
 
   assert.equal(result.status, 'copied')
-  assert.deepEqual(copied, ['https://baseballos.vercel.app/team/TOR'])
+  assert.deepEqual(copied, ['https://baseballos.app/team/TOR'])
 })
 
 test('cancelled native share and failed clipboard fallback do not throw', async () => {
@@ -67,7 +67,7 @@ test('cancelled native share and failed clipboard fallback do not throw', async 
   })
 
   assert.equal(cancelled.status, 'cancelled')
-  assert.equal(cancelled.url, 'https://baseballos.vercel.app/team/TOR')
+  assert.equal(cancelled.url, 'https://baseballos.app/team/TOR')
 
   const failed = await shareTeamUrl('TOR', {
     navigator: {
@@ -80,5 +80,5 @@ test('cancelled native share and failed clipboard fallback do not throw', async 
   })
 
   assert.equal(failed.status, 'unavailable')
-  assert.equal(failed.url, 'https://baseballos.vercel.app/team/TOR')
+  assert.equal(failed.url, 'https://baseballos.app/team/TOR')
 })

@@ -9,7 +9,7 @@
   <text x="92" y="190" fill="#f6f0df" font-family="Arial, Helvetica, sans-serif" font-size="82" font-weight="800" letter-spacing="2">BaseballOS</text>
   <text x="96" y="262" fill="#d7a84f" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" letter-spacing="4">BULLPEN INTELLIGENCE</text>
   <text x="96" y="382" fill="#f6f0df" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700">Daily team story previews</text>
-  <text x="96" y="448" fill="#b8b09e" font-family="Arial, Helvetica, sans-serif" font-size="30">Availability, workload, and trust-lane reads from the latest snapshot.</text>
+  <text x="96" y="448" fill="#b8b09e" font-family="Arial, Helvetica, sans-serif" font-size="30">Availability and workload reads from completed-game data.</text>
   <line x1="96" y1="504" x2="1104" y2="504" stroke="#3a3326" stroke-width="2"/>
-  <text x="96" y="548" fill="#8f8777" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="2">baseballos.vercel.app</text>
+  <text x="96" y="548" fill="#8f8777" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="2">baseballos.app</text>
 </svg>
