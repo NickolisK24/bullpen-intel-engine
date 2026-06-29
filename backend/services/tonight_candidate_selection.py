@@ -140,8 +140,8 @@ def _signal_thin_before_off_day(team_id, team_name, sc, pen, limitations):
         strength += max(0, 3 - clean) * 5
 
     evidence = []
-    if clean is not None:
-        evidence.append(_clean_phrase(clean))
+    if _clean_is_limited(clean, band):
+        evidence.append(_CLEAN_LIMITED_PHRASE)
     if days is not None:
         evidence.append(f'Next off day in {days} {_plural(days, "day")}')
     if games_until is not None:
@@ -150,8 +150,10 @@ def _signal_thin_before_off_day(team_id, team_name, sc, pen, limitations):
         evidence.append(f'{band.capitalize()} bullpen optionality')
 
     # Team-neutral copy: the card carries team_name separately, so the prose never
-    # makes a (often plural) team name the grammatical subject.
-    summary = (f'{_clean_summary_cap(clean)} {_be(clean)} available, '
+    # makes a (often plural) team name the grammatical subject. Clean optionality
+    # is described qualitatively (never as an exact count) so the homepage card
+    # cannot contradict the linked team page's own clean-option labels.
+    summary = (f'Clean options are limited, '
                f'with {_games_phrase(games_until)} before the next off day.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
@@ -174,20 +176,21 @@ def _signal_no_clean_margin(team_id, team_name, sc, pen, limitations):
     if paths is not None:
         strength += max(0, 2 - paths) * 15
 
-    evidence = []
-    if clean is not None:
-        evidence.append(_clean_phrase(clean))
-    if paths is not None:
-        evidence.append(f'{paths} practical close-game {_plural(paths, "path")}')
+    # Public copy is qualitative and severity-capped. The strict optionality
+    # clean count can read 0 for an arm the linked team page still labels a
+    # "Clean Option" (status AVAILABLE), so the card never publishes an exact
+    # clean/path count, and the headline never uses "no"/"almost no"/"zero"
+    # margin language (see _margin_headline for the severity ceiling).
+    evidence = [_CLEAN_LIMITED_PHRASE]
     if pen['optionality_band'] in _THIN_BANDS:
         evidence.append(f"{pen['optionality_band'].capitalize()} bullpen optionality")
 
-    summary = (f'{_clean_summary_cap(clean)} and {_paths_summary(paths)} '
-               f'are available tonight.')
+    summary = ('Clean late-game options are limited, with little cushion behind '
+               'the first trusted arm.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_LATE_GAME_PATH, signal=SIGNAL_NO_CLEAN_MARGIN,
-        headline='Almost no clean margin tonight',
+        headline=_margin_headline(pen),
         summary=summary, evidence=evidence, strength=min(strength, 100))
 
 
@@ -253,8 +256,8 @@ def _signal_off_day_relief(team_id, team_name, sc, pen, limitations):
         strength += max(0, 2 - clean) * 4
 
     evidence = []
-    if clean is not None:
-        evidence.append(_clean_phrase(clean))
+    if _clean_is_limited(clean, band):
+        evidence.append(_CLEAN_LIMITED_PHRASE)
     if band in _THIN_BANDS:
         evidence.append(f'{band.capitalize()} bullpen optionality')
     evidence.append('Off day tomorrow' if days == 1 else 'Last game before an off day')
@@ -435,18 +438,20 @@ def _watching_sentence(signal):
 
 
 def _why_it_matters_sentence(signal, sc, pen):
-    clean = pen.get('clean_options_count')
-    paths = pen.get('practical_close_game_paths_count')
     games_until = sc.get('games_until_next_off_day')
     games_next3 = sc.get('games_in_next_3_days')
     share = pen.get('top_three_workload_share_10d')
 
+    # Clean optionality is described qualitatively (never as an exact count) so
+    # the homepage card cannot contradict the linked team page's clean-option
+    # labels. The workload-share branch keeps a number because it is traceable and
+    # does not assert a bullpen arm-count the team page would dispute.
     if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
-        return (f'This matters because {_clean_summary(clean)} {_be(clean)} available '
+        return (f'This matters because clean options are limited '
                 f'with {_games_phrase(games_until)} before the next off day.')
     if signal == SIGNAL_NO_CLEAN_MARGIN:
-        return (f'This matters because {_clean_summary(clean)} and '
-                f'{_paths_summary(paths)} leave little room if the game stays tight.')
+        return ('This matters because clean late-game options are limited, '
+                'leaving little room if the game stays tight.')
     if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
         if share is not None:
             return (f'This matters because the top three relievers have handled '
@@ -461,28 +466,27 @@ def _why_it_matters_sentence(signal, sc, pen):
 
 
 def _key_note_sentence(pen):
+    # Naming the actual clean arms is traceable and safe — these are arms the team
+    # page also surfaces as available/clean. When no clean arm is named, the note
+    # stays qualitative: it never publishes a rested/limited arm count, because the
+    # card's pool differs from the team page's active-bullpen totals and a bare
+    # "N limited by recent work" reads as a contradiction (the original defect).
     names = pen.get('clean_workload_option_names') or []
     if names:
-        return f'Key bullpen note: rested-enough arms include {_join_names(names[:3])}.'
+        return f'Key bullpen note: clean options include {_join_names(names[:3])}.'
 
-    parts = []
-    available = pen.get('available_arms_count')
-    monitor = pen.get('monitor_arms_count')
-    limited = pen.get('limited_arms_count')
-    restricted = pen.get('restricted_arms_count')
-    if available is not None:
-        parts.append(f'{available} rested-enough {_plural(available, "arm")}')
-    if monitor:
-        parts.append(f'{monitor} on watch')
-    limited_total = sum(n for n in (limited, restricted) if isinstance(n, int))
-    if limited_total:
-        parts.append(f'{limited_total} limited by recent work')
-    if parts:
-        return f'Key bullpen note: {_join_parts(parts)}.'
+    if not pen.get('context_available'):
+        return None
 
     clean = pen.get('clean_options_count')
-    if clean is not None:
-        return f'Key bullpen note: {_clean_summary(clean)} {_be(clean)} available.'
+    band = pen.get('optionality_band')
+    monitor = pen.get('monitor_arms_count')
+    if _clean_is_limited(clean, band):
+        if monitor:
+            return 'Key bullpen note: clean options are limited, with arms on watch.'
+        return 'Key bullpen note: clean options are limited.'
+    if monitor:
+        return 'Key bullpen note: several arms are on watch.'
     return None
 
 
@@ -524,35 +528,33 @@ def _join_parts(parts):
     return f'{", ".join(parts[:-1])}, and {parts[-1]}'
 
 
-def _clean_phrase(n):
-    return f'{n} clean bullpen {_plural(n, "option")}'
+# Public clean-optionality copy is deliberately qualitative and severity-capped
+# so the homepage Tonight card cannot contradict the linked team bullpen state
+# page. Two rules drive this:
+#   1. Never publish an exact clean/path count. The strict optionality count can
+#      be 0 for an arm the team page still labels a "Clean Option" (status
+#      AVAILABLE), so an exact "0 clean options" reads as a direct contradiction.
+#   2. Never let the card's severity exceed the team state. With any available
+#      arm, the headline stays "thin", never "no"/"almost no"/"zero".
+_CLEAN_LIMITED_PHRASE = 'Clean options are limited'
+
+_MARGIN_HEADLINE_THIN = 'Thin late-game margin tonight'
+_MARGIN_HEADLINE_LIMITED = 'Limited clean options tonight'
 
 
-def _clean_summary(n):
-    if n is None:
-        return 'a thin set of clean bullpen paths'
-    if n == 0:
-        return 'no clean bullpen paths'
-    if n == 1:
-        return 'only one clean bullpen path'
-    return f'{n} clean bullpen paths'
+def _clean_is_limited(clean, band):
+    """True when clean optionality is genuinely limited for a thin-signal card."""
+    return (clean is not None and clean <= _CLEAN_LOW) or band in _THIN_BANDS
 
 
-def _clean_summary_cap(n):
-    text = _clean_summary(n)
-    return text[:1].upper() + text[1:]
-
-
-def _be(n):
-    # Subject-verb agreement for the clean-paths phrase ("path is" / "paths are";
-    # the singular "set" also takes "is").
-    return 'is' if n in (None, 1) else 'are'
-
-
-def _paths_summary(paths):
-    if paths is None:
-        return 'few practical close-game paths'
-    return f'{paths} practical close-game {_plural(paths, "path")}'
+def _margin_headline(pen):
+    # Severity ceiling: with at least one available arm the late-game margin is
+    # thin, not absent. Only when no arm is available at all does the card lean to
+    # the (still non-"zero") "limited clean options" wording.
+    available = pen.get('available_arms_count')
+    if available is not None and available <= 0:
+        return _MARGIN_HEADLINE_LIMITED
+    return _MARGIN_HEADLINE_THIN
 
 
 def _games_phrase(games, noun='game'):
