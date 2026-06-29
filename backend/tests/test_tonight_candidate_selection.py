@@ -10,6 +10,7 @@ COIN completed-game story services.
 """
 
 import inspect as _inspect
+import re
 from datetime import date, datetime
 
 import pytest
@@ -21,6 +22,7 @@ from services.tonight_candidate_selection import (
     build_team_tonight_candidate,
     build_tonight_candidates,
 )
+from services.editorial_voice_contract_v1 import contains_editorial_banned_language
 from utils.db import db
 from models.scheduled_game import ScheduledGame
 import models.pitcher  # noqa: F401
@@ -90,6 +92,24 @@ def _all_text(candidate):
     ]).lower()
 
 
+def _public_text_parts(candidate):
+    story = candidate.get('pregame_story') or {}
+    return [
+        candidate['headline'], candidate['summary'], *candidate['evidence'],
+        *[str(value) for value in story.values()],
+    ]
+
+
+def _assert_public_copy_is_editorial(candidate):
+    for text in _public_text_parts(candidate):
+        assert not contains_editorial_banned_language(text), text
+    blob = ' '.join(_public_text_parts(candidate)).lower()
+    assert 'clean options are limited' not in blob
+    assert 'practical path' not in blob
+    assert 'availability distribution' not in blob
+    assert '0 trusted' not in blob
+
+
 # ── 1 & 16. Empty / not-playing ───────────────────────────────────────────────
 
 def test_returns_empty_when_no_schedule_contexts():
@@ -134,7 +154,9 @@ def test_no_clean_margin_candidate():
     headline = c['headline'].lower()
     assert 'thin late-game margin' in headline
     assert 'almost no' not in headline and 'no clean' not in headline
-    assert 'clean options are limited' in ' '.join(c['evidence']).lower()
+    assert 'late-inning cushion is thin' in ' '.join(c['evidence']).lower()
+    assert 'clean options are limited' not in _all_text(c)
+    assert 'starter exits early' in c['pregame_story']['watch_point'].lower()
 
 
 # ── 5. heavy_recent_workload_with_games_ahead ─────────────────────────────────
@@ -247,12 +269,13 @@ def test_evidence_maps_to_source_facts():
     text = ' '.join(c['evidence'])
     # Clean optionality is described qualitatively, never as an exact count, so it
     # cannot contradict the linked team page's clean-option labels.
-    assert 'Clean options are limited' in text
+    assert 'Late-inning cushion is thin' in text
     assert 'clean bullpen option' not in text
     assert 'Next off day in 3 days' in text
     assert '3 games before the next off day' in text
     # Every evidence bullet is backed by a schedule or bullpen fact (non-empty).
     assert all(isinstance(b, str) and b for b in c['evidence'])
+    _assert_public_copy_is_editorial(c)
 
 
 def test_candidate_includes_pregame_bullpen_watch_story_fields():
@@ -267,10 +290,77 @@ def test_candidate_includes_pregame_bullpen_watch_story_fields():
     assert story['label'] == "Tonight's Bullpen Watch"
     assert story['headline'] == c['headline']
     assert story['team_context'] == "Tonight's schedule has Detroit Tigers at home against Minnesota Twins."
-    assert story['watching'].startswith('BaseballOS is watching')
-    assert story['why_it_matters'].startswith('This matters because')
-    assert story['key_note'] == 'Key bullpen note: clean options include Jason Foley and Alex Lange.'
+    assert story['watching'].startswith('Watch whether')
+    assert not story['why_it_matters'].startswith('This matters because')
+    assert story['key_note'] == 'Key bullpen note: clean late-inning looks include Jason Foley and Alex Lange.'
     assert story['watch_point'].startswith('The key question is')
+
+
+def test_limited_clean_options_render_as_baseball_consequence():
+    c = build_team_tonight_candidate(
+        120, REF,
+        schedule_context=_sc(120, days_until=1, games_until=1),
+        bullpen_context=_pen(clean=0, band='thin', paths=1,
+                             conc='normal', share=30.0,
+                             name='Washington Nationals'))
+
+    assert c['signal_type'] == 'no_clean_margin_tonight'
+    assert 'late-game path has little cushion' in c['summary'].lower()
+    assert 'That ' in c['summary']
+    assert 'clean options are limited' not in _all_text(c)
+    _assert_public_copy_is_editorial(c)
+
+
+def test_starter_exit_bridge_pressure_watch_copy():
+    c = build_team_tonight_candidate(
+        120, REF,
+        schedule_context=_sc(120, days_until=1, games_until=1),
+        bullpen_context=_pen(clean=0, band='thin', paths=1,
+                             conc='normal', share=30.0,
+                             name='Washington Nationals'))
+    story = c['pregame_story']
+
+    assert story['watch_point'] == (
+        'If the starter exits early, watch whether the bridge can cover the '
+        'sixth and seventh before the late arms take over.'
+    )
+    assert 'bridge' in story['why_it_matters'].lower()
+    assert 'That ' in story['why_it_matters']
+
+
+def test_zero_count_prose_protection_for_tonight_watch():
+    pen = _pen(clean=0, band='thin', paths=0,
+               conc='normal', share=30.0,
+               name='Washington Nationals')
+    pen['available_arms_count'] = 0
+    c = build_team_tonight_candidate(
+        120, REF,
+        schedule_context=_sc(120, days_until=1, games_until=1),
+        bullpen_context=pen)
+    text = _all_text(c)
+
+    assert c['headline'] == 'Short late-game cushion tonight'
+    assert not re.search(r'(?<![\w-])0(?![\w-])', text)
+    assert '0 trusted' not in text
+    assert '0 clean' not in text
+    assert '0 practical' not in text
+    assert 'clean options' not in text
+
+
+def test_tonight_watch_structured_fields_are_preserved_after_voice_migration():
+    c = build_team_tonight_candidate(
+        116, REF,
+        schedule_context=_sc(116, days_until=3, games_until=3),
+        bullpen_context=_pen(clean=1, band='thin', paths=3))
+
+    assert set(c) == {
+        'team_id', 'team_name', 'reference_date', 'signal_type', 'signal_family',
+        'headline', 'summary', 'pregame_story', 'evidence', 'schedule_context',
+        'bullpen_context', 'strength', 'limitations',
+    }
+    assert c['schedule_context']['games_until_next_off_day'] == 3
+    assert c['bullpen_context']['clean_options_count'] == 1
+    assert isinstance(c['strength'], int)
 
 
 # ── 12. No prediction / betting / recommendation language ─────────────────────
@@ -291,6 +381,7 @@ def test_copy_contains_no_forbidden_language():
         text = _all_text(c)
         for term in _BANNED:
             assert term not in text, (c['signal_type'], term)
+        _assert_public_copy_is_editorial(c)
 
 
 # ── 13. Missing bullpen fields do not crash ───────────────────────────────────
@@ -476,4 +567,4 @@ def test_workload_card_cites_band_only_when_meaningful():
         bullpen_context=_pen(clean=3, band='flexible', paths=4, conc='narrow',
                              share=52.0, name='Milwaukee Brewers'))
     # A meaningful band ("narrow") is allowed as an evidence bullet.
-    assert any('narrow' in b.lower() for b in c['evidence'])
+    assert any('clustered' in b.lower() for b in c['evidence'])

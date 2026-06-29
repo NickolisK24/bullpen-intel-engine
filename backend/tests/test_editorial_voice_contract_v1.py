@@ -28,7 +28,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 UNMIGRATED_PUBLIC_SURFACE_FILES = (
     'backend/services/what_changed_since_yesterday_copy.py',
-    'backend/services/tonight_candidate_selection.py',
     'backend/story_writers/base_story_writer.py',
     'backend/services/story_writer_v1.py',
     'backend/services/story_feed.py',
@@ -149,11 +148,16 @@ def test_contract_report_documents_migrated_surfaces():
     assert report['plural_aware_matching'] is True
     assert report['count_language']['raw_counts_in_prose'] is False
     assert 'late_inning_margin' in report['consequence_keys']
-    assert report['public_surfaces_migrated'] == ['compare_bullpens']
+    assert report['public_surfaces_migrated'] == ['compare_bullpens', 'todays_watch']
 
 
 def test_compare_bullpens_is_registered_as_first_migrated_surface():
     text = (REPO_ROOT / 'backend/services/bullpen_comparison.py').read_text(encoding='utf-8')
+    assert 'editorial_voice_contract_v1' in text
+
+
+def test_todays_watch_is_registered_as_migrated_surface():
+    text = (REPO_ROOT / 'backend/services/tonight_candidate_selection.py').read_text(encoding='utf-8')
     assert 'editorial_voice_contract_v1' in text
 
 

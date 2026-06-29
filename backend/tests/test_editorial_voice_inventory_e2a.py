@@ -95,11 +95,11 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
     {
         'surface': "Today's Watch",
         'writer_component': 'tonight_candidate_selection -> serve_tonight',
-        'voice_source': 'local pregame card copy helpers',
-        'shared_library': 'no',
-        'hardcoded': 'yes',
-        'uses_editorial_pools': 'no',
-        'voice_system': 'independent',
+        'voice_source': 'editorial_voice_contract_v1 consequence/count helpers plus local watch subjects',
+        'shared_library': 'yes',
+        'hardcoded': 'partial',
+        'uses_editorial_pools': 'yes',
+        'voice_system': 'editorial_voice_contract_v1',
         'files': (
             'backend/services/tonight_candidate_selection.py',
             'backend/services/tonight_intelligence_service.py',
@@ -294,7 +294,6 @@ REQUIRED_PUBLIC_SURFACES = {
 EXPECTED_INDEPENDENT_SYSTEMS = {
     "Homepage Today's Story",
     'What Changed',
-    "Today's Watch",
     'Completed-game stories',
 }
 
@@ -347,6 +346,16 @@ def test_compare_bullpens_inventory_tracks_editorial_voice_migration():
     row = next(
         item for item in PUBLIC_STORY_SURFACE_INVENTORY
         if item['surface'] == 'Compare Bullpens'
+    )
+    assert row['voice_system'] == 'editorial_voice_contract_v1'
+    assert row['shared_library'] == 'yes'
+    assert row['uses_editorial_pools'] == 'yes'
+
+
+def test_todays_watch_inventory_tracks_editorial_voice_migration():
+    row = next(
+        item for item in PUBLIC_STORY_SURFACE_INVENTORY
+        if item['surface'] == "Today's Watch"
     )
     assert row['voice_system'] == 'editorial_voice_contract_v1'
     assert row['shared_library'] == 'yes'

@@ -20,6 +20,11 @@ from __future__ import annotations
 
 import logging
 
+from services.editorial_voice_contract_v1 import (
+    build_comparison_sentence,
+    contains_editorial_banned_language,
+    count_to_baseball_language,
+)
 from services.schedule_context import (
     build_schedule_contexts_for_date,
     build_team_schedule_context,
@@ -48,6 +53,7 @@ _ELEVATED_CONCENTRATION = ('concentrated', 'narrow')
 _INSUFFICIENT = 'insufficient_data'
 PREGAME_STORY_TYPE = 'pregame_bullpen_watch_v1'
 PREGAME_STORY_LABEL = "Tonight's Bullpen Watch"
+VOICE_SURFACE = 'todays_watch'
 
 
 def build_tonight_candidates(reference_date, *, limit=3, schedule_contexts=None,
@@ -141,20 +147,24 @@ def _signal_thin_before_off_day(team_id, team_name, sc, pen, limitations):
 
     evidence = []
     if _clean_is_limited(clean, band):
-        evidence.append(_CLEAN_LIMITED_PHRASE)
+        evidence.append(_LATE_CUSHION_THIN_PHRASE)
     if days is not None:
         evidence.append(f'Next off day in {days} {_plural(days, "day")}')
     if games_until is not None:
         evidence.append(f'{games_until} {_plural(games_until, "game")} before the next off day')
     if band in _THIN_BANDS:
-        evidence.append(f'{band.capitalize()} bullpen optionality')
+        evidence.append(_optionality_evidence(band))
 
     # Team-neutral copy: the card carries team_name separately, so the prose never
     # makes a (often plural) team name the grammatical subject. Clean optionality
     # is described qualitatively (never as an exact count) so the homepage card
     # cannot contradict the linked team page's own clean-option labels.
-    summary = (f'Clean options are limited, '
-               f'with {_games_phrase(games_until)} before the next off day.')
+    summary = _public_sentence(
+        subject='The late-inning cushion is thin',
+        reason=f'the bullpen has {_prose_games_phrase(games_until)} before the next off day',
+        consequence_key='availability_narrowed',
+        stable_parts=('summary', SIGNAL_THIN_BEFORE_OFF_DAY, games_until, band),
+    )
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_SCHEDULE_PRESSURE, signal=SIGNAL_THIN_BEFORE_OFF_DAY,
@@ -181,12 +191,16 @@ def _signal_no_clean_margin(team_id, team_name, sc, pen, limitations):
     # "Clean Option" (status AVAILABLE), so the card never publishes an exact
     # clean/path count, and the headline never uses "no"/"almost no"/"zero"
     # margin language (see _margin_headline for the severity ceiling).
-    evidence = [_CLEAN_LIMITED_PHRASE]
+    evidence = [_LATE_CUSHION_THIN_PHRASE]
     if pen['optionality_band'] in _THIN_BANDS:
-        evidence.append(f"{pen['optionality_band'].capitalize()} bullpen optionality")
+        evidence.append(_optionality_evidence(pen['optionality_band']))
 
-    summary = ('Clean late-game options are limited, with little cushion behind '
-               'the first trusted arm.')
+    summary = _public_sentence(
+        subject='The late-game path has little cushion',
+        reason='the bridge behind the first trusted arm is short',
+        consequence_key='narrow_late_path',
+        stable_parts=('summary', SIGNAL_NO_CLEAN_MARGIN, clean, paths, pen['optionality_band']),
+    )
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_LATE_GAME_PATH, signal=SIGNAL_NO_CLEAN_MARGIN,
@@ -218,18 +232,22 @@ def _signal_heavy_workload_ahead(team_id, team_name, sc, pen, limitations):
         evidence.append(f'Top three relievers at {_round1(share)}% of recent bullpen workload')
     evidence.append(f'{games_next3} {_plural(games_next3, "game")} in the next three days')
     if band in _ELEVATED_CONCENTRATION:
-        evidence.append(f'{band.capitalize()} bullpen workload concentration')
+        evidence.append(_concentration_evidence(band))
     last3 = sc.get('games_played_last_3_days')
     if last3:
         evidence.append(f'{last3} {_plural(last3, "game")} played in the last three days')
 
     if share is not None:
         summary = (f'The top three relievers have handled {_round1(share)}% of recent '
-                   f'bullpen workload, with {_games_phrase(games_next3)} scheduled over '
+                   f'bullpen workload, with {_prose_games_phrase(games_next3)} scheduled over '
                    f'the next three days.')
     else:
-        summary = (f'A {band} bullpen workload faces {_games_phrase(games_next3)} over '
-                   f'the next three days.')
+        summary = _public_sentence(
+            subject='Recent bullpen work is gathered on a smaller group',
+            reason=f'the schedule has {_prose_games_phrase(games_next3)} over the next three days',
+            consequence_key='workload_concentration',
+            stable_parts=('summary', SIGNAL_HEAVY_WORKLOAD_AHEAD, band, games_next3),
+        )
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_WORKLOAD_PRESSURE, signal=SIGNAL_HEAVY_WORKLOAD_AHEAD,
@@ -257,13 +275,13 @@ def _signal_off_day_relief(team_id, team_name, sc, pen, limitations):
 
     evidence = []
     if _clean_is_limited(clean, band):
-        evidence.append(_CLEAN_LIMITED_PHRASE)
+        evidence.append(_LATE_CUSHION_THIN_PHRASE)
     if band in _THIN_BANDS:
-        evidence.append(f'{band.capitalize()} bullpen optionality')
+        evidence.append(_optionality_evidence(band))
     evidence.append('Off day tomorrow' if days == 1 else 'Last game before an off day')
 
-    summary = ('Pressure remains, but the next off day limits how long the '
-               'bullpen has to carry it.')
+    summary = ('The bullpen still has pressure to carry, but the next off day '
+               'creates a reset point after tonight.')
     return _candidate(
         team_id, team_name, sc, pen, limitations,
         family=FAMILY_OFF_DAY_RELIEF, signal=SIGNAL_OFF_DAY_RELIEF,
@@ -427,14 +445,14 @@ def _team_context_sentence(team_name, sc):
 
 def _watching_sentence(signal):
     if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
-        return 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.'
+        return 'Watch whether the bullpen can keep the bridge manageable before the next rest day.'
     if signal == SIGNAL_NO_CLEAN_MARGIN:
-        return 'BaseballOS is watching the late-game path if the game gets tight.'
+        return 'Watch whether the late-game path has enough cushion if the game tightens.'
     if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
-        return 'BaseballOS is watching whether recent bullpen work stays concentrated on the same group.'
+        return 'Watch whether the work spreads beyond the relievers carrying the recent load.'
     if signal == SIGNAL_OFF_DAY_RELIEF:
-        return 'BaseballOS is watching how the bullpen gets through one more game before a reset.'
-    return 'BaseballOS is watching the bullpen context before first pitch.'
+        return 'Watch how directly the bullpen can get to the next rest day.'
+    return 'Watch how the bullpen workload shapes the first pitching change.'
 
 
 def _why_it_matters_sentence(signal, sc, pen):
@@ -447,22 +465,42 @@ def _why_it_matters_sentence(signal, sc, pen):
     # labels. The workload-share branch keeps a number because it is traceable and
     # does not assert a bullpen arm-count the team page would dispute.
     if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
-        return (f'This matters because clean options are limited '
-                f'with {_games_phrase(games_until)} before the next off day.')
+        return _public_sentence(
+            subject='A thin bullpen cushion matters before a rest day',
+            reason=f'the schedule still has {_prose_games_phrase(games_until)} before the next off day',
+            consequence_key='availability_narrowed',
+            stable_parts=('why', signal, games_until),
+        )
     if signal == SIGNAL_NO_CLEAN_MARGIN:
-        return ('This matters because clean late-game options are limited, '
-                'leaving little room if the game stays tight.')
+        return _public_sentence(
+            subject='A tight game asks more from the bridge',
+            reason='the late-game cushion is thin behind the first trusted arm',
+            consequence_key='bridge_pressure',
+            stable_parts=('why', signal),
+        )
     if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
         if share is not None:
-            return (f'This matters because the top three relievers have handled '
-                    f'{_round1(share)}% of recent bullpen workload with '
-                    f'{_games_phrase(games_next3)} scheduled over the next three days.')
-        return (f'This matters because recent bullpen work is concentrated with '
-                f'{_games_phrase(games_next3)} scheduled over the next three days.')
+            return _public_sentence(
+                subject=f'The top three relievers have handled {_round1(share)}% of recent bullpen workload',
+                reason=f'the schedule still has {_prose_games_phrase(games_next3)} over the next three days',
+                consequence_key='workload_concentration',
+                stable_parts=('why', signal, share, games_next3),
+            )
+        return _public_sentence(
+            subject='Recent bullpen work is gathered on a smaller group',
+            reason=f'the schedule still has {_prose_games_phrase(games_next3)} over the next three days',
+            consequence_key='workload_concentration',
+            stable_parts=('why', signal, games_next3),
+        )
     if signal == SIGNAL_OFF_DAY_RELIEF:
-        return ('This matters because pressure is present, but the next off day '
-                'gives the staff a natural reset after tonight.')
-    return 'This matters because bullpen availability can shape how a close game feels late.'
+        return ('The bullpen still has pressure to carry, but the next off day '
+                'gives the staff a natural reset point after tonight.')
+    return _public_sentence(
+        subject='Bullpen availability can shape a close game late',
+        reason='the first pitching change can alter the path to the final outs',
+        consequence_key='no_clear_signal',
+        stable_parts=('why', signal),
+    )
 
 
 def _key_note_sentence(pen):
@@ -473,7 +511,10 @@ def _key_note_sentence(pen):
     # "N limited by recent work" reads as a contradiction (the original defect).
     names = pen.get('clean_workload_option_names') or []
     if names:
-        return f'Key bullpen note: clean options include {_join_names(names[:3])}.'
+        return _safe_public_copy(
+            f'Key bullpen note: clean late-inning looks include {_join_names(names[:3])}.',
+            'Key bullpen note: the late-inning cushion has a named clean look.',
+        )
 
     if not pen.get('context_available'):
         return None
@@ -483,10 +524,10 @@ def _key_note_sentence(pen):
     monitor = pen.get('monitor_arms_count')
     if _clean_is_limited(clean, band):
         if monitor:
-            return 'Key bullpen note: clean options are limited, with arms on watch.'
-        return 'Key bullpen note: clean options are limited.'
+            return 'Key bullpen note: the bridge carries pressure before the late innings, with secondary arms carrying caution.'
+        return 'Key bullpen note: the late-game cushion is thin before the trusted arms.'
     if monitor:
-        return 'Key bullpen note: several arms are on watch.'
+        return 'Key bullpen note: several middle-inning arms carry caution.'
     return None
 
 
@@ -494,7 +535,7 @@ def _watch_point_sentence(signal):
     if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
         return 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.'
     if signal == SIGNAL_NO_CLEAN_MARGIN:
-        return 'The key question is how the shortest part of the bullpen handles the first tight inning.'
+        return 'If the starter exits early, watch whether the bridge can cover the sixth and seventh before the late arms take over.'
     if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
         return 'The key question is whether the middle innings can spread work beyond the relievers carrying the recent load.'
     if signal == SIGNAL_OFF_DAY_RELIEF:
@@ -536,10 +577,10 @@ def _join_parts(parts):
 #      AVAILABLE), so an exact "0 clean options" reads as a direct contradiction.
 #   2. Never let the card's severity exceed the team state. With any available
 #      arm, the headline stays "thin", never "no"/"almost no"/"zero".
-_CLEAN_LIMITED_PHRASE = 'Clean options are limited'
+_LATE_CUSHION_THIN_PHRASE = 'Late-inning cushion is thin'
 
 _MARGIN_HEADLINE_THIN = 'Thin late-game margin tonight'
-_MARGIN_HEADLINE_LIMITED = 'Limited clean options tonight'
+_MARGIN_HEADLINE_LIMITED = 'Short late-game cushion tonight'
 
 
 def _clean_is_limited(clean, band):
@@ -549,12 +590,52 @@ def _clean_is_limited(clean, band):
 
 def _margin_headline(pen):
     # Severity ceiling: with at least one available arm the late-game margin is
-    # thin, not absent. Only when no arm is available at all does the card lean to
-    # the (still non-"zero") "limited clean options" wording.
+    # thin, not absent. Only when no arm is available at all does the card use a
+    # firmer cushion headline without publishing a zero-count claim.
     available = pen.get('available_arms_count')
     if available is not None and available <= 0:
         return _MARGIN_HEADLINE_LIMITED
     return _MARGIN_HEADLINE_THIN
+
+
+def _safe_public_copy(text, fallback):
+    """Fail closed if future Today copy trips the shared banned-language scan."""
+    return fallback if contains_editorial_banned_language(text) else text
+
+
+def _public_sentence(*, subject, reason, stable_parts, consequence_key=None, consequence=None):
+    sentence = build_comparison_sentence(
+        subject=subject,
+        reason=reason,
+        consequence=consequence,
+        consequence_key=consequence_key,
+        stable_parts=(VOICE_SURFACE, *tuple(stable_parts)),
+    )
+    fallback = build_comparison_sentence(
+        subject='The bullpen read stays focused on tonight',
+        reason='the baseball consequence needs to stay clear',
+        consequence='That keeps the watch note tied to the game shape',
+        stable_parts=(VOICE_SURFACE, 'fallback'),
+    )
+    return _safe_public_copy(sentence, fallback)
+
+
+def _optionality_evidence(band):
+    if band == 'thin':
+        return 'Bullpen cushion is thin'
+    if band == 'narrow':
+        return 'Bullpen cushion is narrow'
+    return 'Bullpen cushion is constrained'
+
+
+def _concentration_evidence(band):
+    if band == 'narrow':
+        return 'Recent bullpen work is clustered tightly'
+    return 'Recent bullpen work is clustered on a smaller group'
+
+
+def _prose_games_phrase(games, noun='game'):
+    return count_to_baseball_language(games, noun, _plural(2, noun)) or f'multiple {_plural(2, noun)}'
 
 
 def _games_phrase(games, noun='game'):

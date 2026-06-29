@@ -219,7 +219,7 @@ def test_public_cards_omit_strength_and_include_public_fields(client):
                 'bullpen_context', 'limitations'):
         assert key in card
     assert card['pregame_story']['label'] == "Tonight's Bullpen Watch"
-    assert card['pregame_story']['watching'].startswith('BaseballOS is watching')
+    assert card['pregame_story']['watching'].startswith('Watch ')
 
 
 # ── Public-copy polish: served cards are team-neutral in prose ────────────────

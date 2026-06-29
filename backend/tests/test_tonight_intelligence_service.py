@@ -82,8 +82,8 @@ def test_public_card_omits_strength_and_keeps_public_fields():
         assert key in card
     story = card['pregame_story']
     assert story['label'] == "Tonight's Bullpen Watch"
-    assert story['watching'].startswith('BaseballOS is watching')
-    assert story['why_it_matters'].startswith('This matters because')
+    assert story['watching'].startswith('Watch ')
+    assert not story['why_it_matters'].startswith('This matters because')
     assert story['watch_point'].startswith('The key question is')
 
 
