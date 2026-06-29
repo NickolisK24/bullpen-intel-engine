@@ -1,5 +1,7 @@
 import json
+import re
 
+from services.editorial_voice_contract_v1 import contains_editorial_banned_language
 from services.what_changed_since_yesterday_public import (
     CAPABILITY,
     DEFAULT_PUBLIC_ITEM_LIMIT,
@@ -119,11 +121,14 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'team_id': 1,
             'team_name': 'Alpha Club',
             'team_abbreviation': 'AAA',
-            'public_headline': 'Alpha Club bullpen moved from 2 to 5 rested relievers.',
-            'public_summary': 'Alpha Club has 3 more rested relievers than it had yesterday.',
+            'public_headline': 'The Alpha Club bullpen has more clean ways through a close game.',
+            'public_summary': (
+                'The Alpha Club bullpen has more close-game room because the clean side gained '
+                'three clean ways. That helps bridge the middle innings.'
+            ),
             'public_context': (
-                '3 relievers took on meaningful workload yesterday, but Alpha Club still has more '
-                'rested options than it had before.'
+                'Three relievers took on meaningful workload yesterday because the bullpen still has '
+                'more breathing room than before. That gives the staff more ways to cover tonight.'
             ),
             'yesterday_rested_count': 2,
             'today_rested_count': 5,
@@ -144,7 +149,7 @@ def test_public_payload_uses_plain_baseball_why_it_matters_copy():
     item = result['items'][0]
 
     assert item['public_context']
-    assert 'rested relievers' in item['public_context']
+    assert 'breathing room' in item['public_context']
     assert 'tonight' in item['public_context']
     encoded = json.dumps(item).lower()
     for forbidden in (
@@ -158,8 +163,70 @@ def test_public_payload_uses_plain_baseball_why_it_matters_copy():
         'identity_key',
         'coverage',
         'cleaner paths',
+        'moved from',
+        'rested options',
     ):
         assert forbidden not in encoded
+
+
+def test_public_payload_renders_worsening_movement_as_baseball_consequence():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+    )
+    item = result['items'][0]
+    text = ' '.join([
+        item['public_headline'],
+        item['public_summary'],
+        item['public_context'],
+    ]).lower()
+
+    assert 'late-inning cushion' in text
+    assert 'middle innings' in text or 'bridge' in text
+    assert 'from 5 to 2' not in text
+    assert 'fewer rested' not in text
+
+
+def test_public_payload_zero_count_prose_protection_and_banned_scan():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=3)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=0)],
+    )
+    item = result['items'][0]
+    public_text = ' '.join([
+        item['public_headline'],
+        item['public_summary'],
+        item['public_context'],
+    ])
+
+    assert not re.search(r'(?<![\w-])0(?![\w-])', public_text)
+    assert not contains_editorial_banned_language(public_text)
+    assert 'moved from' not in public_text.lower()
+    assert 'practical path' not in public_text.lower()
+
+
+def test_public_payload_preserves_structured_fields_after_voice_migration():
+    result = build_public(
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+        [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+    )
+    item = result['items'][0]
+
+    assert set(item) == {
+        'key',
+        'team_id',
+        'team_name',
+        'team_abbreviation',
+        'public_headline',
+        'public_summary',
+        'public_context',
+        'yesterday_rested_count',
+        'today_rested_count',
+        'workload_added',
+    }
+    assert item['yesterday_rested_count'] == 2
+    assert item['today_rested_count'] == 5
+    assert item['workload_added'] == []
 
 
 def test_public_payload_sorts_and_limits_workload_added_pitchers():
@@ -276,11 +343,11 @@ def test_public_payload_preserves_card_without_consequence_context_when_absent_o
     )
 
     assert no_consequence['item_count'] == 1
-    assert 'rested relievers' in no_consequence['items'][0]['public_context']
+    assert 'breathing room' in no_consequence['items'][0]['public_context']
     assert unsafe_consequence['item_count'] == 1
-    assert 'rested relievers' in unsafe_consequence['items'][0]['public_context']
+    assert 'breathing room' in unsafe_consequence['items'][0]['public_context']
     assert flagged_consequence['item_count'] == 1
-    assert 'rested relievers' in flagged_consequence['items'][0]['public_context']
+    assert 'breathing room' in flagged_consequence['items'][0]['public_context']
     assert 'should use' not in json.dumps(unsafe_consequence['items']).lower()
 
 

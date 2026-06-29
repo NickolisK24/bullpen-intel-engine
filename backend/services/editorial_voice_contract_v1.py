@@ -381,7 +381,7 @@ def editorial_voice_contract_report() -> dict[str, Any]:
         'consequence_keys': sorted(BASEBALL_CONSEQUENCE_LINES),
         'banned_language_count': len(EDITORIAL_BANNED_LANGUAGE),
         'plural_aware_matching': True,
-        'public_surfaces_migrated': ['compare_bullpens', 'todays_watch'],
+        'public_surfaces_migrated': ['compare_bullpens', 'todays_watch', 'what_changed'],
     }
 
 

@@ -6,6 +6,11 @@ import re
 from typing import Any
 
 from services.bullpen_identity import IDENTITY_LABELS
+from services.editorial_voice_contract_v1 import (
+    build_comparison_sentence,
+    contains_editorial_banned_language,
+    count_to_baseball_language,
+)
 from services.what_changed_since_yesterday import (
     CHANGE_COVERAGE_SAFETY,
     CHANGE_IDENTITY,
@@ -70,6 +75,7 @@ MECHANICAL_PATTERN = re.compile(
     r'\b(increased|decreased|improved|worsened|expanded|narrowed|changed) from\b',
     re.IGNORECASE,
 )
+VOICE_SURFACE = 'what_changed'
 
 
 def _norm(value: Any) -> str:
@@ -135,17 +141,44 @@ def _is_tiny_count_change(change: dict[str, Any] | None) -> bool:
     return change_type == CHANGE_TRUST_STRUCTURE and delta < MEANINGFUL_TRUST_DELTA
 
 
-def _count_phrase(value: int | None) -> str:
-    words = {
-        1: 'one',
-        2: 'two',
-        3: 'three',
-        4: 'four',
-        5: 'five',
-    }
-    if value in words:
-        return words[value]
-    return str(value) if value is not None else 'more'
+def _safe_public_copy(text: str, fallback: str) -> str:
+    """Fail closed if future What Changed copy trips the shared banned scan."""
+    return fallback if contains_editorial_banned_language(text) else text
+
+
+def _public_sentence(
+    *,
+    subject: str,
+    reason: str,
+    stable_parts: tuple[Any, ...],
+    consequence: str | None = None,
+    consequence_key: str | None = None,
+) -> str:
+    sentence = build_comparison_sentence(
+        subject=subject,
+        reason=reason,
+        consequence=consequence,
+        consequence_key=consequence_key,
+        stable_parts=(VOICE_SURFACE, *stable_parts),
+    )
+    fallback = build_comparison_sentence(
+        subject='The bullpen movement stays descriptive',
+        reason='the public read needs a baseball consequence',
+        consequence='That keeps the note tied to the game shape',
+        stable_parts=(VOICE_SURFACE, 'fallback'),
+    )
+    return _safe_public_copy(sentence, fallback)
+
+
+def _count_phrase(value: int | None, singular: str, plural: str | None = None) -> str:
+    phrase = count_to_baseball_language(value, singular, plural)
+    return phrase or f'more {plural or singular}'
+
+
+def _other_shift_phrase(count: int) -> str:
+    if count == 2:
+        return 'two other meaningful shifts'
+    return _count_phrase(count, 'other meaningful shift', 'other meaningful shifts')
 
 
 def _coverage_label(value: Any) -> str:
@@ -161,19 +194,19 @@ def _headline(team_change: dict[str, Any], change: dict[str, Any]) -> str:
     options = {
         (CHANGE_RESTED_OPTIONS, 'increased'): [
             f'The {team} bullpen has more breathing room today.',
-            f'The {team} bullpen has more room than yesterday.',
-            f'The {team} bullpen has a few more paths available.',
+            f'The {team} bullpen has a wider late-inning cushion today.',
+            f'The {team} bullpen has more clean ways through a close game.',
         ],
         (CHANGE_RESTED_OPTIONS, 'decreased'): [
             f'The {team} bullpen has a thinner margin today.',
-            f'The {team} bullpen has fewer clean paths than yesterday.',
+            f'The {team} bullpen has a shorter late-inning cushion today.',
         ],
         (CHANGE_USABLE_DEPTH, 'increased'): [
             f'The {team} bullpen has more ways to cover tonight.',
-            f'The {team} bullpen has more usable depth today.',
+            f'The {team} bullpen has more full-game coverage today.',
         ],
         (CHANGE_USABLE_DEPTH, 'decreased'): [
-            f'The {team} bullpen has fewer paths available today.',
+            f'The {team} bullpen has a shorter full-game route today.',
             f'The {team} bullpen margin is thinner than yesterday.',
         ],
         (CHANGE_COVERAGE_SAFETY, 'improved'): [
@@ -186,11 +219,11 @@ def _headline(team_change: dict[str, Any], change: dict[str, Any]) -> str:
         ],
         (CHANGE_TRUST_STRUCTURE, 'expanded'): [
             f'The trusted group widened for the {team} bullpen.',
-            f'More of the {team} bullpen sits in the trusted layer.',
+            f'The {team} bullpen has a wider late-inning support layer.',
         ],
         (CHANGE_TRUST_STRUCTURE, 'narrowed'): [
             f'The trusted group narrowed for the {team} bullpen.',
-            f'The {team} trusted layer is smaller than yesterday.',
+            f'The {team} late-inning support layer is smaller today.',
         ],
         (CHANGE_RESOURCE_HEALTH, 'improved'): [
             f'The {team} bullpen has a healthier resource picture today.',
@@ -201,11 +234,11 @@ def _headline(team_change: dict[str, Any], change: dict[str, Any]) -> str:
             f'The {team} bullpen has less margin today.',
         ],
         (CHANGE_IDENTITY, 'changed'): [
-            f'The {team} bullpen has a different shape today.',
-            f'The broader {team} bullpen picture looks different today.',
+            f'The {team} bullpen route reads differently today.',
+            f'The {team} bullpen has a new close-game shape today.',
         ],
     }.get((change_type, direction), [
-        f'The {team} bullpen looks different from yesterday.',
+        f'The {team} bullpen route reads differently today.',
     ])
     return options[_variant_index(team_change, change, len(options))]
 
@@ -216,128 +249,164 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
     direction = change.get('change_direction')
     previous, current = _values(change)
     delta = _count_delta(change)
-    delta_phrase = _count_phrase(delta)
+    clean_delta = _count_phrase(delta, 'clean way', 'clean ways')
+    coverage_delta = _count_phrase(delta, 'coverage route', 'coverage routes')
+    support_delta = _count_phrase(delta, 'support arm', 'support arms')
 
     if change_type == CHANGE_RESTED_OPTIONS:
         if direction == 'increased':
             options = [
-                (
-                    f'For the {team} bullpen, rested options moved from {previous} to '
-                    f'{current}, giving the group {delta_phrase} more usable paths than '
-                    'yesterday.'
+                _public_sentence(
+                    subject=f'The {team} bullpen has more breathing room',
+                    reason=f'{clean_delta} came back into the usable group',
+                    consequence='That gives the staff more ways through a close game',
+                    stable_parts=(team, change_type, direction, 'a', delta),
                 ),
-                (
-                    f'The rested count moved from {previous} to {current}, opening '
-                    f'{delta_phrase} more ways to cover the game.'
+                _public_sentence(
+                    subject='The late-inning cushion is wider',
+                    reason=f'the clean side has {clean_delta} back',
+                    consequence='That leaves more room for the biggest outs',
+                    stable_parts=(team, change_type, direction, 'b', delta),
                 ),
-                (
-                    f"Yesterday's {previous} rested options became {current}, so there is "
-                    'more room around the edges.'
+                _public_sentence(
+                    subject=f'The {team} bullpen has more close-game room',
+                    reason=f'the clean side gained {clean_delta}',
+                    consequence='That helps bridge the middle innings',
+                    stable_parts=(team, change_type, direction, 'c', delta),
                 ),
-                (
-                    f'The bullpen went from {previous} rested options to {current}, adding '
-                    f'{delta_phrase} cleaner paths than yesterday.'
+                _public_sentence(
+                    subject='The bullpen has a wider close-game lane',
+                    reason=f'{clean_delta} returned to the usable group',
+                    consequence='That adds margin before the biggest outs',
+                    stable_parts=(team, change_type, direction, 'd', delta),
                 ),
-                (
-                    f'There are {current} rested options after {previous} yesterday, giving '
-                    'the bullpen more margin.'
+                _public_sentence(
+                    subject=f'The {team} bullpen has more middle-inning cover',
+                    reason=f'the usable group gained {clean_delta}',
+                    consequence='That widens the route to the late arms',
+                    stable_parts=(team, change_type, direction, 'e', delta),
+                ),
+                _public_sentence(
+                    subject='The path to the late innings has more room',
+                    reason=f'the bullpen gained {clean_delta}',
+                    consequence='That gives the staff more choices in a tight game',
+                    stable_parts=(team, change_type, direction, 'f', delta),
                 ),
             ]
             return options[_variant_index(team_change, change, len(options))]
         options = [
-            (
-                f'For the {team} bullpen, rested options moved from {previous} to '
-                f'{current}, leaving {delta_phrase} fewer clean paths than yesterday.'
+            _public_sentence(
+                subject=f'The {team} bullpen has a thinner late-inning cushion',
+                reason=f'the usable group lost {clean_delta}',
+                consequence='That puts more weight on the bridge before the trusted arms',
+                stable_parts=(team, change_type, direction, 'a', delta),
             ),
-            (
-                f'The rested count slipped from {previous} to {current}, so the bullpen '
-                'has less room around the edges.'
+            _public_sentence(
+                subject='The close-game route is tighter',
+                reason=f'the clean side lost {clean_delta}',
+                consequence='That leaves less margin before the late innings',
+                stable_parts=(team, change_type, direction, 'b', delta),
             ),
-            (
-                f"Yesterday's {previous} rested options became {current}, tightening the "
-                'available paths for this bullpen.'
-            ),
-            (
-                f'The bullpen went from {previous} rested options to {current}, removing '
-                f'{delta_phrase} cleaner paths from yesterday.'
-            ),
-            (
-                f'There are {current} rested options after {previous} yesterday, leaving '
-                'less margin around the edges.'
+            _public_sentence(
+                subject='The bullpen has less breathing room around the edges',
+                reason=f'the usable group no longer has {clean_delta}',
+                consequence='That makes the middle innings matter more',
+                stable_parts=(team, change_type, direction, 'c', delta),
             ),
         ]
         return options[_variant_index(team_change, change, len(options))]
 
     if change_type == CHANGE_USABLE_DEPTH:
         if direction == 'increased':
-            return (
-                f'Usable bullpen depth moved from {previous} to {current}, creating '
-                f'{delta_phrase} more paths through the game.'
+            return _public_sentence(
+                subject='The bullpen has more full-game coverage',
+                reason=f'{coverage_delta} opened',
+                consequence='That helps if the starter exits early',
+                stable_parts=(team, change_type, direction, delta),
             )
-        return (
-            f'Usable bullpen depth moved from {previous} to {current}, leaving fewer '
-            'ways to cover a full game.'
+        return _public_sentence(
+            subject='The full-game route is shorter than yesterday',
+            reason=f'{coverage_delta} dropped out of the usable group',
+            consequence='That makes the bridge to the late arms more important',
+            stable_parts=(team, change_type, direction, delta),
         )
 
     if change_type == CHANGE_COVERAGE_SAFETY:
         previous_label = _coverage_label(previous)
         current_label = _coverage_label(current)
         if direction == 'improved':
-            return (
-                f'Coverage moved from {previous_label} to {current_label}, giving the '
-                'bullpen more room if the game stretches.'
+            return _public_sentence(
+                subject='The coverage picture is sturdier than yesterday',
+                reason=f'the read shifted out of {previous_label} territory toward {current_label}',
+                consequence='That gives the bullpen more room if the game stretches',
+                stable_parts=(team, change_type, direction, previous_label, current_label),
             )
-        return (
-            f'Coverage slipped from {previous_label} to {current_label}, leaving less '
-            'room if the game stretches.'
+        return _public_sentence(
+            subject='The coverage picture is tighter than yesterday',
+            reason=f'the read shifted from {previous_label} toward {current_label}',
+            consequence='That leaves less margin if the game stretches',
+            stable_parts=(team, change_type, direction, previous_label, current_label),
         )
 
     if change_type == CHANGE_TRUST_STRUCTURE:
         if direction == 'expanded':
-            return (
-                f'The trusted group moved from {previous} to {current}, so more of the '
-                'bullpen can support the late innings than yesterday.'
+            return _public_sentence(
+                subject='The late-inning support layer is wider',
+                reason=f'the trusted side added {support_delta}',
+                consequence='That gives the staff more ways to reach the biggest outs',
+                stable_parts=(team, change_type, direction, delta),
             )
-        return (
-            f'The trusted group moved from {previous} to {current}, making the late-inning '
-            'support layer smaller than yesterday.'
+        return _public_sentence(
+            subject='The late-inning support layer is narrower',
+            reason=f'the trusted side lost {support_delta}',
+            consequence='That puts more pressure on the bridge before the biggest outs',
+            stable_parts=(team, change_type, direction, delta),
         )
 
     if change_type == CHANGE_RESOURCE_HEALTH:
         if direction == 'improved':
-            return (
-                f'Resource health moved from {previous} to {current}, giving the bullpen '
-                'more flexibility than yesterday.'
+            return _public_sentence(
+                subject='The bullpen has more breathing room than yesterday',
+                reason='the resource picture is less tight',
+                consequence='That gives the staff more ways to cover tonight',
+                stable_parts=(team, change_type, direction, previous, current),
             )
-        return (
-            f'Resource health moved from {previous} to {current}, leaving less flexibility '
-            'around the edges.'
+        return _public_sentence(
+            subject='The bullpen margin tightened from yesterday',
+            reason='the resource picture is more constrained',
+            consequence='That leaves less room around the middle innings',
+            stable_parts=(team, change_type, direction, previous, current),
         )
 
     if change_type == CHANGE_IDENTITY:
-        return (
-            'The broader bullpen shape moved enough to read differently from the prior '
-            'snapshot.'
+        return _public_sentence(
+            subject='The close-game route changed',
+            reason='the broader shape no longer matches yesterday',
+            consequence='That changes the path to the final outs',
+            stable_parts=(team, change_type, direction),
         )
 
-    return str(change.get('change_summary') or '').strip()
+    return _safe_public_copy(
+        str(change.get('change_summary') or '').strip(),
+        'The bullpen route changed enough to affect the close-game shape.',
+    )
 
 
 def _secondary_phrase(change: dict[str, Any]) -> str:
     change_type = change.get('change_type')
     direction = change.get('change_direction')
     phrases = {
-        (CHANGE_RESTED_OPTIONS, 'increased'): 'rested depth also improved',
-        (CHANGE_RESTED_OPTIONS, 'decreased'): 'rested depth also tightened',
-        (CHANGE_USABLE_DEPTH, 'increased'): 'usable depth also widened',
-        (CHANGE_USABLE_DEPTH, 'decreased'): 'usable depth also narrowed',
+        (CHANGE_RESTED_OPTIONS, 'increased'): 'the late-inning cushion also widened',
+        (CHANGE_RESTED_OPTIONS, 'decreased'): 'the late-inning cushion also tightened',
+        (CHANGE_USABLE_DEPTH, 'increased'): 'full-game coverage also widened',
+        (CHANGE_USABLE_DEPTH, 'decreased'): 'full-game coverage also narrowed',
         (CHANGE_COVERAGE_SAFETY, 'improved'): 'coverage also stabilized',
         (CHANGE_COVERAGE_SAFETY, 'worsened'): 'coverage also tightened',
-        (CHANGE_TRUST_STRUCTURE, 'expanded'): 'the trusted group also widened',
-        (CHANGE_TRUST_STRUCTURE, 'narrowed'): 'the trusted group also narrowed',
-        (CHANGE_RESOURCE_HEALTH, 'improved'): 'resource health also improved',
-        (CHANGE_RESOURCE_HEALTH, 'worsened'): 'resource health also tightened',
-        (CHANGE_IDENTITY, 'changed'): 'the broader bullpen shape also changed',
+        (CHANGE_TRUST_STRUCTURE, 'expanded'): 'late-inning support also widened',
+        (CHANGE_TRUST_STRUCTURE, 'narrowed'): 'late-inning support also narrowed',
+        (CHANGE_RESOURCE_HEALTH, 'improved'): 'the bullpen margin also improved',
+        (CHANGE_RESOURCE_HEALTH, 'worsened'): 'the bullpen margin also tightened',
+        (CHANGE_IDENTITY, 'changed'): 'the broader close-game route also changed',
     }
     return phrases.get((change_type, direction), 'another bullpen detail also changed')
 
@@ -357,7 +426,7 @@ def _context(
     if len(secondary) == 1:
         return f'There is another meaningful shift here: {phrase}.'
     return (
-        f'There are {len(secondary)} other meaningful shifts here, including '
+        f'There are {_other_shift_phrase(len(secondary))} here, including '
         f'{phrase}.'
     )
 
@@ -408,6 +477,8 @@ def _copy_flags(
         flags.append(COPY_FLAG_RAW_SCORE_LEAK)
     if _identity_label_leaked(text):
         flags.append(COPY_FLAG_IDENTITY_LABEL_LEAK)
+    if contains_editorial_banned_language(text):
+        flags.append(COPY_FLAG_TOO_MECHANICAL)
 
     return flags
 

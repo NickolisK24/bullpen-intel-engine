@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.editorial_voice_contract_v1 import (
+    build_comparison_sentence,
+    contains_editorial_banned_language,
+    count_to_baseball_language,
+)
 from services.what_changed_since_yesterday import (
     STATUS_AVAILABLE,
     build_what_changed_since_yesterday_payload,
@@ -18,6 +23,7 @@ from services.what_changed_since_yesterday_copy import (
 CAPABILITY = 'what_changed_since_yesterday_public_v1'
 DEFAULT_PUBLIC_ITEM_LIMIT = 6
 PUBLIC_WORKLOAD_ADDED_LIMIT = 3
+VOICE_SURFACE = 'what_changed_public'
 
 
 def _public_top_change(changes: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -131,19 +137,47 @@ def _public_workload_added(workload_team: dict[str, Any] | None) -> list[dict[st
     )[:PUBLIC_WORKLOAD_ADDED_LIMIT]
 
 
-def _rested_label(count: int | None) -> str:
-    if count is None:
-        return 'rested relievers'
-    noun = 'reliever' if count == 1 else 'relievers'
-    return f'{count} rested {noun}'
+def _safe_public_copy(text: str, fallback: str) -> str:
+    """Fail closed if future public context trips the shared banned scan."""
+    return fallback if contains_editorial_banned_language(text) else text
+
+
+def _prose_count(count: int | None, singular: str, plural: str | None = None) -> str:
+    phrase = count_to_baseball_language(count, singular, plural)
+    return phrase or f'a few {plural or singular}'
+
+
+def _public_sentence(
+    *,
+    subject: str,
+    reason: str,
+    consequence: str,
+    stable_parts: tuple[Any, ...],
+) -> str:
+    sentence = build_comparison_sentence(
+        subject=subject,
+        reason=reason,
+        consequence=consequence,
+        stable_parts=(VOICE_SURFACE, *stable_parts),
+    )
+    fallback = build_comparison_sentence(
+        subject='The bullpen movement stays descriptive',
+        reason='the public read needs a baseball consequence',
+        consequence='That keeps the note tied to the game shape',
+        stable_parts=(VOICE_SURFACE, 'fallback'),
+    )
+    return _safe_public_copy(sentence, fallback)
 
 
 def _public_headline(team_name: str, counts: dict[str, int | None]) -> str:
     yesterday = counts.get('yesterday_rested_count')
     today = counts.get('today_rested_count')
     if yesterday is not None and today is not None:
-        return f'{team_name} bullpen moved from {yesterday} to {today} rested relievers.'
-    return f'{team_name} bullpen movement from yesterday.'
+        if today < yesterday:
+            return f'{team_name} has a thinner late-inning cushion today.'
+        if today > yesterday:
+            return f'{team_name} has more bullpen breathing room today.'
+    return f'{team_name} bullpen route is steady today.'
 
 
 def _public_summary(team_name: str, counts: dict[str, int | None]) -> str:
@@ -152,14 +186,22 @@ def _public_summary(team_name: str, counts: dict[str, int | None]) -> str:
     if yesterday is None or today is None:
         return f'{team_name} has a bullpen change in the current comparison.'
     if today < yesterday:
-        lost = yesterday - today
-        noun = 'reliever' if lost == 1 else 'relievers'
-        return f'{team_name} has {lost} fewer rested {noun} than it had yesterday.'
+        lost = _prose_count(yesterday - today, 'clean way', 'clean ways')
+        return _public_sentence(
+            subject=f'{team_name} has a thinner late-inning cushion',
+            reason=f'the usable group lost {lost}',
+            consequence='That puts more weight on the middle innings',
+            stable_parts=(team_name, 'summary', 'down', yesterday, today),
+        )
     if today > yesterday:
-        gained = today - yesterday
-        noun = 'reliever' if gained == 1 else 'relievers'
-        return f'{team_name} has {gained} more rested {noun} than it had yesterday.'
-    return f'{team_name} still has {_rested_label(today)} today.'
+        gained = _prose_count(today - yesterday, 'clean way', 'clean ways')
+        return _public_sentence(
+            subject=f'{team_name} has more breathing room than yesterday',
+            reason=f'the usable group gained {gained}',
+            consequence='That creates more ways through a close game',
+            stable_parts=(team_name, 'summary', 'up', yesterday, today),
+        )
+    return f'{team_name} still has a steady bullpen route today.'
 
 
 def _public_why_it_matters(
@@ -171,31 +213,42 @@ def _public_why_it_matters(
     today = counts.get('today_rested_count')
     workload_count = len(workload_added)
     if workload_count > 0 and yesterday is not None and today is not None:
-        noun = 'reliever' if workload_count == 1 else 'relievers'
+        relievers = _prose_count(workload_count, 'reliever', 'relievers')
+        relievers_subject = relievers[:1].upper() + relievers[1:]
         if today < yesterday:
-            return (
-                f'{workload_count} {noun} carried meaningful workload yesterday, '
-                'leaving fewer rested options for tonight.'
+            return _public_sentence(
+                subject=f'{relievers_subject} carried meaningful workload yesterday',
+                reason='the late-inning cushion is thinner tonight',
+                consequence='That makes the middle innings matter more',
+                stable_parts=(team_name, 'context', 'workload_down', workload_count, yesterday, today),
             )
         if today > yesterday:
-            return (
-                f'{workload_count} {noun} took on meaningful workload yesterday, '
-                f'but {team_name} still has more rested options than it had before.'
+            return _public_sentence(
+                subject=f'{relievers_subject} took on meaningful workload yesterday',
+                reason='the bullpen still has more breathing room than before',
+                consequence='That gives the staff more ways to cover tonight',
+                stable_parts=(team_name, 'context', 'workload_up', workload_count, yesterday, today),
             )
-        return (
-            f'{workload_count} {noun} took on meaningful workload yesterday, '
-            'so tonight depends more on the relievers who did not pitch.'
+        return _public_sentence(
+            subject=f'{relievers_subject} took on meaningful workload yesterday',
+            reason='the clean group held steady overall',
+            consequence='That shifts the watch to the arms who did not pitch',
+            stable_parts=(team_name, 'context', 'workload_flat', workload_count, today),
         )
     if yesterday is not None and today is not None:
         if today < yesterday:
-            return (
-                'The bullpen has fewer rested relievers than it had yesterday, '
-                'leaving less margin for tonight.'
+            return _public_sentence(
+                subject='The late-inning cushion is thinner than yesterday',
+                reason='the usable group has less room',
+                consequence='That makes the middle innings matter more',
+                stable_parts=(team_name, 'context', 'down', yesterday, today),
             )
         if today > yesterday:
-            return (
-                'The bullpen has more rested relievers than it had yesterday, '
-                'creating more room for tonight.'
+            return _public_sentence(
+                subject='The bullpen has more breathing room than yesterday',
+                reason='the usable group has more room',
+                consequence='That creates more ways through a close game tonight',
+                stable_parts=(team_name, 'context', 'up', yesterday, today),
             )
     return 'No meaningful bullpen movement stands out for this club in the current comparison.'
 
@@ -228,8 +281,8 @@ def _public_item(
         'team_id': team_change.get('team_id'),
         'team_name': team_change.get('team_name'),
         'team_abbreviation': team_change.get('team_abbreviation'),
-        'public_headline': _public_headline(team_name, counts),
-        'public_summary': _public_summary(team_name, counts),
+        'public_headline': copy.get('public_headline') or _public_headline(team_name, counts),
+        'public_summary': copy.get('public_summary') or _public_summary(team_name, counts),
         'public_context': _public_why_it_matters(team_name, counts, workload_added),
         'yesterday_rested_count': counts.get('yesterday_rested_count'),
         'today_rested_count': counts.get('today_rested_count'),

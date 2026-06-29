@@ -183,7 +183,8 @@ def test_review_does_not_select_tiny_capacity_change_over_structural_change():
     assert team['public_copy_generated'] is True
     assert team['public_headline']
     assert team['public_summary'] == (
-        'Coverage moved from thin to stable, giving the bullpen more room if the game stretches.'
+        'The coverage picture is sturdier than yesterday because the read shifted out of thin '
+        'territory toward stable. That gives the bullpen more room if the game stretches.'
     )
     assert team['public_context'] is None
     assert team['copy_review_flags'] == []

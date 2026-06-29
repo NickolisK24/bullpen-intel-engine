@@ -80,11 +80,11 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
     {
         'surface': 'What Changed',
         'writer_component': 'build_what_changed_public_copy',
-        'voice_source': 'local headline, summary, and context pools',
-        'shared_library': 'no',
-        'hardcoded': 'yes',
+        'voice_source': 'editorial_voice_contract_v1 consequence/count helpers plus local movement subjects',
+        'shared_library': 'yes',
+        'hardcoded': 'partial',
         'uses_editorial_pools': 'yes',
-        'voice_system': 'independent',
+        'voice_system': 'editorial_voice_contract_v1',
         'files': (
             'backend/services/what_changed_since_yesterday_copy.py',
             'backend/services/what_changed_since_yesterday_public.py',
@@ -293,7 +293,6 @@ REQUIRED_PUBLIC_SURFACES = {
 
 EXPECTED_INDEPENDENT_SYSTEMS = {
     "Homepage Today's Story",
-    'What Changed',
     'Completed-game stories',
 }
 
@@ -356,6 +355,16 @@ def test_todays_watch_inventory_tracks_editorial_voice_migration():
     row = next(
         item for item in PUBLIC_STORY_SURFACE_INVENTORY
         if item['surface'] == "Today's Watch"
+    )
+    assert row['voice_system'] == 'editorial_voice_contract_v1'
+    assert row['shared_library'] == 'yes'
+    assert row['uses_editorial_pools'] == 'yes'
+
+
+def test_what_changed_inventory_tracks_editorial_voice_migration():
+    row = next(
+        item for item in PUBLIC_STORY_SURFACE_INVENTORY
+        if item['surface'] == 'What Changed'
     )
     assert row['voice_system'] == 'editorial_voice_contract_v1'
     assert row['shared_library'] == 'yes'
