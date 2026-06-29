@@ -1017,11 +1017,6 @@ function TonightSection({
   staleWithError,
   onRetry,
   dashboard,
-  leadStory,
-  dashboardLoading,
-  dashboardError,
-  dashboardStaleWithError,
-  onRetryDashboard,
 }) {
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanTonightList(tonight?.limitations)
@@ -1029,12 +1024,8 @@ function TonightSection({
   const slateDate = textValue(tonight?.reference_date)
   const dataThrough = textValue(freshness?.data_through)
   const lastSync = textValue(freshness?.last_successful_sync)
-  const fallbackItems = getAroundBaseballItems(dashboard, leadStory)
-  const canShowFallback = !loading && (
-    fallbackItems.length > 0 ||
-    (dashboardLoading && !dashboard) ||
-    (dashboardStaleWithError && dashboard)
-  )
+  const snapshotUnavailable = textValue(tonight?.empty_reason) === 'tonight_snapshot_unavailable'
+  const showUnavailable = Boolean(error && !tonight) || snapshotUnavailable
 
   if (loading && !tonight) {
     return (
@@ -1092,19 +1083,6 @@ function TonightSection({
     )
   }
 
-  if (canShowFallback) {
-    return (
-      <AroundBaseball
-        dashboard={dashboard}
-        leadStory={leadStory}
-        loading={dashboardLoading}
-        error={dashboardError}
-        staleWithError={dashboardStaleWithError}
-        onRetry={onRetryDashboard}
-      />
-    )
-  }
-
   return (
     <SectionShell
       id="tonight"
@@ -1119,7 +1097,7 @@ function TonightSection({
           lastSync={lastSync}
         />
       )}
-      <TonightEmptyState isError={Boolean(error && !tonight)} onRetry={onRetry} />
+      <TonightEmptyState isError={showUnavailable} onRetry={onRetry} />
     </SectionShell>
   )
 }
@@ -1280,13 +1258,8 @@ export function IntelligenceSurfaceView({
   landscapeStaleWithError = false,
   onRetryLandscape,
   dashboard = null,
-  dashboardLoading = false,
-  dashboardError = null,
-  dashboardStaleWithError = false,
-  onRetryDashboard,
   teams = [],
 }) {
-  const leadStory = getLeadStoryView(intelligence, teams)
   const pageFreshness = dashboardFreshness(dashboard)
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
@@ -1308,11 +1281,6 @@ export function IntelligenceSurfaceView({
         staleWithError={tonightStaleWithError}
         onRetry={onRetryTonight}
         dashboard={dashboard}
-        leadStory={leadStory}
-        dashboardLoading={dashboardLoading}
-        dashboardError={dashboardError}
-        dashboardStaleWithError={dashboardStaleWithError}
-        onRetryDashboard={onRetryDashboard}
       />
       <BullpenPicture
         landscape={landscape}

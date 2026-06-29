@@ -3,9 +3,11 @@
 The Tonight cards are expensive to build on demand (schedule contexts for every
 team, a bullpen context per playing team, candidate selection, envelope shaping).
 This caches the finished public ``GET /api/bullpen/intelligence/tonight`` response
-per slate and serves it back quickly, falling back to live generation when no
-snapshot exists. The served payload is exactly what the builder produces, so the
-public response contract is unchanged either way.
+per slate and serves it back quickly. Callers that can afford the work may fall
+back to live generation when no snapshot exists; public serving paths can opt
+out so a cache miss never turns into a long synchronous homepage request. The
+served payload is exactly what the builder produces when a snapshot or live
+build is available.
 
 Mirrors the Intelligence Surface snapshot layer. Nothing here changes candidate
 selection, signals, or copy — it only caches the builder's output. Pregame and
@@ -32,16 +34,20 @@ TONIGHT_SNAPSHOT_VERSION = 'tonight_v1'
 
 SERVED_FROM_SNAPSHOT = 'snapshot'
 SERVED_FROM_ON_DEMAND = 'on_demand'
+SERVED_FROM_SNAPSHOT_MISS = 'snapshot_miss'
+EMPTY_SNAPSHOT_UNAVAILABLE = 'tonight_snapshot_unavailable'
 
 
 def serve_tonight_cached(reference_date=None, *, current_date=None, limit=None,
-                         persist=True):
+                         persist=True, build_on_miss=True):
     """Cache-aware entry point for the Tonight endpoint.
 
     Resolves the slate (the product current day by default), returns a stored
     snapshot when one exists for that date, otherwise builds live and (best
-    effort) stores the result. Must run inside an app context. Returns the public
-    envelope — identical shape whether served from snapshot or built on demand.
+    effort) stores the result when ``build_on_miss`` is true. Public request
+    paths can pass ``build_on_miss=False`` to return a bounded empty envelope
+    instead of performing the expensive live build. Must run inside an app
+    context. Returns the public envelope.
     """
     start = perf_counter()
     ref = _resolve_reference_date(reference_date, current_date)
@@ -50,6 +56,11 @@ def serve_tonight_cached(reference_date=None, *, current_date=None, limit=None,
     if cached is not None:
         _log_timing(SERVED_FROM_SNAPSHOT, cached, start)
         return cached
+
+    if not build_on_miss:
+        response = _snapshot_unavailable_response(ref)
+        _log_timing(SERVED_FROM_SNAPSHOT_MISS, response, start)
+        return response
 
     build_kwargs = {} if limit is None else {'limit': limit}
     response = serve_tonight(ref, **build_kwargs)
@@ -137,6 +148,18 @@ def _safe_write_snapshot(response, *, source):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _snapshot_unavailable_response(reference_date):
+    ref = _as_date(reference_date)
+    return {
+        'status': 'empty',
+        'reference_date': ref.isoformat() if ref is not None else None,
+        'cards': [],
+        'card_count': 0,
+        'empty_reason': EMPTY_SNAPSHOT_UNAVAILABLE,
+        'limitations': ['Tonight snapshot is not available yet.'],
+    }
+
 
 def _resolve_reference_date(reference_date, current_date):
     if reference_date is not None:

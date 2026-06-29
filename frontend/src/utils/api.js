@@ -11,6 +11,7 @@ import { getOrCreateProductAnonId } from './productIdentity'
 const BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api'
+const TONIGHT_INTELLIGENCE_TIMEOUT_MS = 12000
 
 export const AUTH_TOKEN_STORAGE_KEY = 'baseballos.authToken'
 export const AUTH_TOKEN_CHANGED_EVENT = 'baseballos:auth-token-changed'
@@ -644,7 +645,12 @@ function buildQuery(params = {}) {
 }
 
 async function request(path, options = {}) {
-  const { silent = false, authToken: _authToken, ...fetchOptions } = options
+  const {
+    silent = false,
+    authToken: _authToken,
+    timeoutMs = 0,
+    ...fetchOptions
+  } = options
   const { headers, token } = buildRequestHeaders(options)
   const method = String(options.method || 'GET').toUpperCase()
   const dedupeKey = method === 'GET' && !options.body
@@ -655,8 +661,21 @@ async function request(path, options = {}) {
   }
 
   const requestPromise = (async () => {
+    const timeoutDuration = Number(timeoutMs)
+    const shouldTimeout = Number.isFinite(timeoutDuration)
+      && timeoutDuration > 0
+      && typeof AbortController !== 'undefined'
+      && !fetchOptions.signal
+    const controller = shouldTimeout ? new AbortController() : null
+    const requestOptions = controller
+      ? { ...fetchOptions, signal: controller.signal }
+      : fetchOptions
+    let timeoutId = null
     try {
-      const res = await fetch(`${BASE}${path}`, { ...fetchOptions, headers })
+      if (controller) {
+        timeoutId = setTimeout(() => controller.abort(), timeoutDuration)
+      }
+      const res = await fetch(`${BASE}${path}`, { ...requestOptions, headers })
       if (!res.ok) {
         if (res.status === 401) clearAuthToken()
         const error = new Error(`API ${res.status}: ${res.statusText}`)
@@ -665,9 +684,16 @@ async function request(path, options = {}) {
       }
       return await res.json()
     } catch (err) {
-      if (!silent) console.error(`[API] ${path}`, err)
-      throw err
+      const requestError = controller && err?.name === 'AbortError'
+        ? Object.assign(
+          new Error(`API request timed out after ${timeoutDuration}ms`),
+          { status: 'timeout' },
+        )
+        : err
+      if (!silent) console.error(`[API] ${path}`, requestError)
+      throw requestError
     } finally {
+      if (timeoutId) clearTimeout(timeoutId)
       if (dedupeKey) {
         inFlightGetRequests.delete(dedupeKey)
       }
@@ -840,8 +866,11 @@ export const getTodayIntelligence = (params = {}) => (
   request(`/bullpen/intelligence/today${buildQuery(params)}`)
 )
 // Intelligence Surface — pregame bullpen cards for the homepage Tonight rail.
-export const getTonightIntelligence = (params = {}) => (
-  request(`/bullpen/intelligence/tonight${buildQuery(params)}`)
+export const getTonightIntelligence = (params = {}, options = {}) => (
+  request(`/bullpen/intelligence/tonight${buildQuery(params)}`, {
+    timeoutMs: TONIGHT_INTELLIGENCE_TIMEOUT_MS,
+    ...options,
+  })
 )
 // Game context for one team, derived from stored game logs only.
 export const getTeamGameContext = (teamId) => request(`/bullpen/teams/${teamId}/game-context`)

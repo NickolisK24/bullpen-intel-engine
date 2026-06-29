@@ -153,6 +153,26 @@ def test_empty_response_is_cached(app):
         assert again == out
 
 
+def test_snapshot_only_miss_returns_empty_without_live_build(app, monkeypatch):
+    built = {'called': False}
+
+    def _track_build(*a, **k):
+        built['called'] = True
+        raise AssertionError('snapshot-only serving must not build live')
+
+    monkeypatch.setattr(snap, 'serve_tonight', _track_build)
+
+    with app.app_context():
+        out = serve_tonight_cached(REF, build_on_miss=False)
+
+    assert out['status'] == 'empty'
+    assert out['empty_reason'] == snap.EMPTY_SNAPSHOT_UNAVAILABLE
+    assert out['cards'] == []
+    assert out['card_count'] == 0
+    assert out['limitations'] == ['Tonight snapshot is not available yet.']
+    assert built['called'] is False
+
+
 # ── Write failure does not break serving ──────────────────────────────────────
 
 def test_write_failure_does_not_fail_serving(app, monkeypatch):

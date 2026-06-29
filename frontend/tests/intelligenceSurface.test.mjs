@@ -171,20 +171,20 @@ const tonightOk = {
       team_name: 'Chicago Cubs',
       team_abbreviation: 'CHC',
       headline: 'Cubs have a narrow late-game path before first pitch',
-      summary: 'Chicago has 2 clean bullpen paths available with another game on the schedule tonight.',
+      summary: 'Chicago has a narrow set of clean bullpen paths with another game on the schedule tonight.',
       pregame_story: {
         story_type: 'pregame_bullpen_watch_v1',
         label: "Tonight's Bullpen Watch",
         headline: 'Narrow bullpen margin before first pitch',
         team_context: "Tonight's schedule has Chicago Cubs at home against Milwaukee Brewers.",
         watching: 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.',
-        why_it_matters: 'This matters because two clean bullpen paths are available with five games before the next off day.',
-        key_note: 'Key bullpen note: 3 rested-enough arms, 1 on watch, and 2 limited by recent work.',
+        why_it_matters: 'This matters because clean options are limited with a long stretch before the next off day.',
+        key_note: 'Key bullpen note: clean options are limited, with several arms on watch after recent work.',
         watch_point: 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.',
       },
       evidence: [
-        'Clean options: 2',
-        'Games before next off day: 5',
+        'Clean options are limited',
+        'Long stretch before the next off day',
       ],
       limitations: [],
       signal_family: 'schedule_pressure',
@@ -204,13 +204,13 @@ const tonightOk = {
         headline: 'Late-game path worth monitoring',
         team_context: "Tonight's schedule has San Francisco Giants on the road against Los Angeles Dodgers.",
         watching: 'BaseballOS is watching the late-game path if the game gets tight.',
-        why_it_matters: 'This matters because only one clean bullpen path is available tonight.',
+        why_it_matters: 'This matters because clean late-game margin is limited tonight.',
         key_note: 'Key bullpen note: rested-enough arms include Erik Miller and Ryan Walker.',
         watch_point: 'The key question is how the shortest part of the bullpen handles the first tight inning.',
       },
       evidence: [
-        'Clean options: 1',
-        'On watch: 1',
+        'Clean options are limited',
+        'One arm is on watch after recent work',
       ],
       limitations: ['Schedule context can change before lineup lock.'],
       ranking_score: 91,
@@ -286,6 +286,26 @@ test('getTonightIntelligence calls the Tonight Intelligence endpoint', async () 
 
   assert.equal(calls.length, 1)
   assert.equal(calls[0].url, '/api/bullpen/intelligence/tonight?reference_date=2026-06-25')
+  assert.ok(calls[0].options.signal)
+})
+
+test('getTonightIntelligence times out a stuck Tonight request', async () => {
+  globalThis.fetch = async (url, options = {}) => {
+    assert.equal(url, '/api/bullpen/intelligence/tonight')
+    assert.ok(options.signal)
+    return new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const err = new Error('aborted')
+        err.name = 'AbortError'
+        reject(err)
+      })
+    })
+  }
+
+  await assert.rejects(
+    () => getTonightIntelligence({}, { timeoutMs: 5, silent: true }),
+    /timed out after 5ms/,
+  )
 })
 
 test('lead story view resolves team, prose, evidence, metadata, and snapshot', () => {
@@ -487,8 +507,8 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.equal(cards[0].href, '/bullpen?view=board&team=CHC&source=intelligence-tonight')
   assert.equal(cards[0].headline, 'Narrow bullpen margin before first pitch')
   assert.equal(cards[0].summary, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.')
-  assert.equal(cards[0].whyItMatters, 'This matters because two clean bullpen paths are available with five games before the next off day.')
-  assert.equal(cards[0].keyNote, 'Key bullpen note: 3 rested-enough arms, 1 on watch, and 2 limited by recent work.')
+  assert.equal(cards[0].whyItMatters, 'This matters because clean options are limited with a long stretch before the next off day.')
+  assert.equal(cards[0].keyNote, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.')
   assert.equal(cards[0].watchPoint, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.')
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
@@ -506,12 +526,12 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s schedule has Chicago Cubs at home against Milwaukee Brewers.'))
   assert.ok(htmlIncludes(html, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.'))
   assert.ok(htmlIncludes(html, 'Why It Matters Tonight'))
-  assert.ok(htmlIncludes(html, 'This matters because two clean bullpen paths are available with five games before the next off day.'))
+  assert.ok(htmlIncludes(html, 'This matters because clean options are limited with a long stretch before the next off day.'))
   assert.ok(htmlIncludes(html, 'Key Note'))
-  assert.ok(htmlIncludes(html, 'Key bullpen note: 3 rested-enough arms, 1 on watch, and 2 limited by recent work.'))
+  assert.ok(htmlIncludes(html, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.'))
   assert.ok(htmlIncludes(html, 'Watch Point'))
   assert.ok(htmlIncludes(html, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.'))
-  assert.ok(htmlIncludes(html, 'Clean options: 2'))
+  assert.ok(htmlIncludes(html, 'Clean options are limited'))
   assert.ok(htmlIncludes(html, 'Schedule and bullpen context can still change before first pitch.'))
   assert.ok(htmlIncludes(html, 'Schedule context can change before lineup lock.'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=intelligence-tonight"'))
@@ -519,6 +539,47 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   for (const raw of ['signal_family', 'schedule_pressure', 'internal_strength', 'ranking_score', 'recommendation', 'Do not render this field.', 'fatigue score', 'confidence score']) {
     assert.equal(html.includes(raw), false, raw)
   }
+})
+
+test('Tonight qualitative story payload survives the public safety filter', () => {
+  const cards = getTonightCards(tonightOk, teams)
+
+  assert.equal(cards.length, 2)
+  assert.equal(cards[0].headline, 'Narrow bullpen margin before first pitch')
+  assert.equal(cards[0].whyItMatters, 'This matters because clean options are limited with a long stretch before the next off day.')
+  assert.equal(cards[0].keyNote, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.')
+  assert.deepEqual(cards[0].evidence, [
+    'Clean options are limited',
+    'Long stretch before the next off day',
+  ])
+})
+
+test('Tonight missing pregame_story exits loading and renders safe legacy fields', () => {
+  const legacyTonight = clone(tonightOk)
+  legacyTonight.cards = [
+    {
+      ...legacyTonight.cards[0],
+      pregame_story: null,
+      headline: 'Bullpen margin worth watching before first pitch',
+      summary: 'BaseballOS is watching whether the late-inning bridge stays manageable tonight.',
+      evidence: [],
+      limitations: [],
+    },
+  ]
+  legacyTonight.card_count = 1
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: legacyTonight,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Bullpen margin worth watching before first pitch'))
+  assert.ok(htmlIncludes(html, 'BaseballOS is watching whether the late-inning bridge stays manageable tonight.'))
+  assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
+  assert.equal(htmlIncludes(html, 'No standout bullpen watch point tonight.'), false)
 })
 
 test('Tonight story card drops unsafe scoring and prediction copy', () => {
@@ -572,7 +633,7 @@ test('Tonight renders only returned cards and does not backfill from Around Base
   assert.equal(countOccurrences(html, 'source=intelligence-tonight'), 1)
 })
 
-test('Tonight empty response falls back to Around Baseball when dashboard observations exist', () => {
+test('Tonight empty response shows honest empty state when dashboard observations exist', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightEmpty,
@@ -581,10 +642,12 @@ test('Tonight empty response falls back to Around Baseball when dashboard observ
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Around Baseball'))
-  assert.ok(htmlIncludes(html, 'Other bullpen movement BaseballOS is tracking across the league.'))
-  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
-  assert.equal(htmlIncludes(html, 'No standout bullpen watch point tonight.'), false)
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+  assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
 })
 
 test('Tonight empty response shows a muted empty state when fallback has no items', () => {
@@ -601,7 +664,43 @@ test('Tonight empty response shows a muted empty state when fallback has no item
   assert.equal(htmlIncludes(html, 'No other league bullpen movement is ready to show yet.'), false)
 })
 
-test('Tonight error falls back to Around Baseball when dashboard observations exist', () => {
+test('Tonight completed missing payload exits skeleton into empty state', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: null,
+    tonightLoading: false,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
+  assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+})
+
+test('Tonight snapshot unavailable reason renders unavailable state without fallback cards', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: {
+      ...tonightEmpty,
+      empty_reason: 'tonight_snapshot_unavailable',
+      limitations: ['Tonight snapshot is not available yet.'],
+    },
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
+  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+  assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
+})
+
+test('Tonight error shows unavailable state when dashboard observations exist', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: null,
@@ -612,9 +711,11 @@ test('Tonight error falls back to Around Baseball when dashboard observations ex
   }))
 
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
-  assert.ok(htmlIncludes(html, 'Around Baseball'))
-  assert.ok(htmlIncludes(html, 'Milwaukee Brewers lost 2 rested arms'))
-  assert.equal(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'), false)
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
+  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
+  assert.equal(htmlIncludes(html, 'Milwaukee Brewers lost 2 rested arms'), false)
 })
 
 test('Tonight error shows a graceful error state when fallback also fails', () => {
@@ -634,7 +735,7 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
   assert.ok(htmlIncludes(html, 'Most Available'))
 })
 
-test('Around Baseball editorializes dashboard observations, excludes the lead team, and caps at three', () => {
+test('Around Baseball helper editorializes dashboard observations without replacing Tonight', () => {
   const lead = getLeadStoryView(intelligenceOk, teams)
   const items = getAroundBaseballItems(dashboard, lead)
 
@@ -657,12 +758,13 @@ test('Around Baseball editorializes dashboard observations, excludes the lead te
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Around Baseball'))
-  assert.ok(htmlIncludes(html, 'Other bullpen movement BaseballOS is tracking across the league.'))
+  assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
+  assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
+  assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'Giants bullpen moved from 4 to 2 rested relievers.'), false)
   assert.equal(htmlIncludes(html, 'Mets bullpen moved from 3 to 5 rested relievers.'), false)
-  assert.ok(htmlIncludes(html, 'New York Mets added 2 rested arms'))
-  assert.ok(htmlIncludes(html, 'Toronto still has 4 rested relievers today.'))
+  assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
+  assert.equal(htmlIncludes(html, 'Toronto still has 4 rested relievers today.'), false)
 })
 
 test('Tonight empty state renders when neither Tonight nor fallback observations are available', () => {
