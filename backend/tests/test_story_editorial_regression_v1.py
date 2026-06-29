@@ -1,8 +1,8 @@
 """Editorial regression tests for public story output.
 
 This is a governance-only test layer: it builds a deterministic 30-team public
-story corpus from existing story services and records the editorial gates that
-future story-refinement phases must make hard-passing.
+story corpus from existing story services and records the editorial and beat
+diversity gates that future story-refinement phases must keep hard-passing.
 """
 
 from __future__ import annotations
@@ -34,6 +34,11 @@ from services.story_voice_library_v1 import (
 DATE = '2026-06-20'
 MAX_DUPLICATE_HEADLINE_COUNT = 1
 MAX_DUPLICATE_OPENING_COUNT = 1
+MIN_DISTINCT_BEATS_EXTREME_GUARD = 2
+MAX_SINGLE_BEAT_SHARE_EXTREME_GUARD = 0.90
+MIN_DISTINCT_BEATS_NEXT_TARGET = 3
+MAX_SINGLE_BEAT_SHARE_NEXT_TARGET = 0.70
+MAX_ROUTE_DEPTH_SHARE_NEXT_TARGET = 0.80
 
 PUBLIC_BEATS = (
     BEAT_ROUTE_CHANGE,
@@ -495,6 +500,101 @@ def _editorial_failures(stories):
     return failures
 
 
+def _beat_distribution_from_counts(counts):
+    counts = Counter(counts)
+    total = sum(counts.values())
+    ordered_counts = {
+        beat: int(counts.get(beat, 0))
+        for beat in PUBLIC_BEATS
+    }
+    ordered_counts.update({
+        beat: int(count)
+        for beat, count in sorted(counts.items())
+        if beat not in ordered_counts
+    })
+    max_beat = None
+    max_count = 0
+    if total:
+        max_beat, max_count = max(
+            ordered_counts.items(),
+            key=lambda item: (item[1], item[0]),
+        )
+    route_depth_count = (
+        ordered_counts.get(BEAT_ROUTE_CHANGE, 0)
+        + ordered_counts.get(BEAT_DEPTH_CONSTRAINT, 0)
+    )
+    return {
+        'team_count': total,
+        'counts': ordered_counts,
+        'shares': {
+            beat: round(count / total, 3) if total else 0.0
+            for beat, count in ordered_counts.items()
+        },
+        'distinct_beat_count': sum(1 for count in ordered_counts.values() if count > 0),
+        'max_beat': max_beat,
+        'max_beat_count': max_count,
+        'max_beat_share': round(max_count / total, 3) if total else 0.0,
+        'route_depth_count': route_depth_count,
+        'route_depth_share': round(route_depth_count / total, 3) if total else 0.0,
+    }
+
+
+def _beat_distribution(stories):
+    return _beat_distribution_from_counts(
+        Counter(story.get('story_type') for story in stories if story.get('story_type'))
+    )
+
+
+def _format_beat_distribution(report):
+    counts = ', '.join(
+        f'{beat}={count}'
+        for beat, count in report['counts'].items()
+        if count
+    )
+    return (
+        'beat_distribution: '
+        f"teams={report['team_count']}; "
+        f"distinct={report['distinct_beat_count']}; "
+        f"max={report['max_beat']} {report['max_beat_count']}/"
+        f"{report['team_count']} ({report['max_beat_share']:.1%}); "
+        f"route_change+depth_constraint={report['route_depth_count']}/"
+        f"{report['team_count']} ({report['route_depth_share']:.1%}); "
+        f'counts={counts}'
+    )
+
+
+def _extreme_beat_collapse_failures(report):
+    failures = []
+    if report['distinct_beat_count'] < MIN_DISTINCT_BEATS_EXTREME_GUARD:
+        failures.append(
+            f"fewer than {MIN_DISTINCT_BEATS_EXTREME_GUARD} distinct beats"
+        )
+    if report['max_beat_share'] >= MAX_SINGLE_BEAT_SHARE_EXTREME_GUARD:
+        failures.append(
+            f"single beat at {report['max_beat_share']:.1%}: {report['max_beat']}"
+        )
+    return failures
+
+
+def _next_target_beat_diversity_failures(report):
+    failures = []
+    if report['distinct_beat_count'] < MIN_DISTINCT_BEATS_NEXT_TARGET:
+        failures.append(
+            f"fewer than {MIN_DISTINCT_BEATS_NEXT_TARGET} distinct beats"
+        )
+    if report['max_beat_share'] > MAX_SINGLE_BEAT_SHARE_NEXT_TARGET:
+        failures.append(
+            f"single beat above {MAX_SINGLE_BEAT_SHARE_NEXT_TARGET:.0%}: "
+            f"{report['max_beat']} at {report['max_beat_share']:.1%}"
+        )
+    if report['route_depth_share'] > MAX_ROUTE_DEPTH_SHARE_NEXT_TARGET:
+        failures.append(
+            f"route_change+depth_constraint above {MAX_ROUTE_DEPTH_SHARE_NEXT_TARGET:.0%}: "
+            f"{report['route_depth_share']:.1%}"
+        )
+    return failures
+
+
 def _story_signature(feed):
     return [
         (
@@ -523,6 +623,43 @@ def test_editorial_regression_corpus_is_deterministic():
     second = _story_signature(_thirty_team_story_feed())
 
     assert first == second
+
+
+def test_public_story_beat_distribution_diagnostic_is_deterministic():
+    first = _beat_distribution(_public_stories())
+    second = _beat_distribution(_public_stories())
+
+    assert first == second
+    assert first['team_count'] == 30
+    assert set(first['counts']) == set(PUBLIC_BEATS)
+    assert sum(first['counts'].values()) == first['team_count']
+
+
+def test_public_story_beat_distribution_prevents_extreme_collapse():
+    report = _beat_distribution(_public_stories())
+    failures = _extreme_beat_collapse_failures(report)
+
+    assert failures == [], _format_beat_distribution(report)
+
+
+def test_public_story_beat_distribution_hits_next_target_guardrails():
+    report = _beat_distribution(_public_stories())
+    failures = _next_target_beat_diversity_failures(report)
+
+    assert failures == [], _format_beat_distribution(report)
+
+
+def test_beat_diversity_diagnostic_identifies_audit_collapse_shape():
+    report = _beat_distribution_from_counts({
+        BEAT_DEPTH_CONSTRAINT: 17,
+        BEAT_ROUTE_CHANGE: 12,
+        BEAT_COVERAGE_PRESSURE: 1,
+    })
+
+    assert _extreme_beat_collapse_failures(report) == []
+    assert _next_target_beat_diversity_failures(report) == [
+        'route_change+depth_constraint above 80%: 96.7%',
+    ], _format_beat_distribution(report)
 
 
 def test_banned_public_language_guard_catches_singular_and_plural_loopholes():
