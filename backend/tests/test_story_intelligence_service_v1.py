@@ -759,6 +759,44 @@ def test_context_specific_tiebreak_prefers_core_transition_over_depth_pressure()
     assert_forward_clause(result)
 
 
+def test_broad_inactive_depth_with_adequate_active_group_yields_to_route_change():
+    context = team_context(
+        stability={
+            'stability_band': 'transitioning',
+            'current_operational_core': ['Fifth Arm', 'Sixth Arm', 'Seventh Arm'],
+            'previous_operational_core': ['First Arm', 'Second Arm', 'Third Arm'],
+            'new_core_members': ['Fifth Arm', 'Sixth Arm'],
+            'departed_core_members': ['First Arm', 'Second Arm'],
+            'core_retention_count': 1,
+            'core_stability_pct': 33,
+            'core_change_count': 2,
+        },
+        optionality={
+            'optionality_band': 'thin',
+            'practical_close_game_paths_count': 2,
+        },
+        injury={
+            'depth_pressure_band': 'heavy',
+            'active_bullpen_arms_count': 8,
+            'inactive_bullpen_arms_count': 12,
+            'il_bullpen_arms_count': 4,
+            'non_il_inactive_bullpen_arms_count': 8,
+        },
+    )
+
+    result = build_team_story(118, team_context=context)
+
+    assert_story_contract(result, TYPE_CORE_TRANSITION, BEAT_ROUTE_CHANGE)
+    depth = _profile_for(result, BEAT_DEPTH_CONSTRAINT)
+    route = _profile_for(result, BEAT_ROUTE_CHANGE)
+    assert depth is not None
+    assert route is not None
+    assert depth['selection_strength'] < route['selection_strength']
+    assert 'large_inactive_group' in depth['selection_reasons']
+    assert 'operational_core_changed' in route['selection_reasons']
+    assert_forward_clause(result)
+
+
 def test_route_change_can_explain_roster_change_with_held_route():
     context = team_context(
         stability={

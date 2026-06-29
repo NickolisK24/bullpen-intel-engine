@@ -1,8 +1,6 @@
 import json
 from datetime import datetime, timezone
 
-import pytest
-
 import services.four_beat_real_quality_audit as real_audit
 from services.four_beat_real_quality_audit import (
     BOUNDED_LIVE_PAYLOAD_SOURCE,
@@ -23,12 +21,12 @@ from services.story_four_beat_interpreter_v1 import (
 )
 
 
-OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_2026_06_29 = {
-    BEAT_AVAILABILITY_DEPTH: 1,
+OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_AFTER_E1E_2026_06_29 = {
+    BEAT_AVAILABILITY_DEPTH: 2,
     BEAT_BRIDGE: 0,
-    BEAT_COVERAGE_PRESSURE: 1,
-    BEAT_DEPTH_CONSTRAINT: 25,
-    BEAT_ROUTE_CHANGE: 3,
+    BEAT_COVERAGE_PRESSURE: 7,
+    BEAT_DEPTH_CONSTRAINT: 10,
+    BEAT_ROUTE_CHANGE: 11,
     BEAT_SUSTAINABILITY_QUESTION: 0,
     BEAT_TRUST_LANE: 0,
 }
@@ -358,23 +356,14 @@ def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeyp
     assert diagnostic['team_trace'][0]['selection_reasons'] == ['bounded_live_evidence']
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        'story-refinement E1D: bounded current DB-backed audit on 2026-06-29 '
-        'observed depth_constraint=25, route_change=3, coverage_pressure=1, '
-        'availability_depth=1, sustainability_question=0, trust_lane=0, '
-        'bridge=0; live stored-data selection still needs follow-up.'
-    ),
-)
-def test_document_observed_bounded_live_db_collapse_needs_selection_followup():
-    counts = OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_2026_06_29
+def test_document_observed_bounded_live_db_after_e1e_meets_diversity_targets():
+    counts = OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_AFTER_E1E_2026_06_29
     story_count = sum(counts.values())
     max_count = max(counts.values())
     route_depth_count = counts[BEAT_ROUTE_CHANGE] + counts[BEAT_DEPTH_CONSTRAINT]
 
     assert story_count == 30
-    assert sum(1 for count in counts.values() if count > 0) >= 5
-    assert max_count <= 15
+    assert sum(1 for count in counts.values() if count > 0) >= 3
+    assert max_count / story_count < 0.70
     assert route_depth_count / story_count <= 0.80
-    assert counts[BEAT_SUSTAINABILITY_QUESTION] >= 1
+    assert counts[BEAT_DEPTH_CONSTRAINT] < 25

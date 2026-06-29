@@ -489,43 +489,60 @@ def _sustainability_selection_reasons(frame, public_story=None):
 
 def _selection_strength_for_depth(frame):
     observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
     interpretation = _facts(frame, 'interpretation_facts')
     band = observed.get('depth_pressure_band')
+    active = _number(baseline.get('active_bullpen_arms_count'))
     inactive = observed.get('inactive_bullpen_arms_count')
+    il_count = _number(cause.get('il_bullpen_arms_count'))
     paths = interpretation.get('practical_close_game_paths_count')
     optionality = interpretation.get('optionality_band')
+    active_short = active is not None and active <= 7
+    active_very_short = active is not None and active <= 6
 
     strength = 0
     if band == 'heavy':
-        strength += 3
+        strength += 2 if active_short else 1
     elif band == 'moderate':
+        strength += 1 if active_short else 0
+    if active_very_short:
         strength += 1
-    strength += _strength_step(inactive, ((12.0, 2), (7.0, 1)))
+    if active_short:
+        strength += _strength_step(il_count, ((7.0, 2), (5.0, 1)))
+    elif il_count is not None and il_count >= 8.0:
+        strength += 1
+    if active_very_short:
+        strength += _strength_step(inactive, ((12.0, 1),))
     paths_number = _number(paths)
-    if paths_number is not None and paths_number <= 2:
-        strength += 2
-    elif paths_number is not None and paths_number <= 3:
+    if active_short and paths_number is not None and paths_number <= 2:
         strength += 1
-    if optionality == 'thin':
-        strength += 2
-    elif optionality == 'narrow':
+    if active_very_short and optionality == 'thin':
         strength += 1
     return strength
 
 
 def _depth_selection_reasons(frame):
     observed = _facts(frame, 'observation_facts')
+    baseline = _facts(frame, 'baseline_facts')
+    cause = _facts(frame, 'cause_facts')
     interpretation = _facts(frame, 'interpretation_facts')
     reasons = []
     if observed.get('depth_pressure_band') in {'moderate', 'heavy'}:
         reasons.append('inactive_depth_pressure')
+    active = _number(baseline.get('active_bullpen_arms_count'))
+    if active is not None and active <= 7:
+        reasons.append('active_bullpen_shortage')
     inactive = _number(observed.get('inactive_bullpen_arms_count'))
     if inactive is not None and inactive >= 7.0:
         reasons.append('large_inactive_group')
+    il_count = _number(cause.get('il_bullpen_arms_count'))
+    if il_count is not None and il_count >= 5.0:
+        reasons.append('il_depth_pressure')
     paths = _number(interpretation.get('practical_close_game_paths_count'))
-    if paths is not None and paths <= 3:
+    if active is not None and active <= 7 and paths is not None and paths <= 2:
         reasons.append('practical_paths_narrowed')
-    if interpretation.get('optionality_band') in {'thin', 'narrow'}:
+    if active is not None and active <= 6 and interpretation.get('optionality_band') == 'thin':
         reasons.append('optionality_constraint')
     return reasons
 
