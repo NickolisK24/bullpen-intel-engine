@@ -10,8 +10,6 @@ from __future__ import annotations
 from collections import Counter
 import re
 
-import pytest
-
 from services.story_feed import build_canonical_story_feed
 from services.story_intelligence_service_v1 import build_team_story
 from services.story_voice_library_v1 import (
@@ -439,12 +437,12 @@ def _public_body(story):
 
 
 def _first_sentence(text):
-    match = re.search(r'[^.!?]+[.!?]', _clean(text))
+    match = re.match(r'.+?[.!?](?=\s+|$)', _clean(text))
     return _clean(match.group(0)) if match else _clean(text)
 
 
 def _opening_sentence(story):
-    return _first_sentence(story.get('narrative') or _blueprint_text(story, 'what_everyone_saw'))
+    return _first_sentence(_blueprint_text(story, 'what_everyone_saw') or story.get('narrative'))
 
 
 def _duplicate_counts(values, *, max_count):
@@ -580,14 +578,8 @@ def test_public_story_editorial_scanner_detects_requested_failures():
     assert any('final explanation contains "clean options are limited"' in failure for failure in failures)
 
 
-def test_public_story_corpus_current_editorial_gates_documented_for_story_refinement():
+def test_public_story_corpus_clears_editorial_regression_gates():
     stories = _public_stories()
     failures = _editorial_failures(stories)
-
-    if failures:
-        pytest.xfail(
-            'TODO(story-refinement): current generated 30-team corpus still '
-            f'violates editorial regression gates: {failures[:8]}'
-        )
 
     assert failures == []

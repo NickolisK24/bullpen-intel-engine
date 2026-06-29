@@ -250,6 +250,28 @@ def _forward_line(frame, beat, *, names=None, extra_parts=()):
     )
 
 
+def _route_turnover_sentence(changes, retention):
+    if _lte(retention, 0):
+        return 'The late-inning path has turned over completely from the prior read'
+    if _present(changes):
+        return 'The relief route now points to a different pocket of arms than the prior read'
+    return 'The late-inning route has shifted from the prior read'
+
+
+def _route_carryover_sentence(retention):
+    if not _present(retention):
+        return None
+    if _lte(retention, 0):
+        return 'None of that prior late-inning group carries into the current route'
+    return 'Part of that prior late-inning group still carries into the current route'
+
+
+def _route_change_matter_sentence(retention):
+    if _lte(retention, 0):
+        return 'That kind of turnover matters because the bullpen is reaching for a new late-inning group'
+    return 'That kind of shift matters because the late innings no longer rest on exactly the same group'
+
+
 def _has_banned_language(text):
     lower = _clean_text(text).lower()
     return any(term in lower for term in BANNED_TERMS)
@@ -743,33 +765,28 @@ def _core_transition(frame):
                 f"The important-outs route now runs through {current}"
                 if current else None
             ),
-            (
-                f"That is a {_fmt(changes)}-spot change from the prior route"
-                if _present(changes) else None
-            ),
+            _route_turnover_sentence(changes, retention),
         ),
         baseline_paragraph=_paragraph(
             (
-                f"Not long ago, those innings still ran through {previous}"
+                f"The previous read pointed those innings toward {previous}"
                 if previous else None
             ),
-            (
-                f"The current route retained {_fmt(retention)} {_count_word(retention, 'arm')} from that baseline"
-                if _present(retention) else None
-            ),
+            _route_carryover_sentence(retention),
         ),
         cause_paragraph=_paragraph(
             (
-                f"The added arms are {new_members}"
+                f"The route has added {new_members}"
                 if new_members else None
             ),
             (
-                f"The arms moving out of that route are {departed}"
+                f"Moving out of that lane: {departed}"
                 if departed else None
             ),
         ),
         constraint_paragraph=_paragraph(
             _forward_line(frame, BEAT_ROUTE_CHANGE, names=current or new_members, extra_parts=(changes, retention)),
+            _route_change_matter_sentence(retention),
         ),
     )
 

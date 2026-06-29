@@ -781,10 +781,15 @@ def test_writer_outputs_core_transition_observation():
 
     assert_writer_shape(output, TYPE_CORE_TRANSITION)
     text = written_text(output)
-    assert '3-spot change from the prior route' in text
+    assert 'late-inning path has turned over completely from the prior read' in text
     assert 'Fifth Arm, Sixth Arm, and Seventh Arm' in text
-    assert '0 arms from that baseline' in text
-    assert 'The added arms are' in text
+    assert 'previous read pointed those innings toward First Arm, Second Arm, and Third Arm' in text
+    assert 'None of that prior late-inning group carries into the current route' in text
+    assert 'The route has added' in text
+    assert 'Moving out of that lane: First Arm, Second Arm, and Third Arm' in text
+    assert 'That kind of turnover matters' in text
+    assert '3-spot change' not in text
+    assert '0 arms from that baseline' not in text
     assert looks_like_forward_clause(output['written_observation']['constraint_paragraph'])
     assert_quality_sections(output)
 
