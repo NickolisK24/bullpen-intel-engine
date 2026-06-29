@@ -42,6 +42,19 @@ def _bridge_inputs(*, early=38.0, coverage=4.2, monitor=3, limited=1, clean=1, a
     )
 
 
+def _mostly_stable_bridge_inputs(**kwargs):
+    inputs = _bridge_inputs(stability_band='mostly_stable', **kwargs)
+    inputs['stability'].update({
+        'previous_operational_core': ['Core One', 'Core Two', 'Fourth Core'],
+        'core_retention_count': 2,
+        'core_stability_pct': 67,
+        'core_change_count': 1,
+        'new_core_members': ['Core Three'],
+        'departed_core_members': ['Fourth Core'],
+    })
+    return inputs
+
+
 def _trust_lane_optionality(*, clean=2, secondary=4, available=6, band='flexible', context_available=True):
     """A bullpen with an acceptable available board but a thin trusted/clean lane."""
     return {
@@ -303,10 +316,56 @@ def test_bridge_instability_fires_when_handoff_is_fragile():
     assert_structured_observation(item)
 
 
+def test_bridge_instability_accepts_stable_late_core_boundary():
+    payload = build_team_story_observation_payload(team_context(
+        **_bridge_inputs(early=45.0, monitor=3, limited=1, clean=1)
+    ))
+
+    assert TYPE_BRIDGE_INSTABILITY in _types(payload)
+
+
+def test_bridge_instability_accepts_mostly_stable_late_core_boundary():
+    payload = build_team_story_observation_payload(team_context(
+        **_mostly_stable_bridge_inputs(early=45.0, monitor=3, limited=1, clean=1)
+    ))
+
+    item = observation(payload, TYPE_BRIDGE_INSTABILITY)
+    assert item['severity'] == 'medium'
+    assert item['headline_inputs']['stability_band'] == 'mostly_stable'
+
+
 def test_bridge_instability_does_not_fire_without_a_settled_core():
     # An unsettled core is a route/core problem, not a bridge problem.
     payload = build_team_story_observation_payload(team_context(**_bridge_inputs(stability_band='transitioning')))
     assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_rejects_transitioning_late_core_boundary():
+    payload = build_team_story_observation_payload(team_context(
+        **_bridge_inputs(stability_band='transitioning')
+    ))
+
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_rejects_rebuilding_late_core_boundary():
+    payload = build_team_story_observation_payload(team_context(
+        **_bridge_inputs(stability_band='rebuilding')
+    ))
+
+    assert TYPE_BRIDGE_INSTABILITY not in _types(payload)
+
+
+def test_bridge_instability_high_severity_requires_stable_late_core():
+    stable_payload = build_team_story_observation_payload(team_context(
+        **_bridge_inputs(early=55.0, monitor=4, limited=0, clean=1)
+    ))
+    mostly_stable_payload = build_team_story_observation_payload(team_context(
+        **_mostly_stable_bridge_inputs(early=55.0, monitor=4, limited=0, clean=1)
+    ))
+
+    assert observation(stable_payload, TYPE_BRIDGE_INSTABILITY)['severity'] == 'high'
+    assert observation(mostly_stable_payload, TYPE_BRIDGE_INSTABILITY)['severity'] == 'medium'
 
 
 def test_bridge_instability_does_not_fire_when_bridge_is_healthy():

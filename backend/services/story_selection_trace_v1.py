@@ -14,6 +14,7 @@ from services.story_feed import build_canonical_story_feed
 from services.story_intelligence_service_v1 import (
     build_story_intelligence_service_v1,
 )
+from services.story_observation_engine import BRIDGE_ELIGIBLE_CORE_BANDS
 from services.story_voice_library_v1 import (
     BEAT_AVAILABILITY_DEPTH,
     BEAT_BRIDGE,
@@ -431,7 +432,7 @@ def _bridge_blockers(context: dict) -> list[str]:
     clean_count = len(_list(optionality.get('clean_workload_options')))
 
     blockers = []
-    if stability.get('stability_band') != 'stable':
+    if stability.get('stability_band') not in BRIDGE_ELIGIBLE_CORE_BANDS:
         blockers.append('late_core_not_settled')
     if optionality.get('context_available') is not True:
         blockers.append('optionality_context_unavailable')
@@ -700,6 +701,12 @@ def _classify_context_signal(
         if band == 'stable':
             if late_core_blocked or (pct is not None and pct < 100.0) or change_count:
                 return CONTEXT_SIGNAL_LIKELY_INCORRECT
+            return CONTEXT_SIGNAL_EXPECTED
+        if band == 'mostly_stable':
+            if late_core_blocked:
+                return CONTEXT_SIGNAL_LIKELY_INCORRECT
+            if pct is not None and not (67.0 <= pct < 100.0):
+                return CONTEXT_SIGNAL_SUSPICIOUS
             return CONTEXT_SIGNAL_EXPECTED
         if not late_core_blocked:
             return CONTEXT_SIGNAL_LIKELY_INCORRECT

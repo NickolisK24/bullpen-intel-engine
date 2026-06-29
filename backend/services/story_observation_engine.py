@@ -61,6 +61,7 @@ TRUST_LANE_HIGH_FLAGGED = 5
 # Read from rotation_context (handoff demand), role_stability_context (a settled
 # late core), and bullpen_optionality_context (volatile middle). No new raw data.
 BRIDGE_STABLE_CORE_BAND = 'stable'
+BRIDGE_ELIGIBLE_CORE_BANDS = {BRIDGE_STABLE_CORE_BAND, 'mostly_stable'}
 BRIDGE_MIN_EARLY_ENTRY_RATE = 35.0
 BRIDGE_MIN_COVERAGE_IP = 3.8
 BRIDGE_MIN_VOLATILE_MIDDLE = 2
@@ -455,9 +456,9 @@ def _bridge_instability(team_context: dict[str, Any]) -> dict[str, Any] | None:
     optionality = _dict(team_context.get('bullpen_optionality_context'))
     rotation = _dict(team_context.get('rotation_context'))
 
-    # A fragile bridge presumes a SETTLED late-game core; otherwise the story is a
-    # route-change / core problem, not a handoff problem.
-    if stability.get('stability_band') != BRIDGE_STABLE_CORE_BAND:
+    # A fragile bridge presumes a settled late-game core; otherwise the story is
+    # a route-change / core problem, not a handoff problem.
+    if stability.get('stability_band') not in BRIDGE_ELIGIBLE_CORE_BANDS:
         return None
     if optionality.get('context_available') is not True:
         return None
@@ -490,6 +491,7 @@ def _bridge_instability(team_context: dict[str, Any]) -> dict[str, Any] | None:
         early_rate is not None
         and early_rate >= BRIDGE_HIGH_EARLY_ENTRY_RATE
         and volatile_middle >= BRIDGE_HIGH_VOLATILE_MIDDLE
+        and stability.get('stability_band') == BRIDGE_STABLE_CORE_BAND
     ):
         severity = SEVERITY_HIGH
 
@@ -665,6 +667,7 @@ def build_story_observation_engine_v1(
 
 __all__ = [
     'CAPABILITY',
+    'BRIDGE_ELIGIBLE_CORE_BANDS',
     'TYPE_BRIDGE_INSTABILITY',
     'TYPE_CONCENTRATION_PRESSURE',
     'TYPE_CORE_TRANSITION',

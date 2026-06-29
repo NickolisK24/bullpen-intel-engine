@@ -172,8 +172,8 @@ def test_selection_trace_reports_missing_beat_source_blockers():
 
     assert review[BEAT_BRIDGE]['candidate_evidence_team_count'] == 0
     assert review[BEAT_BRIDGE]['eligible_candidate_team_count'] == 0
-    assert review[BEAT_BRIDGE]['source_blocker_reason_counts']['late_core_not_settled'] == 1
     assert review[BEAT_BRIDGE]['source_blocker_reason_counts']['no_starter_handoff_demand'] == 1
+    assert 'late_core_not_settled' not in review[BEAT_BRIDGE]['source_blocker_reason_counts']
 
     assert review[BEAT_TRUST_LANE]['candidate_evidence_team_count'] == 0
     assert review[BEAT_TRUST_LANE]['eligible_candidate_team_count'] == 0
