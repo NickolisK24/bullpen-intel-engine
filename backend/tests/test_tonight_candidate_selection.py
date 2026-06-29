@@ -32,7 +32,10 @@ REF = '2026-06-26'
 
 _BANNED = (
     'will win', 'will lose', 'guaranteed', 'probability', 'odds', 'recommend',
-    'ranked', 'predict', 'blow', 'likely', 'betting', 'best option', ' lock',
+    'ranked', 'predict', 'projection', 'blow', 'likely', 'betting',
+    'best option', ' lock', 'pick', 'edge', 'fatigue score',
+    'confidence score', 'will happen', 'expected to happen', 'healthy',
+    'injury-free',
 )
 
 
@@ -59,10 +62,12 @@ def _sc(team_id=116, *, playing=True, days_until=3, games_until=3, games_next3=3
 
 
 def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0,
+         clean_names=None,
          available=True, name='Detroit Tigers'):
     return {
         'context_available': available,
         'clean_options_count': clean, 'optionality_band': band,
+        'clean_workload_option_names': list(clean_names or []),
         'practical_close_game_paths_count': paths,
         'available_arms_count': 3, 'monitor_arms_count': 2,
         'limited_arms_count': 1, 'restricted_arms_count': 3,
@@ -78,8 +83,11 @@ def _builder(pen_by_team):
 
 
 def _all_text(candidate):
-    return ' '.join([candidate['headline'], candidate['summary'],
-                     *candidate['evidence']]).lower()
+    story = candidate.get('pregame_story') or {}
+    return ' '.join([
+        candidate['headline'], candidate['summary'], *candidate['evidence'],
+        *[str(value) for value in story.values()],
+    ]).lower()
 
 
 # ── 1 & 16. Empty / not-playing ───────────────────────────────────────────────
@@ -237,6 +245,24 @@ def test_evidence_maps_to_source_facts():
     assert '3 games before the next off day' in text
     # Every evidence bullet is backed by a schedule or bullpen fact (non-empty).
     assert all(isinstance(b, str) and b for b in c['evidence'])
+
+
+def test_candidate_includes_pregame_bullpen_watch_story_fields():
+    c = build_team_tonight_candidate(
+        116, REF,
+        schedule_context=_sc(116, days_until=3, games_until=3),
+        bullpen_context=_pen(clean=1, band='thin', paths=3,
+                             clean_names=['Jason Foley', 'Alex Lange']))
+    story = c['pregame_story']
+
+    assert story['story_type'] == 'pregame_bullpen_watch_v1'
+    assert story['label'] == "Tonight's Bullpen Watch"
+    assert story['headline'] == c['headline']
+    assert story['team_context'] == "Tonight's schedule has Detroit Tigers at home against Minnesota Twins."
+    assert story['watching'].startswith('BaseballOS is watching')
+    assert story['why_it_matters'].startswith('This matters because')
+    assert story['key_note'] == 'Key bullpen note: rested-enough arms include Jason Foley and Alex Lange.'
+    assert story['watch_point'].startswith('The key question is')
 
 
 # ── 12. No prediction / betting / recommendation language ─────────────────────

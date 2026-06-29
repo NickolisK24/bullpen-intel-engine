@@ -46,6 +46,8 @@ _TOP_THREE_SHARE_ELEVATED = 45.0
 _THIN_BANDS = ('thin', 'narrow')
 _ELEVATED_CONCENTRATION = ('concentrated', 'narrow')
 _INSUFFICIENT = 'insufficient_data'
+PREGAME_STORY_TYPE = 'pregame_bullpen_watch_v1'
+PREGAME_STORY_LABEL = "Tonight's Bullpen Watch"
 
 
 def build_tonight_candidates(reference_date, *, limit=3, schedule_contexts=None,
@@ -303,6 +305,8 @@ def _candidate(team_id, team_name, sc, pen, limitations, *, family, signal,
         'signal_family': family,
         'headline': headline,
         'summary': summary,
+        'pregame_story': _pregame_story(
+            team_name, sc, pen, signal=signal, headline=headline),
         'evidence': list(evidence),
         'schedule_context': _schedule_subset(sc),
         'bullpen_context': pen,
@@ -346,6 +350,7 @@ def _normalize_bullpen_context(bc):
         return {
             'context_available': True,
             'clean_options_count': len(clean_list) if isinstance(clean_list, list) else None,
+            'clean_workload_option_names': _clean_option_names(clean_list),
             'optionality_band': _clean_band(opt.get('optionality_band')),
             'practical_close_game_paths_count': opt.get('practical_close_game_paths_count'),
             'available_arms_count': opt.get('available_arms_count'),
@@ -373,6 +378,7 @@ def _empty_bullpen_norm(*, available):
     return {
         'context_available': bool(available),
         'clean_options_count': None,
+        'clean_workload_option_names': [],
         'optionality_band': None,
         'practical_close_game_paths_count': None,
         'available_arms_count': None,
@@ -385,6 +391,138 @@ def _empty_bullpen_norm(*, available):
 
 
 # ── Copy helpers (descriptive, evidence-backed; no predictions) ───────────────
+
+def _pregame_story(team_name, sc, pen, *, signal, headline):
+    story = {
+        'story_type': PREGAME_STORY_TYPE,
+        'label': PREGAME_STORY_LABEL,
+        'headline': headline,
+        'team_context': _team_context_sentence(team_name, sc),
+        'watching': _watching_sentence(signal),
+        'why_it_matters': _why_it_matters_sentence(signal, sc, pen),
+        'key_note': _key_note_sentence(pen),
+        'watch_point': _watch_point_sentence(signal),
+    }
+    return {key: value for key, value in story.items() if value}
+
+
+def _team_context_sentence(team_name, sc):
+    opponent = sc.get('opponent_today')
+    home_away = sc.get('home_away_today')
+    if opponent and home_away == 'home':
+        text = f"Tonight's schedule has {team_name} at home against {opponent}."
+    elif opponent and home_away == 'away':
+        text = f"Tonight's schedule has {team_name} on the road against {opponent}."
+    elif opponent:
+        text = f"Tonight's schedule has {team_name} against {opponent}."
+    else:
+        text = f"Tonight's schedule includes {team_name}."
+    if sc.get('doubleheader_today'):
+        text += ' It is a doubleheader day.'
+    return text
+
+
+def _watching_sentence(signal):
+    if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
+        return 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.'
+    if signal == SIGNAL_NO_CLEAN_MARGIN:
+        return 'BaseballOS is watching the late-game path if the game gets tight.'
+    if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
+        return 'BaseballOS is watching whether recent bullpen work stays concentrated on the same group.'
+    if signal == SIGNAL_OFF_DAY_RELIEF:
+        return 'BaseballOS is watching how the bullpen gets through one more game before a reset.'
+    return 'BaseballOS is watching the bullpen context before first pitch.'
+
+
+def _why_it_matters_sentence(signal, sc, pen):
+    clean = pen.get('clean_options_count')
+    paths = pen.get('practical_close_game_paths_count')
+    games_until = sc.get('games_until_next_off_day')
+    games_next3 = sc.get('games_in_next_3_days')
+    share = pen.get('top_three_workload_share_10d')
+
+    if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
+        return (f'This matters because {_clean_summary(clean)} {_be(clean)} available '
+                f'with {_games_phrase(games_until)} before the next off day.')
+    if signal == SIGNAL_NO_CLEAN_MARGIN:
+        return (f'This matters because {_clean_summary(clean)} and '
+                f'{_paths_summary(paths)} leave little room if the game stays tight.')
+    if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
+        if share is not None:
+            return (f'This matters because the top three relievers have handled '
+                    f'{_round1(share)}% of recent bullpen workload with '
+                    f'{_games_phrase(games_next3)} scheduled over the next three days.')
+        return (f'This matters because recent bullpen work is concentrated with '
+                f'{_games_phrase(games_next3)} scheduled over the next three days.')
+    if signal == SIGNAL_OFF_DAY_RELIEF:
+        return ('This matters because pressure is present, but the next off day '
+                'gives the staff a natural reset after tonight.')
+    return 'This matters because bullpen availability can shape how a close game feels late.'
+
+
+def _key_note_sentence(pen):
+    names = pen.get('clean_workload_option_names') or []
+    if names:
+        return f'Key bullpen note: rested-enough arms include {_join_names(names[:3])}.'
+
+    parts = []
+    available = pen.get('available_arms_count')
+    monitor = pen.get('monitor_arms_count')
+    limited = pen.get('limited_arms_count')
+    restricted = pen.get('restricted_arms_count')
+    if available is not None:
+        parts.append(f'{available} rested-enough {_plural(available, "arm")}')
+    if monitor:
+        parts.append(f'{monitor} on watch')
+    limited_total = sum(n for n in (limited, restricted) if isinstance(n, int))
+    if limited_total:
+        parts.append(f'{limited_total} limited by recent work')
+    if parts:
+        return f'Key bullpen note: {_join_parts(parts)}.'
+
+    clean = pen.get('clean_options_count')
+    if clean is not None:
+        return f'Key bullpen note: {_clean_summary(clean)} {_be(clean)} available.'
+    return None
+
+
+def _watch_point_sentence(signal):
+    if signal == SIGNAL_THIN_BEFORE_OFF_DAY:
+        return 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.'
+    if signal == SIGNAL_NO_CLEAN_MARGIN:
+        return 'The key question is how the shortest part of the bullpen handles the first tight inning.'
+    if signal == SIGNAL_HEAVY_WORKLOAD_AHEAD:
+        return 'The key question is whether the middle innings can spread work beyond the relievers carrying the recent load.'
+    if signal == SIGNAL_OFF_DAY_RELIEF:
+        return 'The key question is how directly the bullpen can get to the next rest day.'
+    return 'The key question is how the bullpen workload holds together tonight.'
+
+
+def _clean_option_names(items):
+    names = []
+    for item in items or []:
+        if isinstance(item, dict):
+            name = item.get('name') or item.get('player_name') or item.get('full_name')
+        else:
+            name = item
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _join_names(names):
+    return _join_parts(list(names))
+
+
+def _join_parts(parts):
+    if not parts:
+        return ''
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f'{parts[0]} and {parts[1]}'
+    return f'{", ".join(parts[:-1])}, and {parts[-1]}'
+
 
 def _clean_phrase(n):
     return f'{n} clean bullpen {_plural(n, "option")}'

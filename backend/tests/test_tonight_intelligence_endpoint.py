@@ -144,9 +144,11 @@ def test_public_cards_omit_strength_and_include_public_fields(client):
     card = client.get('/api/bullpen/intelligence/tonight').get_json()['cards'][0]
     assert 'strength' not in card
     for key in ('team_id', 'team_name', 'headline', 'summary', 'signal_type',
-                'signal_family', 'evidence', 'schedule_context', 'bullpen_context',
-                'limitations'):
+                'signal_family', 'pregame_story', 'evidence', 'schedule_context',
+                'bullpen_context', 'limitations'):
         assert key in card
+    assert card['pregame_story']['label'] == "Tonight's Bullpen Watch"
+    assert card['pregame_story']['watching'].startswith('BaseballOS is watching')
 
 
 # ── Public-copy polish: served cards are team-neutral in prose ────────────────
@@ -175,7 +177,10 @@ def test_endpoint_response_has_no_forbidden_language(client):
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     blob = str(body).lower()
     for term in ('will win', 'will lose', 'guaranteed', 'probability', 'odds',
-                 'recommend', 'ranked', 'ranking', 'predict', 'best option'):
+                 'recommend', 'ranked', 'ranking', 'predict', 'projection',
+                 'best option', 'pick', 'edge', 'fatigue score',
+                 'confidence score', 'will happen', 'expected to happen',
+                 'healthy', 'injury-free'):
         assert term not in blob, term
 
 

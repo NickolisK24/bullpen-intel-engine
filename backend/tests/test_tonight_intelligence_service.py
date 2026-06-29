@@ -15,7 +15,9 @@ REF = '2026-06-26'
 
 _BANNED = (
     'will win', 'will lose', 'guaranteed', 'probability', 'odds', 'recommend',
-    'ranked', 'ranking', 'predict', 'betting', 'best option', ' lock',
+    'ranked', 'ranking', 'predict', 'projection', 'betting', 'best option',
+    ' lock', 'pick', 'edge', 'fatigue score', 'confidence score',
+    'will happen', 'expected to happen', 'healthy', 'injury-free',
 )
 
 
@@ -75,9 +77,14 @@ def test_public_card_omits_strength_and_keeps_public_fields():
     assert 'strength' not in card
     assert 'reference_date' not in card     # carried by the envelope, not the card
     for key in ('team_id', 'team_name', 'headline', 'summary', 'signal_type',
-                'signal_family', 'evidence', 'schedule_context', 'bullpen_context',
-                'limitations'):
+                'signal_family', 'pregame_story', 'evidence', 'schedule_context',
+                'bullpen_context', 'limitations'):
         assert key in card
+    story = card['pregame_story']
+    assert story['label'] == "Tonight's Bullpen Watch"
+    assert story['watching'].startswith('BaseballOS is watching')
+    assert story['why_it_matters'].startswith('This matters because')
+    assert story['watch_point'].startswith('The key question is')
 
 
 def test_card_count_matches_cards_length():
