@@ -166,7 +166,7 @@ const tonightOk = {
   snapshot: {
     served_from: 'snapshot',
     source: 'github_actions',
-    generated_at: '2026-06-26T03:30:00Z',
+    generated_at: '2026-06-26T03:30:00',
   },
   limitations: ['Schedule and bullpen context can still change before first pitch.'],
   cards: [
@@ -425,6 +425,38 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   for (const implementationCopy of ['existing dashboard snapshot', 'existing landscape endpoint', 'internal adapter']) {
     assert.equal(html.includes(implementationCopy), false, implementationCopy)
   }
+})
+
+test('Tonight generated timestamp treats timezone-less UTC as EDT before labeling ET', () => {
+  const summerTonight = clone(tonightOk)
+  summerTonight.snapshot.generated_at = '2026-06-29T03:30:00'
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: summerTonight,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
+  assert.equal(htmlIncludes(html, 'Tonight watch generated 3:30 AM ET'), false)
+})
+
+test('Tonight generated timestamp treats timezone-less UTC as EST before labeling ET', () => {
+  const winterTonight = clone(tonightOk)
+  winterTonight.snapshot.generated_at = '2026-12-15T03:30:00'
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: winterTonight,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Tonight watch generated 10:30 PM ET'))
+  assert.equal(htmlIncludes(html, 'Tonight watch generated 3:30 AM ET'), false)
 })
 
 test('homepage freshness separates Tonight slate from completed-game bullpen data', () => {
@@ -700,7 +732,7 @@ test('Tonight live build timeout reason renders unavailable state without fallba
       snapshot: {
         served_from: 'live_build_timeout',
         source: 'on_demand',
-        generated_at: '2026-06-26T03:30:00Z',
+        generated_at: '2026-06-26T03:30:00',
       },
     },
     dashboard,
