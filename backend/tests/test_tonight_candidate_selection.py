@@ -129,7 +129,12 @@ def test_no_clean_margin_candidate():
     signals = {c['signal_type'] for c in out}
     assert 'no_clean_margin_tonight' in signals
     c = next(c for c in out if c['signal_type'] == 'no_clean_margin_tonight')
-    assert 'almost no clean margin' in c['headline'].lower()
+    # Severity ceiling: with available arms present the headline is "thin", never
+    # "no"/"almost no"/"zero" margin language, and never an exact clean count.
+    headline = c['headline'].lower()
+    assert 'thin late-game margin' in headline
+    assert 'almost no' not in headline and 'no clean' not in headline
+    assert 'clean options are limited' in ' '.join(c['evidence']).lower()
 
 
 # ── 5. heavy_recent_workload_with_games_ahead ─────────────────────────────────
@@ -240,7 +245,10 @@ def test_evidence_maps_to_source_facts():
         schedule_context=_sc(116, days_until=3, games_until=3),
         bullpen_context=_pen(clean=1, band='thin', paths=3))
     text = ' '.join(c['evidence'])
-    assert '1 clean bullpen option' in text
+    # Clean optionality is described qualitatively, never as an exact count, so it
+    # cannot contradict the linked team page's clean-option labels.
+    assert 'Clean options are limited' in text
+    assert 'clean bullpen option' not in text
     assert 'Next off day in 3 days' in text
     assert '3 games before the next off day' in text
     # Every evidence bullet is backed by a schedule or bullpen fact (non-empty).
@@ -261,7 +269,7 @@ def test_candidate_includes_pregame_bullpen_watch_story_fields():
     assert story['team_context'] == "Tonight's schedule has Detroit Tigers at home against Minnesota Twins."
     assert story['watching'].startswith('BaseballOS is watching')
     assert story['why_it_matters'].startswith('This matters because')
-    assert story['key_note'] == 'Key bullpen note: rested-enough arms include Jason Foley and Alex Lange.'
+    assert story['key_note'] == 'Key bullpen note: clean options include Jason Foley and Alex Lange.'
     assert story['watch_point'].startswith('The key question is')
 
 
