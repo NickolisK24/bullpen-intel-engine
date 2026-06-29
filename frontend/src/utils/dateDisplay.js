@@ -18,9 +18,24 @@ const ET_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
 })
 
-export function formatUtcDateTimeEt(value, { includeDate = true } = {}) {
+const ISO_DATE_TIME_WITHOUT_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+
+function parseUtcDateTime(value) {
   if (!value) return null
-  const date = new Date(value)
+  if (value instanceof Date) return value
+
+  const raw = String(value).trim()
+  if (!raw) return null
+
+  // Backend UTC timestamps are sometimes stored as timezone-less ISO strings.
+  // Treat that exact shape as UTC before rendering an ET label.
+  const normalized = ISO_DATE_TIME_WITHOUT_ZONE.test(raw) ? `${raw}Z` : raw
+  return new Date(normalized)
+}
+
+export function formatUtcDateTimeEt(value, { includeDate = true } = {}) {
+  const date = parseUtcDateTime(value)
+  if (!date) return null
   if (Number.isNaN(date.getTime())) return null
   const formatter = includeDate ? ET_DATE_TIME_FORMATTER : ET_TIME_FORMATTER
   return `${formatter.format(date)} ET`
