@@ -279,9 +279,10 @@ function TonightFreshnessRow({
   slateDate,
   dataThrough,
   lastSync,
+  generatedAt,
   stale = false,
 }) {
-  if (!slateDate && !dataThrough && !lastSync && !stale) return null
+  if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale) return null
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <SlateDateStamp date={slateDate} />
@@ -289,6 +290,7 @@ function TonightFreshnessRow({
         <FreshnessBadge state={stale ? 'stale' : 'current'} />
       )}
       <DataThroughStamp date={dataThrough} label="Bullpen data through" />
+      <LastSyncLabel value={generatedAt} label="Tonight watch generated" />
       <LastSyncLabel value={lastSync} />
     </div>
   )
@@ -1024,7 +1026,13 @@ function TonightSection({
   const slateDate = textValue(tonight?.reference_date)
   const dataThrough = textValue(freshness?.data_through)
   const lastSync = textValue(freshness?.last_successful_sync)
-  const snapshotUnavailable = textValue(tonight?.empty_reason) === 'tonight_snapshot_unavailable'
+  const generatedAt = textValue(tonight?.snapshot?.generated_at)
+  const emptyReason = textValue(tonight?.empty_reason)
+  const snapshotUnavailable = [
+    'tonight_live_build_timeout',
+    'tonight_snapshot_build_unavailable',
+    'tonight_snapshot_unavailable',
+  ].includes(emptyReason)
   const showUnavailable = Boolean(error && !tonight) || snapshotUnavailable
 
   if (loading && !tonight) {
@@ -1058,6 +1066,7 @@ function TonightSection({
           slateDate={slateDate}
           dataThrough={dataThrough}
           lastSync={lastSync}
+          generatedAt={generatedAt}
           stale={staleWithError}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1095,6 +1104,7 @@ function TonightSection({
           slateDate={slateDate}
           dataThrough={dataThrough}
           lastSync={lastSync}
+          generatedAt={generatedAt}
         />
       )}
       <TonightEmptyState isError={showUnavailable} onRetry={onRetry} />

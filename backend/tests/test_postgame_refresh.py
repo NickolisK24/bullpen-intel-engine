@@ -449,3 +449,25 @@ def test_postgame_sync_workflow_job_timeout_is_25_minutes():
     assert "    - cron: '0 10 * * *'" in text
     assert "    - cron: '0 2,4,6 * * *'" in text
     assert '\nconcurrency:\n  group: baseballos-sync\n  cancel-in-progress: false\n' in text
+    assert '          - daily\n          - postgame\n' in text
+
+
+def test_postgame_sync_workflow_warms_tonight_after_postgame_refresh():
+    """Static guard: postgame runs must warm the Tonight snapshot after the
+    completed-game refresh, while daily warming remains intact."""
+    from pathlib import Path
+
+    workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
+    text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    daily_step = '      - name: Refresh schedule and warm Tonight\n'
+    postgame_step = '      - name: Refresh schedule and warm Tonight after postgame\n'
+    assert daily_step in text
+    assert postgame_step in text
+    assert text.index('      - name: Run direct postgame refresh\n') < text.index(postgame_step)
+    assert text.index(postgame_step) < text.index('      - name: Verify dashboard snapshot cache\n')
+
+    postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
+    assert "inputs.mode == 'postgame'" in postgame_block
+    assert "github.event.schedule != '0 10 * * *'" in postgame_block
+    assert 'python backend/scripts/run_tonight_refresh.py --source github_actions_postgame' in postgame_block

@@ -100,6 +100,8 @@ def test_ok_with_cards_default_date(client):
     assert body['card_count'] == len(body['cards']) >= 1
     assert body['cards'][0]['team_id'] == 116
     assert body['cards'][0]['signal_family'] == 'schedule_pressure'
+    assert body['snapshot']['served_from'] == 'snapshot'
+    assert body['snapshot']['source'] == 'test_warm'
 
 
 # ── 3. Explicit reference date honored ────────────────────────────────────────
@@ -134,21 +136,60 @@ def test_empty_when_no_schedule_rows(client):
     assert body['cards'] == [] and body['card_count'] == 0
 
 
-def test_snapshot_miss_returns_bounded_empty_without_live_build(client, monkeypatch):
-    built = {'called': False}
+def test_snapshot_miss_uses_bounded_live_fallback_and_stores(client, monkeypatch):
+    calls = []
 
-    def _track_build(*a, **k):
-        built['called'] = True
-        raise AssertionError('public endpoint must not build Tonight live')
+    def _build(reference_date, build_kwargs, timeout_seconds):
+        calls.append((reference_date, build_kwargs, timeout_seconds))
+        return {
+            'status': 'empty',
+            'reference_date': _FIXED_TODAY.isoformat(),
+            'cards': [],
+            'card_count': 0,
+            'empty_reason': 'no_schedule_context',
+            'limitations': [],
+        }
 
-    monkeypatch.setattr(tonight_snap, 'serve_tonight', _track_build)
+    monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _build)
 
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     assert body['status'] == 'empty'
-    assert body['empty_reason'] == tonight_snap.EMPTY_SNAPSHOT_UNAVAILABLE
+    assert body['empty_reason'] == 'no_schedule_context'
     assert body['cards'] == [] and body['card_count'] == 0
-    assert body['limitations'] == ['Tonight snapshot is not available yet.']
-    assert built['called'] is False
+    assert body['snapshot']['served_from'] == 'on_demand'
+    assert body['snapshot']['source'] == 'on_demand'
+    assert calls and calls[0][0] == _FIXED_TODAY
+    assert calls[0][2] > 0
+    with client.application.app_context():
+        assert tonight_snap.read_snapshot(_FIXED_TODAY)['empty_reason'] == 'no_schedule_context'
+
+
+def test_snapshot_miss_live_timeout_returns_bounded_empty(client, monkeypatch):
+    def _timeout(*a, **k):
+        raise tonight_snap.TonightLiveBuildTimeout('too slow')
+
+    monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _timeout)
+
+    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    assert body['status'] == 'empty'
+    assert body['empty_reason'] == tonight_snap.EMPTY_LIVE_BUILD_TIMEOUT
+    assert body['cards'] == [] and body['card_count'] == 0
+    assert body['limitations'] == ['Tonight watch is temporarily unavailable.']
+    assert body['snapshot']['served_from'] == 'live_build_timeout'
+
+
+def test_snapshot_miss_live_exception_returns_bounded_empty(client, monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError('builder exploded')
+
+    monkeypatch.setattr(tonight_snap, '_run_live_build_with_timeout', _boom)
+
+    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    assert body['status'] == 'empty'
+    assert body['empty_reason'] == tonight_snap.EMPTY_SNAPSHOT_BUILD_UNAVAILABLE
+    assert body['cards'] == [] and body['card_count'] == 0
+    assert body['limitations'] == ['Tonight watch is temporarily unavailable.']
+    assert body['snapshot']['served_from'] == 'live_build_failed'
 
 
 def test_empty_when_no_team_playing_today(client):

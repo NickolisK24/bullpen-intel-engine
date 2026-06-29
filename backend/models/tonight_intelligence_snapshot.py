@@ -9,8 +9,8 @@ class TonightIntelligenceSnapshot(db.Model):
     for every team, build each playing team's bullpen context, select candidates,
     shape the public envelope). This stores the finished public response per slate
     keyed by ``reference_date`` and ``snapshot_version``. The endpoint serves
-    ``response_json`` verbatim when a snapshot exists and falls back to live
-    generation when it does not, so the response contract is identical either way.
+    ``response_json`` with lightweight request-time provenance when a snapshot
+    exists and falls back to bounded live generation when it does not.
 
     Mirrors the Intelligence Surface snapshot pattern; it is a dedicated table
     because the Tonight response shape (cards) differs from the lead-story shape.

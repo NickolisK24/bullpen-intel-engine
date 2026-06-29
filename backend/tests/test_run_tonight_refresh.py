@@ -74,6 +74,25 @@ def test_run_refresh_ingests_window_and_warms_tonight():
     assert out['tonight_snapshot'] == {'status': 'ok', 'card_count': 3, 'empty_reason': None}
 
 
+def test_postgame_source_warms_current_product_slate_date():
+    ingest_calls = []
+    warm_calls = []
+
+    def warm(today, source):
+        warm_calls.append((today, source))
+        return {'status': 'empty', 'card_count': 0, 'empty_reason': 'no_cards_cleared_bar'}
+
+    out = rtr.run_refresh(
+        _FakeApp(), source='github_actions_postgame', reference_date=None,
+        ingest_fn=_ok_ingest(ingest_calls), today_fn=_today_fn(date(2026, 6, 29)),
+        warm_fn=warm)
+
+    assert ingest_calls == [('2026-06-19', '2026-07-09', 'github_actions_postgame')]
+    assert warm_calls == [(date(2026, 6, 29), 'github_actions_postgame')]
+    assert out['reference_date'] == '2026-06-29'
+    assert out['tonight_snapshot']['status'] == 'empty'
+
+
 def test_empty_tonight_cards_are_not_a_failure():
     out = rtr.run_refresh(
         _FakeApp(), source='manual', reference_date=None,
