@@ -14,22 +14,37 @@ from pathlib import Path
 from typing import Any
 
 from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
 )
+from services.story_audit_preview_v1 import build_bounded_live_story_audit_preview
+from services.story_selection_trace_v1 import build_story_selection_trace_from_service_payload
 
 
 CAPABILITY = 'four_beat_real_quality_audit_v1'
 VERSION = '2026-06-21.v1'
 DEFAULT_EXPECTED_TEAM_COUNT = 30
+BOUNDED_LIVE_PAYLOAD_SOURCE = 'bounded_live_story_audit_preview'
+PRIOR_COLLAPSE_SIGNATURE = {
+    BEAT_COVERAGE_PRESSURE: 1,
+    BEAT_DEPTH_CONSTRAINT: 17,
+    BEAT_ROUTE_CHANGE: 12,
+    BEAT_SUSTAINABILITY_QUESTION: 0,
+}
 
 PUBLIC_BEATS = (
     BEAT_ROUTE_CHANGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_AVAILABILITY_DEPTH,
+    BEAT_TRUST_LANE,
+    BEAT_BRIDGE,
 )
 
 BOOL_FLAG_KEYS = (
@@ -140,8 +155,16 @@ def _issue_counts(teams):
     }
 
 
+def _zero_filled_counts(counts, beats=PUBLIC_BEATS):
+    counts = _dict(counts)
+    return {
+        beat: int(counts.get(beat) or 0)
+        for beat in beats
+    }
+
+
 def _beat_distribution(audit_preview):
-    counts = _dict(_dict(audit_preview).get('story_type_counts'))
+    counts = _zero_filled_counts(_dict(audit_preview).get('story_type_counts'))
     story_total = sum(int(count or 0) for count in counts.values())
     rows = []
     for beat in PUBLIC_BEATS:
@@ -157,13 +180,19 @@ def _beat_distribution(audit_preview):
     return rows
 
 
-def _unexpected_story_types(audit_preview):
-    counts = _dict(_dict(audit_preview).get('story_type_counts'))
+def _unexpected_story_types_from_counts(counts):
+    counts = _dict(counts)
     return [
         story_type
         for story_type in sorted(counts)
         if story_type not in PUBLIC_BEATS
     ]
+
+
+def _unexpected_story_types(audit_preview):
+    return _unexpected_story_types_from_counts(
+        _dict(audit_preview).get('story_type_counts')
+    )
 
 
 def _example(team, *, review_basis=None):
@@ -279,6 +308,96 @@ def _team_selection_audit(teams):
     return rows
 
 
+def _selected_profile(team):
+    return _dict(_dict(team.get('selection_metadata')).get('selected_profile'))
+
+
+def _opening_sentence(team):
+    text = _clean_text(_dict(team.get('sections')).get('observation'))
+    if not text:
+        return None
+    for marker in ('. ', '? ', '! '):
+        if marker in text:
+            return f'{text.split(marker, 1)[0]}{marker.strip()}'
+    return text
+
+
+def _trace_by_team_id(trace):
+    return {
+        _dict(row.get('team')).get('team_id'): row
+        for row in _list(_dict(trace).get('trace'))
+        if isinstance(row, dict)
+    }
+
+
+def _bounded_team_trace(teams, canonical_trace):
+    canonical_by_id = _trace_by_team_id(canonical_trace)
+    rows = []
+    for team in sorted(teams, key=_team_sort_key):
+        team_id = team.get('team_id')
+        canonical = _dict(canonical_by_id.get(team_id))
+        selected = _selected_profile(team)
+        rows.append({
+            'team': {
+                'team_id': team_id,
+                'team_name': team.get('team_name'),
+                'team_abbreviation': team.get('team_abbreviation'),
+            },
+            'selected_beat': canonical.get('selected_beat') or team.get('story_type'),
+            'headline': team.get('headline'),
+            'opening': _opening_sentence(team),
+            'fallback_status': canonical.get('fallback_status') or {
+                'fallback_used': team.get('state') != 'story',
+                'service_state': team.get('service_state'),
+                'neutral_reason': team.get('neutral_reason'),
+                'limitations': list(_list(team.get('limitations'))),
+            },
+            'selection_reasons': (
+                list(_list(canonical.get('selection_reasons')))
+                or list(_list(selected.get('selection_reasons')))
+            ),
+            'primary_inputs': _dict(canonical.get('primary_inputs')),
+        })
+    return rows
+
+
+def _prior_collapse_reproduced(counts):
+    counts = _dict(counts)
+    signature_count = sum(PRIOR_COLLAPSE_SIGNATURE.values())
+    observed_count = sum(int(count or 0) for count in counts.values())
+    return observed_count == signature_count and all(
+        int(counts.get(beat) or 0) == expected
+        for beat, expected in PRIOR_COLLAPSE_SIGNATURE.items()
+    )
+
+
+def _bounded_live_diagnostic(*, bounded_preview, canonical_trace):
+    audit_preview = _dict(bounded_preview.get('audit_preview'))
+    audit_counts = _zero_filled_counts(audit_preview.get('story_type_counts'))
+    canonical_counts = _zero_filled_counts(
+        _dict(_dict(canonical_trace).get('beat_distribution')).get('story_type_counts')
+    )
+    return {
+        'mode': bounded_preview.get('mode') or 'bounded_live_current_stored_data',
+        'limit': bounded_preview.get('limit'),
+        'team_ids': list(_list(bounded_preview.get('team_ids'))),
+        'current_stored_data_only': True,
+        'sync_like_behavior_started': False,
+        'team_count': audit_preview.get('team_count'),
+        'beat_distribution': _dict(canonical_trace).get('beat_distribution'),
+        'audit_preview_story_type_counts': audit_counts,
+        'canonical_trace_story_type_counts': canonical_counts,
+        'matches_canonical_public_trace': audit_counts == canonical_counts,
+        'prior_collapse_signature': dict(PRIOR_COLLAPSE_SIGNATURE),
+        'prior_collapse_reproduced': _prior_collapse_reproduced(canonical_counts),
+        'team_trace': _bounded_team_trace(
+            _list(audit_preview.get('teams')),
+            canonical_trace,
+        ),
+        'limitations': list(_list(bounded_preview.get('limitations'))),
+    }
+
+
 def build_four_beat_real_quality_audit(
     audit_preview,
     *,
@@ -345,6 +464,45 @@ def build_four_beat_real_quality_audit(
     }
 
 
+def build_bounded_live_four_beat_real_quality_audit(
+    *,
+    team_ids=None,
+    as_of_date=None,
+    limit=DEFAULT_EXPECTED_TEAM_COUNT,
+    generated_at=None,
+    expected_team_count=DEFAULT_EXPECTED_TEAM_COUNT,
+    initial_audit_summary=None,
+    initial_findings=None,
+    fixes_applied=None,
+):
+    """Build a bounded current stored-data story audit with trace diagnostics."""
+
+    bounded_preview = build_bounded_live_story_audit_preview(
+        team_ids=team_ids,
+        as_of_date=as_of_date,
+        limit=limit,
+    )
+    audit_preview = _dict(bounded_preview.get('audit_preview'))
+    canonical_trace = build_story_selection_trace_from_service_payload(
+        _dict(bounded_preview.get('service_payload')),
+        as_of_date=as_of_date,
+    )
+    report = build_four_beat_real_quality_audit(
+        audit_preview,
+        generated_at=generated_at,
+        expected_team_count=expected_team_count,
+        payload_source=BOUNDED_LIVE_PAYLOAD_SOURCE,
+        initial_audit_summary=initial_audit_summary,
+        initial_findings=initial_findings,
+        fixes_applied=fixes_applied,
+    )
+    report['bounded_live_diagnostic'] = _bounded_live_diagnostic(
+        bounded_preview=bounded_preview,
+        canonical_trace=canonical_trace,
+    )
+    return report
+
+
 def write_json_report(report: dict[str, Any], output_path: str | Path) -> Path:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -356,10 +514,13 @@ def write_json_report(report: dict[str, Any], output_path: str | Path) -> Path:
 
 
 __all__ = [
+    'BOUNDED_LIVE_PAYLOAD_SOURCE',
     'CAPABILITY',
     'DEFAULT_EXPECTED_TEAM_COUNT',
     'PUBLIC_BEATS',
+    'PRIOR_COLLAPSE_SIGNATURE',
     'VERSION',
+    'build_bounded_live_four_beat_real_quality_audit',
     'build_four_beat_real_quality_audit',
     'write_json_report',
 ]

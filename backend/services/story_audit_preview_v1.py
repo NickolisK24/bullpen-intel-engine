@@ -104,6 +104,7 @@ SHORT_START_CAUSE_TERMS = (
 )
 
 COMPETITIVE_SELECTION_STRENGTH = 5
+DEFAULT_BOUNDED_LIVE_TEAM_LIMIT = 30
 
 AWKWARD_EMPTY_VALUES = {
     'n/a',
@@ -660,6 +661,28 @@ def _selection_balance_flags(teams, story_type_counts):
     return flags
 
 
+def _audit_preview_from_service_payload(service_payload, *, as_of_date=None):
+    service_payload = _dict(service_payload)
+    teams = [
+        _preview_team(team)
+        for team in _list(service_payload.get('teams'))
+    ]
+    story_type_counts = _story_type_counts(teams)
+    return {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'source': SOURCE,
+        'as_of_date': _iso(as_of_date) or service_payload.get('as_of_date'),
+        'team_count': len(teams),
+        'state_counts': _state_counts(teams),
+        'story_type_counts': story_type_counts,
+        'story_type_distribution': _story_type_distribution(story_type_counts),
+        'selection_balance_flags': _selection_balance_flags(teams, story_type_counts),
+        'teams': teams,
+        'limitations': [*LIMITATIONS, *_list(service_payload.get('limitations'))],
+    }
+
+
 def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=None, limit=None):
     """
     Build an internal Story Intelligence QA preview.
@@ -685,23 +708,40 @@ def build_story_audit_preview(*, team_ids=None, team_contexts=None, as_of_date=N
             as_of_date=as_of_date,
         )
 
-    teams = [
-        _preview_team(team)
-        for team in _list(_dict(service_payload).get('teams'))
-    ]
-    story_type_counts = _story_type_counts(teams)
+    return _audit_preview_from_service_payload(service_payload, as_of_date=as_of_date)
+
+
+def build_bounded_live_story_audit_preview(
+    *,
+    team_ids=None,
+    as_of_date=None,
+    limit=DEFAULT_BOUNDED_LIVE_TEAM_LIMIT,
+):
+    """Build the current stored-data audit preview with an explicit team cap."""
+
+    selected_ids = _limited(
+        team_ids if team_ids is not None else _default_team_ids(limit=limit),
+        limit=limit,
+    )
+    service_payload = build_story_intelligence_service_v1(
+        team_ids=selected_ids,
+        as_of_date=as_of_date,
+    )
     return {
-        'capability': CAPABILITY,
-        'version': VERSION,
-        'source': SOURCE,
-        'as_of_date': _iso(as_of_date) or _dict(service_payload).get('as_of_date'),
-        'team_count': len(teams),
-        'state_counts': _state_counts(teams),
-        'story_type_counts': story_type_counts,
-        'story_type_distribution': _story_type_distribution(story_type_counts),
-        'selection_balance_flags': _selection_balance_flags(teams, story_type_counts),
-        'teams': teams,
-        'limitations': [*LIMITATIONS, *_list(_dict(service_payload).get('limitations'))],
+        'mode': 'bounded_live_current_stored_data',
+        'limit': int(limit or 0),
+        'team_ids': selected_ids,
+        'service_payload': service_payload,
+        'audit_preview': _audit_preview_from_service_payload(
+            service_payload,
+            as_of_date=as_of_date,
+        ),
+        'limitations': [
+            'uses_current_stored_data_only',
+            'caps_team_scope_before_story_generation',
+            'does_not_start_sync',
+            'does_not_change_story_selection',
+        ],
     }
 
 
@@ -715,5 +755,6 @@ __all__ = [
     'STATE_NEUTRAL',
     'STATE_STORY',
     'VERSION',
+    'build_bounded_live_story_audit_preview',
     'build_story_audit_preview',
 ]

@@ -8,6 +8,8 @@ select stories, rank teams, alter observations, or infer causality.
 from collections import defaultdict
 from datetime import date, timedelta
 
+from sqlalchemy.orm import joinedload
+
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from utils.db import db
@@ -163,6 +165,7 @@ def _team_pitchers(team_id):
 def _team_logs(team_id, start_date, end_date):
     return (
         GameLog.query
+        .options(joinedload(GameLog.pitcher))
         .join(Pitcher, GameLog.pitcher_id == Pitcher.id)
         .filter(
             Pitcher.team_id == team_id,
@@ -176,6 +179,7 @@ def _team_logs(team_id, start_date, end_date):
 def _league_logs(start_date, end_date):
     return (
         GameLog.query
+        .options(joinedload(GameLog.pitcher))
         .join(Pitcher, GameLog.pitcher_id == Pitcher.id)
         .filter(
             Pitcher.team_id.isnot(None),

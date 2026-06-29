@@ -306,24 +306,14 @@ def _trace_row(service_payload: dict, canonical_item: dict | None) -> dict:
     }
 
 
-def build_story_selection_trace(*, team_contexts=None, team_ids=None, as_of_date=None) -> dict:
-    """Build an internal public-story selection trace.
+def build_story_selection_trace_from_service_payload(
+    service_payload: dict,
+    *,
+    as_of_date=None,
+) -> dict:
+    """Build a canonical selection trace from an existing service payload."""
 
-    Supplied ``team_contexts`` keep tests and audits deterministic. ``team_ids``
-    uses the live Story Intelligence context path, so it should be run only in
-    explicit diagnostics where the database state is intended input.
-    """
-    if team_contexts is not None:
-        service = build_story_intelligence_service_v1(
-            team_contexts=team_contexts,
-            as_of_date=as_of_date,
-        )
-    else:
-        service = build_story_intelligence_service_v1(
-            team_ids=team_ids or [],
-            as_of_date=as_of_date,
-        )
-
+    service = _dict(service_payload)
     payloads = [
         payload
         for payload in _list(service.get('teams'))
@@ -370,6 +360,29 @@ def build_story_selection_trace(*, team_contexts=None, team_ids=None, as_of_date
     }
 
 
+def build_story_selection_trace(*, team_contexts=None, team_ids=None, as_of_date=None) -> dict:
+    """Build an internal public-story selection trace.
+
+    Supplied ``team_contexts`` keep tests and audits deterministic. ``team_ids``
+    uses the live Story Intelligence context path, so it should be run only in
+    explicit diagnostics where the database state is intended input.
+    """
+    if team_contexts is not None:
+        service = build_story_intelligence_service_v1(
+            team_contexts=team_contexts,
+            as_of_date=as_of_date,
+        )
+    else:
+        service = build_story_intelligence_service_v1(
+            team_ids=team_ids or [],
+            as_of_date=as_of_date,
+        )
+    return build_story_selection_trace_from_service_payload(
+        service,
+        as_of_date=as_of_date,
+    )
+
+
 __all__ = [
     'CAPABILITY',
     'PATH_CANONICAL_DASHBOARD',
@@ -384,4 +397,5 @@ __all__ = [
     'STORY_GENERATION_PATHS',
     'VERSION',
     'build_story_selection_trace',
+    'build_story_selection_trace_from_service_payload',
 ]

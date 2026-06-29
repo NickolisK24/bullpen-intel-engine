@@ -1,18 +1,37 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
+
+import services.four_beat_real_quality_audit as real_audit
 from services.four_beat_real_quality_audit import (
+    BOUNDED_LIVE_PAYLOAD_SOURCE,
     CAPABILITY,
     PUBLIC_BEATS,
+    build_bounded_live_four_beat_real_quality_audit,
     build_four_beat_real_quality_audit,
     write_json_report,
 )
 from services.story_four_beat_interpreter_v1 import (
+    BEAT_AVAILABILITY_DEPTH,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
+    BEAT_TRUST_LANE,
 )
+
+
+OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_2026_06_29 = {
+    BEAT_AVAILABILITY_DEPTH: 1,
+    BEAT_BRIDGE: 0,
+    BEAT_COVERAGE_PRESSURE: 1,
+    BEAT_DEPTH_CONSTRAINT: 25,
+    BEAT_ROUTE_CHANGE: 3,
+    BEAT_SUSTAINABILITY_QUESTION: 0,
+    BEAT_TRUST_LANE: 0,
+}
 
 
 def team_payload(
@@ -145,6 +164,9 @@ def test_four_beat_quality_audit_summarizes_distribution_and_examples():
         {'story_type': BEAT_COVERAGE_PRESSURE, 'count': 0, 'share_of_story_states': 0.0},
         {'story_type': BEAT_DEPTH_CONSTRAINT, 'count': 1, 'share_of_story_states': 50.0},
         {'story_type': BEAT_SUSTAINABILITY_QUESTION, 'count': 0, 'share_of_story_states': 0.0},
+        {'story_type': BEAT_AVAILABILITY_DEPTH, 'count': 0, 'share_of_story_states': 0.0},
+        {'story_type': BEAT_TRUST_LANE, 'count': 0, 'share_of_story_states': 0.0},
+        {'story_type': BEAT_BRIDGE, 'count': 0, 'share_of_story_states': 0.0},
     ]
     assert summary['flagged_issue_counts']['team_flag_counts']['has_raw_object_literal'] == 1
     assert summary['flagged_issue_counts']['term_counts']['database_diff_terms'] == {'core changes': 1}
@@ -227,3 +249,132 @@ def test_four_beat_quality_audit_reports_unexpected_public_story_types(tmp_path)
 
     assert written['capability'] == CAPABILITY
     assert written['unexpected_story_type_count'] == 1
+
+
+def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeypatch):
+    distribution = {
+        BEAT_AVAILABILITY_DEPTH: 4,
+        BEAT_BRIDGE: 4,
+        BEAT_COVERAGE_PRESSURE: 5,
+        BEAT_DEPTH_CONSTRAINT: 4,
+        BEAT_ROUTE_CHANGE: 4,
+        BEAT_SUSTAINABILITY_QUESTION: 5,
+        BEAT_TRUST_LANE: 4,
+    }
+    teams = []
+    team_id = 100
+    for beat, count in distribution.items():
+        for _ in range(count):
+            team_id += 1
+            teams.append(team_payload(
+                team_id=team_id,
+                team_name=f'Team {team_id}',
+                story_type=beat,
+                eligible_beats=[{
+                    'story_type': beat,
+                    'selection_strength': 7,
+                    'selection_reasons': ['bounded_live_evidence'],
+                    'selected': True,
+                }],
+            ))
+
+    preview = audit_preview(teams)
+    service_payload = {
+        'capability': 'story_intelligence_service_v1',
+        'as_of_date': '2026-06-29',
+        'teams': [],
+    }
+    canonical_trace = {
+        'beat_distribution': {
+            'story_count': 30,
+            'story_type_counts': distribution,
+            'distinct_beat_count': 7,
+            'max_beat': BEAT_SUSTAINABILITY_QUESTION,
+            'max_beat_count': 5,
+            'max_beat_share': 0.167,
+            'route_depth_count': 8,
+            'route_depth_share': 0.267,
+        },
+        'trace': [
+            {
+                'team': {
+                    'team_id': team['team_id'],
+                    'team_name': team['team_name'],
+                    'team_abbreviation': team['team_abbreviation'],
+                },
+                'selected_beat': team['story_type'],
+                'selection_reasons': ['bounded_live_evidence'],
+                'primary_inputs': {'selection_strength': 7},
+                'fallback_status': {'fallback_used': False},
+            }
+            for team in teams
+        ],
+    }
+
+    monkeypatch.setattr(
+        real_audit,
+        'build_bounded_live_story_audit_preview',
+        lambda **kwargs: {
+            'mode': 'bounded_live_current_stored_data',
+            'limit': 30,
+            'team_ids': [team['team_id'] for team in teams],
+            'service_payload': service_payload,
+            'audit_preview': preview,
+            'limitations': [
+                'uses_current_stored_data_only',
+                'does_not_start_sync',
+                'does_not_change_story_selection',
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        real_audit,
+        'build_story_selection_trace_from_service_payload',
+        lambda payload, as_of_date=None: canonical_trace,
+    )
+
+    report = build_bounded_live_four_beat_real_quality_audit(
+        generated_at=datetime(2026, 6, 29, tzinfo=timezone.utc),
+    )
+
+    assert report['payload_source'] == BOUNDED_LIVE_PAYLOAD_SOURCE
+    assert report['complete_team_count'] is True
+    assert report['unexpected_story_type_count'] == 0
+
+    diagnostic = report['bounded_live_diagnostic']
+    assert diagnostic['team_count'] == 30
+    assert diagnostic['current_stored_data_only'] is True
+    assert diagnostic['sync_like_behavior_started'] is False
+    assert diagnostic['audit_preview_story_type_counts'] == distribution
+    assert diagnostic['canonical_trace_story_type_counts'] == distribution
+    assert diagnostic['matches_canonical_public_trace'] is True
+    assert diagnostic['prior_collapse_reproduced'] is False
+    assert diagnostic['beat_distribution']['distinct_beat_count'] == 7
+    assert diagnostic['beat_distribution']['route_depth_share'] <= 0.80
+    assert len(diagnostic['team_trace']) == 30
+    assert diagnostic['team_trace'][0]['headline']
+    assert diagnostic['team_trace'][0]['opening']
+    assert diagnostic['team_trace'][0]['fallback_status']['fallback_used'] is False
+    assert diagnostic['team_trace'][0]['selection_reasons'] == ['bounded_live_evidence']
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        'story-refinement E1D: bounded current DB-backed audit on 2026-06-29 '
+        'observed depth_constraint=25, route_change=3, coverage_pressure=1, '
+        'availability_depth=1, sustainability_question=0, trust_lane=0, '
+        'bridge=0; live stored-data selection still needs follow-up.'
+    ),
+)
+def test_document_observed_bounded_live_db_collapse_needs_selection_followup():
+    counts = OBSERVED_BOUNDED_LIVE_DB_DISTRIBUTION_2026_06_29
+    story_count = sum(counts.values())
+    max_count = max(counts.values())
+    route_depth_count = counts[BEAT_ROUTE_CHANGE] + counts[BEAT_DEPTH_CONSTRAINT]
+
+    assert story_count == 30
+    assert sum(1 for count in counts.values() if count > 0) >= 5
+    assert max_count <= 15
+    assert route_depth_count / story_count <= 0.80
+    assert counts[BEAT_SUSTAINABILITY_QUESTION] >= 1
