@@ -108,6 +108,21 @@ def print_summary(report, output_path):
             'Prior collapse reproduced: '
             f"{json.dumps(bounded['prior_collapse_reproduced'])}"
         )
+        missing_review = bounded.get('missing_beat_evidence_review') or {}
+        if missing_review:
+            compact = {
+                beat: {
+                    'candidate_evidence_team_count': review.get('candidate_evidence_team_count'),
+                    'eligible_candidate_team_count': review.get('eligible_candidate_team_count'),
+                    'top_candidate_score': review.get('top_candidate_score'),
+                    'selected_team_count': review.get('selected_team_count'),
+                }
+                for beat, review in sorted(missing_review.items())
+            }
+            print(
+                'Missing beat evidence review: '
+                f"{json.dumps(compact, sort_keys=True)}"
+            )
 
 
 def main():

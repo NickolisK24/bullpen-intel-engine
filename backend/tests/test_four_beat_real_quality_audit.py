@@ -293,6 +293,26 @@ def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeyp
             'route_depth_count': 8,
             'route_depth_share': 0.267,
         },
+        'missing_beat_evidence_review': {
+            BEAT_BRIDGE: {
+                'candidate_evidence_team_count': 4,
+                'eligible_candidate_team_count': 4,
+                'top_candidate_score': 6,
+                'selected_team_count': 4,
+            },
+            BEAT_TRUST_LANE: {
+                'candidate_evidence_team_count': 4,
+                'eligible_candidate_team_count': 4,
+                'top_candidate_score': 7,
+                'selected_team_count': 4,
+            },
+            BEAT_SUSTAINABILITY_QUESTION: {
+                'candidate_evidence_team_count': 5,
+                'eligible_candidate_team_count': 5,
+                'top_candidate_score': 8,
+                'selected_team_count': 5,
+            },
+        },
         'trace': [
             {
                 'team': {
@@ -347,6 +367,8 @@ def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeyp
     assert diagnostic['canonical_trace_story_type_counts'] == distribution
     assert diagnostic['matches_canonical_public_trace'] is True
     assert diagnostic['prior_collapse_reproduced'] is False
+    assert diagnostic['missing_beat_evidence_review'][BEAT_BRIDGE]['selected_team_count'] == 4
+    assert diagnostic['missing_beat_evidence_review'][BEAT_TRUST_LANE]['top_candidate_score'] == 7
     assert diagnostic['beat_distribution']['distinct_beat_count'] == 7
     assert diagnostic['beat_distribution']['route_depth_share'] <= 0.80
     assert len(diagnostic['team_trace']) == 30

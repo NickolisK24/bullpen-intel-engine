@@ -106,6 +106,12 @@ PUBLIC_BEATS = (
     BEAT_BRIDGE,
 )
 
+MISSING_BEAT_REVIEW_TARGETS = (
+    BEAT_BRIDGE,
+    BEAT_TRUST_LANE,
+    BEAT_SUSTAINABILITY_QUESTION,
+)
+
 
 def _dict(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
@@ -138,6 +144,15 @@ def _count(value: Any):
     if isinstance(value, list):
         return len(value)
     return value
+
+
+def _number(value: Any):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _nested(context: dict, section: str, key: str):
@@ -192,6 +207,33 @@ def _candidate_profiles(payload: dict) -> list[dict]:
         }
         for profile in _list(_dict(payload.get('selection_metadata')).get('candidate_profiles'))
     ]
+
+
+def _profile_for_beat(payload: dict, beat: str) -> dict:
+    return next(
+        (
+            profile
+            for profile in _candidate_profiles(payload)
+            if profile.get('story_type') == beat
+        ),
+        {},
+    )
+
+
+def _loss_reason(profile: dict, selected: dict) -> str | None:
+    profile = _dict(profile)
+    if not profile:
+        return None
+    if profile.get('selected') is True:
+        return None
+    selected = _dict(selected)
+    strength = int(profile.get('selection_strength') or 0)
+    selected_strength = int(selected.get('selection_strength') or 0)
+    if selected_strength > strength:
+        return 'lost_lower_selection_strength'
+    if selected_strength == strength:
+        return 'lost_tiebreak_or_evidence_completeness'
+    return 'lost_after_service_sort'
 
 
 def _fallback_status(service_payload: dict, canonical_item: dict | None) -> dict:
@@ -274,6 +316,220 @@ def _primary_inputs_for_beat(story_type: str | None, context: dict) -> dict:
     return {}
 
 
+def _source_inputs_for_missing_beat(beat: str, context: dict) -> dict:
+    if beat == BEAT_BRIDGE:
+        return _primary_inputs_for_beat(BEAT_BRIDGE, context)
+    if beat == BEAT_TRUST_LANE:
+        return _primary_inputs_for_beat(BEAT_TRUST_LANE, context)
+    if beat == BEAT_SUSTAINABILITY_QUESTION:
+        return _primary_inputs_for_beat(BEAT_SUSTAINABILITY_QUESTION, context) | {
+            'rotation_ip_trend': _nested(context, 'rotation_context', 'rotation_ip_trend'),
+            'early_bullpen_entry_rate': _nested(context, 'rotation_context', 'early_bullpen_entry_rate'),
+        }
+    return {}
+
+
+def _bridge_blockers(context: dict) -> list[str]:
+    rotation = _dict(context.get('rotation_context'))
+    optionality = _dict(context.get('bullpen_optionality_context'))
+    stability = _dict(context.get('role_stability_context'))
+    early_rate = _number(rotation.get('early_bullpen_entry_rate'))
+    coverage_ip = _number(rotation.get('bullpen_coverage_ip_7d'))
+    monitor = int(_number(optionality.get('monitor_arms_count')) or 0)
+    limited = int(_number(optionality.get('limited_arms_count')) or 0)
+    clean_count = len(_list(optionality.get('clean_workload_options')))
+
+    blockers = []
+    if stability.get('stability_band') != 'stable':
+        blockers.append('late_core_not_settled')
+    if optionality.get('context_available') is not True:
+        blockers.append('optionality_context_unavailable')
+    if rotation.get('context_available') is False:
+        blockers.append('rotation_context_unavailable')
+    if not (
+        (early_rate is not None and early_rate >= 35.0)
+        or (coverage_ip is not None and coverage_ip >= 3.8)
+    ):
+        blockers.append('no_starter_handoff_demand')
+    if monitor + limited < 2:
+        blockers.append('insufficient_volatile_middle')
+    if clean_count > 2:
+        blockers.append('bridge_not_thin')
+    return blockers
+
+
+def _trust_lane_blockers(context: dict) -> list[str]:
+    optionality = _dict(context.get('bullpen_optionality_context'))
+    available = _number(optionality.get('available_arms_count'))
+    clean_count = len(_list(optionality.get('clean_workload_options')))
+    secondary_count = len(_list(optionality.get('secondary_options')))
+
+    blockers = []
+    if optionality.get('context_available') is not True:
+        blockers.append('optionality_context_unavailable')
+    if available is None:
+        blockers.append('missing_available_count')
+    elif available < 4:
+        blockers.append('insufficient_available_arms')
+    if clean_count > 2:
+        blockers.append('trusted_lane_not_thin')
+    if secondary_count < 3:
+        blockers.append('insufficient_flagged_secondary_options')
+    return blockers
+
+
+def _sustainability_blockers(context: dict) -> list[str]:
+    rotation = _dict(context.get('rotation_context'))
+    concentration = _dict(context.get('bullpen_concentration_context'))
+    optionality = _dict(context.get('bullpen_optionality_context'))
+    stability = _dict(context.get('role_stability_context'))
+    band = concentration.get('concentration_band')
+    share = _number(concentration.get('top_three_workload_share_10d'))
+    paths = _number(optionality.get('practical_close_game_paths_count'))
+    clean_count = len(_list(optionality.get('clean_workload_options')))
+    trend = _number(rotation.get('rotation_ip_trend'))
+    early_rate = _number(rotation.get('early_bullpen_entry_rate'))
+    route_arms = (
+        _names(stability.get('current_operational_core'))
+        or _names(concentration.get('top_three_relievers_10d'))
+    )
+
+    blockers = []
+    if band not in {'concentrated', 'narrow'}:
+        blockers.append('no_concentration_pressure_observation')
+    if (
+        (trend is not None and trend <= -0.5)
+        or (early_rate is not None and early_rate >= 40.0)
+    ):
+        blockers.append('concentration_mapped_to_coverage_pressure')
+    if not (band == 'narrow' or (share is not None and share >= 75.0)):
+        blockers.append('insufficient_concentration')
+    if not ((paths is not None and paths <= 3) or clean_count <= 1):
+        blockers.append('insufficient_optionality_constraint')
+    if not route_arms:
+        blockers.append('missing_named_arms')
+    if not concentration.get('league_top_three_workload_share_10d'):
+        blockers.append('missing_baseline')
+    if not (
+        rotation.get('rotation_ip_trend') is not None
+        or paths is not None
+        or clean_count is not None
+    ):
+        blockers.append('missing_cause')
+    return blockers
+
+
+def _missing_beat_blockers(beat: str, context: dict) -> list[str]:
+    if beat == BEAT_BRIDGE:
+        return _bridge_blockers(context)
+    if beat == BEAT_TRUST_LANE:
+        return _trust_lane_blockers(context)
+    if beat == BEAT_SUSTAINABILITY_QUESTION:
+        return _sustainability_blockers(context)
+    return []
+
+
+def _missing_beat_team_review(payload: dict, trace_row: dict, beat: str) -> dict:
+    context = _dict(payload.get('supporting_context'))
+    profile = _profile_for_beat(payload, beat)
+    selected = _selected_profile(payload)
+    blockers = _missing_beat_blockers(beat, context)
+    source_evidence_present = not blockers
+    eligible_candidate = bool(profile)
+    filtered_reason = (
+        'source_evidence_present_but_no_public_candidate'
+        if source_evidence_present and not eligible_candidate
+        else None
+    )
+    return {
+        'team': _team_descriptor(payload),
+        'selected_beat': trace_row.get('selected_beat'),
+        'source_evidence_present': source_evidence_present,
+        'eligible_candidate': eligible_candidate,
+        'candidate_selected': profile.get('selected') is True if profile else False,
+        'candidate_score': (
+            int(profile.get('selection_strength') or 0)
+            if profile else None
+        ),
+        'candidate_rank': profile.get('selection_rank') if profile else None,
+        'selected_score': int(selected.get('selection_strength') or 0),
+        'loss_reason': _loss_reason(profile, selected),
+        'filtered_reason': filtered_reason,
+        'blocker_reasons': blockers,
+        'source_inputs': _source_inputs_for_missing_beat(beat, context),
+    }
+
+
+def _missing_beat_evidence_review(payloads: list[dict], trace_rows: list[dict]) -> dict:
+    rows_by_id = {
+        _dict(row.get('team')).get('team_id'): row
+        for row in trace_rows
+        if isinstance(row, dict)
+    }
+    review = {}
+    for beat in MISSING_BEAT_REVIEW_TARGETS:
+        team_rows = [
+            _missing_beat_team_review(
+                payload,
+                _dict(rows_by_id.get(payload.get('team_id'))),
+                beat,
+            )
+            for payload in payloads
+        ]
+        blocker_counts = Counter(
+            blocker
+            for row in team_rows
+            for blocker in _list(row.get('blocker_reasons'))
+        )
+        loss_counts = Counter(
+            row.get('loss_reason')
+            for row in team_rows
+            if row.get('loss_reason')
+        )
+        filter_counts = Counter(
+            row.get('filtered_reason')
+            for row in team_rows
+            if row.get('filtered_reason')
+        )
+        scores = [
+            int(row.get('candidate_score'))
+            for row in team_rows
+            if row.get('candidate_score') is not None
+        ]
+        review[beat] = {
+            'candidate_evidence_team_count': sum(
+                1 for row in team_rows if row.get('source_evidence_present')
+            ),
+            'eligible_candidate_team_count': sum(
+                1 for row in team_rows if row.get('eligible_candidate')
+            ),
+            'selected_team_count': sum(
+                1 for row in team_rows if row.get('candidate_selected')
+            ),
+            'lost_selection_team_count': sum(
+                1 for row in team_rows if row.get('loss_reason')
+            ),
+            'filtered_candidate_team_count': sum(
+                1 for row in team_rows if row.get('filtered_reason')
+            ),
+            'top_candidate_score': max(scores) if scores else None,
+            'lost_selection_reason_counts': {
+                reason: loss_counts[reason]
+                for reason in sorted(loss_counts)
+            },
+            'filtered_reason_counts': {
+                reason: filter_counts[reason]
+                for reason in sorted(filter_counts)
+            },
+            'source_blocker_reason_counts': {
+                reason: blocker_counts[reason]
+                for reason in sorted(blocker_counts)
+            },
+            'teams': team_rows,
+        }
+    return review
+
+
 def _team_descriptor(payload: dict) -> dict:
     return {
         'team_id': payload.get('team_id'),
@@ -348,6 +604,7 @@ def build_story_selection_trace_from_service_payload(
         'team_count': len(payloads),
         'story_count': sum(1 for item in _list(feed.get('items')) if _dict(item).get('story_available') is True),
         'beat_distribution': _beat_distribution(_list(feed.get('items'))),
+        'missing_beat_evidence_review': _missing_beat_evidence_review(payloads, rows),
         'generation_paths': list(STORY_GENERATION_PATHS),
         'multiple_selection_paths_present': True,
         'trace': rows,
@@ -394,6 +651,7 @@ __all__ = [
     'PATH_TEAM_STORY_API',
     'PATH_TODAY_LEAD_STORY',
     'PUBLIC_BEATS',
+    'MISSING_BEAT_REVIEW_TARGETS',
     'STORY_GENERATION_PATHS',
     'VERSION',
     'build_story_selection_trace',

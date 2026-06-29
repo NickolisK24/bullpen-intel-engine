@@ -1,5 +1,6 @@
 from services.story_selection_trace_v1 import (
     CAPABILITY,
+    MISSING_BEAT_REVIEW_TARGETS,
     PATH_CANONICAL_DASHBOARD,
     PATH_DETERMINISTIC_EDITORIAL_CORPUS,
     PATH_FOUR_BEAT_AUDIT,
@@ -119,6 +120,56 @@ def test_selection_trace_distribution_matches_deterministic_public_corpus():
     assert distribution['distinct_beat_count'] == 7
     assert distribution['max_beat_count'] == 5, _format_distribution(distribution)
     assert distribution['route_depth_count'] == 8, _format_distribution(distribution)
+
+
+def test_selection_trace_reports_missing_beat_candidate_paths():
+    trace = _trace()
+    review = trace['missing_beat_evidence_review']
+
+    assert set(review) == set(MISSING_BEAT_REVIEW_TARGETS)
+
+    for beat in (BEAT_BRIDGE, BEAT_TRUST_LANE, BEAT_SUSTAINABILITY_QUESTION):
+        row = review[beat]
+        assert row['candidate_evidence_team_count'] >= 1
+        assert row['eligible_candidate_team_count'] >= 1
+        assert row['top_candidate_score'] is not None
+        assert row['selected_team_count'] == EXPECTED_DETERMINISTIC_DISTRIBUTION[beat]
+        assert len(row['teams']) == 30
+
+
+def test_selection_trace_reports_missing_beat_source_blockers():
+    context = editorial._team_context(
+        999,
+        'Blocked Beat Club',
+        'BBC',
+    )
+
+    trace = build_story_selection_trace(
+        team_contexts=[context],
+        as_of_date=editorial.DATE,
+    )
+    review = trace['missing_beat_evidence_review']
+
+    assert review[BEAT_BRIDGE]['candidate_evidence_team_count'] == 0
+    assert review[BEAT_BRIDGE]['eligible_candidate_team_count'] == 0
+    assert review[BEAT_BRIDGE]['source_blocker_reason_counts']['late_core_not_settled'] == 1
+    assert review[BEAT_BRIDGE]['source_blocker_reason_counts']['no_starter_handoff_demand'] == 1
+
+    assert review[BEAT_TRUST_LANE]['candidate_evidence_team_count'] == 0
+    assert review[BEAT_TRUST_LANE]['eligible_candidate_team_count'] == 0
+    assert (
+        review[BEAT_TRUST_LANE]['source_blocker_reason_counts']
+        ['insufficient_flagged_secondary_options']
+        == 1
+    )
+
+    assert review[BEAT_SUSTAINABILITY_QUESTION]['candidate_evidence_team_count'] == 0
+    assert review[BEAT_SUSTAINABILITY_QUESTION]['eligible_candidate_team_count'] == 0
+    assert (
+        review[BEAT_SUSTAINABILITY_QUESTION]['source_blocker_reason_counts']
+        ['no_concentration_pressure_observation']
+        == 1
+    )
 
 
 def test_prior_audit_collapse_is_not_reproduced_by_current_public_trace():

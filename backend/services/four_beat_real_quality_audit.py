@@ -385,6 +385,9 @@ def _bounded_live_diagnostic(*, bounded_preview, canonical_trace):
         'sync_like_behavior_started': False,
         'team_count': audit_preview.get('team_count'),
         'beat_distribution': _dict(canonical_trace).get('beat_distribution'),
+        'missing_beat_evidence_review': _dict(canonical_trace).get(
+            'missing_beat_evidence_review'
+        ),
         'audit_preview_story_type_counts': audit_counts,
         'canonical_trace_story_type_counts': canonical_counts,
         'matches_canonical_public_trace': audit_counts == canonical_counts,
