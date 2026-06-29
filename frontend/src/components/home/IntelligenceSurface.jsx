@@ -19,10 +19,13 @@ import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
   'No other league bullpen movement is ready to show yet.'
+const TONIGHT_SECTION_TITLE = "Tonight's Bullpen Watch"
+const TONIGHT_SECTION_SUBTITLE =
+  'What BaseballOS is watching before first pitch.'
 const TONIGHT_EMPTY_TITLE =
-  'No Tonight bullpen read has cleared the bar yet.'
+  'No standout bullpen watch point tonight.'
 const TONIGHT_EMPTY_BODY =
-  'BaseballOS will only surface a pregame card when schedule context and bullpen evidence are strong enough.'
+  'No standout bullpen watch point tonight based on the latest available usage data.'
 const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
@@ -34,6 +37,8 @@ const WEEKLY_NOTES_MAILTO =
 
 const INTERNAL_TODAY_COPY_PATTERN =
   /\b(COIN|V2|V3|V4|deterministic|snapshot|endpoint|backend|recommendation engine|baseline distribution|governance layer|sample state)\b/i
+const INTERNAL_TONIGHT_COPY_PATTERN =
+  /\b(fatigue score|confidence score|internal_strength|ranking_score|signal_family|signal_type|recommend(?:ed|ation)?|ranked|ranking|projection|prediction|bet(?:ting|s)?|odds|pick|edge|guaranteed|expected to happen|will happen|healthy|injury-free)\b/i
 
 const EMPTY_REASON_COPY = {
   no_completed_game_contexts: 'No completed-game contexts are available for the current reference date.',
@@ -225,6 +230,19 @@ function cleanStoryList(...values) {
   return values
     .flatMap(value => (Array.isArray(value) ? value : [value]))
     .map(cleanStoryCopy)
+    .filter(Boolean)
+}
+
+function cleanTonightCopy(value) {
+  const text = textValue(value)
+  if (!text || INTERNAL_TONIGHT_COPY_PATTERN.test(text)) return null
+  return text
+}
+
+function cleanTonightList(...values) {
+  return values
+    .flatMap(value => (Array.isArray(value) ? value : [value]))
+    .map(cleanTonightCopy)
     .filter(Boolean)
 }
 
@@ -454,8 +472,9 @@ export function getTonightCards(response, teams = [], limit = 3) {
     .map(card => {
       const team = resolveTonightTeam(card, teams)
       const teamName = cleanTeamName(card?.team_name ?? card?.teamName ?? team?.teamName)
-      const headline = textValue(card?.headline)
-      const summary = textValue(card?.summary)
+      const story = firstObjectValue(card?.pregame_story) || {}
+      const headline = cleanTonightCopy(story?.headline) || cleanTonightCopy(card?.headline)
+      const summary = cleanTonightCopy(story?.watching) || cleanTonightCopy(card?.summary)
       if (!teamName || !headline || !summary) return null
       return {
         key: textValue(card?.key) || [
@@ -465,10 +484,16 @@ export function getTonightCards(response, teams = [], limit = 3) {
           headline,
         ].filter(Boolean).join('-'),
         teamName,
+        label: cleanTonightCopy(story?.label) || TONIGHT_SECTION_TITLE,
         headline,
         summary,
-        evidence: cleanDraftList(card?.evidence),
-        limitations: cleanDraftList(card?.limitations),
+        teamContext: cleanTonightCopy(story?.team_context),
+        whyItMatters: cleanTonightCopy(story?.why_it_matters),
+        keyNote: cleanTonightCopy(story?.key_note),
+        starterDependency: cleanTonightCopy(story?.starter_dependency),
+        watchPoint: cleanTonightCopy(story?.watch_point),
+        evidence: cleanTonightList(card?.evidence),
+        limitations: cleanTonightList(card?.limitations),
         href: teamBoardHrefIfResolvable(team, 'intelligence-tonight'),
       }
     })
@@ -905,6 +930,13 @@ function TonightEmptyState({ isError, onRetry }) {
 }
 
 function TonightCard({ card }) {
+  const storyRows = [
+    ['Why It Matters Tonight', card.whyItMatters],
+    ['Key Note', card.keyNote],
+    ['Starter Length', card.starterDependency],
+    ['Watch Point', card.watchPoint],
+  ].filter(([, body]) => Boolean(body))
+
   return (
     <article className="flex min-w-0 flex-col border border-dirt bg-dugout p-4 sm:p-5">
       <div className="font-mono text-[10px] uppercase tracking-widest text-amber/75">
@@ -913,13 +945,32 @@ function TonightCard({ card }) {
       <h3 className="mt-3 break-words font-display text-2xl leading-tight tracking-wide text-chalk100">
         {card.headline}
       </h3>
+      {card.teamContext && (
+        <p className="mt-2 text-xs leading-relaxed text-chalk500">
+          {card.teamContext}
+        </p>
+      )}
       <p className="mt-3 text-sm leading-relaxed text-chalk400">
         {card.summary}
       </p>
+      {storyRows.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {storyRows.map(([label, body]) => (
+            <div key={label}>
+              <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
+                {label}
+              </h4>
+              <p className="mt-1 text-xs leading-relaxed text-chalk400">
+                {body}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
       {card.evidence.length > 0 && (
         <div className="mt-4">
           <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-            Evidence
+            Usage Notes
           </h4>
           <ul className="mt-2 space-y-2">
             {card.evidence.map(item => (
@@ -973,7 +1024,7 @@ function TonightSection({
   onRetryDashboard,
 }) {
   const cards = getTonightCards(tonight, teams)
-  const sectionLimitations = cleanDraftList(tonight?.limitations)
+  const sectionLimitations = cleanTonightList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
   const slateDate = textValue(tonight?.reference_date)
   const dataThrough = textValue(freshness?.data_through)
@@ -990,8 +1041,8 @@ function TonightSection({
       <SectionShell
         id="tonight"
         eyebrow="Tonight"
-        title="Tonight"
-        subtitle="Bullpen situations BaseballOS is watching before first pitch."
+        title={TONIGHT_SECTION_TITLE}
+        subtitle={TONIGHT_SECTION_SUBTITLE}
       >
         <TonightLoadingState />
       </SectionShell>
@@ -1003,8 +1054,8 @@ function TonightSection({
       <SectionShell
         id="tonight"
         eyebrow="Tonight"
-        title="Tonight"
-        subtitle="Bullpen situations BaseballOS is watching before first pitch."
+        title={TONIGHT_SECTION_TITLE}
+        subtitle={TONIGHT_SECTION_SUBTITLE}
       >
         {staleWithError && (
           <StaleDataNotice
@@ -1058,8 +1109,8 @@ function TonightSection({
     <SectionShell
       id="tonight"
       eyebrow="Tonight"
-      title="Tonight"
-      subtitle="Bullpen situations BaseballOS is watching before first pitch."
+      title={TONIGHT_SECTION_TITLE}
+      subtitle={TONIGHT_SECTION_SUBTITLE}
     >
       {!Boolean(error && !tonight) && (
         <TonightFreshnessRow

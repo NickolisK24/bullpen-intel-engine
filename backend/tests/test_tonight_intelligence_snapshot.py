@@ -36,8 +36,8 @@ REF = date(2026, 6, 26)
 _CONTRACT_KEYS = {'status', 'reference_date', 'cards', 'card_count',
                   'empty_reason', 'limitations'}
 _CARD_KEYS = {'team_id', 'team_name', 'headline', 'summary', 'signal_type',
-              'signal_family', 'evidence', 'schedule_context', 'bullpen_context',
-              'limitations'}
+              'signal_family', 'pregame_story', 'evidence', 'schedule_context',
+              'bullpen_context', 'limitations'}
 
 
 def _pen(*, clean=1, band='thin', paths=2, conc='normal', share=40.0, name='Detroit Tigers'):
@@ -117,6 +117,7 @@ def test_stored_response_matches_public_contract_without_strength(app):
     assert set(served) == _CONTRACT_KEYS == set(live)
     for card in served['cards']:
         assert set(card) == _CARD_KEYS
+        assert card['pregame_story']['label'] == "Tonight's Bullpen Watch"
         assert 'strength' not in card
     # The stored JSON is exactly what was served, and carries no strength.
     blob = str(read_snapshot(REF))
