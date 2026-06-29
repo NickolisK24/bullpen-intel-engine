@@ -1791,21 +1791,21 @@ def get_tonight_intelligence():
     """Tonight — bullpen situations BaseballOS is watching before first pitch.
 
     Read-only, pregame intelligence. Serves a precomputed Tonight snapshot for
-    the resolved slate when one exists (the fast path), otherwise joins the
-    stored schedule with the existing bullpen context to surface up to three
-    diverse situations, stores the result, and returns it. Defaults to the
-    product current day (optional ``reference_date`` YYYY-MM-DD for inspection).
-    Returns an honest empty state when no team is playing or no situation clears
-    a signal. Descriptive and evidence-backed — no predictions, no ranking, no
-    recommendations. The response shape is identical whether served from snapshot
-    or built live. Separate from the COIN completed-game stories and from
-    ``/intelligence/today``.
+    the resolved slate when one exists. Public requests do not build the expensive
+    snapshot synchronously on cache miss; they return an honest empty envelope so
+    the homepage can complete instead of hanging. Defaults to the product current
+    day (optional ``reference_date`` YYYY-MM-DD for inspection). Descriptive and
+    evidence-backed — no predictions, no ranking, no recommendations. Separate
+    from the COIN completed-game stories and from ``/intelligence/today``.
     """
     reference_date, error = _tonight_reference_date_from_request()
     if error:
         return query_param_error_response(error)
     try:
-        payload = serve_tonight_cached(reference_date=reference_date)
+        payload = serve_tonight_cached(
+            reference_date=reference_date,
+            build_on_miss=False,
+        )
     except Exception:  # pragma: no cover - defensive; service isolates failures
         current_app.logger.exception('tonight intelligence build failed')
         return jsonify({

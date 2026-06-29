@@ -81,11 +81,19 @@ def _seed_playing_stretch(team_id=116, *, game_date=_FIXED_TODAY):
     db.session.commit()
 
 
+def _warm_tonight_snapshot(reference_date=_FIXED_TODAY):
+    return tonight_snap.generate_tonight_snapshot_for_date(
+        reference_date,
+        source='test_warm',
+    )
+
+
 # ── 1 & 2. ok with cards, defaulting to product_current_date ──────────────────
 
 def test_ok_with_cards_default_date(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
+        _warm_tonight_snapshot()
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     assert body['status'] == 'ok'
     assert body['reference_date'] == '2026-06-26'
@@ -99,6 +107,7 @@ def test_ok_with_cards_default_date(client):
 def test_explicit_reference_date(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
+        _warm_tonight_snapshot()
     body = client.get('/api/bullpen/intelligence/tonight?reference_date=2026-06-26').get_json()
     assert body['reference_date'] == '2026-06-26'
     assert body['status'] == 'ok'
@@ -117,10 +126,29 @@ def test_invalid_reference_date_returns_400(client):
 # ── 5 & 6. Empty states ───────────────────────────────────────────────────────
 
 def test_empty_when_no_schedule_rows(client):
+    with client.application.app_context():
+        _warm_tonight_snapshot()
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_schedule_context'
     assert body['cards'] == [] and body['card_count'] == 0
+
+
+def test_snapshot_miss_returns_bounded_empty_without_live_build(client, monkeypatch):
+    built = {'called': False}
+
+    def _track_build(*a, **k):
+        built['called'] = True
+        raise AssertionError('public endpoint must not build Tonight live')
+
+    monkeypatch.setattr(tonight_snap, 'serve_tonight', _track_build)
+
+    body = client.get('/api/bullpen/intelligence/tonight').get_json()
+    assert body['status'] == 'empty'
+    assert body['empty_reason'] == tonight_snap.EMPTY_SNAPSHOT_UNAVAILABLE
+    assert body['cards'] == [] and body['card_count'] == 0
+    assert body['limitations'] == ['Tonight snapshot is not available yet.']
+    assert built['called'] is False
 
 
 def test_empty_when_no_team_playing_today(client):
@@ -131,6 +159,7 @@ def test_empty_when_no_team_playing_today(client):
         db.session.add(ScheduledGame(team_id=116, game_pk=992, game_date=date(2026, 6, 28),
                                      status_state='scheduled', opponent_team_id=142))
         db.session.commit()
+        _warm_tonight_snapshot()
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     assert body['status'] == 'empty'
     assert body['empty_reason'] == 'no_teams_playing_today'
@@ -141,6 +170,7 @@ def test_empty_when_no_team_playing_today(client):
 def test_public_cards_omit_strength_and_include_public_fields(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
+        _warm_tonight_snapshot()
     card = client.get('/api/bullpen/intelligence/tonight').get_json()['cards'][0]
     assert 'strength' not in card
     for key in ('team_id', 'team_name', 'headline', 'summary', 'signal_type',
@@ -160,6 +190,7 @@ def test_served_cards_do_not_put_team_name_in_prose(client, monkeypatch):
         lambda team_id, reference_date: _pen(name='Chicago Cubs', clean=1, band='thin'))
     with client.application.app_context():
         _seed_playing_stretch(116)
+        _warm_tonight_snapshot()
     cards = client.get('/api/bullpen/intelligence/tonight').get_json()['cards']
     assert cards
     for card in cards:
@@ -174,6 +205,7 @@ def test_endpoint_response_has_no_forbidden_language(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
         _seed_playing_stretch(118)
+        _warm_tonight_snapshot()
     body = client.get('/api/bullpen/intelligence/tonight').get_json()
     blob = str(body).lower()
     for term in ('will win', 'will lose', 'guaranteed', 'probability', 'odds',
@@ -189,6 +221,7 @@ def test_endpoint_response_has_no_forbidden_language(client):
 def test_deterministic_response(client):
     with client.application.app_context():
         _seed_playing_stretch(116)
+        _warm_tonight_snapshot()
     first = client.get('/api/bullpen/intelligence/tonight').get_json()
     second = client.get('/api/bullpen/intelligence/tonight').get_json()
     assert first == second
