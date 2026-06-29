@@ -163,6 +163,11 @@ const tonightOk = {
   reference_date: '2026-06-25',
   card_count: 2,
   empty_reason: null,
+  snapshot: {
+    served_from: 'snapshot',
+    source: 'github_actions',
+    generated_at: '2026-06-26T03:30:00Z',
+  },
   limitations: ['Schedule and bullpen context can still change before first pitch.'],
   cards: [
     {
@@ -403,6 +408,7 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'Confidence'))
   assert.ok(htmlIncludes(html, 'Critical'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
+  assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
   assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
   assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
@@ -411,6 +417,9 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
   assert.ok(htmlIncludes(html, 'What BaseballOS is watching before first pitch.'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
   for (const raw of ['lead_story', 'story_priority', 'lost_game_shape', 'public_headline', 'Primary story', 'Why selected']) {
+    assert.equal(html.includes(raw), false, raw)
+  }
+  for (const raw of ['github_actions', 'served_from']) {
     assert.equal(html.includes(raw), false, raw)
   }
   for (const implementationCopy of ['existing dashboard snapshot', 'existing landscape endpoint', 'internal adapter']) {
@@ -449,6 +458,7 @@ test('homepage freshness separates Tonight slate from completed-game bullpen dat
   }))
 
   assert.ok(htmlIncludes(html, 'Tonight slate: Jun 27'))
+  assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 26'))
   assert.ok(htmlIncludes(html, 'Last synced 11:04 AM ET'))
   assert.equal(htmlIncludes(html, 'Data through Jun 27'), false)
@@ -680,13 +690,18 @@ test('Tonight completed missing payload exits skeleton into empty state', () => 
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
 })
 
-test('Tonight snapshot unavailable reason renders unavailable state without fallback cards', () => {
+test('Tonight live build timeout reason renders unavailable state without fallback cards', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: {
       ...tonightEmpty,
-      empty_reason: 'tonight_snapshot_unavailable',
-      limitations: ['Tonight snapshot is not available yet.'],
+      empty_reason: 'tonight_live_build_timeout',
+      limitations: ['Tonight watch is temporarily unavailable.'],
+      snapshot: {
+        served_from: 'live_build_timeout',
+        source: 'on_demand',
+        generated_at: '2026-06-26T03:30:00Z',
+      },
     },
     dashboard,
     landscape,
@@ -695,6 +710,7 @@ test('Tonight snapshot unavailable reason renders unavailable state without fall
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)

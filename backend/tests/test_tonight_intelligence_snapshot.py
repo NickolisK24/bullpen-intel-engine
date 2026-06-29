@@ -33,8 +33,9 @@ import models.prospect  # noqa: F401
 
 REF = date(2026, 6, 26)
 
-_CONTRACT_KEYS = {'status', 'reference_date', 'cards', 'card_count',
-                  'empty_reason', 'limitations'}
+_SERVICE_KEYS = {'status', 'reference_date', 'cards', 'card_count',
+                 'empty_reason', 'limitations'}
+_CONTRACT_KEYS = _SERVICE_KEYS | {'snapshot'}
 _CARD_KEYS = {'team_id', 'team_name', 'headline', 'summary', 'signal_type',
               'signal_family', 'pregame_story', 'evidence', 'schedule_context',
               'bullpen_context', 'limitations'}
@@ -97,13 +98,38 @@ def test_miss_builds_and_stores_then_hit_serves_verbatim(app):
         assert row.status == 'ok'
         assert row.card_count == first['card_count']
         assert row.source == 'on_demand'
-        assert read_snapshot(REF) == first
+        stored = read_snapshot(REF)
+        assert stored['cards'] == first['cards']
+        assert stored['snapshot']['source'] == 'on_demand'
+        assert stored['snapshot']['generated_at']
+        assert first['snapshot']['served_from'] == 'on_demand'
 
         # A hand-marked sentinel proves the second call is served from the cache.
         row.response_json = {**first, 'cards': [{**first['cards'][0], 'team_id': 999}]}
         db.session.commit()
         second = serve_tonight_cached(REF)
         assert second['cards'][0]['team_id'] == 999   # could only come from the cache
+        assert second['snapshot']['served_from'] == 'snapshot'
+
+
+def test_snapshot_hit_serves_cached_without_live_build(app, monkeypatch):
+    with app.app_context():
+        write_snapshot({'status': 'empty', 'reference_date': REF.isoformat(),
+                        'cards': [], 'card_count': 0,
+                        'empty_reason': 'no_cards_cleared_bar', 'limitations': []},
+                       source='pregame_warm')
+
+        def _unexpected(*a, **k):
+            raise AssertionError('cache hit must not build live')
+
+        monkeypatch.setattr(snap, '_run_live_build_with_timeout', _unexpected)
+
+        out = serve_tonight_cached(REF)
+
+    assert out['status'] == 'empty'
+    assert out['empty_reason'] == 'no_cards_cleared_bar'
+    assert out['snapshot']['served_from'] == 'snapshot'
+    assert out['snapshot']['source'] == 'pregame_warm'
 
 
 # ── Stored shape matches the live contract; no strength stored ────────────────
@@ -114,7 +140,8 @@ def test_stored_response_matches_public_contract_without_strength(app):
         served = serve_tonight_cached(REF)
         live = serve_tonight(REF)
 
-    assert set(served) == _CONTRACT_KEYS == set(live)
+    assert set(served) == _CONTRACT_KEYS
+    assert set(live) == _SERVICE_KEYS
     for card in served['cards']:
         assert set(card) == _CARD_KEYS
         assert card['pregame_story']['label'] == "Tonight's Bullpen Watch"
@@ -136,7 +163,9 @@ def test_explicit_reference_date_builds_and_caches(app):
         # empty response.
         empty = serve_tonight_cached(date(2026, 7, 20))
         assert empty['status'] == 'empty'
-        assert read_snapshot(date(2026, 7, 20)) == empty
+        stored_empty = read_snapshot(date(2026, 7, 20))
+        assert stored_empty['status'] == 'empty'
+        assert stored_empty['snapshot']['source'] == 'on_demand'
 
 
 # ── Empty responses are cached and round-trip ─────────────────────────────────
@@ -150,27 +179,47 @@ def test_empty_response_is_cached(app):
         assert row.status == 'empty'
         assert row.card_count == 0
         again = serve_tonight_cached(REF)
-        assert again == out
+        assert again['status'] == out['status']
+        assert again['empty_reason'] == out['empty_reason']
+        assert again['snapshot']['served_from'] == 'snapshot'
 
 
-def test_snapshot_only_miss_returns_empty_without_live_build(app, monkeypatch):
-    built = {'called': False}
+def test_snapshot_miss_live_build_timeout_returns_bounded_empty(app, monkeypatch):
+    def _timeout(*a, **k):
+        raise snap.TonightLiveBuildTimeout('too slow')
 
-    def _track_build(*a, **k):
-        built['called'] = True
-        raise AssertionError('snapshot-only serving must not build live')
-
-    monkeypatch.setattr(snap, 'serve_tonight', _track_build)
+    monkeypatch.setattr(snap, '_run_live_build_with_timeout', _timeout)
 
     with app.app_context():
-        out = serve_tonight_cached(REF, build_on_miss=False)
+        out = serve_tonight_cached(REF, live_build_timeout_seconds=0.01)
 
     assert out['status'] == 'empty'
-    assert out['empty_reason'] == snap.EMPTY_SNAPSHOT_UNAVAILABLE
+    assert out['empty_reason'] == snap.EMPTY_LIVE_BUILD_TIMEOUT
     assert out['cards'] == []
     assert out['card_count'] == 0
-    assert out['limitations'] == ['Tonight snapshot is not available yet.']
-    assert built['called'] is False
+    assert out['limitations'] == ['Tonight watch is temporarily unavailable.']
+    assert out['snapshot']['served_from'] == 'live_build_timeout'
+    with app.app_context():
+        assert TonightIntelligenceSnapshot.query.count() == 0
+
+
+def test_snapshot_miss_live_build_exception_returns_bounded_empty(app, monkeypatch):
+    def _boom(*a, **k):
+        raise RuntimeError('builder exploded')
+
+    monkeypatch.setattr(snap, '_run_live_build_with_timeout', _boom)
+
+    with app.app_context():
+        out = serve_tonight_cached(REF)
+
+    assert out['status'] == 'empty'
+    assert out['empty_reason'] == snap.EMPTY_SNAPSHOT_BUILD_UNAVAILABLE
+    assert out['cards'] == []
+    assert out['card_count'] == 0
+    assert out['limitations'] == ['Tonight watch is temporarily unavailable.']
+    assert out['snapshot']['served_from'] == 'live_build_failed'
+    with app.app_context():
+        assert TonightIntelligenceSnapshot.query.count() == 0
 
 
 # ── Write failure does not break serving ──────────────────────────────────────
@@ -203,9 +252,13 @@ def test_generate_snapshot_for_date_warms_cache(app):
         _seed_playing_stretch(116)
         response = generate_tonight_snapshot_for_date(REF, source='pregame_warm')
         assert response['status'] == 'ok'
+        assert response['snapshot']['served_from'] == 'pregame_warm'
         row = TonightIntelligenceSnapshot.query.filter_by(reference_date=REF).one()
         assert row.source == 'pregame_warm'
-        assert read_snapshot(REF) == response
+        assert row.generated_at is not None
+        stored = read_snapshot(REF)
+        assert stored['cards'] == response['cards']
+        assert stored['snapshot']['source'] == 'pregame_warm'
 
 
 def test_warming_overwrites_stale_no_schedule_context_snapshot(app):
@@ -226,6 +279,7 @@ def test_warming_overwrites_stale_no_schedule_context_snapshot(app):
         assert refreshed['status'] == 'ok'
         assert refreshed['empty_reason'] is None
         assert refreshed['card_count'] >= 1
+        assert refreshed['snapshot']['source'] == 'tonight_refresh'
         # Still one row for the slate — overwritten in place, not duplicated.
         assert TonightIntelligenceSnapshot.query.filter_by(reference_date=REF).count() == 1
 
@@ -248,7 +302,11 @@ def test_deterministic_served_response(app):
         first = serve_tonight_cached(REF)
     with app.app_context():
         second = serve_tonight_cached(REF)   # from snapshot now
-    assert first == second
+    first_content = {k: v for k, v in first.items() if k != 'snapshot'}
+    second_content = {k: v for k, v in second.items() if k != 'snapshot'}
+    assert first_content == second_content
+    assert first['snapshot']['served_from'] == 'on_demand'
+    assert second['snapshot']['served_from'] == 'snapshot'
 
 
 # ── Fail-closed: a read-level DB connection failure ───────────────────────────
