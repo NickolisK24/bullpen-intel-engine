@@ -67,11 +67,11 @@ PUBLIC_STORY_SURFACE_INVENTORY = (
     {
         'surface': 'Compare Bullpens',
         'writer_component': 'build_team_comparison',
-        'voice_source': 'local comparison statements',
-        'shared_library': 'no',
-        'hardcoded': 'yes',
-        'uses_editorial_pools': 'no',
-        'voice_system': 'independent',
+        'voice_source': 'editorial_voice_contract_v1 comparison helpers plus local comparison subjects',
+        'shared_library': 'yes',
+        'hardcoded': 'partial',
+        'uses_editorial_pools': 'yes',
+        'voice_system': 'editorial_voice_contract_v1',
         'files': (
             'backend/services/bullpen_comparison.py',
             'backend/api/bullpen.py',
@@ -293,7 +293,6 @@ REQUIRED_PUBLIC_SURFACES = {
 
 EXPECTED_INDEPENDENT_SYSTEMS = {
     "Homepage Today's Story",
-    'Compare Bullpens',
     'What Changed',
     "Today's Watch",
     'Completed-game stories',
@@ -342,6 +341,16 @@ def test_known_independent_public_voice_systems_are_documented():
         if row['voice_system'] == 'independent'
     }
     assert EXPECTED_INDEPENDENT_SYSTEMS <= independent
+
+
+def test_compare_bullpens_inventory_tracks_editorial_voice_migration():
+    row = next(
+        item for item in PUBLIC_STORY_SURFACE_INVENTORY
+        if item['surface'] == 'Compare Bullpens'
+    )
+    assert row['voice_system'] == 'editorial_voice_contract_v1'
+    assert row['shared_library'] == 'yes'
+    assert row['uses_editorial_pools'] == 'yes'
 
 
 def test_shared_story_voice_library_covers_documented_public_beats():

@@ -7,9 +7,15 @@ V2 team context) into a plain-language, self-explaining comparison. It answers
 
 It performs NO ranking of teams, NO bullpen grading, NO scoring, NO matchup or
 win-probability logic, and NO recommendation. Every observation is a transparent
-count comparison: it names which side currently has more of a given availability
-group and shows both numbers. There is no "better", "stronger", or "best".
+count comparison: public prose explains the baseball consequence while raw
+numbers stay in structured fields. There is no "better", "stronger", or "best".
 """
+
+from services.editorial_voice_contract_v1 import (
+    build_comparison_explanation,
+    contains_editorial_banned_language,
+    count_to_baseball_language,
+)
 
 # Dimensions compared, in a fixed reading order. Each pulls a count straight from
 # the V2 context metrics — no new availability math happens here.
@@ -35,6 +41,129 @@ COMPARISON_DIMENSIONS = [
 ]
 
 CAPABILITY = 'team_bullpen_comparison'
+
+
+def _count_phrase(count, singular, plural=None):
+    return count_to_baseball_language(count, singular, plural)
+
+
+def _has_count(label, count, singular, plural=None):
+    return f'{label} has {_count_phrase(count, singular, plural)}'
+
+
+def _safe_public_copy(text, fallback):
+    """Fail closed if future local copy trips the shared banned-language scan."""
+    return fallback if contains_editorial_banned_language(text) else text
+
+
+def _comparison_sentence(*, subject, reason, stable_parts, consequence=None, consequence_key=None):
+    explanation = build_comparison_explanation(
+        subject=subject,
+        reason=reason,
+        consequence=consequence,
+        consequence_key=consequence_key,
+        stable_parts=stable_parts,
+    )
+    fallback = build_comparison_explanation(
+        subject='The bullpen comparison stays descriptive',
+        reason='the side-by-side needs a clean baseball consequence before it separates',
+        consequence='That keeps the side-by-side note focused on the game shape',
+        stable_parts=('compare_bullpens', 'fallback'),
+    )['sentence']
+    return _safe_public_copy(explanation['sentence'], fallback)
+
+
+def _reason_line(label, count, singular, plural=None, suffix=''):
+    sentence = f'{_has_count(label, count, singular, plural)}{suffix}.'
+    return _safe_public_copy(sentence, 'This side has a neutral bullpen note.')
+
+
+def _dimension_reason_lines(dimension_key, label_a, label_b, value_a, value_b):
+    if dimension_key == 'available':
+        return [
+            _reason_line(label_a, value_a, 'available arm', 'available arms', ' ready'),
+            _reason_line(label_b, value_b, 'available arm', 'available arms', ' ready'),
+        ]
+    if dimension_key == 'restricted':
+        return [
+            _reason_line(
+                label_a,
+                value_a,
+                'restricted arm',
+                'restricted arms',
+                ' needing rest or unavailable',
+            ),
+            _reason_line(
+                label_b,
+                value_b,
+                'restricted arm',
+                'restricted arms',
+                ' needing rest or unavailable',
+            ),
+        ]
+    return [
+        _reason_line(label_a, value_a, 'watch-list arm', 'watch-list arms', ' carrying caution'),
+        _reason_line(label_b, value_b, 'watch-list arm', 'watch-list arms', ' carrying caution'),
+    ]
+
+
+def _tie_statement(dimension_key, value):
+    if dimension_key == 'available':
+        return _comparison_sentence(
+            subject='Both bullpens have the same late-inning coverage',
+            reason=f'each side has {_count_phrase(value, "available arm", "available arms")} ready',
+            consequence='That keeps the late-inning margin even across the two clubs',
+            stable_parts=('compare_bullpens', dimension_key, 'tie', value),
+        )
+    if dimension_key == 'restricted':
+        return _comparison_sentence(
+            subject='Both bullpens carry the same usable-depth pressure',
+            reason=(
+                f'each side has {_count_phrase(value, "restricted arm", "restricted arms")} '
+                'needing rest or unavailable'
+            ),
+            consequence='That keeps the side-by-side read from separating on depth alone',
+            stable_parts=('compare_bullpens', dimension_key, 'tie', value),
+        )
+    return _comparison_sentence(
+        subject='Both bullpens carry the same watch-list traffic',
+        reason=f'each side has {_count_phrase(value, "watch-list arm", "watch-list arms")} carrying caution',
+        consequence='That keeps the bridge comparison even before the late arms',
+        stable_parts=('compare_bullpens', dimension_key, 'tie', value),
+    )
+
+
+def _leader_statement(dimension_key, leader_label, other_label, leader_value, other_value):
+    if dimension_key == 'available':
+        return _comparison_sentence(
+            subject=f'{leader_label} has the clearer late-inning coverage',
+            reason=(
+                f'{_has_count(leader_label, leader_value, "available arm", "available arms")} '
+                f'while {_has_count(other_label, other_value, "available arm", "available arms")}'
+            ),
+            consequence_key='late_inning_margin',
+            stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
+        )
+    if dimension_key == 'restricted':
+        return _comparison_sentence(
+            subject=f'{leader_label} has the thinner usable group',
+            reason=(
+                f'{_has_count(leader_label, leader_value, "restricted arm", "restricted arms")} '
+                'needing rest or unavailable while '
+                f'{_has_count(other_label, other_value, "restricted arm", "restricted arms")}'
+            ),
+            consequence_key='availability_narrowed',
+            stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
+        )
+    return _comparison_sentence(
+        subject=f'{leader_label} has more bullpen watch traffic',
+        reason=(
+            f'{_has_count(leader_label, leader_value, "watch-list arm", "watch-list arms")} '
+            f'while {_has_count(other_label, other_value, "watch-list arm", "watch-list arms")}'
+        ),
+        consequence='That puts more of the side-by-side read on who is fully clear',
+        stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
+    )
 
 
 def _team_label(board, fallback):
@@ -65,35 +194,30 @@ def _build_observation(dimension, label_a, label_b, value_a, value_b):
     One transparent comparison for a single availability group.
 
     leader is 'A', 'B', or 'tie' based purely on which count is larger. The
-    reasons always show both raw numbers so nothing is hidden.
+    reasons keep both sides visible without putting raw count prose in public
+    copy. Exact values remain available in team_a_value and team_b_value.
     """
-    descriptor = dimension['descriptor']
     reason_label = dimension['reason_label']
+    dimension_key = dimension['key']
 
     if value_a == value_b:
         leader = 'tie'
-        statement = (
-            f'Both bullpens currently have the same number of relievers '
-            f'{descriptor} ({value_a}).'
-        )
+        statement = _tie_statement(dimension_key, value_a)
     elif value_a > value_b:
         leader = 'A'
-        statement = f'{label_a} currently has more relievers {descriptor}.'
+        statement = _leader_statement(dimension_key, label_a, label_b, value_a, value_b)
     else:
         leader = 'B'
-        statement = f'{label_b} currently has more relievers {descriptor}.'
+        statement = _leader_statement(dimension_key, label_b, label_a, value_b, value_a)
 
     return {
-        'dimension': dimension['key'],
+        'dimension': dimension_key,
         'reason_label': reason_label,
         'statement': statement,
         'leader': leader,
         'team_a_value': value_a,
         'team_b_value': value_b,
-        'reasons': [
-            f'{label_a} {reason_label}: {value_a}.',
-            f'{label_b} {reason_label}: {value_b}.',
-        ],
+        'reasons': _dimension_reason_lines(dimension_key, label_a, label_b, value_a, value_b),
     }
 
 
@@ -120,6 +244,89 @@ def _freshness_summary(board):
         'data_through': freshness.get('data_through'),
         'last_successful_sync': freshness.get('last_successful_sync'),
         'sync_status': freshness.get('sync_status'),
+    }
+
+
+def _no_data_summary(label_a, label_b):
+    return {
+        'state': 'no_data',
+        'statement': _comparison_sentence(
+            subject='Neither bullpen has a current relief group to compare',
+            reason='both relief groups are empty in the freshness window',
+            consequence_key='no_clear_signal',
+            stable_parts=('compare_bullpens', 'summary', 'no_data', label_a, label_b),
+        ),
+        'reasons': [
+            _reason_line(label_a, 0, 'current bullpen arm', 'current bullpen arms', ' in the freshness window'),
+            _reason_line(label_b, 0, 'current bullpen arm', 'current bullpen arms', ' in the freshness window'),
+        ],
+    }
+
+
+def _similar_summary(observations):
+    return {
+        'state': 'similar',
+        'statement': _comparison_sentence(
+            subject='The side-by-side bullpen read is even',
+            reason='available coverage, watch traffic, and restricted depth all match',
+            consequence='That leaves neither club with a clearer bullpen margin from this comparison alone',
+            stable_parts=('compare_bullpens', 'summary', 'similar'),
+        ),
+        'reasons': [observation['statement'] for observation in observations],
+    }
+
+
+def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
+    if metrics_a['available'] != metrics_b['available']:
+        leader_label, other_label = (
+            (label_a, label_b) if metrics_a['available'] > metrics_b['available'] else (label_b, label_a)
+        )
+        leader_value = max(metrics_a['available'], metrics_b['available'])
+        other_value = min(metrics_a['available'], metrics_b['available'])
+        statement = _comparison_sentence(
+            subject=f'{leader_label} has the clearer late-inning coverage',
+            reason=(
+                f'{_has_count(leader_label, leader_value, "available arm", "available arms")} '
+                f'while {_has_count(other_label, other_value, "available arm", "available arms")}'
+            ),
+            consequence_key='late_inning_margin',
+            stable_parts=('compare_bullpens', 'summary', 'available', leader_label, other_label, leader_value, other_value),
+        )
+    elif metrics_a['restricted'] != metrics_b['restricted']:
+        thinner_label, cleaner_label = (
+            (label_a, label_b) if metrics_a['restricted'] > metrics_b['restricted'] else (label_b, label_a)
+        )
+        thinner_value = max(metrics_a['restricted'], metrics_b['restricted'])
+        cleaner_value = min(metrics_a['restricted'], metrics_b['restricted'])
+        statement = _comparison_sentence(
+            subject=f'{cleaner_label} has the cleaner usable group',
+            reason=(
+                f'{thinner_label} carries {_count_phrase(thinner_value, "restricted arm", "restricted arms")} '
+                'needing rest or unavailable while '
+                f'{cleaner_label} carries {_count_phrase(cleaner_value, "restricted arm", "restricted arms")}'
+            ),
+            consequence=f'That gives {cleaner_label} more room before the late innings arrive',
+            stable_parts=('compare_bullpens', 'summary', 'restricted', thinner_label, cleaner_label, thinner_value, cleaner_value),
+        )
+    else:
+        higher_label, lower_label = (
+            (label_a, label_b) if metrics_a['monitor'] > metrics_b['monitor'] else (label_b, label_a)
+        )
+        higher_value = max(metrics_a['monitor'], metrics_b['monitor'])
+        lower_value = min(metrics_a['monitor'], metrics_b['monitor'])
+        statement = _comparison_sentence(
+            subject=f'{lower_label} has the cleaner watch picture',
+            reason=(
+                f'{higher_label} carries {_count_phrase(higher_value, "watch-list arm", "watch-list arms")} '
+                f'while {lower_label} carries {_count_phrase(lower_value, "watch-list arm", "watch-list arms")}'
+            ),
+            consequence=f'That leaves fewer caution flags around {lower_label} in the side-by-side read',
+            stable_parts=('compare_bullpens', 'summary', 'monitor', higher_label, lower_label, higher_value, lower_value),
+        )
+    return {
+        'state': 'differ',
+        'statement': statement,
+        'reasons': [observation['statement'] for observation in observations],
     }
 
 
@@ -154,26 +361,11 @@ def build_team_comparison(board_a, board_b, generated_at=None):
     both_empty = metrics_a['total_relievers'] == 0 and metrics_b['total_relievers'] == 0
 
     if both_empty:
-        summary = {
-            'state': 'no_data',
-            'statement': 'Neither bullpen has relievers in the current freshness window.',
-            'reasons': [
-                f'{label_a} total relievers: 0.',
-                f'{label_b} total relievers: 0.',
-            ],
-        }
+        summary = _no_data_summary(label_a, label_b)
     elif all_tied:
-        summary = {
-            'state': 'similar',
-            'statement': 'Both bullpens currently show similar availability distributions.',
-            'reasons': [observation['statement'] for observation in observations],
-        }
+        summary = _similar_summary(observations)
     else:
-        summary = {
-            'state': 'differ',
-            'statement': 'These bullpens currently show different availability profiles.',
-            'reasons': [observation['statement'] for observation in observations],
-        }
+        summary = _difference_summary(label_a, label_b, metrics_a, metrics_b, observations)
 
     conf_a = _confidence_of(board_a)
     conf_b = _confidence_of(board_b)

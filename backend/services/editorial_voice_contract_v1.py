@@ -1,8 +1,7 @@
-"""Shared public editorial voice helpers for future surface migrations.
+"""Shared public editorial voice helpers for surface migrations.
 
-E2C-1 infrastructure only. Current public storytelling surfaces do not import
-this module yet; future migrations can opt in surface by surface while preserving
-their existing behavior under tests.
+E2C-1 introduced the infrastructure. Later phases opt in surface by surface
+while preserving public contracts under tests.
 """
 
 from __future__ import annotations
@@ -382,7 +381,7 @@ def editorial_voice_contract_report() -> dict[str, Any]:
         'consequence_keys': sorted(BASEBALL_CONSEQUENCE_LINES),
         'banned_language_count': len(EDITORIAL_BANNED_LANGUAGE),
         'plural_aware_matching': True,
-        'public_surfaces_migrated': [],
+        'public_surfaces_migrated': ['compare_bullpens'],
     }
 
 

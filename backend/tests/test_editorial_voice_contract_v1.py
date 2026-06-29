@@ -1,8 +1,8 @@
-"""E2C-1 editorial voice contract infrastructure tests.
+"""Editorial voice contract infrastructure tests.
 
-These tests cover the shared helpers future public surfaces will migrate to.
-They intentionally do not wire the helpers into current story, comparison,
-Tonight, or What Changed renderers.
+These tests cover the shared helpers public surfaces migrate to. Compare
+Bullpens is the first migrated surface; the other public story surfaces remain
+unwired until their scoped migration phases.
 """
 
 from pathlib import Path
@@ -26,8 +26,7 @@ from services.editorial_voice_contract_v1 import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-PUBLIC_SURFACE_FILES = (
-    'backend/services/bullpen_comparison.py',
+UNMIGRATED_PUBLIC_SURFACE_FILES = (
     'backend/services/what_changed_since_yesterday_copy.py',
     'backend/services/tonight_candidate_selection.py',
     'backend/story_writers/base_story_writer.py',
@@ -144,16 +143,21 @@ def test_editorial_conformance_report_can_gate_raw_counts_for_prose():
     assert report['raw_counts'] == ['2']
 
 
-def test_contract_report_documents_infrastructure_only_status():
+def test_contract_report_documents_migrated_surfaces():
     report = editorial_voice_contract_report()
 
     assert report['plural_aware_matching'] is True
     assert report['count_language']['raw_counts_in_prose'] is False
     assert 'late_inning_margin' in report['consequence_keys']
-    assert report['public_surfaces_migrated'] == []
+    assert report['public_surfaces_migrated'] == ['compare_bullpens']
 
 
-def test_e2c1_helpers_are_not_wired_into_public_surfaces_yet():
-    for rel_path in PUBLIC_SURFACE_FILES:
+def test_compare_bullpens_is_registered_as_first_migrated_surface():
+    text = (REPO_ROOT / 'backend/services/bullpen_comparison.py').read_text(encoding='utf-8')
+    assert 'editorial_voice_contract_v1' in text
+
+
+def test_helpers_are_not_wired_into_unmigrated_public_surfaces_yet():
+    for rel_path in UNMIGRATED_PUBLIC_SURFACE_FILES:
         text = (REPO_ROOT / rel_path).read_text(encoding='utf-8')
         assert 'editorial_voice_contract_v1' not in text, rel_path

@@ -6,8 +6,9 @@ Two layers:
   * GET /api/bullpen/teams/compare endpoint — in-memory SQLite, no MLB.
 
 The comparison is descriptive: it names which bullpen currently has more of a
-given availability group and shows both counts. It must never grade, rank,
-score, or recommend a team, and it must be deterministic and self-explaining.
+given availability group, keeps exact counts in structured fields, and renders
+public copy in baseball language. It must never grade, rank, score, or recommend
+a team, and it must be deterministic and self-explaining.
 """
 
 from datetime import date, datetime, timedelta
@@ -19,6 +20,10 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 import services.sync as sync_service
 from services.bullpen_board import build_board_payload
 from services.bullpen_comparison import build_team_comparison
+from services.editorial_voice_contract_v1 import (
+    contains_editorial_banned_language,
+    raw_count_matches,
+)
 from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from models.pitcher import Pitcher
@@ -59,6 +64,15 @@ def abs_hash(value):
     return abs(hash(value)) % 1000
 
 
+def public_comparison_copy(comp):
+    parts = [comp['summary']['statement']]
+    parts.extend(comp['summary'].get('reasons') or [])
+    for observation in comp['observations']:
+        parts.append(observation['statement'])
+        parts.extend(observation.get('reasons') or [])
+    return [part for part in parts if part]
+
+
 # ── Pure comparison service ────────────────────────────────────────────────
 
 class TestObservations:
@@ -68,19 +82,27 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['leader'] == 'A'
-        assert available['statement'] == 'Aces currently has more relievers classified Available.'
+        assert available['statement'].startswith(
+            'Aces has the clearer late-inning coverage because '
+        )
+        assert 'Aces has six available arms' in available['statement']
+        assert 'Bears has three available arms' in available['statement']
+        assert 'That ' in available['statement']
         assert available['team_a_value'] == 6
         assert available['team_b_value'] == 3
 
-    def test_transparency_reasons_show_both_counts(self):
+    def test_transparency_reasons_keep_both_counts_in_baseball_language(self):
         a = board('Aces', 'AAA', {'Available': 6})
         b = board('Bears', 'BBB', {'Available': 3})
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['reasons'] == [
-            'Aces Available: 6.',
-            'Bears Available: 3.',
+            'Aces has six available arms ready.',
+            'Bears has three available arms ready.',
         ]
+        assert available['team_a_value'] == 6
+        assert available['team_b_value'] == 3
+        assert raw_count_matches(' '.join(available['reasons'])) == []
 
     def test_restricted_dimension_combines_avoid_and_unavailable(self):
         a = board('Aces', 'AAA', {'Available': 5, 'Avoid': 1, 'Unavailable': 1})
@@ -88,6 +110,9 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         assert restricted['leader'] == 'B'  # Bears have 5 restricted vs 2
+        assert restricted['statement'].startswith('Bears has the thinner usable group because ')
+        assert 'Bears has five restricted arms' in restricted['statement']
+        assert 'Aces has both restricted arms' in restricted['statement']
         assert restricted['team_a_value'] == 2
         assert restricted['team_b_value'] == 5
 
@@ -99,6 +124,24 @@ class TestObservations:
         for term in ('best', 'better', 'stronger', 'superior', 'recommend', 'win', 'grade', 'score'):
             assert term not in blob.lower(), term
 
+    def test_compare_public_copy_passes_shared_banned_language_scan(self):
+        a = board('Aces', 'AAA', {'Available': 6, 'Monitor': 1, 'Avoid': 1})
+        b = board('Bears', 'BBB', {'Available': 3, 'Monitor': 2, 'Unavailable': 2})
+        comp = build_team_comparison(a, b)
+
+        for text in public_comparison_copy(comp):
+            assert not contains_editorial_banned_language(text), text
+
+    def test_raw_zero_counts_do_not_leak_into_public_copy(self):
+        a = board('Aces', 'AAA', {'Avoid': 2})
+        b = board('Bears', 'BBB', {'Available': 4})
+        comp = build_team_comparison(a, b)
+        copy = public_comparison_copy(comp)
+
+        assert any('not one available arm' in text for text in copy)
+        for text in copy:
+            assert raw_count_matches(text) == [], text
+
 
 class TestSummary:
     def test_tie_across_all_dimensions_reads_as_similar(self):
@@ -106,6 +149,8 @@ class TestSummary:
         b = board('Bears', 'BBB', {'Available': 4, 'Monitor': 2, 'Avoid': 1, 'Unavailable': 1})
         comp = build_team_comparison(a, b)
         assert comp['summary']['state'] == 'similar'
+        assert comp['summary']['statement'].startswith('The side-by-side bullpen read is even because ')
+        assert 'availability distribution' not in comp['summary']['statement'].lower()
         assert all(o['leader'] == 'tie' for o in comp['observations'])
 
     def test_difference_reads_as_differ(self):
@@ -113,12 +158,17 @@ class TestSummary:
         b = board('Bears', 'BBB', {'Available': 2, 'Avoid': 4})
         comp = build_team_comparison(a, b)
         assert comp['summary']['state'] == 'differ'
+        assert comp['summary']['statement'].startswith(
+            'Aces has the clearer late-inning coverage because '
+        )
 
     def test_both_empty_reads_as_no_data(self):
         a = board('Aces', 'AAA', {})
         b = board('Bears', 'BBB', {})
         comp = build_team_comparison(a, b)
         assert comp['summary']['state'] == 'no_data'
+        assert 'not one current bullpen arm' in ' '.join(comp['summary']['reasons'])
+        assert raw_count_matches(' '.join(public_comparison_copy(comp))) == []
 
     def test_tie_observation_shows_shared_count(self):
         a = board('Aces', 'AAA', {'Available': 4})
@@ -126,7 +176,8 @@ class TestSummary:
         comp = build_team_comparison(a, b)
         available = next(o for o in comp['observations'] if o['dimension'] == 'available')
         assert available['leader'] == 'tie'
-        assert '(4)' in available['statement']
+        assert 'four available arms' in available['statement']
+        assert raw_count_matches(available['statement']) == []
 
 
 class TestFreshnessAndConfidence:
