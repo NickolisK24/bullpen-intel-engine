@@ -123,6 +123,21 @@ def print_summary(report, output_path):
                 'Missing beat evidence review: '
                 f"{json.dumps(compact, sort_keys=True)}"
             )
+        context_review = bounded.get('context_signal_accuracy_review') or {}
+        if context_review:
+            compact = {
+                signal: {
+                    'classification': review.get('classification'),
+                    'classification_counts': review.get('classification_counts'),
+                    'blocker_reason_counts': review.get('blocker_reason_counts'),
+                    'numeric_ranges': review.get('numeric_ranges'),
+                }
+                for signal, review in sorted(context_review.items())
+            }
+            print(
+                'Context signal accuracy review: '
+                f"{json.dumps(compact, sort_keys=True)}"
+            )
 
 
 def main():

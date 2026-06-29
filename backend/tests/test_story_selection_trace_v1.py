@@ -1,5 +1,7 @@
 from services.story_selection_trace_v1 import (
     CAPABILITY,
+    CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS,
+    CONTEXT_SIGNAL_CLASSIFICATIONS,
     MISSING_BEAT_REVIEW_TARGETS,
     PATH_CANONICAL_DASHBOARD,
     PATH_DETERMINISTIC_EDITORIAL_CORPUS,
@@ -137,6 +139,24 @@ def test_selection_trace_reports_missing_beat_candidate_paths():
         assert len(row['teams']) == 30
 
 
+def test_selection_trace_reports_context_signal_accuracy_review():
+    trace = _trace()
+    review = trace['context_signal_accuracy_review']
+
+    assert set(review) == set(CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS)
+
+    for signal, row in review.items():
+        assert row['classification'] in CONTEXT_SIGNAL_CLASSIFICATIONS
+        assert row['team_count'] == 30
+        assert row['classification_counts']
+        assert row['raw_value_counts']
+        assert len(row['teams']) == 30
+        assert row['teams'][0]['team']['team_id']
+        assert row['teams'][0]['selected_beat']
+        assert row['teams'][0]['classification'] in CONTEXT_SIGNAL_CLASSIFICATIONS
+        assert row['teams'][0]['raw_values']
+
+
 def test_selection_trace_reports_missing_beat_source_blockers():
     context = editorial._team_context(
         999,
@@ -170,6 +190,54 @@ def test_selection_trace_reports_missing_beat_source_blockers():
         ['no_concentration_pressure_observation']
         == 1
     )
+
+    accuracy = trace['context_signal_accuracy_review']
+    starter = accuracy['starter_handoff_demand']['teams'][0]
+    assert starter['blocker_reasons'] == ['no_starter_handoff_demand']
+    assert starter['raw_values'] == {
+        'rotation_context_available': True,
+        'early_bullpen_entry_rate': 12.0,
+        'bullpen_coverage_ip_7d': 3.0,
+    }
+
+    available = accuracy['available_arms_counts']['teams'][0]
+    assert available['raw_values'] == {
+        'optionality_context_available': True,
+        'available_arms_count': 4,
+    }
+
+
+def test_context_signal_accuracy_review_flags_impossible_core_band():
+    context = editorial._team_context(
+        1000,
+        'Impossible Core Club',
+        'ICC',
+        stability={
+            'stability_band': 'stable',
+            'core_retention_count': 1,
+            'core_stability_pct': 33,
+            'core_change_count': 2,
+            'current_core_size': 3,
+            'previous_core_size': 3,
+        },
+    )
+
+    trace = build_story_selection_trace(
+        team_contexts=[context],
+        as_of_date=editorial.DATE,
+    )
+    review = trace['context_signal_accuracy_review']['stable_late_core_detection']
+
+    assert review['classification'] == 'likely_incorrect'
+    assert review['classification_counts'] == {'likely_incorrect': 1}
+    assert review['teams'][0]['raw_values'] == {
+        'stability_band': 'stable',
+        'core_retention_count': 1,
+        'core_stability_pct': 33,
+        'core_change_count': 2,
+        'current_core_size': 3,
+        'previous_core_size': 3,
+    }
 
 
 def test_prior_audit_collapse_is_not_reproduced_by_current_public_trace():

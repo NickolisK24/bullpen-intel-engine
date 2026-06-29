@@ -388,6 +388,9 @@ def _bounded_live_diagnostic(*, bounded_preview, canonical_trace):
         'missing_beat_evidence_review': _dict(canonical_trace).get(
             'missing_beat_evidence_review'
         ),
+        'context_signal_accuracy_review': _dict(canonical_trace).get(
+            'context_signal_accuracy_review'
+        ),
         'audit_preview_story_type_counts': audit_counts,
         'canonical_trace_story_type_counts': canonical_counts,
         'matches_canonical_public_trace': audit_counts == canonical_counts,

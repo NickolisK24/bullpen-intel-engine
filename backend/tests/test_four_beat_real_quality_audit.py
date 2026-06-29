@@ -313,6 +313,20 @@ def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeyp
                 'selected_team_count': 5,
             },
         },
+        'context_signal_accuracy_review': {
+            'stable_late_core_detection': {
+                'classification': 'expected_from_current_data',
+                'classification_counts': {'expected_from_current_data': 30},
+                'blocker_reason_counts': {},
+                'numeric_ranges': {'core_change_count': {'min': 0, 'max': 3}},
+            },
+            'available_arms_counts': {
+                'classification': 'expected_from_current_data',
+                'classification_counts': {'expected_from_current_data': 30},
+                'blocker_reason_counts': {'insufficient_available_arms': 8},
+                'numeric_ranges': {'available_arms_count': {'min': 0, 'max': 8}},
+            },
+        },
         'trace': [
             {
                 'team': {
@@ -369,6 +383,19 @@ def test_bounded_live_quality_audit_emits_trace_and_diversity_guardrails(monkeyp
     assert diagnostic['prior_collapse_reproduced'] is False
     assert diagnostic['missing_beat_evidence_review'][BEAT_BRIDGE]['selected_team_count'] == 4
     assert diagnostic['missing_beat_evidence_review'][BEAT_TRUST_LANE]['top_candidate_score'] == 7
+    assert (
+        diagnostic['context_signal_accuracy_review']
+        ['stable_late_core_detection']
+        ['classification']
+        == 'expected_from_current_data'
+    )
+    assert (
+        diagnostic['context_signal_accuracy_review']
+        ['available_arms_counts']
+        ['blocker_reason_counts']
+        ['insufficient_available_arms']
+        == 8
+    )
     assert diagnostic['beat_distribution']['distinct_beat_count'] == 7
     assert diagnostic['beat_distribution']['route_depth_share'] <= 0.80
     assert len(diagnostic['team_trace']) == 30

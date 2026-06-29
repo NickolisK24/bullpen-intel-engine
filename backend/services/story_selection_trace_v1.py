@@ -26,7 +26,7 @@ from services.story_voice_library_v1 import (
 
 
 CAPABILITY = 'story_selection_trace_v1'
-VERSION = '2026-06-29.e1c'
+VERSION = '2026-06-29.e1g'
 
 PATH_CANONICAL_DASHBOARD = 'canonical_dashboard_stories'
 PATH_STORIES_PAGE = 'stories_page'
@@ -111,6 +111,97 @@ MISSING_BEAT_REVIEW_TARGETS = (
     BEAT_TRUST_LANE,
     BEAT_SUSTAINABILITY_QUESTION,
 )
+
+CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS = (
+    'stable_late_core_detection',
+    'starter_handoff_demand',
+    'bridge_thinness',
+    'available_arms_counts',
+    'flagged_secondary_option_counts',
+    'trusted_lane_thinness',
+    'concentration_pressure_observations',
+    'concentration_band_calculations',
+    'optionality_constraint_inputs',
+)
+
+CONTEXT_SIGNAL_EXPECTED = 'expected_from_current_data'
+CONTEXT_SIGNAL_SUSPICIOUS = 'suspicious_but_explainable'
+CONTEXT_SIGNAL_LIKELY_INCORRECT = 'likely_incorrect'
+CONTEXT_SIGNAL_UNREACHABLE = 'unreachable_due_to_bug_or_key_mismatch'
+
+CONTEXT_SIGNAL_CLASSIFICATIONS = (
+    CONTEXT_SIGNAL_EXPECTED,
+    CONTEXT_SIGNAL_SUSPICIOUS,
+    CONTEXT_SIGNAL_LIKELY_INCORRECT,
+    CONTEXT_SIGNAL_UNREACHABLE,
+)
+
+_CLASSIFICATION_SEVERITY = {
+    CONTEXT_SIGNAL_EXPECTED: 0,
+    CONTEXT_SIGNAL_SUSPICIOUS: 1,
+    CONTEXT_SIGNAL_UNREACHABLE: 2,
+    CONTEXT_SIGNAL_LIKELY_INCORRECT: 3,
+}
+
+_CONTEXT_SIGNAL_BLOCKERS = {
+    'stable_late_core_detection': {'late_core_not_settled'},
+    'starter_handoff_demand': {'no_starter_handoff_demand'},
+    'bridge_thinness': {'bridge_not_thin'},
+    'available_arms_counts': {
+        'missing_available_count',
+        'insufficient_available_arms',
+    },
+    'flagged_secondary_option_counts': {'insufficient_flagged_secondary_options'},
+    'trusted_lane_thinness': {'trusted_lane_not_thin'},
+    'concentration_pressure_observations': {'no_concentration_pressure_observation'},
+    'concentration_band_calculations': {'insufficient_concentration'},
+    'optionality_constraint_inputs': {'insufficient_optionality_constraint'},
+}
+
+_CONTEXT_SIGNAL_RAW_KEYS = {
+    'stable_late_core_detection': (
+        'stability_band',
+        'core_retention_count',
+        'core_stability_pct',
+        'core_change_count',
+        'current_core_size',
+        'previous_core_size',
+    ),
+    'starter_handoff_demand': (
+        'rotation_context_available',
+        'early_bullpen_entry_rate',
+        'bullpen_coverage_ip_7d',
+    ),
+    'bridge_thinness': (
+        'optionality_context_available',
+        'clean_workload_options_count',
+    ),
+    'available_arms_counts': (
+        'optionality_context_available',
+        'available_arms_count',
+    ),
+    'flagged_secondary_option_counts': (
+        'optionality_context_available',
+        'secondary_options_count',
+    ),
+    'trusted_lane_thinness': (
+        'optionality_context_available',
+        'clean_workload_options_count',
+    ),
+    'concentration_pressure_observations': (
+        'concentration_band',
+        'top_three_workload_share_10d',
+    ),
+    'concentration_band_calculations': (
+        'concentration_band',
+        'top_three_workload_share_10d',
+    ),
+    'optionality_constraint_inputs': (
+        'optionality_context_available',
+        'practical_close_game_paths_count',
+        'clean_workload_options_count',
+    ),
+}
 
 
 def _dict(value: Any) -> dict:
@@ -530,6 +621,344 @@ def _missing_beat_evidence_review(payloads: list[dict], trace_rows: list[dict]) 
     return review
 
 
+def _context_signal_raw_values(context: dict) -> dict:
+    rotation = _dict(context.get('rotation_context'))
+    optionality = _dict(context.get('bullpen_optionality_context'))
+    stability = _dict(context.get('role_stability_context'))
+    concentration = _dict(context.get('bullpen_concentration_context'))
+    return {
+        'rotation_context_available': rotation.get('context_available'),
+        'early_bullpen_entry_rate': rotation.get('early_bullpen_entry_rate'),
+        'bullpen_coverage_ip_7d': rotation.get('bullpen_coverage_ip_7d'),
+        'optionality_context_available': optionality.get('context_available'),
+        'available_arms_count': optionality.get('available_arms_count'),
+        'monitor_arms_count': optionality.get('monitor_arms_count'),
+        'limited_arms_count': optionality.get('limited_arms_count'),
+        'clean_workload_options_count': len(
+            _list(optionality.get('clean_workload_options'))
+        ),
+        'secondary_options_count': len(_list(optionality.get('secondary_options'))),
+        'practical_close_game_paths_count': optionality.get(
+            'practical_close_game_paths_count'
+        ),
+        'optionality_band': optionality.get('optionality_band'),
+        'stability_context_available': stability.get('context_available'),
+        'stability_band': stability.get('stability_band'),
+        'core_retention_count': stability.get('core_retention_count'),
+        'core_stability_pct': stability.get('core_stability_pct'),
+        'core_change_count': stability.get('core_change_count'),
+        'current_core_size': stability.get('current_core_size'),
+        'previous_core_size': stability.get('previous_core_size'),
+        'concentration_context_available': concentration.get('context_available'),
+        'concentration_band': concentration.get('concentration_band'),
+        'top_three_workload_share_10d': concentration.get(
+            'top_three_workload_share_10d'
+        ),
+        'league_top_three_workload_share_10d': concentration.get(
+            'league_top_three_workload_share_10d'
+        ),
+        'qualifying_reliever_count_10d': concentration.get(
+            'qualifying_reliever_count_10d'
+        ),
+    }
+
+
+def _expected_concentration_band(share):
+    share = _number(share)
+    if share is None:
+        return 'insufficient_data'
+    if share < 55.0:
+        return 'balanced'
+    if share <= 65.0:
+        return 'normal'
+    if share <= 80.0:
+        return 'concentrated'
+    return 'narrow'
+
+
+def _has_blocker(blockers_by_beat: dict, reason: str) -> bool:
+    return any(
+        reason in _list(reasons)
+        for reasons in _dict(blockers_by_beat).values()
+    )
+
+
+def _classify_context_signal(
+    signal: str,
+    raw: dict,
+    blockers_by_beat: dict,
+) -> str:
+    if signal == 'stable_late_core_detection':
+        band = raw.get('stability_band')
+        pct = _number(raw.get('core_stability_pct'))
+        change_count = _number(raw.get('core_change_count'))
+        retention = _number(raw.get('core_retention_count'))
+        current_size = _number(raw.get('current_core_size'))
+        late_core_blocked = _has_blocker(blockers_by_beat, 'late_core_not_settled')
+        if band is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if band == 'stable':
+            if late_core_blocked or (pct is not None and pct < 100.0) or change_count:
+                return CONTEXT_SIGNAL_LIKELY_INCORRECT
+            return CONTEXT_SIGNAL_EXPECTED
+        if not late_core_blocked:
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        if (
+            pct is not None
+            and pct >= 100.0
+            and change_count == 0
+            and retention is not None
+            and current_size is not None
+            and retention >= current_size
+        ):
+            return CONTEXT_SIGNAL_SUSPICIOUS
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'starter_handoff_demand':
+        early_rate = _number(raw.get('early_bullpen_entry_rate'))
+        coverage_ip = _number(raw.get('bullpen_coverage_ip_7d'))
+        no_demand = _has_blocker(blockers_by_beat, 'no_starter_handoff_demand')
+        demand_present = (
+            (early_rate is not None and early_rate >= 35.0)
+            or (coverage_ip is not None and coverage_ip >= 3.8)
+        )
+        if early_rate is None and coverage_ip is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if no_demand == demand_present:
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'bridge_thinness':
+        clean_count = _number(raw.get('clean_workload_options_count'))
+        not_thin = _has_blocker(blockers_by_beat, 'bridge_not_thin')
+        if clean_count is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if not_thin != (clean_count > 2):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'available_arms_counts':
+        available = _number(raw.get('available_arms_count'))
+        if available is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if _has_blocker(blockers_by_beat, 'missing_available_count'):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        if _has_blocker(blockers_by_beat, 'insufficient_available_arms') != (
+            available < 4
+        ):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'flagged_secondary_option_counts':
+        secondary = _number(raw.get('secondary_options_count'))
+        if secondary is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if _has_blocker(
+            blockers_by_beat,
+            'insufficient_flagged_secondary_options',
+        ) != (secondary < 3):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'trusted_lane_thinness':
+        clean_count = _number(raw.get('clean_workload_options_count'))
+        not_thin = _has_blocker(blockers_by_beat, 'trusted_lane_not_thin')
+        if clean_count is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if not_thin != (clean_count > 2):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'concentration_pressure_observations':
+        band = raw.get('concentration_band')
+        no_pressure = _has_blocker(
+            blockers_by_beat,
+            'no_concentration_pressure_observation',
+        )
+        pressure_observed = band in {'concentrated', 'narrow'}
+        if band is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if no_pressure == pressure_observed:
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'concentration_band_calculations':
+        band = raw.get('concentration_band')
+        share = _number(raw.get('top_three_workload_share_10d'))
+        if band is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        if band != _expected_concentration_band(share):
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    if signal == 'optionality_constraint_inputs':
+        paths = _number(raw.get('practical_close_game_paths_count'))
+        clean_count = _number(raw.get('clean_workload_options_count'))
+        insufficient = _has_blocker(
+            blockers_by_beat,
+            'insufficient_optionality_constraint',
+        )
+        if paths is None or clean_count is None:
+            return CONTEXT_SIGNAL_UNREACHABLE
+        constraint_present = paths <= 3 or clean_count <= 1
+        if insufficient == constraint_present:
+            return CONTEXT_SIGNAL_LIKELY_INCORRECT
+        return CONTEXT_SIGNAL_EXPECTED
+
+    return CONTEXT_SIGNAL_SUSPICIOUS
+
+
+def _context_signal_team_review(payload: dict, trace_row: dict) -> dict:
+    context = _dict(payload.get('supporting_context'))
+    blockers_by_beat = {
+        BEAT_BRIDGE: _bridge_blockers(context),
+        BEAT_TRUST_LANE: _trust_lane_blockers(context),
+        BEAT_SUSTAINABILITY_QUESTION: _sustainability_blockers(context),
+    }
+    raw = _context_signal_raw_values(context)
+    classifications = {
+        signal: _classify_context_signal(signal, raw, blockers_by_beat)
+        for signal in CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS
+    }
+    return {
+        'team': _team_descriptor(payload),
+        'selected_beat': trace_row.get('selected_beat'),
+        'raw_values': raw,
+        'blockers_by_missing_beat': blockers_by_beat,
+        'signal_classifications': classifications,
+    }
+
+
+def _value_key(value: Any) -> str:
+    if value is None:
+        return 'null'
+    if value is True:
+        return 'true'
+    if value is False:
+        return 'false'
+    return str(value)
+
+
+def _raw_value_counts(rows: list[dict], raw_keys: tuple[str, ...]) -> dict:
+    counts = {}
+    for key in raw_keys:
+        counter = Counter(
+            _value_key(_dict(row.get('raw_values')).get(key))
+            for row in rows
+        )
+        counts[key] = {
+            value: int(counter[value])
+            for value in sorted(counter)
+        }
+    return counts
+
+
+def _numeric_range(rows: list[dict], raw_keys: tuple[str, ...]) -> dict:
+    ranges = {}
+    for key in raw_keys:
+        values = [
+            _number(_dict(row.get('raw_values')).get(key))
+            for row in rows
+        ]
+        values = [value for value in values if value is not None]
+        if values:
+            ranges[key] = {
+                'min': min(values),
+                'max': max(values),
+            }
+    return ranges
+
+
+def _signal_blocker_counts(rows: list[dict], signal: str) -> dict:
+    target_blockers = _CONTEXT_SIGNAL_BLOCKERS[signal]
+    counter = Counter()
+    for row in rows:
+        for blockers in _dict(row.get('blockers_by_missing_beat')).values():
+            for blocker in _list(blockers):
+                if blocker in target_blockers:
+                    counter[blocker] += 1
+    return {
+        blocker: int(counter[blocker])
+        for blocker in sorted(counter)
+    }
+
+
+def _worst_classification(classifications: Counter) -> str:
+    if not classifications:
+        return CONTEXT_SIGNAL_EXPECTED
+    return max(
+        classifications,
+        key=lambda classification: (
+            _CLASSIFICATION_SEVERITY.get(classification, 0),
+            classification,
+        ),
+    )
+
+
+def _context_signal_rows_for_signal(rows: list[dict], signal: str) -> list[dict]:
+    raw_keys = _CONTEXT_SIGNAL_RAW_KEYS[signal]
+    target_blockers = _CONTEXT_SIGNAL_BLOCKERS[signal]
+    signal_rows = []
+    for row in rows:
+        blockers = sorted({
+            blocker
+            for blockers_for_beat in _dict(row.get('blockers_by_missing_beat')).values()
+            for blocker in _list(blockers_for_beat)
+            if blocker in target_blockers
+        })
+        raw_values = _dict(row.get('raw_values'))
+        signal_rows.append({
+            'team': row.get('team'),
+            'selected_beat': row.get('selected_beat'),
+            'classification': _dict(row.get('signal_classifications')).get(signal),
+            'blocker_reasons': blockers,
+            'raw_values': {
+                key: raw_values.get(key)
+                for key in raw_keys
+            },
+        })
+    return signal_rows
+
+
+def _context_signal_accuracy_review(
+    payloads: list[dict],
+    trace_rows: list[dict],
+) -> dict:
+    rows_by_id = {
+        _dict(row.get('team')).get('team_id'): row
+        for row in trace_rows
+        if isinstance(row, dict)
+    }
+    rows = [
+        _context_signal_team_review(
+            payload,
+            _dict(rows_by_id.get(payload.get('team_id'))),
+        )
+        for payload in payloads
+    ]
+    review = {}
+    for signal in CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS:
+        raw_keys = _CONTEXT_SIGNAL_RAW_KEYS[signal]
+        classifications = Counter(
+            _dict(row.get('signal_classifications')).get(signal)
+            for row in rows
+        )
+        review[signal] = {
+            'classification': _worst_classification(classifications),
+            'team_count': len(rows),
+            'classification_counts': {
+                classification: int(classifications.get(classification, 0))
+                for classification in CONTEXT_SIGNAL_CLASSIFICATIONS
+                if classifications.get(classification, 0)
+            },
+            'blocker_reason_counts': _signal_blocker_counts(rows, signal),
+            'raw_value_counts': _raw_value_counts(rows, raw_keys),
+            'numeric_ranges': _numeric_range(rows, raw_keys),
+            'teams': _context_signal_rows_for_signal(rows, signal),
+        }
+    return review
+
+
 def _team_descriptor(payload: dict) -> dict:
     return {
         'team_id': payload.get('team_id'),
@@ -605,6 +1034,10 @@ def build_story_selection_trace_from_service_payload(
         'story_count': sum(1 for item in _list(feed.get('items')) if _dict(item).get('story_available') is True),
         'beat_distribution': _beat_distribution(_list(feed.get('items'))),
         'missing_beat_evidence_review': _missing_beat_evidence_review(payloads, rows),
+        'context_signal_accuracy_review': _context_signal_accuracy_review(
+            payloads,
+            rows,
+        ),
         'generation_paths': list(STORY_GENERATION_PATHS),
         'multiple_selection_paths_present': True,
         'trace': rows,
@@ -651,6 +1084,8 @@ __all__ = [
     'PATH_TEAM_STORY_API',
     'PATH_TODAY_LEAD_STORY',
     'PUBLIC_BEATS',
+    'CONTEXT_SIGNAL_ACCURACY_REVIEW_SIGNALS',
+    'CONTEXT_SIGNAL_CLASSIFICATIONS',
     'MISSING_BEAT_REVIEW_TARGETS',
     'STORY_GENERATION_PATHS',
     'VERSION',
