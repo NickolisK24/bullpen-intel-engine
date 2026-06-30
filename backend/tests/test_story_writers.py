@@ -399,6 +399,216 @@ def test_starter_covered_same_beat_stories_keep_specific_anchors_and_unique_skel
     assert max(headlines.count(headline) for headline in set(headlines)) <= 3
 
 
+def _assert_completed_game_public_text_safe(text: str):
+    lowered = text.lower()
+    assert not contains_editorial_banned_language(lowered), text
+    for phrase in _DISCOURAGED_PUBLIC_LANGUAGE:
+        assert phrase not in lowered, phrase
+    assert not _IMPOSSIBLE_INNINGS.search(text)
+
+
+def _rendered_team_story(completed: dict, *, team: dict | None = None) -> StoryDraft:
+    draft = TeamStoryWriter(_feed(completed=completed, team=team)).write()
+    _assert_completed_game_public_text_safe(draft.rendered_text)
+    return draft
+
+
+def test_kept_alive_residual_cluster_splits_under_tightened_normalizer():
+    drafts = [
+        _rendered_team_story(_completed_ctx(
+            team_id=114,
+            game_pk=824422,
+            bullpen_story_tag='bullpen_kept_team_alive',
+            comeback_completed=True,
+            lead_lost=None,
+            lead_protected=None,
+            starter_name='Gavin Williams',
+            starter_player_id=668909,
+            starter_ip=5.0,
+            starter_pitch_count=103,
+            lead_when_bullpen_entered=None,
+            deficit_when_bullpen_entered=2,
+            bullpen_entry_inning=6,
+            largest_lead=2,
+            largest_deficit=3,
+            late_runs_allowed=1,
+            runs_allowed_innings_7_to_9=1,
+            turning_inning=8,
+        )),
+        _rendered_team_story(_completed_ctx(
+            team_id=142,
+            game_pk=823686,
+            bullpen_story_tag='bullpen_kept_team_alive',
+            comeback_completed=True,
+            lead_lost=None,
+            lead_protected=None,
+            starter_name='Connor Prielipp',
+            starter_player_id=687570,
+            starter_ip=6.0,
+            starter_pitch_count=93,
+            lead_when_bullpen_entered=None,
+            deficit_when_bullpen_entered=None,
+            bullpen_entry_inning=7,
+            largest_lead=1,
+            largest_deficit=1,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+            turning_inning=4,
+        )),
+    ]
+    templates = {_template_key(draft.body) for draft in drafts}
+    assert len(templates) == len(drafts)
+
+
+def test_overexposed_residual_cluster_splits_under_tightened_normalizer():
+    drafts = [
+        _rendered_team_story(_completed_ctx(
+            team_id=118,
+            game_pk=824580,
+            confidence='MEDIUM',
+            bullpen_story_tag='bullpen_overexposed',
+            game_shape_created='short_start',
+            lead_lost=None,
+            lead_protected=None,
+            starter_name='Luinder Avila',
+            starter_player_id=679883,
+            starter_ip=4.0,
+            starter_pitch_count=86,
+            lead_when_bullpen_entered=1,
+            deficit_when_bullpen_entered=None,
+            bullpen_entry_inning=5,
+            largest_lead=1,
+            largest_deficit=1,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+            turning_inning=4,
+        )),
+        _rendered_team_story(_completed_ctx(
+            team_id=135,
+            game_pk=823281,
+            confidence='MEDIUM',
+            bullpen_story_tag='bullpen_overexposed',
+            game_shape_created='short_start',
+            lead_lost=None,
+            lead_protected=None,
+            starter_name='Michael King',
+            starter_player_id=650633,
+            starter_ip=4.333333333333333,
+            starter_pitch_count=90,
+            lead_when_bullpen_entered=None,
+            deficit_when_bullpen_entered=3,
+            bullpen_entry_inning=5,
+            largest_lead=0,
+            largest_deficit=3,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+            turning_inning=None,
+        )),
+    ]
+    templates = {_template_key(draft.body) for draft in drafts}
+    assert len(templates) == len(drafts)
+
+
+def test_protected_residual_cluster_splits_under_tightened_normalizer():
+    drafts = [
+        _rendered_team_story(_completed_ctx(
+            team_id=111,
+            game_pk=824744,
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            starter_name='Sonny Gray',
+            starter_player_id=543243,
+            starter_ip=7.333333333333333,
+            starter_pitch_count=97,
+            lead_when_bullpen_entered=2,
+            deficit_when_bullpen_entered=None,
+            bullpen_entry_inning=8,
+            largest_lead=2,
+            largest_deficit=2,
+            late_runs_allowed=4,
+            runs_allowed_innings_7_to_9=2,
+            turning_inning=10,
+        ), team={'team_id': 111}),
+        _rendered_team_story(_completed_ctx(
+            team_id=120,
+            game_pk=824821,
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            starter_name='Zack Littell',
+            starter_player_id=641793,
+            starter_ip=5.0,
+            starter_pitch_count=82,
+            lead_when_bullpen_entered=3,
+            deficit_when_bullpen_entered=None,
+            bullpen_entry_inning=6,
+            largest_lead=4,
+            largest_deficit=2,
+            late_runs_allowed=2,
+            runs_allowed_innings_7_to_9=2,
+            turning_inning=3,
+        ), team={'team_id': 120}),
+        _rendered_team_story(_completed_ctx(
+            team_id=139,
+            game_pk=822959,
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            starter_name='Drew Rasmussen',
+            starter_player_id=656876,
+            starter_ip=6.0,
+            starter_pitch_count=99,
+            lead_when_bullpen_entered=5,
+            deficit_when_bullpen_entered=None,
+            bullpen_entry_inning=7,
+            largest_lead=5,
+            largest_deficit=0,
+            late_runs_allowed=1,
+            runs_allowed_innings_7_to_9=1,
+            turning_inning=None,
+        ), team={'team_id': 139}),
+    ]
+    templates = {_template_key(draft.body) for draft in drafts}
+    assert len(templates) == len(drafts)
+
+
+def test_residual_variety_polish_preserves_story_draft_fields():
+    draft = _rendered_team_story(_completed_ctx(
+        team_id=111,
+        game_pk=824744,
+        bullpen_story_tag='protected_game_shape',
+        lead_protected=True,
+        lead_lost=False,
+        starter_name='Sonny Gray',
+        starter_ip=7.333333333333333,
+        starter_pitch_count=97,
+        lead_when_bullpen_entered=2,
+        bullpen_entry_inning=8,
+        largest_lead=2,
+        late_runs_allowed=4,
+        runs_allowed_innings_7_to_9=2,
+    ))
+    assert set(draft.to_dict()) == {
+        'writer',
+        'headline',
+        'body',
+        'observations',
+        'evidence',
+        'confidence',
+        'story_priority',
+        'game_importance',
+        'safe_time_context',
+        'recommended_story_focus',
+        'primary_narrative',
+        'team_id',
+        'game_pk',
+    }
+    assert draft.team_id == 111
+    assert draft.game_pk == 824744
+    assert draft.primary_narrative == 'protected_game_shape'
+
+
 # ── Confidence respected: LOW never invents ───────────────────────────────────
 
 def test_low_confidence_never_invents_detail():
