@@ -195,7 +195,7 @@ def _headline(team_change: dict[str, Any], change: dict[str, Any]) -> str:
         (CHANGE_RESTED_OPTIONS, 'increased'): [
             f'The {team} bullpen has more breathing room today.',
             f'The {team} bullpen has a wider late-inning cushion today.',
-            f'The {team} bullpen has more clean ways through a close game.',
+            f'The {team} bullpen has more rested arms for a close game.',
         ],
         (CHANGE_RESTED_OPTIONS, 'decreased'): [
             f'The {team} bullpen has a thinner margin today.',
@@ -249,7 +249,7 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
     direction = change.get('change_direction')
     previous, current = _values(change)
     delta = _count_delta(change)
-    clean_delta = _count_phrase(delta, 'clean way', 'clean ways')
+    clean_delta = _count_phrase(delta, 'rested arm', 'rested arms')
     coverage_delta = _count_phrase(delta, 'coverage route', 'coverage routes')
     support_delta = _count_phrase(delta, 'support arm', 'support arms')
 
@@ -258,31 +258,31 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
             options = [
                 _public_sentence(
                     subject=f'The {team} bullpen has more breathing room',
-                    reason=f'{clean_delta} came back into the usable group',
+                    reason=f'{clean_delta} came back into the late-inning mix',
                     consequence='That gives the staff more ways through a close game',
                     stable_parts=(team, change_type, direction, 'a', delta),
                 ),
                 _public_sentence(
                     subject='The late-inning cushion is wider',
-                    reason=f'the clean side has {clean_delta} back',
+                    reason=f'the rested side has {clean_delta} back',
                     consequence='That leaves more room for the biggest outs',
                     stable_parts=(team, change_type, direction, 'b', delta),
                 ),
                 _public_sentence(
                     subject=f'The {team} bullpen has more close-game room',
-                    reason=f'the clean side gained {clean_delta}',
+                    reason=f'the rested side gained {clean_delta}',
                     consequence='That helps bridge the middle innings',
                     stable_parts=(team, change_type, direction, 'c', delta),
                 ),
                 _public_sentence(
                     subject='The bullpen has a wider close-game lane',
-                    reason=f'{clean_delta} returned to the usable group',
+                    reason=f'{clean_delta} returned to the late-inning mix',
                     consequence='That adds margin before the biggest outs',
                     stable_parts=(team, change_type, direction, 'd', delta),
                 ),
                 _public_sentence(
                     subject=f'The {team} bullpen has more middle-inning cover',
-                    reason=f'the usable group gained {clean_delta}',
+                    reason=f'the bullpen gained {clean_delta}',
                     consequence='That widens the route to the late arms',
                     stable_parts=(team, change_type, direction, 'e', delta),
                 ),
@@ -297,19 +297,19 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
         options = [
             _public_sentence(
                 subject=f'The {team} bullpen has a thinner late-inning cushion',
-                reason=f'the usable group lost {clean_delta}',
+                reason=f'the bullpen lost {clean_delta}',
                 consequence='That puts more weight on the bridge before the trusted arms',
                 stable_parts=(team, change_type, direction, 'a', delta),
             ),
             _public_sentence(
                 subject='The close-game route is tighter',
-                reason=f'the clean side lost {clean_delta}',
+                reason=f'the rested side lost {clean_delta}',
                 consequence='That leaves less margin before the late innings',
                 stable_parts=(team, change_type, direction, 'b', delta),
             ),
             _public_sentence(
                 subject='The bullpen has less breathing room around the edges',
-                reason=f'the usable group no longer has {clean_delta}',
+                reason=f'the bullpen no longer has {clean_delta}',
                 consequence='That makes the middle innings matter more',
                 stable_parts=(team, change_type, direction, 'c', delta),
             ),
@@ -326,7 +326,7 @@ def _summary(team_change: dict[str, Any], change: dict[str, Any]) -> str:
             )
         return _public_sentence(
             subject='The full-game route is shorter than yesterday',
-            reason=f'{coverage_delta} dropped out of the usable group',
+            reason=f'{coverage_delta} dropped out of the coverage picture',
             consequence='That makes the bridge to the late arms more important',
             stable_parts=(team, change_type, direction, delta),
         )

@@ -186,18 +186,18 @@ def _public_summary(team_name: str, counts: dict[str, int | None]) -> str:
     if yesterday is None or today is None:
         return f'{team_name} has a bullpen change in the current comparison.'
     if today < yesterday:
-        lost = _prose_count(yesterday - today, 'clean way', 'clean ways')
+        lost = _prose_count(yesterday - today, 'rested arm', 'rested arms')
         return _public_sentence(
             subject=f'{team_name} has a thinner late-inning cushion',
-            reason=f'the usable group lost {lost}',
+            reason=f'the bullpen lost {lost}',
             consequence='That puts more weight on the middle innings',
             stable_parts=(team_name, 'summary', 'down', yesterday, today),
         )
     if today > yesterday:
-        gained = _prose_count(today - yesterday, 'clean way', 'clean ways')
+        gained = _prose_count(today - yesterday, 'rested arm', 'rested arms')
         return _public_sentence(
             subject=f'{team_name} has more breathing room than yesterday',
-            reason=f'the usable group gained {gained}',
+            reason=f'the bullpen gained {gained}',
             consequence='That creates more ways through a close game',
             stable_parts=(team_name, 'summary', 'up', yesterday, today),
         )
@@ -239,14 +239,14 @@ def _public_why_it_matters(
         if today < yesterday:
             return _public_sentence(
                 subject='The late-inning cushion is thinner than yesterday',
-                reason='the usable group has less room',
+                reason='the bullpen has less room',
                 consequence='That makes the middle innings matter more',
                 stable_parts=(team_name, 'context', 'down', yesterday, today),
             )
         if today > yesterday:
             return _public_sentence(
                 subject='The bullpen has more breathing room than yesterday',
-                reason='the usable group has more room',
+                reason='the bullpen has more room',
                 consequence='That creates more ways through a close game tonight',
                 stable_parts=(team_name, 'context', 'up', yesterday, today),
             )

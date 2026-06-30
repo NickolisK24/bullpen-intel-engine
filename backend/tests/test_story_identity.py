@@ -143,7 +143,7 @@ def test_critical_story_varies_sentence_length():
 def test_morning_brief_explains_todays_bullpen_with_names():
     brief = MorningBriefWriter(_pkg(team=_team_context(clean_names=['Erik Miller', 'Sean Hjelle']))).write()
     assert 'Available arms: Erik Miller, Sean Hjelle.' in brief.body
-    assert "Yesterday's late damage matters here." in brief.body
+    assert 'The late damage leaves the bullpen with less margin.' in brief.body
     assert 'That ' in brief.body
     assert brief.observations == []
 

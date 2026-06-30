@@ -121,10 +121,10 @@ def test_public_payload_includes_only_frontend_safe_copy_items():
             'team_id': 1,
             'team_name': 'Alpha Club',
             'team_abbreviation': 'AAA',
-            'public_headline': 'The Alpha Club bullpen has more clean ways through a close game.',
+            'public_headline': 'The Alpha Club bullpen has more rested arms for a close game.',
             'public_summary': (
-                'The Alpha Club bullpen has more close-game room because the clean side gained '
-                'three clean ways. That helps bridge the middle innings.'
+                'The Alpha Club bullpen has more close-game room because the rested side gained '
+                'three rested arms. That helps bridge the middle innings.'
             ),
             'public_context': (
                 'Three relievers took on meaningful workload yesterday because the bullpen still has '

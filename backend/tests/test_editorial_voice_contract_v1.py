@@ -113,10 +113,34 @@ def test_editorial_banned_language_helper_catches_singular_plural_loopholes():
         'The bridge has clean arms left.',
         'The bridge has a short list of clean arms left.',
         'The bullpen is in good shape.',
+        'The bullpen has fewer clean ways through a close game.',
+        'That narrows the usable group before the game gets late.',
+        'The club has less usable depth than yesterday.',
     )
 
     for text in cases:
         assert contains_editorial_banned_language(text), text
+
+
+def test_shared_consequence_helpers_retire_model_adjacent_phrases():
+    retired = ('clean ways', 'usable group', 'usable depth')
+
+    for key, forms in BASEBALL_CONSEQUENCE_LINES.items():
+        for form in forms:
+            lower = form.lower()
+            for phrase in retired:
+                assert phrase not in lower, (key, phrase, form)
+
+    rendered = ' '.join(
+        render_baseball_consequence(
+            key,
+            stable_parts=('phrase-retirement', key, index),
+        )
+        for key in BASEBALL_CONSEQUENCE_LINES
+        for index in range(8)
+    ).lower()
+    for phrase in retired:
+        assert phrase not in rendered
 
 
 def test_find_editorial_violations_reports_term_match_category_and_order():

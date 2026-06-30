@@ -110,7 +110,7 @@ class TestObservations:
         comp = build_team_comparison(a, b)
         restricted = next(o for o in comp['observations'] if o['dimension'] == 'restricted')
         assert restricted['leader'] == 'B'  # Bears have 5 restricted vs 2
-        assert restricted['statement'].startswith('Bears has the thinner usable group because ')
+        assert restricted['statement'].startswith('Bears has less rested late-inning cover because ')
         assert 'Bears has five restricted arms' in restricted['statement']
         assert 'Aces has both restricted arms' in restricted['statement']
         assert restricted['team_a_value'] == 2

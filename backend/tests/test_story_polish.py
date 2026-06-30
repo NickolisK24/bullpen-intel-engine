@@ -157,7 +157,7 @@ def test_morning_brief_differs_from_team_story():
     assert len(brief.body) < len(team.body)         # one-sentence recap, not full story
     assert 'Available arms: Erik Miller.' in brief.body
     # Brief states why yesterday changed the picture.
-    assert "Yesterday's late damage matters here." in brief.body
+    assert 'The late damage leaves the bullpen with less margin.' in brief.body
     assert 'That ' in brief.body
     assert 'relief corps' not in brief.body
 

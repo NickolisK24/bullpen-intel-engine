@@ -117,7 +117,7 @@ def _tie_statement(dimension_key, value):
         )
     if dimension_key == 'restricted':
         return _comparison_sentence(
-            subject='Both bullpens carry the same usable-depth pressure',
+            subject='Both bullpens carry the same late-inning depth pressure',
             reason=(
                 f'each side has {_count_phrase(value, "restricted arm", "restricted arms")} '
                 'needing rest or unavailable'
@@ -146,7 +146,7 @@ def _leader_statement(dimension_key, leader_label, other_label, leader_value, ot
         )
     if dimension_key == 'restricted':
         return _comparison_sentence(
-            subject=f'{leader_label} has the thinner usable group',
+            subject=f'{leader_label} has less rested late-inning cover',
             reason=(
                 f'{_has_count(leader_label, leader_value, "restricted arm", "restricted arms")} '
                 'needing rest or unavailable while '
@@ -299,7 +299,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
         thinner_value = max(metrics_a['restricted'], metrics_b['restricted'])
         cleaner_value = min(metrics_a['restricted'], metrics_b['restricted'])
         statement = _comparison_sentence(
-            subject=f'{cleaner_label} has the cleaner usable group',
+            subject=f'{cleaner_label} has more rested late-inning cover',
             reason=(
                 f'{thinner_label} carries {_count_phrase(thinner_value, "restricted arm", "restricted arms")} '
                 'needing rest or unavailable while '

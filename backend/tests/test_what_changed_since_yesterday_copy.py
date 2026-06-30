@@ -50,10 +50,11 @@ def test_improved_movement_renders_as_baseball_consequence():
 
     assert copy['public_copy_status'] == COPY_STATUS_GENERATED
     assert copy['copy_review_flags'] == []
-    assert 'breathing room' in text or 'clean ways' in text
+    assert 'breathing room' in text or 'rested arms' in text
+    assert 'clean ways' not in text
+    assert 'usable group' not in text
     assert 'moved from' not in text
     assert 'from 2 to 5' not in text
-    assert 'more rested' not in text
 
 
 def test_worsening_movement_renders_as_baseball_consequence():
@@ -62,9 +63,10 @@ def test_worsening_movement_renders_as_baseball_consequence():
 
     assert copy['copy_review_flags'] == []
     assert 'late-inning cushion' in text or 'middle innings' in text
+    assert 'clean ways' not in text
+    assert 'usable group' not in text
     assert 'moved from' not in text
     assert 'from 5 to 2' not in text
-    assert 'fewer rested' not in text
 
 
 def test_no_meaningful_change_stays_neutral_and_unrendered():

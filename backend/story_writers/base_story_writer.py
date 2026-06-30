@@ -825,9 +825,9 @@ class BaseStoryWriter:
             return None
         primary = self.primary_narrative()
         if primary == 'lost_game_shape':
-            return f"Yesterday's late damage matters here. {consequence}"
+            return f'The late damage leaves the bullpen with less margin. {consequence}'
         if primary == 'bullpen_overexposed':
-            return f'The extra innings matter here. {consequence}'
+            return f'The extra bullpen work leaves less margin if the starter exits early. {consequence}'
         return consequence
 
     def short_summary(self) -> str:

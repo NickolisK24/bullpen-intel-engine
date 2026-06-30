@@ -21,6 +21,10 @@ from models.completed_game_context import CompletedGameContext
 
 from services.narrative_feed_builder import build_narrative_feed
 from services import coin_story_inspection
+from services.todays_story_editorial_review import (
+    build_todays_story_editorial_review,
+    write_todays_story_editorial_review,
+)
 
 
 def _completed_ctx(**over):
@@ -150,6 +154,55 @@ def test_output_is_json_serializable():
     encoded = json.dumps(out, sort_keys=True)
     pretty = json.dumps(out, indent=2, sort_keys=True)
     assert json.loads(encoded) == json.loads(pretty)
+
+
+def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
+    contexts = [
+        _completed_ctx(
+            team_id=1,
+            game_pk=701,
+            game_date='2026-06-28',
+            starter_name='Logan Webb',
+            starter_ip=7.3333,
+            starter_pitch_count=101,
+        ),
+        _completed_ctx(
+            team_id=2,
+            game_pk=702,
+            game_date='2026-06-28',
+            confidence='LOW',
+            bullpen_story_tag='insufficient_context',
+        ),
+    ]
+
+    def inspect(team_id, **kwargs):
+        return coin_story_inspection.inspect_team_story(
+            team_id,
+            completed_game_context=kwargs.get('completed_game_context'),
+            team_context=_team_context(),
+        )
+
+    report = build_todays_story_editorial_review(
+        reference_date='2026-06-28',
+        candidate_contexts=contexts,
+        inspect_fn=inspect,
+        generated_at='2026-06-29T00:00:00',
+    )
+    output = write_todays_story_editorial_review(
+        report,
+        tmp_path / 'todays_story_editorial_review_E2C5C_live.md',
+    )
+    text = output.read_text(encoding='utf-8')
+
+    assert report['completed_game_context_rows_reviewed'] == 2
+    assert report['completed_game_publishable_stories'] == 1
+    assert report['completed_game_fallback_or_unpublishable_rows'] == 1
+    assert report['banned_language_scan']['status'] == 'pass'
+    assert report['impossible_innings_scan']['status'] == 'pass'
+    assert 'Homepage Lead Story' in text
+    assert 'Completed-Game Story Corpus' in text
+    assert '7.1 IP' in text
+    assert 'No draft rendered.' in text
 
 
 # ── DB-backed: real read path mutates nothing ─────────────────────────────────

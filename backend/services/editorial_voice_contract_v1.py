@@ -38,7 +38,7 @@ BASEBALL_CONSEQUENCE_LINES = {
     'late_inning_margin': (
         'That gives the bullpen more ways to cover the late innings',
         'That gives the staff more margin before the game reaches the final outs',
-        'That leaves the late innings with more than one clean path',
+        'That leaves the late innings with more than one route through a tight game',
     ),
     'narrow_late_path': (
         'That leaves less margin before the game reaches the trusted arms',
@@ -51,7 +51,7 @@ BASEBALL_CONSEQUENCE_LINES = {
         'That shifts the pressure to the innings before the back of the bullpen',
     ),
     'route_turnover': (
-        "That matters because yesterday's comfortable route may not be today's cleanest path",
+        "That matters because yesterday's comfortable route may not be today's best-supported path",
         'That kind of turnover matters because the late-inning order has changed beneath the same roster',
         'That changes how the bullpen has to build the path to the biggest outs',
     ),
@@ -66,9 +66,9 @@ BASEBALL_CONSEQUENCE_LINES = {
         'That keeps the workload from spreading across the full bullpen',
     ),
     'availability_narrowed': (
-        'That narrows the usable group before the game gets late',
-        'That leaves fewer clean ways through a close game',
-        'That shortens the bullpen before the late innings arrive',
+        'That leaves fewer rested arms to get through a close game',
+        'That leaves fewer ways to cover the late innings without leaning on tired arms',
+        'That leaves less room before the game gets late',
     ),
     'no_clear_signal': (
         'That keeps the read descriptive until the evidence separates',
@@ -83,8 +83,12 @@ EXPANDED_EDITORIAL_DENY_TERMS = (
     'clean options',
     'clean arm',
     'clean arms',
+    'clean way',
+    'clean ways',
     'short list of clean arms',
     'in good shape',
+    'usable group',
+    'usable depth',
     'retained 0 arm',
     '3-spot change',
     'clean option is limited',

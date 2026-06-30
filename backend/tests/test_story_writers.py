@@ -28,8 +28,11 @@ _IMPOSSIBLE_INNINGS = re.compile(r'\b\d+\.[367]\b')
 _DISCOURAGED_PUBLIC_LANGUAGE = (
     'clean options',
     'clean arms',
+    'clean ways',
     'short list of clean arms',
     'in good shape',
+    'usable group',
+    'usable depth',
     'availability distributions',
     'practical path',
     'practical paths',
