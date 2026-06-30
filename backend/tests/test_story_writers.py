@@ -233,6 +233,57 @@ def test_fractional_innings_render_in_public_completed_game_text():
     assert not _IMPOSSIBLE_INNINGS.search(rendered)
 
 
+def test_burke_tied_handoff_does_not_render_false_deficit_or_decimal_ip():
+    completed = _completed_ctx(
+        team_id=145,
+        game_pk=826001,
+        team_name='Chicago White Sox',
+        bullpen_story_tag='bullpen_kept_team_alive',
+        lead_lost=None,
+        lead_protected=None,
+        game_shape_protected=None,
+        comeback_completed=True,
+        starter_name='Sean Burke',
+        starter_player_id=656271,
+        starter_ip=16 / 3,
+        starter_pitch_count=89,
+        starter_exit_inning=6,
+        starter_exit_score_for=2,
+        starter_exit_score_against=2,
+        lead_when_bullpen_entered=None,
+        deficit_when_bullpen_entered=None,
+        bullpen_entry_inning=6,
+        bullpen_entry_score_for=2,
+        bullpen_entry_score_against=2,
+        largest_lead=2,
+        largest_deficit=1,
+        late_runs_allowed=0,
+        runs_allowed_innings_7_to_9=0,
+        turning_inning=8,
+    )
+
+    draft = TeamStoryWriter(build_story_package(
+        145,
+        completed_game_context=completed,
+        team_context=_team_context(),
+    )).write()
+    _assert_completed_game_public_text_safe(draft.rendered_text)
+    rendered = draft.rendered_text
+    lowered = rendered.lower()
+
+    assert 'Sean Burke' in rendered
+    assert '5.1 innings' in rendered
+    assert 'Starter: Sean Burke, 5.1 IP, 89 pitches' in rendered
+    assert 'Bullpen entered in the 6th with the score tied' in rendered
+    assert 'tied game' in lowered
+    assert '5.3' not in rendered
+    assert 'one-run deficit to erase' not in lowered
+    assert 'left a one-run deficit' not in lowered
+    assert 'left chicago white sox chasing a one-run deficit' not in lowered
+    assert 'down one' not in lowered
+    assert not _IMPOSSIBLE_INNINGS.search(rendered)
+
+
 def test_starter_covered_bullpen_copy_requires_named_anchor_and_consequence():
     completed = _completed_ctx(
         bullpen_story_tag='starter_covered_bullpen',
@@ -429,6 +480,10 @@ def test_kept_alive_residual_cluster_splits_under_tightened_normalizer():
             lead_when_bullpen_entered=None,
             deficit_when_bullpen_entered=2,
             bullpen_entry_inning=6,
+            bullpen_entry_score_for=2,
+            bullpen_entry_score_against=4,
+            starter_exit_score_for=2,
+            starter_exit_score_against=4,
             largest_lead=2,
             largest_deficit=3,
             late_runs_allowed=1,
@@ -449,6 +504,10 @@ def test_kept_alive_residual_cluster_splits_under_tightened_normalizer():
             lead_when_bullpen_entered=None,
             deficit_when_bullpen_entered=None,
             bullpen_entry_inning=7,
+            bullpen_entry_score_for=1,
+            bullpen_entry_score_against=1,
+            starter_exit_score_for=1,
+            starter_exit_score_against=1,
             largest_lead=1,
             largest_deficit=1,
             late_runs_allowed=0,
@@ -477,6 +536,10 @@ def test_overexposed_residual_cluster_splits_under_tightened_normalizer():
             lead_when_bullpen_entered=1,
             deficit_when_bullpen_entered=None,
             bullpen_entry_inning=5,
+            bullpen_entry_score_for=3,
+            bullpen_entry_score_against=2,
+            starter_exit_score_for=3,
+            starter_exit_score_against=2,
             largest_lead=1,
             largest_deficit=1,
             late_runs_allowed=0,
@@ -498,6 +561,10 @@ def test_overexposed_residual_cluster_splits_under_tightened_normalizer():
             lead_when_bullpen_entered=None,
             deficit_when_bullpen_entered=3,
             bullpen_entry_inning=5,
+            bullpen_entry_score_for=0,
+            bullpen_entry_score_against=3,
+            starter_exit_score_for=0,
+            starter_exit_score_against=3,
             largest_lead=0,
             largest_deficit=3,
             late_runs_allowed=0,

@@ -453,27 +453,34 @@ class BaseStoryWriter:
         return f'in the {inning} inning' if inning else None
 
     def _lead_lost(self) -> str:
-        lead = self.fact('largest_lead')
+        entry_lead = self._entry_lead_value()
+        lead = entry_lead if entry_lead is not None else self.fact('largest_lead')
         late = self.fact('late_runs_allowed')
         handoff = self._starter_handoff_clause()
-        clause = 'the bullpen inherited '
-        clause += f'a {lead}-run lead' if lead else 'a lead'
-        if handoff:
-            clause += f' {handoff}'
-        clause += " but couldn't protect it"
+        if entry_lead:
+            clause = 'the bullpen inherited '
+            clause += f'a {entry_lead}-run lead'
+            if handoff:
+                clause += f' {handoff}'
+            clause += " but couldn't protect it"
+        else:
+            clause = f'a {lead}-run lead slipped away' if lead else 'a lead slipped away'
         if late:
             clause += f', allowing {_runs_word(late)} over the late innings'
         clause += ', turning a strong start into a difficult finish'
         return self._start(clause)
 
     def _lead_protected(self) -> str:
-        lead = self.fact('largest_lead')
+        entry_lead = self._entry_lead_value()
+        lead = entry_lead if entry_lead is not None else self.fact('largest_lead')
         late = self.fact('late_runs_allowed')
         handoff = self._starter_handoff_clause()
-        clause = 'the bullpen protected '
-        clause += f'a {lead}-run lead' if lead else 'the lead'
-        if handoff:
-            clause += f' {handoff}'
+        if entry_lead:
+            clause = f'the bullpen protected a {entry_lead}-run lead'
+            if handoff:
+                clause += f' {handoff}'
+        else:
+            clause = f'the bullpen closed out a {lead}-run lead' if lead else 'the bullpen closed out the lead'
         if late == 0:
             clause += ' without giving anything back'
         clause += ', closing out the win'
@@ -592,28 +599,48 @@ class BaseStoryWriter:
         return block if block is not None else self.fact('bullpen_entry_inning')
 
     def _entry_deficit_value(self):
-        block = (self.evidence_block('bullpen_entry_situation') or {}).get('deficit_when_entered')
-        if block is not None:
-            return block
-        fact = self.fact('deficit_when_bullpen_entered')
-        if fact is not None:
-            return fact
-        completed = self._get('completed_game_context')
-        if isinstance(completed, dict):
-            return completed.get('deficit_when_bullpen_entered')
-        return None
+        margin = self._entry_margin_value()
+        if margin is None or margin >= 0:
+            return None
+        return -margin
 
     def _entry_lead_value(self):
-        block = (self.evidence_block('bullpen_entry_situation') or {}).get('lead_when_entered')
-        if block is not None:
-            return block
-        fact = self.fact('lead_when_bullpen_entered')
-        if fact is not None:
-            return fact
+        margin = self._entry_margin_value()
+        if margin is None or margin <= 0:
+            return None
+        return margin
+
+    def _entry_score_pair(self) -> tuple[int, int] | None:
+        block = self.evidence_block('bullpen_entry_situation') or {}
+        for_score = block.get('score_for')
+        against_score = block.get('score_against')
+        if for_score is None:
+            for_score = self.fact('bullpen_entry_score_for')
+        if against_score is None:
+            against_score = self.fact('bullpen_entry_score_against')
         completed = self._get('completed_game_context')
         if isinstance(completed, dict):
-            return completed.get('lead_when_bullpen_entered')
-        return None
+            if for_score is None:
+                for_score = completed.get('bullpen_entry_score_for')
+            if against_score is None:
+                against_score = completed.get('bullpen_entry_score_against')
+        try:
+            return int(for_score), int(against_score)
+        except (TypeError, ValueError):
+            return None
+
+    def _entry_margin_value(self) -> int | None:
+        pair = self._entry_score_pair()
+        if pair is None:
+            return None
+        return pair[0] - pair[1]
+
+    def _entry_tied(self) -> bool:
+        return self._entry_margin_value() == 0
+
+    def _story_lead_value(self):
+        entry_lead = self._entry_lead_value()
+        return entry_lead if entry_lead is not None else self._largest_lead_value()
 
     # ── Priority-aware body composition ───────────────────────────────────────
     def compose_body(self) -> str:
@@ -644,10 +671,11 @@ class BaseStoryWriter:
         # rhythm (long, short, medium); no team-noun fallbacks, no "couldn't hold".
         team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
-        lead, late = self._largest_lead_value(), self._late_runs_value()
+        entry_lead = self._entry_lead_value()
+        lead, late = self._story_lead_value(), self._late_runs_value()
         names = self._key_relief_names()
 
-        if not (starter and ipw and lead):
+        if not (starter and ipw and entry_lead):
             base = f'a {_num(lead)}-run lead' if lead else 'a lead'
             line = f'{base} slipped away in the late innings'
             if late:
@@ -657,13 +685,13 @@ class BaseStoryWriter:
         variant = self._voice_index(2, 'lost_body')
         if variant == 0:
             if team:
-                opener = f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run lead to protect'
+                opener = f'{starter} gave {team} {ipw} strong innings and a {_num(entry_lead)}-run lead to protect'
             else:
-                opener = f"{starter}'s {ipw} strong innings staked a {_num(lead)}-run lead heading to the late innings"
+                opener = f"{starter}'s {ipw} strong innings staked a {_num(entry_lead)}-run lead heading to the late innings"
         elif team:
-            opener = f'{starter} gave {team} {ipw} innings and a {_num(lead)}-run lead'
+            opener = f'{starter} gave {team} {ipw} innings and a {_num(entry_lead)}-run lead'
         else:
-            opener = f'{starter} worked {ipw} innings before a {_num(lead)}-run lead reached the bullpen'
+            opener = f'{starter} worked {ipw} innings before a {_num(entry_lead)}-run lead reached the bullpen'
         sentences = [self._start(opener), "It didn't last."]
 
         closing = ''
@@ -680,36 +708,36 @@ class BaseStoryWriter:
     def _compose_protected(self, include_opening, include_consequence) -> str:
         team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
-        lead, late = self._largest_lead_value(), self._late_runs_value()
-        inning = _ordinal(self._entry_inning_value())
         entry_lead = self._entry_lead_value()
+        lead, late = self._story_lead_value(), self._late_runs_value()
+        inning = _ordinal(self._entry_inning_value())
         has_takeaway = bool(self.wants_observations() and self.story_takeaway())
         names = self._key_relief_names()
         sentences = []
 
         variant = self._voice_index(6, 'protected_body', lead, late, self._entry_inning_value())
-        if include_opening and starter and ipw and lead:
+        if include_opening and starter and ipw and entry_lead:
             if variant in (0, 3):
-                opener = (f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'
+                opener = (f'{starter} handed {team} a {_num(entry_lead)}-run lead after {ipw} innings'
                           if team else
-                          f'{starter} worked {ipw} innings and handed off a {_num(lead)}-run lead')
+                          f'{starter} worked {ipw} innings and handed off a {_num(entry_lead)}-run lead')
             elif variant in (1, 4):
-                opener = (f'{starter} left {team} {_num(lead)} runs up after {ipw} innings'
+                opener = (f'{starter} left {team} {_num(entry_lead)} runs up after {ipw} innings'
                           if team else
-                          f'{starter} left after {ipw} innings with a {_num(lead)}-run lead')
+                          f'{starter} left after {ipw} innings with a {_num(entry_lead)}-run lead')
             else:
-                opener = (f'{starter} built {team} a {_num(lead)}-run cushion over {ipw} innings'
+                opener = (f'{starter} built {team} a {_num(entry_lead)}-run cushion over {ipw} innings'
                           if team else
-                          f'{starter} built a {_num(lead)}-run cushion over {ipw} innings')
+                          f'{starter} built a {_num(entry_lead)}-run cushion over {ipw} innings')
             sentences.append(self._start(opener))
             sentences.append(_variant((
                 'The bullpen brought it home.',
                 'The relievers handled the finish.',
                 'The late innings held from there.',
             ), variant))
-        elif starter and ipw and lead:
+        elif starter and ipw and entry_lead:
             if variant == 0:
-                opener = (f'{starter} worked {ipw} innings and left with a {_num(lead)}-run lead, '
+                opener = (f'{starter} worked {ipw} innings and left with a {_num(entry_lead)}-run lead, '
                           f'and the bullpen brought it home')
             elif variant == 1:
                 if inning and entry_lead and not has_takeaway:
@@ -724,25 +752,25 @@ class BaseStoryWriter:
                                   f'in the {inning}, and the relievers protected it')
                 else:
                     opener = (f'{starter} handed off after {ipw} innings with a '
-                              f'{_num(lead)}-run lead, and the bullpen finished it')
+                              f'{_num(entry_lead)}-run lead, and the bullpen finished it')
             elif variant == 2:
-                opener = (f'{starter} gave the bullpen a {_num(lead)}-run lead after '
+                opener = (f'{starter} gave the bullpen a {_num(entry_lead)}-run lead after '
                           f'{ipw} innings, and the late innings held')
             elif variant == 3:
-                opener = (f'{starter} left after {ipw} innings with {_num(lead)} runs of '
+                opener = (f'{starter} left after {ipw} innings with {_num(entry_lead)} runs of '
                           f'cushion, and the bullpen protected it')
             elif variant == 4:
                 opener = (f'{starter} covered {ipw} innings before the bullpen took a '
-                          f'{_num(lead)}-run lead to the finish')
+                          f'{_num(entry_lead)}-run lead to the finish')
             else:
-                opener = (f'{starter} put a {_num(lead)}-run lead in place over {ipw} '
+                opener = (f'{starter} put a {_num(entry_lead)}-run lead in place over {ipw} '
                           f'innings, and the relievers carried it home')
             sentences.append(self._start(opener))
         else:
             if variant in (0, 3):
                 line = 'the bullpen protected '
                 line += f'a {_num(lead)}-run lead' if lead else 'the lead'
-                if inning:
+                if inning and entry_lead:
                     line += f' from the {inning} inning on'
                 line += ', closing out the win'
             elif variant in (1, 4):
@@ -764,39 +792,48 @@ class BaseStoryWriter:
     def _compose_kept_alive(self, include_opening, include_consequence) -> str:
         team = self._team_name()
         starter, ipw = self._starter_name(), self._starter_innings_word()
-        deficit = self._entry_deficit_value() or self._largest_deficit_value()
         entry_deficit = self._entry_deficit_value()
+        largest_deficit = self._largest_deficit_value()
         inning = _ordinal(self._entry_inning_value())
+        entry_tied = self._entry_tied()
         names = self._key_relief_names()
         sentences = []
 
         variant = self._voice_index(2, 'kept_alive_body')
-        if starter and ipw and deficit:
+        if starter and ipw and entry_deficit:
             if variant == 0:
                 if team:
                     opener = (f"{starter}'s {ipw} innings left {team} chasing a "
-                              f'{_num(deficit)}-run deficit, but the bullpen kept it from growing')
+                              f'{_num(entry_deficit)}-run deficit, but the bullpen kept it from growing')
                 elif entry_deficit and inning:
                     opener = (f'{starter} worked {ipw} innings before the bullpen entered '
                               f'in the {inning} trailing by {_num(entry_deficit)}, '
                               f'and the deficit held there')
                 elif inning:
-                    opener = (f"{starter}'s {ipw} innings left a {_num(deficit)}-run deficit, "
+                    opener = (f"{starter}'s {ipw} innings left a {_num(entry_deficit)}-run deficit, "
                               f'and the bullpen kept it close from the {inning} on')
                 else:
-                    opener = (f"{starter}'s {ipw} innings left a {_num(deficit)}-run deficit to "
+                    opener = (f"{starter}'s {ipw} innings left a {_num(entry_deficit)}-run deficit to "
                               f'erase, but the bullpen kept it from growing')
             elif team:
-                opener = (f'{starter} left {team} down {_num(deficit)} after {ipw} innings, '
+                opener = (f'{starter} left {team} down {_num(entry_deficit)} after {ipw} innings, '
                           f'and the bullpen held the game there')
             else:
-                opener = (f'{starter} left a {_num(deficit)}-run deficit after {ipw} innings, '
+                opener = (f'{starter} left a {_num(entry_deficit)}-run deficit after {ipw} innings, '
                           f'and the bullpen held the game there')
+            sentences.append(self._start(opener))
+        elif starter and ipw and entry_tied:
+            if team:
+                opener = (f"{starter}'s {ipw} innings handed {team} a tied game, "
+                          f'and the bullpen held the line from there')
+            else:
+                opener = (f"{starter}'s {ipw} innings handed the bullpen a tied game, "
+                          f'and the relievers held the line from there')
             sentences.append(self._start(opener))
         else:
             line = 'the bullpen kept the game within reach'
-            if deficit:
-                line += f' after a {_num(deficit)}-run deficit'
+            if largest_deficit:
+                line += f' after {self._team_subject()} had fallen behind by {_num(largest_deficit)}'
             sentences.append(self._start(line))
 
         if include_consequence:
@@ -918,8 +955,9 @@ class BaseStoryWriter:
         """A single-sentence game recap for the morning brief (not the full story)."""
         team = self._team_subject()
         primary = self.primary_narrative()
-        lead = self._largest_lead_value()
-        deficit = self._entry_deficit_value() or self._largest_deficit_value()
+        lead = self._story_lead_value()
+        entry_deficit = self._entry_deficit_value()
+        deficit = entry_deficit if entry_deficit is not None else self._largest_deficit_value()
         late = self._late_runs_value()
         if primary == 'lost_game_shape':
             clause = f'{team} carried '
@@ -932,9 +970,17 @@ class BaseStoryWriter:
             clause += f'a {_num(lead)}-run lead' if lead else 'a lead'
             clause += ' into a win the bullpen never let slip'
         elif primary == 'bullpen_kept_team_alive':
-            clause = f'{team} climbed out of'
-            clause += f' a {_num(deficit)}-run hole' if deficit else ' a deficit'
-            clause += ' the bullpen kept from growing'
+            if entry_deficit:
+                clause = f'{team} climbed out of'
+                clause += f' a {_num(entry_deficit)}-run hole'
+                clause += ' the bullpen kept from growing'
+            elif self._entry_tied():
+                clause = f'{team} broke through after the bullpen held a tied game'
+            else:
+                clause = f'{team} came back'
+                if deficit:
+                    clause += f' after falling behind by {_num(deficit)}'
+                clause += ' with the bullpen keeping the game close'
         elif primary == 'bullpen_overexposed':
             clause = f'a short start put {self._team_possessive()} bullpen to work early'
         elif primary == 'starter_covered_bullpen':
@@ -1067,6 +1113,8 @@ class BaseStoryWriter:
                 text += f" with a {entry['lead_when_entered']}-run lead"
             elif entry.get('deficit_when_entered'):
                 text += f" trailing by {entry['deficit_when_entered']}"
+            elif entry.get('score_for') is not None and entry.get('score_for') == entry.get('score_against'):
+                text += ' with the score tied'
             lines.append(text)
 
         turning = (blocks.get('turning_point') or {}).get('inning')

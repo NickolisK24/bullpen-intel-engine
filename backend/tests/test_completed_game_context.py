@@ -22,6 +22,7 @@ from services.completed_game_context_service import (
     CONFIDENCE_HIGH,
     CONFIDENCE_LOW,
     CONFIDENCE_MEDIUM,
+    TAG_BULLPEN_KEPT_TEAM_ALIVE,
     TAG_BULLPEN_OVEREXPOSED,
     TAG_INSUFFICIENT_CONTEXT,
     TAG_LOST_GAME_SHAPE,
@@ -65,6 +66,10 @@ def _away_team(pitchers):
 
 def _home_context(contexts):
     return next(c for c in contexts if c['home_away'] == 'home')
+
+
+def _away_context(contexts):
+    return next(c for c in contexts if c['home_away'] == 'away')
 
 
 # A normal-start home team (starter goes 6 IP = 18 outs) plus one reliever.
@@ -196,6 +201,49 @@ def test_lost_game_shape_when_team_leads_at_handoff_and_loses_late():
     assert home['runs_allowed_innings_7_to_9'] == 3
     assert home['turning_inning'] == 8
     assert home['bullpen_story_tag'] == TAG_LOST_GAME_SHAPE
+
+
+def test_burke_style_tied_handoff_keeps_largest_deficit_separate_from_entry_state():
+    # Away starter records 16 outs (5.1 IP), trails earlier, exits tied, and
+    # the offense breaks the tie later. The largest deficit must not become the
+    # starter/bullpen handoff state.
+    burke = _line(1451, 'Sean Burke', 1, 16, pitches=89)
+    sox_reliever = _line(1452, 'White Sox Reliever', 0, 11, pitches=31)
+    home_starter = _line(1161, 'Home Starter', 1, 15, pitches=80)
+    home_reliever = _line(1162, 'Home Reliever', 0, 12, pitches=42)
+    plays = [
+        _play(1, 'top', 0, 0, 1161),
+        _play(3, 'bottom', 0, 1, 1451),  # Chicago trails by one.
+        _play(5, 'top', 2, 2, 1161),     # Chicago ties before the handoff.
+        _play(6, 'bottom', 2, 2, 1451),  # Burke's final batter, still tied.
+        _play(6, 'bottom', 2, 2, 1452),  # Bullpen enters with a tied score.
+        _play(8, 'top', 4, 2, 1162),     # Chicago breaks the tie later.
+        _play(9, 'bottom', 4, 2, 1452),
+    ]
+    game = {
+        'game_pk': 826001,
+        'away': _away_team([burke, sox_reliever]) | {'team_id': 145, 'team_name': 'Chicago White Sox'},
+        'home': _home_team([home_starter, home_reliever]) | {'team_id': 116, 'team_name': 'Home Club'},
+        'linescore': {'home_runs': 2, 'away_runs': 4},
+        'plays': plays,
+    }
+
+    away = _away_context(extract_completed_game_contexts(game))
+
+    assert away['starter_name'] == 'Sean Burke'
+    assert away['starter_ip'] == pytest.approx(16 / 3)
+    assert away['starter_exit_inning'] == 6
+    assert away['starter_exit_score_for'] == 2
+    assert away['starter_exit_score_against'] == 2
+    assert away['bullpen_entry_inning'] == 6
+    assert away['bullpen_entry_score_for'] == 2
+    assert away['bullpen_entry_score_against'] == 2
+    assert away['lead_when_bullpen_entered'] is None
+    assert away['deficit_when_bullpen_entered'] is None
+    assert away['largest_deficit'] == 1
+    assert away['turning_inning'] == 8
+    assert away['late_runs_allowed'] == 0
+    assert away['bullpen_story_tag'] == TAG_BULLPEN_KEPT_TEAM_ALIVE
 
 
 # ── Exposure-based tags (no lead context required) ────────────────────────────
