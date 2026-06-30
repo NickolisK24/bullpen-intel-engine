@@ -229,7 +229,7 @@ def test_writer_voices_bullpen_coverage_above_norm_baseline():
 
     text = written_text(write_story_frame(frame))
 
-    assert 'innings a game on the way there' in text
+    assert 'a little over four innings per game on the way there' in text
     assert 'above the league norm for recent bullpen coverage' in text
 
 
@@ -251,7 +251,7 @@ def test_writer_bridge_without_coverage_read_keeps_existing_copy():
 
     text = written_text(write_story_frame(frame))
 
-    assert 'innings a game on the way there' in text
+    assert 'a little over four innings per game on the way there' in text
     assert 'league norm for recent bullpen coverage' not in text
 
 
@@ -266,8 +266,21 @@ def test_writer_bridge_guarded_coverage_read_keeps_existing_copy():
     text = written_text(write_story_frame(frame))
 
     # Guarded coverage read -> existing bridge copy preserved, no league sentence.
-    assert 'innings a game on the way there' in text
+    assert 'a little over four innings per game on the way there' in text
     assert 'league norm for recent bullpen coverage' not in text
+
+
+def test_writer_bridge_average_innings_avoids_bad_ip_looking_notation():
+    frame = frame_for(
+        team_context(**_bridge_inputs(coverage=3.7)),
+        TYPE_BRIDGE_INSTABILITY,
+    )
+
+    text = written_text(write_story_frame(frame))
+
+    assert 'nearly four innings per game on the way there' in text
+    assert '3.7 innings a game' not in text
+    assert '3.7 innings per game' not in text
 
 
 def test_bullpen_coverage_baseline_language_has_no_ranking_or_recommendation_terms():

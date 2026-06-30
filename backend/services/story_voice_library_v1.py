@@ -356,7 +356,7 @@ LESSON_LINES = {
         'Availability is about who can pitch; trust is about who the manager calls.',
     ),
     BEAT_BRIDGE: (
-        'Late-inning stability is not only about the final arms; it is about building a clean enough path to reach them.',
+        'Late-inning stability is not only about the final arms; it is about building a stable enough path to reach them.',
         'The middle innings are the bridge; when the bridge is shaky, even a strong back of the bullpen is hard to use.',
         'Reaching the trusted arms with a lead intact is its own challenge, separate from who finishes.',
         'A strong closer means little if the game cannot reach him with a lead.',

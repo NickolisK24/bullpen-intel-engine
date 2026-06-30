@@ -1,10 +1,12 @@
 from services.story_voice_library_v1 import (
     BANNED_PUBLIC_LANGUAGE,
+    BEAT_BRIDGE,
     BEAT_COVERAGE_PRESSURE,
     BEAT_DEPTH_CONSTRAINT,
     BEAT_ROUTE_CHANGE,
     BEAT_SUSTAINABILITY_QUESTION,
     DENIED_PUBLIC_PHRASES,
+    PURPOSE_LESSON,
     approved_sentence_forms,
     contains_banned_public_language,
     contains_denied_public_phrase,
@@ -92,6 +94,14 @@ def test_depth_constraint_voice_forms_can_use_named_pressure_points():
     assert any('{names}' in form and 'pressure point' in form for form in forms)
     assert any('{names}' in form and 'roster count' in form for form in forms)
     assert sum('{names}' in form for form in forms) >= 2
+
+
+def test_bridge_lesson_lines_avoid_post_merge_residue():
+    forms = approved_sentence_forms(BEAT_BRIDGE, PURPOSE_LESSON)
+    text = ' '.join(forms).lower()
+
+    assert 'clean enough path' not in text
+    assert 'stable enough path' in text
 
 
 def test_voice_library_deny_lists_cover_requested_editorial_terms():

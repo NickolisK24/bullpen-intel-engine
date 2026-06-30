@@ -40,6 +40,12 @@ _BANNED = (
     'injury-free',
 )
 
+_POST_MERGE_RESIDUE = (
+    'clean late-inning looks',
+    'clean enough path',
+    'carrying caution',
+)
+
 
 def _sc(team_id=116, *, playing=True, days_until=3, games_until=3, games_next3=3,
         last3=3, last5=5, is_last_before_off=False, doubleheader=False,
@@ -108,6 +114,8 @@ def _assert_public_copy_is_editorial(candidate):
     assert 'practical path' not in blob
     assert 'availability distribution' not in blob
     assert '0 trusted' not in blob
+    for phrase in _POST_MERGE_RESIDUE:
+        assert phrase not in blob
 
 
 # ── 1 & 16. Empty / not-playing ───────────────────────────────────────────────
@@ -292,8 +300,9 @@ def test_candidate_includes_pregame_bullpen_watch_story_fields():
     assert story['team_context'] == "Tonight's schedule has Detroit Tigers at home against Minnesota Twins."
     assert story['watching'].startswith('Watch whether')
     assert not story['why_it_matters'].startswith('This matters because')
-    assert story['key_note'] == 'Key bullpen note: clean late-inning looks include Jason Foley and Alex Lange.'
+    assert story['key_note'] == 'Key bullpen note: rested late-inning options include Jason Foley and Alex Lange.'
     assert story['watch_point'].startswith('The key question is')
+    _assert_public_copy_is_editorial(c)
 
 
 def test_limited_clean_options_render_as_baseball_consequence():
@@ -307,6 +316,10 @@ def test_limited_clean_options_render_as_baseball_consequence():
     assert c['signal_type'] == 'no_clean_margin_tonight'
     assert 'late-game path has little cushion' in c['summary'].lower()
     assert 'That ' in c['summary']
+    assert (
+        c['pregame_story']['key_note']
+        == 'Key bullpen note: the bridge carries pressure before the late innings, with the middle-relief group already carrying some workload pressure.'
+    )
     assert 'clean options are limited' not in _all_text(c)
     _assert_public_copy_is_editorial(c)
 

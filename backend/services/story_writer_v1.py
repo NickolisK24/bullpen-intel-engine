@@ -79,6 +79,20 @@ ROBOTIC_TERMS = (
     *DENIED_PUBLIC_PHRASES,
 )
 
+_SMALL_NUMBER_WORDS = {
+    0: 'zero',
+    1: 'one',
+    2: 'two',
+    3: 'three',
+    4: 'four',
+    5: 'five',
+    6: 'six',
+    7: 'seven',
+    8: 'eight',
+    9: 'nine',
+    10: 'ten',
+}
+
 
 def _dict(value):
     return value if isinstance(value, dict) else {}
@@ -127,6 +141,23 @@ def _fmt(value, *, suffix=''):
     else:
         text = str(value)
     return f'{text}{suffix}'
+
+
+def _approx_innings_per_game(value):
+    if not _present(value):
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    rounded = max(1, int(round(numeric)))
+    word = _SMALL_NUMBER_WORDS.get(rounded, str(rounded))
+    delta = numeric - rounded
+    if abs(delta) < 0.15:
+        return f'about {word} innings per game'
+    if delta < 0:
+        return f'nearly {word} innings per game'
+    return f'a little over {word} innings per game'
 
 
 def _lte(value, threshold):
@@ -1004,6 +1035,7 @@ def _bridge_instability(frame):
     )
     early_rate = observed.get('early_bullpen_entry_rate') or cause.get('early_bullpen_entry_rate')
     coverage_ip = observed.get('bullpen_coverage_ip_7d') or cause.get('bullpen_coverage_ip_7d')
+    coverage_phrase = _approx_innings_per_game(coverage_ip)
     volatile = observed.get('volatile_middle_count')
     clean_count = observed.get('clean_workload_options_count')
     monitor = cause.get('monitor_arms_count')
@@ -1036,8 +1068,8 @@ def _bridge_instability(frame):
                 if _present(clean_count) else None
             ),
             (
-                f"The bullpen is covering {_fmt(coverage_ip)} innings a game on the way there"
-                if _present(coverage_ip) else None
+                f"The bullpen is covering {coverage_phrase} on the way there"
+                if coverage_phrase else None
             ),
             # Distribution-aware league read of recent bullpen-coverage burden,
             # appended to the coverage line above; voiced only when the coverage

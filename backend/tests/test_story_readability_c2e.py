@@ -157,8 +157,8 @@ def test_bridge_baseline_is_condensed():
     text = _text(written)
     assert 'clean middle option' not in text
     assert 'clean middle options' not in text
-    # The coverage-burden number that carries the point is preserved.
-    assert 'innings a game on the way there' in text
+    # The coverage-burden point is preserved without decimal/IP-looking prose.
+    assert 'innings per game on the way there' in text
     assert 'settled' in text.lower()
 
 

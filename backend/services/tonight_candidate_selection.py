@@ -512,8 +512,8 @@ def _key_note_sentence(pen):
     names = pen.get('clean_workload_option_names') or []
     if names:
         return _safe_public_copy(
-            f'Key bullpen note: clean late-inning looks include {_join_names(names[:3])}.',
-            'Key bullpen note: the late-inning cushion has a named clean look.',
+            f'Key bullpen note: rested late-inning options include {_join_names(names[:3])}.',
+            'Key bullpen note: the late-inning cushion has a named rested option.',
         )
 
     if not pen.get('context_available'):
@@ -524,10 +524,10 @@ def _key_note_sentence(pen):
     monitor = pen.get('monitor_arms_count')
     if _clean_is_limited(clean, band):
         if monitor:
-            return 'Key bullpen note: the bridge carries pressure before the late innings, with secondary arms carrying caution.'
+            return 'Key bullpen note: the bridge carries pressure before the late innings, with the middle-relief group already carrying some workload pressure.'
         return 'Key bullpen note: the late-game cushion is thin before the trusted arms.'
     if monitor:
-        return 'Key bullpen note: several middle-inning arms carry caution.'
+        return 'Key bullpen note: several middle-inning arms are carrying recent workload.'
     return None
 
 
