@@ -51,6 +51,22 @@ UNKNOWN_INPUT_LIMITATION = (
     'There is not enough stored bullpen context to read multi-inning coverage yet.'
 )
 
+COUNT_WORDS = {
+    0: 'no',
+    1: 'one',
+    2: 'two',
+    3: 'three',
+    4: 'four',
+    5: 'five',
+    6: 'six',
+    7: 'seven',
+    8: 'eight',
+    9: 'nine',
+    10: 'ten',
+    11: 'eleven',
+    12: 'twelve',
+}
+
 
 def _get(mapping: dict[str, Any] | None, *keys, default=None):
     current = mapping or {}
@@ -73,6 +89,17 @@ def _number(value, default=0):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _count_word(value):
+    count = _int(value)
+    return COUNT_WORDS.get(count, 'more than twelve')
+
+
+def _reliever_phrase(count, noun='reliever'):
+    count = _int(count)
+    plural = f'{noun}s'
+    return f'{_count_word(count)} {noun if count == 1 else plural}'
 
 
 def _has_v2_inputs(capacity_intelligence: dict[str, Any] | None) -> bool:
@@ -176,10 +203,13 @@ def _base_label(evidence):
         return _limited_read(evidence)
 
     reasons = [
-        f'Active capacity is {capacity_state} with {active} active relievers and {clean} clean active options.',
         (
-            f'Resource health is {resource_state}; trust structure shows {anchor} anchors, '
-            f'{evidence["leverage_count"]} leverage arms, and {trusted_group} trusted-group arms.'
+            f'The bullpen has {_reliever_phrase(active)} active in the stored board, '
+            f'with {_reliever_phrase(clean)} rested enough to cover innings.'
+        ),
+        (
+            f'The wider relief picture is {resource_state}, with {_reliever_phrase(anchor, "late anchor")} '
+            f'and {_reliever_phrase(evidence["leverage_count"], "leverage arm")} near the back of the game.'
         ),
     ]
 
@@ -201,7 +231,7 @@ def _base_label(evidence):
         or trust_unavailable_pct >= THIN_TRUST_UNAVAILABLE_PCT
     )
     if capacity_state == CAPACITY_THIN or clean <= 2 or trust_loss_material:
-        reasons.append('Coverage reads thin because clean capacity or trusted availability is already tight.')
+        reasons.append('Coverage reads thin because the rested group or late-inning availability is already tight.')
         return LABEL_THIN, reasons, []
 
     strong_shape = (
@@ -215,7 +245,7 @@ def _base_label(evidence):
         and hierarchy_confidence in {'medium', 'high'}
     )
     if strong_shape:
-        reasons.append('Coverage reads strong because capacity, resource health, and top-trust availability all align.')
+        reasons.append('Coverage reads strong because rested relief, late-inning depth, and top-end availability all align.')
         return LABEL_STRONG, reasons, []
 
     if resource_state == RESOURCE_STRAINED:
@@ -225,9 +255,9 @@ def _base_label(evidence):
             and trusted_group >= STRONG_MIN_TRUSTED_GROUP
             and leverage_group >= STABLE_MIN_LEVERAGE_GROUP
         ):
-            reasons.append('Resource health is strained, so coverage holds at stable rather than strong.')
+            reasons.append('The wider relief pool is strained, so coverage holds at stable rather than strong.')
             return LABEL_STABLE, reasons, []
-        reasons.append('Coverage reads thin because organizational resource health is strained.')
+        reasons.append('Coverage reads thin because the wider relief pool is strained.')
         return LABEL_THIN, reasons, []
 
     stable_shape = (
@@ -240,15 +270,15 @@ def _base_label(evidence):
         and hierarchy_confidence in {'medium', 'high'}
     )
     if stable_shape:
-        reasons.append('Coverage reads stable because there is usable active capacity with a broad trusted group.')
+        reasons.append('Coverage reads stable because there are enough rested relievers with a broad late-inning group.')
         return LABEL_STABLE, reasons, []
 
     if trusted_group >= THIN_MIN_TRUSTED_GROUP and active >= 5 and clean >= 1:
-        reasons.append('Coverage reads thin because the bullpen has some usable coverage but not a stable coverage shape.')
+        reasons.append('Coverage reads thin because the bullpen has some coverage, but not enough for a stable read.')
         return LABEL_THIN, reasons, []
 
     return LABEL_LIMITED, [
-        'Coverage is limited because the stored coverage does not support a broader note.'
+        'Coverage is limited because the stored data does not support a broader coverage note.'
     ], []
 
 

@@ -62,6 +62,8 @@ TEAM_READINESS_SCOPES = (
 RETIRED_PUBLIC_PHRASES = (
     'clean option',
     'clean options',
+    'length option',
+    'length options',
     'interpretation weighs',
     'weighs clean',
     'weighs trust',
@@ -99,6 +101,10 @@ RETIRED_PUBLIC_PHRASES = (
     '0 trusted',
 )
 
+DATA_LIMITED_DISCLAIMER = (
+    'This is a data-limited note, not a statement about injury status or manager intent.'
+)
+LOWERCASE_SENTENCE_START_PATTERN = re.compile(r'(?<=[.!?])\s+([a-z])')
 RAW_COUNT_FORMULA_PATTERN = re.compile(r'(?<![\w-])\d+\s+of\s+\d+(?![\w-])', re.IGNORECASE)
 PARENTHETICAL_UNKNOWN_FORMULA_PATTERN = re.compile(r'\([^)]*\bunknown\b[^)]*\)', re.IGNORECASE)
 JARGON_COUPLED_RAW_COUNT_PATTERN = re.compile(
@@ -247,6 +253,8 @@ def build_context_explanation_editorial_review(
         raw_count_formula_scan = _raw_count_formula_scan(examples)
         weighting_scoring_scan = _weighting_scoring_scan(examples)
         circular_meta_scan = _circular_meta_scan(examples)
+        capitalization_sentence_scan = _capitalization_sentence_scan(examples)
+        disclaimer_repetition_scan = _disclaimer_repetition_scan(examples)
         disclaimer_check = _disclaimer_preservation_check(examples)
         summary = _surface_summary(examples)
         coverage = _coverage_summary(examples, missing)
@@ -283,6 +291,8 @@ def build_context_explanation_editorial_review(
                 raw_count_formula_scan=raw_count_formula_scan,
                 weighting_scoring_scan=weighting_scoring_scan,
                 circular_meta_scan=circular_meta_scan,
+                capitalization_sentence_scan=capitalization_sentence_scan,
+                disclaimer_repetition_scan=disclaimer_repetition_scan,
                 disclaimer_check=disclaimer_check,
             ),
             'banned_language_scan': scans['banned_language_scan'],
@@ -290,6 +300,8 @@ def build_context_explanation_editorial_review(
             'raw_count_formula_scan': raw_count_formula_scan,
             'weighting_scoring_scan': weighting_scoring_scan,
             'circular_meta_scan': circular_meta_scan,
+            'capitalization_sentence_scan': capitalization_sentence_scan,
+            'disclaimer_repetition_scan': disclaimer_repetition_scan,
             'disclaimer_preservation_check': disclaimer_check,
             'fallback_summary': _fallback_summary(examples),
             'examples': examples,
@@ -363,6 +375,14 @@ def render_context_explanation_editorial_review_markdown(
         '## Circular-Meta Scan',
         '',
         _scan_status_line(report.get('circular_meta_scan'), 'circular-meta'),
+        '',
+        '## Capitalization / Sentence-Join Scan',
+        '',
+        _scan_status_line(report.get('capitalization_sentence_scan'), 'lowercase sentence-start'),
+        '',
+        '## Disclaimer Repetition Scan',
+        '',
+        _scan_status_line(report.get('disclaimer_repetition_scan'), 'repeated disclaimer'),
         '',
         '## Disclaimer Preservation Check',
         '',
@@ -1389,12 +1409,29 @@ def _explanation_copy(explanation: Mapping[str, Any]) -> list[str]:
     freshness = explanation.get('freshness') or {}
     trust = explanation.get('trust') or {}
     confidence = explanation.get('confidence') or {}
-    copy.extend([
+    copy.extend(_freshness_trust_trailer(freshness, trust, confidence))
+    return _dedupe_strings(copy)
+
+
+def _freshness_trust_trailer(
+    freshness: Mapping[str, Any],
+    trust: Mapping[str, Any],
+    confidence: Mapping[str, Any],
+) -> list[str]:
+    summaries = _dedupe_strings([
         freshness.get('summary'),
         trust.get('summary'),
         confidence.get('summary'),
     ])
-    return _dedupe_strings(copy)
+    if len(summaries) <= 1:
+        return summaries
+    if (
+        freshness.get('status') == 'current'
+        and trust.get('status') == 'trusted'
+        and confidence.get('level') == 'high'
+    ):
+        return summaries[:1]
+    return summaries
 
 
 def _explanation_structured_fields(explanation: Mapping[str, Any]) -> dict[str, Any]:
@@ -1454,6 +1491,8 @@ def _with_scans(example: dict[str, Any]) -> dict[str, Any]:
     example['raw_count_formula_scan'] = _raw_count_formula_scan([example])
     example['weighting_scoring_scan'] = _weighting_scoring_scan([example])
     example['circular_meta_scan'] = _circular_meta_scan([example])
+    example['capitalization_sentence_scan'] = _capitalization_sentence_scan([example])
+    example['disclaimer_repetition_scan'] = _disclaimer_repetition_scan([example])
     return example
 
 
@@ -1564,6 +1603,62 @@ def _circular_meta_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     }
 
 
+def _capitalization_sentence_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    violations = []
+    for index, example in enumerate(examples, start=1):
+        text = '\n'.join(_public_texts(example))
+        for match in LOWERCASE_SENTENCE_START_PATTERN.finditer(text):
+            start = match.start()
+            snippet = text[max(0, start - 40):start + 80].strip()
+            violations.append(_scan_row(
+                index,
+                example,
+                snippet,
+                'lowercase_sentence_start',
+                start,
+            ))
+    return {
+        'scope': 'rendered public context explanation copy only',
+        'status': 'pass' if not violations else 'warn',
+        'violation_count': len(violations),
+        'violations': violations,
+        'patterns': {
+            'lowercase_sentence_start': LOWERCASE_SENTENCE_START_PATTERN.pattern,
+        },
+    }
+
+
+def _disclaimer_repetition_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    violations = []
+    for index, example in enumerate(examples, start=1):
+        if example.get('surface_name') != 'Team bullpen shape explanations':
+            continue
+        count = sum(
+            str(text).count(DATA_LIMITED_DISCLAIMER)
+            for text in _public_texts(example)
+        )
+        if count > 1:
+            violations.append({
+                **_scan_row(
+                    index,
+                    example,
+                    DATA_LIMITED_DISCLAIMER,
+                    'repeated_data_limited_disclaimer',
+                    0,
+                ),
+                'occurrence_count': count,
+                'per_card_limit': 1,
+            })
+    return {
+        'scope': 'Team bullpen shape rendered public copy',
+        'status': 'pass' if not violations else 'warn',
+        'violation_count': len(violations),
+        'violations': violations,
+        'disclaimer': DATA_LIMITED_DISCLAIMER,
+        'per_card_limit': 1,
+    }
+
+
 def _scan_row(
     index: int,
     example: Mapping[str, Any],
@@ -1607,6 +1702,8 @@ def _before_after_summary(
     raw_count_formula_scan: Mapping[str, Any],
     weighting_scoring_scan: Mapping[str, Any],
     circular_meta_scan: Mapping[str, Any],
+    capitalization_sentence_scan: Mapping[str, Any],
+    disclaimer_repetition_scan: Mapping[str, Any],
     disclaimer_check: Mapping[str, Any],
 ) -> dict[str, Any]:
     prior_path = Path('artifacts/context_explanation_editorial_review_E2D1.md')
@@ -1624,6 +1721,8 @@ def _before_after_summary(
         'current_raw_count_formula_status': raw_count_formula_scan.get('status'),
         'current_weighting_scoring_status': weighting_scoring_scan.get('status'),
         'current_circular_meta_status': circular_meta_scan.get('status'),
+        'current_capitalization_sentence_status': capitalization_sentence_scan.get('status'),
+        'current_disclaimer_repetition_status': disclaimer_repetition_scan.get('status'),
         'disclaimer_preservation_status': disclaimer_check.get('status'),
     }
 
@@ -1857,6 +1956,8 @@ def _example_lines(index: int, example: Mapping[str, Any]) -> list[str]:
             'raw_count_formula_scan',
             'weighting_scoring_scan',
             'circular_meta_scan',
+            'capitalization_sentence_scan',
+            'disclaimer_repetition_scan',
         )
     }
     copy = list(example.get('rendered_public_copy') or [])
@@ -1898,6 +1999,8 @@ def _metadata(report: Mapping[str, Any]) -> dict[str, Any]:
             'data_notes',
             'before_after_summary',
             'weighting_scoring_scan',
+            'capitalization_sentence_scan',
+            'disclaimer_repetition_scan',
         )
     }
 
@@ -2020,6 +2123,7 @@ def _isoformat(value: Any) -> str | None:
 
 __all__ = [
     'ARTIFACT_PATH',
+    'DATA_LIMITED_DISCLAIMER',
     'RETIRED_PUBLIC_PHRASES',
     'REVIEW_LABEL',
     'build_context_explanation_editorial_review',

@@ -1,4 +1,10 @@
-from services.team_bullpen_shape import TEAM_BULLPEN_PUBLIC_LABELS, build_team_bullpen_shape
+import re
+
+from services.team_bullpen_shape import (
+    DATA_LIMITED_DISCLAIMER,
+    TEAM_BULLPEN_PUBLIC_LABELS,
+    build_team_bullpen_shape,
+)
 from services.workload_concentration import summarize_workload_concentration
 
 
@@ -358,11 +364,34 @@ def test_sparse_backend_labels_return_limited_reads():
         'active capacity',
         'trust structure',
         'clean options',
+        'length option',
         '(unknown)',
     ):
         assert phrase not in text
-    assert 'not a statement about injury status or manager intent' in text
+    explanation_text = ' '.join(str(read.get('explanation') or '') for read in result['reads'])
+    assert explanation_text.count(DATA_LIMITED_DISCLAIMER) == 1
     assert 'data-limited note' in text
+
+
+def test_team_shape_public_copy_uses_sentence_case_and_long_relief_language():
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('coverage_arm', 'rest_restricted'),
+        card('depth_arm', 'clean_option'),
+        card('depth_arm', 'watch_arm'),
+    ])
+    text = ' '.join(
+        str(item)
+        for read in result['reads']
+        for item in (read.get('explanation'), *read.get('reasons', []))
+    )
+    lowered = text.lower()
+
+    assert not re.search(r'(?<=[.!?])\s+[a-z]', text)
+    assert 'long reliever' in lowered or 'long relief' in lowered
+    assert 'length option' not in lowered
+    assert 'on monitor' not in lowered
+    assert 'Rested' in ' '.join(read['label'] for read in result['reads'])
 
 
 def test_team_shape_output_exposes_no_score_or_ranking_fields():

@@ -91,6 +91,10 @@ READ_USABILITY = {
     'limited_read': 0,
 }
 
+DATA_LIMITED_DISCLAIMER = (
+    'This is a data-limited note, not a statement about injury status or manager intent.'
+)
+
 ROLE_INFLUENCE = {
     'trust_arm': 3,
     'bridge_arm': 2,
@@ -179,12 +183,19 @@ def _has_have(count):
         return 'have'
 
 
+def _sentence_start(text):
+    text = str(text or '').strip()
+    if not text:
+        return text
+    return f'{text[0].upper()}{text[1:]}'
+
+
 def _coverage_layer_phrase(count):
     if count <= 0:
-        return 'no rested length option'
+        return 'no rested long reliever'
     if count == 1:
-        return 'one rested length option'
-    return f'{_count_word(count)} rested length options'
+        return 'one rested long reliever'
+    return f'{_count_word(count)} rested long relievers'
 
 
 def _late_path_phrase(count):
@@ -290,7 +301,7 @@ def _limited_read(key, explanation, supporting_counts):
 def _role_limited_explanation(role_known_count, total, concept):
     return (
         f'There is not enough recent workload data to read {concept} yet. '
-        'This is a data-limited note, not a statement about injury status or manager intent.'
+        f'{DATA_LIMITED_DISCLAIMER}'
     )
 
 
@@ -333,7 +344,7 @@ def _trust_availability(summary):
         restriction = 'none of that group is blocked by a heavy recent workload signal'
     explanation = (
         f'The late-inning group has {rested_phrase} fully rested and '
-        f'{monitor_phrase} worth monitoring. {restriction}.'
+        f'{monitor_phrase} worth monitoring. {_sentence_start(restriction)}.'
     )
     if trust_arms == 0 or available == 0:
         return _read('trustAvailability', 'Limited Late-Inning Availability', explanation, counts)
@@ -374,8 +385,7 @@ def _clean_options(summary):
             'cleanOptions',
             (
                 'BaseballOS cannot yet say how many rested late-inning arms are ready '
-                'from the stored data. This is a data-limited note, not a statement '
-                'about injury status or manager intent.'
+                f'from the stored data. {DATA_LIMITED_DISCLAIMER}'
             ),
             counts,
         )
@@ -472,8 +482,7 @@ def _bullpen_pressure(summary):
             'bullpenPressure',
             (
                 'BaseballOS cannot yet say how much late-inning pressure is on this '
-                'bullpen from the stored data. This is a data-limited note, not a '
-                'statement about injury status or manager intent.'
+                f'bullpen from the stored data. {DATA_LIMITED_DISCLAIMER}'
             ),
             counts,
         )
@@ -603,19 +612,19 @@ def _legacy_coverage_safety(summary):
 
     rested_length = _coverage_layer_phrase(clean)
     monitor_length = (
-        'no additional length option on monitor'
-        if watch <= 0 else f'{_arm_phrase(watch, "length option")} on monitor'
+        'no other long reliever is close to rested'
+        if watch <= 0 else f'{_arm_phrase(watch, "long reliever")} {_is_are(watch)} close to rested'
     )
     restricted_length = restricted + unavailable
     if restricted_length:
         restriction = (
-            f'{_arm_phrase(restricted_length, "length option")} {_is_are(restricted_length)} '
+            f'{_arm_phrase(restricted_length, "long reliever")} {_is_are(restricted_length)} '
             'carrying enough recent workload to limit coverage'
         )
     else:
-        restriction = 'the length layer does not show a heavy recent workload block'
+        restriction = 'the long relief layer does not show a heavy recent workload block'
     explanation = (
-        f'The bullpen has {rested_length} and {monitor_length}. {restriction}.'
+        f'The bullpen has {rested_length} and {monitor_length}. {_sentence_start(restriction)}.'
     )
     if coverage_arms >= 2 and clean >= 2 and restricted == 0 and unavailable == 0:
         return _read('coverageSafety', 'Strong Coverage Safety', explanation, counts)
@@ -626,10 +635,10 @@ def _legacy_coverage_safety(summary):
     if has_substitute:
         fallback = ' and '.join(filter(None, [
             f'{_arm_phrase(clean_bridge, "shorter bridge arm")} rested' if clean_bridge > 0 else None,
-            f'{_arm_phrase(watch_bridge, "shorter bridge arm")} on monitor' if watch_bridge > 0 else None,
+            f'{_arm_phrase(watch_bridge, "shorter bridge arm")} {_is_are(watch_bridge)} close to rested' if watch_bridge > 0 else None,
         ]))
         lifted = (
-            f'{explanation} No clear length option is ready, but {fallback} can help chain '
+            f'{explanation} No clear long reliever is ready, but {fallback} can help chain '
             'emergency innings, so the coverage note stays Thin rather than Limited.'
         )
         return _read(
@@ -695,6 +704,36 @@ def _depth_safety(summary):
     return _read('depthSafety', 'Limited Depth Safety', explanation, counts)
 
 
+def _without_data_limited_disclaimer(text):
+    text = str(text or '')
+    if DATA_LIMITED_DISCLAIMER not in text:
+        return text
+    return ' '.join(text.replace(DATA_LIMITED_DISCLAIMER, '').split()).strip()
+
+
+def _dedupe_data_limited_disclaimers(reads):
+    """Keep the trust-first disclaimer once across one team-shape card."""
+    seen = False
+    output = []
+    for read in reads:
+        item = dict(read)
+        explanation = str(item.get('explanation') or '')
+        if DATA_LIMITED_DISCLAIMER in explanation:
+            if seen:
+                item['explanation'] = _without_data_limited_disclaimer(explanation)
+            else:
+                seen = True
+        reasons = []
+        for reason in item.get('reasons') or []:
+            reason_text = str(reason)
+            if DATA_LIMITED_DISCLAIMER in reason_text and item.get('explanation') != reason_text:
+                reason_text = _without_data_limited_disclaimer(reason_text)
+            reasons.append(reason_text)
+        item['reasons'] = reasons
+        output.append(item)
+    return output
+
+
 def build_team_bullpen_shape(
     groups,
     context=None,
@@ -711,14 +750,14 @@ def build_team_bullpen_shape(
         )
         or _legacy_coverage_safety(summary)
     )
-    reads = [
+    reads = _dedupe_data_limited_disclaimers([
         _trust_availability(summary),
         _clean_options(summary),
         _bullpen_pressure(summary),
         _workload_concentration(workload_concentration),
         coverage_safety,
         _depth_safety(summary),
-    ]
+    ])
     by_key = {item['key']: item for item in reads}
     return {
         'reads': reads,

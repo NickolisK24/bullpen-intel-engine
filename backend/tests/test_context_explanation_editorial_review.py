@@ -1,4 +1,5 @@
 from services.context_explanation_editorial_review import (
+    DATA_LIMITED_DISCLAIMER,
     build_context_explanation_editorial_review,
     write_context_explanation_editorial_review,
 )
@@ -109,6 +110,8 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
     assert 'Raw-Count / Formula Scan' in text
     assert 'Weighting / Scoring Narration Scan' in text
     assert 'Circular-Meta Scan' in text
+    assert 'Capitalization / Sentence-Join Scan' in text
+    assert 'Disclaimer Repetition Scan' in text
     assert 'Disclaimer Preservation Check' in text
     assert 'pitcher_availability_statuses' in text
     assert 'Avoid' in text
@@ -116,22 +119,91 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
     assert 'Structured fields used' in text
 
 
+def test_context_explanation_editorial_review_e2d5_scans_catch_copy_defects():
+    examples = [
+        {
+            'surface_name': 'Team bullpen shape explanations',
+            'team': 'Los Angeles Angels (LAA, 108)',
+            'pitcher': None,
+            'status': 'team_shape',
+            'role_or_classification': {'read_labels': ['Limited Read']},
+            'source_path': 'services.team_bullpen_shape.build_team_bullpen_shape',
+            'fallback_status': 'limited_read_shape',
+            'rendered_public_copy': [
+                f'One public sentence. lowercase sentence starts here. {DATA_LIMITED_DISCLAIMER}',
+                f'Another limited read. {DATA_LIMITED_DISCLAIMER}',
+                'The bullpen has no rested length option.',
+            ],
+            'structured_fields_used': {},
+            'evidence_sections': {},
+        },
+        {
+            'surface_name': 'Team Operations readiness V4 explanation',
+            'team': 'Los Angeles Angels (LAA, 108)',
+            'pitcher': None,
+            'status': 'data_limited',
+            'role_or_classification': {
+                'scope': 'readiness_state',
+                'readiness_status_code': 'data_limited',
+            },
+            'source_path': 'explanations.readiness.serialize_readiness_explanation',
+            'fallback_status': 'data_limited',
+            'rendered_public_copy': [
+                'The public data is not strong enough to give this team a full bullpen readiness note.',
+                'Readiness is based on public workload data, not private team information.',
+                'Readiness is not injury or medical information.',
+                'Readiness is not a performance forecast.',
+                'Manager intent and bullpen warm-up state are not available.',
+            ],
+            'structured_fields_used': {},
+            'evidence_sections': {},
+        },
+    ]
+
+    report = build_context_explanation_editorial_review(
+        seed_examples=examples,
+        generated_at='2026-06-29T00:00:00',
+        artifact_path='artifacts/context_explanation_editorial_review_E2D5.md',
+    )
+
+    assert report['capitalization_sentence_scan']['status'] == 'warn'
+    assert report['disclaimer_repetition_scan']['status'] == 'warn'
+    assert report['retired_phrase_scan']['status'] == 'warn'
+    assert any(
+        item['term'] == 'lowercase_sentence_start'
+        for item in report['capitalization_sentence_scan']['violations']
+    )
+    assert any(
+        item['term'] == 'repeated_data_limited_disclaimer'
+        for item in report['disclaimer_repetition_scan']['violations']
+    )
+    assert any(
+        item['term'] == 'length option'
+        for item in report['retired_phrase_scan']['violations']
+    )
+
+
 def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_path):
     report = build_context_explanation_editorial_review(
         include_fixture_examples=True,
         generated_at='2026-06-29T00:00:00',
-        artifact_path='artifacts/context_explanation_editorial_review_E2D4.md',
-        review_label='E2D-4 Healthy-State Team Context Voice Migration',
+        artifact_path='artifacts/context_explanation_editorial_review_E2D5.md',
+        review_label='E2D-5 Context Explanation Final Copy Polish',
     )
     output = write_context_explanation_editorial_review(
         report,
-        tmp_path / 'context_explanation_editorial_review_E2D3.md',
+        tmp_path / 'context_explanation_editorial_review_E2D5.md',
     )
     text = output.read_text(encoding='utf-8')
+    public_copy = '\n'.join(
+        str(item)
+        for example in report['examples']
+        for item in example.get('rendered_public_copy') or []
+    )
 
     coverage = report['coverage_summary']
 
-    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D4.md'
+    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D5.md'
     assert coverage['fixture_backed_examples'] > 0
     assert coverage['stored_data_examples'] == 0
     assert set(coverage['pitcher_availability_statuses_found']) == {
@@ -181,12 +253,40 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
     )
     assert 'Clean Option' not in text
     assert 'Clean Options' not in text
+    assert 'length option' not in public_copy.lower()
     assert 'Interpretation weighs' not in text
     assert '(84 of 100)' not in text
     assert report['weighting_scoring_scan']['status'] == 'pass'
     assert report['circular_meta_scan']['status'] == 'pass'
+    assert report['capitalization_sentence_scan']['status'] == 'pass'
+    assert report['disclaimer_repetition_scan']['status'] == 'pass'
+    assert report['disclaimer_preservation_check']['status'] == 'pass'
+    assert 'Rested' in text
+    assert 'long reliever' in text.lower() or 'long relief' in text.lower()
     assert 'deterministic fixture example' in text
     assert 'examples_by_source' in text
     assert 'Raw-Count / Formula Scan' in text
     assert 'Weighting / Scoring Narration Scan' in text
     assert 'Circular-Meta Scan' in text
+    assert 'Capitalization / Sentence-Join Scan' in text
+    assert 'Disclaimer Repetition Scan' in text
+
+    trailer_phrases = (
+        'The stored workload data is current enough for this pitcher note.',
+        'The stored workload data is current enough for this team note.',
+        'The public workload record is strong enough for this note.',
+        'The public workload record is strong enough for this team note.',
+        'The public workload record is current enough for this note.',
+    )
+    for example in report['examples']:
+        if example['surface_name'] not in {
+            'Pitcher V4 availability explanation',
+            'Team Operations readiness V4 explanation',
+        }:
+            continue
+        rendered = example.get('rendered_public_copy') or []
+        assert sum(
+            1
+            for item in rendered
+            if any(phrase in str(item) for phrase in trailer_phrases)
+        ) <= 1
