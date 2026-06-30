@@ -44,6 +44,40 @@ RETIRED_PUBLIC_PHRASES = (
     'practical paths',
     '0 trusted',
 )
+TEMPLATE_NUMBER_WORDS = (
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'lone',
+    'both',
+    'pair',
+    'couple',
+    'handful',
+    'first',
+    'second',
+    'third',
+    'fourth',
+    'fifth',
+    'sixth',
+    'seventh',
+    'eighth',
+    'ninth',
+    'tenth',
+)
+TEMPLATE_NUMBER_WORD_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9])(?:'
+    + '|'.join(re.escape(word) for word in TEMPLATE_NUMBER_WORDS)
+    + r')(?![A-Za-z0-9])',
+    re.IGNORECASE,
+)
 SOURCE_PATH_HOMEPAGE = (
     'current stored CompletedGameContext rows -> build_today_lead_story '
     '(on-demand, no snapshot write)'
@@ -431,7 +465,10 @@ def _same_beat_repetition_summary(entries: list[dict[str, Any]]) -> dict[str, An
         duplicate_groups.extend({'beat': beat, **item} for item in duplicates)
 
     return {
-        'scope': 'publishable team_story completed-game bodies, stripped names/numbers',
+        'scope': (
+            'publishable team_story completed-game bodies, stripped names, '
+            'numeric values, and common baseball number-words'
+        ),
         'beat_summaries': beat_summaries,
         'duplicate_groups': duplicate_groups,
         'status': 'pass' if not duplicate_groups else 'review',
@@ -568,8 +605,22 @@ def _completed_game_fallback_status(entries: list[dict[str, Any]]) -> dict[str, 
 
 
 def _template_key(text: str) -> str:
-    text = re.sub(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'NAME', text)
+    return normalize_completed_game_story_template(text)
+
+
+def normalize_completed_game_story_template(text: str) -> str:
+    """Return a diagnostic story skeleton, not rendered public copy.
+
+    The completed-game swap test should not treat "two-run" and "four-run" as
+    structurally different story forms. Keep baseball concepts such as
+    "late-inning" intact, but neutralize explicit numeric values, common
+    number-words, and player/team names.
+    """
+
+    text = str(text or '')
+    text = TEMPLATE_NUMBER_WORD_PATTERN.sub('NUM', text)
     text = re.sub(r'\b\d+(?:\.\d+)?\b', 'NUM', text)
+    text = re.sub(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'NAME', text)
     return re.sub(r'\s+', ' ', text).strip().lower()
 
 
@@ -751,7 +802,9 @@ __all__ = [
     'IMPOSSIBLE_INNINGS_PATTERN',
     'RETIRED_PUBLIC_PHRASES',
     'REVIEW_LABEL',
+    'TEMPLATE_NUMBER_WORDS',
     'build_todays_story_editorial_review',
+    'normalize_completed_game_story_template',
     'render_todays_story_editorial_review_markdown',
     'write_todays_story_editorial_review',
 ]

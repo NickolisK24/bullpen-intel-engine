@@ -42,6 +42,8 @@ def _review_label_for_path(path, explicit=None):
     if explicit:
         return explicit
     text = str(path)
+    if 'E2C5F' in text:
+        return 'E2C-5F Live'
     if 'E2C5E' in text:
         return 'E2C-5E Live'
     if 'E2C5D' in text:

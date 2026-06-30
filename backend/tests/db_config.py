@@ -125,6 +125,10 @@ def create_test_schema(app):
         _app_database_url(app),
         operation='create test schema',
     )
+    # Several optional test import paths load sync-failure/snapshot tables before
+    # the durable sync run model. Import it here so FK metadata is complete
+    # regardless of pytest collection order.
+    import models.sync_run  # noqa: F401
     from utils.db import db
     db.create_all()
 

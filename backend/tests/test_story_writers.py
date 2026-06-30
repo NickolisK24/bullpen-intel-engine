@@ -12,6 +12,7 @@ import re
 
 from services.editorial_voice_contract_v1 import contains_editorial_banned_language
 from services.narrative_feed_builder import build_narrative_feed
+from services.todays_story_editorial_review import normalize_completed_game_story_template
 from story_orchestrator import build_story_package
 from story_writers import (
     DashboardStoryWriter,
@@ -291,9 +292,39 @@ def test_completed_game_public_copy_clears_discouraged_language():
 
 
 def _template_key(text: str) -> str:
-    text = re.sub(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'NAME', text)
-    text = re.sub(r'\b\d+(?:\.\d+)?\b', 'NUM', text)
-    return re.sub(r'\s+', ' ', text).strip().lower()
+    return normalize_completed_game_story_template(text)
+
+
+def test_swap_test_normalizer_neutralizes_number_words_and_digits():
+    assert normalize_completed_game_story_template(
+        'Logan Webb protected a two-run lead.'
+    ) == normalize_completed_game_story_template(
+        'Robbie Ray protected a four-run lead.'
+    )
+    assert normalize_completed_game_story_template(
+        'Logan Webb worked six innings.'
+    ) == normalize_completed_game_story_template(
+        'Robbie Ray worked seven innings.'
+    )
+    assert normalize_completed_game_story_template(
+        'Tyler Rogers allowed 2 runs in the seventh-inning handoff.'
+    ) == normalize_completed_game_story_template(
+        'Ryan Walker allowed 4 runs in the ninth-inning handoff.'
+    )
+    assert 'late-inning bridge' in normalize_completed_game_story_template(
+        'The late-inning bridge held.'
+    )
+
+
+def test_swap_test_normalizer_does_not_change_rendered_public_copy():
+    draft = TeamStoryWriter(_feed()).write()
+    before = draft.to_dict()
+    rendered = draft.rendered_text
+
+    normalize_completed_game_story_template(rendered)
+
+    assert draft.to_dict() == before
+    assert draft.rendered_text == rendered
 
 
 def _surface_headlines(feed):

@@ -23,6 +23,7 @@ from services.narrative_feed_builder import build_narrative_feed
 from services import coin_story_inspection
 from services.todays_story_editorial_review import (
     build_todays_story_editorial_review,
+    normalize_completed_game_story_template,
     write_todays_story_editorial_review,
 )
 
@@ -218,6 +219,103 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
     assert 'Completed-Game Story Corpus' in text
     assert '7.1 IP' in text
     assert 'No draft rendered.' in text
+
+
+def test_todays_story_review_swap_test_uses_number_word_normalizer(tmp_path):
+    bodies = {
+        1: (
+            'After their most recent game, Logan Webb protected a two-run lead '
+            'after six innings. The late innings held from there.'
+        ),
+        2: (
+            'After their most recent game, Robbie Ray protected a four-run lead '
+            'after seven innings. The late innings held from there.'
+        ),
+    }
+    contexts = [
+        _completed_ctx(
+            team_id=1,
+            game_pk=801,
+            game_date='2026-06-28',
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            largest_lead=2,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+        ),
+        _completed_ctx(
+            team_id=2,
+            game_pk=802,
+            game_date='2026-06-28',
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            largest_lead=4,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+        ),
+    ]
+
+    def inspect(team_id, **kwargs):
+        ctx = kwargs.get('completed_game_context') or {}
+        body = bodies[team_id]
+        return {
+            'team_id': team_id,
+            'game_pk': ctx.get('game_pk'),
+            'publishable': True,
+            'publish_reason': 'critical_narrative',
+            'confidence': 'HIGH',
+            'story_priority': 'CRITICAL',
+            'game_importance': 'HIGH',
+            'recommended_surface': 'team_story',
+            'safe_time_context': 'AFTER_MOST_RECENT_GAME',
+            'writer_targets': ['team_story'],
+            'package': {
+                'primary_story': 'protected_game_shape',
+                'publish_reason': 'critical_narrative',
+                'completed_game_context': ctx,
+            },
+            'drafts': [{
+                'writer': 'team_story',
+                'headline': 'Lead protected',
+                'body': body,
+                'observations': [],
+                'evidence': [],
+                'metadata': {},
+                'text': f'Lead protected\n{body}',
+                'rendered_text': f'Lead protected\n\n{body}',
+                'is_internal_preview': False,
+            }],
+        }
+
+    report = build_todays_story_editorial_review(
+        reference_date='2026-06-28',
+        candidate_contexts=contexts,
+        inspect_fn=inspect,
+        generated_at='2026-06-29T00:00:00',
+        artifact_path='artifacts/todays_story_editorial_review_E2C5F_live.md',
+        review_label='E2C-5F Live',
+    )
+    output = write_todays_story_editorial_review(
+        report,
+        tmp_path / 'todays_story_editorial_review_E2C5F_live.md',
+    )
+    text = output.read_text(encoding='utf-8')
+    summary = report['same_beat_repetition_summary']
+    duplicates = summary['duplicate_groups']
+    expected_key = normalize_completed_game_story_template(bodies[1])
+
+    assert summary['status'] == 'review'
+    assert len(duplicates) == 1
+    assert duplicates[0]['beat'] == 'protected_game_shape'
+    assert duplicates[0]['count'] == 2
+    assert duplicates[0]['template_key'] == expected_key
+    assert 'num-run lead' in duplicates[0]['template_key']
+    assert 'num innings' in duplicates[0]['template_key']
+    assert 'common baseball number-words' in summary['scope']
+    assert 'E2C-5F Live' in text
+    assert 'num-run lead' in text
 
 
 # ── DB-backed: real read path mutates nothing ─────────────────────────────────
