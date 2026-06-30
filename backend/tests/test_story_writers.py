@@ -99,9 +99,11 @@ def _team_context(*, optionality_band='thin', concentration_band='normal',
 
 
 def _feed(completed=None, team=None):
+    completed = completed if completed is not None else _completed_ctx()
+    team_id = completed.get('team_id', 1) if isinstance(completed, dict) else 1
     return build_narrative_feed(
-        1,
-        completed_game_context=completed if completed is not None else _completed_ctx(),
+        team_id,
+        completed_game_context=completed,
         team_context=team if team is not None else _team_context(),
     )
 
@@ -191,6 +193,9 @@ def test_protected_uses_feed_headline_key():
         'Bullpen slammed the door',
         'Lead finished cleanly',
         'Late innings stayed quiet',
+        'Late innings held firm',
+        'Bullpen closed it down',
+        'Quiet finish from the pen',
     }
 
 
@@ -291,22 +296,76 @@ def _template_key(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip().lower()
 
 
-def test_same_beat_stories_use_deterministic_variation_and_headline_cap():
+def _surface_headlines(feed):
+    return [
+        TeamStoryWriter(feed).write().headline,
+        DashboardStoryWriter(feed).write().headline,
+        MorningBriefWriter(feed).write().headline,
+    ]
+
+
+def test_protected_game_shape_same_beat_stories_do_not_collapse_to_one_skeleton():
     bodies = []
     headlines = []
-    for team_id in (101, 102, 103, 104):
+    for offset, team_id in enumerate(range(131, 137)):
         completed = _completed_ctx(
             team_id=team_id,
-            game_pk=900 + team_id,
+            game_pk=900,
             team_name=f'the Team {team_id}',
+            bullpen_story_tag='protected_game_shape',
+            lead_protected=True,
+            lead_lost=False,
+            largest_lead=5,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
+            turning_inning=None,
             starter_name=f'Starter {team_id}',
+            starter_ip=6.0,
+            starter_pitch_count=90 + offset,
         )
-        draft = TeamStoryWriter(_feed(completed=completed)).write()
+        feed = _feed(completed=completed)
+        draft = TeamStoryWriter(feed).write()
         bodies.append(_template_key(draft.body))
-        headlines.append(draft.headline)
+        headlines.extend(_surface_headlines(feed))
 
-    assert len(set(bodies)) > 1
-    assert max(headlines.count(headline) for headline in set(headlines)) <= 2
+    assert len(set(bodies)) == len(bodies)
+    assert max(headlines.count(headline) for headline in set(headlines)) <= 3
+
+
+def test_starter_covered_same_beat_stories_keep_specific_anchors_and_unique_skeletons():
+    bodies = []
+    headlines = []
+    for offset, team_id in enumerate(range(141, 147)):
+        starter = f'Starter {team_id}'
+        completed = _completed_ctx(
+            team_id=team_id,
+            game_pk=910,
+            team_name=f'the Team {team_id}',
+            bullpen_story_tag='starter_covered_bullpen',
+            lead_lost=None,
+            lead_protected=None,
+            largest_lead=0,
+            largest_deficit=2,
+            late_runs_allowed=offset % 2,
+            runs_allowed_innings_7_to_9=offset % 2,
+            turning_inning=None,
+            starter_name=starter,
+            starter_ip=6.0,
+            starter_pitch_count=84 + offset,
+        )
+        feed = _feed(completed=completed)
+        draft = TeamStoryWriter(feed).write()
+        text = draft.rendered_text
+        bodies.append(_template_key(draft.body))
+        headlines.extend(_surface_headlines(feed))
+
+        assert starter in text
+        assert '6.0 innings' in text or f'{84 + offset} pitch' in text
+        assert 'bullpen' in text.lower()
+        assert "the starter worked deep and kept the bullpen's exposure light" not in text
+
+    assert len(set(bodies)) == len(bodies)
+    assert max(headlines.count(headline) for headline in set(headlines)) <= 3
 
 
 # ── Confidence respected: LOW never invents ───────────────────────────────────

@@ -205,12 +205,14 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
     assert report['completed_game_publishable_stories'] == 1
     assert report['completed_game_fallback_or_unpublishable_rows'] == 1
     assert report['banned_language_scan']['status'] == 'pass'
+    assert report['retired_phrase_scan']['status'] == 'pass'
     assert report['impossible_innings_scan']['status'] == 'pass'
     assert report['artifact'] == 'artifacts/todays_story_editorial_review_E2C5D_live.md'
     assert report['starter_covered_specificity_check']['status'] == 'pass'
     assert report['completed_game_fallback_status']['status'] == 'pass'
     assert 'Homepage Lead Story' in text
     assert 'E2C-5D Live' in text
+    assert 'Retired Phrase Scan' in text
     assert 'Starter-Covered Bullpen Specificity Check' in text
     assert 'Completed-Game Fallback Status' in text
     assert 'Completed-Game Story Corpus' in text

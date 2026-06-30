@@ -30,6 +30,20 @@ STARTER_COVERED_TAG = 'starter_covered_bullpen'
 OLD_STARTER_COVERED_SENTENCE = (
     "the starter worked deep and kept the bullpen's exposure light"
 )
+RETIRED_PUBLIC_PHRASES = (
+    'clean ways',
+    'clean way',
+    'usable group',
+    'usable depth',
+    'clean options',
+    'clean arms',
+    'short list of clean arms',
+    'in good shape',
+    'availability distributions',
+    'practical path',
+    'practical paths',
+    '0 trusted',
+)
 SOURCE_PATH_HOMEPAGE = (
     'current stored CompletedGameContext rows -> build_today_lead_story '
     '(on-demand, no snapshot write)'
@@ -112,6 +126,7 @@ def build_todays_story_editorial_review(
             'homepage_candidates_considered': (lead_response or {}).get('candidates_considered'),
             'entries': entries,
             'banned_language_scan': scans['banned_language_scan'],
+            'retired_phrase_scan': scans['retired_phrase_scan'],
             'impossible_innings_scan': scans['impossible_innings_scan'],
             'headline_reuse_summary': headline_summary,
             'same_beat_repetition_summary': repetition_summary,
@@ -152,6 +167,10 @@ def render_todays_story_editorial_review_markdown(report: dict[str, Any]) -> str
         '## Editorial Banned-Language Scan',
         '',
         _scan_status_line(report.get('banned_language_scan'), 'banned language'),
+        '',
+        '## Retired Phrase Scan',
+        '',
+        _scan_status_line(report.get('retired_phrase_scan'), 'retired phrase'),
         '',
         '## Impossible Innings Scan',
         '',
@@ -300,12 +319,20 @@ def _inspect_context(ctx: dict[str, Any], reference_date, inspect_fn) -> dict[st
 
 def _scan_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     banned = []
+    retired = []
     innings = []
     for entry in entries:
         for draft in entry.get('drafts') or []:
             text = draft.get('rendered_text') or ''
             for violation in find_editorial_violations(text):
                 banned.append({
+                    'team_id': entry.get('team_id'),
+                    'game_pk': entry.get('game_pk'),
+                    'writer': draft.get('writer'),
+                    **violation,
+                })
+            for violation in find_editorial_violations(text, terms=RETIRED_PUBLIC_PHRASES):
+                retired.append({
                     'team_id': entry.get('team_id'),
                     'game_pk': entry.get('game_pk'),
                     'writer': draft.get('writer'),
@@ -325,6 +352,13 @@ def _scan_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
             'status': 'pass' if not banned else 'warn',
             'violation_count': len(banned),
             'violations': banned,
+        },
+        'retired_phrase_scan': {
+            'scope': 'rendered public completed-game draft text only',
+            'status': 'pass' if not retired else 'warn',
+            'violation_count': len(retired),
+            'violations': retired,
+            'terms': RETIRED_PUBLIC_PHRASES,
         },
         'impossible_innings_scan': {
             'scope': 'rendered public completed-game draft text only',
@@ -715,6 +749,7 @@ def _isoformat(value: Any) -> str | None:
 __all__ = [
     'ARTIFACT_PATH',
     'IMPOSSIBLE_INNINGS_PATTERN',
+    'RETIRED_PUBLIC_PHRASES',
     'REVIEW_LABEL',
     'build_todays_story_editorial_review',
     'render_todays_story_editorial_review_markdown',

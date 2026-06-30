@@ -52,11 +52,17 @@ _HEADLINES = {
         'Lead protected',
         'Late lead held',
         'Bullpen finished the lead',
+        'Lead carried home',
+        'Bullpen held the finish',
+        'Late lead closed out',
     ),
     'bullpen_stabilized': (
         'Bullpen slammed the door',
         'Lead finished cleanly',
         'Late innings stayed quiet',
+        'Late innings held firm',
+        'Bullpen closed it down',
+        'Quiet finish from the pen',
     ),
     'bullpen_kept_team_alive': (
         'Bullpen kept it alive',
@@ -67,6 +73,9 @@ _HEADLINES = {
         'Bullpen stretched thin',
         'Short start stretched the bullpen',
         'Bullpen had to cover',
+        'Relievers had to cover early',
+        'Bullpen drew the long assignment',
+        'Short start made it a bullpen finish',
     ),
     'late_pressure_accumulated': (
         'Late traffic mounted',
@@ -77,10 +86,18 @@ _HEADLINES = {
         'Starter carried the load',
         'Starter spared the bullpen',
         'Deep start lightened the load',
+        'Starter gave the bullpen a shorter day',
+        'Starter covered the hard part',
+        'Deep start kept the bullpen light',
     ),
     'insufficient_context': ('Not enough detail yet',),
 }
 _DEFAULT_HEADLINE = 'Bullpen note'
+_WRITER_HEADLINE_OFFSET = {
+    'team_story': 0,
+    'dashboard': 1,
+    'morning_brief': 2,
+}
 
 _BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY = {
     'thin': 'availability_narrowed',
@@ -357,7 +374,13 @@ class BaseStoryWriter:
 
     def headline_text(self) -> str:
         forms = _HEADLINES.get(self.headline_key(), (_DEFAULT_HEADLINE,))
-        return _variant(forms, self._voice_index(len(forms))) or _DEFAULT_HEADLINE
+        return _variant(
+            forms,
+            self._voice_index(
+                len(forms),
+                _WRITER_HEADLINE_OFFSET.get(self.writer_name, 0),
+            ),
+        ) or _DEFAULT_HEADLINE
 
     def _voice_index(self, count: int, *extra: Any) -> int:
         return _stable_index(
@@ -642,27 +665,60 @@ class BaseStoryWriter:
         names = self._key_relief_names()
         sentences = []
 
-        variant = self._voice_index(2, 'protected_body')
+        variant = self._voice_index(6, 'protected_body', lead, late, self._entry_inning_value())
         if include_opening and starter and ipw and lead:
-            opener = (f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'
-                      if team else
-                      f'{starter} worked {ipw} innings and handed off a {_num(lead)}-run lead')
+            if variant in (0, 3):
+                opener = (f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'
+                          if team else
+                          f'{starter} worked {ipw} innings and handed off a {_num(lead)}-run lead')
+            elif variant in (1, 4):
+                opener = (f'{starter} left {team} {_num(lead)} runs up after {ipw} innings'
+                          if team else
+                          f'{starter} left after {ipw} innings with a {_num(lead)}-run lead')
+            else:
+                opener = (f'{starter} built {team} a {_num(lead)}-run cushion over {ipw} innings'
+                          if team else
+                          f'{starter} built a {_num(lead)}-run cushion over {ipw} innings')
             sentences.append(self._start(opener))
-            sentences.append('The bullpen brought it home.')
+            sentences.append(_variant((
+                'The bullpen brought it home.',
+                'The relievers handled the finish.',
+                'The late innings held from there.',
+            ), variant))
         elif starter and ipw and lead:
             if variant == 0:
                 opener = (f'{starter} worked {ipw} innings and left with a {_num(lead)}-run lead, '
                           f'and the bullpen brought it home')
-            else:
+            elif variant == 1:
                 opener = (f'{starter} handed off after {ipw} innings with a '
                           f'{_num(lead)}-run lead, and the bullpen finished it')
+            elif variant == 2:
+                opener = (f'{starter} gave the bullpen a {_num(lead)}-run lead after '
+                          f'{ipw} innings, and the late innings held')
+            elif variant == 3:
+                opener = (f'{starter} left after {ipw} innings with {_num(lead)} runs of '
+                          f'cushion, and the bullpen protected it')
+            elif variant == 4:
+                opener = (f'{starter} covered {ipw} innings before the bullpen took a '
+                          f'{_num(lead)}-run lead to the finish')
+            else:
+                opener = (f'{starter} put a {_num(lead)}-run lead in place over {ipw} '
+                          f'innings, and the relievers carried it home')
             sentences.append(self._start(opener))
         else:
-            line = 'the bullpen protected '
-            line += f'a {_num(lead)}-run lead' if lead else 'the lead'
-            if inning:
-                line += f' from the {inning} inning on'
-            line += ', closing out the win'
+            if variant in (0, 3):
+                line = 'the bullpen protected '
+                line += f'a {_num(lead)}-run lead' if lead else 'the lead'
+                if inning:
+                    line += f' from the {inning} inning on'
+                line += ', closing out the win'
+            elif variant in (1, 4):
+                line = 'the relievers carried '
+                line += f'a {_num(lead)}-run lead' if lead else 'the lead'
+                line += ' through the finish'
+            else:
+                line = 'the late innings held around '
+                line += f'a {_num(lead)}-run lead' if lead else 'the lead'
             sentences.append(self._start(line))
 
         if include_consequence and names:
@@ -733,11 +789,32 @@ class BaseStoryWriter:
             fallback_key='workload_spread',
             extra_stable_parts=('starter_covered_bullpen', 'body'),
         )
-        variant = self._voice_index(2, 'starter_covered_body')
+        completed = self._get('completed_game_context')
+        starter_player_id = completed.get('starter_player_id') if isinstance(completed, dict) else None
+        variant = self._voice_index(
+            8,
+            'starter_covered_body',
+            self._starter_pitch_count(),
+            self._entry_inning_value(),
+            self._late_runs_value(),
+            starter_player_id,
+        )
         if variant == 0:
             line = f'{anchor}, keeping the bullpen out of the heaviest innings'
-        else:
+        elif variant == 1:
             line = f'{anchor}, so the bullpen only had to finish the shorter piece'
+        elif variant == 2:
+            line = f'{anchor}, leaving the bullpen with a shorter finish'
+        elif variant == 3:
+            line = f'{anchor}, and the bullpen handled the final stretch'
+        elif variant == 4:
+            line = f'{anchor}, keeping the relief workload short'
+        elif variant == 5:
+            line = f'{anchor}, giving the bullpen a lighter finish'
+        elif variant == 6:
+            line = f'{anchor}, leaving the bullpen with fewer innings to cover'
+        else:
+            line = f'{anchor}, before the bullpen took over for a shorter handoff'
         sentences = [self._start(line)]
         if consequence:
             sentences.append(consequence)
