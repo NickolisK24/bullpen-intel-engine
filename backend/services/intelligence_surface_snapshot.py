@@ -71,6 +71,8 @@ SNAPSHOT_VERSION = f'{SNAPSHOT_FAMILY}_{SNAPSHOT_WRITER_FINGERPRINT}'
 
 SERVED_FROM_SNAPSHOT = 'snapshot'
 SERVED_FROM_ON_DEMAND = 'on_demand'
+SERVED_FROM_ON_DEMAND_FAILED = 'on_demand_failed'
+EMPTY_LEAD_STORY_UNAVAILABLE = 'lead_story_unavailable'
 
 
 def serve_today_lead_story(
@@ -96,11 +98,29 @@ def serve_today_lead_story(
             _log_timing(SERVED_FROM_SNAPSHOT, cached, start)
             return cached
 
-    # No snapshot (or no resolvable date) — fall back to live generation.
-    response = build_today_lead_story(
-        reference_date=resolved if resolved is not None else reference_date,
-        current_date=current_date,
-    )
+    # No snapshot (or no resolvable date) — rebuild from current stored data.
+    # Use the bounded selector for the public on-demand path so a deploy that
+    # invalidates the writer fingerprint can warm the current snapshot without
+    # rendering the entire completed-game slate inside the request.
+    try:
+        response = build_today_lead_story(
+            reference_date=resolved if resolved is not None else reference_date,
+            current_date=current_date,
+            bounded=True,
+        )
+    except Exception:  # noqa: BLE001 - public endpoint must fail closed
+        db.session.rollback()
+        logger.exception(
+            'Intelligence surface snapshot regeneration failed: '
+            'reference_date=%s snapshot_version=%s fingerprint=%s.',
+            resolved if resolved is not None else reference_date,
+            SNAPSHOT_VERSION,
+            SNAPSHOT_WRITER_FINGERPRINT,
+        )
+        response = _regeneration_failed_response(
+            resolved if resolved is not None else reference_date)
+        _log_timing(SERVED_FROM_ON_DEMAND_FAILED, response, start)
+        return response
     if persist:
         _safe_write_snapshot(response, source=SERVED_FROM_ON_DEMAND)
     _log_timing(SERVED_FROM_ON_DEMAND, response, start)
@@ -281,6 +301,19 @@ def _stored_response_is_current(response, version) -> bool:
         and metadata.get('snapshot_family') == SNAPSHOT_FAMILY
         and metadata.get('story_writer_fingerprint') == SNAPSHOT_WRITER_FINGERPRINT
     )
+
+
+def _regeneration_failed_response(reference_date):
+    ref_date = _as_date(reference_date)
+    return {
+        'status': 'empty',
+        'reference_date': ref_date.isoformat() if ref_date else None,
+        'lead_story': None,
+        'candidates_considered': 0,
+        'publishable_candidates': 0,
+        'errors': 1,
+        'empty_reason': EMPTY_LEAD_STORY_UNAVAILABLE,
+    }
 
 
 def _log_timing(served_from, response, start):

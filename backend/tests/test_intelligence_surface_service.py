@@ -72,6 +72,31 @@ def _contexts(*team_ids):
     return [{'team_id': tid} for tid in team_ids]
 
 
+def _completed_context(team_id, *, tag='lost_game_shape', confidence='HIGH', **over):
+    base = {
+        'team_id': team_id,
+        'game_pk': team_id * 1000,
+        'bullpen_story_tag': tag,
+        'confidence': confidence,
+        'starter_name': 'Sample Starter',
+        'starter_ip': 6.0,
+        'bullpen_entry_inning': 7,
+        'bullpen_entry_score_for': 6,
+        'bullpen_entry_score_against': 2,
+        'lead_when_bullpen_entered': 4,
+        'largest_lead': 4,
+        'largest_deficit': 3,
+        'late_runs_allowed': 7,
+        'runs_allowed_innings_7_to_9': 7,
+        'lead_protected': False,
+        'lead_lost': True,
+        'turning_inning': 8,
+        'game_shape_created': 'normal_start',
+    }
+    base.update(over)
+    return base
+
+
 # ── Ranking: priority dominates ───────────────────────────────────────────────
 
 def test_selects_critical_over_high():
@@ -214,6 +239,97 @@ def test_skips_one_failed_candidate_without_failing_all():
     assert result['candidates_considered'] == 2
     assert result['errors'] == 1
     assert result['publishable_candidates'] == 1
+
+
+# ── Bounded on-demand snapshot warming ────────────────────────────────────────
+
+def test_bounded_regeneration_renders_top_ranked_candidate_first():
+    contexts = [
+        _completed_context(
+            147,
+            tag='bullpen_overexposed',
+            confidence='MEDIUM',
+            game_shape_created='short_start',
+            late_runs_allowed=1,
+            runs_allowed_innings_7_to_9=1,
+            lead_lost=None,
+        ),
+        _completed_context(137),
+    ]
+    seen = []
+
+    def inspect(team_id, *, app=None, reference_date=None, completed_game_context=None):
+        seen.append(team_id)
+        if team_id == 137:
+            return _fake_inspected(
+                team_id,
+                priority='CRITICAL',
+                importance='HIGH',
+                primary='lost_game_shape',
+                late_runs=7,
+                largest_lead=4,
+            )
+        return _fake_inspected(
+            team_id,
+            priority='MEDIUM',
+            importance='LOW',
+            primary='bullpen_overexposed',
+        )
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=contexts,
+        inspect_fn=inspect,
+        bounded=True,
+    )
+
+    assert result['status'] == 'ok'
+    assert result['lead_story']['team_id'] == 137
+    assert seen == [137]
+    assert result['candidates_considered'] == 2
+    assert result['publishable_candidates'] == 2
+    assert result['errors'] == 0
+
+
+def test_bounded_regeneration_continues_after_top_candidate_error():
+    contexts = [
+        _completed_context(137),
+        _completed_context(
+            147,
+            tag='bullpen_overexposed',
+            confidence='MEDIUM',
+            game_shape_created='short_start',
+            late_runs_allowed=1,
+            runs_allowed_innings_7_to_9=1,
+            lead_lost=None,
+        ),
+    ]
+    seen = []
+
+    def inspect(team_id, *, app=None, reference_date=None, completed_game_context=None):
+        seen.append(team_id)
+        if team_id == 137:
+            raise RuntimeError('render failed')
+        return _fake_inspected(
+            team_id,
+            priority='MEDIUM',
+            importance='LOW',
+            primary='bullpen_overexposed',
+        )
+
+    result = build_today_lead_story(
+        reference_date='2026-06-25',
+        candidate_contexts=contexts,
+        inspect_fn=inspect,
+        bounded=True,
+    )
+
+    assert result['status'] == 'ok'
+    assert result['lead_story']['team_id'] == 147
+    assert seen == [137, 147]
+    assert result['candidates_considered'] == 2
+    assert result['publishable_candidates'] == 2
+    assert result['errors'] == 1
 
 
 # ── Reference date passthrough ────────────────────────────────────────────────

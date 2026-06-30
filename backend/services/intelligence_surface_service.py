@@ -37,6 +37,8 @@ from __future__ import annotations
 
 from services.availability_reference_date import product_current_date
 from services.coin_story_inspection import inspect_team_story
+from services.completed_game_context_service import TAG_INSUFFICIENT_CONTEXT
+from services.narrative_context_service import build_narrative_context
 
 # ── Ranking vocabularies ──────────────────────────────────────────────────────
 _UNKNOWN_RANK = 99
@@ -70,6 +72,7 @@ def build_today_lead_story(
     current_date=None,
     candidate_contexts=None,
     inspect_fn=None,
+    bounded=False,
 ):
     """Return the single most important publishable COIN story for a date.
 
@@ -84,12 +87,21 @@ def build_today_lead_story(
     and skip the database entirely. ``app`` (a Flask app) wraps the database
     reads in an app context for the real path; when the service is already
     called inside an app/request context, leave it ``None``.
+
+    ``bounded`` is reserved for the public snapshot-miss path. It ranks
+    candidates from the already-stored completed-game context fields, renders in
+    that order, and stops at the first publishable current story so a deploy can
+    warm a stale/missing snapshot without rendering the entire slate
+    synchronously.
     """
     inspect_fn = inspect_fn or inspect_team_story
 
     def _run():
         ref_iso, contexts = _resolve_candidates(
             reference_date, candidate_contexts, current_date)
+        if bounded:
+            return _select_first_publishable_lead_story(
+                ref_iso, contexts, inspect_fn)
         return _select_lead_story(ref_iso, contexts, inspect_fn)
 
     if app is not None and candidate_contexts is None:
@@ -213,6 +225,81 @@ def _select_lead_story(reference_date_iso, contexts, inspect_fn):
         'publishable_candidates': len(publishable),
         'errors': error_count,
         'empty_reason': None,
+    }
+
+
+def _select_first_publishable_lead_story(reference_date_iso, contexts, inspect_fn):
+    """Bounded selector for endpoint snapshot misses.
+
+    Full snapshot generation still uses ``_select_lead_story`` so refresh jobs
+    retain complete candidate accounting. This path exists for first request
+    after deploy/code fingerprint invalidation: it uses the same deterministic
+    ranking inputs already present in CompletedGameContext rows, renders only as
+    much as needed to return a current publishable story, and never falls back to
+    stale text.
+    """
+    considered = 0
+    error_count = 0
+    previews = []
+
+    for ctx in contexts:
+        team_id = ctx.get('team_id')
+        if team_id is None:
+            continue
+        considered += 1
+        preview = _rank_preview_from_context(ctx)
+        if preview is not None:
+            previews.append((ctx, preview))
+
+    if not considered:
+        return _empty_response(reference_date_iso, considered, 0, error_count,
+                               EMPTY_NO_CANDIDATES)
+    if not previews:
+        return _empty_response(reference_date_iso, considered, 0, error_count,
+                               EMPTY_NO_PUBLISHABLE)
+
+    for ctx, _preview in sorted(previews, key=lambda item: _sort_key(item[1])):
+        team_id = ctx.get('team_id')
+        try:
+            inspected = inspect_fn(
+                team_id,
+                app=None,
+                reference_date=reference_date_iso,
+                completed_game_context=ctx,
+            )
+        except Exception:
+            error_count += 1
+            continue
+        if inspected and inspected.get('publishable') is True:
+            return {
+                'status': STATUS_OK,
+                'reference_date': reference_date_iso,
+                'lead_story': _lead_story_payload(inspected, rank=1),
+                'candidates_considered': considered,
+                'publishable_candidates': len(previews),
+                'errors': error_count,
+                'empty_reason': None,
+            }
+
+    return _empty_response(reference_date_iso, considered, 0, error_count,
+                           EMPTY_NO_PUBLISHABLE)
+
+
+def _rank_preview_from_context(ctx):
+    narrative = build_narrative_context(ctx).to_dict()
+    primary = narrative.get('primary_story')
+    if primary == TAG_INSUFFICIENT_CONTEXT:
+        return None
+    return {
+        'team_id': ctx.get('team_id'),
+        'game_pk': ctx.get('game_pk'),
+        'story_priority': narrative.get('story_priority'),
+        'game_importance': narrative.get('game_importance'),
+        'confidence': narrative.get('confidence'),
+        'package': {
+            'primary_story': primary,
+            'completed_game_context': ctx,
+        },
     }
 
 

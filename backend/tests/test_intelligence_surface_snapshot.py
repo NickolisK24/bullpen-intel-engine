@@ -9,6 +9,7 @@ future-date default cap still holds through the cache. Everything is DB-backed
 and read-only against COIN gates — no story data is invented.
 """
 
+import logging
 from datetime import date
 
 import pytest
@@ -18,6 +19,7 @@ from tests.db_config import configure_test_database, create_test_schema, drop_te
 import services.intelligence_surface_service as surface_service
 from services import intelligence_surface_snapshot as snap
 from services.intelligence_surface_snapshot import (
+    EMPTY_LEAD_STORY_UNAVAILABLE,
     SNAPSHOT_VERSION,
     generate_snapshot_for_date,
     read_snapshot,
@@ -267,6 +269,69 @@ def test_missing_snapshot_falls_back_then_persists(app):
         assert '_snapshot_metadata' not in stored
 
 
+def test_snapshot_miss_uses_bounded_regeneration_and_persists(app, monkeypatch):
+    seen = {}
+    response = {
+        'status': 'ok',
+        'reference_date': _REF.isoformat(),
+        'lead_story': {
+            'team_id': 137,
+            'game_pk': 137000,
+            'package': {},
+            'drafts': {},
+            'selection': {'rank': 1},
+        },
+        'candidates_considered': 2,
+        'publishable_candidates': 2,
+        'errors': 0,
+        'empty_reason': None,
+    }
+
+    def _build(**kwargs):
+        seen.update(kwargs)
+        return response
+
+    monkeypatch.setattr(snap, 'build_today_lead_story', _build)
+
+    with app.app_context():
+        result = serve_today_lead_story(reference_date=_REF)
+        stored = read_snapshot(_REF)
+        row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+
+    assert result == response
+    assert stored == response
+    assert seen['reference_date'] == _REF
+    assert seen['bounded'] is True
+    assert row.source == 'on_demand'
+    assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+
+
+def test_snapshot_regeneration_error_returns_safe_fallback(app, monkeypatch, caplog):
+    def _boom(**kwargs):
+        raise RuntimeError('writer exploded')
+
+    monkeypatch.setattr(snap, 'build_today_lead_story', _boom)
+
+    with app.app_context(), caplog.at_level(logging.ERROR):
+        result = serve_today_lead_story(reference_date=_REF)
+
+    assert result == {
+        'status': 'empty',
+        'reference_date': _REF.isoformat(),
+        'lead_story': None,
+        'candidates_considered': 0,
+        'publishable_candidates': 0,
+        'errors': 1,
+        'empty_reason': EMPTY_LEAD_STORY_UNAVAILABLE,
+    }
+    assert read_snapshot(_REF) is None
+    assert 'Intelligence surface snapshot regeneration failed' in caplog.text
+    assert 'writer exploded' in caplog.text
+
+
 def test_persist_false_does_not_store(app):
     with app.app_context():
         _seed_lost_game_shape(137, 137000)
@@ -305,6 +370,33 @@ def test_old_writer_version_snapshot_is_not_served_and_is_rebuilt(app):
         assert stale_row.response_json == stale
         assert current_row.source == 'on_demand'
         assert current_row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+
+
+def test_june_29_reference_date_regenerates_current_burke_story(app):
+    june_29 = date(2026, 6, 29)
+    with app.app_context():
+        _seed_burke_tied_handoff(game_date=june_29)
+        _insert_snapshot_row(
+            june_29,
+            version='intelligence_surface_v1',
+            response=_stale_burke_response(june_29),
+        )
+
+        result = serve_today_lead_story(reference_date=june_29)
+
+        blob = _lead_blob(result).lower()
+        assert result['reference_date'] == '2026-06-29'
+        assert result['lead_story']['team_id'] == 145
+        assert '5.1 innings' in blob
+        assert 'tied game' in blob
+        assert '5.3' not in blob
+        assert 'one-run deficit to erase' not in blob
+        row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=june_29,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+        assert row.source == 'on_demand'
+        assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
 
 
 def test_current_version_snapshot_missing_metadata_is_not_served(app):
