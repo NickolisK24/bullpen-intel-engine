@@ -107,3 +107,72 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
     assert 'Avoid' in text
     assert 'Context Explanation Examples' in text
     assert 'Structured fields used' in text
+
+
+def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_path):
+    report = build_context_explanation_editorial_review(
+        include_fixture_examples=True,
+        generated_at='2026-06-29T00:00:00',
+        artifact_path='artifacts/context_explanation_editorial_review_E2D3.md',
+        review_label='E2D-3 Healthy-State Context Explanation Corpus',
+    )
+    output = write_context_explanation_editorial_review(
+        report,
+        tmp_path / 'context_explanation_editorial_review_E2D3.md',
+    )
+    text = output.read_text(encoding='utf-8')
+
+    coverage = report['coverage_summary']
+
+    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D3.md'
+    assert coverage['fixture_backed_examples'] > 0
+    assert coverage['stored_data_examples'] == 0
+    assert set(coverage['pitcher_availability_statuses_found']) == {
+        'Available',
+        'Monitor',
+        'Limited',
+        'Avoid',
+        'Unavailable',
+    }
+    assert set(coverage['pitcher_context_statuses_found']) == {
+        'Available',
+        'Monitor',
+        'Limited',
+        'Avoid',
+        'Unavailable',
+    }
+    assert {
+        'Available',
+        'Monitor',
+        'Limited',
+        'Avoid',
+        'Unavailable',
+    }.issubset(set(coverage['board_card_groups_found']))
+    assert {
+        'Trust Arm',
+        'Bridge Arm',
+        'Coverage Arm',
+        'Depth Arm',
+        'Limited Read',
+    }.issubset(set(coverage['role_labels_found']))
+    assert {
+        'Clean Option',
+        'Watch Arm',
+        'Rest-Restricted',
+        'Unavailable',
+        'Limited Read',
+    }.issubset(set(coverage['read_labels_found']))
+    assert {
+        'operationally_stable',
+        'operationally_constrained',
+        'operationally_stressed',
+        'refused',
+    }.issubset(set(coverage['team_readiness_states_found']))
+    assert any(
+        label != 'Limited Read'
+        for label in coverage['team_shape_read_labels_found']
+    )
+    assert 'deterministic fixture example' in text
+    assert 'examples_by_source' in text
+    assert 'Raw-Count / Formula Scan' in text
+    assert 'Circular-Meta Scan' in text

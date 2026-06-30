@@ -32,6 +32,14 @@ def _parse_args(argv=None):
         dest='review_label',
         help='Optional title label for the generated review artifact.',
     )
+    parser.add_argument(
+        '--include-fixtures',
+        action='store_true',
+        help=(
+            'Fill uncaptured healthy-state categories with deterministic fixture '
+            'examples that exercise the same backend helper paths.'
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -52,6 +60,7 @@ def main(argv=None):
         app=app,
         artifact_path=args.output_md,
         review_label=args.review_label,
+        include_fixture_examples=args.include_fixtures,
     )
     output = write_context_explanation_editorial_review(report, args.output_md)
     print(output)

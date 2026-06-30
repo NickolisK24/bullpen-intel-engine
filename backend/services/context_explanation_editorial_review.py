@@ -9,9 +9,11 @@ change thresholds, or migrate copy.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from datetime import date, timedelta
 from pathlib import Path
 import json
 import re
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping
 
 from services.editorial_voice_contract_v1 import find_editorial_violations
@@ -20,6 +22,10 @@ from utils.time import utc_now_naive
 
 ARTIFACT_PATH = 'artifacts/context_explanation_editorial_review_E2D1.md'
 REVIEW_LABEL = 'E2D-1 Context Explanation Corpus'
+
+STORED_DATA_EXAMPLE = 'stored-data example'
+DETERMINISTIC_FIXTURE_EXAMPLE = 'deterministic fixture example'
+SEEDED_INTEGRITY_EXAMPLE = 'seeded integrity example'
 
 PITCHER_AVAILABILITY_STATUSES = (
     'Available',
@@ -178,17 +184,35 @@ def build_context_explanation_editorial_review(
     review_label: str | None = None,
     seed_examples: Iterable[Mapping[str, Any]] | None = None,
     seed_missing_categories: Mapping[str, Any] | None = None,
+    include_fixture_examples: bool = False,
 ) -> dict[str, Any]:
     """Build a deterministic review payload from current stored data."""
 
     def _run() -> dict[str, Any]:
         if seed_examples is not None:
-            examples = [_with_scans(dict(example)) for example in seed_examples]
+            examples = []
+            for example in seed_examples:
+                row = dict(example)
+                row.setdefault('example_source', SEEDED_INTEGRITY_EXAMPLE)
+                examples.append(_with_scans(row))
             missing = dict(seed_missing_categories or {})
             data_notes = ['seeded examples supplied by test/integrity path']
             team_ids: list[int] = []
         else:
-            examples, missing, data_notes, team_ids = _collect_current_examples(app)
+            if app is None and include_fixture_examples:
+                examples = []
+                missing = _missing_categories_from_examples([])
+                data_notes = [
+                    'no app supplied; deterministic fixture-only integrity path used',
+                ]
+                team_ids = []
+            else:
+                examples, missing, data_notes, team_ids = _collect_current_examples(app)
+            if include_fixture_examples:
+                fixture_examples, fixture_notes = _collect_fixture_examples(examples)
+                examples.extend(fixture_examples)
+                data_notes.extend(fixture_notes)
+                missing = _missing_categories_from_examples(examples, previous_missing=missing)
 
         scans = _scan_examples(examples)
         raw_count_formula_scan = _raw_count_formula_scan(examples)
@@ -201,7 +225,12 @@ def build_context_explanation_editorial_review(
             'artifact': str(artifact_path or ARTIFACT_PATH),
             'review_label': review_label or REVIEW_LABEL,
             'generated_at': _isoformat(generated_at or utc_now_naive()),
-            'source_mode': 'current stored DB data only; exporter starts no sync',
+            'source_mode': (
+                'current stored DB data first; deterministic fixtures fill uncaptured '
+                'healthy-state categories; exporter starts no sync'
+                if include_fixture_examples and seed_examples is None
+                else 'current stored DB data only; exporter starts no sync'
+            ),
             'generation_path_used': [
                 'services.context_explanation_editorial_review.build_context_explanation_editorial_review',
                 'api.bullpen.get_pitcher_fatigue',
@@ -497,8 +526,555 @@ def _collect_current_examples(app) -> tuple[list[dict[str, Any]], dict[str, Any]
     if readiness_errors:
         notes.append('Some team readiness explanation rows could not be read safely.')
 
-    scanned = [_with_scans(example) for example in examples]
+    scanned = []
+    for example in examples:
+        example.setdefault('example_source', STORED_DATA_EXAMPLE)
+        scanned.append(_with_scans(example))
     return scanned, missing, notes, [int(team_id) for team_id in team_ids]
+
+
+def _collect_fixture_examples(
+    current_examples: Iterable[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Collect deterministic fixture-backed examples for uncaptured categories."""
+
+    current_examples = list(current_examples)
+    examples: list[dict[str, Any]] = []
+    notes = [
+        'Deterministic fixture examples use existing backend test fixture shapes '
+        'and production helper paths; they are labeled separately from stored data.',
+    ]
+
+    examples.extend(_fixture_pitcher_examples(current_examples))
+    fixture_board = _fixture_board_payload()
+    examples.append(_mark_fixture(_team_board_example(fixture_board)))
+    examples.append(_mark_fixture(_team_shape_example(fixture_board)))
+    examples.extend(_fixture_board_card_label_examples(fixture_board))
+    examples.extend(_fixture_readiness_examples(current_examples))
+
+    return [_with_scans(example) for example in examples], notes
+
+
+def _fixture_pitcher_examples(
+    current_examples: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    from explanations import serialize_availability_explanation
+    from services.availability import (
+        STATUS_AVAILABLE,
+        STATUS_AVOID,
+        STATUS_LIMITED,
+        STATUS_MONITOR,
+        STATUS_UNAVAILABLE,
+        classify_availability,
+    )
+    from services.pitcher_public_labels import build_pitcher_labels
+
+    current_examples = list(current_examples)
+    availability_seen = {
+        str(example.get('status'))
+        for example in current_examples
+        if example.get('surface_name') == 'Pitcher V4 availability explanation'
+    }
+    detail_seen = {
+        str(example.get('status'))
+        for example in current_examples
+        if example.get('surface_name') == 'Pitcher Context modal/detail route'
+    }
+
+    ref = date(2026, 6, 1)
+    fixture_specs = {
+        STATUS_AVAILABLE: {'raw_score': 20.0, 'days_ago': 3, 'pitches': 8},
+        STATUS_MONITOR: {'raw_score': 20.0, 'days_ago': 1, 'pitches': 16},
+        STATUS_LIMITED: {'raw_score': 30.0, 'days_ago': 1, 'pitches': 28},
+        STATUS_AVOID: {'raw_score': 30.0, 'days_ago': 1, 'pitches': 42},
+        STATUS_UNAVAILABLE: {'raw_score': 30.0, 'days_ago': 1, 'pitches': 52},
+    }
+    role_specs = (
+        ('late_high_leverage', 'Trust Arm'),
+        ('setup_bridge', 'Bridge Arm'),
+        ('long_relief', 'Coverage Arm'),
+        ('low_leverage', 'Depth Arm'),
+        ('insufficient_data', 'Limited Read'),
+    )
+
+    examples: list[dict[str, Any]] = []
+    availability_by_status: dict[str, Mapping[str, Any]] = {}
+    for index, (status, spec) in enumerate(fixture_specs.items(), start=1):
+        log = _fixture_log(ref - timedelta(days=int(spec['days_ago'])), int(spec['pitches']))
+        availability = classify_availability(
+            score=_fixture_score(float(spec['raw_score'])),
+            game_logs=[log],
+            reference_date=ref,
+            latest_game_date=log.game_date,
+        )
+        availability_by_status[status] = availability
+        pitcher = _fixture_pitcher(status, index)
+
+        if status not in availability_seen:
+            explanation = serialize_availability_explanation(
+                availability,
+                subject_id=f'fixture:{index}',
+                generated_at='2026-06-03T12:00:00Z',
+            )
+            example = _availability_explanation_example(pitcher, explanation)
+            example['source_path'] = (
+                'backend/tests/test_v4_availability_explanation_integration.py fixture pattern -> '
+                'services.availability.classify_availability -> '
+                'explanations.availability.serialize_availability_explanation'
+            )
+            examples.append(_mark_fixture(example))
+
+        if status not in detail_seen:
+            detail_payload = _fixture_pitcher_detail_payload(availability, log)
+            example = _pitcher_detail_example(pitcher, detail_payload)
+            example['source_path'] = (
+                'backend/tests/test_v4_availability_explanation_integration.py fixture pattern -> '
+                'services.availability.classify_availability -> api.bullpen.get_pitcher_fatigue payload shape'
+            )
+            examples.append(_mark_fixture(example))
+
+    for index, (role_key, expected_role_label) in enumerate(role_specs, start=1):
+        status = list(fixture_specs)[index - 1]
+        availability = availability_by_status[status]
+        role = _fixture_role(role_key)
+        labels = build_pitcher_labels(
+            availability=availability,
+            role=role,
+            eligibility={'status': 'eligible'},
+            roster_status={'status': 'active'},
+        )
+        detail_payload = _fixture_pitcher_detail_payload(
+            availability,
+            _fixture_log(ref - timedelta(days=1), 12),
+            role=role,
+        )
+        pitcher = _fixture_pitcher(expected_role_label, index + 20)
+        example = _pitcher_label_example(pitcher, detail_payload, labels)
+        example['source_path'] = (
+            'backend/tests/test_team_bullpen_shape.py role fixture pattern -> '
+            'services.pitcher_public_labels.build_pitcher_labels'
+        )
+        examples.append(_mark_fixture(example))
+
+    stale_availability = classify_availability(
+        score=None,
+        game_logs=[],
+        reference_date=ref,
+        latest_game_date=None,
+    )
+    stale_role = _fixture_role('insufficient_data')
+    stale_labels = build_pitcher_labels(
+        availability=stale_availability,
+        role=stale_role,
+        eligibility={'status': 'eligible'},
+        roster_status={'status': 'active'},
+    )
+    stale_detail_payload = _fixture_pitcher_detail_payload(
+        stale_availability,
+        _fixture_log(ref - timedelta(days=30), 0),
+        role=stale_role,
+    )
+    stale_example = _pitcher_label_example(
+        _fixture_pitcher('Limited Read label', 99),
+        stale_detail_payload,
+        stale_labels,
+    )
+    stale_example['source_path'] = (
+        'backend/tests/test_v4_availability_explanation_integration.py missing-data fixture pattern -> '
+        'services.pitcher_public_labels.build_pitcher_labels'
+    )
+    examples.append(_mark_fixture(stale_example))
+
+    return examples
+
+
+def _fixture_board_payload() -> dict[str, Any]:
+    from services.bullpen_board import build_board_payload
+    from services.workload_concentration import summarize_workload_concentration
+
+    ref = date(2026, 6, 1)
+    records = [
+        _fixture_board_record(
+            name='Fixture Trust Arm',
+            pitcher_id=9101,
+            availability=_fixture_availability('Available', ref, raw_score=20.0, days_ago=3, pitches=8),
+            role=_fixture_role('late_high_leverage'),
+        ),
+        _fixture_board_record(
+            name='Fixture Bridge Arm',
+            pitcher_id=9102,
+            availability=_fixture_availability('Monitor', ref, raw_score=20.0, days_ago=1, pitches=16),
+            role=_fixture_role('setup_bridge'),
+        ),
+        _fixture_board_record(
+            name='Fixture Coverage Arm',
+            pitcher_id=9103,
+            availability=_fixture_availability('Limited', ref, raw_score=30.0, days_ago=1, pitches=28),
+            role=_fixture_role('long_relief'),
+        ),
+        _fixture_board_record(
+            name='Fixture Depth Arm',
+            pitcher_id=9104,
+            availability=_fixture_availability('Avoid', ref, raw_score=30.0, days_ago=1, pitches=42),
+            role=_fixture_role('low_leverage'),
+        ),
+        _fixture_board_record(
+            name='Fixture Unavailable Arm',
+            pitcher_id=9105,
+            availability=_fixture_availability('Unavailable', ref, raw_score=30.0, days_ago=1, pitches=52),
+            role=_fixture_role('depth'),
+        ),
+        _fixture_board_record(
+            name='Fixture Fresh Depth Arm',
+            pitcher_id=9106,
+            availability=_fixture_availability('Available', ref, raw_score=18.0, days_ago=4, pitches=6),
+            role=_fixture_role('depth'),
+        ),
+    ]
+    return build_board_payload(
+        team={
+            'team_id': 'fixture-context',
+            'team_name': 'Deterministic Context Fixture',
+            'team_abbreviation': 'FIX',
+        },
+        records=records,
+        freshness={
+            'is_current': True,
+            'freshness_state': 'current',
+            'data_through': '2026-06-01',
+            'limitations': [],
+        },
+        workload_concentration=summarize_workload_concentration({
+            9101: 42,
+            9102: 28,
+            9103: 14,
+            9104: 10,
+            9105: 6,
+        }),
+        generated_at='2026-06-03T12:05:00Z',
+    )
+
+
+def _fixture_readiness_examples(
+    current_examples: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    from explanations import serialize_readiness_explanation
+    from team_operations import assemble_bullpen_readiness
+
+    readiness_seen = {
+        str((example.get('role_or_classification') or {}).get('readiness_status_code'))
+        for example in current_examples
+        if example.get('surface_name') == 'Team Operations readiness V4 explanation'
+    }
+    fixture_payloads = [
+        assemble_bullpen_readiness(
+            team=_fixture_team(),
+            pitcher_records=_fixture_stable_readiness_records(),
+            trust_metadata=_fixture_trust_metadata(),
+            freshness=_fixture_freshness_metadata(),
+            generated_at='2026-06-03T12:00:00Z',
+        ),
+        assemble_bullpen_readiness(
+            team=_fixture_team(),
+            pitcher_records=_fixture_constrained_readiness_records(),
+            trust_metadata=_fixture_trust_metadata(),
+            freshness=_fixture_freshness_metadata(),
+            generated_at='2026-06-03T12:00:00Z',
+        ),
+        assemble_bullpen_readiness(
+            team=_fixture_team(),
+            pitcher_records=_fixture_stressed_readiness_records(),
+            trust_metadata=_fixture_trust_metadata(),
+            freshness=_fixture_freshness_metadata(),
+            generated_at='2026-06-03T12:00:00Z',
+        ),
+        assemble_bullpen_readiness(
+            team=_fixture_team(),
+            pitcher_records=_fixture_stable_readiness_records(),
+            trust_metadata=None,
+            freshness=_fixture_freshness_metadata(),
+            generated_at='2026-06-03T12:00:00Z',
+        ),
+    ]
+
+    examples = []
+    for payload in fixture_payloads:
+        status = str((payload.get('readiness') or {}).get('status_code') or 'unknown')
+        if status in readiness_seen:
+            continue
+        explanation = serialize_readiness_explanation(
+            payload,
+            scope='readiness_state',
+            generated_at='2026-06-03T12:05:00Z',
+        )
+        example = _readiness_explanation_example(payload, explanation, 'readiness_state')
+        example['source_path'] = (
+            'backend/tests/test_v4_team_operations_readiness_explanation_integration.py fixture pattern -> '
+            'team_operations.assemble_bullpen_readiness -> '
+            'explanations.readiness.serialize_readiness_explanation'
+        )
+        examples.append(_mark_fixture(example))
+    return examples
+
+
+def _fixture_board_card_label_examples(board: Mapping[str, Any]) -> list[dict[str, Any]]:
+    examples = []
+    for group in board.get('groups') or []:
+        pitchers = group.get('pitchers') or []
+        if not pitchers:
+            continue
+        examples.append(_team_board_card_label_example(board, group, pitchers[0]))
+    return examples
+
+
+def _team_board_card_label_example(
+    board: Mapping[str, Any],
+    group: Mapping[str, Any],
+    card: Mapping[str, Any],
+) -> dict[str, Any]:
+    labels = card.get('pitcher_labels') or {}
+    return _mark_fixture({
+        'surface_name': 'Team bullpen board card labels',
+        'team': _team_label(board.get('team')),
+        'pitcher': card.get('name'),
+        'status': group.get('status'),
+        'role_or_classification': {
+            'group': group.get('label'),
+            'role': (labels.get('role') or {}).get('label'),
+            'read': (labels.get('read') or {}).get('label'),
+        },
+        'source_path': (
+            'services.bullpen_board.build_board_payload -> '
+            'services.pitcher_public_labels.build_pitcher_labels'
+        ),
+        'fallback_status': 'rendered',
+        'rendered_public_copy': _dedupe_strings([
+            group.get('label'),
+            group.get('description'),
+            card.get('short_reason'),
+            (labels.get('role') or {}).get('label'),
+            (labels.get('read') or {}).get('label'),
+        ]),
+        'structured_fields_used': {
+            'group': _subset(group, ('status', 'label', 'description', 'count')),
+            'card': _subset(
+                card,
+                (
+                    'pitcher_id',
+                    'availability_status',
+                    'fatigue_score',
+                    'confidence',
+                    'short_reason',
+                    'data_state',
+                    'reasons',
+                    'limitations',
+                    'role',
+                    'pitcher_labels',
+                ),
+            ),
+        },
+        'evidence_sections': {
+            'last_workload_appearance': card.get('last_workload_appearance'),
+        },
+    })
+
+
+def _mark_fixture(example: dict[str, Any]) -> dict[str, Any]:
+    example['example_source'] = DETERMINISTIC_FIXTURE_EXAMPLE
+    return example
+
+
+def _fixture_score(raw_score: float) -> SimpleNamespace:
+    return SimpleNamespace(raw_score=raw_score, risk_level='LOW')
+
+
+def _fixture_log(game_date: date, pitches: int) -> SimpleNamespace:
+    return SimpleNamespace(game_date=game_date, pitches_thrown=pitches)
+
+
+def _fixture_pitcher(status: str, index: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=f'fixture-{index}',
+        full_name=f'Deterministic fixture pitcher - {status}',
+        team_id='fixture-context',
+        team_name='Deterministic Context Fixture',
+        team_abbreviation='FIX',
+    )
+
+
+def _fixture_availability(
+    status: str,
+    ref: date,
+    *,
+    raw_score: float,
+    days_ago: int,
+    pitches: int,
+) -> Mapping[str, Any]:
+    from services.availability import classify_availability
+
+    log = _fixture_log(ref - timedelta(days=days_ago), pitches)
+    availability = classify_availability(
+        score=_fixture_score(raw_score),
+        game_logs=[log],
+        reference_date=ref,
+        latest_game_date=log.game_date,
+    )
+    if availability.get('availability_status') != status:
+        raise RuntimeError(
+            'deterministic availability fixture did not produce expected status '
+            f'{status!r}: {availability.get("availability_status")!r}'
+        )
+    return availability
+
+
+def _fixture_pitcher_detail_payload(
+    availability: Mapping[str, Any],
+    log: SimpleNamespace,
+    *,
+    role: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        'availability': dict(availability),
+        'workload_signal': dict(availability),
+        'roster_status': {},
+        'freshness': {},
+        'role': dict(role or {}),
+        'last_workload_appearance': {
+            'game_date': log.game_date.isoformat(),
+            'pitches': log.pitches_thrown,
+        },
+        'recent_logs': [
+            {
+                'game_date': log.game_date.isoformat(),
+                'pitches_thrown': log.pitches_thrown,
+            }
+        ],
+        'fatigue_trend': [],
+    }
+
+
+def _fixture_role(role_key: str) -> dict[str, Any]:
+    return {
+        'role_key': role_key,
+        'sample_size': 5,
+        'confidence': 'high',
+    }
+
+
+def _fixture_board_record(
+    *,
+    name: str,
+    pitcher_id: int,
+    availability: Mapping[str, Any],
+    role: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        'name': name,
+        'pitcher_id': pitcher_id,
+        'fatigue_score': (availability.get('inputs') or {}).get('raw_score'),
+        'availability': availability,
+        'role': role,
+        'eligibility': {'status': 'eligible'},
+        'roster_status': {'status': 'active'},
+        'last_workload_appearance': {
+            'game_date': (availability.get('inputs') or {}).get('last_game_date'),
+            'pitches': (availability.get('inputs') or {}).get('pitches_yesterday'),
+        },
+    }
+
+
+def _fixture_team() -> dict[str, Any]:
+    return {
+        'team_id': 'fixture-context',
+        'team_name': 'Deterministic Context Fixture',
+        'team_abbreviation': 'FIX',
+    }
+
+
+def _fixture_trust_metadata(**overrides) -> dict[str, Any]:
+    payload = {
+        'confidence': 'high',
+        'confidence_reasons': ['fresh_data', 'complete_metadata'],
+        'data_state': 'fresh',
+        'source_evidence_state': 'represented',
+        'governance_state': 'compliant',
+        'generated_at': '2026-06-03T12:00:00Z',
+        'limitations': [],
+        'explanations': [],
+        'refusal_reasons': [],
+        'trust_validation_errors': [],
+        'ranking_applied': False,
+        'selection_made': False,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _fixture_freshness_metadata(**overrides) -> dict[str, Any]:
+    payload = {
+        'freshness_state': 'current',
+        'data_through': '2026-06-03',
+        'latest_workload_date': '2026-06-03',
+        'last_successful_sync': '2026-06-03T11:30:00Z',
+        'latest_sync_status': 'success',
+        'latest_fatigue_calculated_at': '2026-06-03T11:45:00Z',
+        'generated_at': '2026-06-03T12:00:00Z',
+        'stale_warning': None,
+        'missing_data_warning': None,
+        'limitations': [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _fixture_stable_readiness_records() -> tuple[dict[str, str], ...]:
+    return (
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
+        },
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
+        },
+    )
+
+
+def _fixture_constrained_readiness_records() -> tuple[dict[str, str], ...]:
+    return (
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
+        },
+        {
+            'availability_status': 'monitor',
+            'workload_category': 'moderate',
+            'throwing_hand': 'right',
+        },
+        {
+            'availability_status': 'limited',
+            'workload_category': 'low',
+            'throwing_hand': 'right',
+        },
+    )
+
+
+def _fixture_stressed_readiness_records() -> tuple[dict[str, str], ...]:
+    return (
+        {
+            'availability_status': 'available',
+            'workload_category': 'low',
+            'throwing_hand': 'left',
+        },
+        {
+            'availability_status': 'unavailable',
+            'workload_category': 'elevated',
+            'throwing_hand': 'right',
+        },
+    )
 
 
 def _availability_explanation_example(pitcher, explanation: Mapping[str, Any]) -> dict[str, Any]:
@@ -826,10 +1402,11 @@ def _evidence_sections(explanation: Mapping[str, Any]) -> dict[str, Any]:
 def _with_scans(example: dict[str, Any]) -> dict[str, Any]:
     texts = _public_texts(example)
     text = '\n'.join(texts)
+    banned = find_editorial_violations(text)
     example['banned_language_scan'] = {
-        'status': 'pass' if not find_editorial_violations(text) else 'warn',
-        'violation_count': len(find_editorial_violations(text)),
-        'violations': find_editorial_violations(text),
+        'status': 'pass' if not banned else 'warn',
+        'violation_count': len(banned),
+        'violations': banned,
     }
     retired = find_editorial_violations(text, terms=RETIRED_PUBLIC_PHRASES)
     example['retired_phrase_scan'] = {
@@ -838,6 +1415,8 @@ def _with_scans(example: dict[str, Any]) -> dict[str, Any]:
         'violations': retired,
         'terms': RETIRED_PUBLIC_PHRASES,
     }
+    example['raw_count_formula_scan'] = _raw_count_formula_scan([example])
+    example['circular_meta_scan'] = _circular_meta_scan([example])
     return example
 
 
@@ -1000,8 +1579,20 @@ def _coverage_summary(
     missing: Mapping[str, Any],
 ) -> dict[str, Any]:
     examples = list(examples)
+    by_source = Counter(str(example.get('example_source') or 'unknown') for example in examples)
+    board_groups_found = _board_groups_found(examples)
+    role_read = _role_and_read_labels_found(examples)
+    shape_labels = sorted({
+        str(label)
+        for example in examples
+        if example.get('surface_name') == 'Team bullpen shape explanations'
+        for label in ((example.get('role_or_classification') or {}).get('read_labels') or [])
+    })
     return {
         'examples_exported': len(examples),
+        'examples_by_source': dict(sorted(by_source.items())),
+        'stored_data_examples': by_source.get(STORED_DATA_EXAMPLE, 0),
+        'fixture_backed_examples': by_source.get(DETERMINISTIC_FIXTURE_EXAMPLE, 0),
         'pitcher_availability_statuses_found': sorted({
             str(example.get('status'))
             for example in examples
@@ -1017,7 +1608,148 @@ def _coverage_summary(
             for example in examples
             if example.get('surface_name') == 'Team Operations readiness V4 explanation'
         }),
+        'board_card_groups_found': {
+            status: count
+            for status, count in sorted(board_groups_found.items())
+            if count > 0
+        },
+        'role_labels_found': role_read['role_labels_found'],
+        'read_labels_found': role_read['read_labels_found'],
+        'team_shape_read_labels_found': shape_labels,
         'missing_categories': dict(missing),
+    }
+
+
+def _missing_categories_from_examples(
+    examples: Iterable[Mapping[str, Any]],
+    *,
+    previous_missing: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    examples = list(examples)
+    previous_missing = previous_missing or {}
+    availability_found = {
+        str(example.get('status'))
+        for example in examples
+        if example.get('surface_name') == 'Pitcher V4 availability explanation'
+    }
+    detail_found = {
+        str(example.get('status'))
+        for example in examples
+        if example.get('surface_name') == 'Pitcher Context modal/detail route'
+    }
+    board_groups = _board_groups_found(examples)
+    readiness_found = {
+        str((example.get('role_or_classification') or {}).get('readiness_status_code'))
+        for example in examples
+        if example.get('surface_name') == 'Team Operations readiness V4 explanation'
+    }
+    role_read = _role_and_read_labels_found(examples)
+    shape_has_non_limited = any(
+        label and label != 'Limited Read'
+        for example in examples
+        if example.get('surface_name') == 'Team bullpen shape explanations'
+        for label in ((example.get('role_or_classification') or {}).get('read_labels') or [])
+    )
+
+    missing: dict[str, Any] = {}
+    missing_availability = [
+        status for status in PITCHER_AVAILABILITY_STATUSES
+        if status not in availability_found
+    ]
+    if missing_availability:
+        missing['pitcher_availability_statuses'] = missing_availability
+
+    missing_detail = [
+        status for status in PITCHER_AVAILABILITY_STATUSES
+        if status not in detail_found
+    ]
+    if missing_detail:
+        missing['pitcher_context_modal_statuses'] = missing_detail
+
+    missing_board_groups = [
+        status for status in BOARD_GROUP_STATUSES
+        if board_groups.get(status, 0) == 0
+    ]
+    if missing_board_groups:
+        missing['board_card_groups_with_no_current_cards'] = missing_board_groups
+
+    missing_readiness = [
+        status for status in TEAM_READINESS_STATUSES
+        if status not in readiness_found
+    ]
+    if missing_readiness:
+        missing['team_readiness_statuses'] = missing_readiness
+
+    missing_role_keys = [
+        key for key in ('trust_arm', 'bridge_arm', 'coverage_arm', 'depth_arm', 'limited_read')
+        if key not in role_read['role_keys_found']
+    ]
+    missing_read_keys = [
+        key for key in ('clean_option', 'watch_arm', 'rest_restricted', 'unavailable', 'limited_read')
+        if key not in role_read['read_keys_found']
+    ]
+    if missing_role_keys or missing_read_keys:
+        missing['role_label_examples'] = {
+            'missing_role_keys': missing_role_keys,
+            'missing_read_keys': missing_read_keys,
+        }
+
+    if not shape_has_non_limited:
+        missing['team_shape_non_limited_examples'] = (
+            'No non-limited team-shape examples were captured.'
+        )
+
+    for key in ('availability_read_errors', 'team_readiness_errors'):
+        if previous_missing.get(key):
+            missing[key] = previous_missing[key]
+
+    return missing
+
+
+def _board_groups_found(examples: Iterable[Mapping[str, Any]]) -> Counter[str]:
+    groups_found: Counter[str] = Counter()
+    for example in examples:
+        if example.get('surface_name') != 'Team bullpen board context':
+            continue
+        fields = example.get('structured_fields_used') or {}
+        for group in fields.get('groups') or []:
+            status = group.get('status')
+            if status:
+                groups_found[str(status)] += int(group.get('count') or 0)
+    return groups_found
+
+
+def _role_and_read_labels_found(examples: Iterable[Mapping[str, Any]]) -> dict[str, list[str]]:
+    role_labels = set()
+    read_labels = set()
+    role_keys = set()
+    read_keys = set()
+    for example in examples:
+        if example.get('surface_name') not in {
+            'Pitcher public role/read labels',
+            'Team bullpen board card labels',
+        }:
+            continue
+        fields = example.get('structured_fields_used') or {}
+        labels = fields.get('labels') or {}
+        card = fields.get('card') or {}
+        if card:
+            labels = card.get('pitcher_labels') or {}
+        role = labels.get('role') or {}
+        read = labels.get('read') or {}
+        if role.get('label'):
+            role_labels.add(str(role.get('label')))
+        if read.get('label'):
+            read_labels.add(str(read.get('label')))
+        if role.get('key'):
+            role_keys.add(str(role.get('key')))
+        if read.get('key'):
+            read_keys.add(str(read.get('key')))
+    return {
+        'role_labels_found': sorted(role_labels),
+        'read_labels_found': sorted(read_labels),
+        'role_keys_found': sorted(role_keys),
+        'read_keys_found': sorted(read_keys),
     }
 
 
@@ -1044,6 +1776,7 @@ def _example_lines(index: int, example: Mapping[str, Any]) -> list[str]:
     metadata = {
         key: example.get(key)
         for key in (
+            'example_source',
             'surface_name',
             'team',
             'pitcher',
@@ -1053,6 +1786,8 @@ def _example_lines(index: int, example: Mapping[str, Any]) -> list[str]:
             'fallback_status',
             'banned_language_scan',
             'retired_phrase_scan',
+            'raw_count_formula_scan',
+            'circular_meta_scan',
         )
     }
     copy = list(example.get('rendered_public_copy') or [])
