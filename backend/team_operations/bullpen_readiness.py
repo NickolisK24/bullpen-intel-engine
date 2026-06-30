@@ -372,7 +372,7 @@ def _constraints(
                 severity='caution',
                 affected_area='trust_metadata',
                 count=1,
-                message='Trust metadata limits the readiness summary.',
+                message='The public workload record is not strong enough for a full readiness summary.',
                 evidence=[
                     f'confidence: {trust.confidence}',
                     f'data_state: {trust.data_state}',

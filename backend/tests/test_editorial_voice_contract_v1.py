@@ -116,10 +116,28 @@ def test_editorial_banned_language_helper_catches_singular_plural_loopholes():
         'The bullpen has fewer clean ways through a close game.',
         'That narrows the usable group before the game gets late.',
         'The club has less usable depth than yesterday.',
+        'Only 0 of 0 bullpen arms have clear role labels.',
+        'Coverage margin combines active capacity and resource health.',
+        'The trust structure has 0 trusted-group arms.',
+        'There are 0 available in the top trust bucket.',
+        'Trust metadata limits confidence in the explanation.',
+        'This readiness state reflects workload evidence.',
+        'Coverage evidence is partial for the explained state.',
+        'The current availability read is limited.',
+        'The current bullpen planning read is limited.',
+        'Explanation confidence mirrors the existing value.',
+        'Governed availability evidence supports Monitor state.',
     )
 
     for text in cases:
         assert contains_editorial_banned_language(text), text
+
+
+def test_editorial_banned_language_helper_catches_raw_arithmetic_patterns():
+    violations = find_editorial_violations('Only 2 of 7 bullpen arms have clear labels.')
+
+    assert any(item['category'] == 'raw_count_formula' for item in violations)
+    assert any(item['match'] == '2 of 7' for item in violations)
 
 
 def test_shared_consequence_helpers_retire_model_adjacent_phrases():

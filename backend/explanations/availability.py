@@ -110,19 +110,19 @@ def _freshness_reference(data_state: str, inputs: Mapping[str, Any]) -> dict[str
     latest_game_date = inputs.get('latest_game_date')
     reference_date = inputs.get('reference_date')
 
-    summary = 'Availability explanation uses current workload evidence.'
+    summary = 'The stored workload data is current enough for this pitcher note.'
     freshness_failure = None
     if freshness_status == 'stale':
-        summary = 'Availability explanation is limited by stale workload evidence.'
+        summary = 'The read is limited because the stored workload data is stale.'
         freshness_failure = 'stale_workload_data'
     elif freshness_status == 'missing':
-        summary = 'Availability explanation is limited by missing workload evidence.'
+        summary = 'The read is limited because BaseballOS does not have recent workload data for him.'
         freshness_failure = 'missing_workload_data'
     elif freshness_status == 'incomplete':
-        summary = 'Availability explanation is limited by incomplete workload evidence.'
+        summary = 'The read is limited because some recent workload detail is incomplete.'
         freshness_failure = 'incomplete_workload_data'
     elif freshness_status == 'unknown':
-        summary = 'Availability explanation freshness is unknown.'
+        summary = 'The read is limited because workload freshness is unknown.'
         freshness_failure = 'unknown_freshness_state'
 
     return {
@@ -153,8 +153,20 @@ def _trust_reference(confidence: str, data_state: str) -> dict[str, Any]:
         'contract': AVAILABILITY_EXPLANATION_CONTRACT,
         'certification_status': AVAILABILITY_EXPLANATION_CERTIFICATION_STATUS,
         'trust_failure': trust_failure,
-        'summary': 'Visibility reflects existing availability confidence and data-state detail.',
+        'summary': _trust_summary(trust_status, data_state),
     }
+
+
+def _trust_summary(trust_status: str, data_state: str) -> str:
+    if trust_status == 'trusted':
+        return 'The public workload record is strong enough for this note.'
+    if data_state == 'stale':
+        return 'BaseballOS is keeping this note limited because the stored workload data is stale.'
+    if data_state == 'missing':
+        return 'BaseballOS is keeping this note limited because recent workload data is missing.'
+    if data_state == 'incomplete':
+        return 'BaseballOS is keeping this note limited because recent workload detail is incomplete.'
+    return 'BaseballOS is keeping this note limited to the public workload record.'
 
 
 def _reason_codes(
@@ -239,13 +251,16 @@ def _limitations(
         add_limitation(limitation_type, summary)
 
     if data_state == 'missing':
-        add_limitation('missing_data', 'Workload evidence is missing for this availability state.')
+        add_limitation('missing_data', 'Stored workload data is missing for this pitcher.')
     if data_state == 'stale':
-        add_limitation('stale_data', 'Workload evidence is stale for this availability state.')
+        add_limitation('stale_data', 'Stored workload data is stale for this pitcher.')
     if data_state == 'incomplete':
-        add_limitation('partial_coverage', 'Workload evidence is incomplete for this availability state.')
+        add_limitation('partial_coverage', 'Some recent workload detail is incomplete for this pitcher.')
     if confidence in {'medium', 'low', 'unknown'}:
-        add_limitation('limited_confidence', 'Availability explanation confidence is limited by current evidence.')
+        add_limitation(
+            'limited_confidence',
+            'BaseballOS is keeping this note limited to the public workload evidence.',
+        )
 
     return tuple(limitations)
 
@@ -385,9 +400,11 @@ def build_availability_explanation(
         subject_type='pitcher',
         subject_id=resolved_subject_id,
         state_explained=status,
-        summary=(
-            'This availability state reflects existing workload, freshness, '
-            'confidence, and limitation evidence.'
+        summary=_availability_summary(
+            status=status,
+            data_state=data_state,
+            reasons=reasons,
+            inputs=inputs,
         ),
         reason_codes=_reason_codes(
             status=status,
@@ -401,13 +418,54 @@ def build_availability_explanation(
         trust=trust,
         confidence={
             'level': confidence,
-            'summary': (
-                'Explanation confidence mirrors the existing availability '
-                'confidence value.'
-            ),
+            'summary': _confidence_summary(confidence, data_state),
         },
         generated_at=generated_at,
     )
+
+
+def _availability_summary(
+    *,
+    status: str,
+    data_state: str,
+    reasons: tuple[str, ...],
+    inputs: Mapping[str, Any],
+) -> str:
+    if data_state == 'stale':
+        return 'BaseballOS is treating him as a monitor arm, but the stored workload data is stale.'
+    if data_state == 'missing':
+        return 'BaseballOS cannot say much yet because recent workload data is missing.'
+    if data_state == 'incomplete':
+        return 'BaseballOS is keeping this note limited because recent workload detail is incomplete.'
+
+    if reasons:
+        if status == 'Monitor':
+            return 'He has pitched recently enough that BaseballOS is treating him as a monitor arm.'
+        if status == 'Limited':
+            return 'Recent usage points to a lighter lane if he is needed.'
+        if status == 'Avoid':
+            return 'Recent usage is heavy enough that BaseballOS is holding this as a rest-risk note.'
+        if status == 'Unavailable':
+            return 'A heavy recent stretch has his workload up enough to make him unavailable.'
+
+    pitches_yesterday = inputs.get('pitches_yesterday')
+    if status == 'Available' and isinstance(pitches_yesterday, (int, float)) and pitches_yesterday <= 0:
+        return 'He has no workload from yesterday in the stored data.'
+    if status == 'Available':
+        return 'His recent workload is light enough for BaseballOS to keep this note open.'
+    return 'BaseballOS is limiting this note to the stored public workload data.'
+
+
+def _confidence_summary(confidence: str, data_state: str) -> str:
+    if confidence == 'high' and data_state == 'fresh':
+        return 'The public workload record is current enough for this note.'
+    if data_state == 'stale':
+        return 'The safest note stays limited until fresher workload data is available.'
+    if data_state == 'missing':
+        return 'The safest note stays limited until recent workload data is available.'
+    if data_state == 'incomplete':
+        return 'The safest note stays limited until the workload detail is more complete.'
+    return 'The safest note stays limited to what the public workload record can support.'
 
 
 def serialize_availability_explanation(

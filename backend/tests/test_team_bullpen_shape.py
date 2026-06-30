@@ -299,6 +299,26 @@ def test_sparse_backend_labels_return_limited_reads():
     ])
 
     assert all(read['label'] == 'Limited Read' for read in result['reads'])
+    text = ' '.join(
+        str(item)
+        for read in result['reads']
+        for item in (read.get('explanation'), *read.get('reasons', []))
+    ).lower()
+    for phrase in (
+        '0 of 0',
+        '0 trusted',
+        'trusted-group',
+        'top trust bucket',
+        'coverage margin',
+        'resource health',
+        'active capacity',
+        'trust structure',
+        'clean options',
+        '(unknown)',
+    ):
+        assert phrase not in text
+    assert 'not a statement about injury status or manager intent' in text
+    assert 'data-limited note' in text
 
 
 def test_team_shape_output_exposes_no_score_or_ranking_fields():

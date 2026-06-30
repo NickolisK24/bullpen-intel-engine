@@ -45,10 +45,10 @@ THIN_TRUST_UNAVAILABLE_MIN = 2
 THIN_TRUST_UNAVAILABLE_PCT = 40
 
 MISSING_INPUT_LIMITATION = (
-    'Coverage margin is a Limited Read because capacity, resource health, or trust hierarchy inputs are missing.'
+    'There is not enough stored bullpen context to read multi-inning coverage yet.'
 )
 UNKNOWN_INPUT_LIMITATION = (
-    'Coverage margin is a Limited Read because active capacity, resource health, or trust hierarchy is unknown.'
+    'There is not enough stored bullpen context to read multi-inning coverage yet.'
 )
 
 
@@ -147,8 +147,8 @@ def _limited_read(evidence):
         LABEL_LIMITED_READ,
         [
             (
-                'Coverage margin is limited because the current capacity, resource health, '
-                'or trust hierarchy read is incomplete.'
+                'BaseballOS cannot yet say how much room this bullpen has if the starter exits early. '
+                'This is a data-limited note, not a statement about injury status or manager intent.'
             )
         ],
         [UNKNOWN_INPUT_LIMITATION],
@@ -184,14 +184,17 @@ def _base_label(evidence):
     ]
 
     if capacity_state == CAPACITY_DEPLETED or resource_state == RESOURCE_DEPLETED:
-        reasons.append('Coverage is limited because either active capacity or the resource pool is depleted.')
-        return LABEL_LIMITED, reasons, []
+        return LABEL_LIMITED, [
+            'Coverage is limited because the stored bullpen pool is depleted.'
+        ], []
     if active <= 4 or clean <= 0:
-        reasons.append('Coverage is limited because too few active or clean options remain.')
-        return LABEL_LIMITED, reasons, []
+        return LABEL_LIMITED, [
+            'Coverage is limited because too few rested relievers remain.'
+        ], []
     if trusted_group <= 1 or top_available <= 0:
-        reasons.append('Coverage is limited because the active trust structure is too shallow.')
-        return LABEL_LIMITED, reasons, []
+        return LABEL_LIMITED, [
+            'Coverage is limited because the late-inning support layer is too thin.'
+        ], []
 
     trust_loss_material = (
         trust_unavailable >= THIN_TRUST_UNAVAILABLE_MIN
@@ -244,8 +247,9 @@ def _base_label(evidence):
         reasons.append('Coverage reads thin because the bullpen has some usable coverage but not a stable coverage shape.')
         return LABEL_THIN, reasons, []
 
-    reasons.append('Coverage is limited because the active capacity and trust structure do not support a broader read.')
-    return LABEL_LIMITED, reasons, []
+    return LABEL_LIMITED, [
+        'Coverage is limited because the stored coverage does not support a broader note.'
+    ], []
 
 
 def _apply_environment_context(label, reasons, evidence):
@@ -258,13 +262,19 @@ def _apply_environment_context(label, reasons, evidence):
     return label, reasons
 
 
-def _explanation(evidence):
-    return (
-        f"Coverage margin combines active capacity ({evidence['capacity_state']}), "
-        f"resource health ({evidence['resource_health_state']}), and trust structure "
-        f"({evidence['trusted_group_size']} trusted-group arms, "
-        f"{evidence['top_trust_bucket_available_count']} available in the top trust bucket)."
-    )
+def _explanation(evidence, label):
+    if label == LABEL_LIMITED_READ:
+        return (
+            'There is not enough recent workload data to read this bullpen yet. '
+            'This is a data-limited note, not a statement about injury status or manager intent.'
+        )
+    if label == LABEL_LIMITED:
+        return 'The late innings leave less margin if the starter exits early.'
+    if label == LABEL_THIN:
+        return 'The bullpen has some coverage, but less room if the starter exits early.'
+    if label == LABEL_STABLE:
+        return 'The bullpen has enough stored coverage to handle more than one relief inning.'
+    return 'The bullpen has enough stored coverage to protect a multi-inning bridge.'
 
 
 def build_bullpen_coverage_safety_read(
@@ -314,7 +324,7 @@ def build_bullpen_coverage_safety_read(
     return {
         'key': 'coverageSafety',
         'label': label,
-        'explanation': _explanation(evidence),
+        'explanation': _explanation(evidence, label),
         'supportingCounts': supporting_counts,
         'reasons': reasons,
         'source': 'backend',

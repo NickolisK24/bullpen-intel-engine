@@ -71,32 +71,32 @@ REASON_CODE_DEFINITIONS = {
     'WORKLOAD_RECENT_USAGE_ELEVATED': {
         'scope': ExplanationScope.WORKLOAD_STATE.value,
         'label': 'Recent usage elevated',
-        'summary': 'Recent public workload evidence contributes to elevated workload.',
+        'summary': 'A heavy recent stretch has the workload up.',
     },
     'FRESHNESS_STALE_SOURCE': {
         'scope': ExplanationScope.FRESHNESS_STATE.value,
         'label': 'Source freshness stale',
-        'summary': 'Source freshness is stale for the explained state.',
+        'summary': 'The stored workload data is stale.',
     },
     'COVERAGE_PARTIAL': {
         'scope': ExplanationScope.COVERAGE_STATE.value,
         'label': 'Coverage partial',
-        'summary': 'Coverage evidence is partial for the explained state.',
+        'summary': 'Some of the public workload detail is incomplete.',
     },
     'TRUST_LIMITED': {
         'scope': ExplanationScope.TRUST_STATE.value,
         'label': 'Trust limited',
-        'summary': 'Trust metadata limits confidence in the explanation.',
+        'summary': 'The public data is not strong enough for a fuller explanation.',
     },
     'AVAILABILITY_MONITOR_THRESHOLD_MET': {
         'scope': ExplanationScope.AVAILABILITY_STATE.value,
         'label': 'Monitor threshold met',
-        'summary': 'Governed availability evidence supports Monitor state.',
+        'summary': 'Recent usage is enough for BaseballOS to treat him as a monitor arm.',
     },
     'READINESS_DEGRADED_BY_LIMITATIONS': {
         'scope': ExplanationScope.READINESS_STATE.value,
         'label': 'Readiness degraded by limitations',
-        'summary': 'Readiness context is degraded by visible limitations.',
+        'summary': 'The public data is not strong enough to give this team a full bullpen readiness note.',
     },
 }
 

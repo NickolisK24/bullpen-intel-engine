@@ -218,7 +218,10 @@ def _limited_read(key, explanation, supporting_counts):
 
 
 def _role_limited_explanation(role_known_count, total, concept):
-    return f'Only {role_known_count} of {total} bullpen arms have clear role labels, so this part of the bullpen read stays limited.'
+    return (
+        f'There is not enough recent workload data to read {concept} yet. '
+        'This is a data-limited note, not a statement about injury status or manager intent.'
+    )
 
 
 def _trust_availability(summary):
@@ -289,7 +292,11 @@ def _clean_options(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'cleanOptions',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so BaseballOS cannot say how many clean options the manager really has.",
+            (
+                'BaseballOS cannot yet say how many rested late-inning arms are ready '
+                'from the stored data. This is a data-limited note, not a statement '
+                'about injury status or manager intent.'
+            ),
             counts,
         )
 
@@ -371,7 +378,11 @@ def _bullpen_pressure(summary):
     if summary['dataQuality']['readSparse']:
         return _limited_read(
             'bullpenPressure',
-            f"Only {summary['dataQuality']['readKnownCount']} of {summary['totalBullpenArms']} bullpen arms have clear workload or availability labels, so the late-inning pressure read stays cautious.",
+            (
+                'BaseballOS cannot yet say how much late-inning pressure is on this '
+                'bullpen from the stored data. This is a data-limited note, not a '
+                'statement about injury status or manager intent.'
+            ),
             counts,
         )
 

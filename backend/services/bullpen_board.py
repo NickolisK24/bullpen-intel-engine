@@ -53,7 +53,7 @@ GROUP_META = {
     },
     STATUS_LIMITED: {
         'label': 'Limited',
-        'description': 'Recent workload suggests limited use in the current availability read.',
+        'description': 'Recent workload suggests limited use from the latest completed data.',
     },
     STATUS_AVOID: {
         'label': 'Avoid',
@@ -61,7 +61,7 @@ GROUP_META = {
     },
     STATUS_UNAVAILABLE: {
         'label': 'Unavailable Pitchers',
-        'description': 'Not available in the current bullpen planning read.',
+        'description': 'Not available from the latest public workload and roster context.',
     },
 }
 
@@ -114,7 +114,7 @@ HEALTH_LABELS = {
     HEALTH_MANAGEABLE: 'Bullpen workload appears manageable.',
     HEALTH_MONITORING: 'Several relievers need a workload check.',
     HEALTH_ELEVATED: 'Bullpen workload is elevated.',
-    HEALTH_CONSTRAINED: 'The bullpen is short on clean options right now.',
+    HEALTH_CONSTRAINED: 'The bullpen is short on rested arms right now.',
     HEALTH_NO_DATA: 'No bullpen availability to summarize from the latest completed data.',
 }
 

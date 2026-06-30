@@ -106,6 +106,23 @@ def test_depleted_capacity_or_shallow_trust_structure_reads_limited():
 
     assert depleted['label'] == LABEL_LIMITED
     assert shallow['label'] == LABEL_LIMITED
+    text = ' '.join([
+        depleted['explanation'],
+        *depleted['reasons'],
+        shallow['explanation'],
+        *shallow['reasons'],
+    ]).lower()
+    for phrase in (
+        '0 trusted',
+        'trusted-group',
+        'top trust bucket',
+        'coverage margin',
+        'resource health',
+        'active capacity',
+        'trust structure',
+        'clean options',
+    ):
+        assert phrase not in text
 
 
 def test_unknown_inputs_return_limited_read_without_inventing_pressure():
@@ -117,6 +134,25 @@ def test_unknown_inputs_return_limited_read_without_inventing_pressure():
 
     assert result['label'] == LABEL_LIMITED_READ
     assert result['limitations']
+    text = ' '.join([
+        result['explanation'],
+        *result['reasons'],
+        *result['limitations'],
+    ]).lower()
+    for phrase in (
+        '0 of 0',
+        '0 trusted',
+        'trusted-group',
+        'top trust bucket',
+        'coverage margin',
+        'resource health',
+        'active capacity',
+        'trust structure',
+        '(unknown)',
+    ):
+        assert phrase not in text
+    assert 'data-limited note' in text
+    assert 'not a statement about injury status or manager intent' in text
 
 
 def test_missing_v2_inputs_return_none_for_legacy_fallback():

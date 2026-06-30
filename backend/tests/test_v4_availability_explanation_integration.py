@@ -85,6 +85,17 @@ def assert_governance_safe(payload):
     assert v4_governance_errors(payload) == []
 
 
+def assert_no_availability_meta_copy(payload):
+    serialized = stable_json_dumps(payload).lower()
+    for phrase in (
+        'governed availability evidence',
+        'explanation confidence mirrors',
+        'visibility reflects existing availability confidence',
+        'explained state',
+    ):
+        assert phrase not in serialized
+
+
 class TestV4AvailabilityExplanationIntegration:
     def test_available_state_explanation_preserves_status_and_governance(self, make_log):
         ref = date(2026, 6, 1)
@@ -194,6 +205,8 @@ class TestV4AvailabilityExplanationIntegration:
         assert evidence_by_type(payload)['availability_data_state']['value'] == 'stale'
         assert 'stale_data' in limitation_types(payload)
         assert 'limited_confidence' in limitation_types(payload)
+        assert 'BaseballOS is treating him as a monitor arm' in payload['summary']
+        assert_no_availability_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_missing_evidence_becomes_limitation_without_fabricated_workload(self):
@@ -214,6 +227,8 @@ class TestV4AvailabilityExplanationIntegration:
         assert 'limited_confidence' in limitation_types(payload)
         assert 'availability_fatigue_score' not in evidence
         assert 'availability_pitches_yesterday' not in evidence
+        assert 'recent workload data is missing' in payload['summary']
+        assert_no_availability_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_incomplete_evidence_becomes_partial_coverage_limitation(self, make_log):
@@ -231,6 +246,8 @@ class TestV4AvailabilityExplanationIntegration:
         assert 'COVERAGE_PARTIAL' in reason_codes(payload)
         assert 'partial_coverage' in limitation_types(payload)
         assert 'limited_confidence' in limitation_types(payload)
+        assert 'workload detail is incomplete' in payload['summary']
+        assert_no_availability_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_repeated_generation_is_deterministic(self, make_log):

@@ -95,6 +95,22 @@ EXPANDED_EDITORIAL_DENY_TERMS = (
     'clean options are limited',
     'availability distribution',
     'practical path',
+    '0 of 0',
+    'trusted-group',
+    'top trust bucket',
+    'coverage margin',
+    'resource health',
+    'active capacity',
+    'trust structure',
+    'trust hierarchy',
+    'trust metadata',
+    'explained state',
+    'availability read',
+    'bullpen planning read',
+    'explanation confidence mirrors',
+    'confidence mirrors',
+    'governed availability evidence',
+    'state reflects',
     'usable reliever',
     'route count',
     'active route',
@@ -120,6 +136,7 @@ EDITORIAL_BANNED_LANGUAGE = tuple(dict.fromkeys((
 )))
 
 RAW_COUNT_PATTERN = re.compile(r'(?<![\w-])\d+(?:\.\d+)?(?![\w-])')
+RAW_ARITHMETIC_PATTERN = re.compile(r'(?<![\w-])\d+\s+of\s+\d+(?![\w-])', re.IGNORECASE)
 NO_PLURALIZE_TOKENS = {'odds', 'news'}
 
 
@@ -332,6 +349,18 @@ def find_editorial_violations(text: Any, *, terms: tuple[str, ...] = EDITORIAL_B
         return []
     violations: list[EditorialViolation] = []
     seen: set[tuple[str, int, str]] = set()
+    if terms is EDITORIAL_BANNED_LANGUAGE:
+        for match in RAW_ARITHMETIC_PATTERN.finditer(value):
+            key = ('raw arithmetic pattern', match.start(), match.group(0).lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            violations.append(EditorialViolation(
+                term='raw arithmetic pattern',
+                match=match.group(0),
+                category='raw_count_formula',
+                start=match.start(),
+            ))
     for term in terms:
         pattern = _term_pattern(term)
         for match in pattern.finditer(value):

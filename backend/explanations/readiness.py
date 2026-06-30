@@ -233,16 +233,16 @@ def _freshness_reference(freshness: Mapping[str, Any]) -> dict[str, Any]:
 
 def _freshness_summary(status: str) -> str:
     if status == 'current':
-        return 'Readiness explanation uses current Team Operations freshness metadata.'
+        return 'The stored workload data is current enough for this team note.'
     if status == 'stale':
-        return 'Readiness explanation is limited by stale source freshness.'
+        return 'The safest team note stays limited because the workload data is stale.'
     if status == 'missing':
-        return 'Readiness explanation is limited by missing freshness metadata.'
+        return 'The safest team note stays limited because workload freshness is missing.'
     if status == 'incomplete':
-        return 'Readiness explanation is limited by incomplete freshness metadata.'
+        return 'The safest team note stays limited because workload freshness is incomplete.'
     if status == 'historical':
-        return 'Readiness explanation is limited by historical freshness metadata.'
-    return 'Readiness explanation freshness is unknown.'
+        return 'The safest team note stays limited because the workload data is historical.'
+    return 'The safest team note stays limited because workload freshness is unknown.'
 
 
 def _trust_reference(trust_metadata: Mapping[str, Any]) -> dict[str, Any]:
@@ -270,19 +270,36 @@ def _trust_reference(trust_metadata: Mapping[str, Any]) -> dict[str, Any]:
         'contract': READINESS_EXPLANATION_CONTRACT,
         'certification_status': READINESS_EXPLANATION_CERTIFICATION_STATUS,
         'trust_failure': trust_failure,
-        'summary': 'Trust reflects existing Team Operations metadata and confidence.',
+        'summary': _trust_summary(status),
     }
+
+
+def _trust_summary(status: str) -> str:
+    if status == 'trusted':
+        return 'The public workload record is strong enough for this team note.'
+    if status == 'failed':
+        return 'The public data is not strong enough to give this team a readiness note.'
+    if status == 'unknown':
+        return 'The safest team note stays limited until the public data is clearer.'
+    return 'The public data is not strong enough to give this team a full bullpen readiness note.'
 
 
 def _confidence_reference(trust_metadata: Mapping[str, Any]) -> dict[str, Any]:
     confidence = _confidence_level(trust_metadata)
     return {
         'level': confidence,
-        'summary': (
-            'Explanation confidence mirrors the existing Team Operations '
-            'confidence metadata.'
-        ),
+        'summary': _confidence_summary(confidence),
     }
+
+
+def _confidence_summary(confidence: str) -> str:
+    if confidence == 'high':
+        return 'The public workload record is strong enough for this note.'
+    if confidence == 'low':
+        return 'The safest note stays limited until the public workload picture is stronger.'
+    if confidence == 'unknown':
+        return 'The safest note stays limited until the public workload picture is clearer.'
+    return 'The safest note stays limited to what the public workload record can support.'
 
 
 def _state_explained(
@@ -326,16 +343,15 @@ def _state_explained(
 
 def _summary(scope: str) -> str:
     if scope == 'workload_state':
-        return 'This workload state reflects team-level workload pressure evidence.'
+        return 'This note focuses on whether recent workload is pressing on the bullpen.'
     if scope == 'coverage_state':
-        return 'This coverage state reflects workload, availability, and handedness coverage evidence.'
+        return 'This note focuses on whether the public data can describe bullpen coverage.'
     if scope == 'freshness_state':
-        return 'This freshness state reflects source sync and workload-recency evidence.'
+        return 'This note focuses on how current the stored workload data is.'
     if scope == 'trust_state':
-        return 'This trust state reflects Team Operations trust metadata and confidence evidence.'
+        return 'This note focuses on how much the public workload record can support.'
     return (
-        'This readiness state reflects workload, freshness, coverage, trust, '
-        'and limitation evidence.'
+        'The public data is not strong enough to give this team a full bullpen readiness note.'
     )
 
 
@@ -742,29 +758,29 @@ def _limitations(
     if freshness_status == 'stale':
         add_limitation(
             'stale_data',
-            'Readiness explanation is limited by stale freshness metadata.',
+            'The team note is limited because the workload data is stale.',
         )
     elif freshness_status in {'missing', 'unknown'}:
         add_limitation(
             'missing_data',
-            'Readiness explanation is limited by missing freshness metadata.',
+            'The team note is limited because workload freshness is missing.',
         )
     elif freshness_status in {'incomplete', 'historical'}:
         add_limitation(
             'partial_coverage',
-            'Readiness explanation is limited by incomplete freshness metadata.',
+            'The team note is limited because workload freshness is incomplete.',
         )
 
     trust_ref = _trust_reference(trust)
     if trust_ref['status'] == 'limited':
         add_limitation(
             'limited_confidence',
-            'Readiness explanation confidence is limited by trust metadata.',
+            'The safest read is limited until the public workload picture is stronger.',
         )
     elif trust_ref['status'] in {'failed', 'unknown'}:
         add_limitation(
             'limited_confidence',
-            'Readiness explanation trust status limits confidence.',
+            'The safest read is limited until the public workload picture is clearer.',
         )
 
     return tuple(limitations)

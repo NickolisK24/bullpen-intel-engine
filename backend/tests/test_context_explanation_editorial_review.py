@@ -42,8 +42,11 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
             'source_path': 'explanations.readiness.serialize_readiness_explanation',
             'fallback_status': 'data_limited',
             'rendered_public_copy': [
-                'This readiness state reflects workload, freshness, coverage, trust, and limitation evidence.',
-                'Readiness context is degraded by visible limitations.',
+                'The public data is not strong enough to give this team a full bullpen readiness note.',
+                'Readiness is based on public workload data, not private team information.',
+                'Readiness is not injury or medical information.',
+                'Readiness is not a performance forecast.',
+                'Manager intent and bullpen warm-up state are not available.',
             ],
             'structured_fields_used': {
                 'readiness': {'status_code': 'data_limited'},
@@ -52,10 +55,24 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
                 'primary_reasons': [
                     {
                         'code': 'READINESS_DEGRADED_BY_LIMITATIONS',
-                        'summary': 'Readiness context is degraded by visible limitations.',
+                        'summary': 'The public data is not strong enough to give this team a full bullpen readiness note.',
                     },
                 ],
             },
+        },
+        {
+            'surface_name': 'Team bullpen shape explanations',
+            'team': 'Los Angeles Angels (LAA, 108)',
+            'pitcher': None,
+            'status': 'team_shape',
+            'role_or_classification': {'read_labels': ['Limited Read']},
+            'source_path': 'services.team_bullpen_shape.build_team_bullpen_shape',
+            'fallback_status': 'limited_read_shape',
+            'rendered_public_copy': [
+                'Only 0 of 0 bullpen arms have clear workload or availability labels.',
+            ],
+            'structured_fields_used': {},
+            'evidence_sections': {},
         },
     ]
 
@@ -63,20 +80,29 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
         seed_examples=examples,
         seed_missing_categories={'pitcher_availability_statuses': ['Avoid']},
         generated_at='2026-06-29T00:00:00',
-        artifact_path='artifacts/context_explanation_editorial_review_E2D1.md',
+        artifact_path='artifacts/context_explanation_editorial_review_E2D2.md',
     )
     output = write_context_explanation_editorial_review(
         report,
-        tmp_path / 'context_explanation_editorial_review_E2D1.md',
+        tmp_path / 'context_explanation_editorial_review_E2D2.md',
     )
     text = output.read_text(encoding='utf-8')
 
-    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D1.md'
-    assert report['example_count'] == 2
+    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D2.md'
+    assert report['example_count'] == 3
     assert report['retired_phrase_scan']['status'] == 'warn'
     assert report['retired_phrase_scan']['violation_count'] >= 1
+    assert report['raw_count_formula_scan']['status'] == 'warn'
+    assert any(
+        item['match'] == '0 of 0'
+        for item in report['raw_count_formula_scan']['violations']
+    )
+    assert report['disclaimer_preservation_check']['status'] == 'pass'
     assert 'Clean Option' in text
-    assert 'This readiness state reflects workload, freshness, coverage, trust, and limitation evidence.' in text
+    assert 'The public data is not strong enough to give this team a full bullpen readiness note.' in text
+    assert 'Raw-Count / Formula Scan' in text
+    assert 'Circular-Meta Scan' in text
+    assert 'Disclaimer Preservation Check' in text
     assert 'pitcher_availability_statuses' in text
     assert 'Avoid' in text
     assert 'Context Explanation Examples' in text

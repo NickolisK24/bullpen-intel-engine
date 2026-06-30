@@ -182,6 +182,27 @@ def assert_governance_safe(payload):
     assert v4_governance_errors(payload) == []
 
 
+TRUST_FIRST_DISCLAIMERS = (
+    'Readiness is based on public workload data, not private team information.',
+    'Readiness is not injury or medical information.',
+    'Readiness is not a performance forecast.',
+    'Manager intent and bullpen warm-up state are not available.',
+)
+
+
+def assert_no_readiness_meta_copy(payload):
+    serialized = stable_json_dumps(payload).lower()
+    for phrase in (
+        'explanation confidence mirrors',
+        'confidence mirrors',
+        'trust metadata limits',
+        'readiness explanation confidence',
+        'state reflects',
+        'explained state',
+    ):
+        assert phrase not in serialized
+
+
 class TestV4TeamOperationsReadinessExplanationIntegration:
     def test_operationally_stable_readiness_explanation_preserves_payload(self):
         readiness = readiness_payload()
@@ -279,6 +300,8 @@ class TestV4TeamOperationsReadinessExplanationIntegration:
         assert payload['trust']['status'] == 'limited'
         assert payload['confidence']['level'] == 'low'
         assert 'limited_confidence' in limitation_types(payload)
+        assert 'public workload picture is stronger' in stable_json_dumps(payload)
+        assert_no_readiness_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_refused_readiness_explanation_maps_fail_closed_limitations(self):
@@ -293,6 +316,7 @@ class TestV4TeamOperationsReadinessExplanationIntegration:
         assert 'READINESS_DEGRADED_BY_LIMITATIONS' in reason_codes(payload)
         assert 'TRUST_LIMITED' in reason_codes(payload)
         assert 'missing_data' in limitation_types(payload)
+        assert_no_readiness_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_missing_or_unavailable_evidence_becomes_limitation_not_fabrication(self):
@@ -304,6 +328,11 @@ class TestV4TeamOperationsReadinessExplanationIntegration:
         assert evidence['coverage_inventory_missing_workload_data_count']['value'] == 1
         assert 'partial_coverage' in limitation_types(payload)
         assert 'readiness_risk_distribution' not in evidence
+        serialized = stable_json_dumps(payload)
+        for disclaimer in TRUST_FIRST_DISCLAIMERS:
+            assert disclaimer in serialized
+        assert 'full bullpen readiness note' in serialized
+        assert_no_readiness_meta_copy(payload)
         assert_governance_safe(payload)
 
     def test_repeated_generation_is_deterministic(self):

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from pathlib import Path
 import json
+import re
 from typing import Any, Iterable, Mapping
 
 from services.editorial_voice_contract_v1 import find_editorial_violations
@@ -55,6 +56,7 @@ TEAM_READINESS_SCOPES = (
 RETIRED_PUBLIC_PHRASES = (
     'clean option',
     'clean options',
+    '0 of 0',
     'clean arms',
     'short list of clean arms',
     'clean way',
@@ -62,10 +64,54 @@ RETIRED_PUBLIC_PHRASES = (
     'usable group',
     'usable depth',
     'in good shape',
+    'trusted-group',
+    'top trust bucket',
+    'coverage margin',
+    'resource health',
+    'active capacity',
+    'trust structure',
+    'trust hierarchy',
+    'trust metadata',
+    'explained state',
+    'availability read',
+    'bullpen planning read',
+    'explanation confidence mirrors',
+    'confidence mirrors',
+    'governed availability evidence',
+    'state reflects',
     'availability distributions',
     'practical path',
     'practical paths',
     '0 trusted',
+)
+
+RAW_COUNT_FORMULA_PATTERN = re.compile(r'(?<![\w-])\d+\s+of\s+\d+(?![\w-])', re.IGNORECASE)
+PARENTHETICAL_UNKNOWN_FORMULA_PATTERN = re.compile(r'\([^)]*\bunknown\b[^)]*\)', re.IGNORECASE)
+FORMULA_TERMS = (
+    'trusted-group',
+    'top trust bucket',
+    'coverage margin',
+    'resource health',
+    'active capacity',
+    'trust structure',
+    'trust hierarchy',
+    '0 trusted',
+)
+CIRCULAR_META_TERMS = (
+    'explanation confidence mirrors',
+    'confidence mirrors',
+    'visibility reflects existing availability confidence',
+    'governed availability evidence',
+    'state reflects',
+    'explained state',
+    'trust metadata',
+    'readiness explanation confidence',
+)
+TRUST_FIRST_DISCLAIMERS = (
+    'Readiness is based on public workload data, not private team information.',
+    'Readiness is not injury or medical information.',
+    'Readiness is not a performance forecast.',
+    'Manager intent and bullpen warm-up state are not available.',
 )
 
 INVENTORIED_SURFACES = (
@@ -145,6 +191,9 @@ def build_context_explanation_editorial_review(
             examples, missing, data_notes, team_ids = _collect_current_examples(app)
 
         scans = _scan_examples(examples)
+        raw_count_formula_scan = _raw_count_formula_scan(examples)
+        circular_meta_scan = _circular_meta_scan(examples)
+        disclaimer_check = _disclaimer_preservation_check(examples)
         summary = _surface_summary(examples)
         coverage = _coverage_summary(examples, missing)
 
@@ -170,8 +219,17 @@ def build_context_explanation_editorial_review(
             'coverage_summary': coverage,
             'missing_categories': missing,
             'data_notes': data_notes,
+            'before_after_summary': _before_after_summary(
+                scans=scans,
+                raw_count_formula_scan=raw_count_formula_scan,
+                circular_meta_scan=circular_meta_scan,
+                disclaimer_check=disclaimer_check,
+            ),
             'banned_language_scan': scans['banned_language_scan'],
             'retired_phrase_scan': scans['retired_phrase_scan'],
+            'raw_count_formula_scan': raw_count_formula_scan,
+            'circular_meta_scan': circular_meta_scan,
+            'disclaimer_preservation_check': disclaimer_check,
             'fallback_summary': _fallback_summary(examples),
             'examples': examples,
         }
@@ -207,7 +265,7 @@ def render_context_explanation_editorial_review_markdown(
         f'# Context Explanation Editorial Review Corpus - {label}',
         '',
         'Read-only export of current Pitcher Context and Team Context '
-        'explanation copy before E2 Editorial Voice migration.',
+        'explanation copy for E2 Editorial Voice review.',
         '',
         '## Export Metadata',
         '',
@@ -221,6 +279,10 @@ def render_context_explanation_editorial_review_markdown(
         '',
         _json_block(report.get('coverage_summary') or {}),
         '',
+        '## Before / After Summary',
+        '',
+        _json_block(report.get('before_after_summary') or {}),
+        '',
         '## Editorial Banned-Language Scan',
         '',
         _scan_status_line(report.get('banned_language_scan'), 'banned language'),
@@ -228,6 +290,18 @@ def render_context_explanation_editorial_review_markdown(
         '## Retired Phrase Scan',
         '',
         _scan_status_line(report.get('retired_phrase_scan'), 'retired phrase'),
+        '',
+        '## Raw-Count / Formula Scan',
+        '',
+        _scan_status_line(report.get('raw_count_formula_scan'), 'raw-count or formula'),
+        '',
+        '## Circular-Meta Scan',
+        '',
+        _scan_status_line(report.get('circular_meta_scan'), 'circular-meta'),
+        '',
+        '## Disclaimer Preservation Check',
+        '',
+        _json_block(report.get('disclaimer_preservation_check') or {}),
         '',
         '## Fallbacks Found',
         '',
@@ -805,6 +879,108 @@ def _scan_examples(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _raw_count_formula_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    violations = []
+    for index, example in enumerate(examples, start=1):
+        text = '\n'.join(_public_texts(example))
+        for match in RAW_COUNT_FORMULA_PATTERN.finditer(text):
+            violations.append(_scan_row(index, example, match.group(0), 'raw arithmetic pattern', match.start()))
+        for match in PARENTHETICAL_UNKNOWN_FORMULA_PATTERN.finditer(text):
+            violations.append(_scan_row(index, example, match.group(0), 'parenthetical unknown formula', match.start()))
+        lowered = text.lower()
+        for term in FORMULA_TERMS:
+            start = lowered.find(term)
+            if start >= 0:
+                violations.append(_scan_row(index, example, text[start:start + len(term)], term, start))
+    return {
+        'scope': 'rendered public context explanation copy only',
+        'status': 'pass' if not violations else 'warn',
+        'violation_count': len(violations),
+        'violations': violations,
+        'terms': FORMULA_TERMS,
+    }
+
+
+def _circular_meta_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    violations = []
+    for index, example in enumerate(examples, start=1):
+        text = '\n'.join(_public_texts(example))
+        lowered = text.lower()
+        for term in CIRCULAR_META_TERMS:
+            start = lowered.find(term)
+            if start >= 0:
+                violations.append(_scan_row(index, example, text[start:start + len(term)], term, start))
+    return {
+        'scope': 'rendered public context explanation copy only',
+        'status': 'pass' if not violations else 'warn',
+        'violation_count': len(violations),
+        'violations': violations,
+        'terms': CIRCULAR_META_TERMS,
+    }
+
+
+def _scan_row(
+    index: int,
+    example: Mapping[str, Any],
+    match: str,
+    term: str,
+    start: int,
+) -> dict[str, Any]:
+    return {
+        'example_index': index,
+        'surface_name': example.get('surface_name'),
+        'team': example.get('team'),
+        'pitcher': example.get('pitcher'),
+        'term': term,
+        'match': match,
+        'start': start,
+    }
+
+
+def _disclaimer_preservation_check(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    readiness_text = '\n'.join(
+        text
+        for example in examples
+        if example.get('surface_name') == 'Team Operations readiness V4 explanation'
+        for text in _public_texts(example)
+    )
+    missing = [
+        disclaimer for disclaimer in TRUST_FIRST_DISCLAIMERS
+        if disclaimer not in readiness_text
+    ]
+    return {
+        'scope': 'Team Operations readiness V4 rendered public copy',
+        'status': 'pass' if not missing else 'warn',
+        'required_disclaimers': TRUST_FIRST_DISCLAIMERS,
+        'missing_disclaimers': missing,
+    }
+
+
+def _before_after_summary(
+    *,
+    scans: Mapping[str, Any],
+    raw_count_formula_scan: Mapping[str, Any],
+    circular_meta_scan: Mapping[str, Any],
+    disclaimer_check: Mapping[str, Any],
+) -> dict[str, Any]:
+    prior_path = Path('artifacts/context_explanation_editorial_review_E2D1.md')
+    prior_text = prior_path.read_text(encoding='utf-8') if prior_path.exists() else ''
+    prior_flags = {
+        'raw_arithmetic_examples': len(RAW_COUNT_FORMULA_PATTERN.findall(prior_text)),
+        'formula_term_examples': sum(prior_text.lower().count(term) for term in FORMULA_TERMS),
+        'circular_meta_examples': sum(prior_text.lower().count(term) for term in CIRCULAR_META_TERMS),
+    } if prior_text else {}
+    return {
+        'prior_artifact': str(prior_path) if prior_text else None,
+        'prior_artifact_string_counts': prior_flags,
+        'current_banned_language_status': (scans.get('banned_language_scan') or {}).get('status'),
+        'current_retired_phrase_status': (scans.get('retired_phrase_scan') or {}).get('status'),
+        'current_raw_count_formula_status': raw_count_formula_scan.get('status'),
+        'current_circular_meta_status': circular_meta_scan.get('status'),
+        'disclaimer_preservation_status': disclaimer_check.get('status'),
+    }
+
+
 def _surface_summary(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     by_surface = Counter(str(example.get('surface_name') or 'unknown') for example in examples)
     by_status: dict[str, Counter[str]] = defaultdict(Counter)
@@ -916,6 +1092,7 @@ def _metadata(report: Mapping[str, Any]) -> dict[str, Any]:
             'team_ids_reviewed',
             'example_count',
             'data_notes',
+            'before_after_summary',
         )
     }
 
