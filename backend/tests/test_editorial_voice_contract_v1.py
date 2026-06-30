@@ -110,6 +110,7 @@ def test_editorial_banned_language_helper_catches_singular_plural_loopholes():
         'The availability distribution looks similar.',
         'Clean option is limited as the public explanation.',
         'Clean options are limited as the public explanation.',
+        'The secondary arms are carrying caution.',
         'Interpretation weighs clean Trust Arms above clean Depth Arms.',
         'Late-inning pressure weighs Trust and Bridge Arm stress above Depth Arm stress.',
         'Two relievers are classified Available.',

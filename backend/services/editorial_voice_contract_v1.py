@@ -101,6 +101,7 @@ EXPANDED_EDITORIAL_DENY_TERMS = (
     '3-spot change',
     'clean option is limited',
     'clean options are limited',
+    'carrying caution',
     'availability distribution',
     'practical path',
     '0 of 0',

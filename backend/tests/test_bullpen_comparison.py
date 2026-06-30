@@ -116,6 +116,18 @@ class TestObservations:
         assert restricted['team_a_value'] == 2
         assert restricted['team_b_value'] == 5
 
+    def test_monitor_dimension_uses_workload_language_not_caution(self):
+        a = board('Aces', 'AAA', {'Available': 5, 'Monitor': 3})
+        b = board('Bears', 'BBB', {'Available': 5, 'Monitor': 1})
+        comp = build_team_comparison(a, b)
+        monitor = next(o for o in comp['observations'] if o['dimension'] == 'monitor')
+        text = ' '.join(public_comparison_copy(comp)).lower()
+
+        assert monitor['leader'] == 'A'
+        assert 'carrying recent workload' in monitor['statement']
+        assert 'fewer workload flags' in comp['summary']['statement']
+        assert 'carrying caution' not in text
+
     def test_uses_neutral_language_no_grading_terms(self):
         a = board('Aces', 'AAA', {'Available': 6, 'Avoid': 1})
         b = board('Bears', 'BBB', {'Available': 3, 'Avoid': 4})

@@ -102,8 +102,8 @@ def _dimension_reason_lines(dimension_key, label_a, label_b, value_a, value_b):
             ),
         ]
     return [
-        _reason_line(label_a, value_a, 'watch-list arm', 'watch-list arms', ' carrying caution'),
-        _reason_line(label_b, value_b, 'watch-list arm', 'watch-list arms', ' carrying caution'),
+        _reason_line(label_a, value_a, 'watch-list arm', 'watch-list arms', ' carrying recent workload'),
+        _reason_line(label_b, value_b, 'watch-list arm', 'watch-list arms', ' carrying recent workload'),
     ]
 
 
@@ -127,7 +127,7 @@ def _tie_statement(dimension_key, value):
         )
     return _comparison_sentence(
         subject='Both bullpens carry the same watch-list traffic',
-        reason=f'each side has {_count_phrase(value, "watch-list arm", "watch-list arms")} carrying caution',
+        reason=f'each side has {_count_phrase(value, "watch-list arm", "watch-list arms")} carrying recent workload',
         consequence='That keeps the bridge comparison even before the late arms',
         stable_parts=('compare_bullpens', dimension_key, 'tie', value),
     )
@@ -159,7 +159,9 @@ def _leader_statement(dimension_key, leader_label, other_label, leader_value, ot
         subject=f'{leader_label} has more bullpen watch traffic',
         reason=(
             f'{_has_count(leader_label, leader_value, "watch-list arm", "watch-list arms")} '
-            f'while {_has_count(other_label, other_value, "watch-list arm", "watch-list arms")}'
+            'carrying recent workload while '
+            f'{_has_count(other_label, other_value, "watch-list arm", "watch-list arms")} '
+            'carrying recent workload'
         ),
         consequence='That puts more of the side-by-side read on who is fully clear',
         stable_parts=('compare_bullpens', dimension_key, leader_label, other_label, leader_value, other_value),
@@ -320,7 +322,7 @@ def _difference_summary(label_a, label_b, metrics_a, metrics_b, observations):
                 f'{higher_label} carries {_count_phrase(higher_value, "watch-list arm", "watch-list arms")} '
                 f'while {lower_label} carries {_count_phrase(lower_value, "watch-list arm", "watch-list arms")}'
             ),
-            consequence=f'That leaves fewer caution flags around {lower_label} in the side-by-side read',
+            consequence=f'That leaves fewer workload flags around {lower_label} in the side-by-side read',
             stable_parts=('compare_bullpens', 'summary', 'monitor', higher_label, lower_label, higher_value, lower_value),
         )
     return {
