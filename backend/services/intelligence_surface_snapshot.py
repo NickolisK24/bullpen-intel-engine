@@ -14,8 +14,11 @@ ranking, publishability, or story content — it only caches the builder's outpu
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import logging
 from datetime import date, datetime
+from pathlib import Path
 from time import perf_counter
 
 from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
@@ -29,9 +32,42 @@ from utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
-# Bump to invalidate every stored snapshot without a data migration (e.g. if the
-# response shape changes). Stored alongside reference_date as the lookup key.
-SNAPSHOT_VERSION = 'intelligence_surface_v1'
+# Stored alongside reference_date as the lookup key. Include a deterministic
+# completed-game story-generation fingerprint so writer logic changes invalidate
+# stale persisted prose without a data migration.
+SNAPSHOT_FAMILY = 'intelligence_surface_v1'
+SNAPSHOT_METADATA_KEY = '_snapshot_metadata'
+
+_FINGERPRINTED_SOURCE_FILES = (
+    'story_orchestrator/__init__.py',
+    'story_orchestrator/story_orchestrator.py',
+    'story_writers/base_story_writer.py',
+    'story_writers/team_story_writer.py',
+    'story_writers/dashboard_story_writer.py',
+    'story_writers/morning_brief_writer.py',
+    'services/coin_story_inspection.py',
+    'services/evidence_composition_service.py',
+    'services/editorial_voice_contract_v1.py',
+    'services/narrative_context_service.py',
+    'services/narrative_feed_builder.py',
+    'utils/baseball_innings.py',
+)
+
+
+def _story_generation_fingerprint() -> str:
+    backend_dir = Path(__file__).resolve().parents[1]
+    digest = hashlib.sha256()
+    for rel_path in _FINGERPRINTED_SOURCE_FILES:
+        path = backend_dir / rel_path
+        digest.update(rel_path.encode('utf-8'))
+        digest.update(b'\0')
+        digest.update(path.read_bytes())
+        digest.update(b'\0')
+    return digest.hexdigest()[:12]
+
+
+SNAPSHOT_WRITER_FINGERPRINT = _story_generation_fingerprint()
+SNAPSHOT_VERSION = f'{SNAPSHOT_FAMILY}_{SNAPSHOT_WRITER_FINGERPRINT}'
 
 SERVED_FROM_SNAPSHOT = 'snapshot'
 SERVED_FROM_ON_DEMAND = 'on_demand'
@@ -141,7 +177,18 @@ def read_snapshot(reference_date, version=SNAPSHOT_VERSION):
         reference_date=ref_date,
         snapshot_version=version,
     )
-    return row.response_json if row is not None else None
+    if row is None:
+        return None
+    if not _stored_response_is_current(row.response_json, version):
+        logger.warning(
+            'Ignoring stale intelligence surface snapshot: reference_date=%s '
+            'version=%s expected_fingerprint=%s.',
+            ref_date,
+            version,
+            SNAPSHOT_WRITER_FINGERPRINT,
+        )
+        return None
+    return _public_response(row.response_json)
 
 
 def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
@@ -165,8 +212,10 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
             reference_date=ref_date, snapshot_version=version)
         db.session.add(row)
 
+    generated_at = utc_now_naive()
     row.status = response.get('status')
-    row.response_json = response
+    row.response_json = _stored_response(response, source=source, version=version,
+                                         generated_at=generated_at)
     row.lead_story_team_id = lead.get('team_id')
     row.lead_story_game_pk = lead.get('game_pk')
     row.candidates_considered = response.get('candidates_considered') or 0
@@ -174,7 +223,7 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
     row.empty_reason = response.get('empty_reason')
     row.errors = response.get('errors') or 0
     row.source = source
-    row.generated_at = utc_now_naive()
+    row.generated_at = generated_at
     db.session.commit()
     return row
 
@@ -201,6 +250,37 @@ def _as_date(value):
         return date.fromisoformat(str(value))
     except (ValueError, TypeError):
         return None
+
+
+def _stored_response(response, *, source, version, generated_at):
+    payload = _public_response(response)
+    payload[SNAPSHOT_METADATA_KEY] = {
+        'snapshot_version': version,
+        'snapshot_family': SNAPSHOT_FAMILY,
+        'story_writer_fingerprint': SNAPSHOT_WRITER_FINGERPRINT,
+        'source': source,
+        'generated_at': generated_at.isoformat() if generated_at else None,
+    }
+    return payload
+
+
+def _public_response(response):
+    payload = copy.deepcopy(response or {})
+    payload.pop(SNAPSHOT_METADATA_KEY, None)
+    return payload
+
+
+def _stored_response_is_current(response, version) -> bool:
+    if not isinstance(response, dict):
+        return False
+    metadata = response.get(SNAPSHOT_METADATA_KEY)
+    if not isinstance(metadata, dict):
+        return False
+    return (
+        metadata.get('snapshot_version') == version
+        and metadata.get('snapshot_family') == SNAPSHOT_FAMILY
+        and metadata.get('story_writer_fingerprint') == SNAPSHOT_WRITER_FINGERPRINT
+    )
 
 
 def _log_timing(served_from, response, start):

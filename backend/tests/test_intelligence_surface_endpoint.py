@@ -14,6 +14,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.intelligence_surface_service as surface
+import services.intelligence_surface_snapshot as surface_snapshot
 import services.sync as sync_service
 from utils.db import db
 from models.completed_game_context import CompletedGameContext
@@ -223,7 +224,7 @@ def test_read_failure_returns_honest_503_without_leaking_db_error(client, monkey
 
     def _raise(*a, **k):
         raise SnapshotReadUnavailable('intelligence_surface', _FIXED_TODAY,
-                                      'intelligence_surface_v1')
+                                      surface_snapshot.SNAPSHOT_VERSION)
 
     monkeypatch.setattr(bullpen_api, 'serve_today_lead_story', _raise)
 

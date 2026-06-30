@@ -19,6 +19,7 @@ import services.intelligence_surface_service as surface_service
 from services import intelligence_surface_snapshot as snap
 from services.intelligence_surface_snapshot import (
     SNAPSHOT_VERSION,
+    generate_snapshot_for_date,
     read_snapshot,
     serve_today_lead_story,
     write_snapshot,
@@ -93,6 +94,93 @@ def _seed_low_confidence(team_id, game_pk, game_date=_REF):
     return row
 
 
+def _seed_burke_tied_handoff(game_date=_REF):
+    row = CompletedGameContext(
+        team_id=145,
+        game_pk=824822,
+        game_date=game_date,
+        bullpen_story_tag='bullpen_kept_team_alive',
+        confidence='HIGH',
+        starter_name='Sean Burke',
+        starter_ip=16 / 3,
+        starter_pitch_count=89,
+        starter_exit_inning=6,
+        starter_exit_score_for=2,
+        starter_exit_score_against=2,
+        bullpen_entry_inning=6,
+        bullpen_entry_score_for=2,
+        bullpen_entry_score_against=2,
+        lead_when_bullpen_entered=None,
+        deficit_when_bullpen_entered=None,
+        largest_lead=6,
+        largest_deficit=1,
+        late_runs_allowed=0,
+        runs_allowed_innings_7_to_9=0,
+        lead_protected=None,
+        lead_lost=None,
+        comeback_completed=True,
+        turning_inning=3,
+        game_shape_created='normal_start',
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
+def _stale_burke_response(reference_date):
+    return {
+        'status': 'ok',
+        'reference_date': reference_date.isoformat(),
+        'lead_story': {
+            'team_id': 145,
+            'game_pk': 824822,
+            'package': {},
+            'drafts': {
+                'team_story': {
+                    'writer': 'team_story',
+                    'headline': 'Bullpen kept it alive',
+                    'body': (
+                        "After their most recent game, Sean Burke's 5.3 innings "
+                        'left a one-run deficit to erase, but the bullpen kept '
+                        'it from growing. The offense finished the rally.'
+                    ),
+                    'evidence': ['Starter: Sean Burke, 5.3 IP, 89 pitches'],
+                    'rendered_text': (
+                        "Bullpen kept it alive\n\nAfter their most recent game, "
+                        "Sean Burke's 5.3 innings left a one-run deficit to "
+                        'erase, but the bullpen kept it from growing.\n\n'
+                        'Evidence:\n- Starter: Sean Burke, 5.3 IP, 89 pitches'
+                    ),
+                },
+            },
+            'selection': {'rank': 1},
+        },
+        'candidates_considered': 1,
+        'publishable_candidates': 1,
+        'errors': 0,
+        'empty_reason': None,
+    }
+
+
+def _insert_snapshot_row(reference_date, *, version, response):
+    row = IntelligenceSurfaceSnapshot(
+        reference_date=reference_date,
+        snapshot_version=version,
+        status=response.get('status'),
+        response_json=response,
+        lead_story_team_id=145,
+        lead_story_game_pk=824822,
+        candidates_considered=response.get('candidates_considered') or 0,
+        publishable_candidates=response.get('publishable_candidates') or 0,
+        empty_reason=response.get('empty_reason'),
+        errors=response.get('errors') or 0,
+        source='stale_test_fixture',
+    )
+    db.session.add(row)
+    db.session.commit()
+    return row
+
+
 def _store_marker_snapshot(reference_date, team_id):
     """A hand-written 'ok' snapshot whose lead team has no context row, so it can
     only be returned from the cache (a live build would find nothing)."""
@@ -108,6 +196,16 @@ def _store_marker_snapshot(reference_date, team_id):
     }
     write_snapshot(response, source='test_marker')
     return response
+
+
+def _lead_blob(response):
+    lead = (response or {}).get('lead_story') or {}
+    drafts = lead.get('drafts') or {}
+    return ' '.join(
+        ' '.join(str(draft.get(key) or '') for key in ('headline', 'body', 'rendered_text'))
+        for draft in drafts.values()
+        if isinstance(draft, dict)
+    )
 
 
 # ── 1. Snapshot is returned when present ──────────────────────────────────────
@@ -164,6 +262,9 @@ def test_missing_snapshot_falls_back_then_persists(app):
         assert row.status == 'ok'
         assert row.lead_story_team_id == 137
         assert row.source == 'on_demand'
+        assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+        assert row.response_json['_snapshot_metadata']['story_writer_fingerprint']
+        assert '_snapshot_metadata' not in stored
 
 
 def test_persist_false_does_not_store(app):
@@ -171,6 +272,89 @@ def test_persist_false_does_not_store(app):
         _seed_lost_game_shape(137, 137000)
         serve_today_lead_story(reference_date=_REF, persist=False)
         assert read_snapshot(_REF) is None
+
+
+def test_old_writer_version_snapshot_is_not_served_and_is_rebuilt(app):
+    with app.app_context():
+        _seed_burke_tied_handoff()
+        stale = _stale_burke_response(_REF)
+        _insert_snapshot_row(
+            _REF,
+            version='intelligence_surface_v1',
+            response=stale,
+        )
+
+        result = serve_today_lead_story(reference_date=_REF)
+
+        blob = _lead_blob(result).lower()
+        assert result['lead_story']['team_id'] == 145
+        assert '5.1 innings' in blob
+        assert '5.1 ip' in str(result['lead_story']['drafts']).lower()
+        assert 'tied game' in blob
+        assert '5.3' not in blob
+        assert 'one-run deficit to erase' not in blob
+
+        stale_row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version='intelligence_surface_v1',
+        ).one()
+        current_row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+        assert stale_row.response_json == stale
+        assert current_row.source == 'on_demand'
+        assert current_row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+
+
+def test_current_version_snapshot_missing_metadata_is_not_served(app):
+    with app.app_context():
+        _seed_burke_tied_handoff()
+        _insert_snapshot_row(
+            _REF,
+            version=SNAPSHOT_VERSION,
+            response=_stale_burke_response(_REF),
+        )
+
+        assert read_snapshot(_REF) is None
+        result = serve_today_lead_story(reference_date=_REF)
+
+        blob = _lead_blob(result).lower()
+        assert '5.1 innings' in blob
+        assert 'tied game' in blob
+        assert 'one-run deficit to erase' not in blob
+        row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+        assert row.source == 'on_demand'
+        assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+        assert '5.3 innings' not in str(row.response_json).lower()
+
+
+def test_snapshot_refresh_overwrites_stale_completed_game_story(app):
+    with app.app_context():
+        _seed_burke_tied_handoff()
+        _insert_snapshot_row(
+            _REF,
+            version=SNAPSHOT_VERSION,
+            response=_stale_burke_response(_REF),
+        )
+
+        result = generate_snapshot_for_date(_REF, source='test_refresh')
+
+        blob = _lead_blob(result).lower()
+        assert '5.1 innings' in blob
+        assert 'tied game' in blob
+        assert '5.3' not in blob
+        assert 'one-run deficit to erase' not in blob
+        row = IntelligenceSurfaceSnapshot.query.filter_by(
+            reference_date=_REF,
+            snapshot_version=SNAPSHOT_VERSION,
+        ).one()
+        assert row.source == 'test_refresh'
+        assert row.response_json['_snapshot_metadata']['snapshot_version'] == SNAPSHOT_VERSION
+        assert '5.3 innings' not in str(row.response_json).lower()
 
 
 # ── 5. Explicit reference_date still works ────────────────────────────────────
