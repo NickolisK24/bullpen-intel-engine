@@ -152,7 +152,7 @@ def test_roster_unavailable_handles_bare_status_codes_via_authority_categories()
     assert _roster_unavailable(None) is False
 
 
-# ── 4. Existing outputs remain unchanged (public label behaviour) ─────────────
+# ── 4. Existing outputs preserve roster behaviour under updated public copy ───
 
 def test_public_read_label_unchanged_for_off_roster_and_active():
     off_roster = build_pitcher_labels(
@@ -164,9 +164,9 @@ def test_public_read_label_unchanged_for_off_roster_and_active():
     active = build_pitcher_labels(
         availability=_availability('Available'), role=_role(), roster_status=_classified(STATUS_ACTIVE),
     )
-    assert active['read']['label'] == 'Clean Option'
+    assert active['read']['label'] == 'Rested'
 
     unknown = build_pitcher_labels(
         availability=_availability('Available'), role=_role(), roster_status=_classified(STATUS_UNKNOWN),
     )
-    assert unknown['read']['label'] == 'Clean Option'   # unknown roster status is not "unavailable"
+    assert unknown['read']['label'] == 'Rested'   # unknown roster status is not "unavailable"

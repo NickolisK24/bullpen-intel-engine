@@ -202,7 +202,7 @@ class TestCard:
         )
         assert card['pitcher_labels']['role']['label'] == 'Trust Arm'
         assert card['pitcher_labels']['role']['source'] == 'backend:role_key:late_high_leverage'
-        assert card['pitcher_labels']['read']['label'] == 'Clean Option'
+        assert card['pitcher_labels']['read']['label'] == 'Rested'
         assert card['pitcher_labels']['read']['source'] == 'backend:availability_status'
 
 

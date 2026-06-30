@@ -275,7 +275,7 @@ def _story_record(pitcher):
         'roster_status': {'status': STATUS_ACTIVE, 'is_active_mlb': True},
         'pitcher_labels': {
             'role': {'key': 'bridge_arm', 'label': 'Bridge Arm'},
-            'read': {'key': 'clean_option', 'label': 'Clean Option'},
+            'read': {'key': 'clean_option', 'label': 'Rested'},
         },
     }
 

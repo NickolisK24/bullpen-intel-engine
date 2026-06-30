@@ -11,7 +11,7 @@ ROLE_LABELS = {
 }
 
 READ_LABELS = {
-    'clean_option': 'Clean Option',
+    'clean_option': 'Rested',
     'watch_arm': 'Watch Arm',
     'rest_restricted': 'Rest-Restricted',
     'unavailable': 'Unavailable',
@@ -127,12 +127,12 @@ def test_trust_availability_uses_backend_authored_trust_read_counts():
         card('depth_arm', 'rest_restricted'),
     ])
 
-    assert result['trustAvailability']['label'] == 'Strong Trust Arm Availability'
+    assert result['trustAvailability']['label'] == 'Strong Late-Inning Availability'
     assert result['trustAvailability']['supportingCounts']['trustArms'] == 3
     assert result['trustAvailability']['supportingCounts']['cleanTrustArms'] == 2
 
 
-def test_clean_options_interpretation_weighs_role_shape_on_backend():
+def test_rested_bullpen_interpretation_uses_role_shape_on_backend():
     depth_led = shape([
         card('trust_arm', 'unavailable'),
         card('trust_arm', 'unavailable'),
@@ -152,12 +152,12 @@ def test_clean_options_interpretation_weighs_role_shape_on_backend():
     ])
 
     assert depth_led['cleanOptions']['supportingCounts']['cleanOptionCount'] == 5
-    assert depth_led['cleanOptions']['label'] == 'Thin Clean Options'
+    assert depth_led['cleanOptions']['label'] == 'Thin Rested Bullpen'
     assert trust_led['cleanOptions']['supportingCounts']['cleanOptionCount'] == 3
-    assert trust_led['cleanOptions']['label'] == 'Healthy Clean Options'
+    assert trust_led['cleanOptions']['label'] == 'Healthy Rested Bullpen'
 
 
-def test_bullpen_pressure_weights_trust_and_bridge_stress_on_backend():
+def test_bullpen_pressure_uses_late_inning_baseball_copy_on_backend():
     result = shape([
         card('trust_arm', 'rest_restricted', fatigue_score=75),
         card('trust_arm', 'unavailable'),
@@ -167,12 +167,12 @@ def test_bullpen_pressure_weights_trust_and_bridge_stress_on_backend():
         card('depth_arm', 'clean_option'),
     ])
 
-    assert result['bullpenPressure']['label'] == 'High Trust-Lane Pressure'
+    assert result['bullpenPressure']['label'] == 'High Late-Inning Pressure'
     assert result['bullpenPressure']['supportingCounts']['highFatigueArms'] == 1
     assert result['bullpenPressure']['supportingCounts']['unavailableTrustArms'] == 1
 
 
-def test_trust_lane_pressure_keeps_high_threshold_for_thinning_trust_lane():
+def test_late_inning_pressure_keeps_high_threshold_for_thinning_late_path():
     result = shape([
         card('trust_arm', 'clean_option'),
         card('trust_arm', 'clean_option'),
@@ -184,9 +184,9 @@ def test_trust_lane_pressure_keeps_high_threshold_for_thinning_trust_lane():
         card('coverage_arm', 'clean_option'),
     ])
 
-    assert result['trustAvailability']['label'] == 'Stable Trust Arm Availability'
-    assert result['cleanOptions']['label'] == 'Deep Clean Options'
-    assert result['bullpenPressure']['label'] == 'High Trust-Lane Pressure'
+    assert result['trustAvailability']['label'] == 'Stable Late-Inning Availability'
+    assert result['cleanOptions']['label'] == 'Deep Rested Bullpen'
+    assert result['bullpenPressure']['label'] == 'High Late-Inning Pressure'
     assert result['bullpenPressure']['supportingCounts']['watchArmCount'] == 1
     assert result['bullpenPressure']['supportingCounts']['restRestrictedCount'] == 1
     assert result['bullpenPressure']['supportingCounts']['cleanTrustArms'] == 2
@@ -212,6 +212,50 @@ def test_workload_concentration_uses_shared_pitch_share_bands():
     assert result['workloadConcentration']['label'] == 'Heavily Concentrated Workload'
     assert result['workloadConcentration']['supportingCounts']['topSharePct'] == 84
     assert result['workloadConcentration']['supportingCounts']['topArmCount'] == 3
+    assert '(84 of 100)' not in result['workloadConcentration']['explanation']
+    assert result['workloadConcentration']['explanation'] == (
+        'Three arms have carried 84% of the recent relief work across five bullpen arms.'
+    )
+
+
+def test_team_shape_public_copy_retire_taxonomy_and_weighting_language():
+    workload = summarize_workload_concentration({
+        1: 42,
+        2: 28,
+        3: 14,
+        4: 10,
+        5: 6,
+    })
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('trust_arm', 'rest_restricted'),
+        card('bridge_arm', 'watch_arm'),
+        card('coverage_arm', 'clean_option'),
+        card('depth_arm', 'clean_option'),
+        card('depth_arm', 'unavailable'),
+    ], workload_concentration=workload)
+    rendered = '\n'.join(
+        str(item)
+        for read in result['reads']
+        for item in (read.get('label'), read.get('explanation'), *read.get('reasons', []))
+    )
+    lowered = rendered.lower()
+
+    for phrase in (
+        'clean option',
+        'clean options',
+        'interpretation weighs',
+        'weighs clean',
+        'late-inning pressure weighs',
+        'trust arms above',
+        'depth arms above',
+        'classified available',
+        '(84 of 100)',
+        '1 of 1 trust arms',
+        '0 of 1 coverage arms',
+        'coverage arms are clean options',
+    ):
+        assert phrase not in lowered
 
 
 def test_workload_concentration_fails_closed_without_recent_relief_workload():

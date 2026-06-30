@@ -50,9 +50,9 @@ def _canonical_story(
 def _board(team=None, labels=None):
     team = team or _team()
     labels = labels or {
-        'trustAvailability': 'Stable Trust Arm Availability',
-        'cleanOptions': 'Healthy Clean Options',
-        'bullpenPressure': 'Manageable Trust-Lane Pressure',
+        'trustAvailability': 'Stable Late-Inning Availability',
+        'cleanOptions': 'Healthy Rested Bullpen',
+        'bullpenPressure': 'Manageable Late-Inning Pressure',
     }
     return {
         'team': team,
@@ -183,8 +183,8 @@ def test_no_story_team_uses_neutral_shape_preview_only():
     assert preview['source'] == 'team_shape'
     assert preview['og_title'] == 'Where the Quiet Club Bullpen Stands Tonight'
     assert preview['og_description'] == (
-        'Tonight\'s board: Stable Trust Arm Availability; Healthy Clean Options; '
-        'Manageable Trust-Lane Pressure.'
+        'Tonight\'s board: Stable Late-Inning Availability; Healthy Rested Bullpen; '
+        'Manageable Late-Inning Pressure.'
     )
     assert 'story' not in preview['og_title'].lower()
     assert preview['og_title'] != preview['og_description']

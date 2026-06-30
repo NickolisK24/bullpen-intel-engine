@@ -47,7 +47,7 @@ READ_PUBLIC_LABELS = {
     'clean_option': {
         'kind': 'read',
         'key': 'clean_option',
-        'label': 'Clean Option',
+        'label': 'Rested',
         'source': 'backend',
     },
     'watch_arm': {

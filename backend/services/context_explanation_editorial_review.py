@@ -62,6 +62,14 @@ TEAM_READINESS_SCOPES = (
 RETIRED_PUBLIC_PHRASES = (
     'clean option',
     'clean options',
+    'interpretation weighs',
+    'weighs clean',
+    'weighs trust',
+    'weighs bridge',
+    'late-inning pressure weighs',
+    'trust arms above',
+    'depth arms above',
+    'classified available',
     '0 of 0',
     'clean arms',
     'short list of clean arms',
@@ -93,6 +101,15 @@ RETIRED_PUBLIC_PHRASES = (
 
 RAW_COUNT_FORMULA_PATTERN = re.compile(r'(?<![\w-])\d+\s+of\s+\d+(?![\w-])', re.IGNORECASE)
 PARENTHETICAL_UNKNOWN_FORMULA_PATTERN = re.compile(r'\([^)]*\bunknown\b[^)]*\)', re.IGNORECASE)
+JARGON_COUPLED_RAW_COUNT_PATTERN = re.compile(
+    r'(?<![\w-])\d+\s+of\s+\d+\s+'
+    r'(?:trust|bridge|coverage|depth)\s+arms?\b',
+    re.IGNORECASE,
+)
+PARENTHETICAL_RAW_BASIS_PATTERN = re.compile(
+    r'\(\s*\d+\s+of\s+\d+\s*\)',
+    re.IGNORECASE,
+)
 FORMULA_TERMS = (
     'trusted-group',
     'top trust bucket',
@@ -102,6 +119,18 @@ FORMULA_TERMS = (
     'trust structure',
     'trust hierarchy',
     '0 trusted',
+)
+WEIGHTING_SCORING_TERMS = (
+    'interpretation weighs',
+    'weighs clean',
+    'weighs trust',
+    'weighs bridge',
+    'late-inning pressure weighs',
+    'trust arms above',
+    'depth arms above',
+    'raw score',
+    'scoring weight',
+    'weighted pressure',
 )
 CIRCULAR_META_TERMS = (
     'explanation confidence mirrors',
@@ -216,6 +245,7 @@ def build_context_explanation_editorial_review(
 
         scans = _scan_examples(examples)
         raw_count_formula_scan = _raw_count_formula_scan(examples)
+        weighting_scoring_scan = _weighting_scoring_scan(examples)
         circular_meta_scan = _circular_meta_scan(examples)
         disclaimer_check = _disclaimer_preservation_check(examples)
         summary = _surface_summary(examples)
@@ -251,12 +281,14 @@ def build_context_explanation_editorial_review(
             'before_after_summary': _before_after_summary(
                 scans=scans,
                 raw_count_formula_scan=raw_count_formula_scan,
+                weighting_scoring_scan=weighting_scoring_scan,
                 circular_meta_scan=circular_meta_scan,
                 disclaimer_check=disclaimer_check,
             ),
             'banned_language_scan': scans['banned_language_scan'],
             'retired_phrase_scan': scans['retired_phrase_scan'],
             'raw_count_formula_scan': raw_count_formula_scan,
+            'weighting_scoring_scan': weighting_scoring_scan,
             'circular_meta_scan': circular_meta_scan,
             'disclaimer_preservation_check': disclaimer_check,
             'fallback_summary': _fallback_summary(examples),
@@ -323,6 +355,10 @@ def render_context_explanation_editorial_review_markdown(
         '## Raw-Count / Formula Scan',
         '',
         _scan_status_line(report.get('raw_count_formula_scan'), 'raw-count or formula'),
+        '',
+        '## Weighting / Scoring Narration Scan',
+        '',
+        _scan_status_line(report.get('weighting_scoring_scan'), 'weighting or scoring narration'),
         '',
         '## Circular-Meta Scan',
         '',
@@ -1416,6 +1452,7 @@ def _with_scans(example: dict[str, Any]) -> dict[str, Any]:
         'terms': RETIRED_PUBLIC_PHRASES,
     }
     example['raw_count_formula_scan'] = _raw_count_formula_scan([example])
+    example['weighting_scoring_scan'] = _weighting_scoring_scan([example])
     example['circular_meta_scan'] = _circular_meta_scan([example])
     return example
 
@@ -1463,7 +1500,12 @@ def _raw_count_formula_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, 
     for index, example in enumerate(examples, start=1):
         text = '\n'.join(_public_texts(example))
         for match in RAW_COUNT_FORMULA_PATTERN.finditer(text):
-            violations.append(_scan_row(index, example, match.group(0), 'raw arithmetic pattern', match.start()))
+            if match.group(0).strip().lower() == '0 of 0':
+                violations.append(_scan_row(index, example, match.group(0), 'raw empty arithmetic pattern', match.start()))
+        for match in JARGON_COUPLED_RAW_COUNT_PATTERN.finditer(text):
+            violations.append(_scan_row(index, example, match.group(0), 'jargon-coupled raw arithmetic pattern', match.start()))
+        for match in PARENTHETICAL_RAW_BASIS_PATTERN.finditer(text):
+            violations.append(_scan_row(index, example, match.group(0), 'parenthetical raw basis', match.start()))
         for match in PARENTHETICAL_UNKNOWN_FORMULA_PATTERN.finditer(text):
             violations.append(_scan_row(index, example, match.group(0), 'parenthetical unknown formula', match.start()))
         lowered = text.lower()
@@ -1477,6 +1519,30 @@ def _raw_count_formula_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, 
         'violation_count': len(violations),
         'violations': violations,
         'terms': FORMULA_TERMS,
+        'patterns': {
+            'raw_empty_arithmetic': RAW_COUNT_FORMULA_PATTERN.pattern,
+            'jargon_coupled_raw_count': JARGON_COUPLED_RAW_COUNT_PATTERN.pattern,
+            'parenthetical_raw_basis': PARENTHETICAL_RAW_BASIS_PATTERN.pattern,
+            'parenthetical_unknown_formula': PARENTHETICAL_UNKNOWN_FORMULA_PATTERN.pattern,
+        },
+    }
+
+
+def _weighting_scoring_scan(examples: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    violations = []
+    for index, example in enumerate(examples, start=1):
+        text = '\n'.join(_public_texts(example))
+        lowered = text.lower()
+        for term in WEIGHTING_SCORING_TERMS:
+            start = lowered.find(term)
+            if start >= 0:
+                violations.append(_scan_row(index, example, text[start:start + len(term)], term, start))
+    return {
+        'scope': 'rendered public context explanation copy only',
+        'status': 'pass' if not violations else 'warn',
+        'violation_count': len(violations),
+        'violations': violations,
+        'terms': WEIGHTING_SCORING_TERMS,
     }
 
 
@@ -1539,6 +1605,7 @@ def _before_after_summary(
     *,
     scans: Mapping[str, Any],
     raw_count_formula_scan: Mapping[str, Any],
+    weighting_scoring_scan: Mapping[str, Any],
     circular_meta_scan: Mapping[str, Any],
     disclaimer_check: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -1555,6 +1622,7 @@ def _before_after_summary(
         'current_banned_language_status': (scans.get('banned_language_scan') or {}).get('status'),
         'current_retired_phrase_status': (scans.get('retired_phrase_scan') or {}).get('status'),
         'current_raw_count_formula_status': raw_count_formula_scan.get('status'),
+        'current_weighting_scoring_status': weighting_scoring_scan.get('status'),
         'current_circular_meta_status': circular_meta_scan.get('status'),
         'disclaimer_preservation_status': disclaimer_check.get('status'),
     }
@@ -1787,6 +1855,7 @@ def _example_lines(index: int, example: Mapping[str, Any]) -> list[str]:
             'banned_language_scan',
             'retired_phrase_scan',
             'raw_count_formula_scan',
+            'weighting_scoring_scan',
             'circular_meta_scan',
         )
     }
@@ -1828,6 +1897,7 @@ def _metadata(report: Mapping[str, Any]) -> dict[str, Any]:
             'example_count',
             'data_notes',
             'before_after_summary',
+            'weighting_scoring_scan',
         )
     }
 

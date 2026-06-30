@@ -70,6 +70,7 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
             'fallback_status': 'limited_read_shape',
             'rendered_public_copy': [
                 'Only 0 of 0 bullpen arms have clear workload or availability labels.',
+                'Interpretation weighs clean Trust Arms above clean Depth Arms.',
             ],
             'structured_fields_used': {},
             'evidence_sections': {},
@@ -93,6 +94,11 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
     assert report['retired_phrase_scan']['status'] == 'warn'
     assert report['retired_phrase_scan']['violation_count'] >= 1
     assert report['raw_count_formula_scan']['status'] == 'warn'
+    assert report['weighting_scoring_scan']['status'] == 'warn'
+    assert any(
+        item['term'] == 'interpretation weighs'
+        for item in report['weighting_scoring_scan']['violations']
+    )
     assert any(
         item['match'] == '0 of 0'
         for item in report['raw_count_formula_scan']['violations']
@@ -101,6 +107,7 @@ def test_context_explanation_editorial_review_artifact_integrity(tmp_path):
     assert 'Clean Option' in text
     assert 'The public data is not strong enough to give this team a full bullpen readiness note.' in text
     assert 'Raw-Count / Formula Scan' in text
+    assert 'Weighting / Scoring Narration Scan' in text
     assert 'Circular-Meta Scan' in text
     assert 'Disclaimer Preservation Check' in text
     assert 'pitcher_availability_statuses' in text
@@ -113,8 +120,8 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
     report = build_context_explanation_editorial_review(
         include_fixture_examples=True,
         generated_at='2026-06-29T00:00:00',
-        artifact_path='artifacts/context_explanation_editorial_review_E2D3.md',
-        review_label='E2D-3 Healthy-State Context Explanation Corpus',
+        artifact_path='artifacts/context_explanation_editorial_review_E2D4.md',
+        review_label='E2D-4 Healthy-State Team Context Voice Migration',
     )
     output = write_context_explanation_editorial_review(
         report,
@@ -124,7 +131,7 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
 
     coverage = report['coverage_summary']
 
-    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D3.md'
+    assert report['artifact'] == 'artifacts/context_explanation_editorial_review_E2D4.md'
     assert coverage['fixture_backed_examples'] > 0
     assert coverage['stored_data_examples'] == 0
     assert set(coverage['pitcher_availability_statuses_found']) == {
@@ -156,7 +163,7 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
         'Limited Read',
     }.issubset(set(coverage['role_labels_found']))
     assert {
-        'Clean Option',
+        'Rested',
         'Watch Arm',
         'Rest-Restricted',
         'Unavailable',
@@ -172,7 +179,14 @@ def test_context_explanation_editorial_review_fixture_backed_healthy_corpus(tmp_
         label != 'Limited Read'
         for label in coverage['team_shape_read_labels_found']
     )
+    assert 'Clean Option' not in text
+    assert 'Clean Options' not in text
+    assert 'Interpretation weighs' not in text
+    assert '(84 of 100)' not in text
+    assert report['weighting_scoring_scan']['status'] == 'pass'
+    assert report['circular_meta_scan']['status'] == 'pass'
     assert 'deterministic fixture example' in text
     assert 'examples_by_source' in text
     assert 'Raw-Count / Formula Scan' in text
+    assert 'Weighting / Scoring Narration Scan' in text
     assert 'Circular-Meta Scan' in text

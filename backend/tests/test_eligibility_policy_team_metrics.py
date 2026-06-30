@@ -1,6 +1,6 @@
 """Tests for eligibility policy integration into team bullpen metrics (Phase C3D).
 
-Swing/Bulk Relief arms are held out of the Trust Arm / Bridge Arm / Clean Option
+Swing/Bulk Relief arms are held out of the Trust Arm / Bridge Arm / rested-arm
 lanes but still contribute to coverage and depth context. Starter Protected,
 Excluded, and Unknown/Limited remain withheld (they are ineligible). Normal
 Relief is unchanged.
@@ -33,7 +33,7 @@ _ROLE_LABELS = {
     'limited_read': 'Limited Read',
 }
 _READ_LABELS = {
-    'clean_option': 'Clean Option',
+    'clean_option': 'Rested',
     'watch_arm': 'Watch Arm',
     'rest_restricted': 'Rest-Restricted',
     'unavailable': 'Unavailable',

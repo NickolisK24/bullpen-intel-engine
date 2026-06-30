@@ -182,17 +182,72 @@ def _health_reasons(state, counts, total, freshness_note=None):
     monitor = counts[STATUS_MONITOR]
     restricted = counts[STATUS_AVOID] + counts[STATUS_UNAVAILABLE]
 
-    reasons.append(f'{available} of {total} relievers are classified Available.')
+    reasons.append(
+        f'{_reliever_count_phrase(available).capitalize()} {_reliever_verb(available)} '
+        'available from the latest completed workload data.'
+    )
     if restricted == 0:
         reasons.append('No relievers are marked Avoid or Unavailable.')
     else:
-        reasons.append(f'{restricted} of {total} relievers are Avoid or Unavailable.')
+        reasons.append(
+            f'{_reliever_count_phrase(restricted).capitalize()} {_reliever_verb(restricted)} '
+            'Avoid or Unavailable.'
+        )
     if state in (HEALTH_MONITORING, HEALTH_ELEVATED):
-        reasons.append(f'{monitor} of {total} relievers are in the Monitor group.')
+        reasons.append(
+            f'{_reliever_count_phrase(monitor).capitalize()} {_reliever_verb(monitor)} '
+            'in the Monitor group.'
+        )
     reasons.append(METHODOLOGY_REASON)
     if freshness_note:
         reasons.append(freshness_note)
     return reasons
+
+
+def _count_word(value):
+    words = {
+        0: 'no',
+        1: 'one',
+        2: 'two',
+        3: 'three',
+        4: 'four',
+        5: 'five',
+        6: 'six',
+        7: 'seven',
+        8: 'eight',
+        9: 'nine',
+        10: 'ten',
+        11: 'eleven',
+        12: 'twelve',
+        13: 'thirteen',
+        14: 'fourteen',
+        15: 'fifteen',
+        16: 'sixteen',
+        17: 'seventeen',
+        18: 'eighteen',
+        19: 'nineteen',
+        20: 'twenty',
+    }
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 'unknown'
+    return words.get(count, 'more than twenty')
+
+
+def _reliever_count_phrase(value):
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 'unknown relievers'
+    return f'{_count_word(count)} reliever{"" if count == 1 else "s"}'
+
+
+def _reliever_verb(value):
+    try:
+        return 'is' if int(value) == 1 else 'are'
+    except (TypeError, ValueError):
+        return 'are'
 
 
 def build_team_context(groups, freshness=None):

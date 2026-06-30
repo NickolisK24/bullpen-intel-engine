@@ -117,14 +117,14 @@ class TestTransparency:
     def test_reasons_reference_real_counts(self):
         ctx = context_of(counts(available=7, monitor=1, limited=2))
         reasons = ctx['health']['reasons']
-        assert any('7 of 10 relievers are classified Available.' == r for r in reasons)
+        assert any('Seven relievers are available from the latest completed workload data.' == r for r in reasons)
         assert any('No relievers are marked Avoid or Unavailable.' == r for r in reasons)
         assert METHODOLOGY_REASON in reasons
 
     def test_restricted_count_is_explained(self):
         ctx = context_of(counts(available=6, avoid=2, unavailable=2))
         reasons = ctx['health']['reasons']
-        assert any('4 of 10 relievers are Avoid or Unavailable.' == r for r in reasons)
+        assert any('Four relievers are Avoid or Unavailable.' == r for r in reasons)
 
     def test_every_state_has_a_label_and_reasons(self):
         scenarios = {

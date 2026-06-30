@@ -70,7 +70,7 @@ def test_mixed_starter_reliever_role_stays_limited_unless_coverage_signal_is_cle
 
 def test_read_labels_map_from_backend_availability_state():
     cases = [
-        ('Available', 'Clean Option', 'clean_option'),
+        ('Available', 'Rested', 'clean_option'),
         ('Monitor', 'Watch Arm', 'watch_arm'),
         ('Limited', 'Rest-Restricted', 'rest_restricted'),
         ('Avoid', 'Rest-Restricted', 'rest_restricted'),

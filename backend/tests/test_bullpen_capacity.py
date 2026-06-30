@@ -32,7 +32,7 @@ def record(
         },
         'pitcher_labels': {
             'role': {'key': role_key, 'label': 'Trust Arm' if role_key == 'trust_arm' else 'Bridge Arm'},
-            'read': {'key': read_key, 'label': 'Unavailable' if read_key == 'unavailable' else 'Clean Option'},
+            'read': {'key': read_key, 'label': 'Unavailable' if read_key == 'unavailable' else 'Rested'},
         },
         'roster_status': {
             'is_active_mlb': roster_active,

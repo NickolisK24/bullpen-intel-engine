@@ -16,24 +16,24 @@ READ_KEYS = [
 
 TEAM_BULLPEN_PUBLIC_LABELS = {
     'trustAvailability': [
-        'Strong Trust Arm Availability',
-        'Stable Trust Arm Availability',
-        'Thin Trust Arm Availability',
-        'Limited Trust Arm Availability',
+        'Strong Late-Inning Availability',
+        'Stable Late-Inning Availability',
+        'Thin Late-Inning Availability',
+        'Limited Late-Inning Availability',
         'Limited Read',
     ],
     'cleanOptions': [
-        'Deep Clean Options',
-        'Healthy Clean Options',
-        'Thin Clean Options',
-        'Very Thin Clean Options',
+        'Deep Rested Bullpen',
+        'Healthy Rested Bullpen',
+        'Thin Rested Bullpen',
+        'Very Thin Rested Bullpen',
         'Limited Read',
     ],
     'bullpenPressure': [
-        'High Trust-Lane Pressure',
-        'Elevated Trust-Lane Pressure',
-        'Manageable Trust-Lane Pressure',
-        'Low Trust-Lane Pressure',
+        'High Late-Inning Pressure',
+        'Elevated Late-Inning Pressure',
+        'Manageable Late-Inning Pressure',
+        'Low Late-Inning Pressure',
         'Limited Read',
     ],
     'workloadConcentration': [
@@ -60,7 +60,7 @@ TEAM_BULLPEN_PUBLIC_LABELS = {
 }
 
 READ_LABELS = {
-    'clean': 'Clean Option',
+    'clean': 'Rested',
     'watch': 'Watch Arm',
     'restricted': 'Rest-Restricted',
     'unavailable': 'Unavailable',
@@ -100,10 +100,10 @@ ROLE_INFLUENCE = {
 }
 
 CLEAN_OPTIONS_TIERS = [
-    'Very Thin Clean Options',
-    'Thin Clean Options',
-    'Healthy Clean Options',
-    'Deep Clean Options',
+    'Very Thin Rested Bullpen',
+    'Thin Rested Bullpen',
+    'Healthy Rested Bullpen',
+    'Deep Rested Bullpen',
 ]
 CLEAN_TIER_VERY_THIN = 0
 CLEAN_TIER_THIN = 1
@@ -123,6 +123,76 @@ def _empty_counts(labels):
 
 def _as_number(value):
     return value if isinstance(value, (int, float)) else 0
+
+
+def _count_word(value):
+    words = {
+        0: 'no',
+        1: 'one',
+        2: 'two',
+        3: 'three',
+        4: 'four',
+        5: 'five',
+        6: 'six',
+        7: 'seven',
+        8: 'eight',
+        9: 'nine',
+        10: 'ten',
+        11: 'eleven',
+        12: 'twelve',
+        13: 'thirteen',
+        14: 'fourteen',
+        15: 'fifteen',
+        16: 'sixteen',
+        17: 'seventeen',
+        18: 'eighteen',
+        19: 'nineteen',
+        20: 'twenty',
+    }
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 'unknown'
+    return words.get(count, 'more than twenty')
+
+
+def _arm_phrase(count, noun='arm', plural=None):
+    plural = plural or f'{noun}s'
+    try:
+        value = int(count)
+    except (TypeError, ValueError):
+        return f'unknown {plural}'
+    return f'{_count_word(value)} {noun if value == 1 else plural}'
+
+
+def _is_are(count):
+    try:
+        return 'is' if int(count) == 1 else 'are'
+    except (TypeError, ValueError):
+        return 'are'
+
+
+def _has_have(count):
+    try:
+        return 'has' if int(count) == 1 else 'have'
+    except (TypeError, ValueError):
+        return 'have'
+
+
+def _coverage_layer_phrase(count):
+    if count <= 0:
+        return 'no rested length option'
+    if count == 1:
+        return 'one rested length option'
+    return f'{_count_word(count)} rested length options'
+
+
+def _late_path_phrase(count):
+    if count <= 0:
+        return 'no clear rested late-inning anchor'
+    if count == 1:
+        return 'one rested arm who fits the late-inning bridge'
+    return f'{_count_word(count)} rested arms who fit the late-inning bridge'
 
 
 def _flatten_cards(groups):
@@ -247,23 +317,33 @@ def _trust_availability(summary):
     if summary['dataQuality']['roleSparse']:
         return _limited_read(
             'trustAvailability',
-            _role_limited_explanation(counts['roleKnownCount'], counts['totalBullpenArms'], 'Trust Arm Availability'),
+            _role_limited_explanation(counts['roleKnownCount'], counts['totalBullpenArms'], 'late-inning availability'),
             counts,
         )
 
+    rested_phrase = _arm_phrase(clean, 'late-inning arm')
+    monitor_phrase = _arm_phrase(watch, 'late-inning arm')
+    restricted_total = restricted + unavailable
+    if restricted_total:
+        restriction = (
+            f'{_arm_phrase(restricted_total, "late-inning arm")} {_is_are(restricted_total)} '
+            'carrying enough recent workload to narrow the late-game path'
+        )
+    else:
+        restriction = 'none of that group is blocked by a heavy recent workload signal'
     explanation = (
-        f'{clean} of {trust_arms} Trust Arms are Clean Options; {watch} are Watch Arms, '
-        f'{restricted} are Rest-Restricted, and {unavailable} are Unavailable.'
+        f'The late-inning group has {rested_phrase} fully rested and '
+        f'{monitor_phrase} worth monitoring. {restriction}.'
     )
     if trust_arms == 0 or available == 0:
-        return _read('trustAvailability', 'Limited Trust Arm Availability', explanation, counts)
+        return _read('trustAvailability', 'Limited Late-Inning Availability', explanation, counts)
     if trust_arms >= 2 and clean >= 2 and restricted == 0 and unavailable == 0:
-        return _read('trustAvailability', 'Strong Trust Arm Availability', explanation, counts)
+        return _read('trustAvailability', 'Strong Late-Inning Availability', explanation, counts)
     if trust_arms >= 2 and available >= 2 and unavailable == 0:
-        return _read('trustAvailability', 'Stable Trust Arm Availability', explanation, counts)
+        return _read('trustAvailability', 'Stable Late-Inning Availability', explanation, counts)
     if available >= 1:
-        return _read('trustAvailability', 'Thin Trust Arm Availability', explanation, counts)
-    return _read('trustAvailability', 'Limited Trust Arm Availability', explanation, counts)
+        return _read('trustAvailability', 'Thin Late-Inning Availability', explanation, counts)
+    return _read('trustAvailability', 'Limited Late-Inning Availability', explanation, counts)
 
 
 def _clean_options(summary):
@@ -316,12 +396,24 @@ def _clean_options(summary):
     if not meaningful_clean and tier > CLEAN_TIER_THIN:
         tier = CLEAN_TIER_THIN
 
-    explanation = (
-        f"{clean} Clean Options out of {summary['activeBullpenArms']} active bullpen arms - "
-        f'{clean_trust} Trust, {clean_bridge} Bridge, {clean_coverage} Coverage, {clean_depth} Depth, '
-        f'with {restricted} Rest-Restricted and {unavailable} Unavailable. '
-        'Interpretation weighs clean Trust Arms above clean Depth Arms.'
-    )
+    late_path_count = clean_trust + clean_bridge
+    rested_phrase = _arm_phrase(clean, 'arm')
+    late_path = _late_path_phrase(late_path_count)
+    if tier >= CLEAN_TIER_HEALTHY:
+        explanation = (
+            f'The bullpen has {rested_phrase} fully rested, with {late_path}. '
+            'That gives the late innings more cushion if the starter exits early.'
+        )
+    elif clean > 0:
+        explanation = (
+            f'Only {rested_phrase} {_is_are(clean)} fully rested, with {late_path}. '
+            'The rest of the group looks more like depth coverage than leverage cushion.'
+        )
+    else:
+        explanation = (
+            'Not enough of the bullpen is fully rested to build a comfortable late-game path. '
+            'The late innings leave less margin if the starter exits early.'
+        )
     return _read('cleanOptions', CLEAN_OPTIONS_TIERS[tier], explanation, counts)
 
 
@@ -386,18 +478,21 @@ def _bullpen_pressure(summary):
             counts,
         )
 
+    restricted_late = restricted_trust + unavailable_trust
+    stressed_handoff = stressed_bridge + stressed_coverage
     explanation = (
-        f'Trust Arms show {clean_trust} clean, {restricted_trust} Rest-Restricted, and '
-        f'{unavailable_trust} Unavailable; {stressed_bridge} Bridge Arms and {stressed_coverage} '
-        f'Coverage Arms are stressed, and {summary["highFatigueArms"]} arms are carrying heavy recent workload. '
-        'Late-inning pressure weighs Trust and Bridge Arm stress above Depth Arm stress.'
+        f'The primary late-inning pocket has {_arm_phrase(clean_trust, "arm")} fully rested and '
+        f'{_arm_phrase(restricted_late, "arm")} carrying enough recent workload to narrow the path. '
+        f'The handoff innings add {_arm_phrase(stressed_handoff, "arm")} with recent stress, '
+        f'and {_arm_phrase(summary["highFatigueArms"], "arm")} {_is_are(summary["highFatigueArms"])} '
+        'carrying heavy recent workload.'
     )
     if (
         trust_pressure >= TRUST_PRESSURE_HIGH
         or pressure_share >= PRESSURE_SHARE_HIGH
         or summary['stressState'] == 'constrained'
     ):
-        return _read('bullpenPressure', 'High Trust-Lane Pressure', explanation, counts)
+        return _read('bullpenPressure', 'High Late-Inning Pressure', explanation, counts)
     if (
         trust_pressure >= TRUST_PRESSURE_ELEVATED
         or bridge_pressure >= ROLE_STRESS_ELEVATED
@@ -408,7 +503,7 @@ def _bullpen_pressure(summary):
         or summary['highFatigueArms'] >= 2
         or summary['stressState'] in {'elevated', 'monitoring'}
     ):
-        return _read('bullpenPressure', 'Elevated Trust-Lane Pressure', explanation, counts)
+        return _read('bullpenPressure', 'Elevated Late-Inning Pressure', explanation, counts)
     if (
         counts['restRestrictedCount'] == 0
         and counts['unavailableCount'] == 0
@@ -416,8 +511,8 @@ def _bullpen_pressure(summary):
         and summary['highFatigueArms'] == 0
         and usable_trust > 0
     ):
-        return _read('bullpenPressure', 'Low Trust-Lane Pressure', explanation, counts)
-    return _read('bullpenPressure', 'Manageable Trust-Lane Pressure', explanation, counts)
+        return _read('bullpenPressure', 'Low Late-Inning Pressure', explanation, counts)
+    return _read('bullpenPressure', 'Manageable Late-Inning Pressure', explanation, counts)
 
 
 def _pct(value):
@@ -465,8 +560,9 @@ def _workload_concentration(workload):
 
     label = label_by_level.get(level, 'Limited Read')
     explanation = (
-        f'The top {top_arm_count} relief arms carried {counts["topSharePct"]}% of recent relief pitches '
-        f'({top_pitch_total} of {total_pitches}) across {participant_count} participating arms.'
+        f'{_arm_phrase(top_arm_count).capitalize()} {_has_have(top_arm_count)} carried '
+        f'{counts["topSharePct"]}% of the recent relief work across '
+        f'{_arm_phrase(participant_count, "bullpen arm")}.'
     )
     return _read('workloadConcentration', label, explanation, counts)
 
@@ -505,9 +601,21 @@ def _legacy_coverage_safety(summary):
             counts,
         )
 
+    rested_length = _coverage_layer_phrase(clean)
+    monitor_length = (
+        'no additional length option on monitor'
+        if watch <= 0 else f'{_arm_phrase(watch, "length option")} on monitor'
+    )
+    restricted_length = restricted + unavailable
+    if restricted_length:
+        restriction = (
+            f'{_arm_phrase(restricted_length, "length option")} {_is_are(restricted_length)} '
+            'carrying enough recent workload to limit coverage'
+        )
+    else:
+        restriction = 'the length layer does not show a heavy recent workload block'
     explanation = (
-        f'{clean} of {coverage_arms} Coverage Arms are Clean Options; {watch} are Watch Arms, '
-        f'{restricted} are Rest-Restricted, and {unavailable} are Unavailable.'
+        f'The bullpen has {rested_length} and {monitor_length}. {restriction}.'
     )
     if coverage_arms >= 2 and clean >= 2 and restricted == 0 and unavailable == 0:
         return _read('coverageSafety', 'Strong Coverage Safety', explanation, counts)
@@ -517,12 +625,12 @@ def _legacy_coverage_safety(summary):
         return _read('coverageSafety', 'Thin Coverage Safety', explanation, counts)
     if has_substitute:
         fallback = ' and '.join(filter(None, [
-            f'{clean_bridge} clean Bridge Arm{"s" if clean_bridge != 1 else ""}' if clean_bridge > 0 else None,
-            f'{watch_bridge} Bridge Arm{"s" if watch_bridge != 1 else ""} on watch' if watch_bridge > 0 else None,
+            f'{_arm_phrase(clean_bridge, "shorter bridge arm")} rested' if clean_bridge > 0 else None,
+            f'{_arm_phrase(watch_bridge, "shorter bridge arm")} on monitor' if watch_bridge > 0 else None,
         ]))
         lifted = (
-            f'{explanation} No designated Coverage Arm is available, but {fallback} can chain '
-            'emergency innings, so coverage reads Thin rather than Limited - substitute capacity, not designated length.'
+            f'{explanation} No clear length option is ready, but {fallback} can help chain '
+            'emergency innings, so the coverage note stays Thin rather than Limited.'
         )
         return _read(
             'coverageSafety',
@@ -567,16 +675,17 @@ def _depth_safety(summary):
         )
 
     explanation = (
-        f'{depth_arms} Depth Arms in a {summary["totalBullpenArms"]}-arm bullpen; {available} are '
-        f'Clean Options or Watch Arms, {restricted} are Rest-Restricted, and {unavailable} are Unavailable.'
+        f'The lower-leverage layer has {_arm_phrase(available, "arm")} who can cover softer innings, '
+        f'while {_arm_phrase(restricted + unavailable, "arm")} {_is_are(restricted + unavailable)} '
+        'carrying enough recent workload to limit the fallback cushion.'
     )
     strong_by_volume = summary['totalBullpenArms'] >= 8 and depth_arms >= 3 and available >= 2
     if strong_by_volume and anchored:
         return _read('depthSafety', 'Strong Depth Safety', explanation, counts)
     if strong_by_volume and not anchored:
         stable = (
-            f'{explanation} No usable Trust Arm anchors the bullpen, so this depth reads Stable '
-            'rather than Strong - fallback volume without a primary corps in front of it.'
+            f'{explanation} The late-inning cushion is thin, so this depth note stays Stable '
+            'rather than Strong.'
         )
         return _read('depthSafety', 'Stable Depth Safety', stable, counts)
     if summary['totalBullpenArms'] >= 7 and depth_arms >= 2 and available >= 1:
