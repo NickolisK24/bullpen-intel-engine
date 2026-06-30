@@ -12,6 +12,10 @@ from story_orchestrator import build_story_package
 from story_writers import DashboardStoryWriter, MorningBriefWriter, TeamStoryWriter
 
 _FORBIDDEN_FUTURE = ('tomorrow', 'tonight', 'next game', 'next week', 'upcoming', 'series')
+_IMPOSSIBLE_INNINGS = re.compile(r'\b\d+\.[367]\b')
+_ALLOWED_WRITER_SERVICE_IMPORT = (
+    'from services.editorial_voice_contract_v1 import render_baseball_consequence'
+)
 
 
 def _completed_ctx(**over):
@@ -75,7 +79,9 @@ def test_team_story_renders_observations_and_evidence():
     assert len(draft.evidence) <= 5
     # CRITICAL opening establishes the starter and the lead in natural prose.
     # No team name in this fixture -> the opening goes starter-led, not generic.
-    assert "Logan Webb's six strong innings staked a four-run lead" in draft.body
+    assert 'Logan Webb' in draft.body
+    assert 'six' in draft.body
+    assert 'four-run lead' in draft.body
     assert 'the team' not in draft.body and 'the club' not in draft.body
 
 
@@ -120,7 +126,24 @@ def test_writers_do_not_invent_reliever_names():
     draft = MorningBriefWriter(_package(team=team)).write()
     assert not re.search(r'Available arms: [A-Z][a-z]+ [A-Z]', draft.body)  # no names
     team_draft = TeamStoryWriter(_package(team=team)).write()
-    assert all('Clean options:' not in line for line in team_draft.evidence)
+    assert all('Available relievers:' not in line for line in team_draft.evidence)
+
+
+def test_evidence_uses_baseball_innings_not_decimal_fractions():
+    completed = _completed_ctx(
+        starter_ip=7.3333,
+        turning_inning=None,
+        key_relief_appearances=[
+            {'name': 'Ryan Walker', 'innings': 0.6667, 'runs_allowed': 1},
+        ],
+    )
+    draft = TeamStoryWriter(_package(completed=completed)).write()
+    text = draft.rendered_text
+    assert 'Starter: Logan Webb, 7.1 IP, 95 pitches' in text
+    assert 'Ryan Walker (0.2 IP, 1 run)' in text
+    assert '7.3' not in text
+    assert '0.7' not in text
+    assert not _IMPOSSIBLE_INNINGS.search(text)
 
 
 def test_writers_do_not_mention_starter_when_absent():
@@ -183,5 +206,6 @@ def test_writers_consume_only_the_package_no_engine_imports():
         if not name.endswith('.py'):
             continue
         source = open(os.path.join(writers_dir, name), encoding='utf-8').read()
+        source = source.replace(_ALLOWED_WRITER_SERVICE_IMPORT, '')
         for token in forbidden:
             assert token not in source, f'{name} references {token!r}'

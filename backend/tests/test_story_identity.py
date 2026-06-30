@@ -106,15 +106,18 @@ def test_stories_lead_with_team_and_player_names():
 
 def test_critical_story_ends_with_a_consequence_takeaway():
     body = TeamStoryWriter(_pkg()).write().body
-    assert body.rstrip().endswith(
-        'That late collapse leaves the relief corps down to fewer rested options.')
+    assert 'That ' in body
+    assert 'relief corps' not in body
+    assert 'clean options' not in body.lower()
 
 
 def test_high_protected_story_ends_with_clean_finish_takeaway():
     deep_pen = _team_context(optionality_band='deep', concentration_band='balanced',
                              clean_names=['Garrett Cleavinger'])
     body = TeamStoryWriter(_pkg(_protected_ctx(), team=deep_pen)).write().body
-    assert body.rstrip().endswith('The clean finish keeps the relief corps deep in fresh arms.')
+    assert 'That ' in body
+    assert 'relief corps' not in body
+    assert 'in good shape' not in body.lower()
 
 
 def test_medium_story_has_no_takeaway():
@@ -140,7 +143,8 @@ def test_critical_story_varies_sentence_length():
 def test_morning_brief_explains_todays_bullpen_with_names():
     brief = MorningBriefWriter(_pkg(team=_team_context(clean_names=['Erik Miller', 'Sean Hjelle']))).write()
     assert 'Available arms: Erik Miller, Sean Hjelle.' in brief.body
-    assert "Yesterday's late damage leaves the relief corps" in brief.body
+    assert "Yesterday's late damage matters here." in brief.body
+    assert 'That ' in brief.body
     assert brief.observations == []
 
 

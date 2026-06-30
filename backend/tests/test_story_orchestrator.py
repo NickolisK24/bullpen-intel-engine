@@ -211,7 +211,11 @@ def test_writer_makes_no_publication_decision():
     # The writer renders whatever package it is handed; it never reads publishable.
     pkg = _package()
     draft = TeamStoryWriter(pkg).write()
-    assert draft.headline == 'Lead surrendered late'
+    assert draft.headline in {
+        'Lead surrendered late',
+        'Late lead slipped away',
+        'Lead disappeared late',
+    }
     assert 'publishable' not in draft.to_dict()
 
 

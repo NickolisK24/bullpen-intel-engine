@@ -10,17 +10,34 @@ invents detail.
 import os
 import re
 
+from services.editorial_voice_contract_v1 import contains_editorial_banned_language
 from services.narrative_feed_builder import build_narrative_feed
+from story_orchestrator import build_story_package
 from story_writers import (
     DashboardStoryWriter,
     MorningBriefWriter,
     StoryDraft,
     TeamStoryWriter,
 )
+from utils.baseball_innings import format_baseball_innings
 
 _WRITERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             'story_writers')
 _FORBIDDEN_FUTURE = ('tomorrow', 'tonight', 'next game', 'next week', 'upcoming', 'series')
+_IMPOSSIBLE_INNINGS = re.compile(r'\b\d+\.[367]\b')
+_DISCOURAGED_PUBLIC_LANGUAGE = (
+    'clean options',
+    'clean arms',
+    'short list of clean arms',
+    'in good shape',
+    'availability distributions',
+    'practical path',
+    'practical paths',
+    '0 trusted',
+)
+_ALLOWED_WRITER_SERVICE_IMPORT = (
+    'from services.editorial_voice_contract_v1 import render_baseball_consequence'
+)
 
 
 def _completed_ctx(**over):
@@ -119,6 +136,7 @@ def test_writer_modules_do_not_import_engines_or_database():
         if not name.endswith('.py'):
             continue
         source = open(os.path.join(_WRITERS_DIR, name), encoding='utf-8').read()
+        source = source.replace(_ALLOWED_WRITER_SERVICE_IMPORT, '')
         for token in forbidden:
             assert token not in source, f'{name} references {token!r}'
 
@@ -147,7 +165,11 @@ def test_team_story_translates_lost_game_shape_facts():
     # A bare feed (no evidence_blocks) composes from the narrative facts: the
     # numbers read as words and the lead slips away in the late innings.
     draft = TeamStoryWriter(_feed()).write()
-    assert draft.headline == 'Lead surrendered late'
+    assert draft.headline in {
+        'Lead surrendered late',
+        'Late lead slipped away',
+        'Lead disappeared late',
+    }
     assert draft.body.startswith('After their most recent game,')
     assert 'four-run lead' in draft.body
     assert 'seven runs' in draft.body
@@ -162,7 +184,126 @@ def test_protected_uses_feed_headline_key():
     ))
     # headline_key becomes bullpen_stabilized (protected + zero late runs).
     assert feed.headline_key == 'bullpen_stabilized'
-    assert TeamStoryWriter(feed).write().headline == 'Bullpen slammed the door'
+    assert TeamStoryWriter(feed).write().headline in {
+        'Bullpen slammed the door',
+        'Lead finished cleanly',
+        'Late innings stayed quiet',
+    }
+
+
+def test_baseball_innings_formatter_uses_outs_not_decimal_fractions():
+    assert format_baseball_innings(7.0) == '7.0'
+    assert format_baseball_innings(7.3333) == '7.1'
+    assert format_baseball_innings(7.6667) == '7.2'
+    assert format_baseball_innings(5.6667) == '5.2'
+    assert format_baseball_innings(2.1) == '2.1'
+
+
+def test_fractional_innings_render_in_public_completed_game_text():
+    completed = _completed_ctx(
+        confidence='MEDIUM',
+        bullpen_story_tag='bullpen_overexposed',
+        game_shape_created='short_start',
+        lead_lost=None,
+        lead_protected=None,
+        starter_name='Casey Mize',
+        starter_ip=5.6667,
+        starter_pitch_count=88,
+        late_runs_allowed=1,
+        runs_allowed_innings_7_to_9=1,
+    )
+    draft = TeamStoryWriter(build_story_package(
+        1,
+        completed_game_context=completed,
+        team_context=_team_context(),
+    )).write()
+    rendered = draft.rendered_text
+    assert '5.2-inning start' in rendered
+    assert 'Starter: Casey Mize, 5.2 IP, 88 pitches' in rendered
+    assert '5.7' not in rendered
+    assert not _IMPOSSIBLE_INNINGS.search(rendered)
+
+
+def test_starter_covered_bullpen_copy_requires_named_anchor_and_consequence():
+    completed = _completed_ctx(
+        bullpen_story_tag='starter_covered_bullpen',
+        lead_lost=None,
+        lead_protected=None,
+        late_runs_allowed=0,
+        runs_allowed_innings_7_to_9=0,
+        starter_name='Logan Gilbert',
+        starter_ip=7.3333,
+        starter_pitch_count=101,
+    )
+    draft = TeamStoryWriter(_feed(completed=completed)).write()
+    text = draft.rendered_text
+
+    assert 'Logan Gilbert' in text
+    assert '7.1 innings' in text
+    assert "the starter worked deep and kept the bullpen's exposure light" not in text
+    assert 'That ' in draft.body
+    assert not _IMPOSSIBLE_INNINGS.search(text)
+
+
+def test_starter_covered_bullpen_falls_back_without_starter_anchor():
+    completed = _completed_ctx(
+        bullpen_story_tag='starter_covered_bullpen',
+        lead_lost=None,
+        lead_protected=None,
+        late_runs_allowed=0,
+        runs_allowed_innings_7_to_9=0,
+        starter_name=None,
+        starter_ip=None,
+        starter_pitch_count=None,
+    )
+    draft = TeamStoryWriter(_feed(completed=completed)).write()
+    assert "there isn't enough completed-game detail" in draft.body
+    assert "the starter worked deep and kept the bullpen's exposure light" not in draft.body
+
+
+def test_completed_game_public_copy_clears_discouraged_language():
+    cases = [
+        _completed_ctx(),
+        _completed_ctx(bullpen_story_tag='protected_game_shape', lead_protected=True,
+                       lead_lost=False, largest_lead=3, late_runs_allowed=0,
+                       runs_allowed_innings_7_to_9=0),
+        _completed_ctx(bullpen_story_tag='bullpen_kept_team_alive', comeback_completed=True,
+                       lead_lost=None, lead_protected=None, deficit_when_bullpen_entered=3,
+                       largest_deficit=3),
+        _completed_ctx(confidence='MEDIUM', bullpen_story_tag='bullpen_overexposed',
+                       game_shape_created='short_start', lead_lost=None, lead_protected=None),
+    ]
+    for completed in cases:
+        feed = _feed(completed=completed)
+        for writer_cls in (TeamStoryWriter, DashboardStoryWriter, MorningBriefWriter):
+            text = writer_cls(feed).write().rendered_text.lower()
+            assert not contains_editorial_banned_language(text), text
+            for phrase in _DISCOURAGED_PUBLIC_LANGUAGE:
+                assert phrase not in text, phrase
+
+
+def _template_key(text: str) -> str:
+    text = re.sub(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'NAME', text)
+    text = re.sub(r'\b\d+(?:\.\d+)?\b', 'NUM', text)
+    return re.sub(r'\s+', ' ', text).strip().lower()
+
+
+def test_same_beat_stories_use_deterministic_variation_and_headline_cap():
+    bodies = []
+    headlines = []
+    for team_id in (101, 102, 103, 104):
+        completed = _completed_ctx(
+            team_id=team_id,
+            game_pk=900 + team_id,
+            team_name=f'the Team {team_id}',
+            starter_name=f'Starter {team_id}',
+        )
+        draft = TeamStoryWriter(_feed(completed=completed)).write()
+        bodies.append(_template_key(draft.body))
+        headlines.append(draft.headline)
+
+    assert len(set(bodies)) > 1
+    assert max(headlines.count(headline) for headline in set(headlines)) <= 2
 
 
 # ── Confidence respected: LOW never invents ───────────────────────────────────

@@ -1,10 +1,10 @@
 """Tests for the Final Writer Polish Pass (COIN).
 
 Editorial refinements: team names replace generic subjects (failing closed to
-"the club"), bullpen-state language is natural (no "profiles as"), near-duplicate
-observations merge, evidence shows one lead/deficit line in story order, and the
-morning brief is differentiated from the team story. All deterministic and
-evidence-backed; nothing invented.
+"the club"), bullpen-state language routes through the E2 consequence helpers,
+near-duplicate observations merge, evidence shows one lead/deficit line in story
+order, and the morning brief is differentiated from the team story. All
+deterministic and evidence-backed; nothing invented.
 """
 
 from story_orchestrator import build_story_package
@@ -102,8 +102,9 @@ def test_team_possessive_grammar_is_correct():
 def test_bullpen_state_uses_natural_language_not_profiles_as():
     body = TeamStoryWriter(_pkg()).write().body
     assert 'profiles as' not in body
-    # The "so what" takeaway closes on the bullpen's standing.
-    assert 'leaves the relief corps down to fewer rested options' in body
+    assert 'relief corps' not in body
+    assert 'That ' in body
+    assert 'clean options' not in body.lower()
 
 
 # ── Observation merging ───────────────────────────────────────────────────────
@@ -156,7 +157,9 @@ def test_morning_brief_differs_from_team_story():
     assert len(brief.body) < len(team.body)         # one-sentence recap, not full story
     assert 'Available arms: Erik Miller.' in brief.body
     # Brief states why yesterday changed the picture.
-    assert "Yesterday's late damage leaves the relief corps down to fewer rested options." in brief.body
+    assert "Yesterday's late damage matters here." in brief.body
+    assert 'That ' in brief.body
+    assert 'relief corps' not in brief.body
 
 
 def test_dashboard_leads_with_team_and_stays_short():

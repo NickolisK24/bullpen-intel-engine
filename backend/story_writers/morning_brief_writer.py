@@ -30,7 +30,7 @@ class MorningBriefWriter(BaseStoryWriter):
             sentences.append(f"Available arms: {', '.join(names)}.")
         else:
             available = self.availability_snapshot().get('available_arms_count')
-            if isinstance(available, int):
+            if isinstance(available, int) and available > 0:
                 sentences.append(f'Available arms: {available}.')
 
         today = self.brief_today_line()

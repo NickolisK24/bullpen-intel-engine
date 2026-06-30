@@ -7,7 +7,7 @@ query an engine, the database, or the completed-game/narrative layers; they
 never compute a priority, confidence, observation, or story focus. Every such
 decision was already made upstream and is simply read off the feed.
 
-This module deliberately imports nothing from ``services`` or ``models`` — the
+This module deliberately imports no engines, database access, or models — the
 only input a writer is allowed is the feed payload (a NarrativeFeed dataclass or
 its ``to_dict``). Phrasing is template-driven and deterministic: the same feed
 always yields the same prose. Temporal language is gated strictly on the feed's
@@ -16,8 +16,12 @@ always yields the same prose. Temporal language is gated strictly on the feed's
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any
+
+from services.editorial_voice_contract_v1 import render_baseball_consequence
+from utils.baseball_innings import format_baseball_innings
 
 
 # Safe relative-time framing. These mirror the narrative_feed_builder vocabulary,
@@ -39,28 +43,54 @@ PRIMARY_INSUFFICIENT = 'insufficient_context'
 
 # Short headlines keyed by the feed's headline_key (translation, not a decision).
 _HEADLINES = {
-    'lost_game_shape': 'Lead surrendered late',
-    'protected_game_shape': 'Lead protected',
-    'bullpen_stabilized': 'Bullpen slammed the door',
-    'bullpen_kept_team_alive': 'Bullpen kept it alive',
-    'bullpen_overexposed': 'Bullpen stretched thin',
-    'late_pressure_accumulated': 'Late traffic mounted',
-    'starter_carried_game': 'Starter carried the load',
-    'insufficient_context': 'Not enough detail yet',
+    'lost_game_shape': (
+        'Lead surrendered late',
+        'Late lead slipped away',
+        'Lead disappeared late',
+    ),
+    'protected_game_shape': (
+        'Lead protected',
+        'Late lead held',
+        'Bullpen finished the lead',
+    ),
+    'bullpen_stabilized': (
+        'Bullpen slammed the door',
+        'Lead finished cleanly',
+        'Late innings stayed quiet',
+    ),
+    'bullpen_kept_team_alive': (
+        'Bullpen kept it alive',
+        'Relievers left room for the rally',
+        'Bullpen gave the comeback room',
+    ),
+    'bullpen_overexposed': (
+        'Bullpen stretched thin',
+        'Short start stretched the bullpen',
+        'Bullpen had to cover',
+    ),
+    'late_pressure_accumulated': (
+        'Late traffic mounted',
+        'Late innings got heavy',
+        'Bullpen worked through traffic',
+    ),
+    'starter_carried_game': (
+        'Starter carried the load',
+        'Starter spared the bullpen',
+        'Deep start lightened the load',
+    ),
+    'insufficient_context': ('Not enough detail yet',),
 }
 _DEFAULT_HEADLINE = 'Bullpen note'
 
-# Short descriptors of the bullpen's standing, written so they read after both
-# "the relief corps is ___" and "leaves the relief corps ___". Band-supported.
-_OPTIONALITY_PHRASE = {
-    'thin': 'down to fewer rested options',
-    'narrow': 'down to a short list of clean arms',
-    'flexible': 'in good shape',
-    'deep': 'deep in fresh arms',
+_BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY = {
+    'thin': 'availability_narrowed',
+    'narrow': 'availability_narrowed',
+    'flexible': 'late_inning_margin',
+    'deep': 'late_inning_margin',
 }
-_CONCENTRATION_PHRASE = {
-    'concentrated': 'leaning on a few arms',
-    'narrow': 'leaning heavily on a few arms',
+_BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION = {
+    'concentrated': 'workload_concentration',
+    'narrow': 'workload_concentration',
 }
 
 # Plain-language reads of the narrative's observation identifiers. Only the
@@ -149,13 +179,8 @@ def _runs_word(n) -> str:
 
 
 def _ip(value) -> str | None:
-    """Format innings for evidence bullets ('6.0', '0.2') without altering it."""
-    if value is None:
-        return None
-    try:
-        return f'{float(value):.1f}'
-    except (TypeError, ValueError):
-        return None
+    """Format innings for public evidence bullets ('6.0', '0.2')."""
+    return format_baseball_innings(value)
 
 
 _NUMBER_WORDS = {
@@ -175,13 +200,41 @@ def _num(value) -> str | None:
 
 def _innings_word(value) -> str | None:
     """Whole innings as a word ('six'); fractional stays as a number ('5.1')."""
-    if value is None:
+    formatted = format_baseball_innings(value)
+    if not formatted:
         return None
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
+    whole, _, outs = formatted.partition('.')
+    if outs == '0':
+        return _num(whole)
+    return formatted
+
+
+def _stable_index(count: int, *parts: Any) -> int:
+    """Deterministic variant selection from feed identifiers."""
+    if count <= 1:
+        return 0
+    numeric_total = 0
+    for value in parts:
+        try:
+            numeric_total += int(value)
+        except (TypeError, ValueError):
+            continue
+    if numeric_total:
+        return numeric_total % count
+
+    raw = '|'.join(str(part or '') for part in parts)
+    if not raw:
+        return 0
+    digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+    return int(digest[:8], 16) % count
+
+
+def _variant(forms, index: int) -> str | None:
+    if not forms:
         return None
-    return _num(int(f)) if f.is_integer() else f'{f:.1f}'
+    if isinstance(forms, str):
+        return forms
+    return forms[index % len(forms)]
 
 
 def _join_names(names) -> str:
@@ -303,7 +356,30 @@ class BaseStoryWriter:
         return _TIME_PREFIX.get(self.safe_time_context(), '')
 
     def headline_text(self) -> str:
-        return _HEADLINES.get(self.headline_key(), _DEFAULT_HEADLINE)
+        forms = _HEADLINES.get(self.headline_key(), (_DEFAULT_HEADLINE,))
+        return _variant(forms, self._voice_index(len(forms))) or _DEFAULT_HEADLINE
+
+    def _voice_index(self, count: int, *extra: Any) -> int:
+        return _stable_index(
+            count,
+            self._get('team_id'),
+            self._get('game_pk'),
+            self.primary_narrative(),
+            self.headline_key(),
+            *extra,
+        )
+
+    def _voice_variant(self, forms, *extra: Any) -> str | None:
+        return _variant(forms, self._voice_index(len(forms), *extra))
+
+    def _stable_parts(self, *extra: Any) -> tuple[Any, ...]:
+        return (
+            self._get('team_id'),
+            self._get('game_pk'),
+            self.primary_narrative(),
+            self.headline_key(),
+            *extra,
+        )
 
     def _start(self, rest: str) -> str:
         """Open a sentence with the feed's permitted time framing (or none)."""
@@ -329,7 +405,20 @@ class BaseStoryWriter:
 
     def _starter(self) -> dict:
         block = self.evidence_block('starter_summary')
-        return block if isinstance(block, dict) else {}
+        if isinstance(block, dict) and block:
+            return block
+        completed = self._get('completed_game_context')
+        if not isinstance(completed, dict):
+            return {}
+        return {
+            'name': completed.get('starter_name'),
+            'innings': completed.get('starter_ip'),
+            'pitch_count': completed.get('starter_pitch_count'),
+            'exit_inning': completed.get('starter_exit_inning'),
+            'exit_score_for': completed.get('starter_exit_score_for'),
+            'exit_score_against': completed.get('starter_exit_score_against'),
+            'game_shape_created': completed.get('game_shape_created'),
+        }
 
     def _starter_handoff_clause(self) -> str | None:
         """'after Logan Webb worked 6.0 innings' when known; else the entry inning."""
@@ -395,9 +484,17 @@ class BaseStoryWriter:
         return self._start(clause)
 
     def _lead_starter_covered(self) -> str:
-        return self._start(
-            "the starter worked deep and kept the bullpen's exposure light"
+        anchor = self._starter_covered_anchor()
+        if not anchor:
+            return self._lead_insufficient()
+        consequence = self._bullpen_consequence_line(
+            fallback_key='workload_spread',
+            extra_stable_parts=('starter_covered_bullpen',),
         )
+        line = f'{anchor}, keeping the bullpen out of the heaviest innings'
+        if consequence:
+            return f'{self._start(line)} {consequence}'
+        return self._start(line)
 
     def _lead_insufficient(self) -> str:
         return self._start(
@@ -428,6 +525,28 @@ class BaseStoryWriter:
 
     def _starter_innings_word(self):
         return _innings_word(self._starter().get('innings'))
+
+    def _starter_innings_text(self):
+        return _ip(self._starter().get('innings'))
+
+    def _starter_pitch_count(self):
+        return self._starter().get('pitch_count')
+
+    def _starter_covered_anchor(self) -> str | None:
+        name = self._starter_name()
+        if not name:
+            return None
+        innings = self._starter_innings_text()
+        if innings:
+            return f'{name} worked {innings} innings'
+        pitches = self._starter_pitch_count()
+        try:
+            pitch_count = int(pitches)
+        except (TypeError, ValueError):
+            pitch_count = None
+        if pitch_count and pitch_count > 0:
+            return f'{name} threw {pitches} pitches'
+        return None
 
     def _key_relief_names(self) -> list[str]:
         appearances = self.evidence_block('key_relief_appearances') or []
@@ -471,6 +590,7 @@ class BaseStoryWriter:
             'protected_game_shape': self._compose_protected,
             'bullpen_kept_team_alive': self._compose_kept_alive,
             'bullpen_overexposed': self._compose_overexposed,
+            'starter_covered_bullpen': self._compose_starter_covered,
         }.get(self.primary_narrative())
         if composer is None:
             return self.lead_sentence()
@@ -491,10 +611,16 @@ class BaseStoryWriter:
                 line += f', with {_num(late)} runs crossing'
             return self._start(line)
 
-        if team:
-            opener = f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run lead to protect'
+        variant = self._voice_index(2, 'lost_body')
+        if variant == 0:
+            if team:
+                opener = f'{starter} gave {team} {ipw} strong innings and a {_num(lead)}-run lead to protect'
+            else:
+                opener = f"{starter}'s {ipw} strong innings staked a {_num(lead)}-run lead heading to the late innings"
+        elif team:
+            opener = f'{starter} gave {team} {ipw} innings and a {_num(lead)}-run lead'
         else:
-            opener = f"{starter}'s {ipw} strong innings staked a {_num(lead)}-run lead heading to the late innings"
+            opener = f'{starter} worked {ipw} innings before a {_num(lead)}-run lead reached the bullpen'
         sentences = [self._start(opener), "It didn't last."]
 
         closing = ''
@@ -516,16 +642,20 @@ class BaseStoryWriter:
         names = self._key_relief_names()
         sentences = []
 
+        variant = self._voice_index(2, 'protected_body')
         if include_opening and starter and ipw and lead:
-            who = team or 'a lead'
             opener = (f'{starter} handed {team} a {_num(lead)}-run lead after {ipw} innings'
                       if team else
                       f'{starter} worked {ipw} innings and handed off a {_num(lead)}-run lead')
             sentences.append(self._start(opener))
             sentences.append('The bullpen brought it home.')
         elif starter and ipw and lead:
-            opener = (f'{starter} worked {ipw} innings and left with a {_num(lead)}-run lead, '
-                      f'and the bullpen brought it home')
+            if variant == 0:
+                opener = (f'{starter} worked {ipw} innings and left with a {_num(lead)}-run lead, '
+                          f'and the bullpen brought it home')
+            else:
+                opener = (f'{starter} handed off after {ipw} innings with a '
+                          f'{_num(lead)}-run lead, and the bullpen finished it')
             sentences.append(self._start(opener))
         else:
             line = 'the bullpen protected '
@@ -549,13 +679,21 @@ class BaseStoryWriter:
         names = self._key_relief_names()
         sentences = []
 
+        variant = self._voice_index(2, 'kept_alive_body')
         if starter and ipw and deficit:
-            if team:
-                opener = (f"{starter}'s {ipw} innings left {team} chasing a "
-                          f'{_num(deficit)}-run deficit, but the bullpen kept it from growing')
+            if variant == 0:
+                if team:
+                    opener = (f"{starter}'s {ipw} innings left {team} chasing a "
+                              f'{_num(deficit)}-run deficit, but the bullpen kept it from growing')
+                else:
+                    opener = (f"{starter}'s {ipw} innings left a {_num(deficit)}-run deficit to "
+                              f'erase, but the bullpen kept it from growing')
+            elif team:
+                opener = (f'{starter} left {team} down {_num(deficit)} after {ipw} innings, '
+                          f'and the bullpen held the game there')
             else:
-                opener = (f"{starter}'s {ipw} innings left a {_num(deficit)}-run deficit to "
-                          f'erase, but the bullpen kept it from growing')
+                opener = (f'{starter} left a {_num(deficit)}-run deficit after {ipw} innings, '
+                          f'and the bullpen held the game there')
             sentences.append(self._start(opener))
         else:
             line = 'the bullpen kept the game within reach'
@@ -575,47 +713,77 @@ class BaseStoryWriter:
         # MEDIUM read: matter-of-fact, one sentence, no consequence pile-up.
         starter, ipw = self._starter_name(), self._starter_innings_word()
         late = self._late_runs_value()
+        variant = self._voice_index(2, 'overexposed_body')
         if starter and ipw:
-            line = (f"{starter}'s {ipw}-inning start left the bullpen to cover the rest")
+            if variant == 0:
+                line = f"{starter}'s {ipw}-inning start left the bullpen to cover the rest"
+            else:
+                line = f"{starter}'s {ipw}-inning start pushed the rest of the game to the bullpen"
         else:
             line = 'a short start left the bullpen to cover the rest'
         if late:
             line += f', including {_num(late)} late {"run" if late == 1 else "runs"}'
         return self._start(line)
 
-    def _bullpen_state_phrase(self) -> str | None:
+    def _compose_starter_covered(self, include_opening, include_consequence) -> str:
+        anchor = self._starter_covered_anchor()
+        if not anchor:
+            return self._lead_insufficient()
+        consequence = self._bullpen_consequence_line(
+            fallback_key='workload_spread',
+            extra_stable_parts=('starter_covered_bullpen', 'body'),
+        )
+        variant = self._voice_index(2, 'starter_covered_body')
+        if variant == 0:
+            line = f'{anchor}, keeping the bullpen out of the heaviest innings'
+        else:
+            line = f'{anchor}, so the bullpen only had to finish the shorter piece'
+        sentences = [self._start(line)]
+        if consequence:
+            sentences.append(consequence)
+        return ' '.join(sentences)
+
+    def _bullpen_consequence_key(self, fallback_key: str | None = None) -> str | None:
         optionality = self.availability_snapshot().get('optionality_band')
         concentration = self.workload_snapshot().get('concentration_band')
-        if optionality in _OPTIONALITY_PHRASE:
-            return _OPTIONALITY_PHRASE[optionality]
-        if concentration in _CONCENTRATION_PHRASE:
-            return _CONCENTRATION_PHRASE[concentration]
-        return None
+        if optionality in _BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY:
+            return _BULLPEN_STATE_CONSEQUENCE_BY_OPTIONALITY[optionality]
+        if concentration in _BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION:
+            return _BULLPEN_STATE_CONSEQUENCE_BY_CONCENTRATION[concentration]
+        return fallback_key
+
+    def _bullpen_consequence_line(
+        self,
+        *,
+        fallback_key: str | None = None,
+        extra_stable_parts: tuple[Any, ...] = (),
+    ) -> str | None:
+        key = self._bullpen_consequence_key(fallback_key)
+        if not key:
+            return None
+        line = render_baseball_consequence(
+            key,
+            stable_parts=self._stable_parts(
+                self.availability_snapshot().get('optionality_band'),
+                self.workload_snapshot().get('concentration_band'),
+                *extra_stable_parts,
+            ),
+        )
+        return line or None
 
     def bullpen_state_sentence(self) -> str | None:
         """A natural present-tense read of the bullpen's standing, or None."""
         if self.is_low_confidence():
             return None
-        phrase = self._bullpen_state_phrase()
-        return f'The relief corps is {phrase}.' if phrase else None
+        return self._bullpen_consequence_line()
 
     def story_takeaway(self) -> str | None:
         """The closing "so what" — a factual baseball consequence, or None.
 
         Ties the game's finish to where the relief corps now stands. No
-        prediction, no advice; falls back to the plain state read.
+        prediction, no advice; falls back to no tail when the feed has no state.
         """
-        descriptor = self._bullpen_state_phrase()
-        if descriptor is None:
-            return None
-        primary = self.primary_narrative()
-        if primary == 'lost_game_shape':
-            return f'That late collapse leaves the relief corps {descriptor}.'
-        if primary == 'protected_game_shape':
-            return f'The clean finish keeps the relief corps {descriptor}.'
-        if primary == 'bullpen_kept_team_alive':
-            return f'The comeback leaned on the bullpen, and the relief corps is {descriptor}.'
-        return f'The relief corps is {descriptor}.'
+        return self._bullpen_consequence_line(extra_stable_parts=('team_story',))
 
     def brief_recap(self) -> str:
         """A single-sentence game recap for the morning brief (not the full story)."""
@@ -640,21 +808,27 @@ class BaseStoryWriter:
             clause += ' the bullpen kept from growing'
         elif primary == 'bullpen_overexposed':
             clause = f'a short start put {self._team_possessive()} bullpen to work early'
+        elif primary == 'starter_covered_bullpen':
+            anchor = self._starter_covered_anchor()
+            if anchor:
+                clause = f'{anchor} and kept the bullpen workload light'
+            else:
+                clause = f'{team} {self.short_summary()}'
         else:
             clause = f'{team} {self.short_summary()}'
         return self._start(clause)
 
     def brief_today_line(self) -> str | None:
         """The morning brief's bullpen read — causal when yesterday changed it."""
-        descriptor = self._bullpen_state_phrase()
-        if descriptor is None:
+        consequence = self._bullpen_consequence_line(extra_stable_parts=('brief',))
+        if consequence is None:
             return None
         primary = self.primary_narrative()
         if primary == 'lost_game_shape':
-            return f"Yesterday's late damage leaves the relief corps {descriptor}."
+            return f"Yesterday's late damage matters here. {consequence}"
         if primary == 'bullpen_overexposed':
-            return f'The extra innings leave the relief corps {descriptor}.'
-        return f'The relief corps is {descriptor}.'
+            return f'The extra innings matter here. {consequence}'
+        return consequence
 
     def short_summary(self) -> str:
         """A terse clause for compact surfaces (dashboard)."""
@@ -674,7 +848,8 @@ class BaseStoryWriter:
         if primary == 'late_pressure_accumulated':
             return f'worked through {_runs_word(late79)} late' if late79 else 'worked through late traffic'
         if primary == 'starter_covered_bullpen':
-            return 'barely used behind a deep start'
+            anchor = self._starter_covered_anchor()
+            return f'kept the bullpen light after {anchor}' if anchor else 'has no completed-game read yet'
         return 'no completed-game read yet'
 
     # ── Priority-driven section inclusion ─────────────────────────────────────
@@ -725,7 +900,7 @@ class BaseStoryWriter:
         """Compact evidence bullets that tell the baseball story, in order.
 
         Order: starter -> largest lead/deficit -> bullpen entry -> turning point
-        -> late runs -> key relief -> clean options. Drawn only from
+        -> late runs -> key relief -> available relievers. Drawn only from
         evidence_blocks; capped at five.
         """
         if self.is_low_confidence():
@@ -781,7 +956,7 @@ class BaseStoryWriter:
 
         names = self.available_reliever_names()
         if names:
-            lines.append('Clean options: ' + ', '.join(names[:4]))
+            lines.append('Available relievers: ' + ', '.join(names[:4]))
 
         deduped = list(dict.fromkeys(lines))  # preserve order, drop any repeats
         return deduped[:5]

@@ -43,7 +43,7 @@ BASEBALL_CONSEQUENCE_LINES = {
     'narrow_late_path': (
         'That leaves less margin before the game reaches the trusted arms',
         'That narrows the path through the highest-pressure innings',
-        'That makes each clean arm matter more when the game tightens',
+        'That makes each rested reliever matter more when the game tightens',
     ),
     'bridge_pressure': (
         'That puts more of the game on the bridge to the late arms',
@@ -79,6 +79,12 @@ BASEBALL_CONSEQUENCE_LINES = {
 
 EXPANDED_EDITORIAL_DENY_TERMS = (
     '0 trusted',
+    'clean option',
+    'clean options',
+    'clean arm',
+    'clean arms',
+    'short list of clean arms',
+    'in good shape',
     'retained 0 arm',
     '3-spot change',
     'clean option is limited',
@@ -381,7 +387,12 @@ def editorial_voice_contract_report() -> dict[str, Any]:
         'consequence_keys': sorted(BASEBALL_CONSEQUENCE_LINES),
         'banned_language_count': len(EDITORIAL_BANNED_LANGUAGE),
         'plural_aware_matching': True,
-        'public_surfaces_migrated': ['compare_bullpens', 'todays_watch', 'what_changed'],
+        'public_surfaces_migrated': [
+            'compare_bullpens',
+            'todays_watch',
+            'what_changed',
+            'todays_story_completed_game',
+        ],
     }
 
 

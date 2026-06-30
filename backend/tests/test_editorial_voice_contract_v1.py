@@ -1,8 +1,8 @@
 """Editorial voice contract infrastructure tests.
 
 These tests cover the shared helpers public surfaces migrate to. Compare
-Bullpens is the first migrated surface; the other public story surfaces remain
-unwired until their scoped migration phases.
+Bullpens moved first; Today's Watch, What Changed, and the homepage-visible
+completed-game story writers now share the same public voice contract.
 """
 
 from pathlib import Path
@@ -27,7 +27,6 @@ from services.editorial_voice_contract_v1 import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 UNMIGRATED_PUBLIC_SURFACE_FILES = (
-    'backend/story_writers/base_story_writer.py',
     'backend/services/story_writer_v1.py',
     'backend/services/story_feed.py',
 )
@@ -111,6 +110,9 @@ def test_editorial_banned_language_helper_catches_singular_plural_loopholes():
         'The availability distribution looks similar.',
         'Clean option is limited as the public explanation.',
         'Clean options are limited as the public explanation.',
+        'The bridge has clean arms left.',
+        'The bridge has a short list of clean arms left.',
+        'The bullpen is in good shape.',
     )
 
     for text in cases:
@@ -131,9 +133,9 @@ def test_find_editorial_violations_reports_term_match_category_and_order():
 
 
 def test_editorial_conformance_report_can_gate_raw_counts_for_prose():
-    count_phrase = count_to_baseball_language(2, 'clean arm')
+    count_phrase = count_to_baseball_language(2, 'trusted reliever')
     safe = f'The bridge has {count_phrase}, so the late innings have room to breathe.'
-    unsafe = 'The bridge has 2 clean arms, so the late innings have room to breathe.'
+    unsafe = 'The bridge has 2 trusted relievers, so the late innings have room to breathe.'
 
     assert editorial_conformance_report(safe, allow_raw_counts=False)['status'] == STATUS_PASS
     report = editorial_conformance_report(unsafe, allow_raw_counts=False)
@@ -151,6 +153,7 @@ def test_contract_report_documents_migrated_surfaces():
         'compare_bullpens',
         'todays_watch',
         'what_changed',
+        'todays_story_completed_game',
     ]
 
 
@@ -171,6 +174,11 @@ def test_what_changed_is_registered_as_migrated_surface():
     ):
         text = (REPO_ROOT / rel_path).read_text(encoding='utf-8')
         assert 'editorial_voice_contract_v1' in text
+
+
+def test_todays_story_completed_game_is_registered_as_migrated_surface():
+    text = (REPO_ROOT / 'backend/story_writers/base_story_writer.py').read_text(encoding='utf-8')
+    assert 'editorial_voice_contract_v1' in text
 
 
 def test_helpers_are_not_wired_into_unmigrated_public_surfaces_yet():
