@@ -27,6 +27,8 @@ def _parse_args(argv=None):
     parser.add_argument('--output-md', dest='output_md',
                         default=str(REPO_ROOT / 'artifacts' / 'todays_story_editorial_review_E2C5C_live.md'),
                         help='Markdown artifact path.')
+    parser.add_argument('--review-label', dest='review_label',
+                        help='Optional title label for the generated review artifact.')
     return parser.parse_args(argv)
 
 
@@ -34,6 +36,17 @@ def _parse_date(value):
     if not value:
         return None
     return date.fromisoformat(value)
+
+
+def _review_label_for_path(path, explicit=None):
+    if explicit:
+        return explicit
+    text = str(path)
+    if 'E2C5D' in text:
+        return 'E2C-5D Live'
+    if 'E2C5C' in text:
+        return 'E2C-5C Live'
+    return None
 
 
 def main(argv=None):
@@ -52,6 +65,8 @@ def main(argv=None):
     report = build_todays_story_editorial_review(
         app=app,
         reference_date=_parse_date(args.reference_date),
+        artifact_path=args.output_md,
+        review_label=_review_label_for_path(args.output_md, args.review_label),
     )
     output = write_todays_story_editorial_review(report, args.output_md)
     print(output)

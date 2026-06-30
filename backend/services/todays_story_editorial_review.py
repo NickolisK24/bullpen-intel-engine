@@ -19,11 +19,17 @@ from services.intelligence_surface_service import (
     build_today_lead_story,
     resolve_default_reference_date,
 )
+from utils.baseball_innings import format_baseball_innings
 from utils.time import utc_now_naive
 
 
 ARTIFACT_PATH = 'artifacts/todays_story_editorial_review_E2C5C_live.md'
+REVIEW_LABEL = 'E2C-5C Live'
 IMPOSSIBLE_INNINGS_PATTERN = re.compile(r'\b\d+\.[367]\b')
+STARTER_COVERED_TAG = 'starter_covered_bullpen'
+OLD_STARTER_COVERED_SENTENCE = (
+    "the starter worked deep and kept the bullpen's exposure light"
+)
 SOURCE_PATH_HOMEPAGE = (
     'current stored CompletedGameContext rows -> build_today_lead_story '
     '(on-demand, no snapshot write)'
@@ -41,6 +47,8 @@ def build_todays_story_editorial_review(
     candidate_contexts=None,
     inspect_fn=None,
     generated_at=None,
+    artifact_path=None,
+    review_label=None,
 ) -> dict[str, Any]:
     """Build a deterministic review payload from current stored context rows."""
 
@@ -64,6 +72,9 @@ def build_todays_story_editorial_review(
         scans = _scan_entries(entries)
         headline_summary = _headline_reuse_summary(entries)
         repetition_summary = _same_beat_repetition_summary(entries)
+        starter_check = _starter_covered_specificity_check(entries)
+        homepage_fallback_status = _homepage_fallback_status(lead_response)
+        completed_fallback_status = _completed_game_fallback_status(entries)
         story_counts = Counter(
             (entry.get('primary_story') or entry.get('context_story_tag') or 'unknown')
             for entry in entries
@@ -74,10 +85,11 @@ def build_todays_story_editorial_review(
         rendered_drafts = sum(len(entry.get('drafts') or []) for entry in entries)
 
         return {
-            'artifact': ARTIFACT_PATH,
+            'artifact': str(artifact_path or ARTIFACT_PATH),
+            'review_label': review_label or REVIEW_LABEL,
             'generated_at': _isoformat(generated_at or utc_now_naive()),
             'reference_date': ref_iso,
-            'source_mode': 'current stored DB data only; no sync started',
+            'source_mode': 'current stored DB data only; exporter starts no sync',
             'generation_path_used': [
                 'services.todays_story_editorial_review.build_todays_story_editorial_review',
                 'services.intelligence_surface_service.build_today_lead_story',
@@ -103,6 +115,9 @@ def build_todays_story_editorial_review(
             'impossible_innings_scan': scans['impossible_innings_scan'],
             'headline_reuse_summary': headline_summary,
             'same_beat_repetition_summary': repetition_summary,
+            'starter_covered_specificity_check': starter_check,
+            'homepage_fallback_status': homepage_fallback_status,
+            'completed_game_fallback_status': completed_fallback_status,
         }
 
     if app is not None:
@@ -123,11 +138,12 @@ def write_todays_story_editorial_review(report: dict[str, Any], path: str | Path
 def render_todays_story_editorial_review_markdown(report: dict[str, Any]) -> str:
     """Render a readable Markdown artifact with exact public draft wording."""
 
+    label = report.get('review_label') or REVIEW_LABEL
     lines: list[str] = [
-        "# Today's Story Editorial Review Corpus - E2C-5C Live",
+        f"# Today's Story Editorial Review Corpus - {label}",
         '',
         'Read-only export of the current stored homepage-visible Today\'s Story / '
-        'completed-game story writer path after the final E2C-5C polish pass.',
+        'completed-game story writer path after the E2C completed-game voice polish.',
         '',
         '## Export Metadata',
         '',
@@ -148,6 +164,18 @@ def render_todays_story_editorial_review_markdown(report: dict[str, Any]) -> str
         '## Same-Beat Repetition / Swap-Test Summary',
         '',
         _json_block(report.get('same_beat_repetition_summary') or {}),
+        '',
+        '## Starter-Covered Bullpen Specificity Check',
+        '',
+        _json_block(report.get('starter_covered_specificity_check') or {}),
+        '',
+        '## Homepage Fallback Status',
+        '',
+        _json_block(report.get('homepage_fallback_status') or {}),
+        '',
+        '## Completed-Game Fallback Status',
+        '',
+        _json_block(report.get('completed_game_fallback_status') or {}),
         '',
         '## Homepage Lead Story',
         '',
@@ -376,6 +404,135 @@ def _same_beat_repetition_summary(entries: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _starter_covered_specificity_check(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [
+        entry for entry in entries
+        if (entry.get('primary_story') or entry.get('context_story_tag')) == STARTER_COVERED_TAG
+        and entry.get('publishable') is True
+    ]
+    failures = []
+    checked = []
+    for entry in rows:
+        draft = _draft_by_writer(entry, 'team_story') or _first_draft(entry)
+        context = entry.get('completed_game_context') or {}
+        text = (draft or {}).get('rendered_text') or ''
+        lowered = text.lower()
+        starter_name = str(context.get('starter_name') or '').strip()
+        starter_ip = format_baseball_innings(context.get('starter_ip'))
+        pitch_count = context.get('starter_pitch_count')
+        checks = {
+            'starter_name_present': bool(starter_name and starter_name in text),
+            'innings_or_pitch_count_anchor_present': _has_starter_anchor(
+                lowered,
+                starter_ip=starter_ip,
+                pitch_count=pitch_count,
+            ),
+            'bullpen_consequence_present': _has_bullpen_consequence(lowered),
+            'old_nameless_sentence_absent': OLD_STARTER_COVERED_SENTENCE not in lowered,
+        }
+        row = {
+            'team_id': entry.get('team_id'),
+            'game_pk': entry.get('game_pk'),
+            'headline': (draft or {}).get('headline'),
+            'starter_name': starter_name or None,
+            'starter_ip': starter_ip,
+            'starter_pitch_count': pitch_count,
+            'checks': checks,
+        }
+        checked.append(row)
+        missing = [key for key, passed in checks.items() if not passed]
+        if missing:
+            failures.append({**row, 'missing': missing})
+
+    if not rows:
+        status = 'not_applicable'
+    else:
+        status = 'pass' if not failures else 'review'
+    return {
+        'scope': 'publishable starter_covered_bullpen completed-game team-story drafts',
+        'status': status,
+        'starter_covered_publishable_rows': len(rows),
+        'rows_checked': checked,
+        'failure_count': len(failures),
+        'failures': failures,
+    }
+
+
+def _has_starter_anchor(text: str, *, starter_ip: str | None, pitch_count: Any) -> bool:
+    if starter_ip and (f'{starter_ip} innings' in text or f'{starter_ip} ip' in text):
+        return True
+    try:
+        pitches = int(pitch_count)
+    except (TypeError, ValueError):
+        return False
+    return pitches > 0 and f'{pitches} pitch' in text
+
+
+def _has_bullpen_consequence(text: str) -> bool:
+    if 'bullpen' not in text:
+        return False
+    consequence_terms = (
+        'rested arm',
+        'late inning',
+        'tired arm',
+        'margin',
+        'cover',
+        'exposure',
+        'spread the work',
+        'finish the shorter piece',
+        'shorter piece',
+        'heaviest inning',
+        'creates room',
+        'workload',
+        'kept the bullpen light',
+        'kept',
+        'worked deep',
+    )
+    return any(term in text for term in consequence_terms)
+
+
+def _homepage_fallback_status(lead_response: dict[str, Any] | None) -> dict[str, Any]:
+    lead_response = lead_response or {}
+    return {
+        'status': lead_response.get('status'),
+        'empty_reason': lead_response.get('empty_reason'),
+        'lead_rendered': bool(lead_response.get('lead_story')),
+        'candidates_considered': lead_response.get('candidates_considered'),
+        'publishable_candidates': lead_response.get('publishable_candidates'),
+        'errors': lead_response.get('errors'),
+    }
+
+
+def _completed_game_fallback_status(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    fallback_rows = [
+        {
+            'team_id': entry.get('team_id'),
+            'game_pk': entry.get('game_pk'),
+            'story_type': entry.get('primary_story') or entry.get('context_story_tag'),
+            'confidence': entry.get('confidence') or entry.get('context_confidence'),
+            'publishable': entry.get('publishable'),
+            'publish_reason': entry.get('publish_reason'),
+            'drafts_rendered': len(entry.get('drafts') or []),
+            'export_error': entry.get('export_error'),
+        }
+        for entry in entries
+        if entry.get('publishable') is not True
+    ]
+    if not entries:
+        status = 'empty_no_completed_game_contexts'
+    elif any(row.get('export_error') for row in fallback_rows):
+        status = 'review'
+    else:
+        status = 'pass'
+    return {
+        'status': status,
+        'rows_reviewed': len(entries),
+        'publishable_rows': sum(1 for entry in entries if entry.get('publishable') is True),
+        'fallback_or_unpublishable_rows': len(fallback_rows),
+        'fallback_rows': fallback_rows,
+    }
+
+
 def _template_key(text: str) -> str:
     text = re.sub(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'NAME', text)
     text = re.sub(r'\b\d+(?:\.\d+)?\b', 'NUM', text)
@@ -387,6 +544,7 @@ def _metadata(report: dict[str, Any]) -> dict[str, Any]:
         key: report.get(key)
         for key in (
             'artifact',
+            'review_label',
             'generated_at',
             'reference_date',
             'source_mode',
@@ -513,6 +671,11 @@ def _draft_by_writer(entry: dict[str, Any], writer: str) -> dict[str, Any] | Non
     return None
 
 
+def _first_draft(entry: dict[str, Any]) -> dict[str, Any] | None:
+    drafts = entry.get('drafts') or []
+    return drafts[0] if drafts else None
+
+
 def _scan_status_line(scan: dict[str, Any] | None, label: str) -> str:
     scan = scan or {}
     status = scan.get('status') or 'unknown'
@@ -552,6 +715,7 @@ def _isoformat(value: Any) -> str | None:
 __all__ = [
     'ARTIFACT_PATH',
     'IMPOSSIBLE_INNINGS_PATTERN',
+    'REVIEW_LABEL',
     'build_todays_story_editorial_review',
     'render_todays_story_editorial_review_markdown',
     'write_todays_story_editorial_review',

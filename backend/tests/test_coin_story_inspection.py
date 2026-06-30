@@ -162,6 +162,11 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
             team_id=1,
             game_pk=701,
             game_date='2026-06-28',
+            bullpen_story_tag='starter_covered_bullpen',
+            lead_lost=None,
+            lead_protected=None,
+            late_runs_allowed=0,
+            runs_allowed_innings_7_to_9=0,
             starter_name='Logan Webb',
             starter_ip=7.3333,
             starter_pitch_count=101,
@@ -187,10 +192,12 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
         candidate_contexts=contexts,
         inspect_fn=inspect,
         generated_at='2026-06-29T00:00:00',
+        artifact_path='artifacts/todays_story_editorial_review_E2C5D_live.md',
+        review_label='E2C-5D Live',
     )
     output = write_todays_story_editorial_review(
         report,
-        tmp_path / 'todays_story_editorial_review_E2C5C_live.md',
+        tmp_path / 'todays_story_editorial_review_E2C5D_live.md',
     )
     text = output.read_text(encoding='utf-8')
 
@@ -199,7 +206,13 @@ def test_todays_story_live_review_artifact_generation_succeeds(tmp_path):
     assert report['completed_game_fallback_or_unpublishable_rows'] == 1
     assert report['banned_language_scan']['status'] == 'pass'
     assert report['impossible_innings_scan']['status'] == 'pass'
+    assert report['artifact'] == 'artifacts/todays_story_editorial_review_E2C5D_live.md'
+    assert report['starter_covered_specificity_check']['status'] == 'pass'
+    assert report['completed_game_fallback_status']['status'] == 'pass'
     assert 'Homepage Lead Story' in text
+    assert 'E2C-5D Live' in text
+    assert 'Starter-Covered Bullpen Specificity Check' in text
+    assert 'Completed-Game Fallback Status' in text
     assert 'Completed-Game Story Corpus' in text
     assert '7.1 IP' in text
     assert 'No draft rendered.' in text
