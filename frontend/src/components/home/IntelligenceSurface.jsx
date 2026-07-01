@@ -62,6 +62,16 @@ const FAIL_CLOSED_SERVED_FROM = new Set([
 
 const EXPLORE_LINKS = [
   {
+    title: 'About BaseballOS',
+    body: 'Why BaseballOS exists, in a minute.',
+    to: '/about',
+  },
+  {
+    title: 'How to Read BaseballOS',
+    body: 'Learn every term in one line each.',
+    to: '/how-to-read',
+  },
+  {
     title: 'Dashboard',
     body: "See every team's pen at a glance.",
     to: '/dashboard',
@@ -75,6 +85,11 @@ const EXPLORE_LINKS = [
     title: 'Stories',
     body: "Read today's bullpen storylines.",
     to: '/stories',
+  },
+  {
+    title: 'Methodology',
+    body: 'See how each read is built.',
+    to: '/methodology',
   },
   {
     title: 'Data & Trust',
@@ -1347,9 +1362,9 @@ function Explore() {
   return (
     <SectionShell
       id="explore"
-      eyebrow="Explore"
-      title="Explore"
-      subtitle="More ways to read tonight's bullpens."
+      eyebrow="Learn & Explore"
+      title="Learn & Explore BaseballOS"
+      subtitle="Get to know BaseballOS, then dig into every bullpen."
       className="mb-6"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

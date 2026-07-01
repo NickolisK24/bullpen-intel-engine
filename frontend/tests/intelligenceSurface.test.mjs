@@ -978,19 +978,49 @@ test('Explore links render to existing routes', () => {
     teams,
   }))
 
+  assert.ok(htmlIncludes(html, 'Learn &amp; Explore'))
+  assert.ok(htmlIncludes(html, 'Learn &amp; Explore BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Get to know BaseballOS, then dig into every bullpen.'))
+
   for (const href of [
+    'href="/about"',
+    'href="/how-to-read"',
     'href="/dashboard"',
     'href="/bullpen"',
     'href="/stories"',
+    'href="/methodology"',
     'href="/trust"',
   ]) {
     assert.ok(htmlIncludes(html, href), href)
   }
 
+  assert.ok(htmlIncludes(html, 'About BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Why BaseballOS exists, in a minute.'))
+  assert.ok(htmlIncludes(html, 'How to Read BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Learn every term in one line each.'))
   assert.ok(htmlIncludes(html, "See every team&#x27;s pen at a glance."))
   assert.ok(htmlIncludes(html, "Open any team&#x27;s bullpen board."))
   assert.ok(htmlIncludes(html, "Read today&#x27;s bullpen storylines."))
+  assert.ok(htmlIncludes(html, 'See how each read is built.'))
   assert.ok(htmlIncludes(html, 'Check freshness and how we know.'))
+
+  const exploreHtml = sectionSlice(html, 'Learn &amp; Explore BaseballOS')
+  const orderedTitles = [
+    'About BaseballOS',
+    'How to Read BaseballOS',
+    'Dashboard',
+    'Bullpen',
+    'Stories',
+    'Methodology',
+    'Data &amp; Trust',
+  ]
+  let previousIndex = -1
+  for (const title of orderedTitles) {
+    const index = exploreHtml.indexOf(title)
+    assert.ok(index > previousIndex, title)
+    previousIndex = index
+  }
+
   assert.equal(countOccurrences(html, 'href="/bullpen"'), 1)
   assert.equal(htmlIncludes(html, 'href="/bullpen?view=compare"'), false)
 })
