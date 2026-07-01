@@ -392,6 +392,30 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
   assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
 })
 
+test('homepage sections introduce the bullpen picture before Tonight watch', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  const orderedSections = [
+    'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
+    'Today&#x27;s Story',
+    'Today&#x27;s Bullpen Picture',
+    'Tonight&#x27;s Bullpen Watch',
+    'Learn &amp; Explore BaseballOS',
+  ]
+  let previousIndex = -1
+  for (const section of orderedSections) {
+    const index = html.indexOf(section)
+    assert.ok(index > previousIndex, section)
+    previousIndex = index
+  }
+})
+
 test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -520,7 +544,7 @@ test('sample Today intelligence is visibly non-live and cannot show current fres
     intelligence: sampleIntelligence,
     teams,
   }))
-  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Tonight&#x27;s Bullpen Watch')
+  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Today&#x27;s Bullpen Picture')
 
   assert.ok(htmlIncludes(storyHtml, 'Sample intelligence state'))
   assert.ok(htmlIncludes(storyHtml, 'Not live MLB data.'))
@@ -543,7 +567,7 @@ test('stale homepage freshness does not imply current live data', () => {
     dashboard: staleDashboard,
     teams,
   }))
-  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Tonight&#x27;s Bullpen Watch')
+  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Today&#x27;s Bullpen Picture')
 
   assert.ok(htmlIncludes(storyHtml, 'Refresh delayed'))
   assert.equal(htmlIncludes(storyHtml, 'Freshness: Current'), false)
@@ -566,7 +590,7 @@ test('Bullpen Picture omits data-through when no trusted completed-game date exi
   }))
 
   const pictureStart = html.indexOf('Today&#x27;s Bullpen Picture')
-  const exploreStart = html.indexOf('Explore', pictureStart)
+  const exploreStart = html.indexOf('Tonight&#x27;s Bullpen Watch', pictureStart)
   const pictureHtml = html.slice(pictureStart, exploreStart)
 
   assert.equal(htmlIncludes(pictureHtml, 'Bullpen data through'), false)
@@ -791,7 +815,7 @@ test('Tonight live build timeout reason renders unavailable state without fallba
     landscape,
     teams,
   }))
-  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Today&#x27;s Bullpen Picture')
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
