@@ -9,6 +9,7 @@ const PRODUCT_LINKS = [
 
 const LEARN_LINKS = [
   { label: 'About', to: '/about' },
+  { label: 'How to Read', to: '/how-to-read' },
   { label: 'Methodology', to: '/methodology' },
   { label: 'Data & Trust', to: '/trust' },
 ]

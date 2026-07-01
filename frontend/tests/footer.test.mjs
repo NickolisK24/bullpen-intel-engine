@@ -42,7 +42,7 @@ test('site footer keeps internal, social, and shell wiring intact', () => {
   const html = render(React.createElement(Footer))
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 
-  for (const href of ['/', '/dashboard', '/bullpen', '/stories', '/methodology', '/trust']) {
+  for (const href of ['/', '/dashboard', '/bullpen', '/stories', '/about', '/how-to-read', '/methodology', '/trust']) {
     assert.ok(htmlIncludes(html, `href="${href}"`), href)
   }
   assert.ok(htmlIncludes(html, 'href="https://x.com/baseballoshq"'))
