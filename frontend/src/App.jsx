@@ -7,6 +7,7 @@ import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
+import About from './components/about/About'
 import Methodology from './components/methodology/Methodology'
 import DataTrust from './components/trust/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
@@ -23,6 +24,7 @@ export const APP_ROUTES = [
   { path: '/dashboard', Component: Dashboard },
   { path: '/bullpen', Component: Bullpen },
   { path: '/stories', Component: Stories },
+  { path: '/about', Component: About },
   { path: '/methodology', Component: Methodology },
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
