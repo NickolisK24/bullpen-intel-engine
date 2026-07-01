@@ -1419,6 +1419,14 @@ export function IntelligenceSurfaceView({
         onRetry={onRetryIntelligence}
         freshness={pageFreshness}
       />
+      <BullpenPicture
+        landscape={landscape}
+        loading={landscapeLoading}
+        error={landscapeError}
+        staleWithError={landscapeStaleWithError}
+        onRetry={onRetryLandscape}
+        freshness={pageFreshness}
+      />
       <TonightSection
         tonight={tonight}
         teams={teams}
@@ -1427,14 +1435,6 @@ export function IntelligenceSurfaceView({
         staleWithError={tonightStaleWithError}
         onRetry={onRetryTonight}
         dashboard={dashboard}
-      />
-      <BullpenPicture
-        landscape={landscape}
-        loading={landscapeLoading}
-        error={landscapeError}
-        staleWithError={landscapeStaleWithError}
-        onRetry={onRetryLandscape}
-        freshness={pageFreshness}
       />
       <Explore />
     </div>
