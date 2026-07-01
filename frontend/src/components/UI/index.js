@@ -4,6 +4,7 @@ export { default as ErrorState }   from './ErrorState'
 export { default as StaleDataNotice } from './StaleDataNotice'
 export {
   FreshnessBadge,
+  isSampleFreshness,
   DataThroughStamp,
   SlateDateStamp,
   LastSyncLabel,

@@ -39,6 +39,12 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const clone = (value) => JSON.parse(JSON.stringify(value))
+const sectionSlice = (html, startText, endText) => {
+  const start = html.indexOf(startText)
+  if (start < 0) return ''
+  const end = endText ? html.indexOf(endText, start + startText.length) : -1
+  return end > start ? html.slice(start, end) : html.slice(start)
+}
 
 const teams = [
   { team_id: 137, team_name: 'San Francisco Giants', team_abbreviation: 'SF' },
@@ -500,6 +506,49 @@ test('homepage freshness separates Tonight slate from completed-game bullpen dat
   assert.equal(htmlIncludes(html, 'Bullpen data through Jun 27'), false)
 })
 
+test('sample Today intelligence is visibly non-live and cannot show current freshness', () => {
+  const sampleIntelligence = {
+    ...intelligenceOk,
+    freshness: {
+      freshness_state: 'sample',
+      sample: true,
+      data_through: '2026-06-24',
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: sampleIntelligence,
+    teams,
+  }))
+  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Tonight&#x27;s Bullpen Watch')
+
+  assert.ok(htmlIncludes(storyHtml, 'Sample intelligence state'))
+  assert.ok(htmlIncludes(storyHtml, 'Not live MLB data.'))
+  assert.equal(htmlIncludes(storyHtml, 'Freshness: Current'), false)
+})
+
+test('stale homepage freshness does not imply current live data', () => {
+  const staleDashboard = {
+    ...dashboard,
+    freshness: {
+      ...dashboard.freshness,
+      freshness_state: 'stale',
+      is_current: false,
+      is_stale: true,
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard: staleDashboard,
+    teams,
+  }))
+  const storyHtml = sectionSlice(html, 'Today&#x27;s Story', 'Tonight&#x27;s Bullpen Watch')
+
+  assert.ok(htmlIncludes(storyHtml, 'Refresh delayed'))
+  assert.equal(htmlIncludes(storyHtml, 'Freshness: Current'), false)
+})
+
 test('Bullpen Picture omits data-through when no trusted completed-game date exists', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -742,10 +791,13 @@ test('Tonight live build timeout reason renders unavailable state without fallba
     landscape,
     teams,
   }))
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Today&#x27;s Bullpen Picture')
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
+  assert.ok(htmlIncludes(tonightHtml, 'Refresh delayed'))
+  assert.equal(htmlIncludes(tonightHtml, 'Freshness: Current'), false)
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)

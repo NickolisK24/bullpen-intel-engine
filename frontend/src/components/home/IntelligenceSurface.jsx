@@ -10,6 +10,7 @@ import {
 import {
   DataThroughStamp,
   FreshnessBadge,
+  isSampleFreshness,
   LastSyncLabel,
   SlateDateStamp,
   StaleDataNotice,
@@ -45,6 +46,19 @@ const EMPTY_REASON_COPY = {
   no_publishable_coin_story: 'No publishable bullpen story is available from the current completed-game context.',
   lead_story_unavailable: 'The lead story service is unavailable right now.',
 }
+
+const FAIL_CLOSED_EMPTY_REASONS = new Set([
+  'lead_story_unavailable',
+  'tonight_live_build_timeout',
+  'tonight_snapshot_build_unavailable',
+  'tonight_snapshot_unavailable',
+])
+
+const FAIL_CLOSED_SERVED_FROM = new Set([
+  'live_build_timeout',
+  'live_build_failed',
+  'snapshot_unavailable',
+])
 
 const EXPLORE_LINKS = [
   {
@@ -270,19 +284,83 @@ function dashboardFreshness(dashboard) {
   return firstObjectValue(dashboard?.freshness)
 }
 
+function payloadHasSampleMarker(payload) {
+  if (!payload || typeof payload !== 'object') return false
+  return Boolean(
+    isSampleFreshness(payload) ||
+    isSampleFreshness(payload.freshness) ||
+    isSampleFreshness(payload.metadata) ||
+    isSampleFreshness(payload.trust) ||
+    isSampleFreshness(payload.snapshot)
+  )
+}
+
+function payloadIsFailClosed(payload) {
+  if (!payload || typeof payload !== 'object') return false
+  const status = String(payload.status || '').toLowerCase()
+  const emptyReason = String(payload.empty_reason || '').toLowerCase()
+  const servedFrom = String(payload.snapshot?.served_from || '').toLowerCase()
+  return (
+    status === 'error' ||
+    FAIL_CLOSED_EMPTY_REASONS.has(emptyReason) ||
+    FAIL_CLOSED_SERVED_FROM.has(servedFrom)
+  )
+}
+
+function sectionFreshness(payload, fallbackFreshness) {
+  const payloadFreshness = firstObjectValue(
+    payload?.freshness,
+    payload?.metadata?.freshness,
+    payload?.trust?.freshness,
+    payload?.snapshot?.freshness,
+  )
+  const base = {
+    ...(fallbackFreshness && typeof fallbackFreshness === 'object' ? fallbackFreshness : {}),
+    ...(payloadFreshness && typeof payloadFreshness === 'object' ? payloadFreshness : {}),
+  }
+
+  if (payloadHasSampleMarker(payload)) {
+    return {
+      ...base,
+      freshness_state: 'sample',
+      sample: true,
+      is_current: false,
+    }
+  }
+
+  if (payloadIsFailClosed(payload)) {
+    return {
+      ...base,
+      freshness_state: 'stale',
+      is_current: false,
+      is_stale: true,
+      fail_closed: true,
+    }
+  }
+
+  return Object.keys(base).length ? base : null
+}
+
 function SectionFreshnessRow({
   dataThrough,
   lastSync,
   stale = false,
+  freshness,
   dataThroughLabel = 'Bullpen data through',
   className = '',
 }) {
-  if (!dataThrough && !lastSync && !stale) return null
+  const sample = isSampleFreshness(freshness)
+  if (!dataThrough && !lastSync && !stale && !freshness) return null
   return (
     <div className={`mb-3 flex flex-wrap items-center gap-2 ${className}`}>
-      <FreshnessBadge state={stale ? 'stale' : 'current'} />
+      <FreshnessBadge state={stale ? 'stale' : 'current'} freshness={freshness} />
       <DataThroughStamp date={dataThrough} label={dataThroughLabel} />
       <LastSyncLabel value={lastSync} />
+      {sample && (
+        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          Not live MLB data.
+        </span>
+      )}
     </div>
   )
 }
@@ -293,17 +371,24 @@ function TonightFreshnessRow({
   lastSync,
   generatedAt,
   stale = false,
+  freshness,
 }) {
-  if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale) return null
+  const sample = isSampleFreshness(freshness)
+  if (!slateDate && !dataThrough && !lastSync && !generatedAt && !stale && !freshness) return null
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
       <SlateDateStamp date={slateDate} />
-      {(dataThrough || lastSync || stale) && (
-        <FreshnessBadge state={stale ? 'stale' : 'current'} />
+      {(dataThrough || lastSync || stale || freshness) && (
+        <FreshnessBadge state={stale ? 'stale' : 'current'} freshness={freshness} />
       )}
       <DataThroughStamp date={dataThrough} label="Bullpen data through" />
       <LastSyncLabel value={generatedAt} label="Tonight watch generated" />
       <LastSyncLabel value={lastSync} />
+      {sample && (
+        <span className="font-mono text-[11px] uppercase tracking-widest text-chalk500">
+          Not live MLB data.
+        </span>
+      )}
     </div>
   )
 }
@@ -704,8 +789,13 @@ function TodaysStory({
   freshness,
 }) {
   const story = getLeadStoryView(intelligence, teams)
-  const dataThrough = firstTextValue(intelligence?.reference_date, freshness?.data_through)
-  const lastSync = textValue(freshness?.last_successful_sync)
+  const missingCompletedPayload = !intelligence && !loading && !error
+  const rowFreshness = sectionFreshness(
+    missingCompletedPayload ? { status: 'error' } : intelligence,
+    freshness,
+  )
+  const dataThrough = firstTextValue(intelligence?.reference_date, rowFreshness?.data_through)
+  const lastSync = textValue(rowFreshness?.last_successful_sync)
   return (
     <SectionShell
       id="todays-story"
@@ -734,6 +824,7 @@ function TodaysStory({
             dataThrough={dataThrough}
             lastSync={lastSync}
             stale={staleWithError}
+            freshness={rowFreshness}
           />
 
           {!story.hasStory ? (
@@ -844,8 +935,9 @@ function AroundBaseball({
 }) {
   const items = getAroundBaseballItems(dashboard, leadStory)
   const freshness = dashboardFreshness(dashboard)
-  const dataThrough = textValue(freshness?.data_through)
-  const lastSync = textValue(freshness?.last_successful_sync)
+  const rowFreshness = sectionFreshness(dashboard, freshness)
+  const dataThrough = textValue(rowFreshness?.data_through)
+  const lastSync = textValue(rowFreshness?.last_successful_sync)
   return (
     <SectionShell
       id="around-baseball"
@@ -886,6 +978,7 @@ function AroundBaseball({
             dataThrough={dataThrough}
             lastSync={lastSync}
             stale={staleWithError}
+            freshness={rowFreshness}
           />
           {items.length ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -1041,9 +1134,14 @@ function TonightSection({
   const cards = getTonightCards(tonight, teams)
   const sectionLimitations = cleanTonightList(tonight?.limitations)
   const freshness = dashboardFreshness(dashboard)
+  const missingCompletedPayload = !tonight && !loading && !error
+  const rowFreshness = sectionFreshness(
+    missingCompletedPayload ? { status: 'error' } : tonight,
+    freshness,
+  )
   const slateDate = textValue(tonight?.reference_date)
-  const dataThrough = textValue(freshness?.data_through)
-  const lastSync = textValue(freshness?.last_successful_sync)
+  const dataThrough = textValue(rowFreshness?.data_through)
+  const lastSync = textValue(rowFreshness?.last_successful_sync)
   const generatedAt = textValue(tonight?.snapshot?.generated_at)
   const emptyReason = textValue(tonight?.empty_reason)
   const snapshotUnavailable = [
@@ -1086,6 +1184,7 @@ function TonightSection({
           lastSync={lastSync}
           generatedAt={generatedAt}
           stale={staleWithError}
+          freshness={rowFreshness}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map(card => (
@@ -1123,6 +1222,8 @@ function TonightSection({
           dataThrough={dataThrough}
           lastSync={lastSync}
           generatedAt={generatedAt}
+          stale={staleWithError || snapshotUnavailable || missingCompletedPayload}
+          freshness={rowFreshness}
         />
       )}
       <TonightEmptyState isError={showUnavailable} onRetry={onRetry} />
@@ -1139,11 +1240,12 @@ function BullpenPicture({
   freshness,
 }) {
   const picture = getBullpenPictureView(landscape)
+  const rowFreshness = sectionFreshness(landscape, freshness)
   const dataThrough = firstTextValue(
     landscape?.games?.as_of_date,
-    freshness?.data_through,
+    rowFreshness?.data_through,
   )
-  const lastSync = textValue(freshness?.last_successful_sync)
+  const lastSync = textValue(rowFreshness?.last_successful_sync)
   return (
     <SectionShell
       id="bullpen-picture"
@@ -1180,6 +1282,7 @@ function BullpenPicture({
             dataThrough={dataThrough}
             lastSync={lastSync}
             stale={staleWithError}
+            freshness={rowFreshness}
           />
           <div className="border border-dirt bg-dugout p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
