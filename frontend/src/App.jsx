@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
+import Footer from './components/layout/Footer'
 import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
@@ -56,6 +57,7 @@ export default function App() {
         <Sidebar />
         <main className="flex-1 min-w-0 lg:ml-56">
           <AppRoutes />
+          <Footer />
         </main>
       </div>
       <Analytics />
