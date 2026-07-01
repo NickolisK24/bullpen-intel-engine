@@ -1,3 +1,5 @@
+import { getAvailabilityStatusLabel } from './availabilityView.js'
+
 export function getBullpenEmptyState({
   allRowsCount = 0,
   visibleRowsCount = 0,
@@ -48,7 +50,7 @@ export function getBullpenEmptyState({
 
   if (availabilityFilter && availabilityFilter !== 'ALL') {
     return {
-      title: `No pitchers match the ${availabilityFilter} availability filter.`,
+      title: `No pitchers match the ${getAvailabilityStatusLabel(availabilityFilter)} availability filter.`,
       subtitle: 'Adjust the availability status, team, risk, or freshness setting to expand the list.',
     }
   }

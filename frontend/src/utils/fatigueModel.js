@@ -22,9 +22,9 @@ export const FATIGUE_FACTORS = [
 // workload heuristic, not an injury or performance prediction.
 export const RISK_TIERS = [
   { level: 'LOW',      range: '0–24',   blurb: 'Fresh and available.' },
-  { level: 'MODERATE', range: '25–49',  blurb: 'Some recent use — monitor workload.' },
-  { level: 'HIGH',     range: '50–80',  blurb: 'Elevated workload — use with caution.' },
-  { level: 'CRITICAL', range: '81–100', blurb: 'Heavy recent workload — rest recommended.' },
+  { level: 'MODERATE', range: '25–49',  blurb: 'Some recent use — check workload.' },
+  { level: 'HIGH',     range: '50–80',  blurb: 'Elevated workload — read with caution.' },
+  { level: 'CRITICAL', range: '81–100', blurb: 'Heavy recent workload — rest burden is high.' },
 ]
 
 export const RISK_BLURB = RISK_TIERS.reduce((acc, t) => {

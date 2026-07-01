@@ -122,7 +122,7 @@ test('changes state renders pitcher summaries without team summary counts', () =
   assert.ok(htmlIncludes(html, 'Compared with ACE: Jun 6 -&gt; Jun 7'))
   assert.ok(!htmlIncludes(html, 'Available arms:'))
   assert.ok(!htmlIncludes(html, 'Bullpen condition moved from'))
-  assert.ok(htmlIncludes(html, 'Shift Arm moved from Monitor to Limited.'))
+  assert.ok(htmlIncludes(html, 'Shift Arm moved from On Watch to Limited.'))
   assert.ok(htmlIncludes(html, 'Pitched Sunday - 24 pitches.'))
 })
 

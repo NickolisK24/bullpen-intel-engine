@@ -287,7 +287,7 @@ test('team context reads map safe labels, explanations, and reasons only', () =>
   assert.deepEqual(model.cleanOptions, {
     label: 'Thin Clean Options',
     summary: 'Cleanly available choices are thinner than raw availability may suggest.',
-    reasons: ['2 clean options are available.'],
+    reasons: ['2 Clean Options are available.'],
   })
   assert.deepEqual(model.coverageSafety, {
     label: 'Stable Coverage Safety',
@@ -324,7 +324,7 @@ test('team context reads can map direct team_shape fields with public summaries'
   assert.deepEqual(model.cleanOptions, {
     label: 'Healthy Clean Options',
     summary: 'This bullpen has enough cleanly available choices for normal coverage.',
-    reasons: ['5 clean options are available.'],
+    reasons: ['5 Clean Options are available.'],
   })
   assert.equal(model.coverageSafety, null)
   assert.equal(model.workloadConcentration, null)

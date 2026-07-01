@@ -420,7 +420,7 @@ test('summarizes structured team context indicators without dumping count object
   })
 
   assert.ok(htmlIncludes(collapsedHtml, '3 indicators'))
-  assert.ok(htmlIncludes(collapsedHtml, 'Available Or Monitor Count: 704'))
+  assert.ok(htmlIncludes(collapsedHtml, 'Available Or On Watch Count: 704'))
   assert.ok(htmlIncludes(collapsedHtml, 'Stress Level: elevated'))
   assert.ok(htmlIncludes(collapsedHtml, 'View Indicators'))
   assert.ok(!htmlIncludes(collapsedHtml, 'Confidence Counts Low: 704'))
@@ -486,8 +486,8 @@ test('keeps high-volume inventory short until mobile users expand details', () =
           inventory_type: 'monitor_inventory',
           label: 'Monitor Inventory',
           count: 284,
-          members: makeMembers('Monitor', 284),
-          evidence: ['Monitor inventory contains current availability evidence.'],
+          members: makeMembers('On Watch', 284),
+          evidence: ['On Watch inventory contains current availability evidence.'],
           limitations: [],
           freshness: { freshness_state: 'current', data_through: '2026-06-02' },
           confidence: 'medium',
@@ -522,13 +522,13 @@ test('keeps high-volume inventory short until mobile users expand details', () =
   const reduction = 1 - (collapsedText.length / expandedText.length)
 
   assert.ok(htmlIncludes(collapsedText, '266 Available'))
-  assert.ok(htmlIncludes(collapsedText, '284 Monitor'))
+  assert.ok(htmlIncludes(collapsedText, '284 On Watch'))
   assert.ok(htmlIncludes(collapsedText, '88 Limited'))
   assert.ok(!htmlIncludes(collapsedText, 'Available Pitcher 001'))
   assert.ok(htmlIncludes(outerExpandedText, 'View Members'))
   assert.ok(!htmlIncludes(outerExpandedText, 'Available Pitcher 001'))
   assert.ok(htmlIncludes(expandedText, 'Available Pitcher 001'))
-  assert.ok(htmlIncludes(expandedText, 'Monitor Pitcher 284'))
+  assert.ok(htmlIncludes(expandedText, 'On Watch Pitcher 284'))
   assert.ok(htmlIncludes(expandedText, 'Limited Pitcher 088'))
   assert.ok(reduction >= 0.8, `expected at least 80% initial inventory text reduction, got ${Math.round(reduction * 100)}%`)
 })

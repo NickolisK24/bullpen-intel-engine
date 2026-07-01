@@ -15,6 +15,7 @@ import {
   AVAILABILITY_FILTERS,
   filterRowsByAvailability,
   getAvailabilityFilterCounts,
+  getAvailabilityStatusLabel,
   getRowAvailabilityStatus,
 } from './availabilityView'
 
@@ -213,6 +214,7 @@ function PitcherView({
       r.pitcher?.team_abbreviation,
       r.risk_level,
       getRowAvailabilityStatus(r),
+      getAvailabilityStatusLabel(getRowAvailabilityStatus(r)),
     ].filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(normalizedSearch)
   })
@@ -324,7 +326,7 @@ function PitcherView({
                 : 'text-chalk400 hover:text-chalk200'
             }`}
           >
-            {f === 'ALL' ? 'All' : f}{' '}
+            {getAvailabilityStatusLabel(f)}{' '}
             <span className="opacity-60">({availabilityCounts[f] ?? 0})</span>
           </button>
         ))}

@@ -32,6 +32,16 @@ function CardStatus({ children }) {
   )
 }
 
+function displayPublicCopy(value) {
+  return String(value ?? '')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+}
+
 function ChangesList({ changes }) {
   const items = Array.isArray(changes?.pitcher_changes) ? changes.pitcher_changes : []
   const visible = items.slice(0, 4)
@@ -41,7 +51,7 @@ function ChangesList({ changes }) {
     <div className="space-y-3">
       {changes?.team_summary?.summary && (
         <div className="rounded border border-amber/25 bg-amber/10 p-3 font-mono text-xs leading-relaxed text-amber">
-          {changes.team_summary.summary}
+          {displayPublicCopy(changes.team_summary.summary)}
         </div>
       )}
 
@@ -54,7 +64,7 @@ function ChangesList({ changes }) {
               </div>
               <div className="mt-0.5 text-sm font-semibold text-chalk100">{item.pitcher_name}</div>
               {item.summary && (
-                <p className="mt-1 text-xs leading-relaxed text-chalk400">{item.summary}</p>
+                <p className="mt-1 text-xs leading-relaxed text-chalk400">{displayPublicCopy(item.summary)}</p>
               )}
             </li>
           ))}
@@ -144,14 +154,14 @@ export function WhatChangedCard({
           </div>
           {changes?.comparison?.label && (
             <div className="rounded border border-dirt px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-chalk500">
-              {changes.comparison.label}
+              {displayPublicCopy(changes.comparison.label)}
             </div>
           )}
         </div>
         {body}
         {behindLeagueNote && (
           <p className="mt-3 rounded border border-dirt bg-field/40 p-3 font-mono text-[11px] leading-relaxed text-chalk400">
-            {behindLeagueNote}
+            {displayPublicCopy(behindLeagueNote)}
           </p>
         )}
       </div>
