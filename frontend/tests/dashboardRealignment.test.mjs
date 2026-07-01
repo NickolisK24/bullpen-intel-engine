@@ -139,11 +139,12 @@ test('league-wide bullpen state sits directly after the landscape', () => {
   assert.ok(readIndex > stateIndex)
 })
 
-test('bullpen read cards show the five availability counts', () => {
+test('bullpen read cards show the four public availability labels', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  for (const label of ['Available', 'On Watch', 'Limited', 'Avoid', 'Unavailable']) {
+  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
     assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
   }
+  assert.equal(htmlIncludes(html, 'Avoid'), false)
 })
 
 test('bullpen state reuses the Team Context Layer statement and confidence', () => {

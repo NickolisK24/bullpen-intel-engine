@@ -8,7 +8,7 @@ const SNAPSHOT_ROWS = [
   { status: 'Available', label: 'Available', key: 'available' },
   { status: 'Monitor', label: 'On Watch', key: 'monitor' },
   { status: 'Limited', label: 'Limited', key: 'limited' },
-  { status: 'Avoid', label: 'Avoid', key: 'avoid' },
+  { status: 'Avoid', label: 'Unavailable', key: 'avoid' },
   { status: 'Unavailable', label: 'Unavailable', key: 'unavailable' },
 ]
 
@@ -23,14 +23,14 @@ const HEALTH_TONE = {
 const STATE_META = {
   manageable: {
     label: 'Stable',
-    summary: 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.',
+    summary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
     leagueLabel: 'Stable Overall',
     leagueSummary: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
     tone: HEALTH_TONE.manageable,
   },
   stable: {
     label: 'Stable',
-    summary: 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.',
+    summary: 'The current bullpen read shows enough usable coverage without a clear pressure flag.',
     leagueLabel: 'Stable Overall',
     leagueSummary: 'Most bullpen-eligible arms remain usable, with limited league-wide pressure.',
     tone: HEALTH_TONE.manageable,
@@ -116,6 +116,9 @@ function safeText(value) {
     .replace(/\bMonitor\b/g, 'On Watch')
     .replace(/\brestricted\b/g, 'limited')
     .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bLimited,\s*Avoid,\s*or\s*Unavailable\b/g, 'Limited or Unavailable')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
     .replace(/\bconstrained\b/g, 'stretched')
     .replace(/\bConstrained\b/g, 'Stretched')
     .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
@@ -139,6 +142,9 @@ function safeTeamContextText(value) {
     .replace(/\bMonitor\b/g, 'On Watch')
     .replace(/\brestricted\b/g, 'limited')
     .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bLimited,\s*Avoid,\s*or\s*Unavailable\b/g, 'Limited or Unavailable')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
     .replace(/\bconstrained\b/g, 'stretched')
     .replace(/\bConstrained\b/g, 'Stretched')
     .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
@@ -176,7 +182,7 @@ function teamContextSummary(key, label) {
   }
   if (key === 'workloadConcentration') {
     if (labelKey.includes('no_workload_concentration')) {
-      return 'Recent bullpen work has been spread out enough to avoid a clear concentration flag.'
+      return 'Recent bullpen work has been spread out without creating a clear concentration flag.'
     }
     if (labelKey.includes('some_workload_concentration')) {
       return 'Recent relief work has flowed through a smaller group of arms.'
@@ -328,7 +334,7 @@ function getWorkloadConcern(context, stateKey) {
   if (stateKey === 'elevated' || counts.narrowed > 0) {
     return buildConcern(
       'Not every arm is cleanly available',
-      `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited, Avoid, or Unavailable.`,
+      `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited or Unavailable.`,
     )
   }
   if (stateKey === 'monitoring') {
@@ -355,7 +361,7 @@ function getLeagueSecondaryConcern(context) {
   if (counts.unavailableOrAvoid > 0) {
     return buildConcern(
       'Some arms are out of the normal plan',
-      `${counts.unavailableOrAvoid} of ${counts.total} ${pluralRelievers(counts.total)} are Avoid or Unavailable.`,
+      `${counts.unavailableOrAvoid} of ${counts.total} ${pluralRelievers(counts.total)} are Unavailable.`,
     )
   }
   if (counts.limited > 0) {
@@ -372,7 +378,7 @@ function isLowValueZeroEvidence(item) {
   return (
     /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
     /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
-    /^No relievers? are marked Avoid or Unavailable\.$/i.test(text)
+    /^No relievers? are marked Unavailable\.$/i.test(text)
   )
 }
 
@@ -382,7 +388,7 @@ function getWorkloadEvidence(context) {
   return [
     `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     counts.monitor > 0 ? `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the On Watch group.` : null,
-    counts.narrowed > 0 ? `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited, Avoid, or Unavailable.` : null,
+    counts.narrowed > 0 ? `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited or Unavailable.` : null,
   ].filter(Boolean)
 }
 

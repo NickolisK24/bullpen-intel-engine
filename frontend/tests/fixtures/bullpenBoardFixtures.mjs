@@ -7,7 +7,7 @@ const GROUP_META = {
   Available: { label: 'Available', description: 'Workload signals are inside normal ranges in the latest completed data.' },
   Monitor: { label: 'Monitor', description: 'Worth a look at recent workload before counting on these arms.' },
   Limited: { label: 'Limited', description: 'Recent workload suggests limited use in the current availability read.' },
-  Avoid: { label: 'Avoid', description: 'Meaningful recent-use load on these arms.' },
+  Avoid: { label: 'Unavailable', description: 'Meaningful recent-use load keeps these arms out of the available group.' },
   Unavailable: { label: 'Unavailable Pitchers', description: 'Not available in the current bullpen planning read.' },
 }
 
@@ -137,8 +137,8 @@ function contextFromGroups(groups, freshness) {
     : [
       `${available} of ${total} relievers are classified Available.`,
       restricted === 0
-        ? 'No relievers are marked Avoid or Unavailable.'
-        : `${restricted} of ${total} relievers are Avoid or Unavailable.`,
+        ? 'No relievers are marked Unavailable.'
+        : `${restricted} of ${total} relievers are Unavailable.`,
       'Availability classifications are workload-based only.',
     ]
   const limitations = []
@@ -369,7 +369,7 @@ export const populatedBoard = makeBoard({
       }),
     ],
     Avoid: [
-      card(5, 'Avery Avoid', 'Avoid', {
+      card(5, 'Avery Workload Unavailable', 'Avoid', {
         fatigue_score: 80,
         short_reason: '42 pitches yesterday',
         last_appearance: { game_date: '2026-05-30', pitches: 42 },

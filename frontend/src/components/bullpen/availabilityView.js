@@ -3,9 +3,20 @@ export const AVAILABILITY_FILTERS = [
   'Available',
   'Monitor',
   'Limited',
+  'Unavailable',
+]
+
+export const RAW_AVAILABILITY_STATUSES = [
+  'Available',
+  'Monitor',
+  'Limited',
   'Avoid',
   'Unavailable',
 ]
+
+const PUBLIC_STATUS_BY_RAW_STATUS = {
+  Avoid: 'Unavailable',
+}
 
 const STATUS_CONFIG = {
   Available: {
@@ -39,8 +50,8 @@ const STATUS_CONFIG = {
     dotStyle: { backgroundColor: '#f97316' },
   },
   Avoid: {
-    label: 'Avoid',
-    tone: 'Recent usage has tightened the margin enough that this arm should not be treated as a normal option.',
+    label: 'Unavailable',
+    tone: "Recent workload keeps this arm out of today's available group.",
     style: {
       color: '#fca5a5',
       borderColor: 'rgba(239,68,68,0.42)',
@@ -50,7 +61,7 @@ const STATUS_CONFIG = {
   },
   Unavailable: {
     label: 'Unavailable',
-    tone: "Roster or workload context means this pitcher should not be counted in tonight's bullpen plan.",
+    tone: "Roster or workload context keeps this pitcher out of tonight's available group.",
     style: {
       color: '#fecaca',
       borderColor: 'rgba(185,28,28,0.54)',
@@ -140,12 +151,21 @@ export function getRosterStatusSummary(rosterStatus = null) {
 
 export function normalizeAvailabilityStatus(status) {
   if (!status) return null
-  return AVAILABILITY_FILTERS.find(s => s !== 'ALL' && s.toLowerCase() === String(status).toLowerCase()) || null
+  return RAW_AVAILABILITY_STATUSES.find(s => s.toLowerCase() === String(status).toLowerCase()) || null
+}
+
+export function getPublicAvailabilityStatus(status) {
+  const normalized = normalizeAvailabilityStatus(status)
+  if (!normalized) return null
+  return PUBLIC_STATUS_BY_RAW_STATUS[normalized] || normalized
 }
 
 export function getAvailabilityStatusLabel(status) {
   const text = String(status || '').trim()
   if (!text) return ''
+  if (text.toLowerCase() === 'all') return 'All'
+  const normalized = normalizeAvailabilityStatus(text)
+  if (normalized) return STATUS_CONFIG[normalized]?.label || text
   return STATUS_DISPLAY_LABELS[text.toLowerCase()] || text
 }
 
@@ -203,14 +223,15 @@ export function getDataStateView(dataState) {
 
 export function filterRowsByAvailability(rows, availabilityFilter = 'ALL') {
   if (availabilityFilter === 'ALL') return rows
-  return rows.filter(row => getRowAvailabilityStatus(row) === availabilityFilter)
+  const publicFilter = getPublicAvailabilityStatus(availabilityFilter)
+  return rows.filter(row => getPublicAvailabilityStatus(getRowAvailabilityStatus(row)) === publicFilter)
 }
 
 export function getAvailabilityFilterCounts(rows = []) {
   const counts = Object.fromEntries(AVAILABILITY_FILTERS.map(filter => [filter, 0]))
   counts.ALL = rows.length
   rows.forEach(row => {
-    const status = getRowAvailabilityStatus(row)
+    const status = getPublicAvailabilityStatus(getRowAvailabilityStatus(row))
     if (status && counts[status] != null) counts[status] += 1
   })
   return counts

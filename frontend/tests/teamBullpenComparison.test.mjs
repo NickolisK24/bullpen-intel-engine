@@ -44,7 +44,8 @@ test('renders side-by-side snapshot with both teams and their counts', () => {
 test('renders deterministic comparison observations naming the team with more', () => {
   const html = render(differingComparison)
   assert.ok(htmlIncludes(html, 'Aces currently has more relievers classified Available.'))
-  assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Avoid or Unavailable.'))
+  assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Unavailable.'))
+  assert.equal(htmlIncludes(html, 'Avoid or Unavailable'), false)
 })
 
 test('each observation explains itself with both raw counts', () => {

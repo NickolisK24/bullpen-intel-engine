@@ -75,6 +75,13 @@ function buildRows(counts = {}, order = [], labelFor = value => value, styleFor 
   }))
 }
 
+function publicStatusCounts(statuses = {}) {
+  return {
+    ...statuses,
+    Unavailable: Number(statuses?.Unavailable || 0) + Number(statuses?.Avoid || 0),
+  }
+}
+
 function getPrimaryTrustNote(summary, limitedByData, isCurrentAvailability) {
   const notes = Array.isArray(summary?.notes) ? summary.notes : []
   if (limitedByData) {
@@ -171,7 +178,7 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const isCurrentAvailability = summary?.is_current_availability === true
   const modeCopy = getModeCopy(mode, isCurrentAvailability)
   const statusRows = buildRows(
-    summary?.statuses,
+    publicStatusCounts(summary?.statuses),
     AVAILABILITY_FILTERS.filter(status => status !== 'ALL'),
     getAvailabilityStatusLabel,
     status => getAvailabilityBadgeView(status).style,

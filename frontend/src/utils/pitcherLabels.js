@@ -63,7 +63,7 @@ export const PITCHER_READ_LABELS = Object.freeze({
   REST_RESTRICTED: read(
     'rest_restricted',
     'Limited Rest',
-    'Current workload status is Limited or Avoid because of recent workload only.',
+    'Current workload status is Limited or Unavailable because of recent workload only.',
     { borderColor: 'rgba(249,115,22,0.34)', backgroundColor: 'rgba(249,115,22,0.09)', color: '#fed7aa' },
   ),
   UNAVAILABLE: read(

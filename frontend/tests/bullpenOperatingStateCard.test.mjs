@@ -386,7 +386,7 @@ test('renders compact team operating card density with the core read intact', ()
   assert.ok(htmlIncludes(html, 'Team'))
   assert.ok(htmlIncludes(html, 'New York Mets'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State: Stable'))
-  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.'))
+  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage without a clear pressure flag.'))
   assert.ok(htmlIncludes(html, 'Primary Concern'))
   assert.ok(htmlIncludes(html, 'Active workload is usable'))
   assert.ok(htmlIncludes(html, 'Secondary Concern'))
@@ -604,6 +604,7 @@ test('team card omits unsupported rows and gates starter support by sample size'
   assert.equal(htmlIncludes(zeroMonitorHtml, '0 of 6 relievers are in the Monitor group.'), false)
   assert.equal(htmlIncludes(zeroMonitorCompactHtml, '0 of 6 relievers are in the Monitor group.'), false)
   assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Avoid or Unavailable.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Unavailable.'), false)
 
   for (const phrase of [
     'Clean Options',
@@ -720,7 +721,7 @@ test('omits internal language from visible card copy', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
@@ -752,7 +753,7 @@ test('separates limitation copy from evidence', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
@@ -782,7 +783,7 @@ test('deduplicates league-wide workload limitation copy', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }

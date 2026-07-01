@@ -123,7 +123,7 @@ test('returning card emphasizes the followed team and links to its board', () =>
   assert.ok(htmlIncludes(html, 'Overall Availability: Manageable'))
   assert.ok(htmlIncludes(html, 'This pen has ordinary usable room right now.'))
   assert.ok(htmlIncludes(html, '4 of 6 relievers are classified Available.'))
-  assert.ok(htmlIncludes(html, 'No relievers are marked Avoid or Unavailable.'))
+  assert.equal(htmlIncludes(html, 'No relievers are marked Avoid or Unavailable.'), false)
   assert.ok(!htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Available'))
   assert.ok(htmlIncludes(html, 'On Watch'))

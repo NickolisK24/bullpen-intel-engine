@@ -8,7 +8,7 @@ const SNAPSHOT_ROWS = [
   { key: 'available', label: 'Available', status: 'Available' },
   { key: 'monitor', label: 'On Watch', status: 'Monitor' },
   { key: 'limited', label: 'Limited', status: 'Limited' },
-  { key: 'avoid', label: 'Avoid', status: 'Avoid' },
+  { key: 'avoid', label: 'Unavailable', status: 'Avoid' },
   { key: 'unavailable', label: 'Unavailable', status: 'Unavailable' },
 ]
 
@@ -39,6 +39,8 @@ function displayPublicCopy(value) {
     .replace(/\bMonitor\b/g, 'On Watch')
     .replace(/\brestricted\b/g, 'limited')
     .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
     .replace(/\bconstrained\b/g, 'stretched')
     .replace(/\bConstrained\b/g, 'Stretched')
     .replace(/\bsnapshot\b/gi, 'read')

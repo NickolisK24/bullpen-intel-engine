@@ -225,7 +225,8 @@ test('primary concern is derived from workload lanes', () => {
   }), { scope: 'team' })
 
   assert.equal(model.primaryConcern.label, 'Not every arm is cleanly available')
-  assert.match(model.primaryConcern.body, /Limited, Avoid, or Unavailable/)
+  assert.match(model.primaryConcern.body, /Limited or Unavailable/)
+  assert.equal(model.primaryConcern.body.includes('Avoid'), false)
 })
 
 test('roster pressure is built only from roster authority', () => {
