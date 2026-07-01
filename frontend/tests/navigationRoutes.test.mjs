@@ -48,7 +48,7 @@ test('root HTML uses the public BaseballOS domain for canonical and social metad
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 
   assert.ok(htmlIncludes(html, '<title>BaseballOS | MLB Bullpen Intelligence</title>'))
-  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.'))
   assert.ok(htmlIncludes(html, '<link rel="canonical" href="https://baseballos.app/" />'))
   assert.ok(htmlIncludes(html, '<meta property="og:url" content="https://baseballos.app/" />'))
   assert.ok(htmlIncludes(html, '<meta property="og:image" content="https://baseballos.app/og/baseballos-card.svg" />'))
