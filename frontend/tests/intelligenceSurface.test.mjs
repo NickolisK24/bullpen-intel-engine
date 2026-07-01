@@ -365,11 +365,14 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
     teams: [],
   }))
 
-  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
-  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'Get weekly bullpen notes'))
+  assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'))
+  assert.ok(htmlIncludes(html, 'href="#bullpen-picture"'))
+  assert.ok(htmlIncludes(html, 'Get the weekly Bullpen Report'))
   assert.ok(htmlIncludes(html, 'mailto:baseballoshq@gmail.com'))
   assert.ok(htmlIncludes(html, 'Favorite%20team%3A%20'))
+  assert.ok(htmlIncludes(html, 'One email a week. No spam, no picks.'))
   assert.equal(htmlIncludes(html, 'mailto:nickoliskacludis@gmail.com'), false)
   assert.ok(htmlIncludes(html, 'Today&#x27;s Story'))
   assert.ok(htmlIncludes(html, 'Reading the latest completed-game context...'))
@@ -392,10 +395,10 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
-  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB workload, availability, usage, and game context after completed games.'))
-  assert.ok(htmlIncludes(html, 'It stays descriptive and evidence-backed.'))
+  assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.'))
+  assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
   assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
   assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
   assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
@@ -932,8 +935,10 @@ test('Explore links render to existing routes', () => {
     assert.ok(htmlIncludes(html, href), href)
   }
 
-  assert.ok(htmlIncludes(html, 'Scan the league board.'))
-  assert.ok(htmlIncludes(html, 'Read bullpen stories.'))
+  assert.ok(htmlIncludes(html, "See every team&#x27;s pen at a glance."))
+  assert.ok(htmlIncludes(html, "Open any team&#x27;s bullpen board."))
+  assert.ok(htmlIncludes(html, "Read today&#x27;s bullpen storylines."))
+  assert.ok(htmlIncludes(html, 'Check freshness and how we know.'))
   assert.equal(countOccurrences(html, 'href="/bullpen"'), 1)
   assert.equal(htmlIncludes(html, 'href="/bullpen?view=compare"'), false)
 })

@@ -49,22 +49,22 @@ const EMPTY_REASON_COPY = {
 const EXPLORE_LINKS = [
   {
     title: 'Dashboard',
-    body: 'Scan the league board.',
+    body: "See every team's pen at a glance.",
     to: '/dashboard',
   },
   {
     title: 'Bullpen',
-    body: 'Open team bullpen board.',
+    body: "Open any team's bullpen board.",
     to: '/bullpen',
   },
   {
     title: 'Stories',
-    body: 'Read bullpen stories.',
+    body: "Read today's bullpen storylines.",
     to: '/stories',
   },
   {
     title: 'Data & Trust',
-    body: 'Check data freshness.',
+    body: 'Check freshness and how we know.',
     to: '/trust',
   },
 ]
@@ -581,28 +581,34 @@ function SeesHeader() {
   return (
     <header className="mb-7 max-w-4xl pt-2 sm:pt-4">
       <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
-        Intelligence Surface
+        MLB BULLPEN INTELLIGENCE — UPDATED DAILY
       </div>
       <h1 className="mt-3 font-display text-5xl leading-none tracking-wide text-chalk100 sm:text-6xl lg:text-7xl">
-        MLB Bullpen Intelligence
+        See which bullpens are fresh, stretched, or vulnerable tonight — and why.
       </h1>
       <p className="mt-4 max-w-3xl text-base leading-relaxed text-chalk300 sm:text-lg">
-        See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.
+        BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.
       </p>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-chalk500">
-        BaseballOS reads public MLB workload, availability, usage, and game context after completed games. It stays descriptive and evidence-backed.
+        Descriptive only — we show what we see and what we can't. No picks, no predictions.
       </p>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         <a
-          href={WEEKLY_NOTES_MAILTO}
+          href="#bullpen-picture"
           className="inline-flex w-full items-center justify-center rounded border border-amber/40 bg-amber/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-amber transition-colors hover:border-amber/70 hover:bg-amber/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
         >
-          Get weekly bullpen notes
+          Explore today's bullpen picture
         </a>
-        <span className="max-w-xl text-xs leading-relaxed text-chalk500">
-          Join the launch interest list and include your favorite team.
-        </span>
+        <a
+          href={WEEKLY_NOTES_MAILTO}
+          className="inline-flex w-full items-center justify-center rounded border border-dirt bg-field/60 px-4 py-3 font-mono text-xs uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
+        >
+          Get the weekly Bullpen Report
+        </a>
       </div>
+      <p className="mt-3 max-w-xl text-xs leading-relaxed text-chalk500">
+        One email a week. No spam, no picks.
+      </p>
     </header>
   )
 }
@@ -1228,7 +1234,7 @@ function Explore() {
       id="explore"
       eyebrow="Explore"
       title="Explore"
-      subtitle="Quiet paths into the deeper product."
+      subtitle="More ways to read tonight's bullpens."
       className="mb-6"
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
