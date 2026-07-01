@@ -182,8 +182,8 @@ test('read detail leads with the counts that drive it', () => {
   const { byKey } = getBullpenReads({ total: 8, ready: 2, watch: 2, needRest: 3 })
   assert.match(byKey.pressure.detail, /^3 of 8 arms need rest/)
   assert.match(byKey.recovery.detail, /^2 of 8 arms come in rested/)
-  assert.match(byKey.concentration.detail, /^2 of 8 on the watch list/)
-  assert.match(byKey.cleanOptions.detail, /^2 of 8 arms enter without restriction/)
+  assert.match(byKey.concentration.detail, /^2 of 8 on watch/)
+  assert.match(byKey.cleanOptions.detail, /^2 of 8 arms enter without major workload limits/)
   // Singular counts read grammatically.
   const single = getBullpenReads({ total: 8, ready: 1, watch: 1, needRest: 1 })
   assert.match(single.byKey.recovery.detail, /^1 of 8 arm comes in rested/)

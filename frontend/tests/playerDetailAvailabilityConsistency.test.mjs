@@ -75,8 +75,8 @@ test('player detail summary keeps 15-day IL final availability unavailable when 
     assert.ok(htmlIncludes(html, 'Roster Status'), name)
     assert.ok(htmlIncludes(html, '15-Day IL'), name)
     assert.ok(htmlIncludes(html, 'Workload Signal'), name)
-    assert.ok(htmlIncludes(html, 'Workload signal: Monitor'), name)
-    assert.equal(htmlIncludes(html, 'Final availability: Monitor'), false, name)
+    assert.ok(htmlIncludes(html, 'Workload signal: On Watch'), name)
+    assert.equal(htmlIncludes(html, 'Final availability: On Watch'), false, name)
   }
 })
 

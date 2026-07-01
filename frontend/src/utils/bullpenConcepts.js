@@ -35,8 +35,8 @@ const needRestPhrase = (needRest, total) =>
 const restedPhrase = (ready, total) =>
   `${ready} of ${total} ${ready === 1 ? 'arm comes' : 'arms come'} in rested`
 const unrestrictedPhrase = (ready, total) =>
-  `${ready} of ${total} ${ready === 1 ? 'arm enters' : 'arms enter'} without restriction`
-const onWatchPhrase = (watch, total) => `${watch} of ${total} on the watch list`
+  `${ready} of ${total} ${ready === 1 ? 'arm enters' : 'arms enter'} without major workload limits`
+const onWatchPhrase = (watch, total) => `${watch} of ${total} on watch`
 
 function normalizeCounts(counts = {}) {
   const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
@@ -140,7 +140,7 @@ function concentrationRead({ total, watch, needRest }) {
   }
   return {
     ...base, label: 'Spread-Out', display: 'Spread-Out Workload', tone: 'rest',
-    detail: watch > 0 ? `Just ${watch} of ${total} on watch; work otherwise spread.` : 'No arms on the watch list.',
+    detail: watch > 0 ? `Just ${watch} of ${total} on watch; work otherwise spread.` : 'No arms on watch.',
   }
 }
 

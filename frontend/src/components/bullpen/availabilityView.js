@@ -19,7 +19,7 @@ const STATUS_CONFIG = {
     dotStyle: { backgroundColor: '#22c55e' },
   },
   Monitor: {
-    label: 'Monitor',
+    label: 'On Watch',
     tone: 'Recent work should be checked before counting on a full late-game lane.',
     style: {
       color: '#fde047',
@@ -114,9 +114,14 @@ const ROSTER_STATUS_LABELS = {
   BEREAVEMENT: 'Bereavement List',
   PATERNITY: 'Paternity List',
   SUSPENDED: 'Suspended List',
-  RESTRICTED: 'Restricted List',
+  RESTRICTED: 'Roster Unavailable',
   UNKNOWN: 'Roster Unknown',
 }
+
+const STATUS_DISPLAY_LABELS = Object.fromEntries(
+  Object.entries(STATUS_CONFIG).map(([status, config]) => [status.toLowerCase(), config.label]),
+)
+STATUS_DISPLAY_LABELS.all = 'All'
 
 export function getRosterStatusSummary(rosterStatus = null) {
   if (!rosterStatus || typeof rosterStatus !== 'object') {
@@ -136,6 +141,12 @@ export function getRosterStatusSummary(rosterStatus = null) {
 export function normalizeAvailabilityStatus(status) {
   if (!status) return null
   return AVAILABILITY_FILTERS.find(s => s !== 'ALL' && s.toLowerCase() === String(status).toLowerCase()) || null
+}
+
+export function getAvailabilityStatusLabel(status) {
+  const text = String(status || '').trim()
+  if (!text) return ''
+  return STATUS_DISPLAY_LABELS[text.toLowerCase()] || text
 }
 
 export function getRowAvailability(row) {

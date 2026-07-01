@@ -83,7 +83,7 @@ const staleActivatedAssignmentBoard = makeBoard({
 test('renders all five availability groups in order', () => {
   const html = render(populatedBoard)
   assert.ok(htmlIncludes(html, 'id="pitcher-lanes"'))
-  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
+  for (const label of ['Available', 'On Watch', 'Limited', 'Avoid', 'Unavailable Pitchers']) {
     assert.ok(htmlIncludes(html, label), `missing group: ${label}`)
   }
   // Available must appear before Unavailable Pitchers on the board.

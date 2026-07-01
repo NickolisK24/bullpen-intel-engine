@@ -29,7 +29,7 @@ const TONIGHT_EMPTY_BODY =
 const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
-  'The rest of the Intelligence Surface can still be used.'
+  'The rest of Today can still be used.'
 const LEAD_STORY_LIMITATIONS_FALLBACK =
   'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
 const WEEKLY_NOTES_MAILTO =
@@ -72,6 +72,18 @@ const EXPLORE_LINKS = [
 function textValue(value) {
   const text = value == null ? '' : String(value).trim()
   return text || null
+}
+
+function publicTerminology(value) {
+  return String(value || '')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\brecommendation engine\b/gi, 'how BaseballOS reads workload')
+    .replace(/\bclean options\b/g, 'Clean Options')
+    .replace(/\bClean options\b/g, 'Clean Options')
 }
 
 function numberValue(value) {
@@ -223,7 +235,7 @@ function cleanDraftList(value) {
 function cleanStoryCopy(value) {
   const text = textValue(value)
   if (!text || INTERNAL_TODAY_COPY_PATTERN.test(text)) return null
-  return text
+  return publicTerminology(text)
 }
 
 function cleanStoryList(...values) {
@@ -236,7 +248,7 @@ function cleanStoryList(...values) {
 function cleanTonightCopy(value) {
   const text = textValue(value)
   if (!text || INTERNAL_TONIGHT_COPY_PATTERN.test(text)) return null
-  return text
+  return publicTerminology(text)
 }
 
 function cleanTonightList(...values) {
@@ -320,11 +332,11 @@ function buildBullpenSnapshot(packagePayload = {}) {
   if (available != null) rows.push(`Available arms: ${available}`)
   if (monitor != null) rows.push(`On watch: ${monitor}`)
   if (unavailable != null) rows.push(`Unavailable: ${unavailable}`)
-  if (cleanOptionsCount != null) rows.push(`Clean options: ${cleanOptionsCount}`)
-  if (optionalityBand) rows.push(`Current standing: ${optionalityBand}`)
-  if (concentrationBand) rows.push(`Workload shape: ${concentrationBand}`)
+  if (cleanOptionsCount != null) rows.push(`Clean Options: ${cleanOptionsCount}`)
+  if (optionalityBand) rows.push(`Clean Options: ${optionalityBand}`)
+  if (concentrationBand) rows.push(`Workload Concentration: ${concentrationBand}`)
   if (cleanOptions.length > 0) {
-    rows.push(`Named clean options: ${cleanOptions.slice(0, 3).join(', ')}`)
+    rows.push(`Named Clean Options: ${cleanOptions.slice(0, 3).join(', ')}`)
   }
 
   return rows
@@ -429,7 +441,7 @@ function aroundBaseballTitle(item, team) {
   }
 
   const rawTitle = textValue(item?.public_headline)
-  if (rawTitle && !/\bmoved\s+from\b/i.test(rawTitle)) return rawTitle
+  if (rawTitle && !/\bmoved\s+from\b/i.test(rawTitle)) return publicTerminology(rawTitle)
   return `${label} bullpen movement`
 }
 
@@ -443,7 +455,7 @@ export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
     .map(item => {
       const team = teamOptionValue(item)
       const title = aroundBaseballTitle(item, team)
-      const body = textValue(item.public_summary)
+      const body = publicTerminology(textValue(item.public_summary))
       if (!title || !body) return null
       return {
         key: textValue(item.key) || `${team?.teamId || team?.teamAbbr || title}`,
@@ -524,17 +536,17 @@ export function getBullpenPictureView(landscape) {
       sourceKey: 'available',
       title: 'Most Available',
       metric: 'available',
-      suffix: 'rested enough to use',
+      suffix: 'rested and available',
     },
     {
       sourceKey: 'constrained',
-      title: 'Most Constrained',
+      title: 'Most Stretched',
       metric: 'restricted',
       suffix: 'needing rest or unavailable',
     },
     {
       sourceKey: 'monitoring',
-      title: 'Worth Watching',
+      title: 'On Watch',
       metric: 'monitor',
       suffix: 'on watch',
     },
@@ -1137,7 +1149,7 @@ function BullpenPicture({
       id="bullpen-picture"
       eyebrow="Today's Bullpen Picture"
       title="Today's Bullpen Picture"
-      subtitle="A quick look at which bullpens look rested, constrained, or worth monitoring."
+      subtitle="A quick look at which bullpens look rested and available, stretched, or on watch."
     >
       {loading && !landscape ? (
         <div className="border border-dirt bg-dugout p-4" role="status" aria-live="polite">

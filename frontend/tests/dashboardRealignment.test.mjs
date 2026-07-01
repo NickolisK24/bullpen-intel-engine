@@ -95,12 +95,12 @@ test('dashboard renders the five bullpen sections', () => {
 
 test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
-  assert.ok(htmlIncludes(html, 'Most Stable'))
-  assert.ok(htmlIncludes(html, 'Worth Watching'))
-  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
-  assert.ok(htmlIncludes(html, 'Workload watch groups'))
+  assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
 })
 
 test('dashboard landscape preserves team-board deep links and honest empty groups', () => {
@@ -115,7 +115,7 @@ test('dashboard landscape preserves team-board deep links and honest empty group
 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
   assert.ok(htmlIncludes(html, 'None right now.'))
   assert.equal(htmlIncludes(html, 'CHC'), false)
 })
@@ -141,7 +141,7 @@ test('league-wide bullpen state sits directly after the landscape', () => {
 
 test('bullpen read cards show the five availability counts', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
+  for (const label of ['Available', 'On Watch', 'Limited', 'Avoid', 'Unavailable']) {
     assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
   }
 })

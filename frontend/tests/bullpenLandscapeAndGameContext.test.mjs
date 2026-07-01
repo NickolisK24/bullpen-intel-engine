@@ -56,12 +56,12 @@ const landscape = {
 test('landscape renders canonical callout titles with descriptive subtitles', () => {
   const html = render(React.createElement(BullpenLandscape, { landscape }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
-  assert.ok(htmlIncludes(html, 'Most Stable'))
-  assert.ok(htmlIncludes(html, 'Worth Watching'))
-  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
-  assert.ok(htmlIncludes(html, 'Workload watch groups'))
+  assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
   assert.ok(htmlIncludes(html, 'ACE'))
   assert.ok(htmlIncludes(html, 'BEA'))
   assert.ok(htmlIncludes(html, 'CHC'))
@@ -95,8 +95,8 @@ test('dashboard surfaces the landscape section near the top', () => {
   }
   const html = render(React.createElement(DashboardView, { data }))
   assert.ok(htmlIncludes(html, 'Bullpen Landscape'))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
-  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
 })
 
 // ── Today's Game Context card ──────────────────────────────────────────────

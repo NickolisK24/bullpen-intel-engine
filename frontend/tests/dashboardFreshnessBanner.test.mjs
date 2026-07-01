@@ -42,14 +42,14 @@ test('healthy durable freshness renders the current banner, not a snapshot', () 
     data: withFreshness({ is_current: true, sync_status: 'success', data_through: '2026-06-04', last_successful_sync: '2026-06-04T12:00:00Z' }),
   }))
   assert.ok(htmlIncludes(html, 'Current — 2026 Season'))
-  assert.ok(!htmlIncludes(html, 'End-of-Season Snapshot'))
+  assert.ok(!htmlIncludes(html, 'End-of-Season Read'))
 })
 
 test('non-current freshness renders the honest snapshot label', () => {
   const html = inRouter(React.createElement(DashboardView, {
     data: withFreshness({ is_current: false, sync_status: 'metadata_unavailable', data_through: '2026-04-01', last_successful_sync: null }),
   }))
-  assert.ok(htmlIncludes(html, '2026 End-of-Season Snapshot'))
+  assert.ok(htmlIncludes(html, '2026 End-of-Season Read'))
   assert.ok(!htmlIncludes(html, 'Current — 2026 Season'))
 })
 

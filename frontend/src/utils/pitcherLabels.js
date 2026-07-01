@@ -57,12 +57,12 @@ export const PITCHER_READ_LABELS = Object.freeze({
   WATCH_ARM: read(
     'watch_arm',
     'Watch Arm',
-    'Current workload status is Monitor or the data read is not fully clear.',
+    'Current workload status is On Watch or the data read is not fully clear.',
     { borderColor: 'rgba(234,179,8,0.34)', backgroundColor: 'rgba(234,179,8,0.09)', color: '#fef08a' },
   ),
   REST_RESTRICTED: read(
     'rest_restricted',
-    'Rest-Restricted',
+    'Limited Rest',
     'Current workload status is Limited or Avoid because of recent workload only.',
     { borderColor: 'rgba(249,115,22,0.34)', backgroundColor: 'rgba(249,115,22,0.09)', color: '#fed7aa' },
   ),
@@ -110,6 +110,13 @@ function normalizeKey(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function publicLabel(value) {
+  return String(value || '')
+    .replace(/\bRest-Restricted\b/g, 'Limited Rest')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\bRestricted\b/g, 'Limited')
+}
+
 function authoredLabels(card) {
   return card?.pitcher_labels || card?.pitcherLabels || {}
 }
@@ -133,7 +140,7 @@ function mergeAuthoredLabel(payload, catalogByKey, fallback) {
 
   return {
     ...catalog,
-    label: payload.label || catalog.label,
+    label: publicLabel(payload.label || catalog.label),
     source: payload.source || 'backend',
   }
 }

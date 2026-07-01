@@ -79,6 +79,13 @@ function stripTrustChrome(value) {
     .replace(/\bcertified\b/gi, 'available')
     .replace(/\bV[2-4]\s+/g, '')
     .replace(/\bV[2-4]\b/g, '')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
@@ -374,7 +381,7 @@ function ContractWarnings({ view }) {
 function buildAvailabilityRows(view) {
   return buildRows(view.availabilityDistribution, [
     ['Available', 'available'],
-    ['Monitor', 'monitor'],
+    ['On Watch', 'monitor'],
     ['Limited', 'limited'],
     ['Avoid', 'avoid'],
     ['Unavailable', 'unavailable'],

@@ -17,7 +17,7 @@ const SeasonBanner = ({ season = '2024', isLive = false }) => {
           {/* Static amber dot for historical data */}
           <span className="h-2 w-2 rounded-full bg-amber opacity-80" />
           <span className="text-chalk400 tracking-widest uppercase">
-            {season} End-of-Season Snapshot
+            {season} End-of-Season Read
           </span>
         </>
       )}

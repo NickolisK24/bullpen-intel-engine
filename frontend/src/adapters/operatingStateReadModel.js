@@ -1,11 +1,12 @@
 import {
   formatConfidence,
   getAvailabilityBadgeView,
+  getAvailabilityStatusLabel,
 } from '../components/bullpen/availabilityView'
 
 const SNAPSHOT_ROWS = [
   { status: 'Available', label: 'Available', key: 'available' },
-  { status: 'Monitor', label: 'Monitor', key: 'monitor' },
+  { status: 'Monitor', label: 'On Watch', key: 'monitor' },
   { status: 'Limited', label: 'Limited', key: 'limited' },
   { status: 'Avoid', label: 'Avoid', key: 'avoid' },
   { status: 'Unavailable', label: 'Unavailable', key: 'unavailable' },
@@ -62,8 +63,8 @@ const STATE_META = {
     tone: HEALTH_TONE.elevated,
   },
   constrained: {
-    label: 'Constrained',
-    summary: 'Clean options are limited in the current bullpen read.',
+    label: 'Stretched',
+    summary: 'Clean Options are limited in the current bullpen read.',
     tone: HEALTH_TONE.constrained,
   },
   stressed: {
@@ -110,7 +111,16 @@ function numericCount(value) {
 
 function safeText(value) {
   if (typeof value !== 'string') return null
-  const softened = value.trim().replace(/\bsnapshot\b/gi, 'bullpen read')
+  const softened = value.trim()
+    .replace(/\bsnapshot\b/gi, 'bullpen read')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
+    .replace(/\bclean options\b/g, 'Clean Options')
+    .replace(/\bClean options\b/g, 'Clean Options')
   if (!softened) return null
   if (INTERNAL_COPY_PATTERN.test(softened)) return null
   return softened
@@ -125,6 +135,15 @@ function safeTextList(list) {
 function safeTeamContextText(value) {
   if (typeof value !== 'string') return null
   const text = value.trim()
+    .replace(/\bsnapshot\b/gi, 'bullpen read')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
+    .replace(/\bclean options\b/g, 'Clean Options')
+    .replace(/\bClean options\b/g, 'Clean Options')
   if (!text || TEAM_CONTEXT_INTERNAL_COPY_PATTERN.test(text)) return null
   return text
 }
@@ -302,7 +321,7 @@ function getWorkloadConcern(context, stateKey) {
 
   if (stateKey === 'constrained' || counts.available === 0) {
     return buildConcern(
-      'Clean options are tight',
+      'Clean Options are tight',
       `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
     )
   }
@@ -315,7 +334,7 @@ function getWorkloadConcern(context, stateKey) {
   if (stateKey === 'monitoring') {
     return buildConcern(
       'Several arms are worth watching',
-      `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the Monitor lane.`,
+      `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the On Watch lane.`,
     )
   }
   return buildConcern(
@@ -330,7 +349,7 @@ function getLeagueSecondaryConcern(context) {
   if (counts.monitor > 0) {
     return buildConcern(
       'Several arms are worth watching',
-      `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the Monitor lane.`,
+      `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the On Watch lane.`,
     )
   }
   if (counts.unavailableOrAvoid > 0) {
@@ -352,6 +371,7 @@ function isLowValueZeroEvidence(item) {
   const text = String(item || '').trim()
   return (
     /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
+    /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
     /^No relievers? are marked Avoid or Unavailable\.$/i.test(text)
   )
 }
@@ -361,7 +381,7 @@ function getWorkloadEvidence(context) {
   if (!counts.total || !counts.hasRows) return []
   return [
     `${counts.available} of ${counts.total} ${pluralRelievers(counts.total)} are classified Available.`,
-    counts.monitor > 0 ? `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the Monitor group.` : null,
+    counts.monitor > 0 ? `${counts.monitor} of ${counts.total} ${pluralRelievers(counts.total)} are in the On Watch group.` : null,
     counts.narrowed > 0 ? `${counts.narrowed} of ${counts.total} ${pluralRelievers(counts.total)} are Limited, Avoid, or Unavailable.` : null,
   ].filter(Boolean)
 }
@@ -506,7 +526,7 @@ function normalizeContextView(context) {
     ? context.snapshot
     : SNAPSHOT_ROWS.map(row => ({
       status: row.status,
-      label: row.label,
+      label: getAvailabilityStatusLabel(row.label || row.status),
       count: typeof context?.metrics?.[row.key] === 'number' ? context.metrics[row.key] : 0,
       badge: getAvailabilityBadgeView(row.status),
     }))
@@ -521,12 +541,12 @@ function normalizeContextView(context) {
   return {
     hasContext: context?.hasContext !== false && Boolean(context),
     state,
-    label: context?.label || context?.health?.label || null,
-    reasons: Array.isArray(context?.reasons) ? context.reasons : Array.isArray(context?.health?.reasons) ? context.health.reasons : [],
+    label: safeText(context?.label || context?.health?.label) || null,
+    reasons: safeTextList(Array.isArray(context?.reasons) ? context.reasons : Array.isArray(context?.health?.reasons) ? context.health.reasons : []),
     confidence,
     confidenceLabel: context?.confidenceLabel || formatConfidence(confidence),
     isDegraded: context?.isDegraded === true || confidence === 'low',
-    limitations: Array.isArray(context?.limitations) ? context.limitations : [],
+    limitations: safeTextList(context?.limitations),
     metrics: {
       total,
       pctAvailable: typeof metrics.pctAvailable === 'number' ? metrics.pctAvailable : typeof metrics.pct_available === 'number' ? metrics.pct_available : 0,
@@ -535,7 +555,7 @@ function normalizeContextView(context) {
     },
     snapshot: rows.map(row => ({
       status: row.status,
-      label: row.label,
+      label: getAvailabilityStatusLabel(row.label || row.status),
       count: typeof row.count === 'number' ? row.count : 0,
       badge: row.badge || getAvailabilityBadgeView(row.status),
     })),
@@ -553,7 +573,7 @@ export function getBoardContextView(board) {
 
   const snapshot = SNAPSHOT_ROWS.map(row => ({
     status: row.status,
-    label: row.label,
+    label: getAvailabilityStatusLabel(row.label || row.status),
     count: typeof metrics[row.key] === 'number' ? metrics[row.key] : 0,
     badge: getAvailabilityBadgeView(row.status),
   }))
@@ -561,12 +581,12 @@ export function getBoardContextView(board) {
   return {
     hasContext: Boolean(board?.context),
     state,
-    label: health.label || null,
-    reasons: Array.isArray(health.reasons) ? health.reasons : [],
+    label: safeText(health.label) || null,
+    reasons: safeTextList(health.reasons),
     confidence,
     confidenceLabel: formatConfidence(confidence),
     isDegraded: confidence === 'low',
-    limitations: Array.isArray(context.limitations) ? context.limitations : [],
+    limitations: safeTextList(context.limitations),
     metrics: {
       total: typeof metrics.total_relievers === 'number' ? metrics.total_relievers : 0,
       pctAvailable: typeof metrics.pct_available === 'number' ? metrics.pct_available : 0,

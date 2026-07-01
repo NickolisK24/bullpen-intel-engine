@@ -30,6 +30,7 @@ function isLowValueZeroEvidence(item) {
   const text = String(item || '').trim()
   return (
     /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
+    /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
     /^No relievers? are marked Avoid or Unavailable\.$/i.test(text)
   )
 }
@@ -78,10 +79,10 @@ function compactLimitationList(view, staleWithError) {
 
 function getTeamContextReadRows(view) {
   return [
-    { key: 'cleanOptions', label: 'Clean options', read: view.cleanOptions },
-    { key: 'coverageSafety', label: 'Coverage safety', read: view.coverageSafety },
-    { key: 'workloadConcentration', label: 'Workload concentration', read: view.workloadConcentration },
-    { key: 'starterSupport', label: 'Starter support', read: view.starterSupportPressure },
+    { key: 'cleanOptions', label: 'Clean Options', read: view.cleanOptions },
+    { key: 'coverageSafety', label: 'Coverage Safety', read: view.coverageSafety },
+    { key: 'workloadConcentration', label: 'Workload Concentration', read: view.workloadConcentration },
+    { key: 'starterSupport', label: 'Starter Support', read: view.starterSupportPressure },
   ].filter(row => row.read?.label || row.read?.summary || row.read?.reasons?.length)
 }
 

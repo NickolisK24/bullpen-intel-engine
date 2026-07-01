@@ -126,7 +126,7 @@ test('returning card emphasizes the followed team and links to its board', () =>
   assert.ok(htmlIncludes(html, 'No relievers are marked Avoid or Unavailable.'))
   assert.ok(!htmlIncludes(html, 'Bullpen workload appears manageable.'))
   assert.ok(htmlIncludes(html, 'Available'))
-  assert.ok(htmlIncludes(html, 'Monitor'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(htmlIncludes(html, 'Open ACE Bullpen Board -&gt;'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=ACE&amp;source=follow-my-team"'))
   assert.ok(!htmlIncludes(html, 'Stress Score'))

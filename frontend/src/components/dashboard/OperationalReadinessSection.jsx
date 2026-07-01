@@ -8,6 +8,7 @@ import TeamOperationsBullpenReadinessPanel, {
 } from '../teamOperations/TeamOperationsBullpenReadinessPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import { getTeamReadinessExplanation } from '../../utils/api'
+import { getAvailabilityStatusLabel } from '../bullpen/availabilityView'
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -63,12 +64,12 @@ function visibilityValue(rawValue) {
 function availabilityShape(availability) {
   const rows = [
     ['Available', availability.available],
-    ['Monitor', availability.monitor],
+    ['On Watch', availability.monitor],
     ['Limited', availability.limited],
     ['Avoid', availability.avoid],
     ['Unavailable', availability.unavailable],
   ].map(([label, value]) => ({
-    label,
+    label: getAvailabilityStatusLabel(label),
     count: Number.isFinite(Number(value)) ? Number(value) : 0,
   }))
   const total = Number.isFinite(Number(availability.total))
@@ -259,7 +260,7 @@ export default function OperationalReadinessSection({
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-                Operational Snapshot
+                Operational Read
               </div>
               <p className="mt-1 text-sm leading-relaxed text-chalk500">
                 Current bullpen state, readiness, pressure, availability shape, freshness, and visibility in one baseball-facing view.
@@ -294,7 +295,7 @@ export default function OperationalReadinessSection({
               subtext={workload.summary}
             />
             <SnapshotMetric
-              label="Inventory Concentration"
+              label="Workload Concentration"
               value={availabilitySnapshot.label}
               subtext="Largest workload lane in the bullpen picture"
             />

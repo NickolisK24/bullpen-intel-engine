@@ -3,6 +3,7 @@ import {
   formatDateOnly,
   formatUtcDateTimeEt,
 } from '../../utils/dateDisplay'
+import { getAvailabilityStatusLabel } from '../bullpen/availabilityView'
 
 const TIER_TONES = {
   Available: 'border-emerald-400/35 bg-emerald-400/5 text-emerald-300',
@@ -41,7 +42,7 @@ function TierRateRow({ tier }) {
   return (
     <div className={`rounded border p-3 ${tone}`}>
       <div className="font-mono text-[10px] uppercase tracking-widest opacity-80">
-        {tier.tier}
+        {getAvailabilityStatusLabel(tier.tier)}
       </div>
       <div className="mt-2 flex items-baseline justify-between gap-3">
         <span className="font-display text-3xl tracking-wide">

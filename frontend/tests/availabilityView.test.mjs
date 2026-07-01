@@ -8,6 +8,7 @@ import {
   getAvailabilityBadgeView,
   getAvailabilityFilterCounts,
   getAvailabilitySummary,
+  getAvailabilityStatusLabel,
   getDataStateView,
 } from '../src/components/bullpen/availabilityView.js'
 import { availabilityFixtureRows } from './fixtures/availabilityStatusFixtures.mjs'
@@ -19,7 +20,7 @@ test('builds availability badge labels from every backend status value', () => {
     const status = row.availability.availability_status
     const badge = getAvailabilityBadgeView(row.availability)
 
-    assert.equal(badge.label, status)
+    assert.equal(badge.label, getAvailabilityStatusLabel(status))
     assert.equal(badge.status, status)
     assert.match(badge.tone, /recent usage|recent work|workload|signals|rules/i)
   }
@@ -81,7 +82,7 @@ test('preserves explanation reasons and limitations from fixture backend output'
   for (const row of availabilityFixtureRows) {
     const summary = getAvailabilitySummary(row.availability)
 
-    assert.equal(summary.label, row.availability.availability_status)
+    assert.equal(summary.label, getAvailabilityStatusLabel(row.availability.availability_status))
     assert.equal(summary.confidenceLabel, formatConfidence(row.availability.confidence))
     assert.equal(summary.dataStateView.label, getDataStateView(row.availability.data_state).label)
     assert.deepEqual(summary.reasons, row.availability.reasons)

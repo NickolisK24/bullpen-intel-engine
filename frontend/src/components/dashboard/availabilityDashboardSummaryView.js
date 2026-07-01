@@ -2,6 +2,7 @@ import {
   AVAILABILITY_FILTERS,
   formatConfidence,
   getAvailabilityBadgeView,
+  getAvailabilityStatusLabel,
   getDataStateView,
 } from '../bullpen/availabilityView'
 
@@ -172,7 +173,7 @@ export function getAvailabilityDashboardSummaryView(summary = null) {
   const statusRows = buildRows(
     summary?.statuses,
     AVAILABILITY_FILTERS.filter(status => status !== 'ALL'),
-    status => status,
+    getAvailabilityStatusLabel,
     status => getAvailabilityBadgeView(status).style,
   )
   const statusTotal = statusRows.reduce((total, row) => total + row.count, 0)
