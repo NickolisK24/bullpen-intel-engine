@@ -31,15 +31,15 @@ function isLowValueZeroEvidence(item) {
   return (
     /^0 of \d+ relievers? are in (the )?Monitor( group| lane)?\.$/i.test(text) ||
     /^0 of \d+ relievers? are in (the )?On Watch( group| lane)?\.$/i.test(text) ||
-    /^No relievers? are marked Avoid or Unavailable\.$/i.test(text)
+    /^No relievers? are marked Unavailable\.$/i.test(text)
   )
 }
 
 function compactEvidenceList(view) {
   const compactPatterns = [
     /\b\d+ of \d+ relievers? are classified Available\./i,
-    /\b\d+ of \d+ relievers? are Limited, Avoid, or Unavailable\./i,
-    /\b\d+ of \d+ relievers? are Avoid or Unavailable\./i,
+    /\b\d+ of \d+ relievers? are Limited or Unavailable\./i,
+    /\b\d+ of \d+ relievers? are Unavailable\./i,
     /\bbullpen arms? (is|are) on the injured list\./i,
     /\bbullpen arms? (is|are) inactive or unavailable\./i,
     /\bbullpen arms? (has|have) unconfirmed roster status\./i,

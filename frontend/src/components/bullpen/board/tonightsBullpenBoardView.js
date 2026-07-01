@@ -59,7 +59,7 @@ const GROUP_FALLBACK_META = {
   Available: { label: 'Available', description: 'Recent usage leaves these arms in a clean spot for normal bullpen coverage.' },
   Monitor: { label: 'On Watch', description: 'Recent work should be checked before counting on a full late-game lane.' },
   Limited: { label: 'Limited', description: 'Recent usage narrows how comfortably these arms can be used.' },
-  Avoid: { label: 'Avoid', description: 'Recent usage has tightened the margin enough that these arms should not be treated as normal options.' },
+  Avoid: { label: 'Unavailable', description: "Recent workload keeps these arms out of today's available group." },
   Unavailable: { label: 'Unavailable Pitchers', description: "Roster or workload context keeps these pitchers out of tonight's bullpen plan." },
 }
 

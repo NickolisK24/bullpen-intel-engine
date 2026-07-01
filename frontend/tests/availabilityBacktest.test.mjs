@@ -102,6 +102,7 @@ test('renders stored backtest values and honest framing', () => {
   assert.ok(text.includes('No-appearance tier flips: 1.8%'))
   assert.ok(text.includes('observed association'))
   assert.ok(text.includes('not a physiological proof or causal workload claim'))
+  assert.equal(text.includes('Avoid'), false)
 })
 
 test('renders an honest empty state when no stored computation exists', () => {

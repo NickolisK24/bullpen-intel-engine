@@ -88,7 +88,7 @@ export const availabilityStatusFixtures = [
   },
   {
     pitcher_id: 104,
-    pitcher: { full_name: 'Fixture Avoid', team_abbreviation: 'TST' },
+    pitcher: { full_name: 'Fixture Workload Unavailable', team_abbreviation: 'TST' },
     availability: {
       availability_status: 'Avoid',
       confidence: 'medium',

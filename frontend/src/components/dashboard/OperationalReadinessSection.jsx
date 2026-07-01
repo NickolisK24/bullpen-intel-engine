@@ -24,6 +24,8 @@ function displayValue(value, fallback = 'Not provided') {
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return fallback
   return String(value)
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
 }
 
 function countValue(value) {
@@ -61,16 +63,21 @@ function visibilityValue(rawValue) {
   return VISIBILITY_LABELS[String(rawValue || '').trim().toLowerCase()] || metricLabel(rawValue)
 }
 
+function numericMetric(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
 function availabilityShape(availability) {
+  const unavailable = numericMetric(availability.unavailable) + numericMetric(availability.avoid)
   const rows = [
     ['Available', availability.available],
     ['On Watch', availability.monitor],
     ['Limited', availability.limited],
-    ['Avoid', availability.avoid],
-    ['Unavailable', availability.unavailable],
+    ['Unavailable', unavailable],
   ].map(([label, value]) => ({
     label: getAvailabilityStatusLabel(label),
-    count: Number.isFinite(Number(value)) ? Number(value) : 0,
+    count: numericMetric(value),
   }))
   const total = Number.isFinite(Number(availability.total))
     ? Number(availability.total)
