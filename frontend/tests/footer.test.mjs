@@ -35,16 +35,20 @@ test('site footer renders brand, trust, and contact copy', () => {
   assert.ok(htmlIncludes(html, 'Data is descriptive and drawn from public sources.'))
   assert.ok(htmlIncludes(html, '© 2026 BaseballOS · All rights reserved.'))
   assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
-  assert.ok(htmlIncludes(html, 'baseballoshq@gmail.com'))
+  assert.ok(htmlIncludes(html, 'X: @baseballoshq'))
+  assert.ok(htmlIncludes(html, 'Instagram: @baseballoshq'))
+  assert.ok(htmlIncludes(html, 'Email: baseballoshq@gmail.com'))
 })
 
-test('site footer keeps internal, social, and shell wiring intact', () => {
+test('site footer keeps connect links and shell wiring intact', () => {
   const html = render(React.createElement(Footer))
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 
   for (const href of ['/', '/dashboard', '/bullpen', '/stories', '/about', '/how-to-read', '/methodology', '/trust']) {
-    assert.ok(htmlIncludes(html, `href="${href}"`), href)
+    assert.equal(htmlIncludes(html, `href="${href}"`), false, href)
   }
+  assert.equal(htmlIncludes(html, 'Product'), false)
+  assert.equal(htmlIncludes(html, 'Learn'), false)
   assert.ok(htmlIncludes(html, 'href="https://x.com/baseballoshq"'))
   assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on X"'))
   assert.ok(htmlIncludes(html, 'href="https://instagram.com/baseballoshq"'))

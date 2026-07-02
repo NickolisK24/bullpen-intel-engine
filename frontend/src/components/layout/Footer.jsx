@@ -1,33 +1,18 @@
-import { Link } from 'react-router-dom'
-
-const PRODUCT_LINKS = [
-  { label: 'Today', to: '/' },
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Bullpen', to: '/bullpen' },
-  { label: 'Stories', to: '/stories' },
-]
-
-const LEARN_LINKS = [
-  { label: 'About', to: '/about' },
-  { label: 'How to Read', to: '/how-to-read' },
-  { label: 'Methodology', to: '/methodology' },
-  { label: 'Data & Trust', to: '/trust' },
-]
-
 const CONNECT_LINKS = [
   {
-    label: '@baseballoshq',
+    label: 'X: @baseballoshq',
     href: 'https://x.com/baseballoshq',
     ariaLabel: 'BaseballOS on X',
   },
   {
-    label: '@baseballoshq',
+    label: 'Instagram: @baseballoshq',
     href: 'https://instagram.com/baseballoshq',
     ariaLabel: 'BaseballOS on Instagram',
   },
   {
-    label: 'baseballoshq@gmail.com',
+    label: 'Email: baseballoshq@gmail.com',
     href: 'mailto:baseballoshq@gmail.com',
+    ariaLabel: 'Email BaseballOS',
   },
 ]
 
@@ -36,26 +21,6 @@ function FooterHeading({ children }) {
     <h2 className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
       {children}
     </h2>
-  )
-}
-
-function InternalLinkList({ title, links }) {
-  return (
-    <div>
-      <FooterHeading>{title}</FooterHeading>
-      <ul className="mt-4 space-y-2.5">
-        {links.map(link => (
-          <li key={link.to}>
-            <Link
-              to={link.to}
-              className="text-sm text-chalk300 transition-colors hover:text-amber"
-            >
-              {link.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
@@ -86,7 +51,7 @@ export default function Footer() {
   return (
     <footer className="border-t border-dirt bg-field/95 px-5 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))]">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="max-w-xl">
             <div className="font-display text-2xl uppercase tracking-widest text-chalk100">
               BaseballOS
@@ -97,8 +62,6 @@ export default function Footer() {
             </p>
           </div>
 
-          <InternalLinkList title="Product" links={PRODUCT_LINKS} />
-          <InternalLinkList title="Learn" links={LEARN_LINKS} />
           <ConnectLinks />
         </div>
 

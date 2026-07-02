@@ -51,13 +51,10 @@ test('About route is registered without joining the sidebar nav', () => {
   assert.equal(sidebarSource.includes("to: '/about'"), false)
 })
 
-test('footer exposes About as the first Learn link', () => {
+test('simplified footer does not duplicate About or trust navigation', () => {
   const html = render(React.createElement(Footer))
-  const about = html.indexOf('href="/about"')
-  const methodology = html.indexOf('href="/methodology"')
-  const trust = html.indexOf('href="/trust"')
 
-  assert.ok(about > -1)
-  assert.ok(methodology > about)
-  assert.ok(trust > methodology)
+  assert.equal(htmlIncludes(html, 'href="/about"'), false)
+  assert.equal(htmlIncludes(html, 'href="/methodology"'), false)
+  assert.equal(htmlIncludes(html, 'href="/trust"'), false)
 })

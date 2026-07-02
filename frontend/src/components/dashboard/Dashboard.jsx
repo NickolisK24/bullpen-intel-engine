@@ -10,7 +10,6 @@ import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
 } from './injuryIlContextView'
-import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
@@ -175,13 +174,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
         </>
       )}
 
-      <FeedbackCTA
-        compact
-        className="mb-2"
-        eyebrow="User Validation"
-        title="Help shape BaseballOS"
-        body="Share what is useful, unclear, or missing while BaseballOS is being tested with real users."
-      />
     </div>
   )
 }
