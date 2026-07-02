@@ -251,7 +251,3 @@ Historical phase records remain under [docs/archive/2026-06/](docs/archive/2026-
 
 BaseballOS is built and maintained by **Nickolis Kacludis**
 ([NickolisK24](https://github.com/NickolisK24)).
-
-Nickolis Kacludis is the sole author and maintainer. Preserve single-author
-commit metadata unless Nickolis explicitly chooses otherwise, and do not add
-co-author attribution.
