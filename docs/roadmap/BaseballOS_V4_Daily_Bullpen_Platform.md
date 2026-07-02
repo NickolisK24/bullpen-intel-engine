@@ -419,51 +419,11 @@ Review cadence:
 - Keep this document current when scope, order, status, or guardrails change.
 - Do not skip trust review for speed.
 
-## Claude vs. Codex Execution Rules
-
-Execution work must stay scoped to the branch and phase being requested.
-
-Use Claude for:
-
-- founder-facing product narrative;
-- roadmap and strategy drafting;
-- copy direction and editorial framing;
-- high-level product critique.
-
-Use Codex for:
-
-- repository edits;
-- implementation branches;
-- tests and validation;
-- git hygiene;
-- commit and push execution.
-
-Execution rules:
-
-- Do not mix planning and implementation unless the branch explicitly asks for
-  both.
-- Do not broaden a scoped phase because later roadmap items depend on it.
-- Do not add product code on documentation-only branches.
-- Do not treat roadmap language as authorization to ship unplanned behavior.
-
-## Commit/Authorship Rules
-
-- Nickolis Kacludis is the sole author and maintainer.
-- Commits must use `Nickolis Kacludis <nickoliskacludis@gmail.com>` as author
-  and committer unless Nickolis explicitly directs otherwise.
-- Do not add co-author trailers.
-- Do not add tooling attribution.
-- Do not work directly on `main`.
-- Feature branches must be scoped, named clearly, validated, committed, and
-  pushed before review.
-- Merges must preserve Nickolis as the sole author/committer unless Nickolis
-  explicitly directs otherwise.
-
 ## Living Roadmap Status Table
 
 | Order | Phase | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Canon V4 roadmap document | In progress | Adds this canonical roadmap and docs links. |
+| 1 | Canon V4 roadmap document | Complete | Adds this canonical roadmap and docs links. |
 | 2 | Analytics / event tracking | Complete | Owned V4 event catalog, helper, and current-surface instrumentation are in place. |
 | 3 | Launch foundation cleanup | Not started | Small trust, copy, and launch-readiness cleanup. |
 | 4 | Follow My Team | Not started | First personalization loop. |
