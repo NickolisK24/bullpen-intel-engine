@@ -8,6 +8,7 @@ import TeamOperationsBullpenReadinessPanel, {
 } from '../teamOperations/TeamOperationsBullpenReadinessPanel'
 import ExplanationDisclosure from '../explanations/ExplanationDisclosure'
 import { getTeamReadinessExplanation } from '../../utils/api'
+import { getAvailabilityStatusLabel } from '../bullpen/availabilityView'
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -23,6 +24,8 @@ function displayValue(value, fallback = 'Not provided') {
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return fallback
   return String(value)
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
 }
 
 function countValue(value) {
@@ -60,16 +63,21 @@ function visibilityValue(rawValue) {
   return VISIBILITY_LABELS[String(rawValue || '').trim().toLowerCase()] || metricLabel(rawValue)
 }
 
+function numericMetric(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
 function availabilityShape(availability) {
+  const unavailable = numericMetric(availability.unavailable) + numericMetric(availability.avoid)
   const rows = [
     ['Available', availability.available],
-    ['Monitor', availability.monitor],
+    ['On Watch', availability.monitor],
     ['Limited', availability.limited],
-    ['Avoid', availability.avoid],
-    ['Unavailable', availability.unavailable],
+    ['Unavailable', unavailable],
   ].map(([label, value]) => ({
-    label,
-    count: Number.isFinite(Number(value)) ? Number(value) : 0,
+    label: getAvailabilityStatusLabel(label),
+    count: numericMetric(value),
   }))
   const total = Number.isFinite(Number(availability.total))
     ? Number(availability.total)
@@ -259,7 +267,7 @@ export default function OperationalReadinessSection({
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-amber/70">
-                Operational Snapshot
+                Operational Read
               </div>
               <p className="mt-1 text-sm leading-relaxed text-chalk500">
                 Current bullpen state, readiness, pressure, availability shape, freshness, and visibility in one baseball-facing view.
@@ -294,7 +302,7 @@ export default function OperationalReadinessSection({
               subtext={workload.summary}
             />
             <SnapshotMetric
-              label="Inventory Concentration"
+              label="Workload Concentration"
               value={availabilitySnapshot.label}
               subtext="Largest workload lane in the bullpen picture"
             />

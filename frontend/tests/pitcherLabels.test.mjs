@@ -64,7 +64,7 @@ test('camelCase backend labels are accepted', () => {
   })
 
   assert.equal(labels.role.label, 'Coverage Arm')
-  assert.equal(labels.read.label, 'Rest-Restricted')
+  assert.equal(labels.read.label, 'Limited Rest')
 })
 
 test('raw role and availability fields no longer create frontend-authored labels', () => {
@@ -126,7 +126,7 @@ test('public label sets remain unchanged', () => {
   assert.deepEqual(APPROVED_READ_LABELS, [
     'Clean Option',
     'Watch Arm',
-    'Rest-Restricted',
+    'Limited Rest',
     'Unavailable',
     'Limited Read',
   ])

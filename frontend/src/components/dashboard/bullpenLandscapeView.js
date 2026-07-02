@@ -7,6 +7,33 @@ const COLUMN_TONE = {
   monitoring: { color: '#fde047', dot: '#eab308' },
 }
 
+export const BULLPEN_LANDSCAPE_COLUMNS = [
+  {
+    key: 'available',
+    sourceKey: 'available_bullpens',
+    title: 'Most Available',
+    subtitle: 'Most room to maneuver',
+    metric: 'available',
+    suffix: 'rested and available',
+  },
+  {
+    key: 'monitoring',
+    sourceKey: 'monitoring_concentration',
+    title: 'On Watch',
+    subtitle: 'Recent workload watch groups',
+    metric: 'monitor',
+    suffix: 'on watch',
+  },
+  {
+    key: 'constrained',
+    sourceKey: 'constrained_bullpens',
+    title: 'Most Stretched',
+    subtitle: 'Fewest clean late-inning options',
+    metric: 'restricted',
+    suffix: 'needing rest or unavailable',
+  },
+]
+
 function entryLabel(entry) {
   return entry?.team_abbreviation || entry?.team_name || `Team ${entry?.team_id ?? ''}`.trim()
 }
@@ -67,14 +94,11 @@ export function getLandscapeView(landscape) {
       label: gamesLabel,
       asOfDate,
     },
-    columns: [
-      { key: 'constrained', title: 'Most Constrained', subtitle: 'Thinnest late-inning margins', metric: 'restricted',
-        suffix: 'needing rest or unavailable', tone: COLUMN_TONE.constrained, entries: mapEntries(landscape.constrained_bullpens) },
-      { key: 'available', title: 'Most Stable', subtitle: 'Most room to maneuver', metric: 'available',
-        suffix: 'rested enough to use', tone: COLUMN_TONE.available, entries: mapEntries(landscape.available_bullpens) },
-      { key: 'monitoring', title: 'Worth Watching', subtitle: 'Workload watch groups', metric: 'monitor',
-        suffix: 'on watch', tone: COLUMN_TONE.monitoring, entries: mapEntries(landscape.monitoring_concentration) },
-    ],
+    columns: BULLPEN_LANDSCAPE_COLUMNS.map(column => ({
+      ...column,
+      tone: COLUMN_TONE[column.key],
+      entries: mapEntries(landscape[column.sourceKey]),
+    })),
     notes: Array.isArray(landscape.notes) ? landscape.notes : [],
   }
 }

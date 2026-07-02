@@ -19,15 +19,49 @@ const BADGE_TEXT = {
   sample: 'Sample intelligence state',
 }
 
+const NON_LIVE_FRESHNESS_STATES = new Set([
+  'sample',
+  'sample_state',
+  'static_sample',
+  'demo',
+  'demo_state',
+  'deterministic_sample',
+  'deterministic_sample_state',
+])
+
 export function formatFreshnessDate(value, { includeYear = false } = {}) {
   const formatted = formatDateOnly(value, { month: 'short' })
   if (!formatted) return null
   return includeYear ? formatted : formatted.replace(/,\s*\d{4}$/, '')
 }
 
-function normalizeFreshnessState(state, freshness) {
-  const explicit = String(state || '').toLowerCase()
-  if (BADGE_TEXT[explicit]) return explicit
+function normalizedText(value) {
+  return String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_')
+}
+
+export function isSampleFreshness(freshness) {
+  if (!freshness || typeof freshness !== 'object') return false
+  if (
+    freshness.sample === true ||
+    freshness.demo === true ||
+    freshness.is_demo === true ||
+    freshness.non_live === true ||
+    freshness.is_live === false
+  ) return true
+
+  const state = normalizedText(freshness.freshness_state || freshness.state)
+  if (NON_LIVE_FRESHNESS_STATES.has(state)) return true
+
+  for (const key of ['status', 'source', 'data_source', 'metadata_source', 'mode', 'served_from', 'collection_id']) {
+    const value = normalizedText(freshness[key])
+    if (NON_LIVE_FRESHNESS_STATES.has(value)) return true
+    if (/(^|_)(sample|demo)($|_)/.test(value)) return true
+  }
+
+  return false
+}
+
+function normalizeFreshnessMetadata(freshness) {
   if (!freshness || typeof freshness !== 'object') return null
 
   const freshnessState = String(
@@ -35,7 +69,7 @@ function normalizeFreshnessState(state, freshness) {
   ).toLowerCase()
   const syncStatus = String(freshness.sync_status || '').toLowerCase()
 
-  if (freshness.sample === true || freshnessState === 'sample') return 'sample'
+  if (isSampleFreshness(freshness)) return 'sample'
   if (
     freshness.fail_closed === true ||
     freshness.is_stale === true ||
@@ -48,6 +82,16 @@ function normalizeFreshnessState(state, freshness) {
     return 'current'
   }
   return null
+}
+
+function normalizeFreshnessState(state, freshness) {
+  const explicit = String(state || '').toLowerCase()
+  const fromFreshness = normalizeFreshnessMetadata(freshness)
+  if (fromFreshness && (!BADGE_TEXT[explicit] || explicit === 'current')) {
+    return fromFreshness
+  }
+  if (BADGE_TEXT[explicit]) return explicit
+  return fromFreshness
 }
 
 export function FreshnessBadge({

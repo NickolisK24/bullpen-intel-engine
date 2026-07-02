@@ -2,10 +2,13 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
 import Sidebar from './components/Sidebar'
+import Footer from './components/layout/Footer'
 import Home from './components/home/Home'
 import Stories from './components/stories/Stories'
 import Dashboard from './components/dashboard/Dashboard'
 import Bullpen from './components/bullpen/Bullpen'
+import About from './components/about/About'
+import HowToRead from './components/guide/HowToRead'
 import Methodology from './components/methodology/Methodology'
 import DataTrust from './components/trust/DataTrust'
 import PrivatePosts from './components/posts/PrivatePosts'
@@ -22,6 +25,8 @@ export const APP_ROUTES = [
   { path: '/dashboard', Component: Dashboard },
   { path: '/bullpen', Component: Bullpen },
   { path: '/stories', Component: Stories },
+  { path: '/about', Component: About },
+  { path: '/how-to-read', Component: HowToRead },
   { path: '/methodology', Component: Methodology },
   { path: '/trust', Component: DataTrust },
   { path: '/signin', Component: SignIn },
@@ -56,6 +61,7 @@ export default function App() {
         <Sidebar />
         <main className="flex-1 min-w-0 lg:ml-56">
           <AppRoutes />
+          <Footer />
         </main>
       </div>
       <Analytics />

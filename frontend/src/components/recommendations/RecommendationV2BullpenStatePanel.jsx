@@ -38,7 +38,7 @@ function asObject(value) {
 }
 
 function toTitle(value) {
-  return humanizeLabel(value, '')
+  return stripTrustChrome(humanizeLabel(value, ''))
 }
 
 function displayValue(value, fallback = 'Unavailable') {
@@ -46,7 +46,7 @@ function displayValue(value, fallback = 'Unavailable') {
   if (value === true) return 'true'
   if (value === 0) return '0'
   if (value === null || value === undefined || value === '') return fallback
-  if (typeof value === 'object') return summarizeDisplayValue(value, fallback)
+  if (typeof value === 'object') return stripTrustChrome(summarizeDisplayValue(value, fallback))
   return stripTrustChrome(String(value))
 }
 
@@ -61,6 +61,13 @@ function stripTrustChrome(value) {
     .replace(/\bfail-closed protection\b/gi, 'fail-closed handling')
     .replace(/\bprotection\b/gi, 'withholding')
     .replace(/\bprotected\b/gi, 'withheld')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
@@ -132,7 +139,7 @@ function inventoryItemKey(item, index) {
 
 function inventoryCategoryName(item) {
   const label = item.label || toTitle(item.inventory_type) || 'Inventory'
-  return label.replace(/\s+inventory$/i, '').trim() || label
+  return stripTrustChrome(label.replace(/\s+inventory$/i, '').trim() || label)
 }
 
 function inventoryCountLabel(item) {

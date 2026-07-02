@@ -8,6 +8,7 @@ import {
   getAvailabilityBadgeView,
   getAvailabilityFilterCounts,
   getAvailabilitySummary,
+  getAvailabilityStatusLabel,
   getDataStateView,
 } from '../src/components/bullpen/availabilityView.js'
 import { availabilityFixtureRows } from './fixtures/availabilityStatusFixtures.mjs'
@@ -19,18 +20,23 @@ test('builds availability badge labels from every backend status value', () => {
     const status = row.availability.availability_status
     const badge = getAvailabilityBadgeView(row.availability)
 
-    assert.equal(badge.label, status)
+    assert.equal(badge.label, getAvailabilityStatusLabel(status))
     assert.equal(badge.status, status)
     assert.match(badge.tone, /recent usage|recent work|workload|signals|rules/i)
   }
 })
 
-test('filters rows by every backend availability status without reclassifying', () => {
+test('filters rows by public availability status while preserving raw backend values', () => {
   for (const status of statuses) {
     const filtered = filterRowsByAvailability(availabilityFixtureRows, status)
 
-    assert.equal(filtered.length, 1)
-    assert.equal(filtered[0].availability.availability_status, status)
+    if (status === 'Unavailable') {
+      assert.equal(filtered.length, 2)
+      assert.deepEqual(filtered.map(row => row.availability.availability_status), ['Avoid', 'Unavailable'])
+    } else {
+      assert.equal(filtered.length, 1)
+      assert.equal(filtered[0].availability.availability_status, status)
+    }
   }
 
   const all = filterRowsByAvailability(availabilityFixtureRows, 'ALL')
@@ -44,8 +50,19 @@ test('counts availability filter options from returned rows', () => {
   assert.equal(counts.Available, 1)
   assert.equal(counts.Monitor, 1)
   assert.equal(counts.Limited, 1)
-  assert.equal(counts.Avoid, 1)
-  assert.equal(counts.Unavailable, 1)
+  assert.equal(counts.Unavailable, 2)
+  assert.equal(counts.Avoid, undefined)
+})
+
+test('raw Avoid status displays as public Unavailable copy', () => {
+  const rawAvoid = availabilityFixtureRows.find(row => row.availability.availability_status === 'Avoid')
+  const badge = getAvailabilityBadgeView(rawAvoid.availability)
+  const summary = getAvailabilitySummary(rawAvoid.availability)
+
+  assert.equal(getAvailabilityStatusLabel('Avoid'), 'Unavailable')
+  assert.equal(badge.status, 'Avoid')
+  assert.equal(badge.label, 'Unavailable')
+  assert.equal(summary.label, 'Unavailable')
 })
 
 test('formats fixture confidence values for display', () => {
@@ -81,7 +98,7 @@ test('preserves explanation reasons and limitations from fixture backend output'
   for (const row of availabilityFixtureRows) {
     const summary = getAvailabilitySummary(row.availability)
 
-    assert.equal(summary.label, row.availability.availability_status)
+    assert.equal(summary.label, getAvailabilityStatusLabel(row.availability.availability_status))
     assert.equal(summary.confidenceLabel, formatConfidence(row.availability.confidence))
     assert.equal(summary.dataStateView.label, getDataStateView(row.availability.data_state).label)
     assert.deepEqual(summary.reasons, row.availability.reasons)

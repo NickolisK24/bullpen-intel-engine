@@ -21,6 +21,7 @@ after(async () => {
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 const { default: DataTrust } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const { getBoardContextView } = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -95,12 +96,17 @@ test('dashboard renders the five bullpen sections', () => {
 
 test('dashboard landscape uses canonical group titles and keeps descriptive subtitles', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
-  assert.ok(htmlIncludes(html, 'Most Stable'))
-  assert.ok(htmlIncludes(html, 'Worth Watching'))
-  assert.ok(htmlIncludes(html, 'Thinnest late-inning margins'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'Most Available'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(
+    html.indexOf('Most Available') < html.indexOf('On Watch') &&
+    html.indexOf('On Watch') < html.indexOf('Most Stretched'),
+    'landscape columns should render Most Available, On Watch, then Most Stretched',
+  )
+  assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
-  assert.ok(htmlIncludes(html, 'Workload watch groups'))
+  assert.ok(htmlIncludes(html, 'Recent workload watch groups'))
 })
 
 test('dashboard landscape preserves team-board deep links and honest empty groups', () => {
@@ -115,7 +121,7 @@ test('dashboard landscape preserves team-board deep links and honest empty group
 
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=WSH&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=TOR&amp;source=landscape"'))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
   assert.ok(htmlIncludes(html, 'None right now.'))
   assert.equal(htmlIncludes(html, 'CHC'), false)
 })
@@ -139,11 +145,27 @@ test('league-wide bullpen state sits directly after the landscape', () => {
   assert.ok(readIndex > stateIndex)
 })
 
-test('bullpen read cards show the five availability counts', () => {
+test('bullpen read cards show the four public availability labels', () => {
   const html = inRouter(React.createElement(DashboardView, { data: dashboardData }))
-  for (const label of ['Available', 'Monitor', 'Limited', 'Avoid', 'Unavailable']) {
+  for (const label of ['Available', 'On Watch', 'Limited', 'Unavailable']) {
     assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
   }
+  assert.equal(htmlIncludes(html, 'Avoid'), false)
+})
+
+test('league-wide bullpen read combines raw unavailable statuses into one public bucket', () => {
+  const context = getBoardContextView(dashboardData)
+  const unavailableRows = context.snapshot.filter(row => row.label === 'Unavailable')
+
+  assert.deepEqual(context.snapshot.map(row => row.label), [
+    'Available',
+    'On Watch',
+    'Limited',
+    'Unavailable',
+  ])
+  assert.equal(unavailableRows.length, 1)
+  assert.equal(unavailableRows[0].count, 2)
+  assert.equal(context.snapshot.reduce((total, row) => total + row.count, 0), context.metrics.total)
 })
 
 test('bullpen state reuses the Team Context Layer statement and confidence', () => {

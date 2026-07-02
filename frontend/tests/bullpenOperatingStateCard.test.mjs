@@ -386,7 +386,7 @@ test('renders compact team operating card density with the core read intact', ()
   assert.ok(htmlIncludes(html, 'Team'))
   assert.ok(htmlIncludes(html, 'New York Mets'))
   assert.ok(htmlIncludes(html, 'Current Bullpen State: Stable'))
-  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage to avoid a clear pressure flag.'))
+  assert.ok(htmlIncludes(html, 'The current bullpen read shows enough usable coverage without a clear pressure flag.'))
   assert.ok(htmlIncludes(html, 'Primary Concern'))
   assert.ok(htmlIncludes(html, 'Active workload is usable'))
   assert.ok(htmlIncludes(html, 'Secondary Concern'))
@@ -409,15 +409,15 @@ test('renders safe team context reads without changing freshness or limitations'
   const board = withTeamShape(teamOperatingBoard(), trustedTeamShape())
   const html = renderTeamOperatingCard(board)
 
-  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
   assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
-  assert.ok(htmlIncludes(html, '2 clean options are available.'))
-  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, '2 Clean Options are available.'))
+  assert.ok(htmlIncludes(html, 'Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
   assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
   assert.equal(htmlIncludes(html, 'The top trust bucket still has one available arm.'), false)
-  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
@@ -455,15 +455,15 @@ test('renders compact team context reads without overwhelming the team board car
   const html = renderCompactTeamOperatingCard(board)
 
   assert.ok(htmlIncludes(html, 'data-density="compact"'))
-  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
   assert.ok(htmlIncludes(html, 'Cleanly available choices are thinner than raw availability may suggest.'))
-  assert.ok(htmlIncludes(html, '2 clean options are available.'))
-  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, '2 Clean Options are available.'))
+  assert.ok(htmlIncludes(html, 'Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
   assert.ok(htmlIncludes(html, 'The current group appears to have enough coverage for a normal game state.'))
   assert.ok(htmlIncludes(html, 'Coverage options remain playable for a normal game state.'))
-  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Recent relief work has flowed through a smaller group of arms.'))
   assert.ok(htmlIncludes(html, 'Recent relief work has leaned on three arms.'))
@@ -501,10 +501,10 @@ test('omits limited reads and filters unsafe team context copy', () => {
   const compactHtml = renderCompactTeamOperatingCard(board)
 
   for (const phrase of [
-    'Coverage safety',
+    'Coverage Safety',
     'Stable Coverage Safety',
     'The current group appears to have enough coverage for a normal game state.',
-    'Workload concentration',
+    'Workload Concentration',
     'Some Workload Concentration',
     'Recent relief work has flowed through a smaller group of arms.',
   ]) {
@@ -513,7 +513,7 @@ test('omits limited reads and filters unsafe team context copy', () => {
   }
 
   for (const phrase of [
-    'Clean options',
+    'Clean Options',
     'Limited Read',
     'Backend team bullpen shape was not returned.',
     'COIN source detail should not render.',
@@ -604,6 +604,7 @@ test('team card omits unsupported rows and gates starter support by sample size'
   assert.equal(htmlIncludes(zeroMonitorHtml, '0 of 6 relievers are in the Monitor group.'), false)
   assert.equal(htmlIncludes(zeroMonitorCompactHtml, '0 of 6 relievers are in the Monitor group.'), false)
   assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Avoid or Unavailable.'), false)
+  assert.equal(htmlIncludes(zeroMonitorCompactHtml, 'No relievers are marked Unavailable.'), false)
 
   for (const phrase of [
     'Clean Options',
@@ -629,10 +630,10 @@ test('team card omits unsupported rows and gates starter support by sample size'
   const supportedHtml = renderTeamOperatingCard(supportedStarterBoard)
   const supportedCompactHtml = renderCompactTeamOperatingCard(supportedStarterBoard)
 
-  assert.ok(htmlIncludes(supportedHtml, 'Starter support'))
+  assert.ok(htmlIncludes(supportedHtml, 'Starter Support'))
   assert.ok(htmlIncludes(supportedHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
   assert.ok(htmlIncludes(supportedHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
-  assert.ok(htmlIncludes(supportedCompactHtml, 'Starter support'))
+  assert.ok(htmlIncludes(supportedCompactHtml, 'Starter Support'))
   assert.ok(htmlIncludes(supportedCompactHtml, 'Recent starter length has increased the chance this bullpen needs to cover more outs.'))
   assert.ok(htmlIncludes(supportedCompactHtml, 'The rotation averaged 5.4 innings per start over the last 7 days, requiring 8.2 bullpen innings.'))
   assert.ok(htmlIncludes(supportedHtml, 'Some recent team games are excluded because starter/relief workload data is incomplete or ambiguous.'))
@@ -649,7 +650,7 @@ test('team card renders stable starter support only when safe', () => {
   }
   const stableHtml = renderCompactTeamOperatingCard(stableBoard)
 
-  assert.ok(htmlIncludes(stableHtml, 'Starter support'))
+  assert.ok(htmlIncludes(stableHtml, 'Starter Support'))
   assert.ok(htmlIncludes(stableHtml, 'Recent starter length has not added a major coverage warning.'))
   assert.ok(htmlIncludes(stableHtml, 'The rotation averaged 6.1 innings per start over the last 7 days.'))
   assert.equal(htmlIncludes(stableHtml, 'Unknown'), false)
@@ -677,11 +678,11 @@ test('compact evidence omits unsafe reasons without placeholders', () => {
   }))
   const html = renderCompactTeamOperatingCard(board)
 
-  assert.ok(htmlIncludes(html, 'Clean options'))
+  assert.ok(htmlIncludes(html, 'Clean Options'))
   assert.ok(htmlIncludes(html, 'Thin Clean Options'))
-  assert.ok(htmlIncludes(html, 'Coverage safety'))
+  assert.ok(htmlIncludes(html, 'Coverage Safety'))
   assert.ok(htmlIncludes(html, 'Stable Coverage Safety'))
-  assert.ok(htmlIncludes(html, 'Workload concentration'))
+  assert.ok(htmlIncludes(html, 'Workload Concentration'))
   assert.ok(htmlIncludes(html, 'Some Workload Concentration'))
   assert.equal(htmlIncludes(html, 'Unknown'), false)
   assert.equal(htmlIncludes(html, 'N/A'), false)
@@ -720,7 +721,7 @@ test('omits internal language from visible card copy', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
@@ -752,7 +753,7 @@ test('separates limitation copy from evidence', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
@@ -782,7 +783,7 @@ test('deduplicates league-wide workload limitation copy', () => {
       { status: 'Available', label: 'Available', count: 5 },
       { status: 'Monitor', label: 'Monitor', count: 1 },
       { status: 'Limited', label: 'Limited', count: 1 },
-      { status: 'Avoid', label: 'Avoid', count: 1 },
+      { status: 'Avoid', label: 'Unavailable', count: 1 },
       { status: 'Unavailable', label: 'Unavailable', count: 0 },
     ],
   }
@@ -805,6 +806,6 @@ test('view model exposes only supported operating state labels', () => {
     freshness: currentFreshness,
   })
 
-  assert.equal(view.stateLabel, 'Constrained')
-  assert.equal(view.primaryConcern.label, 'Clean options are tight')
+  assert.equal(view.stateLabel, 'Stretched')
+  assert.equal(view.primaryConcern.label, 'Clean Options are tight')
 })

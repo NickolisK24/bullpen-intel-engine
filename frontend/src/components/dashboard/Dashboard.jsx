@@ -10,7 +10,6 @@ import {
   getInjuryIlContextSummary,
   normalizeInjuryIlContext,
 } from './injuryIlContextView'
-import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { fmtSyncDate } from './syncStatusView'
 import {
   getBoardContextView,
@@ -126,7 +125,7 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
 
           {/* Section 3 — Bullpen Read */}
           <Section title="League-Wide Bullpen Read" subtitle={`${context.metrics.total} bullpen-eligible relievers in the current bullpen availability set`}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {context.snapshot.map(row => (
                 <div key={row.status} className="card p-4">
                   <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-chalk500">
@@ -175,13 +174,6 @@ export function DashboardView({ data, loading = false, error = null, staleWithEr
         </>
       )}
 
-      <FeedbackCTA
-        compact
-        className="mb-2"
-        eyebrow="User Validation"
-        title="Help shape BaseballOS"
-        body="Share what is useful, unclear, or missing while BaseballOS is being tested with real users."
-      />
     </div>
   )
 }

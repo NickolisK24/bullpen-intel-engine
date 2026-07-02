@@ -79,6 +79,15 @@ function stripTrustChrome(value) {
     .replace(/\bcertified\b/gi, 'available')
     .replace(/\bV[2-4]\s+/g, '')
     .replace(/\bV[2-4]\b/g, '')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
@@ -124,6 +133,11 @@ function buildRows(source, entries) {
       value: foundKey ? value[foundKey] : null,
     }
   })
+}
+
+function numericMetric(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
 }
 
 function MetricRow({ label, value }) {
@@ -372,15 +386,15 @@ function ContractWarnings({ view }) {
 }
 
 function buildAvailabilityRows(view) {
-  return buildRows(view.availabilityDistribution, [
-    ['Available', 'available'],
-    ['Monitor', 'monitor'],
-    ['Limited', 'limited'],
-    ['Avoid', 'avoid'],
-    ['Unavailable', 'unavailable'],
-    ['Unknown', 'unknown'],
-    ['Total', 'total'],
-  ])
+  const distribution = asObject(view.availabilityDistribution)
+  return [
+    { label: 'Available', value: distribution.available ?? null },
+    { label: 'On Watch', value: distribution.monitor ?? null },
+    { label: 'Limited', value: distribution.limited ?? null },
+    { label: 'Unavailable', value: numericMetric(distribution.unavailable) + numericMetric(distribution.avoid) },
+    { label: 'Unknown', value: distribution.unknown ?? null },
+    { label: 'Total', value: distribution.total ?? null },
+  ]
 }
 
 function buildWorkloadRows(view) {

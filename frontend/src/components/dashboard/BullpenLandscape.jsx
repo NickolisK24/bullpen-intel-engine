@@ -97,6 +97,11 @@ function displayLandscapeNote(note) {
     .replace(/\bendpoint\b/gi, 'data feed')
     .replace(/\bbackend\b/gi, 'BaseballOS service')
     .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
 }
 
 export default function BullpenLandscape({ landscape }) {

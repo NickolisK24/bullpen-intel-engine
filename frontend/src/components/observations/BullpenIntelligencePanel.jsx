@@ -52,6 +52,22 @@ function labelize(value) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, char => char.toUpperCase())
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bSnapshot\b/g, 'Read')
+    .replace(/\bRecommendation Engine\b/g, 'BaseballOS Read')
+}
+
+function publicTerminology(value) {
+  return String(value)
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
 }
 
 function displayValue(value, fallback = 'Not provided') {
@@ -67,7 +83,7 @@ function displayValue(value, fallback = 'Not provided') {
       .map(([key, item]) => `${labelize(key)}: ${displayValue(item)}`)
       .join(', ')
   }
-  return String(value)
+  return publicTerminology(value)
 }
 
 function itemSummary(item) {

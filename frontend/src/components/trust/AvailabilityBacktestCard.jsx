@@ -3,6 +3,7 @@ import {
   formatDateOnly,
   formatUtcDateTimeEt,
 } from '../../utils/dateDisplay'
+import { getAvailabilityStatusLabel } from '../bullpen/availabilityView'
 
 const TIER_TONES = {
   Available: 'border-emerald-400/35 bg-emerald-400/5 text-emerald-300',
@@ -36,12 +37,20 @@ function formatDate(value) {
   return formatDateOnly(value, { month: 'long' }) || 'Not available'
 }
 
+function publicAvailabilityCopy(value) {
+  return String(value || '')
+    .replace(/\bAvoid\s+and\s+Unavailable\s+were\b/g, 'Unavailable was')
+    .replace(/\bAvoid\s+and\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
+}
+
 function TierRateRow({ tier }) {
   const tone = TIER_TONES[tier.tier] || 'border-dirt bg-field/45 text-chalk300'
   return (
     <div className={`rounded border p-3 ${tone}`}>
       <div className="font-mono text-[10px] uppercase tracking-widest opacity-80">
-        {tier.tier}
+        {getAvailabilityStatusLabel(tier.tier)}
       </div>
       <div className="mt-2 flex items-baseline justify-between gap-3">
         <span className="font-display text-3xl tracking-wide">
@@ -107,10 +116,10 @@ export default function AvailabilityBacktestCard({
             Operational Backtest
           </div>
           <h2 className="mt-1 font-display text-2xl tracking-wider text-chalk100">
-            {framing.title || 'Availability Tier Usage Check'}
+            {publicAvailabilityCopy(framing.title) || 'Availability Tier Usage Check'}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-chalk400">
-            {framing.summary || 'Stored next-day usage results are not available yet.'}
+            {publicAvailabilityCopy(framing.summary) || 'Stored next-day usage results are not available yet.'}
           </p>
         </div>
         <div className="rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] text-chalk500">
@@ -132,7 +141,7 @@ export default function AvailabilityBacktestCard({
         <div className="space-y-4">
           {framing.claim && (
             <div className="rounded border border-emerald-400/25 bg-emerald-400/5 p-3 text-sm leading-relaxed text-emerald-100">
-              {framing.claim}
+              {publicAvailabilityCopy(framing.claim)}
             </div>
           )}
 
@@ -142,7 +151,7 @@ export default function AvailabilityBacktestCard({
           ))}
 
           <div className="rounded border border-dirt bg-chalk/20 p-3 text-xs leading-relaxed text-chalk500">
-            {framing.caveat}
+            {publicAvailabilityCopy(framing.caveat)}
           </div>
         </div>
       )}

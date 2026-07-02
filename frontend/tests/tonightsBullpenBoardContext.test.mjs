@@ -64,7 +64,8 @@ test('every context statement explains itself with real counts', () => {
   assert.ok(detailsTag)
   assert.ok(!detailsTag.includes('open'))
   assert.ok(htmlIncludes(html, '2 of 6 relievers are classified Available.'))
-  assert.ok(htmlIncludes(html, '2 of 6 relievers are Avoid or Unavailable.'))
+  assert.ok(htmlIncludes(html, '2 of 6 relievers are Unavailable.'))
+  assert.equal(htmlIncludes(html, 'Avoid or Unavailable'), false)
   assert.ok(htmlIncludes(html, 'Availability classifications are workload-based only.'))
 })
 
@@ -120,7 +121,7 @@ test('getBoardContextView maps state, metrics, and degraded confidence', () => {
   assert.equal(manageable.state, 'manageable')
   assert.equal(manageable.metrics.total, 1)
   assert.equal(manageable.isDegraded, false)
-  assert.equal(manageable.snapshot.length, 5)
+  assert.equal(manageable.snapshot.length, 4)
 
   const stale = view.getBoardContextView(staleBoard)
   assert.equal(stale.isDegraded, true)

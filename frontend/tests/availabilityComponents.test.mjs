@@ -19,7 +19,7 @@ after(async () => {
 
 const { default: AvailabilityBadge } = await server.ssrLoadModule('/src/components/bullpen/AvailabilityBadge.jsx')
 const { default: AvailabilitySummary } = await server.ssrLoadModule('/src/components/bullpen/AvailabilitySummary.jsx')
-const { formatConfidence } = await server.ssrLoadModule('/src/components/bullpen/availabilityView.js')
+const { formatConfidence, getAvailabilityStatusLabel } = await server.ssrLoadModule('/src/components/bullpen/availabilityView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -27,12 +27,13 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 test('AvailabilityBadge renders every availability status label', () => {
   for (const row of availabilityFixtureRows) {
     const status = row.availability.availability_status
+    const label = getAvailabilityStatusLabel(status)
     const html = renderToStaticMarkup(
       React.createElement(AvailabilityBadge, { availability: row.availability, showDataState: true }),
     )
 
-    assert.ok(htmlIncludes(html, status))
-    assert.ok(htmlIncludes(html, `Availability status: ${status}`))
+    assert.ok(htmlIncludes(html, label))
+    assert.ok(htmlIncludes(html, `Availability status: ${label}`))
   }
 })
 
@@ -42,20 +43,21 @@ test('AvailabilityBadge renders non-current data state when requested', () => {
     React.createElement(AvailabilityBadge, { availability: staleFixture.availability, showDataState: true }),
   )
 
-  assert.ok(htmlIncludes(html, 'Monitor'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(htmlIncludes(html, 'Data: Outside Freshness Window'))
 })
 
 test('AvailabilitySummary renders status, confidence, reasons, and limitations for every fixture', () => {
   for (const row of availabilityFixtureRows) {
     const status = row.availability.availability_status
+    const label = getAvailabilityStatusLabel(status)
     const confidence = formatConfidence(row.availability.confidence)
     const html = renderToStaticMarkup(
       React.createElement(AvailabilitySummary, { availability: row.availability }),
     )
 
     assert.ok(htmlIncludes(html, 'Final Availability'))
-    assert.ok(htmlIncludes(html, status))
+    assert.ok(htmlIncludes(html, label))
     assert.ok(htmlIncludes(html, 'Roster Status'))
     assert.ok(htmlIncludes(html, 'Workload Read'))
     assert.ok(htmlIncludes(html, confidence))

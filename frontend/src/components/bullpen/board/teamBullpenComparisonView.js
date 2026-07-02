@@ -1,15 +1,14 @@
-import { formatConfidence, getAvailabilityBadgeView } from '../availabilityView'
+import { formatConfidence, getAvailabilityBadgeView, getAvailabilityStatusLabel } from '../availabilityView'
 import { fmtDataDate, fmtSyncDate } from '../../dashboard/syncStatusView'
 import { getDataProvenance } from './tonightsBullpenBoardView'
 
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
 const SNAPSHOT_ROWS = [
-  { key: 'available', label: 'Available', status: 'Available' },
-  { key: 'monitor', label: 'Monitor', status: 'Monitor' },
-  { key: 'limited', label: 'Limited', status: 'Limited' },
-  { key: 'avoid', label: 'Avoid', status: 'Avoid' },
-  { key: 'unavailable', label: 'Unavailable', status: 'Unavailable' },
+  { keys: ['available'], label: 'Available', status: 'Available' },
+  { keys: ['monitor'], label: 'On Watch', status: 'Monitor' },
+  { keys: ['limited'], label: 'Limited', status: 'Limited' },
+  { keys: ['avoid', 'unavailable'], label: 'Unavailable', status: 'Unavailable' },
 ]
 
 const LEADER_TONE = {
@@ -31,6 +30,24 @@ function safeMetrics(metrics) {
     pct_available: Number(m.pct_available) || 0,
     pct_unavailable: Number(m.pct_unavailable) || 0,
   }
+}
+
+function displayPublicCopy(value) {
+  if (typeof value !== 'string') return value
+  return value
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bAvoid\s+or\s+Unavailable\b/g, 'Unavailable')
+    .replace(/\bAvoid\b/g, 'Unavailable')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
+    .replace(/\bsnapshot\b/gi, 'read')
+    .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
+}
+
+function sumMetrics(metrics, keys) {
+  return keys.reduce((total, key) => total + (Number(metrics?.[key]) || 0), 0)
 }
 
 function freshnessRow(freshness) {
@@ -63,18 +80,18 @@ export function getComparisonView(payload) {
   const metricsB = safeMetrics(comparison.snapshot?.team_b)
 
   const snapshot = SNAPSHOT_ROWS.map(row => ({
-    label: row.label,
+    label: getAvailabilityStatusLabel(row.label || row.status),
     badge: getAvailabilityBadgeView(row.status),
-    valueA: metricsA[row.key],
-    valueB: metricsB[row.key],
+    valueA: sumMetrics(metricsA, row.keys),
+    valueB: sumMetrics(metricsB, row.keys),
   }))
 
   const observations = (Array.isArray(comparison.observations) ? comparison.observations : []).map(o => ({
     dimension: o.dimension,
-    statement: o.statement,
+    statement: displayPublicCopy(o.statement),
     leader: o.leader,
     leaderTone: LEADER_TONE[o.leader] || LEADER_TONE.tie,
-    reasons: Array.isArray(o.reasons) ? o.reasons : [],
+    reasons: Array.isArray(o.reasons) ? o.reasons.map(displayPublicCopy) : [],
   }))
 
   const confidence = comparison.confidence || 'high'
@@ -89,13 +106,13 @@ export function getComparisonView(payload) {
     observations,
     summary: {
       state: comparison.summary?.state || 'differ',
-      statement: comparison.summary?.statement || null,
-      reasons: Array.isArray(comparison.summary?.reasons) ? comparison.summary.reasons : [],
+      statement: displayPublicCopy(comparison.summary?.statement) || null,
+      reasons: Array.isArray(comparison.summary?.reasons) ? comparison.summary.reasons.map(displayPublicCopy) : [],
     },
     confidence,
     confidenceLabel: formatConfidence(confidence),
     isDegraded: confidence === 'low' || confidence === 'none',
-    limitations: Array.isArray(comparison.limitations) ? comparison.limitations : [],
+    limitations: Array.isArray(comparison.limitations) ? comparison.limitations.map(displayPublicCopy) : [],
     freshnessA: freshnessRow(comparison.freshness?.team_a),
     freshnessB: freshnessRow(comparison.freshness?.team_b),
   }

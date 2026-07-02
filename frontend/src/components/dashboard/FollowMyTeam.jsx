@@ -93,7 +93,7 @@ function FollowedTeamSummary({ board }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {snapshot.map(row => (
           <div key={row.status} className="rounded border border-dirt/80 bg-dugout/70 p-2">
             <div className="font-mono text-[10px] uppercase tracking-wider text-chalk500">{row.label}</div>

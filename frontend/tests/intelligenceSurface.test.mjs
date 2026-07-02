@@ -39,6 +39,12 @@ const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
 const render = (el) => renderToStaticMarkup(React.createElement(MemoryRouter, null, el))
 const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const clone = (value) => JSON.parse(JSON.stringify(value))
+const sectionSlice = (html, startText, endText) => {
+  const start = html.indexOf(startText)
+  if (start < 0) return ''
+  const end = endText ? html.indexOf(endText, start + startText.length) : -1
+  return end > start ? html.slice(start, end) : html.slice(start)
+}
 
 const teams = [
   { team_id: 137, team_name: 'San Francisco Giants', team_abbreviation: 'SF' },
@@ -323,14 +329,14 @@ test('lead story view resolves team, prose, evidence, metadata, and snapshot', (
   assert.equal(view.evidence.length, 3)
   assert.deepEqual(view.limitations, [])
   assert.ok(view.snapshot.includes('Available arms: 3'))
-  assert.ok(view.snapshot.includes('Named clean options: Erik Miller'))
+  assert.ok(view.snapshot.includes('Named Clean Options: Erik Miller'))
   assert.deepEqual(view.metadata.map(item => item.label), [
     'Priority',
     'Confidence',
   ])
 })
 
-test('lead story view renders payload limitations safely', () => {
+test('lead story view resolves payload limitations safely', () => {
   const intelligenceWithLimitations = clone(intelligenceOk)
   intelligenceWithLimitations.lead_story.drafts.team_story.limitations = [
     'Lineup cards and final availability can still change before first pitch.',
@@ -342,21 +348,9 @@ test('lead story view renders payload limitations safely', () => {
   assert.deepEqual(view.limitations, [
     'Lineup cards and final availability can still change before first pitch.',
   ])
-
-  const html = render(React.createElement(IntelligenceSurfaceView, {
-    intelligence: intelligenceWithLimitations,
-    tonight: tonightOk,
-    dashboard,
-    landscape,
-    teams,
-  }))
-
-  assert.ok(htmlIncludes(html, 'Limitations'))
-  assert.ok(htmlIncludes(html, 'Lineup cards and final availability can still change before first pitch.'))
-  assert.equal(htmlIncludes(html, 'Backend snapshot detail should not be public.'), false)
 })
 
-test('Intelligence Surface shell and lead story skeleton render before data resolves', () => {
+test('Intelligence Surface shell and upcoming games placeholder render before data resolves', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligenceLoading: true,
     tonightLoading: true,
@@ -365,22 +359,51 @@ test('Intelligence Surface shell and lead story skeleton render before data reso
     teams: [],
   }))
 
-  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
-  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'Get weekly bullpen notes'))
+  assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'Explore today&#x27;s bullpen picture'))
+  assert.ok(htmlIncludes(html, 'href="#bullpen-picture"'))
+  assert.ok(htmlIncludes(html, 'Get the weekly Bullpen Report'))
   assert.ok(htmlIncludes(html, 'mailto:baseballoshq@gmail.com'))
   assert.ok(htmlIncludes(html, 'Favorite%20team%3A%20'))
+  assert.ok(htmlIncludes(html, 'One email a week. No spam, no picks.'))
   assert.equal(htmlIncludes(html, 'mailto:nickoliskacludis@gmail.com'), false)
-  assert.ok(htmlIncludes(html, 'Today&#x27;s Story'))
-  assert.ok(htmlIncludes(html, 'Reading the latest completed-game context...'))
-  assert.ok(htmlIncludes(html, 'Loading today'))
-  assert.ok(htmlIncludes(html, 'min-h-[28rem]'))
+  assert.ok(htmlIncludes(html, 'Upcoming Games'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Today&#x27;s Story'), false)
+  assert.equal(htmlIncludes(html, 'Reading the latest completed-game context...'), false)
+  assert.equal(htmlIncludes(html, 'Loading today'), false)
+  assert.equal(htmlIncludes(html, 'min-h-[28rem]'), false)
   assert.ok(htmlIncludes(html, 'Tonight'))
   assert.ok(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
   assert.ok(htmlIncludes(html, 'Loading bullpen picture...'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen"'))
+  assert.equal(htmlIncludes(html, 'href="/bullpen"'), false)
   assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
+})
+
+test('homepage sections introduce the bullpen picture before Tonight watch', () => {
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    tonight: tonightOk,
+    dashboard,
+    landscape,
+    teams,
+  }))
+
+  const orderedSections = [
+    'See which bullpens are fresh, stretched, or vulnerable tonight — and why.',
+    'Upcoming Games',
+    'Today&#x27;s Bullpen Picture',
+    'Tonight&#x27;s Bullpen Watch',
+    'Learn &amp; Explore BaseballOS',
+  ]
+  let previousIndex = -1
+  for (const section of orderedSections) {
+    const index = html.indexOf(section)
+    assert.ok(index > previousIndex, section)
+    previousIndex = index
+  }
 })
 
 test('Intelligence Surface renders a populated StoryPackage without raw JSON fields', () => {
@@ -392,27 +415,22 @@ test('Intelligence Surface renders a populated StoryPackage without raw JSON fie
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'MLB Bullpen Intelligence'))
-  assert.ok(htmlIncludes(html, 'See which MLB bullpens are fresh, stretched, or vulnerable tonight — and why.'))
-  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB workload, availability, usage, and game context after completed games.'))
-  assert.ok(htmlIncludes(html, 'It stays descriptive and evidence-backed.'))
-  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
-  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
-  assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
-  assert.ok(htmlIncludes(html, 'The relievers could not hold the lead.'))
-  assert.ok(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'))
-  assert.ok(htmlIncludes(html, 'Limitations'))
-  assert.ok(htmlIncludes(html, 'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'))
-  assert.ok(htmlIncludes(html, 'Bullpen Read'))
-  assert.ok(htmlIncludes(html, 'Priority'))
-  assert.ok(htmlIncludes(html, 'Confidence'))
-  assert.ok(htmlIncludes(html, 'Critical'))
+  assert.ok(htmlIncludes(html, 'MLB BULLPEN INTELLIGENCE — UPDATED DAILY'))
+  assert.ok(htmlIncludes(html, 'See which bullpens are fresh, stretched, or vulnerable tonight — and why.'))
+  assert.ok(htmlIncludes(html, 'BaseballOS reads public MLB usage and workload after every game, so you can tell which pens are gassed and which are loaded — and see the evidence behind each read.'))
+  assert.ok(htmlIncludes(html, 'Descriptive only — we show what we see and what we can&#x27;t. No picks, no predictions.'))
+  assert.ok(htmlIncludes(html, 'Upcoming Games'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
+  assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
+  assert.equal(htmlIncludes(html, 'The relievers could not hold the lead.'), false)
+  assert.equal(htmlIncludes(html, 'Starter: Landen Roupp, 6.0 IP, 95 pitches'), false)
   assert.ok(htmlIncludes(html, 'Freshness: Current'))
   assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
   assert.ok(htmlIncludes(html, 'Last synced 6:04 AM ET'))
-  assert.ok(htmlIncludes(html, 'mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2'))
-  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=intelligence-surface"'))
+  assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=SF&amp;source=landscape"'))
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s Bullpen Watch'))
   assert.ok(htmlIncludes(html, 'What BaseballOS is watching before first pitch.'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
@@ -497,6 +515,50 @@ test('homepage freshness separates Tonight slate from completed-game bullpen dat
   assert.equal(htmlIncludes(html, 'Bullpen data through Jun 27'), false)
 })
 
+test('sample Today intelligence is not rendered as a current homepage story', () => {
+  const sampleIntelligence = {
+    ...intelligenceOk,
+    freshness: {
+      freshness_state: 'sample',
+      sample: true,
+      data_through: '2026-06-24',
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: sampleIntelligence,
+    teams,
+  }))
+
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Sample intelligence state'), false)
+  assert.equal(htmlIncludes(html, 'Not live MLB data.'), false)
+  assert.equal(htmlIncludes(html, 'Freshness: Current'), false)
+})
+
+test('stale homepage freshness does not imply current live data', () => {
+  const staleDashboard = {
+    ...dashboard,
+    freshness: {
+      ...dashboard.freshness,
+      freshness_state: 'stale',
+      is_current: false,
+      is_stale: true,
+    },
+  }
+
+  const html = render(React.createElement(IntelligenceSurfaceView, {
+    intelligence: intelligenceOk,
+    dashboard: staleDashboard,
+    landscape,
+    teams,
+  }))
+  const pictureHtml = sectionSlice(html, 'Today&#x27;s Bullpen Picture', 'Tonight&#x27;s Bullpen Watch')
+
+  assert.ok(htmlIncludes(pictureHtml, 'Refresh delayed'))
+  assert.equal(htmlIncludes(pictureHtml, 'Freshness: Current'), false)
+})
+
 test('Bullpen Picture omits data-through when no trusted completed-game date exists', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -514,7 +576,7 @@ test('Bullpen Picture omits data-through when no trusted completed-game date exi
   }))
 
   const pictureStart = html.indexOf('Today&#x27;s Bullpen Picture')
-  const exploreStart = html.indexOf('Explore', pictureStart)
+  const exploreStart = html.indexOf('Tonight&#x27;s Bullpen Watch', pictureStart)
   const pictureHtml = html.slice(pictureStart, exploreStart)
 
   assert.equal(htmlIncludes(pictureHtml, 'Bullpen data through'), false)
@@ -524,7 +586,14 @@ test('Bullpen Picture omits data-through when no trusted completed-game date exi
   assert.equal(htmlIncludes(pictureHtml, 'null'), false)
 })
 
-test('empty Intelligence Surface response shows a graceful story fallback', () => {
+test('empty Intelligence Surface response does not render a homepage story fallback', () => {
+  const view = getLeadStoryView({
+    status: 'empty',
+    lead_story: null,
+    empty_reason: 'no_publishable_coin_story',
+    candidates_considered: 2,
+    publishable_candidates: 0,
+  }, teams)
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: {
       status: 'empty',
@@ -538,9 +607,11 @@ test('empty Intelligence Surface response shows a graceful story fallback', () =
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'))
-  assert.ok(htmlIncludes(html, 'will only surface a lead story when the evidence is strong enough.'))
-  assert.ok(htmlIncludes(html, 'No publishable bullpen story is available from the current completed-game context.'))
+  assert.equal(view.hasStory, false)
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'No lead bullpen story has cleared the bar yet.'), false)
+  assert.equal(htmlIncludes(html, 'will only surface a lead story when the evidence is strong enough.'), false)
+  assert.equal(htmlIncludes(html, 'No publishable bullpen story is available from the current completed-game context.'), false)
 })
 
 test('Tonight renders endpoint cards without exposing internal fields', () => {
@@ -549,8 +620,8 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.equal(cards[0].href, '/bullpen?view=board&team=CHC&source=intelligence-tonight')
   assert.equal(cards[0].headline, 'Narrow bullpen margin before first pitch')
   assert.equal(cards[0].summary, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.')
-  assert.equal(cards[0].whyItMatters, 'This matters because clean options are limited with a long stretch before the next off day.')
-  assert.equal(cards[0].keyNote, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.')
+  assert.equal(cards[0].whyItMatters, 'This matters because Clean Options are limited with a long stretch before the next off day.')
+  assert.equal(cards[0].keyNote, 'Key bullpen note: Clean Options are limited, with several arms on watch after recent work.')
   assert.equal(cards[0].watchPoint, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.')
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
@@ -568,12 +639,12 @@ test('Tonight renders endpoint cards without exposing internal fields', () => {
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s schedule has Chicago Cubs at home against Milwaukee Brewers.'))
   assert.ok(htmlIncludes(html, 'BaseballOS is watching how much usable bullpen margin is left before the next rest day.'))
   assert.ok(htmlIncludes(html, 'Why It Matters Tonight'))
-  assert.ok(htmlIncludes(html, 'This matters because clean options are limited with a long stretch before the next off day.'))
+  assert.ok(htmlIncludes(html, 'This matters because Clean Options are limited with a long stretch before the next off day.'))
   assert.ok(htmlIncludes(html, 'Key Note'))
-  assert.ok(htmlIncludes(html, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.'))
+  assert.ok(htmlIncludes(html, 'Key bullpen note: Clean Options are limited, with several arms on watch after recent work.'))
   assert.ok(htmlIncludes(html, 'Watch Point'))
   assert.ok(htmlIncludes(html, 'The key question is whether the bridge to the late innings stays manageable without leaning on the same arms again.'))
-  assert.ok(htmlIncludes(html, 'Clean options are limited'))
+  assert.ok(htmlIncludes(html, 'Clean Options are limited'))
   assert.ok(htmlIncludes(html, 'Schedule and bullpen context can still change before first pitch.'))
   assert.ok(htmlIncludes(html, 'Schedule context can change before lineup lock.'))
   assert.ok(htmlIncludes(html, 'href="/bullpen?view=board&amp;team=CHC&amp;source=intelligence-tonight"'))
@@ -588,10 +659,10 @@ test('Tonight qualitative story payload survives the public safety filter', () =
 
   assert.equal(cards.length, 2)
   assert.equal(cards[0].headline, 'Narrow bullpen margin before first pitch')
-  assert.equal(cards[0].whyItMatters, 'This matters because clean options are limited with a long stretch before the next off day.')
-  assert.equal(cards[0].keyNote, 'Key bullpen note: clean options are limited, with several arms on watch after recent work.')
+  assert.equal(cards[0].whyItMatters, 'This matters because Clean Options are limited with a long stretch before the next off day.')
+  assert.equal(cards[0].keyNote, 'Key bullpen note: Clean Options are limited, with several arms on watch after recent work.')
   assert.deepEqual(cards[0].evidence, [
-    'Clean options are limited',
+    'Clean Options are limited',
     'Long stretch before the next off day',
   ])
 })
@@ -739,10 +810,13 @@ test('Tonight live build timeout reason renders unavailable state without fallba
     landscape,
     teams,
   }))
+  const tonightHtml = sectionSlice(html, 'Tonight&#x27;s Bullpen Watch', 'Learn &amp; Explore BaseballOS')
 
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
-  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.ok(htmlIncludes(html, 'Tonight watch generated 11:30 PM ET'))
+  assert.ok(htmlIncludes(tonightHtml, 'Refresh delayed'))
+  assert.equal(htmlIncludes(tonightHtml, 'Freshness: Current'), false)
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'New York Mets added 2 rested arms'), false)
@@ -758,9 +832,10 @@ test('Tonight error shows unavailable state when dashboard observations exist', 
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
-  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.equal(htmlIncludes(html, 'Reading tonight&#x27;s bullpen context...'), false)
   assert.equal(htmlIncludes(html, 'Around Baseball'), false)
   assert.equal(htmlIncludes(html, 'Milwaukee Brewers lost 2 rested arms'), false)
@@ -777,9 +852,10 @@ test('Tonight error shows a graceful error state when fallback also fails', () =
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
   assert.ok(htmlIncludes(html, 'Tonight&#x27;s bullpen reads are temporarily unavailable.'))
-  assert.ok(htmlIncludes(html, 'The rest of the Intelligence Surface can still be used.'))
+  assert.ok(htmlIncludes(html, 'The rest of Today can still be used.'))
   assert.ok(htmlIncludes(html, 'Most Available'))
 })
 
@@ -828,7 +904,7 @@ test('Tonight empty state renders when neither Tonight nor fallback observations
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight based on the latest available usage data.'))
 })
 
-test('fallback dashboard failure does not prevent Today story rendering', () => {
+test('fallback dashboard failure does not prevent Today sections rendering', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightEmpty,
@@ -838,13 +914,14 @@ test('fallback dashboard failure does not prevent Today story rendering', () => 
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
-  assert.ok(htmlIncludes(html, 'The Giants reached the seventh with a cushion'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.equal(htmlIncludes(html, 'The Giants reached the seventh with a cushion'), false)
   assert.ok(htmlIncludes(html, 'No standout bullpen watch point tonight.'))
   assert.ok(htmlIncludes(html, 'Most Available'))
 })
 
-test('Bullpen Picture failure does not prevent Today story rendering', () => {
+test('Bullpen Picture failure does not prevent Today page rendering', () => {
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
     tonight: tonightOk,
@@ -854,8 +931,9 @@ test('Bullpen Picture failure does not prevent Today story rendering', () => {
     teams,
   }))
 
-  assert.ok(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'))
-  assert.ok(htmlIncludes(html, 'Why BaseballOS Sees It'))
+  assert.ok(htmlIncludes(html, 'Upcoming games will appear here when today’s slate is available.'))
+  assert.equal(htmlIncludes(html, 'Giants bullpen let a four-run lead get away'), false)
+  assert.equal(htmlIncludes(html, 'Why BaseballOS Sees It'), false)
   assert.ok(htmlIncludes(html, 'No current bullpen read available.'))
   assert.ok(htmlIncludes(html, 'Today&#x27;s bullpen picture is temporarily unavailable.'))
   assert.ok(htmlIncludes(html, 'Narrow bullpen margin before first pitch'))
@@ -866,9 +944,10 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.equal(picture.hasLandscape, true)
   assert.deepEqual(picture.columns.map(column => column.title), [
     'Most Available',
-    'Most Constrained',
-    'Worth Watching',
+    'On Watch',
+    'Most Stretched',
   ])
+  assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.entries[0]?.restricted, 4)
 
   const html = render(React.createElement(IntelligenceSurfaceView, {
     intelligence: intelligenceOk,
@@ -879,11 +958,11 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   }))
 
   assert.ok(htmlIncludes(html, 'Today&#x27;s Bullpen Picture'))
-  assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested, constrained, or worth monitoring.'))
+  assert.ok(htmlIncludes(html, 'A quick look at which bullpens look rested and available, stretched, or on watch.'))
   assert.ok(htmlIncludes(html, 'Bullpen data through Jun 25'))
   assert.ok(htmlIncludes(html, 'Most Available'))
-  assert.ok(htmlIncludes(html, 'Most Constrained'))
-  assert.ok(htmlIncludes(html, 'Worth Watching'))
+  assert.ok(htmlIncludes(html, 'Most Stretched'))
+  assert.ok(htmlIncludes(html, 'On Watch'))
   assert.ok(htmlIncludes(html, 'SF'))
   assert.ok(htmlIncludes(html, 'MIL'))
   assert.ok(htmlIncludes(html, 'TOR'))
@@ -902,7 +981,8 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
     },
     teams,
   }))
-  assert.ok(htmlIncludes(emptyLaneHtml, 'No bullpen currently meets this threshold.'))
+  assert.ok(htmlIncludes(emptyLaneHtml, 'No bullpen currently shows enough stretched workload to stand out.'))
+  assert.equal(htmlIncludes(emptyLaneHtml, 'No bullpen currently meets this threshold.'), false)
   assert.equal(htmlIncludes(emptyLaneHtml, 'No entries in this lane.'), false)
 
   const emptyHtml = render(React.createElement(IntelligenceSurfaceView, {
@@ -923,18 +1003,47 @@ test('Explore links render to existing routes', () => {
     teams,
   }))
 
+  assert.ok(htmlIncludes(html, 'Learn &amp; Explore'))
+  assert.ok(htmlIncludes(html, 'Learn &amp; Explore BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Get to know BaseballOS, then dig into every bullpen.'))
+
   for (const href of [
-    'href="/dashboard"',
-    'href="/bullpen"',
-    'href="/stories"',
+    'href="/about"',
+    'href="/how-to-read"',
+    'href="/methodology"',
     'href="/trust"',
   ]) {
     assert.ok(htmlIncludes(html, href), href)
   }
 
-  assert.ok(htmlIncludes(html, 'Scan the league board.'))
-  assert.ok(htmlIncludes(html, 'Read bullpen stories.'))
-  assert.equal(countOccurrences(html, 'href="/bullpen"'), 1)
+  assert.ok(htmlIncludes(html, 'About BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Why BaseballOS exists, in a minute.'))
+  assert.ok(htmlIncludes(html, 'How to Read BaseballOS'))
+  assert.ok(htmlIncludes(html, 'Learn every term in one line each.'))
+  assert.ok(htmlIncludes(html, 'See how each read is built.'))
+  assert.ok(htmlIncludes(html, 'Check freshness and how we know.'))
+
+  const exploreHtml = sectionSlice(html, 'Learn &amp; Explore BaseballOS')
+  const orderedTitles = [
+    'About BaseballOS',
+    'How to Read BaseballOS',
+    'Methodology',
+    'Data &amp; Trust',
+  ]
+  let previousIndex = -1
+  for (const title of orderedTitles) {
+    const index = exploreHtml.indexOf(title)
+    assert.ok(index > previousIndex, title)
+    previousIndex = index
+  }
+  for (const removedTitle of ['Dashboard', 'Bullpen', 'Stories']) {
+    assert.equal(htmlIncludes(exploreHtml, removedTitle), false, removedTitle)
+  }
+  assert.equal(htmlIncludes(exploreHtml, 'href="/dashboard"'), false)
+  assert.equal(htmlIncludes(exploreHtml, 'href="/bullpen"'), false)
+  assert.equal(htmlIncludes(exploreHtml, 'href="/stories"'), false)
+
+  assert.equal(countOccurrences(html, 'href="/bullpen"'), 0)
   assert.equal(htmlIncludes(html, 'href="/bullpen?view=compare"'), false)
 })
 

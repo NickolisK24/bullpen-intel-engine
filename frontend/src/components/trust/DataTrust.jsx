@@ -9,7 +9,6 @@ import { SectionHeader, StaleDataNotice } from '../UI'
 import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
 import AvailabilityBacktestCard from './AvailabilityBacktestCard'
-import { FeedbackCTA } from '../feedback/FeedbackLink'
 import { getDataProvenance } from '../bullpen/board/tonightsBullpenBoardView'
 
 // Data & Trust owns freshness, reliability checks, and data limitations.
@@ -18,7 +17,6 @@ const TRUST_LINKS = [
   { href: '/methodology#data-sources', label: 'Data Sources' },
   { href: '/methodology#known-limitations', label: 'Known Limitations' },
   { href: '#freshness-update-schedule', label: 'Freshness / Update Schedule' },
-  { href: '#contact', label: 'Contact' },
 ]
 
 export default function DataTrust() {
@@ -153,15 +151,6 @@ export function DataTrustView({
         )}
         <AvailabilityDashboardSummary summary={overview.data?.scored_pitcher_inventory} initialDetailsOpen />
       </section>
-
-      <div id="contact">
-        <FeedbackCTA
-          className="mb-2"
-          eyebrow="Trust Feedback"
-          title="Help improve BaseballOS"
-          body="Tell us what works, what does not, and what would make this more useful."
-        />
-      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import {
   formatConfidence,
   getAvailabilityBadgeView,
+  getAvailabilityStatusLabel,
   getDataStateView,
 } from '../availabilityView'
 import {
@@ -56,9 +57,9 @@ const VALID_BULLPEN_VIEW_MODES = new Set(BULLPEN_VIEW_MODES.map(mode => mode.id)
 
 const GROUP_FALLBACK_META = {
   Available: { label: 'Available', description: 'Recent usage leaves these arms in a clean spot for normal bullpen coverage.' },
-  Monitor: { label: 'Monitor', description: 'Recent work should be checked before counting on a full late-game lane.' },
+  Monitor: { label: 'On Watch', description: 'Recent work should be checked before counting on a full late-game lane.' },
   Limited: { label: 'Limited', description: 'Recent usage narrows how comfortably these arms can be used.' },
-  Avoid: { label: 'Avoid', description: 'Recent usage has tightened the margin enough that these arms should not be treated as normal options.' },
+  Avoid: { label: 'Unavailable', description: "Recent workload keeps these arms out of today's available group." },
   Unavailable: { label: 'Unavailable Pitchers', description: "Roster or workload context keeps these pitchers out of tonight's bullpen plan." },
 }
 
@@ -86,7 +87,7 @@ function normalizeGroup(group) {
   const pitchers = Array.isArray(group?.pitchers) ? group.pitchers : []
   return {
     status,
-    label: group?.label || fallback.label,
+    label: getAvailabilityStatusLabel(group?.label || fallback.label),
     description: group?.description || fallback.description,
     count: typeof group?.count === 'number' ? group.count : pitchers.length,
     pitchers,
@@ -130,7 +131,7 @@ const ROSTER_STATUS_LABELS = {
   BEREAVEMENT: 'Bereavement List',
   PATERNITY: 'Paternity List',
   SUSPENDED: 'Suspended List',
-  RESTRICTED: 'Restricted List',
+  RESTRICTED: 'Roster Unavailable',
   UNKNOWN: 'Roster Unknown',
 }
 
@@ -579,7 +580,7 @@ function getCurrentStateStressSummary(summary, state) {
     return 'This pen is usable, but a few arms are already in the yellow.'
   }
   if (state === 'constrained') {
-    return 'Clean options are tight right now.'
+    return 'Clean Options are tight right now.'
   }
   return 'Cleanly available options are limited right now.'
 }

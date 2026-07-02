@@ -38,6 +38,29 @@ test('freshness badge renders baseball-facing states', () => {
   assert.ok(htmlIncludes(sample, 'Sample intelligence state'))
 })
 
+test('freshness metadata can downgrade an explicit current badge', () => {
+  const sample = render(React.createElement(FreshnessBadge, {
+    state: 'current',
+    freshness: { freshness_state: 'sample', sample: true },
+  }))
+  assert.ok(htmlIncludes(sample, 'Sample intelligence state'))
+  assert.equal(htmlIncludes(sample, 'Freshness: Current'), false)
+
+  const stale = render(React.createElement(FreshnessBadge, {
+    state: 'current',
+    freshness: { freshness_state: 'stale', is_current: false, is_stale: true },
+  }))
+  assert.ok(htmlIncludes(stale, 'Refresh delayed'))
+  assert.equal(htmlIncludes(stale, 'Freshness: Current'), false)
+
+  const retainedSample = render(React.createElement(FreshnessBadge, {
+    state: 'current',
+    freshness: { status: 'static_sample' },
+  }))
+  assert.ok(htmlIncludes(retainedSample, 'Sample intelligence state'))
+  assert.equal(htmlIncludes(retainedSample, 'Freshness: Current'), false)
+})
+
 test('data-through and last-sync labels format trusted payload values', () => {
   const dataThrough = render(React.createElement(DataThroughStamp, {
     date: '2026-06-26',

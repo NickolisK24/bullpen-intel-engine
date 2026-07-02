@@ -41,10 +41,26 @@ test('renders side-by-side snapshot with both teams and their counts', () => {
   assert.ok(htmlIncludes(html, 'Total relievers'))
 })
 
+test('comparison snapshot shows one public Unavailable row with combined raw counts', () => {
+  const v = view.getComparisonView(differingComparison)
+  const unavailableRows = v.snapshot.filter(row => row.label === 'Unavailable')
+
+  assert.deepEqual(v.snapshot.map(row => row.label), [
+    'Available',
+    'On Watch',
+    'Limited',
+    'Unavailable',
+  ])
+  assert.equal(unavailableRows.length, 1)
+  assert.equal(unavailableRows[0].valueA, 2)
+  assert.equal(unavailableRows[0].valueB, 5)
+})
+
 test('renders deterministic comparison observations naming the team with more', () => {
   const html = render(differingComparison)
   assert.ok(htmlIncludes(html, 'Aces currently has more relievers classified Available.'))
-  assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Avoid or Unavailable.'))
+  assert.ok(htmlIncludes(html, 'Bears currently has more relievers marked Unavailable.'))
+  assert.equal(htmlIncludes(html, 'Avoid or Unavailable'), false)
 })
 
 test('each observation explains itself with both raw counts', () => {

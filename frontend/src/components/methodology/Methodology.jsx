@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { getMethodology } from '../../utils/api'
 import { LoadingPane, ErrorState, SectionHeader, Divider } from '../UI'
-import { FeedbackCTA } from '../feedback/FeedbackLink'
 
 const TIER_HEX = {
   LOW:      { bg: '#0f1f1a', border: '#10b981', text: '#34d399' },
@@ -25,6 +24,11 @@ function displayCopy(value) {
     .replace(/\bCOIN\b/gi, 'BaseballOS')
     .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
     .replace(/\bgovernance layer\b/gi, 'review layer')
+    .replace(/\bMonitor\b/g, 'On Watch')
+    .replace(/\brestricted\b/g, 'limited')
+    .replace(/\bRestricted\b/g, 'Limited')
+    .replace(/\bconstrained\b/g, 'stretched')
+    .replace(/\bConstrained\b/g, 'Stretched')
 }
 
 export default function Methodology() {
@@ -320,14 +324,6 @@ export function MethodologyView({ data }) {
           </li>
         </ul>
       </section>
-
-      <div id="contact">
-        <FeedbackCTA
-          eyebrow="Methodology Feedback"
-          title="Questions or feedback on the methodology?"
-          body="BaseballOS is being refined through real user feedback."
-        />
-      </div>
     </div>
   )
 }
