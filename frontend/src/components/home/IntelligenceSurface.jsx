@@ -15,7 +15,10 @@ import {
   StaleDataNotice,
   UnavailableDataState,
 } from '../UI'
-import { getLandscapeView } from '../dashboard/bullpenLandscapeView'
+import {
+  BULLPEN_LANDSCAPE_COLUMNS,
+  getLandscapeView,
+} from '../dashboard/bullpenLandscapeView'
 
 const AROUND_BASEBALL_UNAVAILABLE =
   'No other league bullpen movement is ready to show yet.'
@@ -602,6 +605,12 @@ function pictureColumnByKey(landscapeView, key) {
   return column || { entries: [] }
 }
 
+const BULLPEN_PICTURE_EMPTY_COPY = {
+  available: 'No bullpen currently stands out as rested and available.',
+  monitoring: 'No bullpen currently has enough arms on watch to stand out.',
+  constrained: 'No bullpen currently shows enough stretched workload to stand out.',
+}
+
 export function getBullpenPictureView(landscape) {
   const view = getLandscapeView(landscape)
   if (!view.hasLandscape) {
@@ -613,29 +622,13 @@ export function getBullpenPictureView(landscape) {
     }
   }
 
-  const specs = [
-    {
-      sourceKey: 'available',
-      title: 'Most Available',
-      metric: 'available',
-      suffix: 'rested and available',
-      emptyCopy: 'No bullpen currently stands out as rested and available.',
-    },
-    {
-      sourceKey: 'constrained',
-      title: 'Most Stretched',
-      metric: 'restricted',
-      suffix: 'needing rest or unavailable',
-      emptyCopy: 'No bullpen currently shows enough stretched workload to stand out.',
-    },
-    {
-      sourceKey: 'monitoring',
-      title: 'On Watch',
-      metric: 'monitor',
-      suffix: 'on watch',
-      emptyCopy: 'No bullpen currently has enough arms on watch to stand out.',
-    },
-  ]
+  const specs = BULLPEN_LANDSCAPE_COLUMNS.map(column => ({
+    sourceKey: column.key,
+    title: column.title,
+    metric: column.metric,
+    suffix: column.suffix,
+    emptyCopy: BULLPEN_PICTURE_EMPTY_COPY[column.key],
+  }))
 
   return {
     hasLandscape: true,

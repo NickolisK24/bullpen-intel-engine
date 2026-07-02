@@ -59,6 +59,11 @@ test('landscape renders canonical callout titles with descriptive subtitles', ()
   assert.ok(htmlIncludes(html, 'Most Stretched'))
   assert.ok(htmlIncludes(html, 'Most Available'))
   assert.ok(htmlIncludes(html, 'On Watch'))
+  assert.ok(
+    html.indexOf('Most Available') < html.indexOf('On Watch') &&
+    html.indexOf('On Watch') < html.indexOf('Most Stretched'),
+    'landscape columns should render Most Available, On Watch, then Most Stretched',
+  )
   assert.ok(htmlIncludes(html, 'Fewest clean late-inning options'))
   assert.ok(htmlIncludes(html, 'Most room to maneuver'))
   assert.ok(htmlIncludes(html, 'Recent workload watch groups'))

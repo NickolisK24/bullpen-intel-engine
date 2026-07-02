@@ -944,8 +944,8 @@ test('Bullpen Picture renders existing landscape lanes and handles missing data'
   assert.equal(picture.hasLandscape, true)
   assert.deepEqual(picture.columns.map(column => column.title), [
     'Most Available',
-    'Most Stretched',
     'On Watch',
+    'Most Stretched',
   ])
   assert.equal(picture.columns.find(column => column.title === 'Most Stretched')?.entries[0]?.restricted, 4)
 
