@@ -9,8 +9,8 @@ export default function BullpenContextSummary({ board, showHealthSummary = true,
   const snapshotClass = compactSnapshot ? 'card p-3' : 'card p-4'
   const countClass = compactSnapshot ? 'mt-1 font-mono text-xl text-chalk100' : 'mt-1 font-mono text-2xl text-chalk100'
   const snapshotGridClass = compactSnapshot
-    ? 'mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'
-    : 'mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'
+    ? 'mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4'
+    : 'mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4'
 
   return (
     <section className="mb-6" aria-label={showHealthSummary ? 'Team bullpen context' : 'Bullpen availability read'}>

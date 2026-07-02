@@ -121,7 +121,7 @@ test('getBoardContextView maps state, metrics, and degraded confidence', () => {
   assert.equal(manageable.state, 'manageable')
   assert.equal(manageable.metrics.total, 1)
   assert.equal(manageable.isDegraded, false)
-  assert.equal(manageable.snapshot.length, 5)
+  assert.equal(manageable.snapshot.length, 4)
 
   const stale = view.getBoardContextView(staleBoard)
   assert.equal(stale.isDegraded, true)

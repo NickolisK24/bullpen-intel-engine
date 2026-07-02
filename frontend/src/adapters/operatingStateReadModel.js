@@ -5,11 +5,10 @@ import {
 } from '../components/bullpen/availabilityView'
 
 const SNAPSHOT_ROWS = [
-  { status: 'Available', label: 'Available', key: 'available' },
-  { status: 'Monitor', label: 'On Watch', key: 'monitor' },
-  { status: 'Limited', label: 'Limited', key: 'limited' },
-  { status: 'Avoid', label: 'Unavailable', key: 'avoid' },
-  { status: 'Unavailable', label: 'Unavailable', key: 'unavailable' },
+  { status: 'Available', label: 'Available', keys: ['available'], rawStatuses: ['Available'] },
+  { status: 'Monitor', label: 'On Watch', keys: ['monitor'], rawStatuses: ['Monitor', 'On Watch'] },
+  { status: 'Limited', label: 'Limited', keys: ['limited'], rawStatuses: ['Limited'] },
+  { status: 'Unavailable', label: 'Unavailable', keys: ['avoid', 'unavailable'], rawStatuses: ['Avoid', 'Unavailable'] },
 ]
 
 const HEALTH_TONE = {
@@ -284,6 +283,37 @@ function rowCount(context, status) {
   return typeof row?.count === 'number' ? row.count : 0
 }
 
+function metricCount(metrics, keys) {
+  return keys.reduce((total, key) => total + (typeof metrics?.[key] === 'number' ? metrics[key] : 0), 0)
+}
+
+function sourceRowMatchesPublicRow(sourceRow, publicRow) {
+  const rawStatus = sourceRow?.status
+  const rawLabel = sourceRow?.label
+  const publicLabel = getAvailabilityStatusLabel(rawLabel || rawStatus)
+  return (
+    publicRow.rawStatuses.includes(rawStatus) ||
+    publicRow.rawStatuses.includes(rawLabel) ||
+    publicRow.label === publicLabel
+  )
+}
+
+function publicSnapshotRows(sourceRows = [], metrics = {}) {
+  const rows = Array.isArray(sourceRows) ? sourceRows : []
+  return SNAPSHOT_ROWS.map(row => {
+    const matchingRows = rows.filter(item => sourceRowMatchesPublicRow(item, row))
+    const count = matchingRows.length
+      ? matchingRows.reduce((total, item) => total + (typeof item?.count === 'number' ? item.count : 0), 0)
+      : metricCount(metrics, row.keys)
+    return {
+      status: row.status,
+      label: row.label,
+      count,
+      badge: getAvailabilityBadgeView(row.status),
+    }
+  })
+}
+
 function getCounts(context) {
   const rows = Array.isArray(context?.snapshot) ? context.snapshot : []
   const hasRows = rows.length > 0
@@ -528,15 +558,8 @@ function resolveTeam(payload, team) {
 
 function normalizeContextView(context) {
   const state = normalizeStateKey(context?.state || context?.health?.state || 'no_data')
-  const rows = Array.isArray(context?.snapshot)
-    ? context.snapshot
-    : SNAPSHOT_ROWS.map(row => ({
-      status: row.status,
-      label: getAvailabilityStatusLabel(row.label || row.status),
-      count: typeof context?.metrics?.[row.key] === 'number' ? context.metrics[row.key] : 0,
-      badge: getAvailabilityBadgeView(row.status),
-    }))
   const metrics = context?.metrics || {}
+  const rows = publicSnapshotRows(context?.snapshot, metrics)
   const total = typeof metrics.total === 'number'
     ? metrics.total
     : typeof metrics.total_relievers === 'number'
@@ -559,12 +582,7 @@ function normalizeContextView(context) {
       pctUnavailable: typeof metrics.pctUnavailable === 'number' ? metrics.pctUnavailable : typeof metrics.pct_unavailable === 'number' ? metrics.pct_unavailable : 0,
       pctRestricted: typeof metrics.pctRestricted === 'number' ? metrics.pctRestricted : typeof metrics.pct_restricted === 'number' ? metrics.pct_restricted : 0,
     },
-    snapshot: rows.map(row => ({
-      status: row.status,
-      label: getAvailabilityStatusLabel(row.label || row.status),
-      count: typeof row.count === 'number' ? row.count : 0,
-      badge: row.badge || getAvailabilityBadgeView(row.status),
-    })),
+    snapshot: rows,
     tone: context?.tone || HEALTH_TONE[state] || HEALTH_TONE.no_data,
   }
 }
@@ -577,12 +595,7 @@ export function getBoardContextView(board) {
   const tone = HEALTH_TONE[state] || HEALTH_TONE.no_data
   const confidence = context.confidence || 'high'
 
-  const snapshot = SNAPSHOT_ROWS.map(row => ({
-    status: row.status,
-    label: getAvailabilityStatusLabel(row.label || row.status),
-    count: typeof metrics[row.key] === 'number' ? metrics[row.key] : 0,
-    badge: getAvailabilityBadgeView(row.status),
-  }))
+  const snapshot = publicSnapshotRows([], metrics)
 
   return {
     hasContext: Boolean(board?.context),
