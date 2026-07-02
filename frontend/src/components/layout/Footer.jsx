@@ -80,7 +80,7 @@ function ConnectLinks() {
 export default function Footer() {
   return (
     <footer className="border-t border-dirt bg-field/95 px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl rounded-lg border border-dirt bg-dugout/80 px-5 py-7 text-center sm:px-10">
+      <div className="mx-auto w-full max-w-7xl rounded-lg border border-dirt bg-dugout/80 px-5 py-7 text-center sm:px-10">
         <div className="font-display text-2xl uppercase tracking-widest text-chalk100">
           BaseballOS
         </div>

@@ -4,7 +4,6 @@ import {
   getBullpenDashboard,
   getBullpenLandscape,
   getTeams,
-  getTodayIntelligence,
   getTonightIntelligence,
 } from '../../utils/api'
 import {
@@ -31,8 +30,6 @@ const TONIGHT_ERROR_TITLE =
   "Tonight's bullpen reads are temporarily unavailable."
 const TONIGHT_ERROR_BODY =
   'The rest of Today can still be used.'
-const LEAD_STORY_LIMITATIONS_FALLBACK =
-  'BaseballOS does not know manager intent, bullpen phone activity, private medical availability, or final game-day decisions.'
 const WEEKLY_NOTES_MAILTO =
   'mailto:baseballoshq@gmail.com?subject=BaseballOS%20weekly%20bullpen%20notes&body=I%27d%20like%20weekly%20bullpen%20notes.%0A%0AFavorite%20team%3A%20'
 
@@ -70,21 +67,6 @@ const EXPLORE_LINKS = [
     title: 'How to Read BaseballOS',
     body: 'Learn every term in one line each.',
     to: '/how-to-read',
-  },
-  {
-    title: 'Dashboard',
-    body: "See every team's pen at a glance.",
-    to: '/dashboard',
-  },
-  {
-    title: 'Bullpen',
-    body: "Open any team's bullpen board.",
-    to: '/bullpen',
-  },
-  {
-    title: 'Stories',
-    body: "Read today's bullpen storylines.",
-    to: '/stories',
   },
   {
     title: 'Methodology',
@@ -637,18 +619,21 @@ export function getBullpenPictureView(landscape) {
       title: 'Most Available',
       metric: 'available',
       suffix: 'rested and available',
+      emptyCopy: 'No bullpen currently stands out as rested and available.',
     },
     {
       sourceKey: 'constrained',
       title: 'Most Stretched',
       metric: 'restricted',
       suffix: 'needing rest or unavailable',
+      emptyCopy: 'No bullpen currently shows enough stretched workload to stand out.',
     },
     {
       sourceKey: 'monitoring',
       title: 'On Watch',
       metric: 'monitor',
       suffix: 'on watch',
+      emptyCopy: 'No bullpen currently has enough arms on watch to stand out.',
     },
   ]
 
@@ -725,218 +710,20 @@ function SeesHeader() {
   )
 }
 
-function StoryEmptyState({ intelligence }) {
-  const emptyReason = emptyReasonText(intelligence?.empty_reason)
-  return (
-    <UnavailableDataState
-      title="No lead bullpen story has cleared the bar yet."
-      message="BaseballOS is still reviewing the latest completed-game context and will only surface a lead story when the evidence is strong enough."
-      detail={emptyReason}
-      className="p-5 sm:p-7"
-      titleClassName="font-display text-3xl leading-none tracking-wide text-chalk100"
-      messageClassName="mt-3 max-w-3xl text-sm leading-relaxed text-chalk400"
-    />
-  )
-}
-
-function StoryLoadingState() {
-  return (
-    <article
-      className="relative min-h-[28rem] overflow-hidden border border-amber/25 bg-dugout bg-stadium-glow p-5 sm:p-7 lg:min-h-[30rem] lg:p-8"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-50" />
-      <div className="relative z-10">
-        <div className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-          Today's Story
-        </div>
-        <h3 className="mt-4 max-w-3xl font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl lg:text-6xl">
-          Reading the latest completed-game context...
-        </h3>
-        <p className="mt-5 max-w-2xl text-sm leading-relaxed text-chalk400 sm:text-base">
-          Loading today's lead story...
-        </p>
-        <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
-          <div className="space-y-3" aria-hidden="true">
-            <div className="h-3 w-32 animate-pulse bg-dirt" />
-            <div className="h-3 w-full max-w-xl animate-pulse bg-dirt" />
-            <div className="h-3 w-11/12 max-w-lg animate-pulse bg-dirt" />
-            <div className="h-3 w-2/3 max-w-md animate-pulse bg-dirt" />
-          </div>
-          <div className="border border-dirt/80 bg-field/50 p-4" aria-hidden="true">
-            <div className="h-3 w-36 animate-pulse bg-dirt" />
-            <div className="mt-4 space-y-3">
-              <div className="h-3 w-4/5 animate-pulse bg-dirt" />
-              <div className="h-3 w-3/5 animate-pulse bg-dirt" />
-              <div className="h-3 w-2/3 animate-pulse bg-dirt" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
-  )
-}
-
-function LeadMetadata({ items }) {
-  if (!items.length) return null
-  return (
-    <dl className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
-      {items.map(item => (
-        <div key={item.label} className="border border-dirt/70 bg-field/45 px-3 py-2">
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-chalk600">
-            {item.label}
-          </dt>
-          <dd className="mt-1 text-sm leading-snug text-chalk200">{item.value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
-function TodaysStory({
-  intelligence,
-  teams,
-  loading,
-  error,
-  staleWithError,
-  onRetry,
-  freshness,
-}) {
-  const story = getLeadStoryView(intelligence, teams)
-  const missingCompletedPayload = !intelligence && !loading && !error
-  const rowFreshness = sectionFreshness(
-    missingCompletedPayload ? { status: 'error' } : intelligence,
-    freshness,
-  )
-  const dataThrough = firstTextValue(intelligence?.reference_date, rowFreshness?.data_through)
-  const lastSync = textValue(rowFreshness?.last_successful_sync)
+function UpcomingGames() {
   return (
     <SectionShell
-      id="todays-story"
-      eyebrow="Today's Story"
-      title="Today's Story"
-      subtitle="The single bullpen story BaseballOS saw first."
+      id="upcoming-games"
+      eyebrow="Today"
+      title="Upcoming Games"
       className="mb-12"
     >
-      {loading && !intelligence ? (
-        <StoryLoadingState />
-      ) : error && !intelligence ? (
-        <UnavailableDataState
-          title="No current bullpen read available."
-          message="Today's lead story is temporarily unavailable."
-          onRetry={onRetry}
-        />
-      ) : (
-        <>
-          {staleWithError && (
-            <StaleDataNotice
-              dataThrough={dataThrough}
-              onRetry={onRetry}
-            />
-          )}
-          <SectionFreshnessRow
-            dataThrough={dataThrough}
-            lastSync={lastSync}
-            stale={staleWithError}
-            freshness={rowFreshness}
-          />
-
-          {!story.hasStory ? (
-            <StoryEmptyState intelligence={intelligence} />
-          ) : (
-            <article className="relative overflow-hidden border border-amber/30 bg-dugout bg-stadium-glow p-5 sm:p-7 lg:p-8">
-              <div className="pointer-events-none absolute inset-0 bg-grid-lines opacity-60" />
-              <div className="relative z-10">
-                <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                  <span>{story.team.label}</span>
-                  {story.referenceDate && (
-                    <>
-                      <span aria-hidden="true">/</span>
-                      <span>{story.referenceDate}</span>
-                    </>
-                  )}
-                </div>
-
-                <h3 className="mt-4 max-w-4xl break-words font-display text-4xl leading-none tracking-wide text-chalk100 sm:text-5xl lg:text-6xl">
-                  {story.headline}
-                </h3>
-                {story.body && (
-                  <p className="mt-5 max-w-3xl text-lg leading-relaxed text-chalk200 sm:text-xl">
-                    {story.body}
-                  </p>
-                )}
-
-                <div className="mt-7 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
-                  <div className="min-w-0">
-                    <StoryList title="Why BaseballOS Sees It" items={story.observations} />
-                    <StoryList title="Evidence" items={story.evidence} mono />
-                    <StoryList
-                      title="Limitations"
-                      items={story.limitations.length ? story.limitations : [LEAD_STORY_LIMITATIONS_FALLBACK]}
-                    />
-                  </div>
-                  <div className="min-w-0 border border-dirt/80 bg-field/50 p-4">
-                    <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-                      Bullpen Read
-                    </h4>
-                    {story.snapshot.length ? (
-                      <ul className="mt-3 space-y-2">
-                        {story.snapshot.map(item => (
-                          <li key={item} className="text-sm leading-relaxed text-chalk300">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-3 text-sm leading-relaxed text-chalk500">
-                        No current bullpen read is included with this story.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <LeadMetadata items={story.metadata} />
-
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Link
-                    to={story.team.href}
-                    className="inline-flex min-h-10 items-center rounded border border-amber/40 bg-amber/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/20"
-                  >
-                    Open Team Board
-                  </Link>
-                  <Link
-                    to="/stories"
-                    className="inline-flex min-h-10 items-center rounded border border-dirt bg-field/60 px-4 py-2 font-mono text-xs uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
-                  >
-                    More Stories
-                  </Link>
-                </div>
-              </div>
-            </article>
-          )}
-        </>
-      )}
+      <div className="border border-dirt bg-dugout p-4">
+        <p className="text-sm leading-relaxed text-chalk500">
+          Upcoming games will appear here when today’s slate is available.
+        </p>
+      </div>
     </SectionShell>
-  )
-}
-
-function StoryList({ title, items, mono = false }) {
-  if (!items.length) return null
-  return (
-    <div className="mb-5">
-      <h4 className="font-mono text-[10px] uppercase tracking-widest text-chalk500">
-        {title}
-      </h4>
-      <ul className="mt-3 space-y-2">
-        {items.map(item => (
-          <li key={item} className="flex gap-2 text-sm leading-relaxed text-chalk300">
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber/70" aria-hidden="true" />
-            <span className={mono ? 'font-mono text-xs text-chalk300' : ''}>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   )
 }
 
@@ -1337,7 +1124,7 @@ function BullpenPicture({
                     </ol>
                   ) : (
                     <p className="mt-3 text-xs text-chalk600">
-                      No bullpen currently meets this threshold.
+                      {column.emptyCopy}
                     </p>
                   )}
                 </div>
@@ -1388,11 +1175,6 @@ function Explore() {
 }
 
 export function IntelligenceSurfaceView({
-  intelligence = null,
-  intelligenceLoading = false,
-  intelligenceError = null,
-  intelligenceStaleWithError = false,
-  onRetryIntelligence,
   tonight = null,
   tonightLoading = false,
   tonightError = null,
@@ -1410,15 +1192,7 @@ export function IntelligenceSurfaceView({
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <SeesHeader />
-      <TodaysStory
-        intelligence={intelligence}
-        teams={teams}
-        loading={intelligenceLoading}
-        error={intelligenceError}
-        staleWithError={intelligenceStaleWithError}
-        onRetry={onRetryIntelligence}
-        freshness={pageFreshness}
-      />
+      <UpcomingGames />
       <BullpenPicture
         landscape={landscape}
         loading={landscapeLoading}
@@ -1442,7 +1216,6 @@ export function IntelligenceSurfaceView({
 }
 
 export default function IntelligenceSurfacePage() {
-  const intelligence = useFetch(getTodayIntelligence)
   const tonight = useFetch(getTonightIntelligence)
   const landscape = useFetch(getBullpenLandscape)
   const dashboard = useFetch(getBullpenDashboard)
@@ -1450,11 +1223,6 @@ export default function IntelligenceSurfacePage() {
 
   return (
     <IntelligenceSurfaceView
-      intelligence={intelligence.data}
-      intelligenceLoading={intelligence.loading}
-      intelligenceError={intelligence.error}
-      intelligenceStaleWithError={intelligence.staleWithError}
-      onRetryIntelligence={intelligence.refetch}
       tonight={tonight.data}
       tonightLoading={tonight.loading}
       tonightError={tonight.error}

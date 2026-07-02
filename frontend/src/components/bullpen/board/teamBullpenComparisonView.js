@@ -5,11 +5,10 @@ import { getDataProvenance } from './tonightsBullpenBoardView'
 // Snapshot rows shown in the side-by-side table, in the board's reading order.
 // Counts are descriptive only — no scores, ranks, or grades.
 const SNAPSHOT_ROWS = [
-  { key: 'available', label: 'Available', status: 'Available' },
-  { key: 'monitor', label: 'On Watch', status: 'Monitor' },
-  { key: 'limited', label: 'Limited', status: 'Limited' },
-  { key: 'avoid', label: 'Unavailable', status: 'Avoid' },
-  { key: 'unavailable', label: 'Unavailable', status: 'Unavailable' },
+  { keys: ['available'], label: 'Available', status: 'Available' },
+  { keys: ['monitor'], label: 'On Watch', status: 'Monitor' },
+  { keys: ['limited'], label: 'Limited', status: 'Limited' },
+  { keys: ['avoid', 'unavailable'], label: 'Unavailable', status: 'Unavailable' },
 ]
 
 const LEADER_TONE = {
@@ -47,6 +46,10 @@ function displayPublicCopy(value) {
     .replace(/\brecommendation engine\b/gi, 'BaseballOS read')
 }
 
+function sumMetrics(metrics, keys) {
+  return keys.reduce((total, key) => total + (Number(metrics?.[key]) || 0), 0)
+}
+
 function freshnessRow(freshness) {
   const f = freshness || {}
   const isCurrent = f.is_current !== false
@@ -79,8 +82,8 @@ export function getComparisonView(payload) {
   const snapshot = SNAPSHOT_ROWS.map(row => ({
     label: getAvailabilityStatusLabel(row.label || row.status),
     badge: getAvailabilityBadgeView(row.status),
-    valueA: metricsA[row.key],
-    valueB: metricsB[row.key],
+    valueA: sumMetrics(metricsA, row.keys),
+    valueB: sumMetrics(metricsB, row.keys),
   }))
 
   const observations = (Array.isArray(comparison.observations) ? comparison.observations : []).map(o => ({

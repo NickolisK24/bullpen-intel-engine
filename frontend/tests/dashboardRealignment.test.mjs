@@ -21,6 +21,7 @@ after(async () => {
 const { DashboardView } = await server.ssrLoadModule('/src/components/dashboard/Dashboard.jsx')
 const { default: DataTrust } = await server.ssrLoadModule('/src/components/trust/DataTrust.jsx')
 const { default: Sidebar } = await server.ssrLoadModule('/src/components/Sidebar.jsx')
+const { getBoardContextView } = await server.ssrLoadModule('/src/components/bullpen/board/tonightsBullpenBoardView.js')
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
@@ -145,6 +146,21 @@ test('bullpen read cards show the four public availability labels', () => {
     assert.ok(htmlIncludes(html, label), `missing bullpen read label: ${label}`)
   }
   assert.equal(htmlIncludes(html, 'Avoid'), false)
+})
+
+test('league-wide bullpen read combines raw unavailable statuses into one public bucket', () => {
+  const context = getBoardContextView(dashboardData)
+  const unavailableRows = context.snapshot.filter(row => row.label === 'Unavailable')
+
+  assert.deepEqual(context.snapshot.map(row => row.label), [
+    'Available',
+    'On Watch',
+    'Limited',
+    'Unavailable',
+  ])
+  assert.equal(unavailableRows.length, 1)
+  assert.equal(unavailableRows[0].count, 2)
+  assert.equal(context.snapshot.reduce((total, row) => total + row.count, 0), context.metrics.total)
 })
 
 test('bullpen state reuses the Team Context Layer statement and confidence', () => {
