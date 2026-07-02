@@ -12,6 +12,7 @@ preserved without cluttering the current view.
 
 - **`current/`** — Active project state, roadmap, setup, and changelog. Start
   here to understand where the project is today.
+- **`roadmap/`** — Canonical execution roadmaps for upcoming product phases.
 - **`product/`** — Product strategy, positioning, go-to-market, monetization,
   and product/UX direction.
 - **`methodology/`** — How the engines work: availability and fatigue
@@ -48,6 +49,7 @@ under `archive/` — provide history and context but do not override these.
 | --- | --- |
 | Canonical project state | [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md) |
 | Roadmap | [`current/ROADMAP.md`](current/ROADMAP.md) |
+| V4 daily bullpen platform roadmap | [`roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md) |
 | Setup and deployment | [`current/SETUP.md`](current/SETUP.md) |
 | Changelog | [`current/CHANGELOG.md`](current/CHANGELOG.md) |
 | Availability / fatigue engine | [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md) |
@@ -75,6 +77,10 @@ under `archive/` — provide history and context but do not override these.
 - [`ROADMAP_2_0_PHASE1_IMPLEMENTATION_PLAN.md`](current/ROADMAP_2_0_PHASE1_IMPLEMENTATION_PLAN.md)
 - [`SETUP.md`](current/SETUP.md)
 - [`CHANGELOG.md`](current/CHANGELOG.md)
+
+### roadmap/
+
+- [`BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md)
 
 ### product/
 
