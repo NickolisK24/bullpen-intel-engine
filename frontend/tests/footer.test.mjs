@@ -21,6 +21,7 @@ const { default: Footer } = await server.ssrLoadModule('/src/components/layout/F
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const countOccurrences = (html, text) => (html.match(new RegExp(escapeRegExp(text), 'g')) || []).length
 const decodeHtml = (html) => String(html)
   .replace(/&amp;/g, '&')
   .replace(/&#x27;/g, "'")
@@ -67,6 +68,8 @@ test('site footer keeps icon-only connect links and shell wiring intact', () => 
   assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on Instagram"'))
   assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
   assert.ok(htmlIncludes(html, 'aria-label="Email BaseballOS"'))
+  assert.equal(countOccurrences(html, '<svg'), 3)
+  assert.equal(htmlIncludes(html, '>X</span>'), false)
   assert.ok(htmlIncludes(html, 'target="_blank"'))
   assert.ok(htmlIncludes(html, 'rel="noopener noreferrer"'))
   assert.ok(appSource.includes("import Footer from './components/layout/Footer'"))

@@ -20,6 +20,19 @@ const CONNECT_LINKS = [
 ]
 
 function ConnectIcon({ type }) {
+  if (type === 'x') {
+    return (
+      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M6.5 5.5l11 13m0-13l-11 13"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+
   if (type === 'instagram') {
     return (
       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -39,11 +52,7 @@ function ConnectIcon({ type }) {
     )
   }
 
-  return (
-    <span className="font-mono text-sm font-semibold uppercase tracking-wider" aria-hidden="true">
-      X
-    </span>
-  )
+  return null
 }
 
 function ConnectLinks() {
