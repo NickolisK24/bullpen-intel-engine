@@ -62,15 +62,11 @@ test('How to Read page exposes the expected section anchors', () => {
   }
 })
 
-test('footer exposes How to Read between About and Methodology', () => {
+test('simplified footer does not duplicate guide navigation', () => {
   const html = render(React.createElement(Footer))
-  const about = html.indexOf('href="/about"')
-  const howToRead = html.indexOf('href="/how-to-read"')
-  const methodology = html.indexOf('href="/methodology"')
-  const trust = html.indexOf('href="/trust"')
 
-  assert.ok(about > -1)
-  assert.ok(howToRead > about)
-  assert.ok(methodology > howToRead)
-  assert.ok(trust > methodology)
+  assert.equal(htmlIncludes(html, 'href="/about"'), false)
+  assert.equal(htmlIncludes(html, 'href="/how-to-read"'), false)
+  assert.equal(htmlIncludes(html, 'href="/methodology"'), false)
+  assert.equal(htmlIncludes(html, 'href="/trust"'), false)
 })
