@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useFetch } from '../../hooks/useFetch'
 import {
   getAvailabilityBacktest,
@@ -5,6 +6,7 @@ import {
   getBullpenOverview,
   getSyncStatus,
 } from '../../utils/api'
+import { ANALYTICS_EVENTS, trackAnalyticsEventOnce } from '../../utils/analytics'
 import { SectionHeader, StaleDataNotice } from '../UI'
 import { SyncStatusContent } from '../dashboard/SyncStatus'
 import AvailabilityDashboardSummary from '../dashboard/AvailabilityDashboardSummary'
@@ -24,6 +26,19 @@ export default function DataTrust() {
   const dashboard = useFetch(getBullpenDashboard)
   const overview = useFetch(getBullpenOverview)
   const sync = useFetch(getSyncStatus)
+
+  useEffect(() => {
+    trackAnalyticsEventOnce(ANALYTICS_EVENTS.TRUST_SURFACE_VIEWED, {
+      surface: 'trust',
+      route: '/trust',
+      source: 'page',
+    })
+    trackAnalyticsEventOnce(ANALYTICS_EVENTS.FRESHNESS_SURFACE_VIEWED, {
+      surface: 'freshness',
+      route: '/trust',
+      source: 'trust_page',
+    })
+  }, [])
 
   return (
     <DataTrustView

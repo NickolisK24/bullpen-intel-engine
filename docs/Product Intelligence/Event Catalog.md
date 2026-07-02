@@ -267,6 +267,39 @@ verification only, no rates or time series.
 - **Related Metrics:** Story-interaction volume (legacy). Superseded by `story_team_board_opened`. **No** engagement, dwell, or completion is inferred.
 - **Version:** 1.
 
+### V4.0 product-loop analytics events
+
+- **Purpose:** Measure whether users open BaseballOS, inspect bullpen context, use
+  trust surfaces, and act on existing share/newsletter/social/team paths.
+- **Definition:** Current-surface product-loop observations emitted through the
+  owned first-party event log. They are measurement facts only.
+- **Trigger:** `POST /api/product/event` with an allowlisted `event_name`.
+- **Owner:** Product ingestion API (`api/product_events.py`) and frontend helper
+  (`frontend/src/utils/analytics.js`).
+- **Payload:** Safe optional properties only: `surface`, `route`, `team_abbrev`,
+  `player_id`, `freshness_state`; `source` is stored in the event's source
+  column; `team_id` is stored in the existing team column when already available.
+- **Privacy note:** The client strips query strings, fragments, email-like text,
+  free-form player names, and unknown/future events. Tracking is best-effort and
+  fault-isolated; it cannot change a baseball read or user-facing claim.
+- **Introduced Phase:** V4.0.
+- **Version:** 1.
+
+| Event | Purpose | Trigger location | Properties | Privacy notes |
+| --- | --- | --- | --- | --- |
+| `app_viewed` | Count route-level app views across the existing shell. | `App.jsx` route observer on route changes. | `surface=app`, `route`, `source=app`. | Path only; no query string or browser payload. |
+| `homepage_viewed` | Count Today/home arrivals as the daily read entry point. | `IntelligenceSurfaceView` mount. | `surface=home`, `route=/`, `source=page`. | Anonymous-safe; no slate or user data attached. |
+| `bullpen_board_viewed` | Count Bullpen Team Board surface views. | `Bullpen.jsx` when the Team Board tab is active. | `surface=bullpen`, `route=/bullpen`, `source=page`. | Measures product navigation only. |
+| `team_surface_viewed` | Count existing team board inspections. | `TonightsBullpenBoard.jsx` when a team is selected. | `surface=bullpen`, `route=/bullpen`, `source=team_board`, `team_abbrev`, `team_id`. | Team context is already visible in the UI. |
+| `pitcher_surface_viewed` | Count existing pitcher-detail inspections. | `Bullpen.jsx` and `TonightsBullpenBoard.jsx` when pitcher detail opens. | `surface=bullpen`, `route=/bullpen`, `source`, `team_abbrev`, `team_id`, `player_id`. | Player id only; no names or health claims. |
+| `methodology_viewed` | Count visits to explanation/methodology context. | `Methodology.jsx` mount. | `surface=methodology`, `route=/methodology`, `source=page`. | Measures page view only. |
+| `trust_surface_viewed` | Count visits to Data & Trust. | `DataTrust.jsx` mount. | `surface=trust`, `route=/trust`, `source=page`. | Measures page view only. |
+| `freshness_surface_viewed` | Count visits to the freshness/sync trust section. | `DataTrust.jsx` mount for the existing Freshness & Sync section. | `surface=freshness`, `route=/trust`, `source=trust_page`. | No raw sync payload is sent. |
+| `social_outbound_clicked` | Count current footer connect-link intent. | `Footer.jsx` connect icon click. | `surface=footer`, current `route`, `source=footer_x \| footer_instagram \| footer_email`. | No handle, email address, or URL is stored in payload. |
+| `newsletter_interest_clicked` | Count existing weekly Bullpen Report mailto interest. | `IntelligenceSurface.jsx` hero secondary CTA click. | `surface=home`, `route=/`, `source=hero_cta`. | Click intent only; no email address or submitted form exists. |
+| `team_interest_clicked` | Count existing team-board intent links. | Today Bullpen Picture, Today watch cards, Dashboard landscape rows, Stories cards. | `surface`, `route`, `source`, `team_abbrev`, `team_id`. | Team context is already visible; no advisory claim. |
+| `share_intent_clicked` | Count existing team-share intent. | `TeamShareButton.jsx` click, before native share or clipboard. | `surface=share`, current `route`, `source=team_share_button`, `team_abbrev`, `team_id`. | Records intent only; does not claim share completion. |
+
 ### digest_delivered
 
 - **Purpose:** Confirm a sent digest reached the recipient — cleans the Return Rate denominator.
@@ -313,6 +346,15 @@ These are reserved so future phases can define them **from observed reality**, n
 from invented thresholds. None is implemented:
 
 - **`story_engaged`** — engagement beyond presentation.
+- **`feedback_intent_clicked`** — reserved until a public feedback action exists again.
+- **`team_follow_started` / `team_follow_completed`** — reserved for Follow My Team.
+- **`daily_home_viewed`** — reserved for the future Daily Bullpen Home surface.
+- **`what_changed_viewed`** — reserved for the future What Changed Since Yesterday surface.
+- **`team_page_viewed`** — reserved for future team pages.
+- **`share_card_clicked` / `share_card_downloaded`** — reserved for shareable team cards.
+- **`digest_signup_started` / `digest_signup_completed`** — reserved for a real digest signup flow.
+- **`correction_submitted`** — reserved for a feedback/correction loop.
+- **`pro_waitlist_started` / `pro_waitlist_completed`** — reserved for a pro beta waitlist.
 - **Understanding Session** — a derived session concept.
 - **Understanding Rate** — a derived KPI.
 - **Story taxonomy / `story_category`** — classification beyond the existing `story_type`.

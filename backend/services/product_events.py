@@ -25,6 +25,7 @@ email, and never makes a send / suppress / opt-in decision.
 from __future__ import annotations
 
 import logging
+import re
 
 from models.product_event import EVENT_SCHEMA_VERSION, ProductEvent
 from services.notification_prefs import CADENCE_OFF
@@ -122,6 +123,48 @@ STORY_INTERACTED = 'story_interacted'
 
 PRODUCT_INTERACTION_EVENTS = (STORY_INTERACTED, STORY_TEAM_BOARD_OPENED, STORY_SHARE_CLICKED)
 
+# ── V4 product-loop analytics (V4.0) ──────────────────────────────────────────
+# Owned, first-party observations for the existing V4-relevant surfaces/actions.
+# These events measure route views and explicit intent signals only. They never
+# influence baseball reads, scoring, thresholds, freshness, or user-facing claims.
+APP_VIEWED = 'app_viewed'
+HOMEPAGE_VIEWED = 'homepage_viewed'
+BULLPEN_BOARD_VIEWED = 'bullpen_board_viewed'
+TEAM_SURFACE_VIEWED = 'team_surface_viewed'
+PITCHER_SURFACE_VIEWED = 'pitcher_surface_viewed'
+METHODOLOGY_VIEWED = 'methodology_viewed'
+TRUST_SURFACE_VIEWED = 'trust_surface_viewed'
+FRESHNESS_SURFACE_VIEWED = 'freshness_surface_viewed'
+SOCIAL_OUTBOUND_CLICKED = 'social_outbound_clicked'
+NEWSLETTER_INTEREST_CLICKED = 'newsletter_interest_clicked'
+TEAM_INTEREST_CLICKED = 'team_interest_clicked'
+SHARE_INTENT_CLICKED = 'share_intent_clicked'
+
+V4_PRODUCT_EVENTS = (
+    APP_VIEWED, HOMEPAGE_VIEWED, BULLPEN_BOARD_VIEWED, TEAM_SURFACE_VIEWED,
+    PITCHER_SURFACE_VIEWED, METHODOLOGY_VIEWED, TRUST_SURFACE_VIEWED,
+    FRESHNESS_SURFACE_VIEWED, SOCIAL_OUTBOUND_CLICKED, NEWSLETTER_INTEREST_CLICKED,
+    TEAM_INTEREST_CLICKED, SHARE_INTENT_CLICKED,
+)
+
+# Reserved by the V4 roadmap/catalog but intentionally not accepted until the
+# corresponding product surfaces exist.
+V4_RESERVED_EVENT_NAMES = (
+    'feedback_intent_clicked',
+    'team_follow_started',
+    'team_follow_completed',
+    'daily_home_viewed',
+    'what_changed_viewed',
+    'team_page_viewed',
+    'share_card_clicked',
+    'share_card_downloaded',
+    'digest_signup_started',
+    'digest_signup_completed',
+    'correction_submitted',
+    'pro_waitlist_started',
+    'pro_waitlist_completed',
+)
+
 # ── Digest deliverability (D2A-7, provider-backed) ────────────────────────────
 # Facts reported by the email provider (Resend) about a sent digest's fate. They
 # never change digest behavior or existing metrics; they only observe delivery.
@@ -139,6 +182,7 @@ CANONICAL_PRODUCT_EVENTS = (
     + PRODUCT_BEHAVIOR_EVENTS
     + PRODUCT_OBSERVATION_EVENTS
     + PRODUCT_INTERACTION_EVENTS
+    + V4_PRODUCT_EVENTS
 )
 
 # ── Sources (where a fact originated) ─────────────────────────────────────────
@@ -197,6 +241,13 @@ ANON_ID_MAX_LEN = 64
 # Caps for client-supplied story descriptors (story id like "<team_id>:<date>",
 # and the existing canonical story_type). Bounded so a client cannot bloat a row.
 STORY_FIELD_MAX_LEN = 64
+V4_EVENT_PROPERTY_MAX_LEN = 64
+V4_ROUTE_MAX_LEN = 128
+V4_SOURCE_MAX_LEN = 32
+TEAM_ABBREV_MAX_LEN = 5
+_SAFE_SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9_.:-]*$')
+_SAFE_FRESHNESS_RE = re.compile(r'^[a-z0-9][a-z0-9_.:-]*$')
+_SAFE_TEAM_ABBREV_RE = re.compile(r'^[A-Z0-9]{2,5}$')
 
 
 def normalize_arrival_source(value):
@@ -234,6 +285,86 @@ def normalize_share_target(value):
     return None
 
 
+def normalize_v4_event_name(value):
+    """Coerce a client-supplied V4 event name to the owned allowlist, else None."""
+    if isinstance(value, str) and value.strip().lower() in V4_PRODUCT_EVENTS:
+        return value.strip().lower()
+    return None
+
+
+def _looks_like_pii(value):
+    return '@' in value or '\n' in value or '\r' in value
+
+
+def normalize_v4_slug(value, *, max_len=V4_EVENT_PROPERTY_MAX_LEN):
+    """Coerce a client-supplied event descriptor to a small safe slug or None."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().lower()[:max_len]
+    if not cleaned or _looks_like_pii(cleaned):
+        return None
+    if not _SAFE_SLUG_RE.match(cleaned):
+        return None
+    return cleaned
+
+
+def normalize_v4_source(value):
+    """Normalize where a V4 observation originated (footer, cta, card, etc.)."""
+    return normalize_v4_slug(value, max_len=V4_SOURCE_MAX_LEN)
+
+
+def normalize_v4_surface(value):
+    """Normalize the product surface that emitted a V4 observation."""
+    return normalize_v4_slug(value, max_len=V4_EVENT_PROPERTY_MAX_LEN)
+
+
+def normalize_v4_route(value):
+    """Normalize a route path without query strings, fragments, or PII."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().split('?', 1)[0].split('#', 1)[0][:V4_ROUTE_MAX_LEN]
+    if not cleaned.startswith('/') or _looks_like_pii(cleaned):
+        return None
+    if any(ch.isspace() for ch in cleaned):
+        return None
+    return cleaned
+
+
+def normalize_v4_team_abbrev(value):
+    """Normalize an already-visible public team abbreviation."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().upper()[:TEAM_ABBREV_MAX_LEN]
+    if _SAFE_TEAM_ABBREV_RE.match(cleaned):
+        return cleaned
+    return None
+
+
+def normalize_v4_player_id(value):
+    """Normalize an already-visible public player id. Free-form names are dropped."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        player_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    if player_id <= 0 or player_id >= 10**12:
+        return None
+    return player_id
+
+
+def normalize_v4_freshness_state(value):
+    """Normalize a safe freshness-state slug already present in the data contract."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip().lower()[:V4_EVENT_PROPERTY_MAX_LEN]
+    if not cleaned or _looks_like_pii(cleaned):
+        return None
+    if not _SAFE_FRESHNESS_RE.match(cleaned):
+        return None
+    return cleaned
+
+
 def normalize_short_text(value, *, max_len=STORY_FIELD_MAX_LEN):
     """Coerce a client-supplied descriptor to a safe, length-capped string or None."""
     if not isinstance(value, str):
@@ -249,7 +380,7 @@ def normalize_anon_id(value):
     if not isinstance(value, str):
         return None
     cleaned = value.strip()
-    if not cleaned:
+    if not cleaned or _looks_like_pii(cleaned):
         return None
     return cleaned[:ANON_ID_MAX_LEN]
 
@@ -504,6 +635,28 @@ def record_story_interacted(*, user_id=None, anon_id=None, team_id=None, story_i
             'story_type': story_type,
             'interaction_type': interaction_type,
         },
+    )
+
+
+def record_v4_product_event(event_name, *, user_id=None, anon_id=None, team_id=None,
+                            source=None, surface=None, route=None, team_abbrev=None,
+                            player_id=None, freshness_state=None, occurred_at=None):
+    """Append one V4 product-loop observation under a validated event name."""
+    payload = {}
+    if surface is not None:
+        payload['surface'] = surface
+    if route is not None:
+        payload['route'] = route
+    if team_abbrev is not None:
+        payload['team_abbrev'] = team_abbrev
+    if player_id is not None:
+        payload['player_id'] = player_id
+    if freshness_state is not None:
+        payload['freshness_state'] = freshness_state
+
+    return record_event(
+        event_name, occurred_at=occurred_at, user_id=user_id, anon_id=anon_id,
+        team_id=team_id, source=source, payload=payload,
     )
 
 

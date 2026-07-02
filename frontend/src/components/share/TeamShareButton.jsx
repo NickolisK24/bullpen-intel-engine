@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   buildTeamShareUrl,
   getShareTeamName,
+  normalizeTeamShareAbbreviation,
   shareTeamUrl,
 } from '../../utils/teamShare'
+import { ANALYTICS_EVENTS, currentAnalyticsRoute, trackAnalyticsEvent } from '../../utils/analytics'
 
 const copiedVisibleMs = 1800
 
@@ -12,6 +14,7 @@ export default function TeamShareButton({ team, className = '', onShareClick = n
   const timeoutRef = useRef(null)
   const shareUrl = buildTeamShareUrl(team)
   const teamName = getShareTeamName(team)
+  const teamId = team?.team_id ?? team?.teamId ?? team?.team?.team_id
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -25,6 +28,13 @@ export default function TeamShareButton({ team, className = '', onShareClick = n
 
     // Fire share-intent tracking up front — never gated on native-share / copy
     // success, which cannot be reliably interpreted.
+    trackAnalyticsEvent(ANALYTICS_EVENTS.SHARE_INTENT_CLICKED, {
+      surface: 'share',
+      route: currentAnalyticsRoute(),
+      source: 'team_share_button',
+      team_abbrev: normalizeTeamShareAbbreviation(team),
+      team_id: teamId,
+    })
     if (typeof onShareClick === 'function') onShareClick()
 
     const result = await shareTeamUrl(team)

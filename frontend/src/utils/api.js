@@ -788,6 +788,14 @@ export const recordStoryShareClicked = (payload = {}) => request('/product/story
   silent: true,
 })
 
+// V4.0: generic owned product-loop observations. Event names are centralized in
+// utils/analytics.js; this seam only posts the already-normalized payload.
+export const recordProductEvent = (payload = {}) => request('/product/event', {
+  method: 'POST',
+  body: JSON.stringify(payloadWithProductAnonId(payload)),
+  silent: true,
+})
+
 // ── User Team Following ────────────────────────────────────
 export const getFollowedTeams = () => request('/me/teams')
 

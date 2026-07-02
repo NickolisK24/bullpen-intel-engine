@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { getLandscapeView, getStorylines } from './bullpenLandscapeView'
+import { ANALYTICS_EVENTS, trackAnalyticsEvent } from '../../utils/analytics'
 
 // Bullpen Storylines — a compact, scannable recap of the most notable bullpen
 // situations, summarized from the same landscape data in plain baseball language.
@@ -51,6 +52,13 @@ function EntryRow({ entry, column }) {
     <li>
       <Link
         to={entry.teamHref}
+        onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+          surface: 'dashboard',
+          route: '/dashboard',
+          source: 'bullpen_landscape',
+          team_abbrev: entry.teamAbbrev,
+          team_id: entry.teamId,
+        })}
         className="group -mx-1 flex cursor-pointer items-baseline justify-between gap-2 rounded px-1 py-0.5 transition-colors hover:bg-amber/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60"
         aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
       >
