@@ -21,38 +21,52 @@ const { default: Footer } = await server.ssrLoadModule('/src/components/layout/F
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const htmlIncludes = (html, text) => new RegExp(escapeRegExp(text)).test(html)
+const decodeHtml = (html) => String(html)
+  .replace(/&amp;/g, '&')
+  .replace(/&#x27;/g, "'")
+const visibleText = (html) => decodeHtml(html)
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
 const render = (element) => renderToStaticMarkup(
   React.createElement(MemoryRouter, null, element),
 )
 
-test('site footer renders brand, trust, and contact copy', () => {
+test('site footer renders the centered brand card and trust copy', () => {
   const html = render(React.createElement(Footer))
+  const text = visibleText(html)
 
-  assert.ok(htmlIncludes(html, 'BaseballOS'))
-  assert.ok(htmlIncludes(html, 'Public MLB bullpen intelligence'))
-  assert.ok(htmlIncludes(html, 'Making bullpen context easier to understand.'))
-  assert.ok(htmlIncludes(html, 'not affiliated with or endorsed by Major League Baseball or its clubs'))
-  assert.ok(htmlIncludes(html, 'Data is descriptive and drawn from public sources.'))
-  assert.ok(htmlIncludes(html, '© 2026 BaseballOS · All rights reserved.'))
+  assert.ok(text.includes('BaseballOS'))
+  assert.ok(text.includes('Public MLB bullpen intelligence'))
+  assert.ok(text.includes('not affiliated with or endorsed by Major League Baseball or its clubs'))
+  assert.ok(text.includes('Data is descriptive and drawn from public sources.'))
+  assert.ok(text.includes('© 2026 BaseballOS — All rights reserved.'))
   assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
-  assert.ok(htmlIncludes(html, 'X: @baseballoshq'))
-  assert.ok(htmlIncludes(html, 'Instagram: @baseballoshq'))
-  assert.ok(htmlIncludes(html, 'Email: baseballoshq@gmail.com'))
+  assert.equal(text.includes('@baseballoshq'), false)
+  assert.equal(text.includes('baseballoshq@gmail.com'), false)
 })
 
-test('site footer keeps connect links and shell wiring intact', () => {
+test('site footer keeps icon-only connect links and shell wiring intact', () => {
   const html = render(React.createElement(Footer))
   const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  const text = visibleText(html)
 
   for (const href of ['/', '/dashboard', '/bullpen', '/stories', '/about', '/how-to-read', '/methodology', '/trust']) {
     assert.equal(htmlIncludes(html, `href="${href}"`), false, href)
   }
   assert.equal(htmlIncludes(html, 'Product'), false)
   assert.equal(htmlIncludes(html, 'Learn'), false)
+  assert.equal(text.includes('X: @baseballoshq'), false)
+  assert.equal(text.includes('Instagram: @baseballoshq'), false)
+  assert.equal(text.includes('Email: baseballoshq@gmail.com'), false)
   assert.ok(htmlIncludes(html, 'href="https://x.com/baseballoshq"'))
   assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on X"'))
   assert.ok(htmlIncludes(html, 'href="https://instagram.com/baseballoshq"'))
   assert.ok(htmlIncludes(html, 'aria-label="BaseballOS on Instagram"'))
+  assert.ok(htmlIncludes(html, 'href="mailto:baseballoshq@gmail.com"'))
+  assert.ok(htmlIncludes(html, 'aria-label="Email BaseballOS"'))
   assert.ok(htmlIncludes(html, 'target="_blank"'))
   assert.ok(htmlIncludes(html, 'rel="noopener noreferrer"'))
   assert.ok(appSource.includes("import Footer from './components/layout/Footer'"))
