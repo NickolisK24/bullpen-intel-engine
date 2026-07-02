@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useFetch } from '../../../hooks/useFetch'
 import { toOperatingStateReadModel } from '../../../adapters/operatingStateReadModel'
 import { getTeamBullpenBoard, getTeamGameContext, getTeamStory } from '../../../utils/api'
+import { ANALYTICS_EVENTS, trackAnalyticsEvent } from '../../../utils/analytics'
 import { LoadingPane, ErrorState, EmptyState } from '../../UI'
 import BullpenOperatingStateCard from '../BullpenOperatingStateCard'
 import BullpenBoardView from './BullpenBoardView'
@@ -48,13 +49,35 @@ export default function TonightsBullpenBoard({ teams, requestedTeam = null }) {
   // board never duplicates that screen.
   const [detailPitcherId, setDetailPitcherId] = useState(null)
   const detailRef = useRef(null)
+  const selectedTeamInfo = teamList.find(team => team.team_id === selectedTeam)
   // Apply a given requestedTeam deep-link only once, so a later manual team
   // click is never overridden by the URL.
   const appliedRequestRef = useRef(null)
 
   useEffect(() => {
-    if (detailPitcherId != null) detailRef.current?.focus()
-  }, [detailPitcherId])
+    if (detailPitcherId != null) {
+      detailRef.current?.focus()
+      trackAnalyticsEvent(ANALYTICS_EVENTS.PITCHER_SURFACE_VIEWED, {
+        surface: 'bullpen',
+        route: '/bullpen',
+        source: 'team_board',
+        team_abbrev: selectedTeamInfo?.team_abbreviation,
+        team_id: selectedTeam,
+        player_id: detailPitcherId,
+      })
+    }
+  }, [detailPitcherId, selectedTeam, selectedTeamInfo?.team_abbreviation])
+
+  useEffect(() => {
+    if (selectedTeam == null) return
+    trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_SURFACE_VIEWED, {
+      surface: 'bullpen',
+      route: '/bullpen',
+      source: 'team_board',
+      team_abbrev: selectedTeamInfo?.team_abbreviation,
+      team_id: selectedTeam,
+    })
+  }, [selectedTeam, selectedTeamInfo?.team_abbreviation])
 
   // Preselect the deep-linked team (landscape drilldown), once per requested value.
   useEffect(() => {

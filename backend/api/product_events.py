@@ -10,6 +10,8 @@ into the canonical Product Event log:
                                         allowlisted event_name (V3-1: story_impression;
                                         V3-2: + story_team_board_opened;
                                         V3-3: + story_share_clicked).
+  • POST /api/product/event            (V4.0)  — an owned product-loop observation
+                                        under an allowlisted event_name.
 
 Future product-behavior facts can be added here without new infrastructure.
 
@@ -30,10 +32,18 @@ from services.product_events import (
     normalize_story_event_name,
     normalize_story_interaction,
     normalize_story_surface,
+    normalize_v4_event_name,
+    normalize_v4_freshness_state,
+    normalize_v4_player_id,
+    normalize_v4_route,
+    normalize_v4_source,
+    normalize_v4_surface,
+    normalize_v4_team_abbrev,
     record_story_event,
     record_story_interacted,
     record_story_viewed,
     record_today_loaded,
+    record_v4_product_event,
 )
 from utils.db import db
 from utils.identity import resolve_current_user
@@ -49,6 +59,13 @@ def _coerce_team_id(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _commit_event_best_effort():
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 @product_bp.route('/today-loaded', methods=['POST'])
@@ -150,4 +167,33 @@ def story_event():
             share_target=normalize_share_target(data.get('share_target')),
         )
         db.session.commit()
+    return jsonify({'ok': True}), 200
+
+
+@product_bp.route('/event', methods=['POST'])
+def product_event():
+    """Record an owned V4 product-loop observation. Anonymous-safe; always 200.
+
+    The client supplies an allowlisted ``event_name`` plus a small set of safe
+    context fields. Unknown event names or unsafe properties record nothing. The
+    endpoint is measurement-only and best-effort: analytics can never change or
+    break the product experience.
+    """
+    data = request.get_json(silent=True) or {}
+    event_name = normalize_v4_event_name(data.get('event_name'))
+    if event_name is not None:
+        user = resolve_current_user()  # None when anonymous; never raises
+        record_v4_product_event(
+            event_name,
+            user_id=getattr(user, 'id', None),
+            anon_id=normalize_anon_id(data.get('anon_id')),
+            team_id=_coerce_team_id(data.get('team_id')),
+            source=normalize_v4_source(data.get('source')),
+            surface=normalize_v4_surface(data.get('surface')),
+            route=normalize_v4_route(data.get('route')),
+            team_abbrev=normalize_v4_team_abbrev(data.get('team_abbrev')),
+            player_id=normalize_v4_player_id(data.get('player_id')),
+            freshness_state=normalize_v4_freshness_state(data.get('freshness_state')),
+        )
+        _commit_event_best_effort()
     return jsonify({'ok': True}), 200

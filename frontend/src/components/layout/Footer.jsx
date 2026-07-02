@@ -1,3 +1,5 @@
+import { ANALYTICS_EVENTS, currentAnalyticsRoute, trackAnalyticsEvent } from '../../utils/analytics'
+
 const CONNECT_LINKS = [
   {
     key: 'x',
@@ -59,6 +61,14 @@ function ConnectIcon({ type }) {
 }
 
 function ConnectLinks() {
+  const handleConnectClick = (link) => {
+    trackAnalyticsEvent(ANALYTICS_EVENTS.SOCIAL_OUTBOUND_CLICKED, {
+      surface: 'footer',
+      route: currentAnalyticsRoute(),
+      source: `footer_${link.key}`,
+    })
+  }
+
   return (
     <div className="mt-5 flex items-center justify-center gap-4">
       {CONNECT_LINKS.map(link => (
@@ -68,6 +78,7 @@ function ConnectLinks() {
           aria-label={link.ariaLabel}
           target={link.external ? '_blank' : undefined}
           rel={link.external ? 'noopener noreferrer' : undefined}
+          onClick={() => handleConnectClick(link)}
           className={`inline-flex h-14 w-14 items-center justify-center rounded-md border border-dirt bg-field/70 transition-colors hover:border-amber/50 hover:bg-amber/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 ${link.iconClassName}`}
         >
           <ConnectIcon type={link.key} />

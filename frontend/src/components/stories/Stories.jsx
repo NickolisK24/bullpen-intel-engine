@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import { useStoryImpressionObservations } from '../../hooks/useProductIntelligence'
 import { getBullpenDashboard, recordStoryShareClicked, recordStoryTeamBoardOpened, recordStoryViewed } from '../../utils/api'
+import { ANALYTICS_EVENTS, trackAnalyticsEvent } from '../../utils/analytics'
 import { observeStoryShareClicked, observeStoryTeamBoardOpened, observeStoryViewedOnce } from '../../utils/productIntelligence'
 import { formatTeamLabel } from '../../utils/formatters'
 import {
@@ -385,7 +386,16 @@ function FeedStoryCard({ story, impressionRef }) {
       {hasDestination && (
         <Link
           to={story.href}
-          onClick={() => observeStoryTeamBoardOpened({ story, surface: 'stories', send: recordStoryTeamBoardOpened })}
+          onClick={() => {
+            observeStoryTeamBoardOpened({ story, surface: 'stories', send: recordStoryTeamBoardOpened })
+            trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+              surface: 'stories',
+              route: '/stories',
+              source: 'story_card',
+              team_abbrev: story.abbr,
+              team_id: story.teamId,
+            })
+          }}
           className="mt-3 inline-flex items-center font-mono text-[10px] uppercase tracking-widest text-chalk500 transition-colors hover:text-amber group-hover:text-amber"
         >
           {story.cta || 'Open the team board'} →

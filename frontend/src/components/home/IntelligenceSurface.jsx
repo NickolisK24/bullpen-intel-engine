@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useFetch } from '../../hooks/useFetch'
 import {
@@ -19,6 +20,11 @@ import {
   BULLPEN_LANDSCAPE_COLUMNS,
   getLandscapeView,
 } from '../dashboard/bullpenLandscapeView'
+import {
+  ANALYTICS_EVENTS,
+  trackAnalyticsEvent,
+  trackAnalyticsEventOnce,
+} from '../../utils/analytics'
 
 const AROUND_BASEBALL_UNAVAILABLE =
   'No other league bullpen movement is ready to show yet.'
@@ -547,6 +553,8 @@ export function getAroundBaseballItems(dashboard, leadStory, limit = 3) {
         title,
         body,
         teamName: team?.teamName || team?.teamAbbr || 'Team',
+        teamAbbr: team?.teamAbbr || null,
+        teamId: team?.teamId ?? null,
         href: teamBoardHref(team, 'intelligence-around-baseball'),
       }
     })
@@ -593,6 +601,8 @@ export function getTonightCards(response, teams = [], limit = 3) {
         watchPoint: cleanTonightCopy(story?.watch_point),
         evidence: cleanTonightList(card?.evidence),
         limitations: cleanTonightList(card?.limitations),
+        teamAbbr: team?.teamAbbr || null,
+        teamId: team?.teamId ?? null,
         href: teamBoardHrefIfResolvable(team, 'intelligence-tonight'),
       }
     })
@@ -668,6 +678,14 @@ function SectionShell({ id, title, eyebrow, subtitle, children, className = '' }
 }
 
 function SeesHeader() {
+  const handleNewsletterInterest = () => {
+    trackAnalyticsEvent(ANALYTICS_EVENTS.NEWSLETTER_INTEREST_CLICKED, {
+      surface: 'home',
+      route: '/',
+      source: 'hero_cta',
+    })
+  }
+
   return (
     <header className="mb-7 max-w-4xl pt-2 sm:pt-4">
       <div className="font-mono text-[10px] uppercase tracking-[0.28em] text-amber/75">
@@ -691,6 +709,7 @@ function SeesHeader() {
         </a>
         <a
           href={WEEKLY_NOTES_MAILTO}
+          onClick={handleNewsletterInterest}
           className="inline-flex w-full items-center justify-center rounded border border-dirt bg-field/60 px-4 py-3 font-mono text-xs uppercase tracking-widest text-chalk300 transition-colors hover:border-amber/40 hover:text-amber focus:outline-none focus-visible:ring-2 focus-visible:ring-amber/60 sm:w-auto"
         >
           Get the weekly Bullpen Report
@@ -781,6 +800,13 @@ function AroundBaseball({
                 <Link
                   key={item.key}
                   to={item.href}
+                  onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+                    surface: 'home',
+                    route: '/',
+                    source: 'around_baseball',
+                    team_abbrev: item.teamAbbr,
+                    team_id: item.teamId,
+                  })}
                   className="min-w-0 border border-dirt bg-dugout p-4 transition-colors hover:border-amber/35 hover:bg-amber/5"
                   aria-label={`Open the bullpen board for ${item.teamName}`}
                 >
@@ -907,6 +933,13 @@ function TonightCard({ card }) {
       {card.href && (
         <Link
           to={card.href}
+          onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+            surface: 'home',
+            route: '/',
+            source: 'tonights_bullpen_watch',
+            team_abbrev: card.teamAbbr,
+            team_id: card.teamId,
+          })}
           className="mt-5 inline-flex min-h-10 w-fit items-center rounded border border-dirt bg-field/60 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-chalk300 transition-colors hover:border-amber/40 hover:text-amber"
           aria-label={`Open the bullpen board for ${card.teamName}`}
         >
@@ -1102,6 +1135,13 @@ function BullpenPicture({
                         <li key={entry.teamId ?? entry.label}>
                           <Link
                             to={entry.teamHref || '/bullpen'}
+                            onClick={() => trackAnalyticsEvent(ANALYTICS_EVENTS.TEAM_INTEREST_CLICKED, {
+                              surface: 'home',
+                              route: '/',
+                              source: 'bullpen_picture',
+                              team_abbrev: entry.teamAbbrev,
+                              team_id: entry.teamId,
+                            })}
                             className="group flex min-w-0 flex-col items-start gap-1 rounded px-1 py-1 transition-colors hover:bg-amber/5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2"
                             aria-label={`Open the bullpen board for ${entry.teamName || entry.label}`}
                           >
@@ -1182,6 +1222,15 @@ export function IntelligenceSurfaceView({
   teams = [],
 }) {
   const pageFreshness = dashboardFreshness(dashboard)
+
+  useEffect(() => {
+    trackAnalyticsEventOnce(ANALYTICS_EVENTS.HOMEPAGE_VIEWED, {
+      surface: 'home',
+      route: '/',
+      source: 'page',
+    })
+  }, [])
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <SeesHeader />

@@ -464,7 +464,7 @@ Execution rules:
 | Order | Phase | Status | Notes |
 | --- | --- | --- | --- |
 | 1 | Canon V4 roadmap document | In progress | Adds this canonical roadmap and docs links. |
-| 2 | Analytics / event tracking | Not started | Needed before retention work can be judged clearly. |
+| 2 | Analytics / event tracking | Complete | Owned V4 event catalog, helper, and current-surface instrumentation are in place. |
 | 3 | Launch foundation cleanup | Not started | Small trust, copy, and launch-readiness cleanup. |
 | 4 | Follow My Team | Not started | First personalization loop. |
 | 5 | Daily Bullpen Home | Not started | Make Today the daily read. |

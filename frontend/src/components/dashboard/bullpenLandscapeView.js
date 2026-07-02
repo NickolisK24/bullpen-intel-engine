@@ -51,6 +51,7 @@ export function buildLandscapeTeamHref(entry) {
 function mapEntries(list) {
   return (Array.isArray(list) ? list : []).map(entry => ({
     teamId: entry?.team_id,
+    teamAbbrev: entry?.team_abbreviation || null,
     label: entryLabel(entry),
     teamName: entry?.team_name || null,
     teamHref: buildLandscapeTeamHref(entry),
