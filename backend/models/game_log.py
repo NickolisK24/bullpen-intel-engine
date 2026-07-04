@@ -65,6 +65,10 @@ class GameLog(db.Model):
     save = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=utc_now_naive)
+    stat_correction_count = db.Column(db.Integer, nullable=False, default=0)
+    last_stat_correction_at = db.Column(db.DateTime)
+    last_stat_correction_source = db.Column(db.String(40))
+    last_stat_correction_sync_run_id = db.Column(db.Integer)
 
     def to_dict(self):
         return {
