@@ -54,6 +54,14 @@ def client(tmp_path, monkeypatch):
         'errors': 0,
         'by_status': {'ACTIVE': 1},
     })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
 
     app = Flask(__name__)
     configure_test_database(app)

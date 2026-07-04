@@ -137,6 +137,7 @@ def create_app(config_name=None):
     from models.user import User, UserFollowedTeam
     from models.digest_metrics import DigestRun, DigestDelivery
     from models.product_event import ProductEvent
+    from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

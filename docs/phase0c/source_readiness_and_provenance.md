@@ -67,6 +67,7 @@ Initial diagnostic families:
 - `slate_coverage`
 - `dashboard_snapshots`
 - `roster_status_snapshots`
+- `player_transactions`
 
 Not-yet-built Phase 0C source families must not be marked ready.
 
@@ -127,3 +128,43 @@ treated as fresh evidence by future consumers.
 
 Two-way eligibility is stored only when sourced. It is not interpreted as a
 bullpen role, relief role, health state, or availability claim.
+
+## 0C-05 Transaction And IL Foundation Rules
+
+Transactions are dated explanatory facts. They do not decide current roster
+state, availability, bullpen role, health, depth pressure, roster churn, or
+public evidence interpretation. The current-state authority remains
+`roster_status_snapshots`; the current roster fields on `pitchers` remain a
+derived compatibility cache populated from roster snapshots only.
+
+`player_transactions` stores structured fields only: player identity, from/to
+team ids where sourced, transaction date, effective/resolution dates where
+sourced, source type code, normalized conservative category, typed IL
+placement/activation flags, typed IL list type, typed retroactive date, roster
+snapshot alignment, source query window, and provenance. It does not store raw
+response JSON, free-text injury descriptions, health status, injury severity,
+return timetable, IL pressure, roster churn, depth pressure, availability
+labels, or public display fields.
+
+Normalized transaction categories are conservative and source-code based:
+`recall`, `option`, `il_placement`, `il_activation`,
+`roster_activation`, `roster_deactivation`, `trade`, `dfa`, `outright`,
+`release`, `contract_selection`, `suspension`, `bereavement`, `paternity`,
+`restricted`, and `unknown`. Unknown or unsupported source type codes are
+stored as `unknown` and excluded from explanatory linkage.
+
+Each transaction aligns against same-date roster snapshots when possible:
+`aligned`, `misaligned`, `unknown`, `no_snapshot`, or `not_applicable`.
+Missing roster snapshots, missing team evidence, unknown transaction types,
+untracked players, and team mismatches fail closed by making explanatory
+linkage ineligible. Stored transaction facts never update pitcher current
+roster fields.
+
+Transaction sync is a bounded internal stage. Fetch failures, malformed rows,
+missing player identity, and shape surprises dead-letter and degrade the
+`player_transactions` readiness family. Empty successful bounded fetches are
+represented by sync-window provenance; they are not stored as synthetic
+transaction facts. Readiness exposes last attempted/successful fetch,
+bounded date range, records fetched/stored, unknown type counts, alignment
+counts, unresolved dead letters, reason codes, source, and `sync_run_id` for
+internal/admin diagnostics only.

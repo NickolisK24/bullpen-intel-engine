@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from models.game_log import GameLog
+from models.player_transaction import PlayerTransaction
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import source_provenance
 from services.source_correction_policies import (
@@ -99,6 +100,24 @@ def test_registered_roster_snapshot_policy_matches_snapshot_authority():
     ][0]
     assert status_policy.update_after_final is True
     assert status_policy.dead_letter_on_conflict is True
+
+
+def test_registered_player_transaction_policy_matches_transaction_foundation():
+    assert validate_correction_sensitive_model(PlayerTransaction)
+
+    policy = correction_policy('player_transaction_corrections')
+    assert policy.source_family == 'player_transactions'
+    assert {'transaction_key'} == policy.identity_fields
+    category_policy = [
+        field for field in policy.fields if field.field_name == 'normalized_category'
+    ][0]
+    alignment_policy = [
+        field for field in policy.fields if field.field_name == 'roster_snapshot_alignment'
+    ][0]
+    assert category_policy.update_after_final is True
+    assert category_policy.unknown_on_unsafe_conflict is True
+    assert alignment_policy.update_after_final is True
+    assert alignment_policy.unknown_on_unsafe_conflict is True
 
 
 def test_unregistered_correction_sensitive_model_fails_contract():
