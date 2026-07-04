@@ -83,3 +83,20 @@ Each later Phase 0C storage branch should add tests proving:
 - readiness family reports ready only when source data is usable
 - stale, unavailable, degraded, never-fetched, and unknown states fail closed
 - public payloads do not consume framework-only data in Phase 0C
+
+## 0C-03 Boxscore Field Rules
+
+`batters_faced`, `balls`, `games_finished`, `inherited_runners`, and
+`inherited_runners_scored` are nullable raw boxscore facts. Missing, blank,
+unparseable, or structurally absent source values stay `NULL`; explicit source
+zero stays `0`.
+
+Historical `inherited_runners` and `inherited_runners_scored` zeroes were
+fabricated by model defaults rather than an authoritative ingest path, so 0C-03
+repairs those stored zeroes to `NULL`. Other historical zero-valued pitching
+stats are not rewritten in 0C-03 because they are already part of the
+established daily/postgame pitching-line stat path and correction policy.
+
+Future backfill of the new fields must be its own scoped operation. It must use
+the finality authority, registered correction policy, source provenance, and
+fail-closed handling. No historical value should be silently imputed.

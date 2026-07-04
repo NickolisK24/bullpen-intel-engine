@@ -23,6 +23,11 @@ class GameLog(db.Model):
         'walks',
         'strikeouts',
         'home_runs_allowed',
+        'batters_faced',
+        'balls',
+        'games_finished',
+        'inherited_runners',
+        'inherited_runners_scored',
         'save_situation',
         'hold',
         'blown_save',
@@ -80,11 +85,14 @@ class GameLog(db.Model):
     walks = db.Column(db.Integer, default=0)
     strikeouts = db.Column(db.Integer, default=0)
     home_runs_allowed = db.Column(db.Integer, default=0)
+    batters_faced = db.Column(db.Integer, nullable=True)
+    balls = db.Column(db.Integer, nullable=True)
+    games_finished = db.Column(db.Integer, nullable=True)
 
     # Context
     leverage_index = db.Column(db.Float)
-    inherited_runners = db.Column(db.Integer, default=0)
-    inherited_runners_scored = db.Column(db.Integer, default=0)
+    inherited_runners = db.Column(db.Integer, nullable=True)
+    inherited_runners_scored = db.Column(db.Integer, nullable=True)
     save_situation = db.Column(db.Boolean, default=False)
     hold = db.Column(db.Boolean, default=False)
     blown_save = db.Column(db.Boolean, default=False)
