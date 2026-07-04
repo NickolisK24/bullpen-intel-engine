@@ -28,6 +28,7 @@ All thresholds are tunable via the WEIGHTS and THRESHOLDS dicts below.
 
 from datetime import date, timedelta
 from models.fatigue_score import FatigueScore
+from services.availability_reference_date import product_current_date
 from utils.db import db
 from utils.innings import sum_log_innings_decimal
 from services.workload_appearance import workload_appearance_logs
@@ -159,7 +160,8 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
     Args:
         pitcher:        Pitcher model instance
         game_logs:      List of GameLog instances, ordered most recent first
-        reference_date: The date to score relative to. Defaults to today.
+        reference_date: The date to score relative to. Defaults to the
+                        BaseballOS product day.
                         Pass the pitcher's last game date when seeding historical
                         data so scores reflect end-of-season workload, not
                         months of offseason rest.
@@ -167,7 +169,7 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
     Returns:
         FatigueScore model instance (not yet committed to DB)
     """
-    ref = reference_date if reference_date is not None else date.today()
+    ref = reference_date if reference_date is not None else product_current_date()
 
     seven_days_ago    = ref - timedelta(days=7)
     fourteen_days_ago = ref - timedelta(days=14)

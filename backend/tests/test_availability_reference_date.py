@@ -20,8 +20,10 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.sync_run import SyncRun
 from services.availability_reference_date import (
+    PRODUCT_TIMEZONE_UTC_FALLBACK_LIMITATION,
     product_availability_reference_date,
     product_current_date,
+    resolve_product_day,
 )
 from services.availability_snapshot import classify_latest_fatigue_rows, latest_fatigue_rows
 from services.roster_status import STATUS_ACTIVE
@@ -150,6 +152,23 @@ def test_product_availability_reference_date_uses_latest_workload_plus_one_day()
 def test_product_current_date_uses_product_timezone_not_utc_midnight():
     current = datetime.fromisoformat('2026-06-09T01:22:01+00:00')
     assert product_current_date(now=current) == date(2026, 6, 8)
+
+
+def test_product_day_resolver_covers_et_midnight_boundaries():
+    before_midnight = datetime.fromisoformat('2026-06-10T03:30:00+00:00')
+    after_midnight = datetime.fromisoformat('2026-06-10T04:30:00+00:00')
+
+    assert resolve_product_day(before_midnight).calendar_date == date(2026, 6, 9)
+    assert resolve_product_day(after_midnight).calendar_date == date(2026, 6, 10)
+
+
+def test_product_day_resolver_records_utc_fallback_limitation():
+    current = datetime.fromisoformat('2026-06-10T03:30:00+00:00')
+    resolved = resolve_product_day(current, timezone_name='Missing/Timezone')
+
+    assert resolved.calendar_date == date(2026, 6, 10)
+    assert resolved.timezone_name == 'UTC'
+    assert resolved.limitations == (PRODUCT_TIMEZONE_UTC_FALLBACK_LIMITATION,)
 
 
 def test_dashboard_uses_data_derived_reference_date_not_runtime_today(client, monkeypatch):
