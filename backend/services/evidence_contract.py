@@ -105,6 +105,13 @@ def build_evidence_object(
         product_date=product_date,
         claim_template_id=claim_template.template_id,
     )
+    trace_payload = dict(computation_trace or {})
+    trace_payload.update({
+        'rule_id': rule.rule_id,
+        'rule_version': rule.rule_version,
+        'steps': list(computation_trace.get('steps') or []),
+        'notes': list(computation_trace.get('notes') or []),
+    })
     evidence = EvidenceObject(
         evidence_key=evidence_key,
         evidence_type=rule.evidence_type,
@@ -118,12 +125,7 @@ def build_evidence_object(
         rule_version=rule.rule_version,
         rule_definition_hash=rule.definition_hash,
         typed_cited_inputs=typed_cited_inputs,
-        computation_trace={
-            'rule_id': rule.rule_id,
-            'rule_version': rule.rule_version,
-            'steps': list(computation_trace.get('steps') or []),
-            'notes': list(computation_trace.get('notes') or []),
-        },
+        computation_trace=trace_payload,
         completeness_state=completeness,
         reason_codes=_dedupe(reason_codes),
         limitations=list(limitations or []),

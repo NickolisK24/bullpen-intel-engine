@@ -68,6 +68,7 @@ GAME_LOG_CORRECTION_FAILURE_ENTITY_TYPE = 'game_log_correction_attempt'
 PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
 POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
+WORKLOAD_EVIDENCE_FAILURE_ENTITY_TYPE = 'phase0d_workload_evidence'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
@@ -80,6 +81,7 @@ POSTGAME_MARKER_STATUS_INCOMPLETE = PostgameProcessedGame.STATUS_INCOMPLETE
 POSTGAME_MARKER_STATUS_FAILED = PostgameProcessedGame.STATUS_FAILED
 POSTGAME_MARKER_RETRY_LIMIT = 3
 _OPTIONAL_INPUT_NOT_PROVIDED = object()
+_FALSEY_ENV_VALUES = {'0', 'false', 'no', 'off', 'disabled'}
 
 _REQUIRED_CORRECTION_STAT_KEYS = (
     'inningsPitched',
@@ -504,6 +506,28 @@ def _record_unsafe_correction_attempt(
     )
 
 
+def _notify_workload_evidence_game_log_correction(
+    game_log,
+    *,
+    sync_run_id=None,
+):
+    try:
+        from services.workload_recovery_evidence import (
+            mark_game_log_correction_for_workload_recovery,
+        )
+        return mark_game_log_correction_for_workload_recovery(
+            game_log,
+            sync_run_id=sync_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - correction marking must not block ingest
+        logger.warning(
+            'Could not mark workload evidence for game_log correction id=%s: %s',
+            getattr(game_log, 'id', None),
+            exc,
+        )
+        return {'marked_count': 0, 'evidence_ids': []}
+
+
 def _upsert_game_log_from_authoritative_values(
     *,
     pitcher,
@@ -570,6 +594,10 @@ def _upsert_game_log_from_authoritative_values(
     existing.last_stat_correction_source = source
     existing.last_stat_correction_sync_run_id = sync_run_id
     db.session.add(existing)
+    _notify_workload_evidence_game_log_correction(
+        existing,
+        sync_run_id=sync_run_id,
+    )
     return {
         'status': 'corrected',
         'log': existing,
@@ -2091,6 +2119,94 @@ def record_sync_error_details(
     return count
 
 
+def phase0d_evidence_build_enabled():
+    value = os.environ.get('PHASE0D_EVIDENCE_BUILD', 'true')
+    return str(value).strip().lower() not in _FALSEY_ENV_VALUES
+
+
+def _safe_build_workload_recovery_evidence_stage(
+    product_dates,
+    *,
+    sync_run_id=None,
+    source='sync',
+    job_name=sync_metadata.JOB_DAILY_SYNC,
+    run_logger=None,
+):
+    logger_to_use = run_logger or logger
+    dates = sorted({_date for _date in product_dates or [] if _date is not None})
+    if not dates:
+        return {'status': 'skipped', 'reason': 'no_product_dates', 'dates': []}
+    if not phase0d_evidence_build_enabled():
+        logger_to_use.info(
+            'Phase 0D workload evidence build skipped: PHASE0D_EVIDENCE_BUILD disabled.'
+        )
+        return {'status': 'skipped', 'reason': 'disabled', 'dates': [d.isoformat() for d in dates]}
+
+    started = time.perf_counter()
+    try:
+        from services.workload_recovery_evidence import (
+            build_workload_recovery_evidence,
+            rebuild_marked_workload_recovery_evidence,
+        )
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_WORKLOAD_EVIDENCE)
+        rebuild = rebuild_marked_workload_recovery_evidence(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        builds = [
+            build_workload_recovery_evidence(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
+        db.session.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.info(
+            'Phase 0D workload evidence stage complete: dates=%s rebuilt=%s '
+            'objects_built=%s elapsed_ms=%s.',
+            ','.join(day.isoformat() for day in dates),
+            rebuild.get('objects_rebuilt', 0),
+            sum(item.get('objects_built', 0) for item in builds),
+            elapsed_ms,
+        )
+        return {
+            'status': 'built',
+            'dates': [d.isoformat() for d in dates],
+            'rebuild': rebuild,
+            'builds': builds,
+            'elapsed_ms': elapsed_ms,
+        }
+    except Exception as exc:  # noqa: BLE001 - optional evidence stage is fail-soft
+        db.session.rollback()
+        dead_letter.record_failure(
+            WORKLOAD_EVIDENCE_FAILURE_ENTITY_TYPE,
+            exc,
+            entity_ref=','.join(day.isoformat() for day in dates),
+            payload={
+                'product_dates': [day.isoformat() for day in dates],
+                'source': source,
+                'stage': sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+            },
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        db.session.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.warning(
+            'Phase 0D workload evidence stage failed after %sms; sync will continue: %s',
+            elapsed_ms,
+            exc,
+        )
+        return {
+            'status': 'failed',
+            'dates': [d.isoformat() for d in dates],
+            'error': str(exc),
+            'elapsed_ms': elapsed_ms,
+        }
+
+
 def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
@@ -2456,6 +2572,16 @@ def run_postgame_refresh(
                     'Fatigue recalculation skipped: no postgame logs changed.'
                 )
 
+            if changed_log_count > 0:
+                active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+                _safe_build_workload_recovery_evidence_stage(
+                    [schedule_date],
+                    sync_run_id=sync_run_id,
+                    source='postgame_refresh',
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    run_logger=run_logger,
+                )
+
             # Refresh the Intelligence Surface homepage cache from the freshly
             # derived contexts. Best-effort: it never blocks or fails the refresh.
             if status['completed_game_contexts_upserted'] > 0:
@@ -2739,6 +2865,15 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+
+            active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+            _safe_build_workload_recovery_evidence_stage(
+                [product_day.calendar_date],
+                sync_run_id=sync_run_id,
+                source='scheduled_sync',
+                job_name=sync_metadata.JOB_DAILY_SYNC,
+                run_logger=run_logger,
+            )
 
             active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
             try:

@@ -12,8 +12,8 @@ approved branch explicitly changes posture for a registered evidence family.
 
 ## Phase 0D Branch Map
 
-- 0D-01: evidence contract and language rules.
-- 0D-02: workload and recovery evidence.
+- 0D-01: evidence contract and language rules. Complete.
+- 0D-02: workload and recovery evidence. Active/completed in this branch.
 - 0D-03: entry and exit appearance context.
 - 0D-04: inherited traffic and clean/traffic outing context.
 - 0D-05: starter exposure and calendar context.
@@ -23,7 +23,8 @@ approved branch explicitly changes posture for a registered evidence family.
 - 0D-09: integration, public-candidate review, and Phase 0D exit.
 
 The branch map is sequencing only. Branch 0D-01 implements no production
-evidence family.
+evidence family. Branch 0D-02 adds the first production evidence family as
+internal-only workload and recovery facts.
 
 ## Binding Interpretation Rules
 
