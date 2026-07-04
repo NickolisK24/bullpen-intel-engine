@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,7 @@ import models.evidence_contract  # noqa: F401
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
 from models.evidence_contract import EvidenceCitation, EvidenceObject
+from models.sync_run import SyncRun
 from services.evidence_contract import (
     EvidenceBuildError,
     EvidenceCitationInput,
@@ -90,7 +91,21 @@ def _claim_template(text=None):
     )
 
 
-def _citation(row_id=99, value=18, role='supporting_input'):
+def _create_sync_run(*, source='phase0d_test'):
+    run = SyncRun(
+        job_name='phase0d_evidence_contract_test',
+        started_at=datetime(2026, 7, 4, 12, 0, 0),
+        completed_at=datetime(2026, 7, 4, 12, 0, 1),
+        status='success',
+        stage='complete',
+        source=source,
+    )
+    db.session.add(run)
+    db.session.flush()
+    return run
+
+
+def _citation(row_id=99, value=18, role='supporting_input', sync_run_id=None):
     return EvidenceCitationInput(
         source_family='game_logs',
         source_table='game_logs',
@@ -100,7 +115,7 @@ def _citation(row_id=99, value=18, role='supporting_input'):
         cited_values={'pitches_thrown': value},
         provenance={
             'source': 'game_logs',
-            'sync_run_id': 17,
+            'sync_run_id': sync_run_id,
             'first_seen_at': '2026-07-04T12:00:00',
         },
     )
@@ -119,7 +134,13 @@ def _ready_payload(status='ready'):
     }
 
 
-def _build_complete(subject_id=42, row_id=99, registry=None, rule_version=None):
+def _build_complete(
+    subject_id=42,
+    row_id=99,
+    registry=None,
+    rule_version=None,
+    sync_run_id=None,
+):
     return build_evidence_object(
         rule_id='test_only_pitch_count_observation',
         rule_version=rule_version,
@@ -128,7 +149,7 @@ def _build_complete(subject_id=42, row_id=99, registry=None, rule_version=None):
         subject_type='pitcher',
         subject_id=subject_id,
         product_date=date(2026, 7, 4),
-        cited_inputs=(_citation(row_id=row_id),),
+        cited_inputs=(_citation(row_id=row_id, sync_run_id=sync_run_id),),
         computation_trace={
             'steps': ['Read cited game_logs.pitches_thrown.', 'Rendered test-only claim.'],
             'notes': ['No production evidence family registered.'],
@@ -136,7 +157,7 @@ def _build_complete(subject_id=42, row_id=99, registry=None, rule_version=None):
         input_values={'game_logs.pitches_thrown': 18},
         readiness_payload=_ready_payload(),
         registry=registry or _rule_registry(),
-        sync_run_id=17,
+        sync_run_id=sync_run_id,
     )
 
 
@@ -147,12 +168,14 @@ def test_global_registries_do_not_ship_production_evidence_rules():
 
 def test_evidence_contract_round_trip_claim_citations_trace_posture_and_provenance(app):
     with app.app_context():
-        evidence = _build_complete()
+        sync_run = _create_sync_run()
+        evidence = _build_complete(sync_run_id=sync_run.id)
         db.session.add(evidence)
         db.session.commit()
 
         stored = EvidenceObject.query.one()
         payload = stored.to_dict()
+        sync_run_id = sync_run.id
 
     assert payload['evidence_type'] == 'test_only_observation'
     assert payload['subject_type'] == 'pitcher'
@@ -164,10 +187,11 @@ def test_evidence_contract_round_trip_claim_citations_trace_posture_and_provenan
     assert payload['completeness_state'] == EvidenceObject.COMPLETENESS_COMPLETE
     assert payload['posture'] == EvidenceObject.POSTURE_INTERNAL_ONLY
     assert payload['source'] == 'phase0d:evidence_contract'
-    assert payload['sync_run_id'] == 17
+    assert payload['sync_run_id'] == sync_run_id
     assert payload['typed_cited_inputs'][0]['source_table'] == 'game_logs'
     assert payload['computation_trace']['steps'][0] == 'Read cited game_logs.pitches_thrown.'
     assert payload['citations'][0]['provenance']['source'] == 'game_logs'
+    assert payload['citations'][0]['provenance']['sync_run_id'] == sync_run_id
     assert 'score' not in payload
     assert EvidenceCitation.query.count() == 1
 
@@ -364,24 +388,27 @@ def test_correction_policy_registration_covers_evidence_contract_models():
 
 def test_upstream_correction_marks_dependent_evidence_for_bounded_recompute(app):
     with app.app_context():
-        first = _build_complete(subject_id=1, row_id=55)
-        second = _build_complete(subject_id=2, row_id=55)
+        initial_run = _create_sync_run()
+        first = _build_complete(subject_id=1, row_id=55, sync_run_id=initial_run.id)
+        second = _build_complete(subject_id=2, row_id=55, sync_run_id=initial_run.id)
         db.session.add_all([first, second])
         db.session.commit()
+        first_correction_run = _create_sync_run(source='phase0d_test_correction_one')
+        second_correction_run = _create_sync_run(source='phase0d_test_correction_two')
 
         first_batch = mark_dependent_evidence_for_recompute(
             source_table='game_logs',
             source_pk=55,
             reason_code='game_log_corrected',
             batch_size=1,
-            sync_run_id=33,
+            sync_run_id=first_correction_run.id,
         )
         second_batch = mark_dependent_evidence_for_recompute(
             source_table='game_logs',
             source_pk=55,
             reason_code='game_log_corrected',
             batch_size=1,
-            sync_run_id=34,
+            sync_run_id=second_correction_run.id,
         )
         rows = EvidenceObject.query.order_by(EvidenceObject.id.asc()).all()
 
@@ -396,7 +423,8 @@ def test_upstream_correction_marks_dependent_evidence_for_bounded_recompute(app)
 
 def test_test_only_dummy_rule_lifecycle_emit_degrade_and_recompute_path(app):
     with app.app_context():
-        complete = _build_complete(subject_id=9, row_id=909)
+        sync_run = _create_sync_run()
+        complete = _build_complete(subject_id=9, row_id=909, sync_run_id=sync_run.id)
         db.session.add(complete)
         db.session.commit()
 
@@ -407,11 +435,12 @@ def test_test_only_dummy_rule_lifecycle_emit_degrade_and_recompute_path(app):
             subject_type='pitcher',
             subject_id=10,
             product_date=date(2026, 7, 4),
-            cited_inputs=(_citation(row_id=910),),
+            cited_inputs=(_citation(row_id=910, sync_run_id=sync_run.id),),
             computation_trace={'steps': ['Readiness degraded in test-only path.']},
             input_values={'game_logs.pitches_thrown': 18},
             readiness_payload=_ready_payload(status='unavailable'),
             registry=_rule_registry(),
+            sync_run_id=sync_run.id,
         )
         db.session.add(withheld)
         db.session.commit()
