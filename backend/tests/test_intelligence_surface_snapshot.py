@@ -40,6 +40,7 @@ _CONTRACT_KEYS = {
     'status', 'reference_date', 'lead_story',
     'candidates_considered', 'publishable_candidates', 'errors', 'empty_reason',
 }
+_PUBLIC_CONTRACT_KEYS = _CONTRACT_KEYS | {'freshness'}
 
 
 @pytest.fixture(autouse=True)
@@ -197,7 +198,7 @@ def _store_marker_snapshot(reference_date, team_id):
         'empty_reason': None,
     }
     write_snapshot(response, source='test_marker')
-    return response
+    return read_snapshot(reference_date)
 
 
 def _lead_blob(response):
@@ -236,8 +237,8 @@ def test_snapshot_response_shape_matches_live_contract(app):
         served = serve_today_lead_story(reference_date=_REF)   # builds + stores, then returns
         again = serve_today_lead_story(reference_date=_REF)    # now from snapshot
     assert set(live) == _CONTRACT_KEYS
-    assert set(served) == _CONTRACT_KEYS
-    assert set(again) == _CONTRACT_KEYS
+    assert set(served) == _PUBLIC_CONTRACT_KEYS
+    assert set(again) == _PUBLIC_CONTRACT_KEYS
     # Cache round-trips the exact bytes the builder produced.
     assert again == served
     # Same contract shape as a live build (deep values differ only by the
@@ -245,6 +246,7 @@ def test_snapshot_response_shape_matches_live_contract(app):
     assert set(served['lead_story']) == set(live['lead_story'])
     assert set(served['lead_story']['drafts']) == set(live['lead_story']['drafts'])
     assert served['lead_story']['selection'] == live['lead_story']['selection']
+    assert served['freshness']['slate_coverage']['complete_enough_to_publish'] is False
 
 
 # ── 3 & 4. Missing snapshot falls back to live generation, then stores it ─────
@@ -301,8 +303,10 @@ def test_snapshot_miss_uses_bounded_regeneration_and_persists(app, monkeypatch):
             snapshot_version=SNAPSHOT_VERSION,
         ).one()
 
-    assert result == response
-    assert stored == response
+    for key in _CONTRACT_KEYS:
+        assert result[key] == response[key]
+    assert stored == result
+    assert result['freshness']['complete_enough_to_publish'] is False
     assert seen['reference_date'] == _REF
     assert seen['bounded'] is True
     assert row.source == 'on_demand'
@@ -318,7 +322,10 @@ def test_snapshot_regeneration_error_returns_safe_fallback(app, monkeypatch, cap
     with app.app_context(), caplog.at_level(logging.ERROR):
         result = serve_today_lead_story(reference_date=_REF)
 
-    assert result == {
+    assert {
+        key: result[key]
+        for key in _CONTRACT_KEYS
+    } == {
         'status': 'empty',
         'reference_date': _REF.isoformat(),
         'lead_story': None,
@@ -327,6 +334,7 @@ def test_snapshot_regeneration_error_returns_safe_fallback(app, monkeypatch, cap
         'errors': 1,
         'empty_reason': EMPTY_LEAD_STORY_UNAVAILABLE,
     }
+    assert result['freshness']['complete_enough_to_publish'] is False
     assert read_snapshot(_REF) is None
     assert 'Intelligence surface snapshot regeneration failed' in caplog.text
     assert 'writer exploded' in caplog.text

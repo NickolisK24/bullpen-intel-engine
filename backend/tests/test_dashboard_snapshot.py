@@ -11,6 +11,8 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401
 from services import dashboard_snapshot
@@ -53,6 +55,58 @@ def _sync_scaffolding():
     }
 
 
+def _complete_slate_coverage(slate_date):
+    return {
+        'slate_date': slate_date.isoformat() if slate_date else None,
+        'games_scheduled': 0,
+        'games_final': 0,
+        'games_fully_ingested': 0,
+        'games_incomplete': 0,
+        'games_failed': 0,
+        'games_postponed': 0,
+        'games_suspended': 0,
+        'games_included': 0,
+        'validations_passed': True,
+        'complete_enough_to_publish': True,
+        'coverage_known': True,
+        'reason_codes': ['no_scheduled_games', 'slate_complete'],
+        'degradation_reasons': [],
+        'marker_counts': {
+            'fully_processed': 0,
+            'incomplete': 0,
+            'failed': 0,
+            'missing': 0,
+        },
+    }
+
+
+def _seed_complete_slate(game_date, game_pks):
+    for game_pk in game_pks:
+        db.session.add_all([
+            ScheduledGame(
+                team_id=116,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='home',
+                opponent_team_id=142,
+            ),
+            ScheduledGame(
+                team_id=142,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='away',
+                opponent_team_id=116,
+            ),
+        ])
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=game_pk,
+            game_date=game_date,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
+
+
 def _seed_dashboard_data():
     workload_date = date.today() - timedelta(days=1)
     pitcher = Pitcher(
@@ -78,6 +132,7 @@ def _seed_dashboard_data():
         pitches_thrown=14,
         game_type='R',
     ))
+    _seed_complete_slate(workload_date, [1010])
     db.session.add(FatigueScore(
         pitcher_id=pitcher.id,
         raw_score=12.0,
@@ -131,6 +186,7 @@ def _build_published_dashboard_snapshot(source='test'):
 
 
 def _minimal_dashboard_payload():
+    coverage = _complete_slate_coverage(None)
     return {
         'capability': 'bullpen_dashboard',
         'generated_at': utc_now_naive().isoformat(),
@@ -146,6 +202,9 @@ def _minimal_dashboard_payload():
             'reference_date': date.today().isoformat(),
             'sync_status': 'never',
             'last_successful_sync': None,
+            'slate_coverage': coverage,
+            'validations_passed': True,
+            'complete_enough_to_publish': True,
         },
         'availability_summary': {},
     }
@@ -194,7 +253,7 @@ class TestDashboardSnapshotService:
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
                 is_published=True,
                 published_at=utc_now_naive() - timedelta(minutes=10),
-                payload={'name': 'old'},
+                payload={**_minimal_dashboard_payload(), 'name': 'old'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
                 source='test',
@@ -213,7 +272,7 @@ class TestDashboardSnapshotService:
                 sync_run_id=run.id,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
                 is_published=False,
-                payload={'name': 'new'},
+                payload={**_minimal_dashboard_payload(), 'name': 'new'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive() - timedelta(minutes=1),
                 source='test',
@@ -253,7 +312,7 @@ class TestDashboardSnapshotService:
                 sync_run_id=first_run.id,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
                 is_published=False,
-                payload={'name': 'first'},
+                payload={**_minimal_dashboard_payload(), 'name': 'first'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
                 source='test',
@@ -270,7 +329,7 @@ class TestDashboardSnapshotService:
                 sync_run_id=second_run.id,
                 status=dashboard_snapshot.SNAPSHOT_STATUS_PENDING,
                 is_published=False,
-                payload={'name': 'second'},
+                payload={**_minimal_dashboard_payload(), 'name': 'second'},
                 payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
                 snapshot_generated_at=utc_now_naive(),
                 source='test',
@@ -340,6 +399,73 @@ class TestDashboardSnapshotService:
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
             assert snapshot.payload['capability'] == 'bullpen_dashboard'
             assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == snapshot.id
+
+    def test_incomplete_slate_snapshot_is_stored_but_not_published(self, app):
+        with app.app_context():
+            run = _create_sync_run()
+            payload = _minimal_dashboard_payload()
+            payload['freshness']['slate_coverage'] = {
+                **_complete_slate_coverage(date(2026, 6, 25)),
+                'games_scheduled': 1,
+                'games_final': 1,
+                'games_fully_ingested': 0,
+                'games_incomplete': 1,
+                'validations_passed': False,
+                'complete_enough_to_publish': False,
+                'reason_codes': [
+                    'final_games_not_fully_ingested',
+                    'postgame_markers_incomplete',
+                    'validations_failed',
+                ],
+                'degradation_reasons': [
+                    'Final games are not fully ingested for this slate.',
+                    'One or more final games still have incomplete postgame processing markers.',
+                    'Slate coverage validations did not pass.',
+                ],
+            }
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                payload,
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert snapshot.is_published is False
+            assert snapshot.error_message == 'dashboard_snapshot_slate_coverage_incomplete'
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
+            assert (
+                dashboard_snapshot.snapshot_unavailable_reason(snapshot)
+                == 'dashboard_snapshot_slate_coverage_incomplete'
+            )
+
+    def test_old_snapshot_without_slate_coverage_is_not_valid(self, app):
+        with app.app_context():
+            run = _create_sync_run()
+            payload = _minimal_dashboard_payload()
+            payload['freshness'].pop('slate_coverage')
+            payload['freshness'].pop('validations_passed')
+            payload['freshness'].pop('complete_enough_to_publish')
+            snapshot = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive(),
+                payload=payload,
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                snapshot_generated_at=utc_now_naive(),
+                source='test',
+            )
+            db.session.add(snapshot)
+            db.session.commit()
+
+            assert (
+                dashboard_snapshot.snapshot_unavailable_reason(snapshot)
+                == 'dashboard_snapshot_slate_coverage_missing'
+            )
+            assert dashboard_snapshot.get_latest_valid_dashboard_snapshot() is None
 
     def test_snapshot_builder_v2_records_failure_without_raising(self, app, monkeypatch):
         def fail_builder():
@@ -851,14 +977,17 @@ class TestSyncSnapshotIntegration:
 
     def test_pending_snapshot_does_not_advance_served_pointer_until_publish(self, app):
         with app.app_context():
+            old_data_through = date.today() - timedelta(days=2)
+            pending_data_through = date.today() - timedelta(days=1)
             old_run = _create_sync_run()
             old_snapshot = dashboard_snapshot.store_dashboard_snapshot(
                 {
                     **_minimal_dashboard_payload(),
                     'freshness': {
                         **_minimal_dashboard_payload()['freshness'],
-                        'data_through': (date.today() - timedelta(days=2)).isoformat(),
-                        'availability_reference_date': (date.today() - timedelta(days=1)).isoformat(),
+                        'data_through': old_data_through.isoformat(),
+                        'availability_reference_date': (old_data_through + timedelta(days=1)).isoformat(),
+                        'slate_coverage': _complete_slate_coverage(old_data_through),
                     },
                 },
                 sync_run_id=old_run.id,
@@ -870,8 +999,9 @@ class TestSyncSnapshotIntegration:
                     **_minimal_dashboard_payload(),
                     'freshness': {
                         **_minimal_dashboard_payload()['freshness'],
-                        'data_through': (date.today() - timedelta(days=1)).isoformat(),
+                        'data_through': pending_data_through.isoformat(),
                         'availability_reference_date': date.today().isoformat(),
+                        'slate_coverage': _complete_slate_coverage(pending_data_through),
                     },
                 },
                 sync_run_id=pending_run.id,
@@ -954,6 +1084,7 @@ class TestSyncSnapshotIntegration:
                 pitches_thrown=12,
                 game_type='R',
             ))
+            _seed_complete_slate(workload_date, [9301])
             db.session.add(FatigueScore(
                 pitcher_id=pitcher.id,
                 raw_score=12.0,

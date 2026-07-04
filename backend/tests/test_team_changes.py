@@ -9,6 +9,8 @@ import services.sync as sync_service
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401  (register on db.metadata)
 from services.availability import ACTIVE_WINDOW_DAYS
@@ -73,7 +75,37 @@ def _log(pitcher, game_date, game_pk, pitches=12, innings=1.0, hold=False, save=
         save=save,
         game_type='R',
     ))
+    _seed_complete_slate_game(pitcher.team_id or 1, game_date, game_pk)
     db.session.commit()
+
+
+def _seed_complete_slate_game(team_id, game_date, game_pk):
+    opponent_id = 900000 + int(team_id)
+    if ScheduledGame.query.filter_by(team_id=team_id, game_pk=game_pk).first() is None:
+        db.session.add_all([
+            ScheduledGame(
+                team_id=team_id,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='home',
+                opponent_team_id=opponent_id,
+            ),
+            ScheduledGame(
+                team_id=opponent_id,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='away',
+                opponent_team_id=team_id,
+            ),
+        ])
+    if PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).first() is None:
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=game_pk,
+            game_date=game_date,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
 
 
 def _score(pitcher, raw_score, calculated_on, hour=12):

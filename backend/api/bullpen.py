@@ -124,6 +124,7 @@ from services import dashboard_snapshot as dashboard_snapshot_service
 from services import sync as sync_service
 from services import sync_metadata
 from services import board_freshness
+from services import slate_coverage
 from utils.auth import require_admin_token
 
 bullpen_bp = Blueprint('bullpen', __name__)
@@ -834,7 +835,11 @@ def get_sync_status():
                 'reason_codes': ['durable_sync_metadata_unavailable'],
                 'label': 'Freshness metadata unavailable.',
                 'limitations': ['Could not read durable sync metadata.'],
+                'slate_coverage': slate_coverage.unknown_slate_coverage(),
+                'validations_passed': False,
+                'complete_enough_to_publish': False,
             },
+            'slate_coverage': slate_coverage.unknown_slate_coverage(),
             'sync': None,
             'last_successful_sync_run': None,
         })
@@ -2613,6 +2618,9 @@ def _dashboard_snapshot_unavailable_payload(reason):
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],
+            'slate_coverage': slate_coverage.unknown_slate_coverage(),
+            'validations_passed': False,
+            'complete_enough_to_publish': False,
         },
         'availability_summary': {},
         'snapshot': {

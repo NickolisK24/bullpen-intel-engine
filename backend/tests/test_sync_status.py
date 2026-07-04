@@ -22,7 +22,10 @@ from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
 from models.sync_run import SyncRun
+from models.scheduled_game import ScheduledGame
+from models.postgame_processed_game import PostgameProcessedGame
 import models.prospect        # noqa: F401  (register on db.metadata)
+import models.sync_failure    # noqa: F401  (pipeline health dead-letter table)
 from api.bullpen import bullpen_bp
 
 
@@ -46,6 +49,33 @@ def client(tmp_path, monkeypatch):
             drop_test_schema(app)
 
 
+def _seed_complete_slate(game_date, game_pks):
+    for game_pk in game_pks:
+        db.session.add_all([
+            ScheduledGame(
+                team_id=116,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='home',
+                opponent_team_id=142,
+            ),
+            ScheduledGame(
+                team_id=142,
+                game_pk=game_pk,
+                game_date=game_date,
+                status_state='final',
+                home_away='away',
+                opponent_team_id=116,
+            ),
+        ])
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=game_pk,
+            game_date=game_date,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
+
+
 class TestSyncStatusSnapshot:
     def test_reports_snapshot_when_data_present_but_no_sync(self, client):
         with client.application.app_context():
@@ -56,6 +86,7 @@ class TestSyncStatusSnapshot:
                                    innings_pitched=1.0, innings_pitched_outs=3))
             db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=11, game_date=date(2025, 9, 10),
                                    innings_pitched=1.0, innings_pitched_outs=3))
+            _seed_complete_slate(date(2025, 9, 10), [11])
             db.session.commit()
 
         res = client.get('/api/bullpen/sync/status')
@@ -124,6 +155,7 @@ class TestSyncStatusSnapshot:
                 raw_score=42.0,
                 calculated_at=datetime(2026, 6, 1, 21, 39, 55),
             ))
+            _seed_complete_slate(date(2026, 5, 31), [31])
             db.session.add(SyncRun(
                 started_at=datetime(2026, 6, 1, 21, 39, 12),
                 completed_at=datetime(2026, 6, 1, 21, 39, 56),
@@ -161,8 +193,105 @@ class TestSyncStatusSnapshot:
         assert body['freshness']['freshness_state'] == 'current'
         assert body['freshness']['reason_codes'] == []
         assert body['freshness']['limitations'] == []
+        assert body['slate_coverage']['complete_enough_to_publish'] is True
+        assert body['slate_coverage']['games_fully_ingested'] == 1
+        assert body['freshness']['slate_coverage']['reason_codes'] == ['slate_complete']
         assert body['sync']['source'] == 'github_actions'
         assert body['last_successful_sync_run']['status'] == 'success'
+
+    def test_recent_but_incomplete_slate_is_not_current(self, client):
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(
+                pitcher_id=p.id,
+                mlb_game_pk=31,
+                game_date=date(2026, 5, 31),
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            db.session.add_all([
+                ScheduledGame(
+                    team_id=116,
+                    game_pk=31,
+                    game_date=date(2026, 5, 31),
+                    status_state='final',
+                ),
+                ScheduledGame(
+                    team_id=142,
+                    game_pk=31,
+                    game_date=date(2026, 5, 31),
+                    status_state='final',
+                ),
+            ])
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                latest_game_date=date(2026, 5, 31),
+                latest_workload_date=date(2026, 5, 31),
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.commit()
+
+        body = client.get('/api/bullpen/sync/status').get_json()
+
+        assert body['status'] == 'success'
+        assert body['freshness']['is_current'] is False
+        assert body['freshness']['freshness_state'] == 'incomplete'
+        assert body['freshness']['complete_enough_to_publish'] is False
+        assert 'final_games_not_fully_ingested' in body['freshness']['reason_codes']
+        assert body['slate_coverage']['games_final'] == 1
+        assert body['slate_coverage']['games_fully_ingested'] == 0
+        assert body['slate_coverage']['complete_enough_to_publish'] is False
+
+    def test_partial_sync_degrades_trust_even_with_complete_counts(self, client):
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(
+                pitcher_id=p.id,
+                mlb_game_pk=31,
+                game_date=date(2026, 5, 31),
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            _seed_complete_slate(date(2026, 5, 31), [31])
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='partial',
+                source='github_actions',
+                latest_game_date=date(2026, 5, 31),
+                latest_workload_date=date(2026, 5, 31),
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                records_failed=1,
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.commit()
+
+        body = client.get('/api/bullpen/sync/status').get_json()
+
+        assert body['status'] == 'partial'
+        assert body['freshness']['is_current'] is False
+        assert body['freshness']['freshness_state'] == 'incomplete'
+        assert 'partial_sync' in body['freshness']['reason_codes']
+        assert body['slate_coverage']['games_fully_ingested'] == 1
+        assert body['slate_coverage']['complete_enough_to_publish'] is False
 
     def test_reports_failed_sync_without_hiding_last_successful_sync(self, client):
         with client.application.app_context():
@@ -176,6 +305,7 @@ class TestSyncStatusSnapshot:
                 raw_score=42.0,
                 calculated_at=datetime(2026, 6, 1, 21, 39, 55),
             ))
+            _seed_complete_slate(date(2026, 5, 31), [31])
             db.session.add(SyncRun(
                 started_at=datetime(2026, 6, 1, 21, 39, 12),
                 completed_at=datetime(2026, 6, 1, 21, 39, 56),
@@ -225,6 +355,7 @@ class TestSyncStatusSnapshot:
             db.session.commit()
             db.session.add(GameLog(pitcher_id=p.id, mlb_game_pk=31, game_date=date(2026, 5, 31),
                                    innings_pitched=1.0, innings_pitched_outs=3))
+            _seed_complete_slate(date(2026, 5, 31), [31])
             db.session.commit()
 
         res = client.get('/api/bullpen/sync/status')
@@ -276,6 +407,7 @@ class TestSyncStatusSnapshot:
                 raw_score=42.0,
                 calculated_at=datetime(2026, 6, 1, 21, 39, 55),
             ))
+            _seed_complete_slate(date(2026, 5, 31), [31])
             db.session.add(SyncRun(
                 started_at=datetime(2026, 6, 1, 21, 39, 12),
                 completed_at=datetime(2026, 6, 1, 21, 39, 56),
@@ -341,3 +473,40 @@ class TestSyncStatusSnapshot:
             assert run.latest_fatigue_calculated_at == datetime(2026, 6, 1, 21, 39, 55)
             assert run.records_processed == 120
             assert run.pitchers_updated == 428
+
+    def test_pipeline_health_payload_contains_slate_coverage(self, client):
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(
+                pitcher_id=p.id,
+                mlb_game_pk=31,
+                game_date=date(2026, 5, 31),
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            _seed_complete_slate(date(2026, 5, 31), [31])
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                latest_game_date=date(2026, 5, 31),
+                latest_workload_date=date(2026, 5, 31),
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.commit()
+
+            health = sync_metadata.pipeline_health_payload()
+
+        assert health['slate_coverage']['games_scheduled'] == 1
+        assert health['slate_coverage']['games_fully_ingested'] == 1
+        assert health['slate_coverage']['complete_enough_to_publish'] is True
+        assert health['freshness']['slate_coverage']['reason_codes'] == ['slate_complete']

@@ -22,6 +22,7 @@ from pathlib import Path
 from time import perf_counter
 
 from models.intelligence_surface_snapshot import IntelligenceSurfaceSnapshot
+from services import slate_coverage
 from services.intelligence_surface_service import (
     build_today_lead_story,
     resolve_default_reference_date,
@@ -103,11 +104,11 @@ def serve_today_lead_story(
     # invalidates the writer fingerprint can warm the current snapshot without
     # rendering the entire completed-game slate inside the request.
     try:
-        response = build_today_lead_story(
+        response = _public_response(build_today_lead_story(
             reference_date=resolved if resolved is not None else reference_date,
             current_date=current_date,
             bounded=True,
-        )
+        ))
     except Exception:  # noqa: BLE001 - public endpoint must fail closed
         db.session.rollback()
         logger.exception(
@@ -117,8 +118,8 @@ def serve_today_lead_story(
             SNAPSHOT_VERSION,
             SNAPSHOT_WRITER_FINGERPRINT,
         )
-        response = _regeneration_failed_response(
-            resolved if resolved is not None else reference_date)
+        response = _public_response(_regeneration_failed_response(
+            resolved if resolved is not None else reference_date))
         _log_timing(SERVED_FROM_ON_DEMAND_FAILED, response, start)
         return response
     if persist:
@@ -147,8 +148,8 @@ def generate_snapshot_for_date(
         'Intelligence surface snapshot build step starting for %s.',
         reference_date,
     )
-    response = build_today_lead_story(
-        reference_date=reference_date, current_date=current_date)
+    response = _public_response(build_today_lead_story(
+        reference_date=reference_date, current_date=current_date))
     build_elapsed_ms = round((perf_counter() - started) * 1000, 1)
     log.info(
         'Intelligence surface snapshot build step completed for %s: '
@@ -221,7 +222,14 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
     if ref_date is None:
         return None
 
-    lead = (response.get('lead_story') or {}) if response else {}
+    generated_at = utc_now_naive()
+    stored_response = _stored_response(
+        response,
+        source=source,
+        version=version,
+        generated_at=generated_at,
+    )
+    lead = (stored_response.get('lead_story') or {}) if stored_response else {}
     row = (
         IntelligenceSurfaceSnapshot.query
         .filter_by(reference_date=ref_date, snapshot_version=version)
@@ -232,10 +240,8 @@ def write_snapshot(response, *, source, version=SNAPSHOT_VERSION):
             reference_date=ref_date, snapshot_version=version)
         db.session.add(row)
 
-    generated_at = utc_now_naive()
     row.status = response.get('status')
-    row.response_json = _stored_response(response, source=source, version=version,
-                                         generated_at=generated_at)
+    row.response_json = stored_response
     row.lead_story_team_id = lead.get('team_id')
     row.lead_story_game_pk = lead.get('game_pk')
     row.candidates_considered = response.get('candidates_considered') or 0
@@ -287,6 +293,24 @@ def _stored_response(response, *, source, version, generated_at):
 def _public_response(response):
     payload = copy.deepcopy(response or {})
     payload.pop(SNAPSHOT_METADATA_KEY, None)
+    ref_date = _as_date(payload.get('reference_date'))
+    if ref_date is None:
+        return payload
+    try:
+        coverage = slate_coverage.compute_slate_coverage(ref_date)
+    except Exception as exc:  # noqa: BLE001 - public metadata must fail closed
+        db.session.rollback()
+        logger.warning(
+            'Could not compute intelligence surface slate coverage for %s: %s',
+            ref_date,
+            exc,
+        )
+        coverage = slate_coverage.unknown_slate_coverage(ref_date)
+    freshness = dict(payload.get('freshness') or {})
+    payload['freshness'] = slate_coverage.append_slate_coverage_to_freshness(
+        freshness,
+        coverage,
+    )
     return payload
 
 
