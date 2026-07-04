@@ -18,18 +18,13 @@ import logging
 from datetime import date, datetime, timezone
 
 from models.scheduled_game import ScheduledGame
+from services.game_finality import normalize_schedule_status_state
 from services.mlb_api import mlb_client
 from utils.db import db
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE = 'schedule_ingestion'
-
-# Raw MLB statusCode values that mean the game is final.
-_FINAL_STATUS_CODES = frozenset({'F', 'O', 'FR', 'FT'})
-# Raw MLB statusCode values that mean the game has not started yet.
-_SCHEDULED_STATUS_CODES = frozenset({'S', 'P', 'PW', 'PR'})
-
 
 def ingest_schedule(start_date, end_date, *, source=DEFAULT_SOURCE, app=None):
     """Fetch and upsert the MLB schedule for [start_date, end_date].
@@ -117,6 +112,28 @@ def _parse_game(game):
 
     status = game.get('status') or {}
     status_code = _str_or_none(status.get('statusCode'))
+    original_game_date = _parse_date_value(
+        game.get('resumedFromDate')
+        or game.get('originalGameDate')
+        or game.get('originalDate')
+    )
+    resumed_game_date = _parse_date_value(
+        game.get('rescheduleDate')
+        or game.get('resumedDate')
+        or game.get('resumedGameDate')
+    )
+    resumed_from_game_pk = _int(
+        game.get('resumedFrom')
+        or game.get('resumedFromGamePk')
+        or game.get('resumedFromGamePK')
+    )
+    resumed_to_game_pk = _int(
+        game.get('resumedTo')
+        or game.get('resumedToGamePk')
+        or game.get('resumedToGamePK')
+        or game.get('rescheduledGamePk')
+        or game.get('rescheduledGamePK')
+    )
 
     return {
         'game_pk': game_pk,
@@ -124,43 +141,33 @@ def _parse_game(game):
         'game_datetime': _parse_datetime(game.get('gameDate')),
         'game_type': _str_or_none(game.get('gameType')),
         'status_code': status_code,
-        'status_state': _normalize_status_state(status),
+        'status_state': _normalize_status_state(game),
         'doubleheader': _str_or_none(game.get('doubleHeader')),
         'game_number': _int(game.get('gameNumber')),
         'series_game_number': _int(game.get('seriesGameNumber')),
         'games_in_series': _int(game.get('gamesInSeries')),
+        'original_game_date': original_game_date,
+        'original_product_date': original_game_date,
+        'resumed_game_date': resumed_game_date,
+        'resumed_product_date': (
+            resumed_game_date
+            or (game_date if resumed_from_game_pk is not None else None)
+        ),
+        'resumed_from_game_pk': resumed_from_game_pk,
+        'resumed_to_game_pk': resumed_to_game_pk,
         'home_team_id': home_team_id,
         'away_team_id': away_team_id,
     }
 
 
-def _normalize_status_state(status):
+def _normalize_status_state(game_or_status):
     """Map MLB status into {scheduled, final, postponed, suspended, other}.
 
-    Conservative: checks the most decisive signals first and falls back to
-    ``other`` (e.g. in-progress, cancelled) rather than guessing.
+    Compatibility wrapper around the shared finality authority. Schedule
+    ingestion stores display/status facts here; it does not create an
+    independent finality authority.
     """
-    code = str(status.get('statusCode') or '').strip().upper()
-    detailed = str(status.get('detailedState') or '').strip().lower()
-    abstract = str(status.get('abstractGameState') or '').strip().lower()
-
-    if 'postpon' in detailed:
-        return ScheduledGame.STATE_POSTPONED
-    if 'suspend' in detailed:
-        return ScheduledGame.STATE_SUSPENDED
-    if 'cancel' in detailed:
-        # A cancelled game is not final, even though MLB may mark it 'Final'.
-        return ScheduledGame.STATE_OTHER
-    if (code in _FINAL_STATUS_CODES
-            or abstract == 'final'
-            or detailed.startswith('final')
-            or detailed in ('game over', 'completed early')):
-        return ScheduledGame.STATE_FINAL
-    if (code in _SCHEDULED_STATUS_CODES
-            or abstract == 'preview'
-            or detailed in ('scheduled', 'pre-game', 'warmup', 'delayed start')):
-        return ScheduledGame.STATE_SCHEDULED
-    return ScheduledGame.STATE_OTHER
+    return normalize_schedule_status_state(game_or_status)
 
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
@@ -188,6 +195,12 @@ def _upsert_row(team_id, opponent_team_id, home_away, parsed, source):
     row.game_number = parsed['game_number']
     row.series_game_number = parsed['series_game_number']
     row.games_in_series = parsed['games_in_series']
+    row.original_game_date = parsed['original_game_date']
+    row.original_product_date = parsed['original_product_date']
+    row.resumed_game_date = parsed['resumed_game_date']
+    row.resumed_product_date = parsed['resumed_product_date']
+    row.resumed_from_game_pk = parsed['resumed_from_game_pk']
+    row.resumed_to_game_pk = parsed['resumed_to_game_pk']
     row.source = source
     return 'created' if created else 'updated'
 
@@ -204,6 +217,15 @@ def _parse_date(game):
     raw = (game or {}).get('officialDate') or str((game or {}).get('gameDate') or '')[:10]
     try:
         return date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_date_value(raw):
+    if raw is None:
+        return None
+    try:
+        return date.fromisoformat(str(raw)[:10])
     except (TypeError, ValueError):
         return None
 

@@ -34,6 +34,12 @@ from services.completed_game_context_service import (
     upsert_completed_game_context,
 )
 from services.fatigue import calculate_fatigue
+from services.game_finality import (
+    FINAL_AND_USABLE,
+    classify_game_finality,
+    has_safe_final_status,
+    scheduled_rows_have_unresolved_resumed_linkage,
+)
 from services.mlb_api import mlb_client
 from services.roster_status import STATUS_ACTIVE
 from services.roster_status_sync import sync_roster_statuses
@@ -54,13 +60,6 @@ PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
 POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
-FINAL_GAME_STATUS_CODES = frozenset({'F', 'O', 'FR', 'FT'})
-FINAL_GAME_DETAILED_STATES = frozenset({
-    'final',
-    'game over',
-    'completed early',
-    'final: tied',
-})
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
@@ -120,24 +119,9 @@ def postgame_schedule_date(now: datetime | None = None) -> date:
     return local.date()
 
 
-def _status_value(game: dict, key: str):
-    status = game.get('status') or {}
-    return status.get(key)
-
-
 def is_completed_game(game: dict) -> bool:
-    """Return True for MLB schedule games that are final/completed."""
-    if not (game or {}).get('gamePk'):
-        return False
-    status_code = str(_status_value(game, 'statusCode') or '').upper()
-    detailed_state = str(_status_value(game, 'detailedState') or '').strip().lower()
-    abstract_state = str(_status_value(game, 'abstractGameState') or '').strip().lower()
-    return (
-        status_code in FINAL_GAME_STATUS_CODES
-        or abstract_state == 'final'
-        or detailed_state in FINAL_GAME_DETAILED_STATES
-        or detailed_state.startswith('final')
-    )
+    """Return True only for games with safe final status precedence."""
+    return has_safe_final_status(game)
 
 
 def completed_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
@@ -182,6 +166,8 @@ def _stored_final_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
 
     games = []
     for game_pk, game_rows in grouped.items():
+        if scheduled_rows_have_unresolved_resumed_linkage(game_rows):
+            continue
         status_code = next((row.status_code for row in game_rows if row.status_code), 'F')
         game_type = next((row.game_type for row in game_rows if row.game_type), 'R')
         games.append({
@@ -1041,7 +1027,7 @@ def _upsert_postgame_processed_marker(
     marker.game_type = (game or {}).get('gameType')
     marker.home_team_id = _game_team_id(game, 'home')
     marker.away_team_id = _game_team_id(game, 'away')
-    marker.final_state = _status_value(game, 'detailedState')
+    marker.final_state = ((game or {}).get('status') or {}).get('detailedState')
     marker.logs_added = logs_added
     marker.pitchers_touched = pitchers_touched
     marker.sync_run_id = sync_run_id
@@ -1136,6 +1122,7 @@ def process_completed_game_for_postgame_refresh(
         }
 
     boxscore = mlb_client.get_game_boxscore(game_pk)
+    finality = classify_game_finality(game, boxscore=boxscore, require_boxscore=True)
     pitching_lines = _extract_pitching_lines_from_boxscore(boxscore)
     pitcher_order = _pitcher_order_by_side(boxscore)
     player_ids = sorted({
@@ -1169,6 +1156,14 @@ def process_completed_game_for_postgame_refresh(
     pitchers_reactivated = 0
     position_overrides_from_pitching_line = 0
     touched_pitcher_ids = set()
+    if finality.state != FINAL_AND_USABLE:
+        logger.info(
+            'Postgame finality pending for game_pk=%s state=%s reason=%s',
+            game_pk,
+            finality.state,
+            finality.reason,
+        )
+
     for line in pitching_lines:
         resolution = resolve_pitcher_for_authoritative_line(
             line,

@@ -7,6 +7,9 @@ from typing import Iterable, Mapping
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
+from services.game_finality import (
+    scheduled_rows_have_unresolved_resumed_linkage,
+)
 from utils.db import db
 
 
@@ -21,6 +24,7 @@ REASON_VALIDATIONS_FAILED = 'validations_failed'
 REASON_COMPLETENESS_UNKNOWN = 'completeness_unknown'
 REASON_SCHEDULED_GAMES_NOT_FINAL = 'scheduled_games_not_final'
 REASON_SUSPENDED_GAMES_NOT_FINAL = 'suspended_games_not_final'
+REASON_RESUMED_LINKAGE_UNRESOLVED = 'resumed_linkage_unresolved'
 
 DIAGNOSTIC_MISSING_MARKER = 'missing_marker'
 DIAGNOSTIC_INCOMPLETE_MARKER = 'incomplete_marker'
@@ -47,6 +51,9 @@ _REASON_MESSAGES = {
     REASON_COMPLETENESS_UNKNOWN: 'Slate completeness cannot be proven from stored coverage.',
     REASON_SCHEDULED_GAMES_NOT_FINAL: 'Scheduled games on this slate are not final yet.',
     REASON_SUSPENDED_GAMES_NOT_FINAL: 'Suspended games on this slate are not final.',
+    REASON_RESUMED_LINKAGE_UNRESOLVED: (
+        'Suspended or resumed game linkage is unresolved for this slate.'
+    ),
 }
 
 
@@ -166,6 +173,9 @@ def _scheduled_games(schedule_rows):
             'home_team': _side_team_id(rows, 'home'),
             'away_team': _side_team_id(rows, 'away'),
             'row_count': len(rows),
+            'resumed_linkage_unresolved': (
+                scheduled_rows_have_unresolved_resumed_linkage(rows)
+            ),
         })
     games.sort(key=lambda item: item['game_pk'])
     return games
@@ -320,6 +330,7 @@ def unknown_slate_coverage(slate_date=None, *, reason_code=REASON_COMPLETENESS_U
         'games_failed': 0,
         'games_postponed': 0,
         'games_suspended': 0,
+        'games_unresolved': 0,
         'games_included': 0,
         'validations_passed': False,
         'complete_enough_to_publish': False,
@@ -374,6 +385,7 @@ def compute_slate_coverage(
                 'games_failed': 0,
                 'games_postponed': 0,
                 'games_suspended': 0,
+                'games_unresolved': 0,
                 'games_included': 0,
                 'validations_passed': not partial_sync,
                 'complete_enough_to_publish': not partial_sync,
@@ -401,7 +413,10 @@ def compute_slate_coverage(
     ]
     final_games = [
         game for game in included_games
-        if game['status_state'] == ScheduledGame.STATE_FINAL
+        if (
+            game['status_state'] == ScheduledGame.STATE_FINAL
+            and not game.get('resumed_linkage_unresolved')
+        )
     ]
     final_game_pks = {game['game_pk'] for game in final_games}
     markers = _markers_by_game_pk(final_game_pks, postgame_markers)
@@ -448,6 +463,11 @@ def compute_slate_coverage(
         if game['status_state'] == ScheduledGame.STATE_OTHER
     )
     non_final_included = scheduled_not_final + suspended_not_final + other_not_final
+    unresolved_linkage = sum(
+        1
+        for game in included_games
+        if game.get('resumed_linkage_unresolved')
+    )
     incomplete_games = max(len(included_games) - fully_ingested, 0)
 
     reason_codes = []
@@ -455,13 +475,15 @@ def compute_slate_coverage(
         reason_codes.append(REASON_SCHEDULED_GAMES_NOT_FINAL)
     if suspended_not_final:
         reason_codes.append(REASON_SUSPENDED_GAMES_NOT_FINAL)
+    if unresolved_linkage:
+        reason_codes.append(REASON_RESUMED_LINKAGE_UNRESOLVED)
     if len(final_games) > fully_ingested:
         reason_codes.append(REASON_FINAL_GAMES_NOT_FULLY_INGESTED)
     if incomplete_markers or missing_markers:
         reason_codes.append(REASON_POSTGAME_MARKERS_INCOMPLETE)
     if failed_markers:
         reason_codes.append(REASON_POSTGAME_MARKERS_FAILED)
-    if non_final_included:
+    if non_final_included or unresolved_linkage:
         reason_codes.append(REASON_COMPLETENESS_UNKNOWN)
     if sync_status == 'partial':
         reason_codes.append(REASON_PARTIAL_SYNC)
@@ -490,6 +512,7 @@ def compute_slate_coverage(
             1 for game in games
             if game['status_state'] == ScheduledGame.STATE_SUSPENDED
         ),
+        'games_unresolved': unresolved_linkage,
         'games_included': len(included_games),
         'validations_passed': validations_passed,
         'complete_enough_to_publish': complete_enough,
