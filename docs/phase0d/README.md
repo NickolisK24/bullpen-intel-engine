@@ -13,8 +13,8 @@ approved branch explicitly changes posture for a registered evidence family.
 ## Phase 0D Branch Map
 
 - 0D-01: evidence contract and language rules. Complete.
-- 0D-02: workload and recovery evidence. Active/completed in this branch.
-- 0D-03: entry and exit appearance context.
+- 0D-02: workload and recovery evidence. Complete.
+- 0D-03: entry and exit appearance context. Active/completed in this branch.
 - 0D-04: inherited traffic and clean/traffic outing context.
 - 0D-05: starter exposure and calendar context.
 - 0D-06: roster, IL, and transaction context.
@@ -24,7 +24,9 @@ approved branch explicitly changes posture for a registered evidence family.
 
 The branch map is sequencing only. Branch 0D-01 implements no production
 evidence family. Branch 0D-02 adds the first production evidence family as
-internal-only workload and recovery facts.
+internal-only workload and recovery facts. Branch 0D-03 adds internal-only
+appearance entry and exit context facts from stored final play-by-play and
+game-log rows.
 
 ## Binding Interpretation Rules
 

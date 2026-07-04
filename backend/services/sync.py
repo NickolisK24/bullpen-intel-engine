@@ -511,21 +511,35 @@ def _notify_workload_evidence_game_log_correction(
     *,
     sync_run_id=None,
 ):
-    try:
-        from services.workload_recovery_evidence import (
-            mark_game_log_correction_for_workload_recovery,
-        )
-        return mark_game_log_correction_for_workload_recovery(
-            game_log,
-            sync_run_id=sync_run_id,
-        )
-    except Exception as exc:  # noqa: BLE001 - correction marking must not block ingest
-        logger.warning(
-            'Could not mark workload evidence for game_log correction id=%s: %s',
-            getattr(game_log, 'id', None),
-            exc,
-        )
-        return {'marked_count': 0, 'evidence_ids': []}
+    marked_count = 0
+    evidence_ids = []
+    markers = (
+        (
+            'workload',
+            'services.workload_recovery_evidence',
+            'mark_game_log_correction_for_workload_recovery',
+        ),
+        (
+            'appearance',
+            'services.appearance_context_evidence',
+            'mark_game_log_correction_for_appearance_context',
+        ),
+    )
+    for label, module_name, function_name in markers:
+        try:
+            module = __import__(module_name, fromlist=[function_name])
+            marker = getattr(module, function_name)
+            result = marker(game_log, sync_run_id=sync_run_id)
+            marked_count += int(result.get('marked_count') or 0)
+            evidence_ids.extend(result.get('evidence_ids') or [])
+        except Exception as exc:  # noqa: BLE001 - correction marking must not block ingest
+            logger.warning(
+                'Could not mark %s evidence for game_log correction id=%s: %s',
+                label,
+                getattr(game_log, 'id', None),
+                exc,
+            )
+    return {'marked_count': marked_count, 'evidence_ids': evidence_ids}
 
 
 def _upsert_game_log_from_authoritative_values(
@@ -2144,12 +2158,20 @@ def _safe_build_workload_recovery_evidence_stage(
 
     started = time.perf_counter()
     try:
+        from services.appearance_context_evidence import (
+            build_appearance_context_evidence,
+            rebuild_marked_appearance_context_evidence,
+        )
         from services.workload_recovery_evidence import (
             build_workload_recovery_evidence,
             rebuild_marked_workload_recovery_evidence,
         )
         sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_WORKLOAD_EVIDENCE)
         rebuild = rebuild_marked_workload_recovery_evidence(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        appearance_rebuild = rebuild_marked_appearance_context_evidence(
             sync_run_id=sync_run_id,
             source=source,
         )
@@ -2161,14 +2183,25 @@ def _safe_build_workload_recovery_evidence_stage(
             )
             for product_date in dates
         ]
+        appearance_builds = [
+            build_appearance_context_evidence(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
         db.session.commit()
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.info(
-            'Phase 0D workload evidence stage complete: dates=%s rebuilt=%s '
-            'objects_built=%s elapsed_ms=%s.',
+            'Phase 0D evidence stage complete: dates=%s workload_rebuilt=%s '
+            'appearance_rebuilt=%s workload_objects_built=%s '
+            'appearance_objects_built=%s elapsed_ms=%s.',
             ','.join(day.isoformat() for day in dates),
             rebuild.get('objects_rebuilt', 0),
+            appearance_rebuild.get('objects_rebuilt', 0),
             sum(item.get('objects_built', 0) for item in builds),
+            sum(item.get('objects_built', 0) for item in appearance_builds),
             elapsed_ms,
         )
         return {
@@ -2176,6 +2209,8 @@ def _safe_build_workload_recovery_evidence_stage(
             'dates': [d.isoformat() for d in dates],
             'rebuild': rebuild,
             'builds': builds,
+            'appearance_rebuild': appearance_rebuild,
+            'appearance_builds': appearance_builds,
             'elapsed_ms': elapsed_ms,
         }
     except Exception as exc:  # noqa: BLE001 - optional evidence stage is fail-soft
