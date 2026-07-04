@@ -22,6 +22,7 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
@@ -143,7 +144,61 @@ def completed_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
         start_date=schedule_date.isoformat(),
         end_date=schedule_date.isoformat(),
     )
-    return [game for game in (games or []) if is_completed_game(game)]
+    completed = [game for game in (games or []) if is_completed_game(game)]
+    seen_game_pks = {_game_pk(game) for game in completed if _game_pk(game)}
+    for game in _stored_final_games_for_postgame_refresh(schedule_date):
+        game_pk = _game_pk(game)
+        if game_pk in seen_game_pks:
+            continue
+        completed.append(game)
+        seen_game_pks.add(game_pk)
+    return completed
+
+
+def _scheduled_side_team(rows, side: str) -> dict:
+    for row in rows:
+        if row.home_away == side:
+            return {'id': row.team_id}
+
+    opposite_side = 'away' if side == 'home' else 'home'
+    for row in rows:
+        if row.home_away == opposite_side and row.opponent_team_id is not None:
+            return {'id': row.opponent_team_id}
+    return {}
+
+
+def _stored_final_games_for_postgame_refresh(schedule_date: date) -> list[dict]:
+    rows = (
+        ScheduledGame.query
+        .filter(ScheduledGame.game_date == schedule_date)
+        .filter(ScheduledGame.status_state == ScheduledGame.STATE_FINAL)
+        .order_by(ScheduledGame.game_pk.asc(), ScheduledGame.team_id.asc())
+        .all()
+    )
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row.game_pk, []).append(row)
+
+    games = []
+    for game_pk, game_rows in grouped.items():
+        status_code = next((row.status_code for row in game_rows if row.status_code), 'F')
+        game_type = next((row.game_type for row in game_rows if row.game_type), 'R')
+        games.append({
+            'gamePk': game_pk,
+            'gameType': game_type,
+            'officialDate': schedule_date.isoformat(),
+            'status': {
+                'statusCode': status_code,
+                'detailedState': 'Final',
+                'abstractGameState': 'Final',
+            },
+            'teams': {
+                'home': {'team': _scheduled_side_team(game_rows, 'home')},
+                'away': {'team': _scheduled_side_team(game_rows, 'away')},
+            },
+            'source': 'scheduled_games',
+        })
+    return games
 
 
 def _game_pk(game: dict):
@@ -464,6 +519,18 @@ def _position_value(position):
     )
 
 
+def _position_code(position):
+    if not isinstance(position, dict):
+        return None
+    return position.get('code') or position.get('abbreviation')
+
+
+def _position_name(position):
+    if not isinstance(position, dict):
+        return None
+    return position.get('name') or position.get('type')
+
+
 def _normalized_position(value):
     raw = _position_value(value)
     return str(raw).strip().upper() if raw not in (None, '') else None
@@ -519,14 +586,19 @@ def _record_pitcher_resolution_failure(
         entity_ref=game_pk,
         payload={
             'game_pk': game_pk,
+            'mlb_game_pk': game_pk,
             'source': source,
             'reason': reason,
             'player_id': line.get('player_id'),
             'person_id': line.get('person_id'),
             'name': line.get('name'),
             'side': line.get('side'),
+            'team_side': line.get('side'),
             'team_id': line.get('team_id'),
             'team': line.get('team'),
+            'position': line.get('position'),
+            'position_code': line.get('position_code'),
+            'position_name': line.get('position_name'),
             'stat_keys': sorted((line.get('stats') or {}).keys()),
         },
         sync_run_id=sync_run_id,
@@ -759,6 +831,8 @@ def _extract_pitching_lines_from_boxscore(boxscore: dict) -> list[dict]:
                     'team_id': team_info.get('id'),
                     'team_abbreviation': _team_abbreviation_from(team_info),
                     'position': _position_value(position),
+                    'position_code': _position_code(position),
+                    'position_name': _position_name(position),
                     'stats': stats,
                     'side': side,
                 })
