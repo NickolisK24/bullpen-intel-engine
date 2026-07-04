@@ -184,6 +184,21 @@ class TestCalculateFatigue:
         assert score.appearances_last_7 == 0
         assert score.appearances_last_14 == 0
 
+    def test_default_reference_date_uses_product_day(self, pitcher, make_log, monkeypatch):
+        import services.fatigue as fatigue_service
+
+        monkeypatch.setattr(
+            fatigue_service,
+            'product_current_date',
+            lambda: date(2026, 6, 10),
+        )
+
+        score = calculate_fatigue(pitcher, [
+            make_log("2026-06-09", pitches_thrown=10, innings_pitched=1.0),
+        ])
+
+        assert score.days_since_last_appearance == 1
+
     def test_zero_pitch_rows_do_not_count_as_workload_appearances(self, pitcher, make_log):
         ref = date(2024, 9, 10)
         valid_logs = [

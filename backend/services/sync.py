@@ -15,7 +15,6 @@ import signal
 import threading
 import time
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import desc
 
@@ -27,7 +26,7 @@ from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
 from services import dead_letter
 from services import sync_metadata
-from services.availability_reference_date import PRODUCT_TIMEZONE
+from services.availability_reference_date import resolve_product_day
 from services.completed_game_context_payload_adapter import build_completed_game_payload
 from services.completed_game_context_service import (
     extract_completed_game_contexts,
@@ -82,14 +81,7 @@ def postgame_schedule_date(now: datetime | None = None) -> date:
     prior baseball date so 1-3 AM ET cleanup runs do not accidentally scan the
     next empty slate.
     """
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    try:
-        product_timezone = ZoneInfo(PRODUCT_TIMEZONE)
-    except ZoneInfoNotFoundError:
-        product_timezone = timezone.utc
-    local = current.astimezone(product_timezone)
+    local = resolve_product_day(now).local_datetime
     if local.hour < POSTGAME_EARLY_MORNING_CUTOFF_HOUR:
         return local.date() - timedelta(days=1)
     return local.date()
@@ -664,7 +656,11 @@ def sync_recent_logs(
           'cutoff':               'YYYY-MM-DD',
         }
     """
-    reference_date = reference_date or date.today()
+    product_day = resolve_product_day(datetime.now(timezone.utc))
+    timezone_limitations = ()
+    if reference_date is None:
+        reference_date = product_day.calendar_date
+        timezone_limitations = product_day.limitations
     cutoff         = reference_date - timedelta(days=days_back)
     season         = _season_for(reference_date)
 
@@ -765,15 +761,19 @@ def sync_recent_logs(
 
     db.session.commit()
 
-    return {
+    result = {
         'new_logs_added':    new_logs,
         'pitchers_touched':  pitchers_touched,
         'errors':            errors,
         'records_failed':    records_failed,
         'days_back':         days_back,
         'season':            season,
+        'reference_date':    reference_date.isoformat(),
         'cutoff':            cutoff.isoformat(),
     }
+    if timezone_limitations:
+        result['limitations'] = list(timezone_limitations)
+    return result
 
 
 def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
@@ -1333,6 +1333,7 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
     run_logger.setLevel(logging.INFO)
 
     started_at = datetime.now(timezone.utc)
+    product_day = resolve_product_day(started_at)
     sync_run_id = None
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
 
@@ -1344,6 +1345,8 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
         'errors':           0,
         'message':          '',
     }
+    if product_day.limitations:
+        status['limitations'] = list(product_day.limitations)
 
     try:
         with app.app_context():
@@ -1394,7 +1397,11 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 sync_run_id,
                 sync_metadata.STAGE_LOG_INGESTION,
             )
-            pull = sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
+            pull = sync_recent_logs(
+                days_back=days_back,
+                reference_date=product_day.calendar_date,
+                sync_run_id=sync_run_id,
+            )
             run_logger.info(
                 'Pulled %s new logs (touched %s pitchers, %s errors, %s dead-lettered)',
                 pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
@@ -1420,8 +1427,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             if pull['new_logs_added'] == 0 and pull['pitchers_touched'] == 0:
                 # Nothing to score against that's new — treat as offseason if
                 # we also have no recent logs anywhere in the DB window.
+                recent_cutoff = product_day.calendar_date - timedelta(days=days_back)
                 recent_any = GameLog.query.filter(
-                    GameLog.game_date >= (date.today() - timedelta(days=days_back))
+                    GameLog.game_date >= recent_cutoff
                 ).first()
                 if recent_any is None:
                     status['message'] = 'No games found — offseason skip.'

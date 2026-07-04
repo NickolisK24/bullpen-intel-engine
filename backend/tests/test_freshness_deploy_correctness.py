@@ -18,13 +18,17 @@ endpoint reports a snapshot while durable-healthy metadata exists.
 In-memory SQLite, no Postgres / MLB / network.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
+from services.availability_reference_date import (
+    product_availability_reference_date,
+    product_current_date,
+)
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -92,6 +96,26 @@ def _write_cache(status='never', last_sync='2020-01-01T00:00:00', message='stale
         'message': message,
         'finished_at': last_sync,
     })
+
+
+def _fixed_datetime_class(fixed_utc):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_utc.replace(tzinfo=None)
+            return fixed_utc.astimezone(tz)
+
+    return FixedDateTime
+
+
+def _host_local_date_class(host_today):
+    class HostLocalDate(date):
+        @classmethod
+        def today(cls):
+            return host_today
+
+    return HostLocalDate
 
 
 # ── Scenario A — durable healthy, cache file missing ───────────────────────
@@ -202,3 +226,38 @@ class TestSharedFreshnessSource:
         assert status['freshness']['is_current'] is True
         assert dash['freshness']['is_current'] is True
         assert dash['freshness']['sync_status'] in ('success', 'ok')
+
+    def test_write_cutoff_and_read_reference_share_product_day(self, client, monkeypatch):
+        fixed_utc = datetime(2026, 6, 10, 3, 30, tzinfo=timezone.utc)
+        product_day = product_current_date(now=fixed_utc)
+
+        monkeypatch.setattr(sync_service, 'datetime', _fixed_datetime_class(fixed_utc))
+        monkeypatch.setattr(
+            sync_service,
+            'date',
+            _host_local_date_class(date(2099, 1, 1)),
+        )
+        monkeypatch.setattr(
+            sync_service.mlb_client,
+            'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [],
+        )
+
+        with client.application.app_context():
+            db.session.add(Pitcher(
+                mlb_id=901001,
+                full_name='Freshness Timezone Reliever',
+                team_id=1,
+                active=True,
+            ))
+            db.session.commit()
+            result = sync_service.sync_recent_logs(days_back=7)
+
+        read_reference = product_availability_reference_date(
+            latest_workload_date=product_day - timedelta(days=1),
+            latest_game_date=product_day - timedelta(days=1),
+        )
+
+        assert result['reference_date'] == product_day.isoformat()
+        assert result['cutoff'] == (product_day - timedelta(days=7)).isoformat()
+        assert read_reference == product_day
