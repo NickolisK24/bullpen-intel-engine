@@ -1,7 +1,9 @@
 from datetime import timedelta
+import threading
 import logging
 
 from flask import current_app, has_app_context
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from models.fatigue_score import FatigueScore
@@ -45,12 +47,241 @@ SOURCE_GITHUB_ACTIONS = 'github_actions'
 
 JOB_DAILY_SYNC = 'daily_sync'
 JOB_POSTGAME_REFRESH = 'postgame_refresh'
+JOB_FATIGUE_RECALCULATION = 'fatigue_recalculation'
+JOB_DASHBOARD_SNAPSHOT_BUILD = 'dashboard_snapshot_build'
+
+SYNC_WRITER_LOCK_KEY = 820260801
+SYNC_WRITER_ALREADY_RUNNING = 'sync_writer_already_running'
+SYNC_WRITER_LOCK_UNAVAILABLE = 'sync_writer_lock_unavailable'
+SYNC_WRITER_STALE_RECLAIMED = 'sync_writer_stale_reclaimed'
+SYNC_WRITER_STALE_AFTER_MINUTES = 120
 
 logger = logging.getLogger(__name__)
+_process_writer_lock = threading.Lock()
 
 
 def _now():
     return utc_now_naive()
+
+
+def _sync_writer_stale_after_minutes():
+    if has_app_context():
+        return int(
+            current_app.config.get(
+                'SYNC_WRITER_STALE_AFTER_MINUTES',
+                SYNC_WRITER_STALE_AFTER_MINUTES,
+            )
+        )
+    return SYNC_WRITER_STALE_AFTER_MINUTES
+
+
+def _sync_writer_stale_cutoff(now=None):
+    return (now or _now()) - timedelta(minutes=_sync_writer_stale_after_minutes())
+
+
+def _sync_run_summary(run):
+    if run is None:
+        return None
+    return {
+        'id': run.id,
+        'job_name': run.job_name,
+        'status': run.status,
+        'stage': run.stage,
+        'source': run.source,
+        'started_at': _iso(run.started_at),
+        'completed_at': _iso(run.completed_at),
+    }
+
+
+def latest_running_sync_run():
+    return (
+        SyncRun.query
+        .filter(SyncRun.status == STATUS_RUNNING)
+        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+        .first()
+    )
+
+
+def stale_running_sync_runs(now=None):
+    cutoff = _sync_writer_stale_cutoff(now)
+    return (
+        SyncRun.query
+        .filter(SyncRun.status == STATUS_RUNNING)
+        .filter(SyncRun.started_at <= cutoff)
+        .order_by(SyncRun.started_at.asc(), SyncRun.id.asc())
+        .all()
+    )
+
+
+def recover_stale_running_sync_runs(now=None, *, commit=True):
+    """
+    Mark abandoned running rows failed after the writer lock is held.
+
+    Advisory locks release when a crashed process disconnects. A durable
+    ``running`` row can remain, though, so the next valid writer reclaims only
+    rows older than the configured timeout.
+    """
+    now = now or _now()
+    stale_runs = stale_running_sync_runs(now)
+    if not stale_runs:
+        return []
+    for run in stale_runs:
+        prior_stage = run.stage
+        run.status = STATUS_FAILED
+        run.stage = STAGE_FAILED
+        run.failed_stage = prior_stage
+        run.completed_at = now
+        run.errors = max(run.errors or 0, 1)
+        message = (
+            f'Stale running sync reclaimed after '
+            f'{_sync_writer_stale_after_minutes()} minutes.'
+        )
+        if run.error_message:
+            run.error_message = f'{run.error_message}; {message}'
+        else:
+            run.error_message = message
+        db.session.add(run)
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
+    return stale_runs
+
+
+class SyncWriterConflict(RuntimeError):
+    def __init__(
+        self,
+        *,
+        reason=SYNC_WRITER_ALREADY_RUNNING,
+        job_name=None,
+        source=None,
+        active_run=None,
+        message=None,
+    ):
+        self.reason = reason
+        self.job_name = job_name
+        self.source = source
+        self.active_run = active_run
+        self.message = message or (
+            'Another sync writer is already running.'
+            if reason == SYNC_WRITER_ALREADY_RUNNING
+            else 'Sync writer lock state is unavailable.'
+        )
+        super().__init__(self.message)
+
+    def to_dict(self):
+        return {
+            'status': 'blocked',
+            'reason': self.reason,
+            'message': self.message,
+            'job_name': self.job_name,
+            'source': self.source,
+            'active_writer': _sync_run_summary(self.active_run),
+        }
+
+
+class SyncWriterGuard:
+    def __init__(self, *, connection=None, process_lock_acquired=False):
+        self.connection = connection
+        self.process_lock_acquired = process_lock_acquired
+        self.released = False
+
+    def release(self):
+        if self.released:
+            return
+        self.released = True
+        try:
+            if self.connection is not None:
+                self.connection.execute(
+                    text('SELECT pg_advisory_unlock(:lock_key)'),
+                    {'lock_key': SYNC_WRITER_LOCK_KEY},
+                )
+        finally:
+            if self.connection is not None:
+                self.connection.close()
+            if self.process_lock_acquired:
+                _process_writer_lock.release()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.release()
+        return False
+
+
+def _acquire_postgres_writer_lock(job_name=None, source=None):
+    connection = db.engine.connect()
+    try:
+        locked = connection.execute(
+            text('SELECT pg_try_advisory_lock(:lock_key)'),
+            {'lock_key': SYNC_WRITER_LOCK_KEY},
+        ).scalar()
+    except SQLAlchemyError as exc:
+        connection.close()
+        db.session.rollback()
+        logger.warning('Could not acquire sync writer advisory lock: %s', exc)
+        raise SyncWriterConflict(
+            reason=SYNC_WRITER_LOCK_UNAVAILABLE,
+            job_name=job_name,
+            source=source,
+        ) from exc
+    if locked is not True:
+        connection.close()
+        raise SyncWriterConflict(
+            reason=SYNC_WRITER_ALREADY_RUNNING,
+            job_name=job_name,
+            source=source,
+            active_run=latest_running_sync_run(),
+        )
+    return SyncWriterGuard(connection=connection)
+
+
+def _acquire_process_writer_lock(job_name=None, source=None):
+    if not _process_writer_lock.acquire(blocking=False):
+        raise SyncWriterConflict(
+            reason=SYNC_WRITER_ALREADY_RUNNING,
+            job_name=job_name,
+            source=source,
+            active_run=latest_running_sync_run(),
+        )
+    return SyncWriterGuard(process_lock_acquired=True)
+
+
+def acquire_sync_writer_guard(*, job_name=JOB_DAILY_SYNC, source=SOURCE_MANUAL):
+    dialect = getattr(db.engine.dialect, 'name', '')
+    guard = (
+        _acquire_postgres_writer_lock(job_name=job_name, source=source)
+        if dialect == 'postgresql'
+        else _acquire_process_writer_lock(job_name=job_name, source=source)
+    )
+    try:
+        recover_stale_running_sync_runs()
+        active_run = latest_running_sync_run()
+        if active_run is not None:
+            raise SyncWriterConflict(
+                reason=SYNC_WRITER_ALREADY_RUNNING,
+                job_name=job_name,
+                source=source,
+                active_run=active_run,
+            )
+    except Exception:
+        guard.release()
+        raise
+    return guard
+
+
+def sync_writer_conflict_payload(conflict):
+    if isinstance(conflict, SyncWriterConflict):
+        return conflict.to_dict()
+    return {
+        'status': 'blocked',
+        'reason': SYNC_WRITER_LOCK_UNAVAILABLE,
+        'message': str(conflict),
+        'job_name': None,
+        'source': None,
+        'active_writer': None,
+    }
 
 
 # ── Freshness degradation (fail-closed) ──────────────────────────────────────
@@ -415,6 +646,7 @@ def pipeline_health_payload(reference_date=None):
         'freshness': overall.get('freshness'),
         'slate_coverage': diagnostic_slate_coverage,
         'sync_status': overall.get('status'),
+        'active_writer': overall.get('active_writer'),
         'last_successful_sync': overall.get('last_successful_sync'),
         'dead_letters': {
             'unresolved_count': dead_letter.unresolved_count(),
@@ -555,11 +787,13 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
     try:
         latest_run = latest_sync_run()
         successful_run = latest_successful_sync_run()
+        active_writer = latest_running_sync_run()
     except SQLAlchemyError as exc:
         db.session.rollback()
         logger.warning('Could not read durable sync metadata: %s', exc)
         latest_run = None
         successful_run = None
+        active_writer = None
 
     if latest_run:
         status = latest_run.status
@@ -678,5 +912,6 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             slate_coverage_payload=slate_coverage_payload,
         ),
         'sync': sync_block,
+        'active_writer': _sync_run_summary(active_writer),
         'last_successful_sync_run': last_successful_sync_run,
     }

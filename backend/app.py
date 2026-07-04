@@ -64,6 +64,8 @@ def _init_scheduler(app):
             id='daily_bullpen_sync',
             name='Daily bullpen sync (06:00 ET)',
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
             misfire_grace_time=60 * 60,
         )
 
