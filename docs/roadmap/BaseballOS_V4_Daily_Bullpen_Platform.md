@@ -817,8 +817,8 @@ Review cadence:
 | Order | Phase | Status | Notes |
 | --- | --- | --- | --- |
 | 1 | Canon roadmap revision | Complete | Replaces the feature-heavy V4 roadmap with the foundation-first, evidence-first direction. |
-| 2 | Phase 0A - Pipeline Integrity & Data Trust | Not started | Validate freshness, coverage, unknown handling, and fail-closed behavior. |
-| 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Not started | Decide source authority and acquisition strategy for each evidence category. |
+| 2 | Phase 0A - Pipeline Integrity & Data Trust | Complete | Branches phase-0a/01 through phase-0a/08 have been merged via PRs #354-#359 and #364-#365; follow-up slate-coverage publish, slate diagnostics, and postgame blocker fixes merged via PRs #360-#363. |
+| 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | In progress | Framework/templates branch starts the audit-and-decision phase. |
 | 4 | Phase 0C - Reliever Appearance Evidence Layer | Not started | Build validated last-outing and recent reliever evidence. |
 | 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Not started | Document which pitch signals can safely support bullpen reads. |
 | 6 | Phase 0E - Bullpen Read Quality Model | Not started | Tie reads to evidence, confidence, and limitations. |
