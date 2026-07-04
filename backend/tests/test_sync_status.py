@@ -534,6 +534,9 @@ class TestSyncStatusSnapshot:
         assert health['slate_coverage']['complete_enough_to_publish'] is True
         assert health['slate_coverage']['diagnostics']['postgame_blockers'] == []
         assert health['freshness']['slate_coverage']['reason_codes'] == ['slate_complete']
+        assert 'source_readiness' in health
+        assert health['source_readiness']['families']['slate_coverage']['status'] == 'ready'
+        assert 'finality_authority' in health['source_readiness']['families']
 
     def test_pipeline_health_payload_identifies_slate_coverage_blockers(self, client):
         slate_date = date(2026, 5, 31)
@@ -599,3 +602,4 @@ class TestSyncStatusSnapshot:
 
         sync_status = client.get('/api/bullpen/sync/status').get_json()
         assert 'diagnostics' not in sync_status['slate_coverage']
+        assert 'source_readiness' not in sync_status

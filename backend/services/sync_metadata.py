@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.sync_run import SyncRun
-from services import slate_coverage
+from services import slate_coverage, source_readiness
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
@@ -632,6 +632,19 @@ def pipeline_health_payload(reference_date=None):
             db.session.rollback()
             logger.warning('Could not compute slate coverage diagnostics: %s', exc)
 
+    health_reference_date = reference_date or product_current_date()
+    try:
+        readiness = source_readiness.source_readiness_payload(
+            metadata=metadata,
+            sync_status=overall.get('status'),
+            slate_coverage_payload=diagnostic_slate_coverage,
+            reference_date=health_reference_date,
+        )
+    except Exception as exc:  # noqa: BLE001 - health diagnostics fail closed
+        db.session.rollback()
+        logger.warning('Could not compute source readiness diagnostics: %s', exc)
+        readiness = source_readiness.unknown_source_readiness_payload()
+
     return {
         'capability': 'pipeline_health',
         'jobs': [
@@ -643,6 +656,7 @@ def pipeline_health_payload(reference_date=None):
             for run in runs
         ],
         'domains': domain_freshness(metadata, reference_date=reference_date),
+        'source_readiness': readiness,
         'freshness': overall.get('freshness'),
         'slate_coverage': diagnostic_slate_coverage,
         'sync_status': overall.get('status'),

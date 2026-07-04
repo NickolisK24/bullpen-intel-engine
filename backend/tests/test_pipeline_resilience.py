@@ -398,6 +398,8 @@ class TestPipelineHealthEndpoint:
 
         health = client.get('/api/system/pipeline-health').get_json()
         assert health['capability'] == 'pipeline_health'
+        assert 'source_readiness' in health
+        assert health['source_readiness']['families']['finality_authority']['status'] == 'ready'
         assert health['dead_letters']['unresolved_count'] == 1
         assert len(health['dead_letters']['recent']) == 1
 
