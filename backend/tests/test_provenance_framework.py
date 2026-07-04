@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from models.game_log import GameLog
+from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.player_transaction import PlayerTransaction
 from models.roster_status_snapshot import RosterStatusSnapshot
 from services import source_provenance
@@ -118,6 +119,37 @@ def test_registered_player_transaction_policy_matches_transaction_foundation():
     assert category_policy.unknown_on_unsafe_conflict is True
     assert alignment_policy.update_after_final is True
     assert alignment_policy.unknown_on_unsafe_conflict is True
+
+
+def test_registered_final_pbp_event_policy_matches_foundation_storage():
+    assert validate_correction_sensitive_model(GamePlayByPlayEvent)
+
+    policy = correction_policy('game_play_by_play_event_corrections')
+    assert policy.source_family == 'final_play_by_play'
+    assert {'mlb_game_pk', 'event_index'} == policy.identity_fields
+    event_type_policy = [
+        field for field in policy.fields if field.field_name == 'event_type'
+    ][0]
+    pitcher_policy = [
+        field for field in policy.fields if field.field_name == 'pitcher_mlb_id'
+    ][0]
+    assert event_type_policy.update_after_final is True
+    assert event_type_policy.unknown_on_unsafe_conflict is True
+    assert pitcher_policy.update_after_final is True
+    assert pitcher_policy.unknown_on_unsafe_conflict is True
+
+
+def test_registered_final_pbp_marker_policy_matches_marker_lifecycle():
+    assert validate_correction_sensitive_model(PlayByPlayProcessedGame)
+
+    policy = correction_policy('play_by_play_processed_game_corrections')
+    assert policy.source_family == 'final_play_by_play'
+    assert {'mlb_game_pk'} == policy.identity_fields
+    status_policy = [
+        field for field in policy.fields if field.field_name == 'processing_status'
+    ][0]
+    assert status_policy.update_after_final is True
+    assert status_policy.unknown_on_unsafe_conflict is True
 
 
 def test_unregistered_correction_sensitive_model_fails_contract():

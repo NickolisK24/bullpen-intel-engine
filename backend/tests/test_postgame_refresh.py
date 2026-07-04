@@ -11,10 +11,14 @@ from services import sync_metadata
 from utils.db import db
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
 from models.sync_run import SyncRun
 import models.fatigue_score  # noqa: F401
 import models.prospect  # noqa: F401
+
+
+_DEFAULT_PBP = object()
 
 
 @pytest.fixture
@@ -147,8 +151,55 @@ def _boxscore():
     }
 
 
+def _play_by_play():
+    return {
+        'allPlays': [
+            {
+                'playId': 'play-0',
+                'about': {
+                    'atBatIndex': 0,
+                    'inning': 1,
+                    'halfInning': 'top',
+                    'outs': 0,
+                    'isComplete': True,
+                    'isScoringPlay': False,
+                },
+                'result': {
+                    'eventType': 'field_out',
+                    'homeScore': 0,
+                    'awayScore': 0,
+                },
+                'matchup': {
+                    'pitcher': {'id': 101},
+                    'batter': {'id': 901},
+                },
+            },
+            {
+                'playId': 'play-1',
+                'about': {
+                    'atBatIndex': 1,
+                    'inning': 1,
+                    'halfInning': 'bottom',
+                    'outs': 0,
+                    'isComplete': True,
+                    'isScoringPlay': False,
+                },
+                'result': {
+                    'eventType': 'field_out',
+                    'homeScore': 0,
+                    'awayScore': 0,
+                },
+                'matchup': {
+                    'pitcher': {'id': 202},
+                    'batter': {'id': 902},
+                },
+            },
+        ],
+    }
+
+
 def _patch_mlb(monkeypatch, schedule_games, boxscore=None, linescore=None,
-               play_by_play=None):
+               play_by_play=_DEFAULT_PBP):
     calls = {'schedule': 0, 'boxscore': [], 'linescore': [], 'play_by_play': []}
 
     def fake_schedule(start_date=None, end_date=None, team_id=None):
@@ -168,7 +219,7 @@ def _patch_mlb(monkeypatch, schedule_games, boxscore=None, linescore=None,
 
     def fake_play_by_play(game_pk):
         calls['play_by_play'].append(game_pk)
-        return play_by_play
+        return _play_by_play() if play_by_play is _DEFAULT_PBP else play_by_play
 
     monkeypatch.setattr(sync_service.mlb_client, 'get_schedule', fake_schedule)
     monkeypatch.setattr(sync_service.mlb_client, 'get_game_boxscore', fake_boxscore)
@@ -210,6 +261,7 @@ def test_postgame_refresh_processes_newly_completed_games(app, monkeypatch):
     with app.app_context():
         logs = GameLog.query.order_by(GameLog.pitcher_id).all()
         marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=7001).one()
+        pbp_marker = PlayByPlayProcessedGame.query.filter_by(mlb_game_pk=7001).one()
         run = SyncRun.query.order_by(SyncRun.id.desc()).first()
         payload = sync_metadata.build_sync_status_payload()
 
@@ -220,12 +272,15 @@ def test_postgame_refresh_processes_newly_completed_games(app, monkeypatch):
     assert status['new_logs_added'] == 2
     assert status['pitchers_touched'] == 2
     assert calls['boxscore'] == [7001]
+    assert calls['play_by_play'] == [7001]
     assert len(logs) == 2
     assert {log.mlb_game_pk for log in logs} == {7001}
     assert [log.innings_pitched_outs for log in logs] == [3, 2]
     assert [log.games_started for log in logs] == [1, 1]
     assert marker.logs_added == 2
     assert marker.pitchers_touched == 2
+    assert pbp_marker.processing_status == PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
+    assert pbp_marker.events_stored == 2
     assert run.job_name == sync_metadata.JOB_POSTGAME_REFRESH
     assert run.latest_game_date == date(2026, 6, 20)
     assert run.new_logs_added == 2
@@ -250,9 +305,60 @@ def test_postgame_refresh_is_idempotent_for_already_processed_games(app, monkeyp
     assert second['new_logs_added'] == 0
     assert second['games_already_processed'] == 1
     assert calls['boxscore'] == [7001]
+    assert calls['play_by_play'] == [7001]
     assert game_log_count == 2
     assert marker_count == 1
     assert postgame_runs == 2
+
+
+def test_postgame_refresh_retries_pbp_for_already_processed_game(app, monkeypatch):
+    with app.app_context():
+        _seed_pitchers()
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=7001,
+            game_date=date(2026, 6, 20),
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+            attempt_count=1,
+            processed_at=datetime(2026, 6, 20, 23, 0, 0),
+        ))
+        db.session.commit()
+    calls = _patch_mlb(monkeypatch, [_game()])
+
+    status = _run(app)
+
+    with app.app_context():
+        game_log_count = GameLog.query.count()
+        pbp_marker = PlayByPlayProcessedGame.query.filter_by(mlb_game_pk=7001).one()
+
+    assert status['status'] == 'success'
+    assert status['new_logs_added'] == 0
+    assert status['games_already_processed'] == 1
+    assert game_log_count == 0
+    assert calls['boxscore'] == [7001]
+    assert calls['play_by_play'] == [7001]
+    assert pbp_marker.processing_status == PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
+    assert pbp_marker.events_stored == 2
+
+
+def test_pbp_absence_does_not_change_postgame_refresh_status(app, monkeypatch):
+    with app.app_context():
+        _seed_pitchers()
+    calls = _patch_mlb(monkeypatch, [_game()], play_by_play={'allPlays': []})
+
+    status = _run(app)
+
+    with app.app_context():
+        postgame_marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=7001).one()
+        pbp_marker = PlayByPlayProcessedGame.query.filter_by(mlb_game_pk=7001).one()
+        event_count = GamePlayByPlayEvent.query.count()
+
+    assert status['status'] == 'success'
+    assert status['new_logs_added'] == 2
+    assert status['records_failed'] == 0
+    assert calls['play_by_play'] == [7001]
+    assert postgame_marker.processing_status == PostgameProcessedGame.STATUS_FULLY_PROCESSED
+    assert pbp_marker.processing_status == PlayByPlayProcessedGame.STATUS_ABSENT
+    assert event_count == 0
 
 
 def test_postgame_refresh_skips_unfinished_games_without_boxscore(app, monkeypatch):

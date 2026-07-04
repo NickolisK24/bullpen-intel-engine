@@ -21,6 +21,7 @@ from sqlalchemy import desc
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
+from models.play_by_play_foundation import PlayByPlayProcessedGame
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
@@ -41,6 +42,10 @@ from services.game_finality import (
     scheduled_rows_have_unresolved_resumed_linkage,
 )
 from services.mlb_api import mlb_client
+from services.play_by_play_foundation import (
+    FINAL_PBP_FETCH_ENTITY_TYPE,
+    process_final_play_by_play_foundation,
+)
 from services.roster_status import STATUS_ACTIVE
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import sync_team_assignments
@@ -71,6 +76,7 @@ POSTGAME_MARKER_STATUS_FULLY_PROCESSED = PostgameProcessedGame.STATUS_FULLY_PROC
 POSTGAME_MARKER_STATUS_INCOMPLETE = PostgameProcessedGame.STATUS_INCOMPLETE
 POSTGAME_MARKER_STATUS_FAILED = PostgameProcessedGame.STATUS_FAILED
 POSTGAME_MARKER_RETRY_LIMIT = 3
+_OPTIONAL_INPUT_NOT_PROVIDED = object()
 
 _REQUIRED_CORRECTION_STAT_KEYS = (
     'inningsPitched',
@@ -233,6 +239,57 @@ def _postgame_marker_retryable(marker: PostgameProcessedGame | None) -> bool:
         _marker_processing_status(marker) == POSTGAME_MARKER_STATUS_INCOMPLETE
         and (marker.attempt_count or 0) < POSTGAME_MARKER_RETRY_LIMIT
     )
+
+
+def _play_by_play_marker_retryable(marker: PlayByPlayProcessedGame | None) -> bool:
+    if marker is None:
+        return True
+    if marker.processing_status == PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED:
+        return False
+    if marker.processing_status == PlayByPlayProcessedGame.STATUS_FAILED:
+        return False
+    return (marker.attempt_count or 0) < 3
+
+
+def _games_requiring_play_by_play_foundation(
+    games: list[dict],
+    *,
+    exclude_game_pks=None,
+) -> list[dict]:
+    exclude_game_pks = set(exclude_game_pks or ())
+    game_pks = [
+        pk
+        for pk in (_game_pk(game) for game in games)
+        if pk and pk not in exclude_game_pks
+    ]
+    if not game_pks:
+        return []
+    markers = {
+        marker.mlb_game_pk: marker
+        for marker in (
+            PlayByPlayProcessedGame.query
+            .filter(PlayByPlayProcessedGame.mlb_game_pk.in_(game_pks))
+            .all()
+        )
+    }
+    postgame_markers = {
+        marker.mlb_game_pk: marker
+        for marker in (
+            PostgameProcessedGame.query
+            .filter(PostgameProcessedGame.mlb_game_pk.in_(game_pks))
+            .all()
+        )
+    }
+    return [
+        game
+        for game in games
+        if (
+            _game_pk(game) not in exclude_game_pks
+            and _marker_processing_status(postgame_markers.get(_game_pk(game)))
+            == POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+            and _play_by_play_marker_retryable(markers.get(_game_pk(game)))
+        )
+    ]
 
 
 def _unprocessed_completed_games(games: list[dict]) -> tuple[list[dict], dict]:
@@ -1276,6 +1333,8 @@ def generate_completed_game_context(
     *,
     boxscore: dict | None,
     game_date: date,
+    linescore=_OPTIONAL_INPUT_NOT_PROVIDED,
+    play_by_play=_OPTIONAL_INPUT_NOT_PROVIDED,
 ) -> dict:
     """Derive and upsert per-team Completed Game Context for one completed game.
 
@@ -1289,17 +1348,21 @@ def generate_completed_game_context(
     failing the game.
     """
     game_pk = _game_pk(game)
-    linescore = None
-    play_by_play = None
     if game_pk:
-        try:
-            linescore = mlb_client.get_game_linescore(game_pk)
-        except Exception as exc:  # noqa: BLE001 — optional input, degrade not fail
-            logger.warning('Linescore fetch failed for game_pk=%s: %s', game_pk, exc)
-        try:
-            play_by_play = mlb_client.get_game_play_by_play(game_pk)
-        except Exception as exc:  # noqa: BLE001 — optional input, degrade not fail
-            logger.warning('Play-by-play fetch failed for game_pk=%s: %s', game_pk, exc)
+        optional_inputs = _fetch_completed_game_optional_inputs(
+            game_pk,
+            fetch_linescore=linescore is _OPTIONAL_INPUT_NOT_PROVIDED,
+            fetch_play_by_play=play_by_play is _OPTIONAL_INPUT_NOT_PROVIDED,
+        )
+        if linescore is _OPTIONAL_INPUT_NOT_PROVIDED:
+            linescore = optional_inputs['linescore']
+        if play_by_play is _OPTIONAL_INPUT_NOT_PROVIDED:
+            play_by_play = optional_inputs['play_by_play']
+    else:
+        if linescore is _OPTIONAL_INPUT_NOT_PROVIDED:
+            linescore = None
+        if play_by_play is _OPTIONAL_INPUT_NOT_PROVIDED:
+            play_by_play = None
 
     payload = build_completed_game_payload(
         game,
@@ -1321,11 +1384,46 @@ def generate_completed_game_context(
     }
 
 
+def _fetch_completed_game_optional_inputs(
+    game_pk,
+    *,
+    fetch_linescore=True,
+    fetch_play_by_play=True,
+):
+    linescore = None
+    play_by_play = None
+    play_by_play_error = None
+    if not game_pk:
+        return {
+            'linescore': None,
+            'play_by_play': None,
+            'play_by_play_error': None,
+        }
+    if fetch_linescore:
+        try:
+            linescore = mlb_client.get_game_linescore(game_pk)
+        except Exception as exc:  # noqa: BLE001 - optional input, degrade not fail
+            logger.warning('Linescore fetch failed for game_pk=%s: %s', game_pk, exc)
+    if fetch_play_by_play:
+        try:
+            play_by_play = mlb_client.get_game_play_by_play(game_pk)
+        except Exception as exc:  # noqa: BLE001 - optional input, degrade not fail
+            play_by_play_error = exc
+            logger.warning('Play-by-play fetch failed for game_pk=%s: %s', game_pk, exc)
+    return {
+        'linescore': linescore,
+        'play_by_play': play_by_play,
+        'play_by_play_error': play_by_play_error,
+    }
+
+
 def _safe_generate_completed_game_context(
     game: dict,
     *,
     boxscore: dict | None,
     schedule_date: date,
+    linescore=None,
+    play_by_play=None,
     sync_run_id=None,
     status: dict,
     run_logger,
@@ -1342,6 +1440,8 @@ def _safe_generate_completed_game_context(
             game,
             boxscore=boxscore,
             game_date=_game_date(game, schedule_date),
+            linescore=linescore,
+            play_by_play=play_by_play,
         )
         db.session.commit()
         status['completed_game_contexts_upserted'] += result['contexts_upserted']
@@ -1369,6 +1469,67 @@ def _safe_generate_completed_game_context(
         db.session.commit()
         run_logger.warning(
             'Completed-game context failed for game_pk=%s: %s', game_pk, exc
+        )
+
+
+def _safe_process_final_play_by_play_foundation(
+    game: dict,
+    *,
+    boxscore: dict | None,
+    schedule_date: date,
+    play_by_play: dict | None,
+    play_by_play_error=None,
+    sync_run_id=None,
+    run_logger,
+) -> None:
+    """Run final PBP foundation storage without changing postgame outcome."""
+    game_pk = _game_pk(game)
+    try:
+        result = process_final_play_by_play_foundation(
+            game,
+            boxscore=boxscore,
+            play_by_play=play_by_play,
+            play_by_play_error=play_by_play_error,
+            game_date=_game_date(game, schedule_date),
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        )
+        db.session.commit()
+        if result.get('skipped'):
+            run_logger.info(
+                'Final play-by-play foundation skipped for game %s: %s.',
+                game_pk,
+                result.get('reason'),
+            )
+            return
+        run_logger.info(
+            'Final play-by-play foundation for game %s: status=%s reason=%s '
+            'events=%s mismatches=%s unresolved_pitchers=%s.',
+            game_pk,
+            result.get('processing_status'),
+            result.get('reason'),
+            result.get('events_stored'),
+            result.get('reconciliation_mismatch_count'),
+            result.get('unresolved_pitcher_count'),
+        )
+    except Exception as exc:  # noqa: BLE001 - optional foundation, fail-soft
+        db.session.rollback()
+        dead_letter.record_failure(
+            FINAL_PBP_FETCH_ENTITY_TYPE,
+            exc,
+            entity_ref=game_pk,
+            payload={
+                'game_pk': game_pk,
+                'schedule_date': schedule_date.isoformat(),
+            },
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        )
+        db.session.commit()
+        run_logger.warning(
+            'Final play-by-play foundation failed for game_pk=%s: %s',
+            game_pk,
+            exc,
         )
 
 
@@ -2044,6 +2205,7 @@ def run_postgame_refresh(
                 len(unprocessed_games),
             )
 
+            pbp_foundation_attempted_game_pks = set()
             for game in unprocessed_games:
                 game_pk = _game_pk(game)
                 game_started = time.perf_counter()
@@ -2103,12 +2265,25 @@ def run_postgame_refresh(
                         result['pitcher_resolution_failures'],
                         result['pitchers_touched'],
                     )
+                    optional_inputs = _fetch_completed_game_optional_inputs(game_pk)
+                    _safe_process_final_play_by_play_foundation(
+                        game,
+                        boxscore=result.get('boxscore'),
+                        schedule_date=schedule_date,
+                        play_by_play=optional_inputs['play_by_play'],
+                        play_by_play_error=optional_inputs['play_by_play_error'],
+                        sync_run_id=sync_run_id,
+                        run_logger=run_logger,
+                    )
+                    pbp_foundation_attempted_game_pks.add(game_pk)
                     # Derive completed-game context in its own transaction so a
                     # context failure can never undo the committed game logs.
                     _safe_generate_completed_game_context(
                         game,
                         boxscore=result.get('boxscore'),
                         schedule_date=schedule_date,
+                        linescore=optional_inputs['linescore'],
+                        play_by_play=optional_inputs['play_by_play'],
                         sync_run_id=sync_run_id,
                         status=status,
                         run_logger=run_logger,
@@ -2138,6 +2313,45 @@ def run_postgame_refresh(
                         game_pk,
                         outcome,
                         round((time.perf_counter() - game_started) * 1000, 1),
+                    )
+
+            for game in _games_requiring_play_by_play_foundation(
+                completed_games,
+                exclude_game_pks=pbp_foundation_attempted_game_pks,
+            ):
+                game_pk = _game_pk(game)
+                try:
+                    boxscore = mlb_client.get_game_boxscore(game_pk)
+                    optional_inputs = _fetch_completed_game_optional_inputs(game_pk)
+                    _safe_process_final_play_by_play_foundation(
+                        game,
+                        boxscore=boxscore,
+                        schedule_date=schedule_date,
+                        play_by_play=optional_inputs['play_by_play'],
+                        play_by_play_error=optional_inputs['play_by_play_error'],
+                        sync_run_id=sync_run_id,
+                        run_logger=run_logger,
+                    )
+                    pbp_foundation_attempted_game_pks.add(game_pk)
+                except Exception as exc:  # noqa: BLE001 - optional retry, fail-soft
+                    db.session.rollback()
+                    dead_letter.record_failure(
+                        FINAL_PBP_FETCH_ENTITY_TYPE,
+                        exc,
+                        entity_ref=game_pk,
+                        payload={
+                            'game_pk': game_pk,
+                            'schedule_date': schedule_date.isoformat(),
+                            'phase': 'play_by_play_retry',
+                        },
+                        sync_run_id=sync_run_id,
+                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    )
+                    db.session.commit()
+                    run_logger.warning(
+                        'Final play-by-play retry failed for game_pk=%s: %s',
+                        game_pk,
+                        exc,
                     )
 
             run_logger.info(

@@ -175,6 +175,53 @@ def _empty_boxscore():
     }
 
 
+def _valid_play_by_play():
+    return {
+        'allPlays': [
+            {
+                'playId': 'play-0',
+                'about': {
+                    'atBatIndex': 0,
+                    'inning': 1,
+                    'halfInning': 'top',
+                    'outs': 0,
+                    'isComplete': True,
+                    'isScoringPlay': False,
+                },
+                'result': {
+                    'eventType': 'field_out',
+                    'homeScore': 0,
+                    'awayScore': 0,
+                },
+                'matchup': {
+                    'pitcher': {'id': 101},
+                    'batter': {'id': 901},
+                },
+            },
+            {
+                'playId': 'play-1',
+                'about': {
+                    'atBatIndex': 1,
+                    'inning': 1,
+                    'halfInning': 'bottom',
+                    'outs': 0,
+                    'isComplete': True,
+                    'isScoringPlay': False,
+                },
+                'result': {
+                    'eventType': 'field_out',
+                    'homeScore': 0,
+                    'awayScore': 0,
+                },
+                'matchup': {
+                    'pitcher': {'id': 202},
+                    'batter': {'id': 902},
+                },
+            },
+        ],
+    }
+
+
 def _partial_unresolved_boxscore():
     boxscore = _valid_boxscore()
     boxscore['teams']['away']['pitchers'] = ['BAD']
@@ -237,7 +284,11 @@ def _patch_mlb(monkeypatch, *, boxscores, schedule_games=None):
     monkeypatch.setattr(sync_service.mlb_client, 'get_schedule', fake_schedule)
     monkeypatch.setattr(sync_service.mlb_client, 'get_game_boxscore', fake_boxscore)
     monkeypatch.setattr(sync_service.mlb_client, 'get_game_linescore', lambda game_pk: None)
-    monkeypatch.setattr(sync_service.mlb_client, 'get_game_play_by_play', lambda game_pk: None)
+    monkeypatch.setattr(
+        sync_service.mlb_client,
+        'get_game_play_by_play',
+        lambda game_pk: _valid_play_by_play(),
+    )
     sync_service.mlb_client.metrics.reset()
     return calls
 

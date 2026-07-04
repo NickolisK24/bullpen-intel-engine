@@ -13,9 +13,10 @@ framing, pressure scores, role inference, or pitch-level ingestion.
 
 ## Current Branch
 
-Branch 0C-05 adds the transaction and IL foundation as typed source facts with
-roster-snapshot alignment. Transactions explain later context only; they do not
-decide current roster state or create public evidence reads in Phase 0C.
+Branch 0C-06 adds the final play-by-play foundation as normalized typed source
+facts with per-game processing markers and reconciliation checks. Final
+play-by-play stores facts for later context only; it does not create entry,
+exit, inherited-runner, pressure, role, or public evidence reads in Phase 0C.
 
 ## Required Ingestion Contract
 
@@ -46,6 +47,9 @@ Every future Phase 0C ingestion/storage branch must document and test:
 - Transactions and IL facts must not persist raw responses, free-text injury
   descriptions, health claims, return timetables, depth-pressure reads, or
   availability labels.
+- Final play-by-play facts must not persist raw response JSON, free-text play
+  descriptions, live/in-progress feed state, inherited-runner attribution,
+  pressure labels, role labels, or public evidence interpretation.
 
 ## Branch Map
 
