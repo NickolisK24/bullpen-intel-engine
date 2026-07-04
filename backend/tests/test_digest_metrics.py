@@ -430,6 +430,9 @@ _POSTGAME_MARKER_LIFECYCLE_REVISION = 'c2f6a9d8e4b1'
 # Scheduled-game resumption linkage columns chain on top of the postgame marker
 # lifecycle revision, advancing the single alembic head once more.
 _SCHEDULED_GAME_RESUMPTION_LINKAGE_REVISION = 'b1c9d7e2a4f6'
+# Unknown-safe boxscore fields chain on top of scheduled-game resumption
+# linkage, advancing the single alembic head once more.
+_BOXSCORE_FIELD_EXPANSION_REVISION = 'd6b8f3a1c9e7'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -455,7 +458,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_SCHEDULED_GAME_RESUMPTION_LINKAGE_REVISION}
+    assert heads == {_BOXSCORE_FIELD_EXPANSION_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
@@ -474,3 +477,5 @@ def test_migrations_have_a_single_head():
             == _GAME_LOG_CORRECTION_PROVENANCE_REVISION)
     assert (revisions[_SCHEDULED_GAME_RESUMPTION_LINKAGE_REVISION]
             == _POSTGAME_MARKER_LIFECYCLE_REVISION)
+    assert (revisions[_BOXSCORE_FIELD_EXPANSION_REVISION]
+            == _SCHEDULED_GAME_RESUMPTION_LINKAGE_REVISION)

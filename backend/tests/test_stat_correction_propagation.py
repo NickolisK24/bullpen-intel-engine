@@ -125,7 +125,20 @@ def _pitcher():
     return Pitcher.query.filter_by(mlb_id=101).one()
 
 
-def _seed_log(*, game_pk=9901, pitches=12, strikes=8, walks=0, strikeouts=2, runs=0):
+def _seed_log(
+    *,
+    game_pk=9901,
+    pitches=12,
+    strikes=8,
+    walks=0,
+    strikeouts=2,
+    runs=0,
+    batters_faced=None,
+    balls=None,
+    games_finished=None,
+    inherited_runners=None,
+    inherited_runners_scored=None,
+):
     pitcher = _pitcher()
     log = GameLog(
         pitcher_id=pitcher.id,
@@ -145,6 +158,11 @@ def _seed_log(*, game_pk=9901, pitches=12, strikes=8, walks=0, strikeouts=2, run
         walks=walks,
         strikeouts=strikeouts,
         home_runs_allowed=0,
+        batters_faced=batters_faced,
+        balls=balls,
+        games_finished=games_finished,
+        inherited_runners=inherited_runners,
+        inherited_runners_scored=inherited_runners_scored,
         hold=True,
     )
     db.session.add(log)
@@ -218,6 +236,134 @@ def test_daily_correction_updates_revised_rate_stats(app, monkeypatch):
     assert log.earned_runs == 1
     assert log.pitches_thrown == 16
     assert log.stat_correction_count == 1
+
+
+def test_daily_correction_updates_new_boxscore_fields_and_provenance(app, monkeypatch):
+    with app.app_context():
+        _seed_log(
+            game_pk=9912,
+            batters_faced=3,
+            balls=4,
+            games_finished=0,
+            inherited_runners=None,
+            inherited_runners_scored=None,
+        )
+        sync_run_id = sync_metadata.start_sync_run(source='test')
+        monkeypatch.setattr(
+            mlb_client,
+            'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(
+                    9912,
+                    stat=_daily_stat(
+                        battersFaced=5,
+                        balls=8,
+                        gamesFinished=1,
+                        inheritedRunners=2,
+                        inheritedRunnersScored=1,
+                    ),
+                )
+            ],
+        )
+
+        result = sync_service.sync_recent_logs(
+            days_back=7,
+            reference_date=date(2026, 6, 10),
+            sync_run_id=sync_run_id,
+        )
+        log = GameLog.query.filter_by(mlb_game_pk=9912).one()
+
+    assert result['logs_corrected'] == 1
+    assert log.batters_faced == 5
+    assert log.balls == 8
+    assert log.games_finished == 1
+    assert log.inherited_runners == 2
+    assert log.inherited_runners_scored == 1
+    assert log.stat_correction_count == 1
+    assert log.last_stat_correction_source == sync_service.DAILY_GAME_LOG_CORRECTION_SOURCE
+    assert log.last_stat_correction_sync_run_id == sync_run_id
+
+
+def test_daily_identical_new_boxscore_fields_are_noop(app, monkeypatch):
+    with app.app_context():
+        _seed_log(
+            game_pk=9913,
+            batters_faced=5,
+            balls=8,
+            games_finished=1,
+            inherited_runners=2,
+            inherited_runners_scored=1,
+        )
+        monkeypatch.setattr(
+            mlb_client,
+            'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(
+                    9913,
+                    stat=_daily_stat(
+                        battersFaced=5,
+                        balls=8,
+                        gamesFinished=1,
+                        inheritedRunners=2,
+                        inheritedRunnersScored=1,
+                    ),
+                )
+            ],
+        )
+
+        result = sync_service.sync_recent_logs(
+            days_back=7,
+            reference_date=date(2026, 6, 10),
+        )
+        log = GameLog.query.filter_by(mlb_game_pk=9913).one()
+
+    assert result['logs_corrected'] == 0
+    assert log.stat_correction_count == 0
+
+
+def test_daily_partial_source_does_not_overwrite_new_boxscore_fields(app, monkeypatch):
+    with app.app_context():
+        _seed_log(
+            game_pk=9914,
+            batters_faced=5,
+            balls=8,
+            games_finished=1,
+            inherited_runners=2,
+            inherited_runners_scored=1,
+        )
+        monkeypatch.setattr(
+            mlb_client,
+            'get_pitcher_game_logs',
+            lambda mlb_id, season=None: [
+                _split(
+                    9914,
+                    stat={
+                        'inningsPitched': '1.0',
+                        'battersFaced': 0,
+                        'balls': 0,
+                        'gamesFinished': 0,
+                        'inheritedRunners': 0,
+                        'inheritedRunnersScored': 0,
+                    },
+                )
+            ],
+        )
+
+        result = sync_service.sync_recent_logs(
+            days_back=7,
+            reference_date=date(2026, 6, 10),
+        )
+        log = GameLog.query.filter_by(mlb_game_pk=9914).one()
+        failure = SyncFailure.query.one()
+
+    assert result['logs_corrected'] == 0
+    assert result['correction_attempts_failed'] == 1
+    assert log.batters_faced == 5
+    assert log.balls == 8
+    assert log.games_finished == 1
+    assert log.inherited_runners == 2
+    assert log.inherited_runners_scored == 1
+    assert failure.payload['reason'] == 'partial_source_line'
 
 
 def test_daily_identical_authoritative_line_is_noop(app, monkeypatch):

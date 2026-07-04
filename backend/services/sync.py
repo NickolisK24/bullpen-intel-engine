@@ -89,6 +89,13 @@ _OPTIONAL_BOOL_STAT_FIELDS = (
     ('losses', 'loss'),
     ('saves', 'save'),
 )
+_OPTIONAL_INT_STAT_FIELDS = (
+    ('batters_faced', ('battersFaced', 'batters_faced')),
+    ('balls', ('balls',)),
+    ('games_finished', ('gamesFinished', 'games_finished')),
+    ('inherited_runners', ('inheritedRunners', 'inherited_runners')),
+    ('inherited_runners_scored', ('inheritedRunnersScored', 'inherited_runners_scored')),
+)
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -285,6 +292,19 @@ def _int_stat_or_none(stats: dict, key: str) -> int | None:
         return None
 
 
+def _int_stat_or_none_any(stats: dict, keys: tuple[str, ...]) -> int | None:
+    stats = stats or {}
+    for key in keys:
+        if key in stats:
+            return _int_stat_or_none(stats, key)
+    return None
+
+
+def _stat_key_present(stats: dict, keys: tuple[str, ...]) -> bool:
+    stats = stats or {}
+    return any(key in stats for key in keys)
+
+
 def _positive_stat(stats: dict, key: str) -> bool:
     return _int_stat(stats, key) > 0
 
@@ -345,6 +365,14 @@ def _game_log_values_from_stats(
         'walks': _int_stat(stats, 'baseOnBalls'),
         'strikeouts': _int_stat(stats, 'strikeOuts'),
         'home_runs_allowed': _int_stat(stats, 'homeRuns'),
+        'batters_faced': _int_stat_or_none_any(stats, ('battersFaced', 'batters_faced')),
+        'balls': _int_stat_or_none_any(stats, ('balls',)),
+        'games_finished': _int_stat_or_none_any(stats, ('gamesFinished', 'games_finished')),
+        'inherited_runners': _int_stat_or_none_any(stats, ('inheritedRunners', 'inherited_runners')),
+        'inherited_runners_scored': _int_stat_or_none_any(
+            stats,
+            ('inheritedRunnersScored', 'inherited_runners_scored'),
+        ),
         'save_situation': _positive_stat(stats, 'saveOpportunities'),
         'hold': _positive_stat(stats, 'holds'),
         'blown_save': _positive_stat(stats, 'blownSaves'),
@@ -377,6 +405,9 @@ def _authoritative_correction_fields(values: dict, stats: dict, *, include_lever
             fields.append(field)
     for source_key, model_field in _OPTIONAL_BOOL_STAT_FIELDS:
         if source_key in (stats or {}) and (stats or {}).get(source_key) not in (None, ''):
+            fields.append(model_field)
+    for model_field, source_keys in _OPTIONAL_INT_STAT_FIELDS:
+        if _stat_key_present(stats, source_keys):
             fields.append(model_field)
     if include_leverage_index and values.get('leverage_index') is not None:
         fields.append('leverage_index')
