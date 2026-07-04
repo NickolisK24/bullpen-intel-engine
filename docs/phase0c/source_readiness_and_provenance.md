@@ -68,6 +68,7 @@ Initial diagnostic families:
 - `dashboard_snapshots`
 - `roster_status_snapshots`
 - `player_transactions`
+- `final_play_by_play`
 
 Not-yet-built Phase 0C source families must not be marked ready.
 
@@ -168,3 +169,52 @@ transaction facts. Readiness exposes last attempted/successful fetch,
 bounded date range, records fetched/stored, unknown type counts, alignment
 counts, unresolved dead letters, reason codes, source, and `sync_run_id` for
 internal/admin diagnostics only.
+
+## 0C-06 Final Play-By-Play Foundation Rules
+
+Final play-by-play facts are normalized final-game source facts. They are not
+entry/exit reads, inherited-runner attribution, traffic labels, leverage or
+pressure reads, role inference, team structure reads, public evidence, or public
+copy.
+
+`game_play_by_play_events` stores ordered typed event facts only: game identity,
+event order, inning/half, score state, outs when sourced, pitcher/batter/team
+identity where safely sourced, typed event category, source code, source
+endpoint, and provenance. It does not store raw play-by-play JSON, raw response
+blobs, free-text event descriptions, live-feed state, or public display fields.
+Missing values remain `NULL`; pitcher or batter identity is never guessed.
+
+`play_by_play_processed_games` is the per-game foundation marker. Marker states
+are `fully_processed`, `incomplete`, `failed`, `absent`, and `ambiguous`.
+Missing or ambiguous PBP remains retryable until the bounded retry limit is
+exhausted. Future PBP-dependent evidence must require a `fully_processed`
+marker and must fail closed for any other marker state.
+
+Final PBP storage is gated by the shared finality authority. A game must have
+safe final status and a usable final boxscore before normalized PBP rows are
+written. Non-final, postponed, suspended unresolved, cancelled, missing gamePk,
+empty/partial boxscore, missing pitcher identity, and unresolved resumed
+linkage produce no normalized PBP evidence.
+
+Reconciliation compares normalized PBP pitcher identity with the final boxscore
+pitcher set. Missing pitcher identity, missing team/game identity, ambiguous
+event order, non-monotonic score state, and boxscore/PBP pitcher mismatches
+dead-letter and keep the marker out of `fully_processed`. Reconciliation does
+not silently choose PBP over boxscore or boxscore over PBP.
+
+The `final_play_by_play` readiness family is internal/admin diagnostics only.
+It reports last attempted process, last successful process, final games
+expected, games fully processed, incomplete/failed/absent/ambiguous markers,
+event count, retry count, reconciliation mismatch count, unresolved pitcher
+identity count, unresolved dead letters, reason codes, source, and `sync_run_id`.
+Missing, failed, absent, ambiguous, or mismatched PBP degrades only the PBP
+readiness family; it does not weaken or replace existing slate coverage,
+dashboard publishability, game-log, roster, or transaction gates.
+
+Re-ingesting identical final PBP is idempotent. Corrected final PBP rebuilds
+that game's normalized event set with correction provenance. Unsafe source
+shape, identity, or reconciliation conflicts dead-letter and fail closed.
+
+Phase 0D owns any future interpretation from these facts: entry/exit context,
+inherited-runner attribution, clean/traffic labels, pressure proxies, role
+inference, and public evidence composition.

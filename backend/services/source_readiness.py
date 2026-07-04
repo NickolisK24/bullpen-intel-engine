@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.sync_failure import SyncFailure
@@ -55,6 +56,7 @@ FAMILY_SLATE_COVERAGE = 'slate_coverage'
 FAMILY_DASHBOARD_SNAPSHOTS = 'dashboard_snapshots'
 FAMILY_ROSTER_STATUS_SNAPSHOTS = 'roster_status_snapshots'
 FAMILY_PLAYER_TRANSACTIONS = 'player_transactions'
+FAMILY_FINAL_PLAY_BY_PLAY = 'final_play_by_play'
 
 ROSTER_SNAPSHOT_STALE_AFTER_DAYS = 1
 ROSTER_STATUS_FAILURE_ENTITY_TYPES = (
@@ -62,6 +64,21 @@ ROSTER_STATUS_FAILURE_ENTITY_TYPES = (
     ROSTER_STATUS_IDENTITY_ENTITY_TYPE,
     ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
 )
+FINAL_PBP_FAILURE_ENTITY_TYPES = (
+    'final_pbp_fetch',
+    'final_pbp_shape',
+    'final_pbp_reconciliation',
+    'final_pbp_identity',
+)
+CURRENT_BLOCKING_SOURCE_FAMILIES = frozenset({
+    FAMILY_FINALITY_AUTHORITY,
+    FAMILY_STATSAPI_CORE,
+    FAMILY_GAME_LOGS,
+    FAMILY_SLATE_COVERAGE,
+    FAMILY_DASHBOARD_SNAPSHOTS,
+    FAMILY_ROSTER_STATUS_SNAPSHOTS,
+    FAMILY_PLAYER_TRANSACTIONS,
+})
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +202,17 @@ def source_readiness_payload(
             _player_transaction_readiness,
             reference_date,
         ),
+        _safe_family(
+            FAMILY_FINAL_PLAY_BY_PLAY,
+            _final_play_by_play_readiness,
+            reference_date,
+        ),
     ]
-    blocking = [family for family in families if family.fail_closed]
+    blocking = [
+        family
+        for family in families
+        if family.fail_closed and family.source_family in CURRENT_BLOCKING_SOURCE_FAMILIES
+    ]
     return {
         'overall_status': READY if not blocking else DEGRADED,
         'fail_closed': bool(blocking),
@@ -505,6 +531,136 @@ def _player_transaction_readiness(reference_date=None):
     )
 
 
+def _final_play_by_play_readiness(reference_date=None):
+    latest_marker = (
+        PlayByPlayProcessedGame.query
+        .order_by(
+            PlayByPlayProcessedGame.last_attempted_at.desc(),
+            PlayByPlayProcessedGame.id.desc(),
+        )
+        .first()
+    )
+    latest_success = (
+        PlayByPlayProcessedGame.query
+        .filter_by(processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED)
+        .order_by(
+            PlayByPlayProcessedGame.processed_at.desc(),
+            PlayByPlayProcessedGame.id.desc(),
+        )
+        .first()
+    )
+    marker_count = int(db.session.query(db.func.count(PlayByPlayProcessedGame.id)).scalar() or 0)
+    event_count = int(db.session.query(db.func.count(GamePlayByPlayEvent.id)).scalar() or 0)
+    status_counts = {
+        status: _pbp_marker_count(status)
+        for status in (
+            PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED,
+            PlayByPlayProcessedGame.STATUS_INCOMPLETE,
+            PlayByPlayProcessedGame.STATUS_FAILED,
+            PlayByPlayProcessedGame.STATUS_ABSENT,
+            PlayByPlayProcessedGame.STATUS_AMBIGUOUS,
+        )
+    }
+    dead_letters = _unresolved_failure_count(entity_types=FINAL_PBP_FAILURE_ENTITY_TYPES)
+    reconciliation_mismatch_count = int(
+        db.session.query(
+            db.func.coalesce(
+                db.func.sum(PlayByPlayProcessedGame.reconciliation_mismatch_count),
+                0,
+            )
+        ).scalar() or 0
+    )
+    unresolved_pitcher_count = int(
+        db.session.query(
+            db.func.coalesce(
+                db.func.sum(PlayByPlayProcessedGame.unresolved_pitcher_count),
+                0,
+            )
+        ).scalar() or 0
+    )
+    max_retry_count = int(
+        db.session.query(
+            db.func.coalesce(db.func.max(PlayByPlayProcessedGame.attempt_count), 0)
+        ).scalar() or 0
+    )
+    reason_codes = []
+    if marker_count == 0:
+        reason_codes.append('final_pbp_never_attempted')
+    if status_counts[PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED] == 0:
+        reason_codes.append('final_pbp_no_fully_processed_games')
+    if status_counts[PlayByPlayProcessedGame.STATUS_INCOMPLETE]:
+        reason_codes.append('final_pbp_incomplete_markers')
+    if status_counts[PlayByPlayProcessedGame.STATUS_FAILED]:
+        reason_codes.append('final_pbp_failed_markers')
+    if status_counts[PlayByPlayProcessedGame.STATUS_ABSENT]:
+        reason_codes.append('final_pbp_absent_markers')
+    if status_counts[PlayByPlayProcessedGame.STATUS_AMBIGUOUS]:
+        reason_codes.append('final_pbp_ambiguous_markers')
+    if reconciliation_mismatch_count:
+        reason_codes.append('final_pbp_reconciliation_mismatch')
+    if unresolved_pitcher_count:
+        reason_codes.append('final_pbp_unresolved_pitcher_identity')
+
+    if marker_count == 0:
+        status = NEVER_FETCHED if latest_marker is None else UNAVAILABLE
+    elif (
+        status_counts[PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED] == 0
+        or event_count == 0
+    ):
+        status = UNAVAILABLE
+    elif any(
+        status_counts[state]
+        for state in (
+            PlayByPlayProcessedGame.STATUS_INCOMPLETE,
+            PlayByPlayProcessedGame.STATUS_FAILED,
+            PlayByPlayProcessedGame.STATUS_ABSENT,
+            PlayByPlayProcessedGame.STATUS_AMBIGUOUS,
+        )
+    ) or dead_letters or reconciliation_mismatch_count or unresolved_pitcher_count:
+        status = DEGRADED
+    else:
+        status = READY
+
+    latest_failure = _latest_failure(FINAL_PBP_FAILURE_ENTITY_TYPES)
+    details = {
+        'latest_marker_status': getattr(latest_marker, 'processing_status', None),
+        'latest_marker_reason': getattr(latest_marker, 'incomplete_reason', None),
+        'event_count': event_count,
+        'max_retry_count': max_retry_count,
+        'reconciliation_mismatch_count': reconciliation_mismatch_count,
+        'unresolved_pitcher_count': unresolved_pitcher_count,
+    }
+    if latest_failure is not None:
+        details['latest_failure_reason'] = (
+            (latest_failure.payload or {}).get('reason')
+            or latest_failure.error
+        )
+    coverage = {
+        'final_games_expected': marker_count,
+        'games_fully_processed': status_counts[
+            PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED
+        ],
+        'games_incomplete': status_counts[PlayByPlayProcessedGame.STATUS_INCOMPLETE],
+        'games_failed': status_counts[PlayByPlayProcessedGame.STATUS_FAILED],
+        'games_absent': status_counts[PlayByPlayProcessedGame.STATUS_ABSENT],
+        'games_ambiguous': status_counts[PlayByPlayProcessedGame.STATUS_AMBIGUOUS],
+    }
+    return SourceReadiness(
+        source_family=FAMILY_FINAL_PLAY_BY_PLAY,
+        status=status,
+        reason_codes=_dedupe(reason_codes),
+        last_successful_at=getattr(latest_success, 'processed_at', None),
+        last_attempted_at=getattr(latest_marker, 'last_attempted_at', None),
+        stale_after_days=None,
+        record_count=event_count,
+        dead_letter_count=dead_letters,
+        sync_run_id=getattr(latest_marker, 'sync_run_id', None),
+        source=getattr(latest_marker, 'source', None),
+        coverage=coverage,
+        details=details,
+    )
+
+
 def _safe_family(family, builder, reference_date=None, *args):
     try:
         return builder(reference_date, *args)
@@ -523,6 +679,15 @@ def _safe_family(family, builder, reference_date=None, *args):
             status=UNKNOWN,
             reason_codes=('readiness_framework_error',),
         )
+
+
+def _pbp_marker_count(status):
+    return int(
+        PlayByPlayProcessedGame.query
+        .filter_by(processing_status=status)
+        .count()
+        or 0
+    )
 
 
 def _active_pitcher_team_ids():

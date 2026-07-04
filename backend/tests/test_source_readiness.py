@@ -8,6 +8,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.postgame_processed_game import PostgameProcessedGame
 from models.roster_status_snapshot import RosterStatusSnapshot
@@ -209,6 +210,60 @@ def test_source_readiness_payload_reports_existing_foundations(app):
             sync_run_id=run.id,
             created_at=datetime(2026, 6, 2, 9, 0, 0),
         ))
+        db.session.add(PlayByPlayProcessedGame(
+            mlb_game_pk=31,
+            game_date=date(2026, 6, 1),
+            game_type='R',
+            home_team_id=116,
+            away_team_id=142,
+            final_state='final_and_usable',
+            processing_status=PlayByPlayProcessedGame.STATUS_FULLY_PROCESSED,
+            attempt_count=1,
+            last_attempted_at=datetime(2026, 6, 2, 9, 0, 0),
+            events_seen=1,
+            events_stored=1,
+            pitcher_events_seen=1,
+            event_fingerprint='fixture',
+            source='mlb_stats_api:final_play_by_play',
+            source_endpoint='/game/31/playByPlay',
+            sync_run_id=run.id,
+            first_seen_at=datetime(2026, 6, 2, 9, 0, 0),
+            processed_at=datetime(2026, 6, 2, 9, 0, 0),
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+            updated_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
+        db.session.add(GamePlayByPlayEvent(
+            mlb_game_pk=31,
+            event_index=0,
+            source_play_id='fixture-play',
+            at_bat_index=0,
+            game_date=date(2026, 6, 1),
+            game_type='R',
+            home_team_id=116,
+            away_team_id=142,
+            event_type='plate_appearance',
+            event_type_code='field_out',
+            inning=1,
+            half_inning='top',
+            is_top_inning=True,
+            outs_at_event=0,
+            home_score_at_event=0,
+            away_score_at_event=0,
+            pitcher_mlb_id=pitcher.mlb_id,
+            pitcher_id=pitcher.id,
+            batter_mlb_id=900,
+            batting_team_id=142,
+            fielding_team_id=116,
+            is_pitching_change=False,
+            is_scoring_play=False,
+            is_mound_visit=False,
+            source='mlb_stats_api:final_play_by_play',
+            source_endpoint='/game/31/playByPlay',
+            sync_run_id=run.id,
+            first_seen_at=datetime(2026, 6, 2, 9, 0, 0),
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+            updated_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
         db.session.add(DashboardSnapshot(
             snapshot_type='bullpen_dashboard',
             sync_run_id=run.id,
@@ -240,6 +295,7 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert families['dashboard_snapshots']['status'] == source_readiness.READY
     assert families['roster_status_snapshots']['status'] == source_readiness.READY
     assert families['player_transactions']['status'] == source_readiness.READY
+    assert families['final_play_by_play']['status'] == source_readiness.READY
 
 
 def test_source_readiness_payload_blocks_incomplete_slate(app):
@@ -271,3 +327,44 @@ def test_source_readiness_payload_blocks_incomplete_slate(app):
     assert 'slate_coverage' in payload['blocking_source_families']
     assert payload['families']['slate_coverage']['status'] == source_readiness.DEGRADED
     assert payload['families']['game_logs']['status'] != source_readiness.READY
+
+
+def test_final_play_by_play_readiness_degrades_on_incomplete_marker(app):
+    with app.app_context():
+        db.session.add(PlayByPlayProcessedGame(
+            mlb_game_pk=99,
+            game_date=date(2026, 6, 1),
+            game_type='R',
+            home_team_id=116,
+            away_team_id=142,
+            final_state='final_and_usable',
+            processing_status=PlayByPlayProcessedGame.STATUS_INCOMPLETE,
+            attempt_count=1,
+            last_attempted_at=datetime(2026, 6, 2, 9, 0, 0),
+            incomplete_reason='pitcher_reconciliation_mismatch',
+            events_seen=4,
+            events_stored=4,
+            pitcher_events_seen=1,
+            reconciliation_mismatch_count=1,
+            event_fingerprint='fixture',
+            source='mlb_stats_api:final_play_by_play',
+            source_endpoint='/game/99/playByPlay',
+            first_seen_at=datetime(2026, 6, 2, 9, 0, 0),
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+            updated_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
+        db.session.commit()
+
+        payload = source_readiness.source_readiness_payload(
+            metadata={},
+            sync_status='success',
+            slate_coverage_payload=slate_coverage.unknown_slate_coverage(date(2026, 6, 1)),
+            reference_date=date(2026, 6, 2),
+        )
+        family = payload['families']['final_play_by_play']
+
+    assert family['status'] == source_readiness.UNAVAILABLE
+    assert family['fail_closed'] is True
+    assert family['coverage']['games_incomplete'] == 1
+    assert family['details']['reconciliation_mismatch_count'] == 1
+    assert 'final_pbp_reconciliation_mismatch' in family['reason_codes']
