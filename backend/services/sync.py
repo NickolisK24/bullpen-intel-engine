@@ -48,6 +48,9 @@ from services.play_by_play_foundation import (
 )
 from services.roster_status import STATUS_ACTIVE
 from services.roster_status_sync import sync_roster_statuses
+from services.team_game_pitching_splits import (
+    safe_recompute_team_game_pitching_splits_for_game,
+)
 from services.team_assignment_sync import sync_team_assignments
 from services.transaction_ingestion import sync_transactions
 from utils.innings import (
@@ -1533,6 +1536,48 @@ def _safe_process_final_play_by_play_foundation(
         )
 
 
+def _safe_recompute_team_game_pitching_splits(
+    game: dict,
+    *,
+    schedule_date: date,
+    sync_run_id=None,
+    run_logger,
+) -> None:
+    """Run derived split/calendar storage after committed GameLog writes."""
+    game_pk = _game_pk(game)
+    result = safe_recompute_team_game_pitching_splits_for_game(
+        game_pk,
+        game=game,
+        game_date=_game_date(game, schedule_date),
+        sync_run_id=sync_run_id,
+        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    )
+    db.session.commit()
+    if result.get('status') == 'skipped':
+        run_logger.info(
+            'Team-game pitching split recompute skipped for game %s: %s.',
+            game_pk,
+            result.get('reason'),
+        )
+        return
+    if result.get('status') == 'failed':
+        run_logger.warning(
+            'Team-game pitching split recompute failed for game %s: %s.',
+            game_pk,
+            result.get('reason'),
+        )
+        return
+    run_logger.info(
+        'Team-game pitching split recompute for game %s: inserted=%s '
+        'corrected=%s unchanged=%s reasons=%s.',
+        game_pk,
+        result.get('rows_inserted'),
+        result.get('rows_corrected'),
+        result.get('rows_unchanged'),
+        ','.join(result.get('reason_codes') or []) or 'none',
+    )
+
+
 def _postgame_snapshot_refresh_enabled() -> bool:
     """Whether the postgame refresh rebuilds the homepage lead-story cache.
 
@@ -1756,6 +1801,7 @@ def sync_recent_logs(
     records_failed  = 0
     correction_attempts_failed = 0
     pitchers_touched = 0
+    affected_game_pks = set()
 
     for pitcher in pitchers:
         try:
@@ -1835,10 +1881,12 @@ def sync_recent_logs(
             if result['status'] == 'inserted':
                 new_logs += 1
                 touched_this_pitcher = True
+                affected_game_pks.add(_positive_external_id(game_pk))
                 time.sleep(0.1)
             elif result['status'] == 'corrected':
                 corrected_logs += 1
                 touched_this_pitcher = True
+                affected_game_pks.add(_positive_external_id(game_pk))
             elif result['status'] == 'unsafe':
                 records_failed += 1
                 correction_attempts_failed += 1
@@ -1847,6 +1895,13 @@ def sync_recent_logs(
             pitchers_touched += 1
 
     db.session.commit()
+    for game_pk in sorted(game_pk for game_pk in affected_game_pks if game_pk is not None):
+        safe_recompute_team_game_pitching_splits_for_game(
+            game_pk,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        db.session.commit()
 
     result = {
         'new_logs_added':    new_logs,
@@ -2264,6 +2319,12 @@ def run_postgame_refresh(
                         result['correction_attempts_failed'],
                         result['pitcher_resolution_failures'],
                         result['pitchers_touched'],
+                    )
+                    _safe_recompute_team_game_pitching_splits(
+                        game,
+                        schedule_date=schedule_date,
+                        sync_run_id=sync_run_id,
+                        run_logger=run_logger,
                     )
                     optional_inputs = _fetch_completed_game_optional_inputs(game_pk)
                     _safe_process_final_play_by_play_foundation(

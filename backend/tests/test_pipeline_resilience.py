@@ -408,6 +408,8 @@ class TestPipelineHealthEndpoint:
         assert health['capability'] == 'pipeline_health'
         assert 'source_readiness' in health
         assert health['source_readiness']['families']['finality_authority']['status'] == 'ready'
+        assert 'team_game_pitching_splits' in health['source_readiness']['families']
+        assert 'calendar_context' in health['source_readiness']['families']
         assert health['dead_letters']['unresolved_count'] == 1
         assert len(health['dead_letters']['recent']) == 1
 

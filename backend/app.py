@@ -139,6 +139,7 @@ def create_app(config_name=None):
     from models.product_event import ProductEvent
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
     from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
+    from models.team_game_pitching_split import TeamGamePitchingSplit
 
     from api.bullpen import bullpen_bp
     from api.prospects import prospects_bp

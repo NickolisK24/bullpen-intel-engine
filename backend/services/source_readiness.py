@@ -14,8 +14,10 @@ from models.pitcher import Pitcher
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
+from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
+from models.team_game_pitching_split import TeamGamePitchingSplit
 from services import slate_coverage
 from services.roster_status_sync import (
     ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
@@ -57,6 +59,8 @@ FAMILY_DASHBOARD_SNAPSHOTS = 'dashboard_snapshots'
 FAMILY_ROSTER_STATUS_SNAPSHOTS = 'roster_status_snapshots'
 FAMILY_PLAYER_TRANSACTIONS = 'player_transactions'
 FAMILY_FINAL_PLAY_BY_PLAY = 'final_play_by_play'
+FAMILY_TEAM_GAME_PITCHING_SPLITS = 'team_game_pitching_splits'
+FAMILY_CALENDAR_CONTEXT = 'calendar_context'
 
 ROSTER_SNAPSHOT_STALE_AFTER_DAYS = 1
 ROSTER_STATUS_FAILURE_ENTITY_TYPES = (
@@ -69,6 +73,9 @@ FINAL_PBP_FAILURE_ENTITY_TYPES = (
     'final_pbp_shape',
     'final_pbp_reconciliation',
     'final_pbp_identity',
+)
+TEAM_GAME_PITCHING_SPLIT_FAILURE_ENTITY_TYPES = (
+    'team_game_pitching_split_derivation',
 )
 CURRENT_BLOCKING_SOURCE_FAMILIES = frozenset({
     FAMILY_FINALITY_AUTHORITY,
@@ -205,6 +212,16 @@ def source_readiness_payload(
         _safe_family(
             FAMILY_FINAL_PLAY_BY_PLAY,
             _final_play_by_play_readiness,
+            reference_date,
+        ),
+        _safe_family(
+            FAMILY_TEAM_GAME_PITCHING_SPLITS,
+            _team_game_pitching_split_readiness,
+            reference_date,
+        ),
+        _safe_family(
+            FAMILY_CALENDAR_CONTEXT,
+            _calendar_context_readiness,
             reference_date,
         ),
     ]
@@ -661,6 +678,193 @@ def _final_play_by_play_readiness(reference_date=None):
     )
 
 
+def _team_game_pitching_split_readiness(reference_date=None):
+    latest = _latest_team_game_pitching_split()
+    latest_success = _latest_team_game_pitching_split(
+        split_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+    )
+    latest_failure = _latest_failure(TEAM_GAME_PITCHING_SPLIT_FAILURE_ENTITY_TYPES)
+    latest_failure_at = getattr(latest_failure, 'created_at', None)
+    latest_attempted_at = _latest_datetime(
+        getattr(latest, 'last_derived_at', None),
+        latest_failure_at,
+    )
+    row_count = int(db.session.query(db.func.count(TeamGamePitchingSplit.id)).scalar() or 0)
+    expected_rows = _final_scheduled_team_game_count()
+    missing_rows = max(expected_rows - row_count, 0)
+    split_status_counts = {
+        status: _team_game_pitching_split_count(split_status=status)
+        for status in (
+            TeamGamePitchingSplit.STATUS_COMPLETE,
+            TeamGamePitchingSplit.STATUS_PARTIAL,
+            TeamGamePitchingSplit.STATUS_UNKNOWN,
+        )
+    }
+    partial_unknown_count = (
+        split_status_counts[TeamGamePitchingSplit.STATUS_PARTIAL]
+        + split_status_counts[TeamGamePitchingSplit.STATUS_UNKNOWN]
+    )
+    dead_letters = _unresolved_failure_count(
+        entity_types=TEAM_GAME_PITCHING_SPLIT_FAILURE_ENTITY_TYPES
+    )
+    reason_counts = _team_game_pitching_split_reason_counts('split_reason_codes')
+    reason_codes = []
+    if row_count == 0:
+        reason_codes.append('team_game_pitching_splits_never_derived')
+    if missing_rows:
+        reason_codes.append('team_game_pitching_splits_missing')
+    if partial_unknown_count:
+        reason_codes.append('team_game_pitching_splits_partial_or_unknown')
+
+    readiness = classify_source_readiness(
+        FAMILY_TEAM_GAME_PITCHING_SPLITS,
+        last_successful_at=getattr(latest_success, 'last_derived_at', None),
+        last_attempted_at=latest_attempted_at,
+        stale_after_days=None,
+        record_count=row_count,
+        dead_letter_count=dead_letters,
+        reason_codes=tuple(reason_codes),
+        reference_date=reference_date,
+        sync_run_id=getattr(latest, 'sync_run_id', None),
+        source=getattr(latest, 'source', None),
+        provenance_present=_team_game_pitching_split_provenance_present(latest),
+        coverage={
+            'final_games_expected': _final_scheduled_game_count(),
+            'team_game_splits_expected': expected_rows,
+            'team_game_splits_complete': split_status_counts[
+                TeamGamePitchingSplit.STATUS_COMPLETE
+            ],
+            'team_game_splits_partial': split_status_counts[
+                TeamGamePitchingSplit.STATUS_PARTIAL
+            ],
+            'team_game_splits_unknown': split_status_counts[
+                TeamGamePitchingSplit.STATUS_UNKNOWN
+            ],
+            'team_game_splits_missing': missing_rows,
+        },
+        details={
+            'latest_split_status': getattr(latest, 'split_completeness_status', None),
+            'latest_split_reason_codes': list(getattr(latest, 'split_reason_codes', None) or []),
+            'split_reason_code_counts': reason_counts,
+            'correction_count': _team_game_pitching_split_correction_count(),
+            'latest_failure_reason': _failure_reason(latest_failure),
+        },
+    )
+    final_status = readiness.status
+    final_reasons = list(readiness.reason_codes)
+    if missing_rows or partial_unknown_count:
+        final_status = DEGRADED if final_status == READY else final_status
+    return SourceReadiness(
+        source_family=readiness.source_family,
+        status=final_status,
+        reason_codes=_dedupe(final_reasons),
+        last_successful_at=readiness.last_successful_at,
+        last_attempted_at=readiness.last_attempted_at,
+        stale_after_days=readiness.stale_after_days,
+        data_age_days=readiness.data_age_days,
+        record_count=readiness.record_count,
+        dead_letter_count=readiness.dead_letter_count,
+        sync_run_id=readiness.sync_run_id,
+        source=readiness.source,
+        coverage=readiness.coverage,
+        details=readiness.details,
+    )
+
+
+def _calendar_context_readiness(reference_date=None):
+    latest = _latest_team_game_pitching_split()
+    latest_success = _latest_team_game_pitching_split(
+        calendar_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+    )
+    latest_failure = _latest_failure(TEAM_GAME_PITCHING_SPLIT_FAILURE_ENTITY_TYPES)
+    latest_failure_at = getattr(latest_failure, 'created_at', None)
+    latest_attempted_at = _latest_datetime(
+        getattr(latest, 'last_derived_at', None),
+        latest_failure_at,
+    )
+    row_count = int(db.session.query(db.func.count(TeamGamePitchingSplit.id)).scalar() or 0)
+    expected_rows = _final_scheduled_team_game_count()
+    missing_rows = max(expected_rows - row_count, 0)
+    calendar_status_counts = {
+        status: _team_game_pitching_split_count(calendar_status=status)
+        for status in (
+            TeamGamePitchingSplit.STATUS_COMPLETE,
+            TeamGamePitchingSplit.STATUS_PARTIAL,
+            TeamGamePitchingSplit.STATUS_UNKNOWN,
+        )
+    }
+    partial_unknown_count = (
+        calendar_status_counts[TeamGamePitchingSplit.STATUS_PARTIAL]
+        + calendar_status_counts[TeamGamePitchingSplit.STATUS_UNKNOWN]
+    )
+    dead_letters = _unresolved_failure_count(
+        entity_types=TEAM_GAME_PITCHING_SPLIT_FAILURE_ENTITY_TYPES
+    )
+    reason_counts = _team_game_pitching_split_reason_counts('calendar_reason_codes')
+    reason_codes = []
+    if row_count == 0:
+        reason_codes.append('calendar_context_never_derived')
+    if missing_rows:
+        reason_codes.append('calendar_context_missing')
+    if partial_unknown_count:
+        reason_codes.append('calendar_context_partial_or_unknown')
+
+    readiness = classify_source_readiness(
+        FAMILY_CALENDAR_CONTEXT,
+        last_successful_at=getattr(latest_success, 'last_derived_at', None),
+        last_attempted_at=latest_attempted_at,
+        stale_after_days=None,
+        record_count=row_count,
+        dead_letter_count=dead_letters,
+        reason_codes=tuple(reason_codes),
+        reference_date=reference_date,
+        sync_run_id=getattr(latest, 'sync_run_id', None),
+        source=getattr(latest, 'source', None),
+        provenance_present=_team_game_pitching_split_provenance_present(latest),
+        coverage={
+            'final_games_expected': _final_scheduled_game_count(),
+            'team_game_calendar_rows_expected': expected_rows,
+            'calendar_context_complete': calendar_status_counts[
+                TeamGamePitchingSplit.STATUS_COMPLETE
+            ],
+            'calendar_context_partial': calendar_status_counts[
+                TeamGamePitchingSplit.STATUS_PARTIAL
+            ],
+            'calendar_context_unknown': calendar_status_counts[
+                TeamGamePitchingSplit.STATUS_UNKNOWN
+            ],
+            'calendar_context_missing': missing_rows,
+        },
+        details={
+            'latest_calendar_status': getattr(latest, 'calendar_context_status', None),
+            'latest_calendar_reason_codes': list(getattr(latest, 'calendar_reason_codes', None) or []),
+            'calendar_reason_code_counts': reason_counts,
+            'correction_count': _team_game_pitching_split_correction_count(),
+            'latest_failure_reason': _failure_reason(latest_failure),
+            'travel_context_inferred': False,
+        },
+    )
+    final_status = readiness.status
+    final_reasons = list(readiness.reason_codes)
+    if missing_rows or partial_unknown_count:
+        final_status = DEGRADED if final_status == READY else final_status
+    return SourceReadiness(
+        source_family=readiness.source_family,
+        status=final_status,
+        reason_codes=_dedupe(final_reasons),
+        last_successful_at=readiness.last_successful_at,
+        last_attempted_at=readiness.last_attempted_at,
+        stale_after_days=readiness.stale_after_days,
+        data_age_days=readiness.data_age_days,
+        record_count=readiness.record_count,
+        dead_letter_count=readiness.dead_letter_count,
+        sync_run_id=readiness.sync_run_id,
+        source=readiness.source,
+        coverage=readiness.coverage,
+        details=readiness.details,
+    )
+
+
 def _safe_family(family, builder, reference_date=None, *args):
     try:
         return builder(reference_date, *args)
@@ -688,6 +892,81 @@ def _pbp_marker_count(status):
         .count()
         or 0
     )
+
+
+def _latest_team_game_pitching_split(*, split_status=None, calendar_status=None):
+    query = TeamGamePitchingSplit.query
+    if split_status:
+        query = query.filter_by(split_completeness_status=split_status)
+    if calendar_status:
+        query = query.filter_by(calendar_context_status=calendar_status)
+    return (
+        query
+        .order_by(
+            TeamGamePitchingSplit.last_derived_at.desc(),
+            TeamGamePitchingSplit.updated_at.desc(),
+            TeamGamePitchingSplit.id.desc(),
+        )
+        .first()
+    )
+
+
+def _team_game_pitching_split_count(*, split_status=None, calendar_status=None):
+    query = TeamGamePitchingSplit.query
+    if split_status:
+        query = query.filter_by(split_completeness_status=split_status)
+    if calendar_status:
+        query = query.filter_by(calendar_context_status=calendar_status)
+    return int(query.count() or 0)
+
+
+def _team_game_pitching_split_correction_count():
+    return int(
+        db.session.query(
+            db.func.coalesce(db.func.sum(TeamGamePitchingSplit.correction_count), 0)
+        ).scalar()
+        or 0
+    )
+
+
+def _team_game_pitching_split_reason_counts(field_name):
+    rows = TeamGamePitchingSplit.query.all()
+    counts = {}
+    for row in rows:
+        reasons = getattr(row, field_name, None) or []
+        for reason in reasons:
+            counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def _team_game_pitching_split_provenance_present(row):
+    if row is None:
+        return True
+    return bool(row.source) and row.first_seen_at is not None
+
+
+def _final_scheduled_game_count():
+    return int(
+        db.session.query(db.func.count(db.distinct(ScheduledGame.game_pk)))
+        .filter(ScheduledGame.status_state == ScheduledGame.STATE_FINAL)
+        .scalar()
+        or 0
+    )
+
+
+def _final_scheduled_team_game_count():
+    return int(
+        ScheduledGame.query
+        .filter(ScheduledGame.status_state == ScheduledGame.STATE_FINAL)
+        .count()
+        or 0
+    )
+
+
+def _failure_reason(failure):
+    if failure is None:
+        return None
+    return (failure.payload or {}).get('reason') or failure.error
 
 
 def _active_pitcher_team_ids():

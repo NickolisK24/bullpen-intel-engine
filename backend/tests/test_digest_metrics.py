@@ -442,6 +442,9 @@ _PLAYER_TRANSACTION_REVISION = 'f8c2d4e6a1b9'
 # Final play-by-play foundation chains on top of player transactions, advancing
 # the single alembic head once more.
 _FINAL_PLAY_BY_PLAY_REVISION = 'a2f4c6d8e9b1'
+# Team-game pitching splits chain on top of final play-by-play, advancing the
+# single alembic head once more.
+_TEAM_GAME_PITCHING_SPLIT_REVISION = 'b6e1a2f4c9d7'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -467,7 +470,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_FINAL_PLAY_BY_PLAY_REVISION}
+    assert heads == {_TEAM_GAME_PITCHING_SPLIT_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
@@ -494,3 +497,5 @@ def test_migrations_have_a_single_head():
             == _ROSTER_STATUS_SNAPSHOT_REVISION)
     assert (revisions[_FINAL_PLAY_BY_PLAY_REVISION]
             == _PLAYER_TRANSACTION_REVISION)
+    assert (revisions[_TEAM_GAME_PITCHING_SPLIT_REVISION]
+            == _FINAL_PLAY_BY_PLAY_REVISION)

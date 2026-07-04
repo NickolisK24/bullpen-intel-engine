@@ -7,6 +7,7 @@ from models.game_log import GameLog
 from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
 from models.player_transaction import PlayerTransaction
 from models.roster_status_snapshot import RosterStatusSnapshot
+from models.team_game_pitching_split import TeamGamePitchingSplit
 from services import source_provenance
 from services.source_correction_policies import (
     CorrectionPolicyError,
@@ -150,6 +151,29 @@ def test_registered_final_pbp_marker_policy_matches_marker_lifecycle():
     ][0]
     assert status_policy.update_after_final is True
     assert status_policy.unknown_on_unsafe_conflict is True
+
+
+def test_registered_team_game_pitching_split_policy_matches_derived_storage():
+    assert validate_correction_sensitive_model(TeamGamePitchingSplit)
+
+    policy = correction_policy('team_game_pitching_split_corrections')
+    assert policy.source_family == 'team_game_pitching_splits'
+    assert {'team_id', 'mlb_game_pk'} == policy.identity_fields
+    starter_status_policy = [
+        field for field in policy.fields if field.field_name == 'starter_identity_status'
+    ][0]
+    bullpen_pitches_policy = [
+        field for field in policy.fields if field.field_name == 'bullpen_pitches_thrown'
+    ][0]
+    calendar_status_policy = [
+        field for field in policy.fields if field.field_name == 'calendar_context_status'
+    ][0]
+    assert starter_status_policy.update_after_final is True
+    assert starter_status_policy.unknown_on_unsafe_conflict is True
+    assert bullpen_pitches_policy.update_after_final is True
+    assert bullpen_pitches_policy.unknown_on_unsafe_conflict is True
+    assert calendar_status_policy.update_after_final is True
+    assert calendar_status_policy.unknown_on_unsafe_conflict is True
 
 
 def test_unregistered_correction_sensitive_model_fails_contract():

@@ -15,6 +15,7 @@ from models.roster_status_snapshot import RosterStatusSnapshot
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
+from models.team_game_pitching_split import TeamGamePitchingSplit
 from services import slate_coverage, source_readiness, sync_metadata
 from utils.db import db
 import models.prospect  # noqa: F401  (full model registry for create_all)
@@ -96,6 +97,68 @@ def test_non_ready_states_fail_closed(kwargs, expected_status, expected_reason):
     assert readiness.status == expected_status
     assert readiness.fail_closed is True
     assert expected_reason in readiness.reason_codes
+
+
+def _add_team_game_split(
+    *,
+    team_id,
+    game_pk,
+    game_date,
+    sync_run_id=None,
+    split_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+    calendar_status=TeamGamePitchingSplit.STATUS_COMPLETE,
+    split_reasons=None,
+    calendar_reasons=None,
+):
+    timestamp = datetime(2026, 6, 2, 9, 0, 0)
+    db.session.add(TeamGamePitchingSplit(
+        team_id=team_id,
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        game_type='R',
+        opponent_team_id=142 if team_id == 116 else 116,
+        home_away='home' if team_id == 116 else 'away',
+        starter_identity_status=(
+            TeamGamePitchingSplit.STARTER_KNOWN
+            if split_status == TeamGamePitchingSplit.STATUS_COMPLETE
+            else TeamGamePitchingSplit.STARTER_UNKNOWN
+        ),
+        starter_outs_recorded=15 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        starter_pitches_thrown=80 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        starter_batters_faced=20 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        starter_balls=30 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        starter_games_started=1 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        bullpen_outs_recorded=12 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        bullpen_pitches_thrown=45 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        bullpen_batters_faced=13 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        bullpen_balls=18 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        relievers_used_count=1 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        total_team_outs=27 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        total_team_pitches=125 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        total_team_batters_faced=33 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        total_team_balls=48 if split_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        split_completeness_status=split_status,
+        split_reason_codes=list(split_reasons or []),
+        off_day_before=False if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        off_day_after=False if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        consecutive_game_day_count_entering=1 if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        series_game_number=1 if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        games_in_series=3 if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        doubleheader_flag=False if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        doubleheader_code='N',
+        game_number=1 if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        postponed_or_makeup_indicator=False if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        suspended_resumed_linkage_status=TeamGamePitchingSplit.LINKAGE_NONE,
+        extra_inning_indicator=False if calendar_status == TeamGamePitchingSplit.STATUS_COMPLETE else None,
+        calendar_context_status=calendar_status,
+        calendar_reason_codes=list(calendar_reasons or []),
+        source='derived:game_logs_schedule',
+        sync_run_id=sync_run_id,
+        first_seen_at=timestamp,
+        last_derived_at=timestamp,
+        created_at=timestamp,
+        updated_at=timestamp,
+    ))
 
 
 def test_source_readiness_payload_reports_existing_foundations(app):
@@ -264,6 +327,18 @@ def test_source_readiness_payload_reports_existing_foundations(app):
             created_at=datetime(2026, 6, 2, 9, 0, 0),
             updated_at=datetime(2026, 6, 2, 9, 0, 0),
         ))
+        _add_team_game_split(
+            team_id=116,
+            game_pk=31,
+            game_date=date(2026, 6, 1),
+            sync_run_id=run.id,
+        )
+        _add_team_game_split(
+            team_id=142,
+            game_pk=31,
+            game_date=date(2026, 6, 1),
+            sync_run_id=run.id,
+        )
         db.session.add(DashboardSnapshot(
             snapshot_type='bullpen_dashboard',
             sync_run_id=run.id,
@@ -296,6 +371,8 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert families['roster_status_snapshots']['status'] == source_readiness.READY
     assert families['player_transactions']['status'] == source_readiness.READY
     assert families['final_play_by_play']['status'] == source_readiness.READY
+    assert families['team_game_pitching_splits']['status'] == source_readiness.READY
+    assert families['calendar_context']['status'] == source_readiness.READY
 
 
 def test_source_readiness_payload_blocks_incomplete_slate(app):
@@ -368,3 +445,60 @@ def test_final_play_by_play_readiness_degrades_on_incomplete_marker(app):
     assert family['coverage']['games_incomplete'] == 1
     assert family['details']['reconciliation_mismatch_count'] == 1
     assert 'final_pbp_reconciliation_mismatch' in family['reason_codes']
+
+
+def test_team_game_split_and_calendar_readiness_degrade_on_partial_rows(app):
+    with app.app_context():
+        game_date = date(2026, 6, 3)
+        db.session.add_all([
+            ScheduledGame(
+                team_id=116,
+                game_pk=41,
+                game_date=game_date,
+                status_state='final',
+                home_away='home',
+                opponent_team_id=142,
+            ),
+            ScheduledGame(
+                team_id=142,
+                game_pk=41,
+                game_date=game_date,
+                status_state='final',
+                home_away='away',
+                opponent_team_id=116,
+            ),
+        ])
+        _add_team_game_split(
+            team_id=116,
+            game_pk=41,
+            game_date=game_date,
+        )
+        _add_team_game_split(
+            team_id=142,
+            game_pk=41,
+            game_date=game_date,
+            split_status=TeamGamePitchingSplit.STATUS_PARTIAL,
+            calendar_status=TeamGamePitchingSplit.STATUS_UNKNOWN,
+            split_reasons=('starter_identity_unknown',),
+            calendar_reasons=('schedule_missing',),
+        )
+        db.session.commit()
+
+        payload = source_readiness.source_readiness_payload(
+            metadata={},
+            sync_status='success',
+            slate_coverage_payload=slate_coverage.unknown_slate_coverage(game_date),
+            reference_date=date(2026, 6, 4),
+        )
+
+    split_family = payload['families']['team_game_pitching_splits']
+    calendar_family = payload['families']['calendar_context']
+    assert split_family['status'] == source_readiness.DEGRADED
+    assert split_family['coverage']['team_game_splits_complete'] == 1
+    assert split_family['coverage']['team_game_splits_partial'] == 1
+    assert 'team_game_pitching_splits_partial_or_unknown' in split_family['reason_codes']
+    assert calendar_family['status'] == source_readiness.DEGRADED
+    assert calendar_family['coverage']['calendar_context_complete'] == 1
+    assert calendar_family['coverage']['calendar_context_unknown'] == 1
+    assert calendar_family['details']['travel_context_inferred'] is False
+    assert 'calendar_context_partial_or_unknown' in calendar_family['reason_codes']
