@@ -2576,8 +2576,13 @@ def _dashboard_live_fallback_enabled():
     return _truthy(os.environ.get('DASHBOARD_LIVE_FALLBACK_ENABLED'))
 
 
-def _dashboard_snapshot_unavailable_payload(reason):
+def _dashboard_snapshot_unavailable_payload(reason, *, snapshot=None):
     generated_at = datetime.now(timezone.utc).isoformat()
+    diagnostics = dashboard_snapshot_service.snapshot_diagnostics(snapshot)
+    coverage = (
+        diagnostics.get('slate_coverage')
+        or slate_coverage.unknown_slate_coverage()
+    )
     return {
         'capability': 'bullpen_dashboard',
         'status': 'snapshot_unavailable',
@@ -2618,7 +2623,7 @@ def _dashboard_snapshot_unavailable_payload(reason):
             'limitations': [
                 'Dashboard snapshot is unavailable; production live fallback is disabled.',
             ],
-            'slate_coverage': slate_coverage.unknown_slate_coverage(),
+            'slate_coverage': coverage,
             'validations_passed': False,
             'complete_enough_to_publish': False,
         },
@@ -2626,9 +2631,10 @@ def _dashboard_snapshot_unavailable_payload(reason):
         'snapshot': {
             'served_from': 'snapshot_unavailable',
             'snapshot_type': dashboard_snapshot_service.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
-            'snapshot_generated_at': None,
-            'payload_version': dashboard_snapshot_service.DASHBOARD_PAYLOAD_VERSION,
+            'snapshot_generated_at': diagnostics.get('snapshot_generated_at'),
+            'payload_version': diagnostics.get('payload_version'),
             'reason': reason or 'dashboard_snapshot_unavailable',
+            'latest_record': diagnostics,
         },
     }
 
@@ -2677,18 +2683,27 @@ def _dashboard_snapshot_build_response(result):
         'served_from': (
             'cache' if result.get('snapshot_served_by_dashboard') else 'pending'
         ),
+        'reason': result.get('reason'),
         'snapshot_type': result.get('snapshot_type'),
         'snapshot_id': result.get('snapshot_id'),
+        'snapshot_status': result.get('snapshot_status'),
+        'is_published': bool(result.get('is_published')),
+        'error_message': result.get('error_message'),
         'sync_run_id': result.get('sync_run_id'),
         'payload_version': result.get('payload_version'),
         'data_through': result.get('data_through'),
         'availability_reference_date': result.get('availability_reference_date'),
         'snapshot_generated_at': result.get('snapshot_generated_at'),
+        'payload_has_slate_coverage': bool(result.get('payload_has_slate_coverage')),
+        'slate_coverage': result.get('slate_coverage'),
     }
     return {
         'status': 'ok' if result.get('snapshot_served_by_dashboard') else 'pending',
+        'reason': result.get('reason'),
         'snapshot': snapshot,
         'builder': {
+            'status': result.get('status'),
+            'reason': result.get('reason'),
             'source': result.get('source'),
             'duration_ms': result.get('duration_ms'),
             'snapshot_served_by_dashboard': result.get('snapshot_served_by_dashboard'),
@@ -2717,6 +2732,7 @@ def build_dashboard_snapshot_endpoint():
     try:
         result = dashboard_snapshot_service.build_bullpen_dashboard_snapshot_v2(
             source='protected_endpoint',
+            publish=True,
         )
     except Exception as exc:
         db.session.rollback()
@@ -2762,8 +2778,12 @@ def get_bullpen_dashboard():
         ))
 
     if not _dashboard_live_fallback_enabled():
-        reason = dashboard_snapshot_service.latest_dashboard_snapshot_unavailable_reason()
-        return jsonify(_dashboard_snapshot_unavailable_payload(reason))
+        latest_record = dashboard_snapshot_service.get_latest_dashboard_snapshot_record()
+        reason = dashboard_snapshot_service.snapshot_unavailable_reason(latest_record)
+        return jsonify(_dashboard_snapshot_unavailable_payload(
+            reason,
+            snapshot=latest_record,
+        ))
 
     payload = build_bullpen_dashboard_payload()
     return jsonify(_dashboard_payload_with_snapshot_metadata(
