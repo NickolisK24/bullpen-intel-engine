@@ -196,3 +196,51 @@ ROSTER_STATUS_SNAPSHOT_CORRECTION_POLICY = register_correction_policy(SourceCorr
         CorrectionFieldPolicy('source', update_after_final=True),
     ),
 ))
+
+PLAYER_TRANSACTION_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
+    name='player_transaction_corrections',
+    source_family='player_transactions',
+    model_name='PlayerTransaction',
+    fields=(
+        CorrectionFieldPolicy('transaction_key', identity_key=True),
+        CorrectionFieldPolicy('transaction_id', update_after_final=True),
+        CorrectionFieldPolicy('pitcher_id', update_after_final=True),
+        CorrectionFieldPolicy('player_mlb_id', update_after_final=True),
+        CorrectionFieldPolicy('from_team_id', update_after_final=True),
+        CorrectionFieldPolicy('to_team_id', update_after_final=True),
+        CorrectionFieldPolicy('transaction_date', update_after_final=True),
+        CorrectionFieldPolicy('effective_date', update_after_final=True),
+        CorrectionFieldPolicy('resolution_date', update_after_final=True),
+        CorrectionFieldPolicy('transaction_type_code', update_after_final=True),
+        CorrectionFieldPolicy(
+            'normalized_category',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+        ),
+        CorrectionFieldPolicy('is_il_placement', update_after_final=True),
+        CorrectionFieldPolicy('is_il_activation', update_after_final=True),
+        CorrectionFieldPolicy(
+            'il_list_type',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+            dead_letter_on_conflict=False,
+        ),
+        CorrectionFieldPolicy('retroactive_date', update_after_final=True),
+        CorrectionFieldPolicy(
+            'roster_snapshot_alignment',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+        ),
+        CorrectionFieldPolicy(
+            'alignment_reason_code',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+            dead_letter_on_conflict=False,
+        ),
+        CorrectionFieldPolicy('explanatory_linkage_eligible', update_after_final=True),
+        CorrectionFieldPolicy('source', update_after_final=True),
+        CorrectionFieldPolicy('source_endpoint', update_after_final=True),
+        CorrectionFieldPolicy('source_query_start_date', update_after_final=True),
+        CorrectionFieldPolicy('source_query_end_date', update_after_final=True),
+    ),
+))

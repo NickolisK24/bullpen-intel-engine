@@ -24,6 +24,14 @@ from utils.time import utc_now_naive
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_service, 'STATUS_FILE', tmp_path / 'sync_status.json')
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
     app = Flask(__name__)
     configure_test_database(app)
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

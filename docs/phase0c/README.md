@@ -13,9 +13,9 @@ framing, pressure scores, role inference, or pitch-level ingestion.
 
 ## Current Branch
 
-Branch 0C-02 adds the source readiness, provenance, and correction-policy
-framework that later Phase 0C storage branches must use before adding new
-correction-sensitive fields or tables.
+Branch 0C-05 adds the transaction and IL foundation as typed source facts with
+roster-snapshot alignment. Transactions explain later context only; they do not
+decide current roster state or create public evidence reads in Phase 0C.
 
 ## Required Ingestion Contract
 
@@ -43,6 +43,9 @@ Every future Phase 0C ingestion/storage branch must document and test:
   score framing.
 - No source family should be marked ready before it exists and has provenance.
 - Missing provenance means the family is not ready.
+- Transactions and IL facts must not persist raw responses, free-text injury
+  descriptions, health claims, return timetables, depth-pressure reads, or
+  availability labels.
 
 ## Branch Map
 

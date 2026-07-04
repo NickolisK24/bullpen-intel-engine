@@ -262,6 +262,159 @@ class MLBApiClient:
             logger.error('MLB API failed endpoint=%s error=%s', endpoint, last_exc)
         raise MlbApiFetchError(f'MLB API fetch failed for {endpoint}', endpoint=endpoint)
 
+    # ─── Structured extraction helpers ───────────────────────────────────────
+
+    @staticmethod
+    def _first_present(mapping, *keys):
+        if not isinstance(mapping, dict):
+            return None
+        for key in keys:
+            value = mapping.get(key)
+            if value not in (None, ''):
+                return value
+        return None
+
+    @staticmethod
+    def _nested_id(mapping, *keys):
+        if not isinstance(mapping, dict):
+            return None
+        for key in keys:
+            value = mapping.get(key)
+            if isinstance(value, dict):
+                candidate = value.get('id')
+            else:
+                candidate = value
+            if candidate not in (None, ''):
+                return candidate
+        return None
+
+    @staticmethod
+    def _transaction_type_code(transaction):
+        type_info = transaction.get('type') if isinstance(transaction, dict) else None
+        if isinstance(type_info, dict):
+            for key in ('code', 'typeCode', 'id'):
+                value = type_info.get(key)
+                if value not in (None, ''):
+                    return value
+        return MLBApiClient._first_present(
+            transaction,
+            'transactionTypeCode',
+            'typeCode',
+            'type',
+            'code',
+        )
+
+    @staticmethod
+    def _transaction_type_description(transaction):
+        type_info = transaction.get('type') if isinstance(transaction, dict) else None
+        if isinstance(type_info, dict):
+            for key in ('description', 'name'):
+                value = type_info.get(key)
+                if value not in (None, ''):
+                    return value
+        return MLBApiClient._first_present(
+            transaction,
+            'transactionTypeDescription',
+            'typeDescription',
+        )
+
+    @staticmethod
+    def _transaction_player_name(transaction):
+        person = transaction.get('person') if isinstance(transaction, dict) else None
+        player = transaction.get('player') if isinstance(transaction, dict) else None
+        for value in (person, player):
+            if isinstance(value, dict):
+                name = value.get('fullName') or value.get('name')
+                if name:
+                    return name
+        return MLBApiClient._first_present(
+            transaction,
+            'playerFullName',
+            'playerName',
+            'personName',
+        )
+
+    @staticmethod
+    def _transaction_team_id(transaction, *keys):
+        for key in keys:
+            value = transaction.get(key) if isinstance(transaction, dict) else None
+            if isinstance(value, dict):
+                candidate = value.get('id')
+            else:
+                candidate = value
+            if candidate not in (None, ''):
+                return candidate
+        return None
+
+    def _transaction_record(self, transaction, *, source_endpoint, params):
+        return {
+            'transaction_id': self._first_present(transaction, 'id', 'transactionId'),
+            'transaction_date': self._first_present(
+                transaction,
+                'date',
+                'transactionDate',
+                'transaction_date',
+            ),
+            'effective_date': self._first_present(
+                transaction,
+                'effectiveDate',
+                'effective_date',
+            ),
+            'resolution_date': self._first_present(
+                transaction,
+                'resolutionDate',
+                'resolution_date',
+            ),
+            'player_mlb_id': self._nested_id(
+                transaction,
+                'person',
+                'player',
+                'personId',
+                'playerId',
+            ),
+            'player_full_name': self._transaction_player_name(transaction),
+            'from_team_id': self._transaction_team_id(
+                transaction,
+                'fromTeam',
+                'from_team',
+                'fromTeamId',
+                'from_team_id',
+            ),
+            'to_team_id': self._transaction_team_id(
+                transaction,
+                'toTeam',
+                'to_team',
+                'team',
+                'teamId',
+                'toTeamId',
+                'to_team_id',
+            ),
+            'transaction_type_code': self._transaction_type_code(transaction),
+            'transaction_type_description': self._transaction_type_description(transaction),
+            'roster_status': self._first_present(
+                transaction,
+                'rosterStatus',
+                'roster_status',
+                'status',
+            ),
+            'il_list_type': self._first_present(
+                transaction,
+                'ilListType',
+                'injuredListType',
+                'injuredList',
+                'listType',
+            ),
+            'retroactive_date': self._first_present(
+                transaction,
+                'retroactiveDate',
+                'retroDate',
+                'retroactive_date',
+            ),
+            'source_endpoint': source_endpoint,
+            'source_query_start_date': params.get('startDate'),
+            'source_query_end_date': params.get('endDate'),
+        }
+
     # ─── Teams ───────────────────────────────────────────────
 
     def get_all_teams(self, sport_id=1):
@@ -362,6 +515,43 @@ class MLBApiClient:
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         return self.get_schedule(start_date=start_date, end_date=end_date)
+
+    def get_transactions(self, start_date, end_date, team_id=None, player_id=None):
+        """
+        Get structured MLB transaction rows for a bounded date range.
+
+        The raw response is consumed transiently. Callers receive typed fields
+        only, plus query metadata needed for provenance/readiness.
+        """
+        params = {
+            'sportId': 1,
+            'startDate': start_date,
+            'endDate': end_date,
+        }
+        if team_id:
+            params['teamId'] = team_id
+        if player_id:
+            params['playerId'] = player_id
+
+        endpoint = '/transactions'
+        data = self._get(endpoint, params=params)
+        if not data:
+            return []
+        if isinstance(data, list):
+            transactions = data
+        elif isinstance(data, dict):
+            transactions = data.get('transactions') or data.get('transaction') or []
+        else:
+            return []
+        return [
+            self._transaction_record(
+                row,
+                source_endpoint=endpoint,
+                params=params,
+            )
+            for row in transactions
+            if isinstance(row, dict)
+        ]
 
     def get_game_boxscore(self, game_pk):
         """Get full boxscore for a specific game."""

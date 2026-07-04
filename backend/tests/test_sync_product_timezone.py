@@ -139,6 +139,14 @@ def test_daily_sync_offseason_check_uses_product_timezone_day(
         'errors': 0,
         'by_status': {},
     })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
     captured_pull_kwargs = {}
 
     def fake_sync_recent_logs(**kwargs):

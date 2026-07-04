@@ -8,6 +8,7 @@ from models.dashboard_snapshot import DashboardSnapshot
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.postgame_processed_game import PostgameProcessedGame
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.scheduled_game import ScheduledGame
@@ -171,6 +172,43 @@ def test_source_readiness_payload_reports_existing_foundations(app):
             created_at=datetime(2026, 6, 2, 9, 0, 0),
             updated_at=datetime(2026, 6, 2, 9, 0, 0),
         ))
+        db.session.add(PlayerTransaction(
+            transaction_key='statsapi:tx-ready',
+            transaction_id='tx-ready',
+            pitcher_id=pitcher.id,
+            player_mlb_id=pitcher.mlb_id,
+            to_team_id=pitcher.team_id,
+            transaction_date=date(2026, 6, 2),
+            transaction_type_code='RECALL',
+            normalized_category='recall',
+            is_il_placement=False,
+            is_il_activation=False,
+            roster_snapshot_alignment='aligned',
+            alignment_reason_code='roster_snapshot_team_match',
+            explanatory_linkage_eligible=True,
+            source='mlb_stats_api:transactions',
+            source_endpoint='/transactions',
+            source_query_start_date=date(2026, 5, 26),
+            source_query_end_date=date(2026, 6, 2),
+            sync_run_id=run.id,
+            first_seen_at=datetime(2026, 6, 2, 9, 0, 0),
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+            updated_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
+        db.session.add(PlayerTransactionSyncWindow(
+            source='mlb_stats_api:transactions',
+            source_endpoint='/transactions',
+            source_query_start_date=date(2026, 5, 26),
+            source_query_end_date=date(2026, 6, 2),
+            attempted_at=datetime(2026, 6, 2, 9, 0, 0),
+            successful_at=datetime(2026, 6, 2, 9, 0, 0),
+            status='success',
+            records_fetched=1,
+            records_stored=1,
+            records_created=1,
+            sync_run_id=run.id,
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
         db.session.add(DashboardSnapshot(
             snapshot_type='bullpen_dashboard',
             sync_run_id=run.id,
@@ -201,6 +239,7 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert families['slate_coverage']['status'] == source_readiness.READY
     assert families['dashboard_snapshots']['status'] == source_readiness.READY
     assert families['roster_status_snapshots']['status'] == source_readiness.READY
+    assert families['player_transactions']['status'] == source_readiness.READY
 
 
 def test_source_readiness_payload_blocks_incomplete_slate(app):

@@ -436,6 +436,9 @@ _BOXSCORE_FIELD_EXPANSION_REVISION = 'd6b8f3a1c9e7'
 # Roster status snapshots chain on top of unknown-safe boxscore fields,
 # advancing the single alembic head once more.
 _ROSTER_STATUS_SNAPSHOT_REVISION = 'e1a9c4d7b6f2'
+# Player transactions chain on top of roster status snapshots, advancing the
+# single alembic head once more.
+_PLAYER_TRANSACTION_REVISION = 'f8c2d4e6a1b9'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -461,7 +464,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_ROSTER_STATUS_SNAPSHOT_REVISION}
+    assert heads == {_PLAYER_TRANSACTION_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
@@ -484,3 +487,5 @@ def test_migrations_have_a_single_head():
             == _SCHEDULED_GAME_RESUMPTION_LINKAGE_REVISION)
     assert (revisions[_ROSTER_STATUS_SNAPSHOT_REVISION]
             == _BOXSCORE_FIELD_EXPANSION_REVISION)
+    assert (revisions[_PLAYER_TRANSACTION_REVISION]
+            == _ROSTER_STATUS_SNAPSHOT_REVISION)

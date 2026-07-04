@@ -44,6 +44,7 @@ from services.mlb_api import mlb_client
 from services.roster_status import STATUS_ACTIVE
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import sync_team_assignments
+from services.transaction_ingestion import sync_transactions
 from utils.innings import (
     outs_to_decimal_innings,
     parse_mlb_innings_to_outs,
@@ -2392,6 +2393,21 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 roster['unknown_count'],
                 roster['errors'],
             )
+            active_stage = sync_metadata.STAGE_TRANSACTIONS
+            transactions = sync_transactions(
+                sync_run_id=sync_run_id,
+                end_date=product_day.calendar_date,
+            )
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TRANSACTIONS)
+            transaction_records_failed = transactions.get('records_failed', 0)
+            run_logger.info(
+                'Refreshed player transactions for %s row(s) '
+                '(%s stored, %s unknown types, %s errors)',
+                transactions['records_fetched'],
+                transactions['records_stored'],
+                transactions['unknown_type_count'],
+                transactions['errors'],
+            )
             active_stage = sync_metadata.STAGE_LOG_INGESTION
             pull = sync_recent_logs(
                 days_back=days_back,
@@ -2411,12 +2427,18 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 pull['records_failed']
                 + team_assignment_records_failed
                 + roster_records_failed
+                + transaction_records_failed
             )
             status['new_logs_added'] = pull['new_logs_added']
             status['logs_corrected'] = logs_corrected
             status['records_failed'] = records_failed
             status['correction_attempts_failed'] = correction_attempts_failed
-            status['errors']         = pull['errors'] + roster['errors'] + team_assignment['errors']
+            status['errors'] = (
+                pull['errors']
+                + roster['errors']
+                + team_assignment['errors']
+                + transactions['errors']
+            )
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
             status['team_assignments_reassigned'] = team_assignment['reassigned_count']
@@ -2480,7 +2502,12 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 records_failed=records_failed,
                 new_logs_added=pull['new_logs_added'],
                 pitchers_updated=pitchers_updated,
-                errors=pull['errors'] + roster['errors'] + team_assignment['errors'],
+                errors=(
+                    pull['errors']
+                    + roster['errors']
+                    + team_assignment['errors']
+                    + transactions['errors']
+                ),
                 api_calls_made=api_metrics['api_calls'],
                 retries_used=api_metrics['retries'],
                 error_message=status['message'] or None,

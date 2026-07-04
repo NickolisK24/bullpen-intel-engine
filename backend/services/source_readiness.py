@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
 from models.roster_status_snapshot import RosterStatusSnapshot
 from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
@@ -20,6 +21,12 @@ from services.roster_status_sync import (
     ROSTER_STATUS_FETCH_ENTITY_TYPE,
     ROSTER_STATUS_IDENTITY_ENTITY_TYPE,
     roster_status_cache_divergence_count,
+)
+from services.transaction_ingestion import (
+    TRANSACTION_FAILURE_ENTITY_TYPES,
+    TRANSACTION_STALE_AFTER_DAYS,
+    WINDOW_STATUS_PARTIAL,
+    WINDOW_STATUS_SUCCESS,
 )
 from utils.db import db
 
@@ -47,6 +54,7 @@ FAMILY_GAME_LOGS = 'game_logs'
 FAMILY_SLATE_COVERAGE = 'slate_coverage'
 FAMILY_DASHBOARD_SNAPSHOTS = 'dashboard_snapshots'
 FAMILY_ROSTER_STATUS_SNAPSHOTS = 'roster_status_snapshots'
+FAMILY_PLAYER_TRANSACTIONS = 'player_transactions'
 
 ROSTER_SNAPSHOT_STALE_AFTER_DAYS = 1
 ROSTER_STATUS_FAILURE_ENTITY_TYPES = (
@@ -170,6 +178,11 @@ def source_readiness_payload(
         _safe_family(
             FAMILY_ROSTER_STATUS_SNAPSHOTS,
             _roster_status_snapshot_readiness,
+            reference_date,
+        ),
+        _safe_family(
+            FAMILY_PLAYER_TRANSACTIONS,
+            _player_transaction_readiness,
             reference_date,
         ),
     ]
@@ -389,6 +402,109 @@ def _roster_status_snapshot_readiness(reference_date=None):
     )
 
 
+def _player_transaction_readiness(reference_date=None):
+    latest_window = _latest_transaction_window()
+    latest_success = _latest_transaction_window(
+        statuses=(WINDOW_STATUS_SUCCESS, WINDOW_STATUS_PARTIAL),
+    )
+    latest_failure = _latest_failure(TRANSACTION_FAILURE_ENTITY_TYPES)
+    latest_failure_at = getattr(latest_failure, 'created_at', None)
+    latest_attempted_at = _latest_datetime(
+        getattr(latest_window, 'attempted_at', None),
+        latest_failure_at,
+    )
+    record_count = int(db.session.query(db.func.count(PlayerTransaction.id)).scalar() or 0)
+    dead_letters = _unresolved_failure_count(entity_types=TRANSACTION_FAILURE_ENTITY_TYPES)
+    latest_success_at = getattr(latest_success, 'successful_at', None)
+    reason_codes = []
+    if latest_window and latest_window.status == 'failed':
+        reason_codes.append('transaction_fetch_failed')
+
+    details = {
+        'latest_window_status': getattr(latest_window, 'status', None),
+        'latest_transaction_date': _iso(_max_transaction_date()),
+        'unknown_type_count': getattr(latest_success, 'unknown_type_count', 0) or 0,
+        'alignment_unknown_count': (
+            getattr(latest_success, 'alignment_unknown_count', 0) or 0
+        ),
+        'alignment_misaligned_count': (
+            getattr(latest_success, 'alignment_misaligned_count', 0) or 0
+        ),
+        'alignment_no_snapshot_count': (
+            getattr(latest_success, 'alignment_no_snapshot_count', 0) or 0
+        ),
+    }
+    if latest_window is not None:
+        details['latest_window'] = latest_window.to_dict()
+    if latest_failure is not None:
+        details['latest_failure_reason'] = (
+            (latest_failure.payload or {}).get('reason')
+            or latest_failure.error
+        )
+
+    coverage = {
+        'source_query_start_date': _iso(
+            getattr(latest_success, 'source_query_start_date', None)
+        ),
+        'source_query_end_date': _iso(
+            getattr(latest_success, 'source_query_end_date', None)
+        ),
+        'records_fetched': getattr(latest_success, 'records_fetched', None),
+        'records_stored': getattr(latest_success, 'records_stored', None),
+    }
+    provenance_present = (
+        latest_success is None
+        or (
+            bool(getattr(latest_success, 'source', None))
+            and getattr(latest_success, 'attempted_at', None) is not None
+            and getattr(latest_success, 'successful_at', None) is not None
+        )
+    )
+    readiness = classify_source_readiness(
+        FAMILY_PLAYER_TRANSACTIONS,
+        last_successful_at=latest_success_at,
+        last_attempted_at=latest_attempted_at,
+        stale_after_days=TRANSACTION_STALE_AFTER_DAYS,
+        record_count=record_count,
+        dead_letter_count=dead_letters,
+        reason_codes=tuple(reason_codes),
+        reference_date=reference_date,
+        sync_run_id=getattr(latest_success, 'sync_run_id', None),
+        source=getattr(latest_success, 'source', None),
+        provenance_present=provenance_present,
+        coverage=coverage,
+        details=details,
+    )
+    final_status = readiness.status
+    final_reasons = list(readiness.reason_codes)
+    if details['unknown_type_count']:
+        final_status = DEGRADED if final_status == READY else final_status
+        final_reasons.append('unknown_transaction_types_present')
+    if (
+        details['alignment_unknown_count']
+        or details['alignment_misaligned_count']
+        or details['alignment_no_snapshot_count']
+    ):
+        final_status = DEGRADED if final_status == READY else final_status
+        final_reasons.append('transaction_roster_alignment_incomplete')
+
+    return SourceReadiness(
+        source_family=readiness.source_family,
+        status=final_status,
+        reason_codes=_dedupe(final_reasons),
+        last_successful_at=readiness.last_successful_at,
+        last_attempted_at=readiness.last_attempted_at,
+        stale_after_days=readiness.stale_after_days,
+        data_age_days=readiness.data_age_days,
+        record_count=readiness.record_count,
+        dead_letter_count=readiness.dead_letter_count,
+        sync_run_id=readiness.sync_run_id,
+        source=readiness.source,
+        coverage=coverage,
+        details=details,
+    )
+
+
 def _safe_family(family, builder, reference_date=None, *args):
     try:
         return builder(reference_date, *args)
@@ -430,6 +546,20 @@ def _snapshot_team_ids(snapshot_date):
         .all()
     )
     return {row[0] for row in rows}
+
+
+def _latest_transaction_window(statuses=None):
+    query = PlayerTransactionSyncWindow.query
+    if statuses:
+        query = query.filter(PlayerTransactionSyncWindow.status.in_(tuple(statuses)))
+    return (
+        query
+        .order_by(
+            PlayerTransactionSyncWindow.attempted_at.desc(),
+            PlayerTransactionSyncWindow.id.desc(),
+        )
+        .first()
+    )
 
 
 def _latest_failure(entity_types):
@@ -482,6 +612,10 @@ def _max_game_log_date():
 
 def _game_log_count():
     return int(db.session.query(db.func.count(GameLog.id)).scalar() or 0)
+
+
+def _max_transaction_date():
+    return db.session.query(db.func.max(PlayerTransaction.transaction_date)).scalar()
 
 
 def _run_finished_at(run):
