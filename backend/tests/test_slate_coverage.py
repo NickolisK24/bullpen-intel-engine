@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from flask import Flask
@@ -25,12 +25,21 @@ def app():
             drop_test_schema(flask_app)
 
 
-def _schedule_game(game_pk, game_date, *, status='final', home_id=116, away_id=142):
+def _schedule_game(
+    game_pk,
+    game_date,
+    *,
+    status='final',
+    status_code=None,
+    home_id=116,
+    away_id=142,
+):
     db.session.add_all([
         ScheduledGame(
             team_id=home_id,
             game_pk=game_pk,
             game_date=game_date,
+            status_code=status_code,
             status_state=status,
             home_away='home',
             opponent_team_id=away_id,
@@ -39,6 +48,7 @@ def _schedule_game(game_pk, game_date, *, status='final', home_id=116, away_id=1
             team_id=away_id,
             game_pk=game_pk,
             game_date=game_date,
+            status_code=status_code,
             status_state=status,
             home_away='away',
             opponent_team_id=home_id,
@@ -46,13 +56,21 @@ def _schedule_game(game_pk, game_date, *, status='final', home_id=116, away_id=1
     ])
 
 
-def _marker(game_pk, game_date, *, status=PostgameProcessedGame.STATUS_FULLY_PROCESSED):
-    db.session.add(PostgameProcessedGame(
-        mlb_game_pk=game_pk,
-        game_date=game_date,
-        processing_status=status,
-        processed_at=None,
-    ))
+def _marker(
+    game_pk,
+    game_date,
+    *,
+    status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+    **kwargs,
+):
+    payload = {
+        'mlb_game_pk': game_pk,
+        'game_date': game_date,
+        'processing_status': status,
+        'processed_at': None,
+    }
+    payload.update(kwargs)
+    db.session.add(PostgameProcessedGame(**payload))
 
 
 def test_full_slate_complete_counts_scheduled_final_and_ingested_games(app):
@@ -109,6 +127,80 @@ def test_incomplete_postgame_marker_degrades_slate(app):
     assert 'postgame_markers_incomplete' in coverage['reason_codes']
 
 
+def test_diagnostics_identify_missing_and_incomplete_postgame_markers(app):
+    slate_date = date(2026, 7, 3)
+    last_attempted_at = datetime(2026, 7, 4, 5, 10, 0)
+    with app.app_context():
+        _schedule_game(
+            2001,
+            slate_date,
+            status_code='F',
+            home_id=116,
+            away_id=142,
+        )
+        _schedule_game(
+            2002,
+            slate_date,
+            status_code='F',
+            home_id=121,
+            away_id=147,
+        )
+        _marker(
+            2001,
+            slate_date,
+            status=PostgameProcessedGame.STATUS_INCOMPLETE,
+            incomplete_reason='pitcher_resolution_failures',
+            attempt_count=2,
+            pitching_lines_seen=6,
+            pitcher_resolution_failures=1,
+            correction_attempts_failed=1,
+            last_attempted_at=last_attempted_at,
+        )
+        db.session.commit()
+
+        coverage = slate_coverage.compute_slate_coverage(
+            slate_date,
+            include_diagnostics=True,
+        )
+
+    diagnostics = coverage['diagnostics']
+    blockers = diagnostics['postgame_blockers']
+    assert diagnostics['slate_date'] == '2026-07-03'
+    assert diagnostics['postgame_blocker_count'] == 2
+    assert [blocker['mlb_game_pk'] for blocker in blockers] == [2001, 2002]
+    assert coverage['complete_enough_to_publish'] is False
+    assert coverage['reason_codes'] == [
+        'final_games_not_fully_ingested',
+        'postgame_markers_incomplete',
+        'validations_failed',
+    ]
+
+    incomplete = blockers[0]
+    assert incomplete['reason_code'] == 'incomplete_marker'
+    assert incomplete['marker_status'] == PostgameProcessedGame.STATUS_INCOMPLETE
+    assert incomplete['incomplete_reason'] == 'pitcher_resolution_failures'
+    assert incomplete['attempt_count'] == 2
+    assert incomplete['pitching_lines_seen'] == 6
+    assert incomplete['pitcher_resolution_failures'] == 1
+    assert incomplete['correction_attempts_failed'] == 1
+    assert incomplete['last_attempted_at'] == '2026-07-04T05:10:00'
+    assert incomplete['game_status'] == 'F'
+    assert incomplete['status_state'] == ScheduledGame.STATE_FINAL
+    assert incomplete['away_team'] == 142
+    assert incomplete['home_team'] == 116
+
+    missing = blockers[1]
+    assert missing['reason_code'] == 'missing_marker'
+    assert missing['marker_status'] == 'missing'
+    assert missing['incomplete_reason'] is None
+    assert missing['attempt_count'] == 0
+    assert missing['pitching_lines_seen'] == 0
+    assert missing['pitcher_resolution_failures'] == 0
+    assert missing['correction_attempts_failed'] == 0
+    assert missing['away_team'] == 147
+    assert missing['home_team'] == 121
+
+
 def test_failed_postgame_marker_is_visible_and_not_publishable(app):
     slate_date = date(2026, 6, 25)
     with app.app_context():
@@ -120,12 +212,16 @@ def test_failed_postgame_marker_is_visible_and_not_publishable(app):
         )
         db.session.commit()
 
-        coverage = slate_coverage.compute_slate_coverage(slate_date)
+        coverage = slate_coverage.compute_slate_coverage(
+            slate_date,
+            include_diagnostics=True,
+        )
 
     assert coverage['games_failed'] == 1
     assert coverage['marker_counts']['failed'] == 1
     assert coverage['complete_enough_to_publish'] is False
     assert 'postgame_markers_failed' in coverage['reason_codes']
+    assert coverage['diagnostics']['postgame_blockers'][0]['reason_code'] == 'failed_marker'
 
 
 def test_partial_sync_degrades_even_when_counts_are_complete(app):
