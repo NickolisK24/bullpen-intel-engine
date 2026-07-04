@@ -819,7 +819,7 @@ Review cadence:
 | 1 | Canon roadmap revision | Complete | Replaces the feature-heavy V4 roadmap with the foundation-first, evidence-first direction. |
 | 2 | Phase 0A - Pipeline Integrity & Data Trust | Complete | Branches phase-0a/01 through phase-0a/08 have been merged via PRs #354-#359 and #364-#365; follow-up slate-coverage publish, slate diagnostics, and postgame blocker fixes merged via PRs #360-#363. |
 | 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Complete | Branches 0B-01 through 0B-07 completed; acquisition strategy and matrix added; Phase 0C sequencing plan is the next step. |
-| 4 | Phase 0C - Reliever Appearance Evidence Layer | In progress | Starts with finality/status hardening before reliever appearance evidence is ingested or surfaced. |
+| 4 | Phase 0C - Reliever Appearance Evidence Layer | In progress | Foundation branches now cover finality, readiness/provenance, boxscore expansion, roster/transaction facts, final PBP, and starter/calendar facts before public evidence interpretation. |
 | 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Not started | Document which pitch signals can safely support bullpen reads. |
 | 6 | Phase 0E - Bullpen Read Quality Model | Not started | Tie reads to evidence, confidence, and limitations. |
 | 7 | Phase 0F - Pitcher Detail Evidence Surface | Not started | Explain what happened and what changed for relievers. |

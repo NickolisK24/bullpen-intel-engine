@@ -13,10 +13,11 @@ framing, pressure scores, role inference, or pitch-level ingestion.
 
 ## Current Branch
 
-Branch 0C-06 adds the final play-by-play foundation as normalized typed source
-facts with per-game processing markers and reconciliation checks. Final
-play-by-play stores facts for later context only; it does not create entry,
-exit, inherited-runner, pressure, role, or public evidence reads in Phase 0C.
+Branch 0C-07 adds internal starter/bullpen split facts and safe calendar
+context facts derived from finality-certified stored rows. These facts support
+later starter-exposure context only; they do not create short-start pressure
+reads, opener/bulk/piggyback inference, team-structure reads, travel fatigue
+claims, projections, or public evidence surfaces in Phase 0C.
 
 ## Required Ingestion Contract
 
@@ -50,6 +51,10 @@ Every future Phase 0C ingestion/storage branch must document and test:
 - Final play-by-play facts must not persist raw response JSON, free-text play
   descriptions, live/in-progress feed state, inherited-runner attribution,
   pressure labels, role labels, or public evidence interpretation.
+- Starter exposure and calendar facts must remain descriptive internal facts.
+  They must not create starter pressure labels, opener/bulk/piggyback
+  inference, travel fatigue, rest advantage, projections, team-structure reads,
+  or public evidence interpretation.
 
 ## Branch Map
 

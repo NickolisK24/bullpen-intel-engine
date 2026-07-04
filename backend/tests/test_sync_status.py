@@ -537,6 +537,8 @@ class TestSyncStatusSnapshot:
         assert 'source_readiness' in health
         assert health['source_readiness']['families']['slate_coverage']['status'] == 'ready'
         assert 'finality_authority' in health['source_readiness']['families']
+        assert 'team_game_pitching_splits' in health['source_readiness']['families']
+        assert 'calendar_context' in health['source_readiness']['families']
 
     def test_pipeline_health_payload_identifies_slate_coverage_blockers(self, client):
         slate_date = date(2026, 5, 31)

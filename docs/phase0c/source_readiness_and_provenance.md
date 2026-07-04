@@ -69,6 +69,8 @@ Initial diagnostic families:
 - `roster_status_snapshots`
 - `player_transactions`
 - `final_play_by_play`
+- `team_game_pitching_splits`
+- `calendar_context`
 
 Not-yet-built Phase 0C source families must not be marked ready.
 
@@ -218,3 +220,59 @@ shape, identity, or reconciliation conflicts dead-letter and fail closed.
 Phase 0D owns any future interpretation from these facts: entry/exit context,
 inherited-runner attribution, clean/traffic labels, pressure proxies, role
 inference, and public evidence composition.
+
+## 0C-07 Starter Exposure And Calendar Foundation Rules
+
+Starter/bullpen split facts are derived internal facts. They are not
+short-start pressure reads, starter risk labels, opener/bulk/piggyback
+inference, role inference, team-structure reads, public evidence, or public
+copy.
+
+`team_game_pitching_splits` stores one row per team per final game, keyed by
+`team_id` and `mlb_game_pk`. It stores descriptive team-game pitching split
+facts: starter identity status, starter outs/pitches/batters faced/balls where
+safely known, bullpen outs/pitches/batters faced/balls where safely known,
+relievers used count where roles are safe, total team aggregates, completeness
+status, reason codes, source, sync run, first-seen timestamp, correction count,
+correction source, and correction timestamp.
+
+Starter identity comes only from sourced final pitching-line `games_started`
+evidence already stored on `game_logs`. Exactly one `games_started = 1` line for
+the team/game is `known`. Missing, null, or absent starter evidence is
+`unknown`. Multiple sourced starters are `ambiguous`. Pitch count, pitcher
+order, appearance length, batting order, opener assumptions, bulk-pitcher
+assumptions, and piggyback assumptions must not identify a starter.
+
+Nullable arithmetic fails closed. Any aggregate that depends on a missing
+component stays `NULL` and carries an UNKNOWN/PARTIAL reason code. Explicit
+source zero remains `0`. Partial sums must not be presented as complete totals.
+If starter identity is unknown or ambiguous, starter-specific fields and
+reliever-count/bullpen-role fields stay unknown rather than guessing roles.
+
+Calendar context is descriptive only. Stored calendar facts may include off day
+before/after, consecutive game-day count entering the game, series game number,
+games in series, doubleheader flag/code, game number, postponed or makeup
+indicator, suspended/resumed linkage status, extra-inning indicator where
+safely derivable from final stored rows, calendar completeness status, and
+reason codes. Calendar context must not infer travel fatigue, rest advantage,
+manager intent, availability, pressure, prediction, or result impact.
+
+Team-game split and calendar derivation runs only after final game logs are
+stored. Recompute is idempotent for identical data. Upstream `GameLog`
+corrections recompute affected team-game rows and update correction provenance
+when derived values change. Unsafe derivation failures dead-letter as
+`team_game_pitching_split_derivation`, mark readiness degraded or unavailable,
+and must not roll back committed `GameLog` rows.
+
+The `team_game_pitching_splits` and `calendar_context` readiness families are
+internal/admin diagnostics only. They report expected final games and team-game
+rows, complete/partial/unknown counts, missing counts, reason codes, dead
+letters, correction counts, source, sync run, last attempted derivation, and
+last successful derivation. Missing or partial rows fail closed for future
+consumers, but these families do not weaken current slate coverage, dashboard
+publishability, public sync status, roster, transaction, game-log, or final PBP
+gates.
+
+Phase 0D owns any future interpretation from these facts: short-start context,
+starter exposure explanations, bullpen share context, calendar-density reads,
+and public evidence composition.
