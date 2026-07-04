@@ -554,23 +554,50 @@ def build_bullpen_dashboard_snapshot_v2(
     sync_run_id=None,
 ):
     started = perf_counter()
+    guard = None
     logger.info(
         'Dashboard snapshot builder v2 starting source=%s publish=%s sync_run_id=%s.',
         source,
         publish,
         sync_run_id,
     )
-    snapshot = build_bullpen_dashboard_snapshot(
-        source=source,
-        publish=publish,
-        sync_run_id=sync_run_id,
-    )
-    duration_ms = _elapsed_ms(started)
-    result = _snapshot_build_result(
-        snapshot,
-        duration_ms=duration_ms,
-        source=source,
-    )
+    try:
+        guard = sync_metadata.acquire_sync_writer_guard(
+            job_name=sync_metadata.JOB_DASHBOARD_SNAPSHOT_BUILD,
+            source=source,
+        )
+        snapshot = build_bullpen_dashboard_snapshot(
+            source=source,
+            publish=publish,
+            sync_run_id=sync_run_id,
+        )
+        duration_ms = _elapsed_ms(started)
+        result = _snapshot_build_result(
+            snapshot,
+            duration_ms=duration_ms,
+            source=source,
+        )
+    except sync_metadata.SyncWriterConflict as conflict:
+        duration_ms = _elapsed_ms(started)
+        result = {
+            **sync_metadata.sync_writer_conflict_payload(conflict),
+            'source': source,
+            'duration_ms': duration_ms,
+            'snapshot_served_by_dashboard': False,
+            'snapshot_id': None,
+            'snapshot_status': None,
+            'snapshot_type': SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+            'sync_run_id': sync_run_id,
+            'payload_version': DASHBOARD_PAYLOAD_VERSION,
+            'data_through': None,
+            'availability_reference_date': None,
+            'snapshot_generated_at': None,
+            'payload_has_slate_coverage': False,
+            'slate_coverage': None,
+        }
+    finally:
+        if guard is not None:
+            guard.release()
     if result['status'] == 'ready':
         logger.info(
             'Dashboard snapshot builder v2 stored ready snapshot id=%s in %.2f ms.',

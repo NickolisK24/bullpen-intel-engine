@@ -625,7 +625,8 @@ class TestDashboardSnapshotService:
 
             result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
 
-            assert result['status'] == 'pending'
+            assert result['status'] == 'blocked'
+            assert result['reason'] == 'sync_writer_already_running'
             assert result['snapshot_served_by_dashboard'] is False
             assert (
                 dashboard_snapshot.get_latest_valid_dashboard_snapshot().id

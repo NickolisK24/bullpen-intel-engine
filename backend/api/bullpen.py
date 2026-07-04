@@ -1,6 +1,7 @@
 import hmac
 import json
 import os
+from functools import wraps
 
 from flask import Blueprint, abort, current_app, jsonify, request
 from sqlalchemy import desc
@@ -146,6 +147,30 @@ FATIGUE_ERA_RESULTS_PATH = os.path.join(
     'analysis',
     'fatigue_era_results.json',
 )
+
+
+def require_sync_writer_guard(job_name, *, source=sync_metadata.SOURCE_MANUAL):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            request_source = source
+            if request.is_json:
+                body = request.get_json(silent=True) or {}
+                request_source = str(body.get('source') or source)[:30]
+            try:
+                guard = sync_metadata.acquire_sync_writer_guard(
+                    job_name=job_name,
+                    source=request_source,
+                )
+            except sync_metadata.SyncWriterConflict as conflict:
+                return jsonify(sync_metadata.sync_writer_conflict_payload(conflict)), 409
+            try:
+                return func(*args, **kwargs)
+            finally:
+                guard.release()
+        return wrapper
+    return decorator
+
 
 def _truthy(value):
     """Parse a query-string boolean tolerantly."""
@@ -525,6 +550,7 @@ def get_pitcher_fatigue(pitcher_id):
 
 @bullpen_bp.route('/fatigue/recalculate', methods=['POST'])
 @require_admin_token
+@require_sync_writer_guard(sync_metadata.JOB_FATIGUE_RECALCULATION)
 def recalculate_fatigue():
     """
     Trigger fatigue recalculation for all pitchers.
@@ -558,6 +584,7 @@ def recalculate_fatigue():
 
 @bullpen_bp.route('/sync', methods=['POST'])
 @require_admin_token
+@require_sync_writer_guard(sync_metadata.JOB_DAILY_SYNC)
 def sync_recent_logs():
     """
     Pull the latest game logs from the MLB Stats API for the current season
@@ -578,35 +605,30 @@ def sync_recent_logs():
         source=source,
         started_at=started.replace(tzinfo=None),
     )
+    active_stage = None
     # Fresh API metrics so api_calls_made / retries_used reflect only this run.
     mlb_client.metrics.reset()
 
     try:
-        sync_metadata.set_sync_stage(
-            sync_run_id,
-            sync_metadata.STAGE_TEAM_ASSIGNMENTS,
-        )
+        active_stage = sync_metadata.STAGE_TEAM_ASSIGNMENTS
         team_assignment = sync_service.sync_team_assignments()
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
         team_assignment_records_failed = sync_service.record_sync_error_details(
             'team_assignment_fetch',
             team_assignment.get('error_details'),
             sync_run_id=sync_run_id,
         )
-        sync_metadata.set_sync_stage(
-            sync_run_id,
-            sync_metadata.STAGE_ROSTER_STATUS,
-        )
+        active_stage = sync_metadata.STAGE_ROSTER_STATUS
         roster = sync_service.sync_roster_statuses()
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
         roster_records_failed = sync_service.record_sync_error_details(
             'roster_status_fetch',
             roster.get('error_details'),
             sync_run_id=sync_run_id,
         )
-        sync_metadata.set_sync_stage(
-            sync_run_id,
-            sync_metadata.STAGE_LOG_INGESTION,
-        )
+        active_stage = sync_metadata.STAGE_LOG_INGESTION
         pull = sync_service.sync_recent_logs(days_back=days_back, sync_run_id=sync_run_id)
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
     except Exception as e:
         db.session.rollback()
         # Durable first, and self-healing: writes a failed row even if the start
@@ -623,11 +645,7 @@ def sync_recent_logs():
             source=source,
             started_at=started.replace(tzinfo=None),
             stage=sync_metadata.STAGE_FAILED,
-            failed_stage=(
-                db.session.get(SyncRun, sync_run_id).stage
-                if sync_run_id and db.session.get(SyncRun, sync_run_id) is not None
-                else None
-            ),
+            failed_stage=active_stage,
         )
         # Persist failure status so the dashboard reflects the bad state. The
         # file write is best-effort and never gates the durable row above.
@@ -645,21 +663,17 @@ def sync_recent_logs():
     try:
         # Canonical authority: score against the latest completed workload date + 1
         # day — the same reference the scheduled sync and recalculate endpoint use.
-        sync_metadata.set_sync_stage(
-            sync_run_id,
-            sync_metadata.STAGE_FATIGUE_RECALCULATION,
-        )
+        active_stage = sync_metadata.STAGE_FATIGUE_RECALCULATION
         fatigue_updated = sync_service.recalculate_all_fatigue()
-        sync_metadata.set_sync_stage(
-            sync_run_id,
-            sync_metadata.STAGE_BACKTEST_REFRESH,
-        )
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
+        active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
         try:
             from services.availability_backtest import refresh_availability_backtest
             backtest = refresh_availability_backtest()
         except Exception as exc:
             db.session.rollback()
             backtest = {'status': 'failed', 'error': str(exc)}
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
         finished        = datetime.now(timezone.utc)
         # Partial when records were dead-lettered but domains still refreshed.
         records_failed = (
@@ -721,7 +735,9 @@ def sync_recent_logs():
                 source=source,
                 started_at=started.replace(tzinfo=None),
                 stage=sync_metadata.STAGE_FAILED,
-                failed_stage=existing_run.stage if existing_run is not None else None,
+                failed_stage=active_stage or (
+                    existing_run.stage if existing_run is not None else None
+                ),
             )
         sync_service.write_status({
             'last_sync':       started.isoformat(),
@@ -2792,6 +2808,17 @@ def build_dashboard_snapshot_endpoint():
             'status': 'error',
             'reason': 'dashboard_snapshot_build_failed',
         }), 500
+
+    if result.get('status') == 'blocked':
+        current_app.logger.warning(
+            'Dashboard snapshot build endpoint blocked: %s',
+            result.get('reason'),
+        )
+        return jsonify({
+            'status': 'blocked',
+            'reason': result.get('reason'),
+            'builder': result,
+        }), 409
 
     if result.get('status') == 'failed':
         current_app.logger.warning(

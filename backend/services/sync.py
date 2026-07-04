@@ -1869,10 +1869,6 @@ def complete_sync_run_with_snapshot(
     from services import dashboard_snapshot as dashboard_snapshot_service
 
     completed_at = completed_at or datetime.now(timezone.utc).replace(tzinfo=None)
-    sync_metadata.set_sync_stage(
-        sync_run_id,
-        sync_metadata.STAGE_DASHBOARD_SNAPSHOT,
-    )
     try:
         run = sync_metadata.finish_sync_run(
             sync_run_id,
@@ -1956,6 +1952,8 @@ def run_postgame_refresh(
     started_at = datetime.now(timezone.utc)
     schedule_date = schedule_date or postgame_schedule_date(started_at)
     sync_run_id = None
+    active_stage = None
+    writer_guard = None
     status = {
         'last_sync': started_at.isoformat(),
         'status': sync_metadata.STATUS_SUCCESS,
@@ -1990,13 +1988,17 @@ def run_postgame_refresh(
 
     try:
         with app.app_context():
+            writer_guard = sync_metadata.acquire_sync_writer_guard(
+                job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                source=source,
+            )
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
                 job_name=sync_metadata.JOB_POSTGAME_REFRESH,
             )
             mlb_client.metrics.reset()
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
+            active_stage = sync_metadata.STAGE_LOG_INGESTION
 
             completed_games = completed_games_for_postgame_refresh(schedule_date)
             unprocessed_games, marker_counts = _unprocessed_completed_games(completed_games)
@@ -2128,13 +2130,18 @@ def run_postgame_refresh(
             )
 
             changed_log_count = status['new_logs_added'] + status['logs_corrected']
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
             if changed_log_count > 0:
-                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
+                active_stage = sync_metadata.STAGE_FATIGUE_RECALCULATION
                 fatigue_started = time.perf_counter()
                 run_logger.info(
                     'Fatigue recalculation starting after postgame ingestion.'
                 )
                 pitchers_updated = recalculate_all_fatigue()
+                sync_metadata.set_sync_stage(
+                    sync_run_id,
+                    sync_metadata.STAGE_FATIGUE_RECALCULATION,
+                )
                 status['pitchers_updated'] = pitchers_updated
                 run_logger.info(
                     'Fatigue recalculation complete: pitchers_updated=%s '
@@ -2206,9 +2213,13 @@ def run_postgame_refresh(
                     stage=(
                         sync_metadata.STAGE_FAILED
                         if status['status'] == sync_metadata.STATUS_FAILED
-                        else sync_metadata.STAGE_PUBLISHED
+                        else sync_metadata.STAGE_LOG_INGESTION
                     ),
                 )
+    except sync_metadata.SyncWriterConflict as conflict:
+        status.update(sync_metadata.sync_writer_conflict_payload(conflict))
+        status['job_name'] = sync_metadata.JOB_POSTGAME_REFRESH
+        run_logger.warning('Postgame refresh blocked: %s', conflict.reason)
     except Exception as e:
         status['status'] = sync_metadata.STATUS_FAILED
         status['message'] = str(e)
@@ -2232,8 +2243,13 @@ def run_postgame_refresh(
                     error_message=str(e),
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                     stage=sync_metadata.STAGE_FAILED,
-                    failed_stage=existing_run.stage if existing_run is not None else None,
+                    failed_stage=active_stage or (
+                        existing_run.stage if existing_run is not None else None
+                    ),
                 )
+
+    if writer_guard is not None:
+        writer_guard.release()
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
     status['elapsed_ms'] = round((time.perf_counter() - refresh_started) * 1000, 1)
@@ -2290,6 +2306,8 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
     started_at = datetime.now(timezone.utc)
     product_day = resolve_product_day(started_at)
     sync_run_id = None
+    active_stage = None
+    writer_guard = None
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
 
     status = {
@@ -2306,6 +2324,10 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
 
     try:
         with app.app_context():
+            writer_guard = sync_metadata.acquire_sync_writer_guard(
+                job_name=sync_metadata.JOB_DAILY_SYNC,
+                source=source,
+            )
             sync_run_id = sync_metadata.start_sync_run(
                 source=source,
                 started_at=started_at.replace(tzinfo=None),
@@ -2313,11 +2335,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             # Fresh API metrics for this run so api_calls_made / retries_used
             # reflect only this sync's activity.
             mlb_client.metrics.reset()
-            sync_metadata.set_sync_stage(
-                sync_run_id,
-                sync_metadata.STAGE_TEAM_ASSIGNMENTS,
-            )
+            active_stage = sync_metadata.STAGE_TEAM_ASSIGNMENTS
             team_assignment = sync_team_assignments()
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_TEAM_ASSIGNMENTS)
             team_assignment_records_failed = record_sync_error_details(
                 'team_assignment_fetch',
                 team_assignment.get('error_details'),
@@ -2332,11 +2352,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 team_assignment['unknown_count'],
                 team_assignment['errors'],
             )
-            sync_metadata.set_sync_stage(
-                sync_run_id,
-                sync_metadata.STAGE_ROSTER_STATUS,
-            )
+            active_stage = sync_metadata.STAGE_ROSTER_STATUS
             roster = sync_roster_statuses()
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
             roster_records_failed = record_sync_error_details(
                 'roster_status_fetch',
                 roster.get('error_details'),
@@ -2349,15 +2367,13 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 roster['unknown_count'],
                 roster['errors'],
             )
-            sync_metadata.set_sync_stage(
-                sync_run_id,
-                sync_metadata.STAGE_LOG_INGESTION,
-            )
+            active_stage = sync_metadata.STAGE_LOG_INGESTION
             pull = sync_recent_logs(
                 days_back=days_back,
                 reference_date=product_day.calendar_date,
                 sync_run_id=sync_run_id,
             )
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
             logs_corrected = pull.get('logs_corrected', 0)
             correction_attempts_failed = pull.get('correction_attempts_failed', 0)
             run_logger.info(
@@ -2396,18 +2412,13 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                     status['message'] = 'No games found — offseason skip.'
                     run_logger.info('No games found — offseason skip.')
 
-            sync_metadata.set_sync_stage(
-                sync_run_id,
-                sync_metadata.STAGE_FATIGUE_RECALCULATION,
-            )
+            active_stage = sync_metadata.STAGE_FATIGUE_RECALCULATION
             pitchers_updated = recalculate_all_fatigue()
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
 
-            sync_metadata.set_sync_stage(
-                sync_run_id,
-                sync_metadata.STAGE_BACKTEST_REFRESH,
-            )
+            active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
             try:
                 from services.availability_backtest import refresh_availability_backtest
                 backtest = refresh_availability_backtest()
@@ -2422,6 +2433,7 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 status['availability_backtest_status'] = 'failed'
                 status['availability_backtest_error'] = str(exc)
                 run_logger.warning('Availability backtest refresh failed: %s', exc)
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
 
             # Partial when records were dead-lettered but the run still
             # refreshed its domains; otherwise success.
@@ -2452,6 +2464,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 snapshot_source='scheduled_sync',
             )
             status['dashboard_snapshot_id'] = snapshot.id
+    except sync_metadata.SyncWriterConflict as conflict:
+        status.update(sync_metadata.sync_writer_conflict_payload(conflict))
+        run_logger.warning('Daily sync blocked: %s', conflict.reason)
     except Exception as e:
         status['status']  = sync_metadata.STATUS_FAILED
         status['message'] = str(e)
@@ -2475,8 +2490,13 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                     retries_used=api_metrics['retries'],
                     error_message=str(e),
                     stage=sync_metadata.STAGE_FAILED,
-                    failed_stage=existing_run.stage if existing_run is not None else None,
+                    failed_stage=active_stage or (
+                        existing_run.stage if existing_run is not None else None
+                    ),
                 )
+
+    if writer_guard is not None:
+        writer_guard.release()
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
 
