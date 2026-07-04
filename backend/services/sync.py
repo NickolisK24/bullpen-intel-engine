@@ -162,6 +162,16 @@ def _int_stat(stats: dict, key: str, default: int = 0) -> int:
         return default
 
 
+def _int_stat_or_none(stats: dict, key: str) -> int | None:
+    raw = (stats or {}).get(key)
+    if raw is None or raw == '':
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _positive_stat(stats: dict, key: str) -> bool:
     return _int_stat(stats, key) > 0
 
@@ -245,7 +255,7 @@ def _ingest_boxscore_pitching_line(
         games_started=_line_games_started(line, pitcher_order),
         innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
         innings_pitched_outs=innings_pitched_outs,
-        pitches_thrown=_int_stat(stats, 'numberOfPitches'),
+        pitches_thrown=_int_stat_or_none(stats, 'numberOfPitches'),
         strikes=_int_stat(stats, 'strikes'),
         hits_allowed=_int_stat(stats, 'hits'),
         runs_allowed=_int_stat(stats, 'runs'),
@@ -793,6 +803,9 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
     if not game_pk or not game_date_str:
         return False
 
+    if not is_completed_game(game_info):
+        return False
+
     game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
 
     if game_date < cutoff:
@@ -820,7 +833,7 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
         games_started=parse_games_started(stat.get('gamesStarted')),
         innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
         innings_pitched_outs=innings_pitched_outs,
-        pitches_thrown=int(stat.get('numberOfPitches', 0) or 0),
+        pitches_thrown=_int_stat_or_none(stat, 'numberOfPitches'),
         strikes=int(stat.get('strikes', 0) or 0),
         hits_allowed=int(stat.get('hits', 0) or 0),
         runs_allowed=int(stat.get('runs', 0) or 0),

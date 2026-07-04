@@ -530,6 +530,29 @@ def _pct(value):
 
 def _workload_concentration(workload):
     workload = workload or {}
+    unknown_pitch_count = bool(workload.get('unknown_pitch_count'))
+    window_days = int(workload.get('window_days') or RECENT_WORKLOAD_WINDOW_DAYS)
+    if unknown_pitch_count:
+        counts = {
+            'totalRecentPitches': None,
+            'participantCount': None,
+            'topArmCount': None,
+            'topPitchTotal': None,
+            'topShare': None,
+            'topSharePct': None,
+            'topOneShare': None,
+            'perArmPitches': None,
+            'windowDays': window_days,
+            'concentrationLevel': 'unknown',
+            'concentrationDescriptor': 'unknown workload concentration',
+            'unknownPitchCount': True,
+        }
+        return _limited_read(
+            'workloadConcentration',
+            'Recent relief pitch-count workload is incomplete, so BaseballOS cannot tell whether the same arms are carrying the work.',
+            counts,
+        )
+
     total_pitches = int(workload.get('total_pitches') or 0)
     participant_count = int(workload.get('participant_count') or 0)
     top_arm_count = int(workload.get('top_arm_count') or 0)
@@ -539,7 +562,6 @@ def _workload_concentration(workload):
     level = workload.get('concentration_level') or 'none'
     descriptor = workload.get('concentration_descriptor') or 'no concentration'
     per_arm = float(workload.get('per_arm_pitches') or 0)
-    window_days = int(workload.get('window_days') or RECENT_WORKLOAD_WINDOW_DAYS)
     label_by_level = {
         'severe': 'Heavily Concentrated Workload',
         'concentrated': 'Concentrated Workload',

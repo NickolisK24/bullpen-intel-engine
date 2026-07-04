@@ -86,8 +86,27 @@ def _round(value):
     return round(float(value), 1) if value is not None else None
 
 
+def _int_or_none(value):
+    if value is None or value == '':
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sum_pitches_or_unknown(logs):
+    total = 0
+    for log in logs or []:
+        pitches = _int_or_none(getattr(log, 'pitches_thrown', None))
+        if pitches is None:
+            return None
+        total += pitches
+    return total
+
+
 def _pct_delta(current, previous):
-    if previous in (None, 0):
+    if current is None or previous in (None, 0):
         return None
     return round((current - previous) / previous, 2)
 
@@ -242,7 +261,17 @@ def _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches
         return 'insufficient_data'
 
     appearance_delta = last_appearances - prev_appearances
-    pitch_delta = last_pitches - prev_pitches
+    pitch_delta = (
+        last_pitches - prev_pitches
+        if last_pitches is not None and prev_pitches is not None
+        else None
+    )
+    if pitch_delta is None:
+        if appearance_delta > 0:
+            return 'increasing_demand'
+        if appearance_delta < 0:
+            return 'decreasing_demand'
+        return 'mixed_demand'
     if (appearance_delta > 0 and pitch_delta >= 0) or (pitch_delta > 0 and appearance_delta >= 0):
         return 'increasing_demand'
     if (appearance_delta < 0 and pitch_delta <= 0) or (pitch_delta < 0 and appearance_delta <= 0):
@@ -340,8 +369,8 @@ def _usage_demand_context(last_logs, prev_logs, windows):
     prev_bullpen = _bullpen_logs(prev_logs)
     last_appearances = len(last_bullpen)
     prev_appearances = len(prev_bullpen)
-    last_pitches = sum(int(log.pitches_thrown or 0) for log in last_bullpen)
-    prev_pitches = sum(int(log.pitches_thrown or 0) for log in prev_bullpen)
+    last_pitches = _sum_pitches_or_unknown(last_bullpen)
+    prev_pitches = _sum_pitches_or_unknown(prev_bullpen)
     trend = _demand_trend(last_appearances, prev_appearances, last_pitches, prev_pitches)
     if signal['start_classification_state'] == 'material_unknown':
         trend = 'insufficient_start_data'
@@ -354,7 +383,11 @@ def _usage_demand_context(last_logs, prev_logs, windows):
         'bullpen_pitches_last_7': last_pitches,
         'bullpen_pitches_prev_7': prev_pitches,
         'appearance_delta': last_appearances - prev_appearances,
-        'pitch_delta': last_pitches - prev_pitches,
+        'pitch_delta': (
+            last_pitches - prev_pitches
+            if last_pitches is not None and prev_pitches is not None
+            else None
+        ),
         'appearance_pct_delta': _pct_delta(last_appearances, prev_appearances),
         'pitch_pct_delta': _pct_delta(last_pitches, prev_pitches),
         'unknown_start_rows_excluded': signal['unknown_start_rows'],

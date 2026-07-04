@@ -89,7 +89,13 @@ def _iso_or_none(value):
 
 
 def _sum_pitches(logs):
-    return sum((getattr(log, 'pitches_thrown', 0) or 0) for log in logs)
+    pitches = []
+    for log in logs:
+        raw = getattr(log, 'pitches_thrown', None)
+        if raw is None:
+            return None
+        pitches.append(raw)
+    return sum(pitches)
 
 
 def _logs_between(logs, start, end):
@@ -170,9 +176,9 @@ def _evaluate_workload(inputs, thresholds):
     status = STATUS_AVAILABLE
 
     fatigue = inputs['fatigue_score']
-    pitches_yesterday = inputs['pitches_yesterday']
-    pitches_3 = inputs['pitches_last_3_days']
-    pitches_5 = inputs['pitches_last_5_days']
+    pitches_yesterday = inputs['pitches_yesterday'] or 0
+    pitches_3 = inputs['pitches_last_3_days'] or 0
+    pitches_5 = inputs['pitches_last_5_days'] or 0
     apps_3 = inputs['appearances_last_3_days']
     apps_5 = inputs['appearances_last_5_days']
     days_rest = inputs['days_rest']

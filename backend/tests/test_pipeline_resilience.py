@@ -35,7 +35,15 @@ from api.system import system_bp
 
 def _valid_split(pk, game_date, innings='1.0', games_started=0):
     return {
-        'game': {'gamePk': pk, 'gameType': 'R'},
+        'game': {
+            'gamePk': pk,
+            'gameType': 'R',
+            'status': {
+                'statusCode': 'F',
+                'detailedState': 'Final',
+                'abstractGameState': 'Final',
+            },
+        },
         'date': game_date.isoformat(),
         'opponent': {'id': 2, 'name': 'Opp'},
         'stat': {
@@ -51,7 +59,15 @@ def _poison_split(pk):
     # Valid-looking keys but an unparseable date → raises during ingest, so the
     # record is dead-lettered rather than silently dropped.
     return {
-        'game': {'gamePk': pk, 'gameType': 'R'},
+        'game': {
+            'gamePk': pk,
+            'gameType': 'R',
+            'status': {
+                'statusCode': 'F',
+                'detailedState': 'Final',
+                'abstractGameState': 'Final',
+            },
+        },
         'date': 'not-a-real-date',
         'opponent': {'id': 2, 'name': 'Opp'},
         'stat': {'inningsPitched': '1.0'},

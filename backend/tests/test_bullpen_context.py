@@ -510,6 +510,24 @@ def test_unknown_games_started_rows_do_not_count_as_bullpen_demand(client):
     assert any('More than 25%' in item for item in context['limitations'])
 
 
+def test_unknown_pitch_count_does_not_zero_usage_demand_pitch_volume(client):
+    with client.application.app_context():
+        reliever = _seed_pitcher(136, 'Unknown Pitch Reliever', 13601)
+        _seed_log(reliever, 1, 136011, innings=1.0, pitches=None, games_started=0)
+        _seed_log(reliever, 8, 136012, innings=1.0, pitches=20, games_started=0)
+
+        context = build_team_bullpen_context(136, reference_date=REF)
+
+    demand = context['usage_demand_context']
+    assert demand['bullpen_appearances_last_7'] == 1
+    assert demand['bullpen_appearances_prev_7'] == 1
+    assert demand['bullpen_pitches_last_7'] is None
+    assert demand['bullpen_pitches_prev_7'] == 20
+    assert demand['pitch_delta'] is None
+    assert demand['pitch_pct_delta'] is None
+    assert demand['trend'] == 'mixed_demand'
+
+
 def test_falling_bullpen_demand_detected(client):
     with client.application.app_context():
         reliever = _seed_pitcher(121, 'Lighter Reliever', 12101)

@@ -82,6 +82,16 @@ class TestGameLogUniqueness:
         db.session.commit()
         assert GameLog.query.filter_by(mlb_game_pk=100).count() == 2
 
+    def test_null_pitch_count_is_allowed_and_serialized_as_unknown(self, app_ctx):
+        p = _add_pitcher(1)
+        db.session.add(_log(p.id, 150))
+        db.session.commit()
+
+        row = GameLog.query.filter_by(pitcher_id=p.id, mlb_game_pk=150).one()
+
+        assert row.pitches_thrown is None
+        assert row.to_dict()['pitches_thrown'] is None
+
     def test_null_innings_outs_is_rejected(self, app_ctx):
         p = _add_pitcher(1)
         db.session.add(GameLog(
