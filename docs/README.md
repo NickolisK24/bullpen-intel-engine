@@ -49,7 +49,7 @@ under `archive/` — provide history and context but do not override these.
 | --- | --- |
 | Canonical project state | [`current/PROJECT_STATE_2026_06.md`](current/PROJECT_STATE_2026_06.md) |
 | Roadmap | [`current/ROADMAP.md`](current/ROADMAP.md) |
-| V4 daily bullpen platform roadmap | [`roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md) |
+| V4 foundation integrity and bullpen evidence roadmap | [`roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`](roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md) |
 | Setup and deployment | [`current/SETUP.md`](current/SETUP.md) |
 | Changelog | [`current/CHANGELOG.md`](current/CHANGELOG.md) |
 | Availability / fatigue engine | [`methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md`](methodology/BULLPEN_AVAILABILITY_ENGINE_V1.md) |

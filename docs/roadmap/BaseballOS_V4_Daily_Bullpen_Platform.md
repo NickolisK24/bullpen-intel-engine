@@ -1,421 +1,814 @@
-# BaseballOS V4 Roadmap: Daily Bullpen Platform
+# BaseballOS V4 Roadmap: Foundation Integrity & Bullpen Evidence
 
-This is the canonical execution roadmap for BaseballOS V4. It is a living
-roadmap for building BaseballOS into a daily bullpen platform: a product people
-can return to before games, understand quickly, share clearly, and trust.
+This is the canonical execution roadmap for BaseballOS V4. The foundation
+sequence starts with Phase 0A — Pipeline Integrity & Data Trust before broader
+daily, follow-team, share, digest, creator, or monetization work.
 
-This document records order, boundaries, decision rules, and review cadence. It
-does not authorize product-code changes by itself. Each implementation phase
-must still ship through its own scoped branch, review, validation, and commit.
+V4 is a foundation-first, evidence-first pass. It replaces the earlier
+feature-heavy V4 direction with a stricter product rule:
+
+Use as much relevant baseball data as possible.
+Interpret it through a bullpen lens.
+Show the evidence clearly.
+Avoid unsupported claims.
+
+Trust first. Evidence second. Interpretation third. Retention only after the
+read is worth returning to.
+
+V4 is not primarily a Follow My Team, Daily Home, share-card, digest,
+creator-mode, or monetization phase. Those product loops remain important, but
+they are deferred until the foundation and evidence layer are strong enough to
+support them without overclaiming.
+
+BaseballOS should not be smaller because it is focused. BaseballOS should be
+deeper because it is focused. BaseballOS should not compete by having fewer
+numbers. BaseballOS should compete by making the right bullpen numbers mean
+something.
+
+This document records order, boundaries, decision rules, evidence requirements,
+and phase gates. It does not authorize product-code changes by itself. Each
+implementation phase must still ship through its own scoped branch, review,
+validation, and commit.
 
 ## V4 Operating Thesis
 
-BaseballOS becomes useful when it becomes a daily read, not only a reference
-tool. V4 should make the product worth opening every day by answering a small
-set of durable baseball questions:
+BaseballOS should become the best public bullpen intelligence platform by being
+narrow in scope and deep in evidence.
 
-- Which bullpens are fresh tonight?
-- Which bullpens are stretched?
-- Which teams have late-game margin?
-- What changed since yesterday?
-- Which team should I follow first?
+The platform should not try to become FanGraphs, Baseball Savant, Baseball
+Reference, or a general baseball analytics site. Those platforms cover the
+entire sport. BaseballOS should specialize in one area:
+
+What is the real state of every MLB bullpen today, what changed, and what
+evidence supports the read?
+
+V4 is no longer primarily a retention-feature roadmap. V4 is a foundation and
+evidence roadmap. The goal is not to make BaseballOS flashier. The goal is to
+make BaseballOS more trustworthy, more useful, and more baseball-specific.
+
+BaseballOS becomes useful when it can explain bullpen context from enough
+relevant public baseball evidence that the read is checkable. V4 should make
+the product stronger by improving the data foundation, reliever evidence layer,
+pitch-trend feasibility, roster context, starter exposure context, methodology,
+and trust posture before broadening into retention or monetization surfaces.
 
 The product should stay descriptive, checkable, and baseball-native. It should
 make bullpen context easier to understand without turning into picks,
-predictions, private injury claims, or certainty about manager decisions.
+predictions, fantasy advice, betting advice, private injury claims, or certainty
+about manager decisions.
 
 ## V4 North Star
 
-V4 should make BaseballOS the clearest daily public read on MLB bullpen context.
+V4 should make BaseballOS the clearest public evidence layer for MLB bullpen
+context.
 
-The user should be able to open BaseballOS before the slate and understand:
+The user should be able to inspect a bullpen read and understand:
 
-- the league-wide bullpen picture;
-- the team they care about;
-- what changed since yesterday;
-- why each read exists;
-- how current the data is;
+- what happened recently;
+- which relievers carried the work;
+- whether the outing was clean, stressful, heavy, efficient, or messy;
+- how pitch count, command, strikeouts, walks, velocity, and pitch usage compare
+  to recent baseline;
+- whether the team is leaning on the same arms repeatedly;
+- whether the bullpen state is driven by workload, performance trend, roster
+  pressure, starter exposure, or a combination;
+- how current the evidence is;
+- what changed from the prior trusted state;
+- which roster or starter-context signals matter;
+- which pitch-level or pitch-trend signals are available;
 - what BaseballOS cannot know.
+
+V4 should move BaseballOS from label-first bullpen availability to
+evidence-first bullpen intelligence.
+
+## Core Product Philosophy
+
+BaseballOS should compete by being narrow and deep. Every piece of data should
+be evaluated through bullpen questions:
+
+- Did this reliever work recently?
+- Was the outing clean or stressful?
+- Was the pitch count light, normal, or heavy?
+- Did command look sharp or shaky?
+- Did velocity hold, dip, or jump?
+- Did pitch mix change?
+- Did strikeout/walk profile shift?
+- Is he being leaned on repeatedly?
+- Is he fresh but not trusted?
+- Is he available but not sharp?
+- Is the team thin because of workload, injuries, roster churn, starter
+  exposure, or late-game concentration?
+- What changed since yesterday?
+- What evidence supports that change?
+
+BaseballOS should not compete by having fewer numbers. It should compete by
+organizing the right numbers around bullpen questions.
 
 ## What V4 Is
 
-V4 is the Daily Bullpen Platform pass.
+V4 is:
 
-It is:
+- a foundation integrity pass;
+- a data completeness pass;
+- a reliever evidence pass;
+- a pitch-trend feasibility and integration pass;
+- a bullpen read quality pass;
+- a team bullpen context pass;
+- a data trust and methodology pass;
+- a measured step toward a stronger daily product.
 
-- a daily home experience;
-- a team-following experience;
-- a clearer change-detection loop;
-- a shareable team-context layer;
-- a weekly content and digest foundation;
-- a measured path toward creator, analyst, and paid beta validation.
-
-V4 should make the current bullpen intelligence easier to return to, easier to
-understand, and easier to share.
+V4 should make the current bullpen intelligence more complete, more
+explainable, more honest about missing evidence, and more useful as the base for
+future daily product loops.
 
 ## What V4 Is Not
 
 V4 is not:
 
 - a betting product;
-- a fantasy product;
 - a prediction product;
-- a private injury product;
-- a live play-by-play product;
-- a manager-intent product;
-- a new backend scoring rewrite;
-- a new route architecture rewrite;
-- a place to broaden product promises before trust and usage prove demand.
-
-## Product Loop
-
-V4 should strengthen this loop:
-
-1. A user opens BaseballOS before the slate.
-2. They understand the daily bullpen picture.
-3. They follow or inspect a team.
-4. They see what changed since yesterday.
-5. They share a clean team card or story.
-6. They return through the next daily read or weekly digest.
-
-Each roadmap item should either improve the loop, measure the loop, or protect
-trust inside the loop.
+- a fantasy advice product;
+- a broad MLB analytics dashboard;
+- a generic player stat site;
+- a social product;
+- a newsletter product;
+- a monetization product;
+- a pro workflow product;
+- a visual polish sprint;
+- a share-card sprint;
+- a follow-team retention sprint.
 
 ## Non-Negotiable Guardrails
 
-- BaseballOS remains descriptive, not predictive.
-- No picks.
 - No betting advice.
-- No fantasy positioning.
+- No picks.
+- No fantasy start/sit claims.
+- No prediction claims.
+- No manager-intent certainty.
 - No private injury claims.
-- No certainty about manager decisions.
-- No hidden scoring terms in public copy.
-- No internal terminology in user-facing product surfaces.
-- No sample, fallback, or stale state may appear as current live data.
-- Freshness, data-through dates, and limitations must stay visible.
-- New surfaces must fail closed when data is missing, stale, or unsafe.
+- No unsupported health claims.
+- No unknown values converted into zeros or plausible values.
+- No stale, sample, fallback, partial, or unsafe data shown as current.
+- No complete-sounding reads from incomplete slates.
+- Freshness, data-through dates, slate coverage, and limitations must stay
+  visible.
 - Roadmap work must not broaden API, data, scoring, or route behavior unless
   that phase explicitly authorizes it.
+
+Allowed and encouraged evidence includes:
+
+- last outing results;
+- pitch count;
+- outs recorded;
+- batters faced;
+- hits, runs, walks, strikeouts, and home runs;
+- strike rate;
+- K/BB;
+- pitch mix;
+- average velocity by pitch type;
+- last outing vs last 7 comparison;
+- command trend;
+- velocity trend;
+- workload trend;
+- roster context;
+- starter exposure context;
+- usage concentration;
+- clean, messy, heavy, or efficient outing labels, when evidence-backed.
 
 ## Audience Priority
 
 V4 should optimize in this order:
 
-1. Baseball-curious fans who want a clear pregame bullpen read.
-2. Analysts, writers, and creators who need fast, checkable context.
-3. Team-focused users who want one club's daily bullpen picture.
-4. Power users who may later want alerts, digests, exports, or premium workflow.
+1. Users who want a clear public bullpen read backed by visible evidence.
+2. Analysts, writers, and creators who need fast, checkable bullpen context.
+3. Team-focused users who want one club's bullpen picture.
+4. Power users who may later want alerts, digests, exports, or premium
+   workflow.
 
 The first user should never need to understand BaseballOS internals. The power
-user should be able to inspect evidence and freshness when they need it.
+user should be able to inspect evidence, freshness, and limitations when they
+need them.
+
+## Must-Have Data Categories
+
+These categories define the minimum evidence direction for V4. They do not
+claim that every source is already present, licensed, complete, or safe to show.
+Unknown values stay unknown until validated.
+
+### Appearance Data
+
+- game date
+- team
+- opponent
+- pitcher
+- inning entered
+- outs
+- batters faced
+- pitches
+- strikes
+- balls if derivable
+- hits
+- runs
+- earned runs
+- walks
+- strikeouts
+- home runs
+- inherited runners if available
+- inherited runners scored if available
+
+### Workload Data
+
+- last outing pitch count
+- last 3 days usage
+- last 7 days usage
+- last 14 days usage
+- back-to-back usage
+- 3-in-4
+- 4-in-6
+- multi-inning appearances
+- high-pitch outings
+- repeated leverage usage if safely derivable
+
+### Performance / Command Data
+
+- K
+- BB
+- K/BB
+- strike percentage
+- walks last outing vs last 7
+- strikeouts last outing vs last 7
+- baserunners allowed
+- clean vs traffic-heavy appearance
+
+### Pitch-Level / Trend Data
+
+- pitch type
+- average velocity by pitch type
+- last outing velocity by pitch
+- last 7 velocity baseline
+- velocity delta
+- pitch mix
+- pitch mix delta
+- strike rate
+- whiff/swinging-strike proxy if available
+
+### Roster Data
+
+- active roster
+- IL
+- 40-man
+- optioned
+- inactive
+- promoted
+- activated
+- traded
+- claimed
+- unknown status
+
+### Starter Exposure Data
+
+- starter innings last 7
+- starter innings last 14
+- starts under 5 innings
+- bullpen innings burden
+- short-start pressure
 
 ## V4 Roadmap Order
 
-1. Canon V4 roadmap document
-2. Analytics / event tracking
-3. Launch foundation cleanup
-4. Follow My Team
-5. Daily Bullpen Home
-6. What Changed Since Yesterday
-7. Team pages
-8. Shareable team cards
-9. In-product weekly content system
-10. Injury / IL / depth pressure context
-11. Starter exposure context
-12. Personalized email digest
-13. Creator / analyst mode
-14. Feedback and correction loop
-15. Pro beta waitlist
-16. Monetization validation
+1. Canon roadmap revision
+2. Phase 0A — Pipeline Integrity & Data Trust
+3. Phase 0B — Data Source Inventory & Acquisition Strategy
+4. Phase 0C — Reliever Appearance Evidence Layer
+5. Phase 0D — Pitch-Level / Pitch-Trend Feasibility Layer
+6. Phase 0E — Bullpen Read Quality Model
+7. Phase 0F — Pitcher Detail Evidence Surface
+8. Phase 0G — Team Bullpen Evidence Surface
+9. Phase 0H — Trusted Snapshot + What Changed Foundation
+10. Phase 0I — Roster Availability Context
+11. Phase 0J — Starter Exposure Context
+12. Phase 0K — Methodology, Limitations, and Data Trust Rewrite
+13. Phase 0L — Analytics Event Alignment
+14. Phase 1 — Daily Bullpen Home
+15. Phase 2 — Follow My Team
+16. Phase 3 — Shareable Cards
+17. Phase 4 — Digest / Creator / Pro Validation
+
+Only items 1 through 13 are true V4 must-do work. Items 14 through 17 are
+allowed only after the foundation is sound.
 
 ## Detailed Phase Plan
 
-### 1. Canon V4 roadmap document
+### 1. Canon roadmap revision
 
-Goal: establish the official V4 execution order, product thesis, guardrails,
-authorship rules, and living status table.
+Goal: replace the earlier feature-heavy V4 roadmap with the foundation-first,
+evidence-first V4 direction.
 
 Scope:
 
-- Add this canonical roadmap document.
-- Link it from the existing docs index pattern.
+- Preserve this canonical roadmap path:
+  `docs/roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`.
+- Establish the new V4 product rule, scope, guardrails, data categories, phase
+  gates, and deferred features.
+- Update existing documentation index labels without creating a new navigation
+  system.
 - Do not change product code.
 
 Exit criteria:
 
-- The roadmap exists at
-  `docs/roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md`.
-- The title and roadmap order are preserved.
+- The roadmap exists at the canonical path.
+- The title is `BaseballOS V4 Roadmap: Foundation Integrity & Bullpen Evidence`.
+- The product rule appears verbatim.
+- Phase 0A appears before Daily Bullpen Home, Follow My Team, Shareable Cards,
+  Digest, Creator Mode, and Monetization.
 - Lightweight documentation validation passes.
 
-### 2. Analytics / event tracking
+### 2. Phase 0A - Pipeline Integrity & Data Trust
 
-Goal: measure whether users understand and return to the product loop.
-
-Scope:
-
-- Track product events for daily home use, team inspection, follow intent,
-  share intent, feedback, and digest interest.
-- Keep event names stable and readable.
-- Avoid sensitive personal data.
-- Do not let analytics drive user-facing claims.
-
-Exit criteria:
-
-- Core events are named and documented.
-- Product surfaces can report usage without changing baseball reads.
-- The metrics plan can distinguish curiosity from repeat behavior.
-
-### 3. Launch foundation cleanup
-
-Goal: remove launch friction before building retention features.
+Goal: make the data pipeline trustworthy enough to support stronger public
+bullpen evidence.
 
 Scope:
 
-- Clean obvious copy drift.
-- Confirm footer, docs, trust links, and onboarding pages are coherent.
-- Fix small visual or navigational issues that distract from the daily read.
+- Audit freshness, data-through dates, slate coverage, and write timing.
+- Confirm stale, sample, fallback, partial, and unsafe states fail closed or
+  visibly degrade.
+- Ensure unknown values remain unknown.
+- Confirm correction paths can update stored data without creating hidden
+  contradictions.
+- Fix or fail-close critical pipeline risks:
+  - stat corrections not propagating;
+  - new pitchers not created by sync;
+  - missing pitch counts stored as zero;
+  - data-through dates without slate completeness checks;
+  - partial syncs appearing healthy or current;
+  - no final-status filter on daily game-log paths;
+  - empty final boxscores marked processed forever;
+  - manual sync overlap risk;
+  - non-atomic daily sync stages;
+  - What Changed using partial-day baselines;
+  - mixed-day or partial league states appearing complete;
+  - host-local date handling instead of product timezone.
+- Add pipeline validation rules, snapshot completeness checks, sync health
+  states, correction propagation strategy, new pitcher detection, partial sync
+  degraded states, standardized product timezone handling, and an internal
+  pipeline health report.
 
 Exit criteria:
 
-- First-session product path is clear.
-- Trust and methodology paths are easy to find.
-- No launch-critical copy contradicts the descriptive product boundary.
+- Public reads are backed by validated data.
+- Unknown values stay unknown.
+- Partial states visibly degrade or fail closed.
+- No complete-sounding read can appear from an incomplete slate.
+- Every public read can explain what games are included and whether validations
+  passed.
+- No green or healthy trust state appears for incomplete data.
 
-### 4. Follow My Team
+### 3. Phase 0B - Data Source Inventory & Acquisition Strategy
 
-Goal: let a user make one team the default daily lens.
+Goal: identify which public or permissible data sources can support the V4
+evidence layer.
 
 Scope:
 
-- Add a lightweight follow/preferred-team flow.
-- Store the preference in the safest existing frontend or auth pattern.
-- Use the preference to orient daily reads and team links.
+- Inventory existing data fields, source authority, refresh cadence, gaps, and
+  licensing or access constraints.
+- Decide which appearance, workload, pitch-level, roster, and starter-exposure
+  fields are available now, derivable later, unavailable, or unsafe.
+- Document acquisition strategy before adding broad new surfaces.
+- Inventory MLB Stats API game logs, boxscores, play-by-play, probable
+  pitchers, transactions, rosters, injuries/IL, pitch-level data, pitch type,
+  velocity, pitch usage, strike/ball events, whiff or swinging-strike
+  indicators, inning or appearance context, inherited runners, leverage proxy
+  if available, public roster status, and starter workload.
+- For each category record source, endpoint or retrieval path, availability,
+  update timing, historical coverage, reliability, legal or usage concern, cost,
+  implementation complexity, and whether it belongs in V4, post-V4, or backlog.
 
 Exit criteria:
 
-- A user can choose and change a followed team.
-- The product can highlight that team's daily bullpen context.
-- The feature does not imply personalized advice.
+- Each must-have data category has a source-status decision.
+- Unsafe or unavailable fields are explicitly marked as unavailable.
+- Future acquisition work is prioritized by bullpen evidence value.
+- The written acquisition matrix answers what can be ingested now, what can be
+  derived from current data, what requires pitch-level ingestion, what should
+  wait, what is unavailable or unsafe, and what is most valuable for bullpen
+  intelligence.
 
-### 5. Daily Bullpen Home
+### 4. Phase 0C - Reliever Appearance Evidence Layer
 
-Goal: make the home page a true daily bullpen read.
+Goal: give BaseballOS reliable reliever-level evidence for what happened in
+recent appearances.
 
 Scope:
 
-- Prioritize the league-wide bullpen picture.
-- Surface followed-team context when available.
-- Show upcoming games only when a reliable slate source is available.
-- Keep freshness and limitations visible.
+- Ingest and normalize reliever appearance fields.
+- Track last outing evidence and recent appearance baselines.
+- Make new reliever ingestion automatic.
+- Preserve corrections and updates.
+- Store and expose, when available and validated: game date, opponent, team,
+  pitcher, game status, inning entered, outs recorded, batters faced, pitches,
+  strikes, balls if derivable, hits, runs, earned runs, walks, strikeouts, home
+  runs, inherited runners, inherited runners scored, rest days before outing,
+  back-to-back status, 3-in-4 status, 4-in-6 status, outing leverage proxy, and
+  appearance role proxy.
+- Create evidence-backed descriptors such as clean outing, traffic-heavy
+  outing, command-stress outing, heavy workload, efficient outing, short
+  appearance, multi-inning coverage, back-to-back usage, repeated usage,
+  leverage-used, and mop-up or low-pressure proxy if safely derivable.
 
 Exit criteria:
 
-- The home page answers what matters today before sending users deeper.
-- Empty states are honest and useful.
-- No sample or stale state can look current.
+- New relievers are ingested automatically.
+- Corrections can update stored data.
+- Last outing evidence is available for relievers.
+- Recent appearance baselines are available.
+- For every reliever in the public bullpen view, BaseballOS can answer what he
+  did last time out, how heavy the outing was, whether it was clean or messy,
+  whether command was an issue, whether he was used recently or repeatedly, and
+  what evidence supports the current read.
 
-### 6. What Changed Since Yesterday
+### 5. Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer
 
-Goal: show the daily movement that creates a reason to return.
+Goal: determine which pitch-level and pitch-trend signals can safely support
+bullpen reads.
+
+Scope:
+
+- Evaluate pitch type, velocity, pitch mix, strike rate, and whiff or
+  swinging-strike proxy availability.
+- Compare last outing signals against recent baselines only when the sample and
+  source are safe.
+- Document what cannot be supported yet.
+- Investigate and, where feasible, implement pitch type, average velocity by
+  pitch type, max velocity, velocity last outing, velocity last 7 appearances,
+  velocity delta, pitch mix last outing, pitch mix last 7 appearances, pitch
+  usage delta, strike rate, ball rate, swinging strikes or whiffs if available,
+  called strikes if available, first-pitch strike rate if derivable, and zone,
+  chase, or contact only if reliable and available.
+- Prioritize average velocity by pitch type, last outing velocity vs last 7,
+  pitch mix last outing vs last 7, strike rate last outing vs last 7, K/BB last
+  outing vs last 7, and whiff or swinging-strike proxy if available.
+
+Exit criteria:
+
+- Pitch-level feasibility is documented.
+- Safe pitch-trend fields have source, cadence, sample, and limitation notes.
+- Unsupported pitch claims remain absent from public reads.
+- Each pitch-trend category is classified as supported now, derivable now,
+  supported later, unsupported or unavailable, or not worth V4.
+- Implemented pitch trends show source, sample window, last outing value, last 7
+  appearance baseline, direction of change, and whether the sample is too small.
+
+### 6. Phase 0E - Bullpen Read Quality Model
+
+Goal: improve how BaseballOS turns evidence into readable bullpen context.
+
+Scope:
+
+- Review the current fresh, stretched, vulnerable, pressure, recovery, workload,
+  and clean-options reads against the new evidence layer.
+- Ensure every public read can point to evidence rather than only a label.
+- Separate descriptive context from prediction or advice.
+- Create evidence-based public read components: workload read, outing quality
+  read, recent trend read, command read, velocity read where available, roster
+  pressure read, starter exposure read, trust or role context read, and data
+  confidence or completeness read.
+- Each reliever read should have current state, evidence summary, last outing,
+  recent baseline, reason for state, data freshness, and limitations if any.
+- Each team read should include bullpen state, key arms, who worked last night,
+  who worked clean, who worked messy, who is workload-stretched, who is trending
+  down or up where supported, who is available but not necessarily clean,
+  roster/depth context, starter exposure context, and slate/data completeness.
+
+Exit criteria:
+
+- Public team reads explain evidence, not only labels.
+- Model language avoids unsupported certainty.
+- Missing evidence reduces confidence or withholds the read.
+- A BaseballOS read can answer what the label is, what happened, what changed,
+  what evidence supports it, what is unknown, and why a baseball person should
+  care.
+
+### 7. Phase 0F - Pitcher Detail Evidence Surface
+
+Goal: let users inspect what happened for an individual reliever and what
+changed.
+
+Scope:
+
+- Present last outing, recent workload, command, traffic, and pitch-trend
+  evidence when supported.
+- Keep data freshness, source limits, and unknown fields visible.
+- Avoid ranking, advice, fantasy, or betting interpretation.
+- Surface sections should include Current Read, Why This Read Exists, Last
+  Outing, Last 7 Appearances, Workload Trend, Command Trend, Velocity / Pitch
+  Mix Trends, Usage Pattern, and Data Trust.
+
+Exit criteria:
+
+- Pitcher detail surfaces explain what happened and what changed.
+- Unknown or unavailable fields remain visibly unknown or omitted.
+- The surface strengthens trust in team-level reads.
+- A user can click any reliever and understand what he did last outing, how it
+  compares to recent baseline, whether he looked clean or stressed, whether
+  workload is the main issue, whether performance trend is part of the read,
+  and what BaseballOS knows and does not know.
+
+### 8. Phase 0G - Team Bullpen Evidence Surface
+
+Goal: make team bullpen context explainable through reliever evidence, roster
+context, workload, and starter exposure.
+
+Scope:
+
+- Connect team-level reads to visible reliever evidence.
+- Show workload distribution, availability groups, recent appearance pressure,
+  and data limitations.
+- Keep the surface focused on bullpen context, not broad team analytics.
+- The team surface should answer what the bullpen has left today, who carried
+  the workload recently, which arms are clean, which arms are stretched, which
+  arms are fresh but not necessarily leverage options, whether pressure comes
+  from reliever workload, starter exposure, roster depth, or a combination, and
+  what changed since yesterday.
+
+Exit criteria:
+
+- Team reads explain evidence, not only labels.
+- Team bullpen context remains baseball-readable.
+- Missing or partial evidence degrades clearly.
+
+### 9. Phase 0H - Trusted Snapshot + What Changed Foundation
+
+Goal: build change detection on trusted snapshots rather than raw or partial
+states.
 
 Scope:
 
 - Compare current trusted reads against the prior trusted read.
-- Explain meaningful availability, workload, and team-state changes.
-- Withhold change reads when data is stale, missing, or not comparable.
+- Track availability, workload, roster, starter-exposure, and evidence-layer
+  changes only when comparable.
+- Withhold change reads when freshness, slate coverage, or source alignment is
+  not safe.
+- Build trusted daily snapshots, snapshot completeness validation, snapshot
+  comparability rules, no comparisons against partial days, no comparisons
+  across incompatible game windows, and change detection for workload,
+  availability state, outing quality, key reliever usage, velocity or pitch
+  trend where supported, roster status, starter exposure, and team-level burden.
 
 Exit criteria:
 
-- The user can see what changed without reading every team board.
-- Change copy is descriptive and evidence-backed.
-- The comparison fails closed when confidence is not warranted.
+- What Changed can explain evidence-backed movement.
+- Snapshot comparison fails closed when confidence is not warranted.
+- Freshness and data-through details stay visible.
+- BaseballOS can safely say what changed, why it changed, which data supports
+  it, whether the comparison is complete, and whether no meaningful change
+  occurred.
 
-### 7. Team pages
+### 10. Phase 0I - Roster Availability Context
 
-Goal: create a clean team-level destination for each MLB bullpen.
+Goal: explain public roster pressure without private injury or health claims.
 
 Scope:
 
-- Present team bullpen state, availability, recent workload, freshness, and
-  story context in one shareable place.
-- Use existing team/bullpen data contracts where practical.
-- Keep team pages readable for first-time visitors.
+- Use public roster, IL, active, inactive, optioned, promoted, activated,
+  traded, claimed, and unknown-status context.
+- Separate absence of a public flag from health certainty.
+- Keep roster evidence tied to bullpen availability, not general roster
+  analysis.
+- Explain active roster status, IL status, optioned or inactive status, 40-man
+  but not active status, newly promoted status, traded or claimed status,
+  activated status, roster status codes, and public depth pressure.
 
 Exit criteria:
 
-- Each team has a clear bullpen read.
-- The page explains evidence and limits.
-- Team pages do not require sidebar navigation to be understandable.
-
-### 8. Shareable team cards
-
-Goal: make BaseballOS context easy to share without losing trust.
-
-Scope:
-
-- Create a compact team-card view for fresh, stretched, or vulnerable reads.
-- Include data freshness and BaseballOS branding.
-- Avoid sensational framing.
-
-Exit criteria:
-
-- A shared card communicates the team read, evidence cue, and freshness.
-- The card links back to the fuller team context.
-- The shared artifact remains descriptive.
-
-### 9. In-product weekly content system
-
-Goal: create a repeatable editorial surface inside BaseballOS.
-
-Scope:
-
-- Publish weekly bullpen notes using existing descriptive reads.
-- Keep content inside the product rather than creating a separate publication
-  workflow too early.
-- Reuse story and trust patterns where possible.
-
-Exit criteria:
-
-- Weekly content has a consistent format.
-- The product can point users from daily reads to weekly context.
-- Editorial copy stays within BaseballOS guardrails.
-
-### 10. Injury / IL / depth pressure context
-
-Goal: explain public roster pressure without making private health claims.
-
-Scope:
-
-- Use public roster and IL flags only.
-- Explain depth pressure created by unavailable or inactive arms.
-- Keep absence of public flags separate from health certainty.
-
-Exit criteria:
-
-- Users can understand public depth constraints.
+- Roster pressure is public-data backed.
 - The product never implies private medical knowledge.
-- Depth pressure is clearly tied to public evidence.
+- Unknown roster status remains unknown.
+- BaseballOS can explain whether the bullpen is carrying depth pressure,
+  whether active arms are paying the price for missing depth, when roster data
+  is stale or incomplete, and what the product can and cannot know.
 
-### 11. Starter exposure context
+### 11. Phase 0J - Starter Exposure Context
 
-Goal: explain how starter workload or short starts can affect bullpen context.
+Goal: explain recent starter-length pressure on bullpen workload without
+predicting tonight.
 
 Scope:
 
-- Use completed-game and recent-start context where data supports it.
-- Show when a bullpen may be carrying extra innings because starters have not
-  provided length.
-- Avoid projecting tonight's starter performance.
+- Use starter innings over recent windows, starts under 5 innings, bullpen
+  innings burden, and short-start pressure.
+- Connect starter exposure to bullpen workload only as recent context.
+- Avoid projecting upcoming starter performance.
+- Include completed-game and recent-start context such as starter innings last 7
+  days, starter innings last 14 days, starts under 5 innings, bullpen innings
+  last 7 days, bullpen innings last 14 days, opener or bulk-game indicators if
+  safely derivable, and team-level coverage burden.
 
 Exit criteria:
 
-- Starter exposure is explained as recent context, not a prediction.
+- Starter exposure is recent-context based, not predictive.
 - The read helps users understand why a bullpen may be stretched.
 - Evidence and freshness remain visible.
+- BaseballOS can explain whether bullpen stress is driven by reliever usage,
+  starter exposure, roster depth, or a combination.
 
-### 12. Personalized email digest
+### 12. Phase 0K - Methodology, Limitations, and Data Trust Rewrite
 
-Goal: test whether users want BaseballOS delivered to them.
-
-Scope:
-
-- Build a narrow digest around followed teams and daily/weekly bullpen context.
-- Keep copy descriptive.
-- Include clear unsubscribe and privacy expectations.
-
-Exit criteria:
-
-- Users can opt in.
-- The digest can summarize followed-team context without new baseball logic.
-- Engagement can be measured without expanding product claims.
-
-### 13. Creator / analyst mode
-
-Goal: support people who turn BaseballOS context into analysis or content.
+Goal: make the V4 evidence layer understandable, auditable, and honest.
 
 Scope:
 
-- Provide cleaner copyable summaries, citations, and share paths.
-- Emphasize freshness, evidence, and limits.
-- Avoid creating an export product before demand is proven.
+- Rewrite methodology around appearance evidence, workload, pitch-trend
+  feasibility, roster context, starter exposure, unknown handling, and
+  fail-closed behavior.
+- Document limits plainly.
+- Keep public copy descriptive and baseball-native.
+- Update public pages for data sources, update schedule, corrections, slate
+  completeness, pitch count handling, roster status handling, appearance
+  evidence, pitch-level trend availability, unknown values, partial sync
+  behavior, what BaseballOS does not know, and why BaseballOS is descriptive,
+  not predictive.
 
 Exit criteria:
 
-- Analysts can reuse BaseballOS context accurately.
-- Shared context points back to the source read.
-- The mode does not add advice, ranking, or prediction behavior.
+- Methodology explains the evidence layer clearly.
+- Limitations describe what BaseballOS does not know.
+- Data trust surfaces match the V4 foundation.
+- A skeptical user can understand where the data comes from, what BaseballOS
+  validates, what metrics are included, what metrics are not included, how
+  unknown data is handled, and why a read is safe to trust.
 
-### 14. Feedback and correction loop
+### 13. Phase 0L - Analytics Event Alignment
 
-Goal: make trust repair visible and operational.
+Goal: align analytics with V4 evidence-first behavior without changing baseball
+claims.
 
 Scope:
 
-- Give users a clear way to report stale, wrong, or confusing reads.
-- Track corrections or clarifications internally.
-- Preserve product credibility without overpromising response time.
+- Review current event names and properties against the foundation-first V4
+  order.
+- Measure whether users inspect evidence, freshness, pitcher detail, team
+  bullpen context, and trusted change reads.
+- Avoid collecting sensitive personal data.
+- Track pitcher evidence opens, last outing section views, pitch trend section
+  views, team evidence section views, data trust opens, methodology opens,
+  stale or partial state interactions, feedback clicks, team read inspections,
+  reliever read inspections, and What Changed evidence opens once built.
 
 Exit criteria:
 
-- Users can report issues from relevant surfaces.
-- Feedback can be triaged by type and affected team/date.
-- Corrections do not bypass data or governance rules.
+- Analytics measure evidence use and product comprehension.
+- Event alignment does not create new product promises.
+- Metrics support future daily and follow-team decisions.
+- BaseballOS can measure whether users inspect evidence, which evidence
+  sections matter, whether users care about pitcher-level trends, whether data
+  trust surfaces are used, and which team or reliever reads draw attention.
 
-### 15. Pro beta waitlist
+### 14. Phase 1 - Daily Bullpen Home
 
-Goal: test paid or power-user demand without committing to a paid product.
+Goal: make the home page a daily bullpen read only after the foundation and
+evidence layer can support it.
 
 Scope:
 
-- Create a simple waitlist for users who want deeper workflow.
-- Collect only necessary contact and interest context.
-- Make clear that pro features are not yet a shipped product.
+- Prioritize league-wide bullpen picture, trusted change reads, and data
+  freshness.
+- Surface team context when evidence is strong enough.
+- Keep empty and degraded states honest.
 
 Exit criteria:
 
-- Demand can be measured.
-- User segments and requested workflows are visible.
-- No paid promise is made before validation.
+- The home page answers what matters today with evidence-backed context.
+- No stale, partial, or unsafe state appears current.
+- The home page remains descriptive, not predictive.
 
-### 16. Monetization validation
+### 15. Phase 2 - Follow My Team
 
-Goal: decide whether BaseballOS has a viable path beyond a free public product.
+Goal: let a user orient the daily read around one club after team bullpen
+evidence is strong enough.
 
 Scope:
 
-- Review usage, return rate, follows, shares, digest interest, waitlist demand,
-  and qualitative feedback.
-- Identify which capabilities create willingness to pay.
-- Keep public trust surfaces intact.
+- Add a lightweight follow or preferred-team flow.
+- Use the preference to orient evidence-backed daily and team reads.
+- Avoid personalized advice or prediction framing.
 
 Exit criteria:
 
-- A clear go/no-go recommendation exists for the next monetization step.
-- The decision is evidence-based.
-- Any paid direction preserves the public descriptive trust posture.
+- A user can choose and change a followed team.
+- Followed-team context uses the same evidence and trust rules.
+- The feature does not imply personalized betting, fantasy, or roster advice.
+
+### 16. Phase 3 - Shareable Cards
+
+Goal: make BaseballOS context shareable without losing evidence or freshness.
+
+Scope:
+
+- Create compact cards for fresh, stretched, vulnerable, or changed bullpen
+  reads only when evidence is strong enough.
+- Include evidence cues, freshness, and a path back to fuller context.
+- Avoid sensational or unsupported framing.
+
+Exit criteria:
+
+- Shared cards communicate read, evidence cue, freshness, and limitations.
+- Cards link back to the fuller BaseballOS context.
+- Shared artifacts remain descriptive.
+
+### 17. Phase 4 - Digest / Creator / Pro Validation
+
+Goal: evaluate delivery, creator, and power-user workflows after BaseballOS has
+a stronger evidence foundation.
+
+Scope:
+
+- Test digest, creator, analyst, and pro workflows only after foundation gates
+  are met.
+- Keep demand validation separate from shipped product promises.
+- Preserve descriptive trust posture.
+
+Exit criteria:
+
+- Future delivery or pro direction is based on evidence and usage.
+- No monetization promise is made before validation.
+- Power-user workflows do not weaken public trust.
+
+## Explicit Deferrals
+
+The following are deferred until the foundation and evidence layer are strong:
+
+- full newsletter system;
+- pro beta waitlist;
+- monetization validation;
+- creator/media kit page;
+- broad content archive;
+- team follow accounts;
+- push notifications;
+- paid tier;
+- player comparison tools;
+- leaderboards;
+- export products;
+- public API;
+- general MLB dashboards;
+- fantasy-specific tooling;
+- betting-adjacent features;
+- broad team analytics beyond bullpen context.
+
+## Phase Gate Rules
+
+Do not move past foundation until:
+
+1. Public reads are backed by validated data.
+2. Unknown values stay unknown.
+3. Partial states visibly degrade or fail closed.
+4. New relievers are ingested automatically.
+5. Corrections can update stored data.
+6. Last outing evidence is available for relievers.
+7. Recent appearance baselines are available.
+8. Pitch-level feasibility is documented.
+9. Team reads explain evidence, not only labels.
+10. Pitcher detail surfaces explain what happened and what changed.
+11. Roster pressure is public-data backed.
+12. Starter exposure is recent-context based, not predictive.
+13. Methodology explains the evidence layer clearly.
 
 ## Metrics and Review Cadence
 
-V4 should be reviewed through product behavior, not optimism.
+V4 should be reviewed through evidence quality and user comprehension before it
+is reviewed through retention or monetization.
 
-Primary metrics:
+Primary foundation metrics:
+
+- source coverage by data category;
+- freshness and data-through accuracy;
+- slate coverage completeness;
+- unknown-field preservation;
+- fail-closed behavior count and reason;
+- reliever appearance coverage;
+- recent baseline availability;
+- pitch-level feasibility status;
+- roster context coverage;
+- starter exposure coverage;
+- methodology and trust-surface completeness.
+
+Future product metrics, after foundation gates:
 
 - daily active readers;
 - returning readers;
+- evidence-surface inspection;
 - followed-team adoption;
 - team-page visits;
 - What Changed engagement;
 - share-card clicks;
-- weekly content opens;
 - digest opt-ins;
 - feedback submissions;
-- waitlist conversion.
+- pro or creator workflow interest.
 
 Review cadence:
 
-- Review metrics after each shipped phase.
-- Review the full roadmap order after each major product loop milestone.
+- Review data trust after each foundation phase.
+- Review the full roadmap order after each major evidence milestone.
 - Keep this document current when scope, order, status, or guardrails change.
 - Do not skip trust review for speed.
 
@@ -423,24 +816,25 @@ Review cadence:
 
 | Order | Phase | Status | Notes |
 | --- | --- | --- | --- |
-| 1 | Canon V4 roadmap document | Complete | Adds this canonical roadmap and docs links. |
-| 2 | Analytics / event tracking | Complete | Owned V4 event catalog, helper, and current-surface instrumentation are in place. |
-| 3 | Launch foundation cleanup | Not started | Small trust, copy, and launch-readiness cleanup. |
-| 4 | Follow My Team | Not started | First personalization loop. |
-| 5 | Daily Bullpen Home | Not started | Make Today the daily read. |
-| 6 | What Changed Since Yesterday | Not started | Main return habit loop. |
-| 7 | Team pages | Not started | Dedicated team-level destinations. |
-| 8 | Shareable team cards | Not started | Shareable daily team context. |
-| 9 | In-product weekly content system | Not started | Repeatable editorial system. |
-| 10 | Injury / IL / depth pressure context | Not started | Public roster pressure context only. |
-| 11 | Starter exposure context | Not started | Recent starter-length context, not projection. |
-| 12 | Personalized email digest | Not started | Opt-in delivery test. |
-| 13 | Creator / analyst mode | Not started | Copyable, citeable analysis workflow. |
-| 14 | Feedback and correction loop | Not started | Trust repair and correction intake. |
-| 15 | Pro beta waitlist | Not started | Demand validation before paid scope. |
-| 16 | Monetization validation | Not started | Evidence-based business decision. |
+| 1 | Canon roadmap revision | Complete | Replaces the feature-heavy V4 roadmap with the foundation-first, evidence-first direction. |
+| 2 | Phase 0A - Pipeline Integrity & Data Trust | Not started | Validate freshness, coverage, unknown handling, and fail-closed behavior. |
+| 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Not started | Decide source authority and acquisition strategy for each evidence category. |
+| 4 | Phase 0C - Reliever Appearance Evidence Layer | Not started | Build validated last-outing and recent reliever evidence. |
+| 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Not started | Document which pitch signals can safely support bullpen reads. |
+| 6 | Phase 0E - Bullpen Read Quality Model | Not started | Tie reads to evidence, confidence, and limitations. |
+| 7 | Phase 0F - Pitcher Detail Evidence Surface | Not started | Explain what happened and what changed for relievers. |
+| 8 | Phase 0G - Team Bullpen Evidence Surface | Not started | Connect team reads to visible bullpen evidence. |
+| 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Not started | Compare only trusted, comparable states. |
+| 10 | Phase 0I - Roster Availability Context | Not started | Use public roster evidence without private health claims. |
+| 11 | Phase 0J - Starter Exposure Context | Not started | Explain recent starter-length pressure without prediction. |
+| 12 | Phase 0K - Methodology, Limitations, and Data Trust Rewrite | Not started | Align methodology and trust docs with the V4 evidence layer. |
+| 13 | Phase 0L - Analytics Event Alignment | Not started | Measure evidence use and comprehension without changing baseball claims. |
+| 14 | Phase 1 - Daily Bullpen Home | Deferred | Begins after foundation gates support a stronger daily product. |
+| 15 | Phase 2 - Follow My Team | Deferred | Begins after team evidence is strong enough. |
+| 16 | Phase 3 - Shareable Cards | Deferred | Begins after shareable reads can preserve evidence and freshness. |
+| 17 | Phase 4 - Digest / Creator / Pro Validation | Deferred | Begins after foundation and evidence layers support broader validation. |
 
 ## Final Operating Principle
 
-BaseballOS should become a daily habit because it makes bullpen context easier
-to understand, not because it overclaims what it can know.
+BaseballOS should become more useful by making bullpen evidence clearer, not by
+claiming more than the data can support.
