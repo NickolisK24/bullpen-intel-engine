@@ -6,6 +6,7 @@ from typing import Iterable, Mapping
 
 from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
+from models.sync_failure import SyncFailure
 from utils.db import db
 
 
@@ -24,6 +25,7 @@ REASON_SUSPENDED_GAMES_NOT_FINAL = 'suspended_games_not_final'
 DIAGNOSTIC_MISSING_MARKER = 'missing_marker'
 DIAGNOSTIC_INCOMPLETE_MARKER = 'incomplete_marker'
 DIAGNOSTIC_FAILED_MARKER = 'failed_marker'
+PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 
 
 _OFFSEASON_MONTHS = {1, 2, 11, 12}
@@ -213,7 +215,7 @@ def _postgame_blocker_diagnostic(ref, game, marker, reason_code):
         home_team = getattr(marker, 'home_team_id', None) or home_team
         away_team = getattr(marker, 'away_team_id', None) or away_team
 
-    return {
+    diagnostic = {
         'slate_date': ref.isoformat(),
         'mlb_game_pk': game['game_pk'],
         'away_team': away_team,
@@ -258,6 +260,32 @@ def _postgame_blocker_diagnostic(ref, game, marker, reason_code):
         ),
         'reason_code': reason_code,
     }
+    if marker is not None and (marker.pitcher_resolution_failures or 0) > 0:
+        diagnostic['pitcher_resolution_failure_details'] = (
+            _pitcher_resolution_failure_details(game['game_pk'])
+        )
+    return diagnostic
+
+
+def _pitcher_resolution_failure_details(game_pk, limit=10):
+    failures = (
+        SyncFailure.query
+        .filter(SyncFailure.entity_type == PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE)
+        .filter(SyncFailure.entity_ref == str(game_pk))
+        .filter(SyncFailure.resolved.is_(False))
+        .order_by(SyncFailure.created_at.desc(), SyncFailure.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            'id': failure.id,
+            'created_at': _iso_datetime(failure.created_at),
+            'error': failure.error,
+            'payload': failure.payload or {},
+        }
+        for failure in failures
+    ]
 
 
 def _postgame_blocker_diagnostics(ref, final_games, markers):

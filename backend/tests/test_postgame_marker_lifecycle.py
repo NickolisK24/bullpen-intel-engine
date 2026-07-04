@@ -12,7 +12,9 @@ import services.sync as sync_service
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
+from services import slate_coverage
 from services import sync_metadata
 from utils.db import db
 
@@ -116,12 +118,16 @@ def _stat(**overrides):
     return stat
 
 
-def _player(player_id, *, name, stats=None, person_id=None):
+def _player(player_id, *, name, stats=None, person_id=None, position=None):
     return {
         'person': {
             'id': person_id if person_id is not None else player_id,
             'fullName': name,
-            'primaryPosition': {'abbreviation': 'P'},
+            'primaryPosition': position or {
+                'code': '1',
+                'name': 'Pitcher',
+                'abbreviation': 'P',
+            },
         },
         'stats': {'pitching': stats if stats is not None else _stat()},
     }
@@ -183,7 +189,32 @@ def _partial_unresolved_boxscore():
     return boxscore
 
 
-def _patch_mlb(monkeypatch, *, boxscores):
+def _seed_scheduled_game(game_pk=7001, *, home_id=1, away_id=2):
+    db.session.add_all([
+        ScheduledGame(
+            team_id=home_id,
+            game_pk=game_pk,
+            game_date=SCHEDULE_DATE,
+            status_code='F',
+            status_state=ScheduledGame.STATE_FINAL,
+            home_away='home',
+            opponent_team_id=away_id,
+            game_type='R',
+        ),
+        ScheduledGame(
+            team_id=away_id,
+            game_pk=game_pk,
+            game_date=SCHEDULE_DATE,
+            status_code='F',
+            status_state=ScheduledGame.STATE_FINAL,
+            home_away='away',
+            opponent_team_id=home_id,
+            game_type='R',
+        ),
+    ])
+
+
+def _patch_mlb(monkeypatch, *, boxscores, schedule_games=None):
     calls = {'schedule': 0, 'boxscore': []}
     queued_boxscores = list(boxscores)
 
@@ -192,6 +223,8 @@ def _patch_mlb(monkeypatch, *, boxscores):
         assert start_date == SCHEDULE_DATE.isoformat()
         assert end_date == SCHEDULE_DATE.isoformat()
         assert team_id is None
+        if schedule_games is not None:
+            return list(schedule_games)
         return [_game()]
 
     def fake_boxscore(game_pk):
@@ -217,8 +250,8 @@ def _run(app):
     )
 
 
-def _marker_payload():
-    marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=7001).one()
+def _marker_payload(game_pk=7001):
+    marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).one()
     return {
         'processing_status': marker.processing_status,
         'attempt_count': marker.attempt_count,
@@ -266,9 +299,38 @@ def test_empty_final_boxscore_remains_retryable_and_later_closes(app, monkeypatc
     assert calls['boxscore'] == [7001, 7001]
 
 
+def test_final_stored_game_without_marker_is_selected_when_schedule_api_omits_it(
+    app,
+    monkeypatch,
+):
+    with app.app_context():
+        _seed_pitchers()
+        _seed_scheduled_game(7002)
+        db.session.commit()
+    calls = _patch_mlb(monkeypatch, boxscores=[_valid_boxscore], schedule_games=[])
+
+    result = _run(app)
+
+    with app.app_context():
+        marker = _marker_payload(7002)
+        log_count = GameLog.query.filter_by(mlb_game_pk=7002).count()
+
+    assert result['status'] == sync_metadata.STATUS_SUCCESS
+    assert result['completed_games_found'] == 1
+    assert result['newly_completed_games'] == 1
+    assert result['games_processed'] == 1
+    assert marker['processing_status'] == sync_service.POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+    assert marker['attempt_count'] == 1
+    assert marker['incomplete_reason'] is None
+    assert log_count == 2
+    assert calls['boxscore'] == [7002]
+
+
 def test_partial_unresolved_boxscore_retries_without_duplicate_logs(app, monkeypatch):
     with app.app_context():
         _seed_pitchers()
+        _seed_scheduled_game()
+        db.session.commit()
     calls = _patch_mlb(
         monkeypatch,
         boxscores=[_partial_unresolved_boxscore, _partial_unresolved_boxscore],
@@ -283,11 +345,17 @@ def test_partial_unresolved_boxscore_retries_without_duplicate_logs(app, monkeyp
         failures = SyncFailure.query.filter_by(
             entity_type=sync_service.PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE
         ).all()
+        coverage = slate_coverage.compute_slate_coverage(
+            SCHEDULE_DATE,
+            include_diagnostics=True,
+        )
 
     assert first['new_logs_added'] == 1
     assert first['pitcher_resolution_failures'] == 1
+    assert first['games_retryable_incomplete'] == 0
     assert second['new_logs_added'] == 0
     assert second['pitcher_resolution_failures'] == 1
+    assert second['games_retryable_incomplete'] == 1
     assert marker['processing_status'] == sync_service.POSTGAME_MARKER_STATUS_INCOMPLETE
     assert marker['attempt_count'] == 2
     assert marker['incomplete_reason'] == 'pitcher_resolution_failures'
@@ -296,6 +364,25 @@ def test_partial_unresolved_boxscore_retries_without_duplicate_logs(app, monkeyp
     assert len(logs) == 1
     assert len(failures) == 2
     assert calls['boxscore'] == [7001, 7001]
+    assert coverage['complete_enough_to_publish'] is False
+    blocker = coverage['diagnostics']['postgame_blockers'][0]
+    assert blocker['mlb_game_pk'] == 7001
+    assert blocker['reason_code'] == 'incomplete_marker'
+    assert blocker['incomplete_reason'] == 'pitcher_resolution_failures'
+    details = blocker['pitcher_resolution_failure_details']
+    assert len(details) == 2
+    failure_payload = details[0]['payload']
+    assert failure_payload['mlb_game_pk'] == 7001
+    assert failure_payload['player_id'] == 'BAD'
+    assert failure_payload['person_id'] == 'BAD'
+    assert failure_payload['name'] == 'Unresolved Reliever'
+    assert failure_payload['team_side'] == 'away'
+    assert failure_payload['team_id'] == 2
+    assert failure_payload['position'] == 'P'
+    assert failure_payload['position_code'] == '1'
+    assert failure_payload['position_name'] == 'Pitcher'
+    assert failure_payload['reason'] == 'missing_or_invalid_player_id'
+    assert 'inningsPitched' in failure_payload['stat_keys']
 
 
 def test_fully_ingested_game_is_closed_and_not_reprocessed(app, monkeypatch):
