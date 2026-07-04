@@ -66,7 +66,7 @@ Initial diagnostic families:
 - `game_logs`
 - `slate_coverage`
 - `dashboard_snapshots`
-- `roster_status_current`
+- `roster_status_snapshots`
 
 Not-yet-built Phase 0C source families must not be marked ready.
 
@@ -100,3 +100,30 @@ established daily/postgame pitching-line stat path and correction policy.
 Future backfill of the new fields must be its own scoped operation. It must use
 the finality authority, registered correction policy, source provenance, and
 fail-closed handling. No historical value should be silently imputed.
+
+## 0C-04 Roster Snapshot Rules
+
+Roster status snapshots are dated source facts. They are not health reads,
+depth-pressure reads, role reads, IL-pressure reads, availability labels, or
+public evidence interpretations.
+
+`roster_status_snapshots` is the storage authority for roster status facts. The
+current roster fields on `pitchers` are a derived compatibility cache populated
+only from the latest valid roster snapshot. Consumers may continue reading the
+current pitcher fields, but those fields must not become a second source of
+truth.
+
+Each snapshot carries source provenance, `sync_run_id`, first-seen timestamp,
+and correction metadata. Same-pitcher same-day roster fact changes correct the
+snapshot row with correction provenance. Same-pitcher same-day team conflicts
+dead-letter and fail closed instead of silently changing identity. Older dated
+snapshots remain historical record.
+
+Roster snapshot readiness is internal/admin diagnostics only. Missing snapshots,
+stale snapshots, fetch failures, unresolved roster dead letters, missing team
+coverage, missing provenance, or cache divergence degrade the
+`roster_status_snapshots` source family. Stale roster snapshots must not be
+treated as fresh evidence by future consumers.
+
+Two-way eligibility is stored only when sourced. It is not interpreted as a
+bullpen role, relief role, health state, or availability claim.
