@@ -321,12 +321,18 @@ def build_what_changed_public_payload(
     *,
     limit: int = DEFAULT_PUBLIC_ITEM_LIMIT,
     consequence_payload: dict[str, Any] | None = None,
+    require_trusted_snapshots: bool = False,
+    current_snapshot_metadata: dict[str, Any] | None = None,
+    prior_snapshot_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a frontend-safe What Changed Since Yesterday V1 payload."""
 
     changes = build_what_changed_since_yesterday_payload(
         current_payload,
         prior_payload,
+        require_trusted_snapshots=require_trusted_snapshots,
+        current_snapshot_metadata=current_snapshot_metadata,
+        prior_snapshot_metadata=prior_snapshot_metadata,
     )
     # ``consequence_payload`` is retained for compatibility with older tests and
     # callers. This public surface now explains the change from concrete rested
@@ -369,10 +375,12 @@ def build_what_changed_public_payload(
             'current_data_through': changes.get('reference_date'),
             'previous_data_through': changes.get('prior_date'),
             'comparison_available': changes.get('status') == STATUS_AVAILABLE,
+            'reason_codes': list(changes.get('reason_codes') or []),
         },
         'items': items,
         'item_count': len(items),
         'limitations': list(changes.get('limitations') or []),
+        'reason_codes': list(changes.get('reason_codes') or []),
     }
 
 
