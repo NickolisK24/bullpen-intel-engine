@@ -44,7 +44,7 @@ class GameLog(db.Model):
     games_started = db.Column(db.Integer, nullable=True)
     innings_pitched = db.Column(db.Float, default=0.0)
     innings_pitched_outs = db.Column(db.Integer, nullable=False)
-    pitches_thrown = db.Column(db.Integer, default=0)
+    pitches_thrown = db.Column(db.Integer, nullable=True)
     strikes = db.Column(db.Integer, default=0)
     hits_allowed = db.Column(db.Integer, default=0)
     runs_allowed = db.Column(db.Integer, default=0)

@@ -7,6 +7,8 @@ from services.workload_concentration import (
     RECENT_WORKLOAD_WINDOW_DAYS,
     build_workload_concentration_baselines,
     league_relief_workload_by_team,
+    recent_relief_pitch_totals,
+    summarize_workload_concentration,
 )
 
 REF = date(2026, 6, 22)
@@ -52,6 +54,46 @@ def test_league_ignores_none_team_id():
     logs = {1: [_log(1, 30)]}
     result = league_relief_workload_by_team({None: [1], 100: [1]}, logs, REF)
     assert {row['team_id'] for row in result} == {100}
+
+
+def test_recent_relief_totals_preserve_unknown_pitch_counts():
+    logs = {
+        1: [_log(1, None)],
+        2: [_log(1, 0)],
+        3: [_log(1, 18)],
+    }
+
+    result = recent_relief_pitch_totals(logs, REF)
+
+    assert result[1] is None
+    assert result[2] == 0
+    assert result[3] == 18
+
+
+def test_workload_concentration_marks_unknown_pitch_counts_unavailable():
+    result = summarize_workload_concentration({
+        1: None,
+        2: 0,
+        3: 18,
+    })
+
+    assert result['unknown_pitch_count'] is True
+    assert result['pitch_by_pitcher'][1] is None
+    assert result['pitch_by_pitcher'][2] == 0
+    assert result['total_pitches'] is None
+    assert result['top_share'] is None
+    assert result['per_arm_pitches'] is None
+
+
+def test_league_excludes_teams_with_unknown_relief_pitch_counts():
+    logs = {
+        1: [_log(1, None)],
+        2: [_log(1, 20)],
+    }
+
+    result = league_relief_workload_by_team({100: [1], 200: [2]}, logs, REF)
+
+    assert {row['team_id'] for row in result} == {200}
 
 
 def test_build_workload_concentration_baselines_distributions():

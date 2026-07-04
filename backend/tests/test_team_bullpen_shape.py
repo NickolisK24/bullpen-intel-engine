@@ -274,6 +274,25 @@ def test_workload_concentration_fails_closed_without_recent_relief_workload():
     assert result['workloadConcentration']['supportingCounts']['totalRecentPitches'] == 0
 
 
+def test_workload_concentration_fails_closed_with_unknown_pitch_counts():
+    workload = summarize_workload_concentration({
+        1: None,
+        2: 18,
+    })
+
+    result = shape([
+        card('trust_arm', 'clean_option'),
+        card('bridge_arm', 'clean_option'),
+    ], workload_concentration=workload)
+
+    read = result['workloadConcentration']
+    assert read['label'] == 'Limited Read'
+    assert read['supportingCounts']['totalRecentPitches'] is None
+    assert read['supportingCounts']['unknownPitchCount'] is True
+    assert 'incomplete' in read['explanation']
+    assert 'No recent relief workload' not in read['explanation']
+
+
 def test_coverage_safety_substitute_capacity_lifts_limited_to_thin_only():
     result = shape([
         card('trust_arm', 'clean_option'),

@@ -219,6 +219,28 @@ class TestCalculateFatigue:
         assert score.appearances_last_14 == 2
         assert score.raw_score == pytest.approx(expected.raw_score)
 
+    def test_unknown_pitch_count_is_not_scored_as_zero_workload(self, pitcher, make_log):
+        ref = date(2024, 9, 10)
+        score = calculate_fatigue(pitcher, [
+            make_log("2024-09-10", pitches_thrown=None, innings_pitched=1.0),
+        ], reference_date=ref)
+
+        assert score.pitches_last_7_days is None
+        assert score.pitch_count_score is None
+        assert score.appearances_last_7 == 1
+        assert score.innings_last_7_days == pytest.approx(1.0)
+
+    def test_known_pitch_total_is_unavailable_when_window_contains_unknown(self, pitcher, make_log):
+        ref = date(2024, 9, 10)
+        score = calculate_fatigue(pitcher, [
+            make_log("2024-09-10", pitches_thrown=None, innings_pitched=1.0),
+            make_log("2024-09-09", pitches_thrown=18, innings_pitched=1.0),
+        ], reference_date=ref)
+
+        assert score.pitches_last_7_days is None
+        assert score.pitch_count_score is None
+        assert score.appearances_last_7 == 2
+
     def test_innings_load_sums_outs_not_display_decimals(self, pitcher, make_log):
         ref = date(2024, 9, 10)
         logs = [

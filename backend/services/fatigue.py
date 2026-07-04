@@ -184,18 +184,23 @@ def calculate_fatigue(pitcher, game_logs: list, reference_date: date = None) -> 
     if last_log:
         days_since_last = (ref - last_log.game_date).days
 
-    pitches_last_7  = sum(g.pitches_thrown or 0   for g in logs_7)
+    known_pitch_counts_7 = [
+        g.pitches_thrown for g in logs_7
+        if g.pitches_thrown is not None
+    ]
+    has_unknown_pitch_count_7 = len(known_pitch_counts_7) != len(logs_7)
+    pitches_last_7 = None if has_unknown_pitch_count_7 else sum(known_pitch_counts_7)
     innings_last_7  = sum_log_innings_decimal(logs_7)
     appearances_7   = len(logs_7)
     appearances_14  = len(logs_14)
 
-    pc_score   = score_pitch_count(pitches_last_7)
+    pc_score   = None if pitches_last_7 is None else score_pitch_count(pitches_last_7)
     rest_score = score_rest_days(days_since_last)
     app_score  = score_appearances(appearances_7, appearances_14)
     inn_score  = score_innings(innings_last_7)
 
     raw = (
-        pc_score   * WEIGHTS['pitch_count'] +
+        (pc_score or 0.0) * WEIGHTS['pitch_count'] +
         rest_score * WEIGHTS['rest_days']   +
         app_score  * WEIGHTS['appearances'] +
         inn_score  * WEIGHTS['innings']

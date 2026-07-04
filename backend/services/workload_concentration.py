@@ -29,6 +29,15 @@ def _value(obj: Any, name: str, default=None):
     return getattr(obj, name, default)
 
 
+def _int_or_none(value):
+    if value is None or value == '':
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def concentration_descriptor(top_share):
     share = float(top_share or 0)
     if share >= CONCENTRATION_DESCRIPTOR_SEVERE_MIN:
@@ -53,10 +62,32 @@ def concentration_descriptor(top_share):
 
 
 def summarize_workload_concentration(pitch_by_pitcher):
-    pitch_totals = {
-        pitcher_id: int(pitches or 0)
-        for pitcher_id, pitches in (pitch_by_pitcher or {}).items()
-    }
+    pitch_totals = {}
+    unknown_pitchers = set()
+    for pitcher_id, pitches in (pitch_by_pitcher or {}).items():
+        parsed = _int_or_none(pitches)
+        if parsed is None:
+            unknown_pitchers.add(pitcher_id)
+            pitch_totals[pitcher_id] = None
+            continue
+        pitch_totals[pitcher_id] = parsed
+
+    if unknown_pitchers:
+        return {
+            'pitch_by_pitcher': pitch_totals,
+            'unknown_pitch_count': True,
+            'unknown_pitch_count_pitchers': len(unknown_pitchers),
+            'total_pitches': None,
+            'participant_count': None,
+            'top_arm_count': None,
+            'top_pitch_total': None,
+            'top_share': None,
+            'top_one_share': None,
+            'concentration_level': 'unknown',
+            'concentration_descriptor': 'unknown workload concentration',
+            'per_arm_pitches': None,
+        }
+
     totals = sorted(pitch_totals.values(), reverse=True)
     total_pitches = sum(totals)
     participant_count = len([value for value in totals if value > 0])
@@ -68,6 +99,8 @@ def summarize_workload_concentration(pitch_by_pitcher):
 
     return {
         'pitch_by_pitcher': pitch_totals,
+        'unknown_pitch_count': False,
+        'unknown_pitch_count_pitchers': 0,
         'total_pitches': total_pitches,
         'participant_count': participant_count,
         'top_arm_count': min(CONCENTRATED_TOP_ARM_COUNT, participant_count),
@@ -111,9 +144,15 @@ def recent_relief_pitch_totals(logs_by_pitcher, reference_date, pitcher_ids=None
                 continue
             if (pitcher_id, _value(log, 'mlb_game_pk')) in bulk_keys:
                 continue
+            pitches = _int_or_none(_value(log, 'pitches_thrown'))
+            if pitches is None:
+                pitch_by_pitcher[pitcher_id] = None
+                continue
+            if pitcher_id in pitch_by_pitcher and pitch_by_pitcher[pitcher_id] is None:
+                continue
             pitch_by_pitcher[pitcher_id] = (
                 pitch_by_pitcher.get(pitcher_id, 0)
-                + int(_value(log, 'pitches_thrown', 0) or 0)
+                + pitches
             )
     return pitch_by_pitcher
 
@@ -151,6 +190,8 @@ def league_relief_workload_by_team(team_to_pitcher_ids, logs_by_pitcher, referen
             reference_date,
             pitcher_ids=pitcher_ids,
         )
+        if summary.get('unknown_pitch_count'):
+            continue
         if summary['total_pitches'] <= 0:
             continue
         summaries.append({

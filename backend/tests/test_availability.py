@@ -184,7 +184,7 @@ class TestAvailabilityClassification:
         ref = date(2026, 6, 1)
         result = classify(
             ScoreStub(raw_score=20.0),
-            [make_log(ref - timedelta(days=1), pitches_thrown=None)],
+            [make_log(ref - timedelta(days=1), pitches_thrown=None, innings_pitched=1.0)],
             reference_date=ref,
         )
 
@@ -192,3 +192,6 @@ class TestAvailabilityClassification:
         assert result['confidence'] == CONFIDENCE_LOW
         assert result['data_state'] == 'incomplete'
         assert 'Incomplete workload inputs' in result['reasons']
+        assert result['inputs']['pitches_yesterday'] is None
+        assert result['inputs']['pitches_last_3_days'] is None
+        assert result['inputs']['pitches_last_5_days'] is None
