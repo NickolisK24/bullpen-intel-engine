@@ -173,3 +173,26 @@ GAME_LOG_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
         CorrectionFieldPolicy('leverage_index', update_after_final=True),
     ),
 ))
+
+ROSTER_STATUS_SNAPSHOT_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
+    name='roster_status_snapshot_corrections',
+    source_family='roster_status_snapshots',
+    model_name='RosterStatusSnapshot',
+    fields=(
+        CorrectionFieldPolicy('pitcher_id', identity_key=True),
+        CorrectionFieldPolicy('mlb_id', identity_key=True),
+        CorrectionFieldPolicy('team_id', identity_key=True),
+        CorrectionFieldPolicy('snapshot_date', identity_key=True),
+        CorrectionFieldPolicy('roster_status', update_after_final=True),
+        CorrectionFieldPolicy('active_roster', update_after_final=True),
+        CorrectionFieldPolicy('forty_man_roster', update_after_final=True),
+        CorrectionFieldPolicy('position_code', update_after_final=True),
+        CorrectionFieldPolicy('position_name', update_after_final=True),
+        CorrectionFieldPolicy('position_type', update_after_final=True),
+        CorrectionFieldPolicy('two_way_eligible', update_after_final=True),
+        CorrectionFieldPolicy('roster_status_raw', update_after_final=True),
+        CorrectionFieldPolicy('roster_status_raw_code', update_after_final=True),
+        CorrectionFieldPolicy('roster_status_raw_description', update_after_final=True),
+        CorrectionFieldPolicy('source', update_after_final=True),
+    ),
+))

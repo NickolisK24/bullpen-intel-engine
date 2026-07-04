@@ -131,10 +131,11 @@ def test_daily_sync_offseason_check_uses_product_timezone_day(
         'errors': 0,
         'by_status': {},
     })
-    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
         'pitchers_refreshed': 0,
         'pitchers_changed': 0,
         'unknown_count': 0,
+        'records_failed': 0,
         'errors': 0,
         'by_status': {},
     })

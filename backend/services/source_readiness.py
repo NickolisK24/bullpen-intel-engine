@@ -11,9 +11,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.dashboard_snapshot import DashboardSnapshot
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.roster_status_snapshot import RosterStatusSnapshot
 from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
 from services import slate_coverage
+from services.roster_status_sync import (
+    ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
+    ROSTER_STATUS_FETCH_ENTITY_TYPE,
+    ROSTER_STATUS_IDENTITY_ENTITY_TYPE,
+    roster_status_cache_divergence_count,
+)
 from utils.db import db
 
 
@@ -39,7 +46,14 @@ FAMILY_STATSAPI_CORE = 'statsapi_core'
 FAMILY_GAME_LOGS = 'game_logs'
 FAMILY_SLATE_COVERAGE = 'slate_coverage'
 FAMILY_DASHBOARD_SNAPSHOTS = 'dashboard_snapshots'
-FAMILY_ROSTER_STATUS_CURRENT = 'roster_status_current'
+FAMILY_ROSTER_STATUS_SNAPSHOTS = 'roster_status_snapshots'
+
+ROSTER_SNAPSHOT_STALE_AFTER_DAYS = 1
+ROSTER_STATUS_FAILURE_ENTITY_TYPES = (
+    ROSTER_STATUS_FETCH_ENTITY_TYPE,
+    ROSTER_STATUS_IDENTITY_ENTITY_TYPE,
+    ROSTER_STATUS_CONFLICT_ENTITY_TYPE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +167,11 @@ def source_readiness_payload(
             sync_status,
         ),
         _safe_family(FAMILY_DASHBOARD_SNAPSHOTS, _dashboard_snapshots_readiness, reference_date),
-        _safe_family(FAMILY_ROSTER_STATUS_CURRENT, _roster_status_readiness, reference_date),
+        _safe_family(
+            FAMILY_ROSTER_STATUS_SNAPSHOTS,
+            _roster_status_snapshot_readiness,
+            reference_date,
+        ),
     ]
     blocking = [family for family in families if family.fail_closed]
     return {
@@ -280,33 +298,94 @@ def _dashboard_snapshots_readiness(reference_date=None):
     )
 
 
-def _roster_status_readiness(reference_date=None):
-    total = db.session.query(db.func.count(Pitcher.id)).scalar() or 0
-    with_status = (
-        db.session.query(db.func.count(Pitcher.id))
-        .filter(Pitcher.roster_status.isnot(None))
-        .scalar()
-        or 0
-    )
-    latest = db.session.query(db.func.max(Pitcher.roster_status_updated_at)).scalar()
-    if total and with_status == 0:
-        return classify_source_readiness(
-            FAMILY_ROSTER_STATUS_CURRENT,
-            last_successful_at=None,
-            last_attempted_at=None,
-            stale_after_days=DEFAULT_STALE_AFTER_DAYS,
-            record_count=0,
-            reference_date=reference_date,
-            reason_codes=('roster_status_not_loaded',),
+def _roster_status_snapshot_readiness(reference_date=None):
+    latest_snapshot = (
+        RosterStatusSnapshot.query
+        .order_by(
+            RosterStatusSnapshot.snapshot_date.desc(),
+            RosterStatusSnapshot.updated_at.desc(),
+            RosterStatusSnapshot.id.desc(),
         )
-    return classify_source_readiness(
-        FAMILY_ROSTER_STATUS_CURRENT,
-        last_successful_at=latest,
-        last_attempted_at=latest,
-        stale_after_days=DEFAULT_STALE_AFTER_DAYS,
-        record_count=with_status,
+        .first()
+    )
+    latest_failure = _latest_failure(ROSTER_STATUS_FAILURE_ENTITY_TYPES)
+    latest_failure_at = getattr(latest_failure, 'created_at', None)
+    latest_attempted_at = _latest_datetime(
+        getattr(latest_snapshot, 'updated_at', None),
+        latest_failure_at,
+    )
+
+    active_team_ids = _active_pitcher_team_ids()
+    target_date = reference_date or getattr(latest_snapshot, 'snapshot_date', None)
+    covered_team_ids = _snapshot_team_ids(target_date) if target_date else set()
+    missing_team_ids = sorted(active_team_ids - covered_team_ids)
+    record_count = int(db.session.query(db.func.count(RosterStatusSnapshot.id)).scalar() or 0)
+    dead_letters = _unresolved_failure_count(entity_types=ROSTER_STATUS_FAILURE_ENTITY_TYPES)
+    divergence_count = roster_status_cache_divergence_count()
+    latest_snapshot_date = getattr(latest_snapshot, 'snapshot_date', None)
+    provenance_present = (
+        latest_snapshot is None
+        or (
+            bool(getattr(latest_snapshot, 'source', None))
+            and getattr(latest_snapshot, 'first_seen_at', None) is not None
+            and getattr(latest_snapshot, 'sync_run_id', None) is not None
+        )
+    )
+    details = {
+        'latest_snapshot_date': _iso(latest_snapshot_date),
+        'active_pitcher_team_count': len(active_team_ids),
+        'snapshot_cache_divergence_count': divergence_count,
+    }
+    if latest_failure is not None:
+        details['latest_failure_reason'] = (
+            (latest_failure.payload or {}).get('reason')
+            or latest_failure.error
+        )
+    coverage = {
+        'snapshot_date': _iso(target_date),
+        'teams_expected': len(active_team_ids),
+        'teams_covered': len(covered_team_ids),
+        'teams_missing': missing_team_ids,
+    }
+
+    readiness = classify_source_readiness(
+        FAMILY_ROSTER_STATUS_SNAPSHOTS,
+        last_successful_at=latest_snapshot_date,
+        last_attempted_at=latest_attempted_at,
+        stale_after_days=ROSTER_SNAPSHOT_STALE_AFTER_DAYS,
+        record_count=record_count,
+        dead_letter_count=dead_letters,
+        reason_codes=('roster_snapshots_missing',) if record_count == 0 else (),
         reference_date=reference_date,
-        details={'pitchers_total': int(total), 'pitchers_with_roster_status': int(with_status)},
+        sync_run_id=getattr(latest_snapshot, 'sync_run_id', None),
+        source=getattr(latest_snapshot, 'source', None),
+        provenance_present=provenance_present,
+        coverage=coverage,
+        details=details,
+    )
+    reason_codes = list(readiness.reason_codes)
+    status = readiness.status
+    if missing_team_ids:
+        status = DEGRADED if status == READY else status
+        reason_codes.append('roster_snapshot_team_coverage_incomplete')
+    if divergence_count:
+        status = DEGRADED
+        reason_codes.append('roster_status_cache_divergence')
+
+    return SourceReadiness(
+        source_family=readiness.source_family,
+        status=status,
+        reason_codes=_dedupe(reason_codes),
+        last_successful_at=readiness.last_successful_at,
+        last_attempted_at=readiness.last_attempted_at,
+        stale_after_days=readiness.stale_after_days,
+        data_age_days=readiness.data_age_days,
+        record_count=readiness.record_count,
+        dead_letter_count=readiness.dead_letter_count,
+        sync_run_id=readiness.sync_run_id,
+        source=readiness.source,
+        coverage=coverage,
+        details=details,
     )
 
 
@@ -328,6 +407,45 @@ def _safe_family(family, builder, reference_date=None, *args):
             status=UNKNOWN,
             reason_codes=('readiness_framework_error',),
         )
+
+
+def _active_pitcher_team_ids():
+    rows = (
+        db.session.query(Pitcher.team_id)
+        .filter(Pitcher.active == True)
+        .filter(Pitcher.team_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _snapshot_team_ids(snapshot_date):
+    if snapshot_date is None:
+        return set()
+    rows = (
+        db.session.query(RosterStatusSnapshot.team_id)
+        .filter(RosterStatusSnapshot.snapshot_date == snapshot_date)
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _latest_failure(entity_types):
+    return (
+        SyncFailure.query
+        .filter(SyncFailure.entity_type.in_(tuple(entity_types)))
+        .order_by(SyncFailure.created_at.desc(), SyncFailure.id.desc())
+        .first()
+    )
+
+
+def _latest_datetime(*values):
+    candidates = [value for value in values if isinstance(value, datetime)]
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def _latest_run(job_names):

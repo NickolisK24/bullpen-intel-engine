@@ -9,6 +9,7 @@ from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
+from models.roster_status_snapshot import RosterStatusSnapshot
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from models.sync_failure import SyncFailure
@@ -103,7 +104,7 @@ def test_source_readiness_payload_reports_existing_foundations(app):
             team_id=116,
             active=True,
             roster_status='ACTIVE',
-            roster_status_source='mlb_stats_api',
+            roster_status_source='mlb_stats_api:roster_sync:active',
             roster_status_updated_at=datetime(2026, 6, 2, 9, 0, 0),
         )
         db.session.add(pitcher)
@@ -155,6 +156,21 @@ def test_source_readiness_payload_reports_existing_foundations(app):
         )
         db.session.add(run)
         db.session.commit()
+        db.session.add(RosterStatusSnapshot(
+            pitcher_id=pitcher.id,
+            mlb_id=pitcher.mlb_id,
+            team_id=pitcher.team_id,
+            snapshot_date=date(2026, 6, 2),
+            roster_status='ACTIVE',
+            active_roster=True,
+            forty_man_roster=True,
+            position_code='P',
+            source='mlb_stats_api:roster_sync:active',
+            sync_run_id=run.id,
+            first_seen_at=datetime(2026, 6, 2, 9, 0, 0),
+            created_at=datetime(2026, 6, 2, 9, 0, 0),
+            updated_at=datetime(2026, 6, 2, 9, 0, 0),
+        ))
         db.session.add(DashboardSnapshot(
             snapshot_type='bullpen_dashboard',
             sync_run_id=run.id,
@@ -184,7 +200,7 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert families['game_logs']['status'] == source_readiness.READY
     assert families['slate_coverage']['status'] == source_readiness.READY
     assert families['dashboard_snapshots']['status'] == source_readiness.READY
-    assert families['roster_status_current']['status'] == source_readiness.READY
+    assert families['roster_status_snapshots']['status'] == source_readiness.READY
 
 
 def test_source_readiness_payload_blocks_incomplete_slate(app):

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from models.game_log import GameLog
+from models.roster_status_snapshot import RosterStatusSnapshot
 from services import source_provenance
 from services.source_correction_policies import (
     CorrectionPolicyError,
@@ -80,6 +81,24 @@ def test_registered_game_log_policy_matches_existing_correction_behavior():
     assert pitches_policy.update_after_final is True
     assert pitches_policy.unknown_on_unsafe_conflict is True
     assert pitches_policy.dead_letter_on_conflict is True
+
+
+def test_registered_roster_snapshot_policy_matches_snapshot_authority():
+    assert validate_correction_sensitive_model(RosterStatusSnapshot)
+
+    policy = correction_policy('roster_status_snapshot_corrections')
+    assert policy.source_family == 'roster_status_snapshots'
+    assert {
+        'pitcher_id',
+        'mlb_id',
+        'team_id',
+        'snapshot_date',
+    } == policy.identity_fields
+    status_policy = [
+        field for field in policy.fields if field.field_name == 'roster_status'
+    ][0]
+    assert status_policy.update_after_final is True
+    assert status_policy.dead_letter_on_conflict is True
 
 
 def test_unregistered_correction_sensitive_model_fails_contract():

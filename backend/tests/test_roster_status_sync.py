@@ -16,6 +16,7 @@ from api.bullpen import bullpen_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.roster_status_snapshot import RosterStatusSnapshot
 from services.roster_status import (
     STATUS_40_MAN_ONLY,
     STATUS_ACTIVE,
@@ -219,9 +220,15 @@ def test_sync_persists_authoritative_roster_statuses(client):
         )
 
         by_name = {pitcher.full_name: pitcher for pitcher in Pitcher.query.all()}
+        snapshot_by_mlb_id = {
+            snapshot.mlb_id: snapshot
+            for snapshot in RosterStatusSnapshot.query.all()
+        }
 
     assert result['teams_processed'] == 1
     assert result['pitchers_refreshed'] == 16
+    assert result['snapshots_created'] == 16
+    assert len(snapshot_by_mlb_id) == 16
     assert result['by_status'][STATUS_ACTIVE] == 5
     assert result['by_status'][STATUS_IL_60] == 1
     assert result['by_status'][STATUS_IL_15] == 2
@@ -252,6 +259,8 @@ def test_sync_persists_authoritative_roster_statuses(client):
     assert by_name['Graham Ashcraft'].roster_status_source == 'mlb_stats_api:roster_sync:40Man'
     assert by_name['Missing Roster Arm'].roster_status_source == 'mlb_stats_api:roster_sync:unavailable'
     assert by_name['Graham Ashcraft'].roster_status_updated_at == datetime(2026, 6, 7, 12, 0, 0)
+    assert snapshot_by_mlb_id[668933].roster_status == STATUS_IL_60
+    assert snapshot_by_mlb_id[668933].source == 'mlb_stats_api:roster_sync:40Man'
 
 
 def test_sync_preserves_bereavement_status_instead_of_collapsing_to_40_man(client):
@@ -294,9 +303,11 @@ def test_roster_fetch_failure_preserves_prior_status(client):
             timestamp=datetime(2026, 6, 7, 12, 0, 0),
         )
         updated = db.session.get(Pitcher, pitcher.id)
+        snapshot_count = RosterStatusSnapshot.query.count()
 
     assert result['errors'] == 1
     assert result['pitchers_refreshed'] == 0
+    assert snapshot_count == 0
     assert updated.roster_status == STATUS_ACTIVE
     assert updated.roster_status_source == 'prior_sync'
 

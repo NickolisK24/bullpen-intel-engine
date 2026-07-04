@@ -2379,13 +2379,12 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 team_assignment['errors'],
             )
             active_stage = sync_metadata.STAGE_ROSTER_STATUS
-            roster = sync_roster_statuses()
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
-            roster_records_failed = record_sync_error_details(
-                'roster_status_fetch',
-                roster.get('error_details'),
+            roster = sync_roster_statuses(
                 sync_run_id=sync_run_id,
+                snapshot_date=product_day.calendar_date,
             )
+            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_ROSTER_STATUS)
+            roster_records_failed = roster.get('records_failed', 0)
             run_logger.info(
                 'Refreshed roster status for %s pitchers (%s changed, %s unknown, %s errors)',
                 roster['pitchers_refreshed'],

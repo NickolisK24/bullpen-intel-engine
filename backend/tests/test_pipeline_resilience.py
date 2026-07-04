@@ -84,9 +84,9 @@ def app(tmp_path, monkeypatch):
         'no_organization_count': 0, 'unknown_count': 0, 'errors': 0,
         'by_status': {},
     })
-    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda: {
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
         'pitchers_refreshed': 0, 'pitchers_changed': 0, 'unknown_count': 0,
-        'errors': 0, 'by_status': {},
+        'records_failed': 0, 'errors': 0, 'by_status': {},
     })
     # No boxscore leverage backfill calls.
     monkeypatch.setattr(mlb_client, 'get_game_pitching_lines', lambda game_pk: [])

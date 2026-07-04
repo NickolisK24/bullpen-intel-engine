@@ -43,13 +43,14 @@ def client(app):
     return app.test_client()
 
 
-def _sync_scaffolding():
+def _sync_scaffolding(*_args, **_kwargs):
     return {
         'pitchers_refreshed': 0,
         'pitchers_changed': 0,
         'reassigned_count': 0,
         'no_organization_count': 0,
         'unknown_count': 0,
+        'records_failed': 0,
         'errors': 0,
         'by_status': {},
     }
