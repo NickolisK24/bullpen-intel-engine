@@ -3,6 +3,34 @@ from utils.time import utc_now_naive
 
 class GameLog(db.Model):
     __tablename__ = 'game_logs'
+    __correction_policy_name__ = 'game_log_pitching_line_corrections'
+    __correction_identity_fields__ = ('pitcher_id', 'mlb_game_pk')
+    __correction_sensitive_fields__ = (
+        'pitcher_id',
+        'mlb_game_pk',
+        'game_date',
+        'game_type',
+        'opponent',
+        'opponent_abbreviation',
+        'games_started',
+        'innings_pitched',
+        'innings_pitched_outs',
+        'pitches_thrown',
+        'strikes',
+        'hits_allowed',
+        'runs_allowed',
+        'earned_runs',
+        'walks',
+        'strikeouts',
+        'home_runs_allowed',
+        'save_situation',
+        'hold',
+        'blown_save',
+        'win',
+        'loss',
+        'save',
+        'leverage_index',
+    )
 
     # ── Indexes + constraints ─────────────────────────────────────────────────
     # A pitcher has exactly one pitching line per MLB game, so (pitcher_id,

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 
 from services import sync_metadata
-from services import slate_coverage
+from services import slate_coverage, source_readiness
 from utils.auth import require_admin_token
 
 
@@ -319,6 +319,7 @@ def get_pipeline_health():
             'generated_at': generated_at,
             'jobs': [],
             'domains': {},
+            'source_readiness': source_readiness.unknown_source_readiness_payload(),
             'freshness': {
                 'freshness_state': 'metadata_unavailable',
                 'degradation': {'state': 'unavailable', 'fail_closed': True},
