@@ -1,9 +1,10 @@
 """Correction-policy registry for source-backed storage.
 
-Future 0C branches should register correction-sensitive tables and fields here
-before those fields ship. The registry is intentionally small: it records which
-fields may update, which fields fail to UNKNOWN on unsafe conflict, which
-conflicts should dead-letter, and which fields are immutable identity keys.
+Future source-backed storage branches should register correction-sensitive
+tables and fields here before those fields ship. The registry is intentionally
+small: it records which fields may update, which fields fail to UNKNOWN on
+unsafe conflict, which conflicts should dead-letter, and which fields are
+immutable identity keys.
 """
 
 from __future__ import annotations
@@ -406,5 +407,57 @@ TEAM_GAME_PITCHING_SPLIT_CORRECTION_POLICY = register_correction_policy(SourceCo
             ),
         )
         for field_name in _TEAM_GAME_PITCHING_SPLIT_MUTABLE_FIELDS
+    ),
+))
+
+EVIDENCE_OBJECT_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
+    name='evidence_object_corrections',
+    source_family='phase0d_evidence_contract',
+    model_name='EvidenceObject',
+    fields=(
+        CorrectionFieldPolicy('evidence_key', identity_key=True),
+        CorrectionFieldPolicy('evidence_type', update_after_final=True),
+        CorrectionFieldPolicy('subject_type', update_after_final=True),
+        CorrectionFieldPolicy('subject_id', update_after_final=True),
+        CorrectionFieldPolicy('subject_key', update_after_final=True),
+        CorrectionFieldPolicy('product_date', update_after_final=True),
+        CorrectionFieldPolicy('claim_template_id', update_after_final=True),
+        CorrectionFieldPolicy('rendered_claim', update_after_final=True),
+        CorrectionFieldPolicy('rule_id', update_after_final=True),
+        CorrectionFieldPolicy('rule_version', update_after_final=True),
+        CorrectionFieldPolicy('rule_definition_hash', update_after_final=True),
+        CorrectionFieldPolicy('typed_cited_inputs', update_after_final=True),
+        CorrectionFieldPolicy('computation_trace', update_after_final=True),
+        CorrectionFieldPolicy(
+            'completeness_state',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+        ),
+        CorrectionFieldPolicy('reason_codes', update_after_final=True),
+        CorrectionFieldPolicy('limitations', update_after_final=True),
+        CorrectionFieldPolicy('posture', update_after_final=True),
+        CorrectionFieldPolicy('recompute_status', update_after_final=True),
+        CorrectionFieldPolicy('recompute_reason_codes', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_at', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_by_source_table', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_by_source_pk', update_after_final=True),
+        CorrectionFieldPolicy('superseded_by_evidence_id', update_after_final=True),
+        CorrectionFieldPolicy('source', update_after_final=True),
+    ),
+))
+
+EVIDENCE_CITATION_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
+    name='evidence_citation_corrections',
+    source_family='phase0d_evidence_contract',
+    model_name='EvidenceCitation',
+    fields=(
+        CorrectionFieldPolicy('evidence_object_id', identity_key=True),
+        CorrectionFieldPolicy('source_family', identity_key=True),
+        CorrectionFieldPolicy('source_table', identity_key=True),
+        CorrectionFieldPolicy('source_pk', identity_key=True),
+        CorrectionFieldPolicy('citation_role', identity_key=True),
+        CorrectionFieldPolicy('source_field_names', update_after_final=True),
+        CorrectionFieldPolicy('cited_values', update_after_final=True),
+        CorrectionFieldPolicy('provenance', update_after_final=True),
     ),
 ))
