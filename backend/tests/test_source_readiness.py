@@ -363,6 +363,19 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert payload['overall_status'] == source_readiness.READY
     assert payload['fail_closed'] is False
     families = payload['families']
+    expected_families = {
+        source_readiness.FAMILY_FINALITY_AUTHORITY,
+        source_readiness.FAMILY_STATSAPI_CORE,
+        source_readiness.FAMILY_GAME_LOGS,
+        source_readiness.FAMILY_SLATE_COVERAGE,
+        source_readiness.FAMILY_DASHBOARD_SNAPSHOTS,
+        source_readiness.FAMILY_ROSTER_STATUS_SNAPSHOTS,
+        source_readiness.FAMILY_PLAYER_TRANSACTIONS,
+        source_readiness.FAMILY_FINAL_PLAY_BY_PLAY,
+        source_readiness.FAMILY_TEAM_GAME_PITCHING_SPLITS,
+        source_readiness.FAMILY_CALENDAR_CONTEXT,
+    }
+    assert set(families) == expected_families
     assert families['finality_authority']['status'] == source_readiness.READY
     assert families['statsapi_core']['status'] == source_readiness.READY
     assert families['game_logs']['status'] == source_readiness.READY
@@ -373,6 +386,12 @@ def test_source_readiness_payload_reports_existing_foundations(app):
     assert families['final_play_by_play']['status'] == source_readiness.READY
     assert families['team_game_pitching_splits']['status'] == source_readiness.READY
     assert families['calendar_context']['status'] == source_readiness.READY
+    for family in families.values():
+        assert isinstance(family['reason_codes'], list)
+        assert isinstance(family['coverage'], dict)
+        assert isinstance(family['details'], dict)
+        assert 'sync_run_id' in family
+        assert 'source' in family
 
 
 def test_source_readiness_payload_blocks_incomplete_slate(app):

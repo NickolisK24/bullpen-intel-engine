@@ -13,11 +13,11 @@ framing, pressure scores, role inference, or pitch-level ingestion.
 
 ## Current Branch
 
-Branch 0C-07 adds internal starter/bullpen split facts and safe calendar
-context facts derived from finality-certified stored rows. These facts support
-later starter-exposure context only; they do not create short-start pressure
-reads, opener/bulk/piggyback inference, team-structure reads, travel fatigue
-claims, projections, or public evidence surfaces in Phase 0C.
+Branch 0C-08 closes the Phase 0C foundation with source coverage integration,
+cross-family invariants, the foundation report, sync-budget documentation, and
+the Phase 0C exit checklist. It does not add public evidence interpretation,
+public payload fields, frontend surfaces, source adoption, schema expansion, or
+Phase 0D implementation.
 
 ## Required Ingestion Contract
 
