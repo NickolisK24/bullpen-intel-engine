@@ -18,7 +18,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
-from services import sync_metadata
+from services import source_readiness, sync_metadata
 from services.availability_explanations import FETCH_FAILED_WORKLOAD_REASON
 from services.availability_snapshot import classify_latest_fatigue_rows
 from services.mlb_api import MlbApiFetchError, mlb_client
@@ -407,9 +407,21 @@ class TestPipelineHealthEndpoint:
         health = client.get('/api/system/pipeline-health').get_json()
         assert health['capability'] == 'pipeline_health'
         assert 'source_readiness' in health
-        assert health['source_readiness']['families']['finality_authority']['status'] == 'ready'
-        assert 'team_game_pitching_splits' in health['source_readiness']['families']
-        assert 'calendar_context' in health['source_readiness']['families']
+        expected_families = {
+            source_readiness.FAMILY_FINALITY_AUTHORITY,
+            source_readiness.FAMILY_STATSAPI_CORE,
+            source_readiness.FAMILY_GAME_LOGS,
+            source_readiness.FAMILY_SLATE_COVERAGE,
+            source_readiness.FAMILY_DASHBOARD_SNAPSHOTS,
+            source_readiness.FAMILY_ROSTER_STATUS_SNAPSHOTS,
+            source_readiness.FAMILY_PLAYER_TRANSACTIONS,
+            source_readiness.FAMILY_FINAL_PLAY_BY_PLAY,
+            source_readiness.FAMILY_TEAM_GAME_PITCHING_SPLITS,
+            source_readiness.FAMILY_CALENDAR_CONTEXT,
+        }
+        families = health['source_readiness']['families']
+        assert expected_families.issubset(set(families))
+        assert families['finality_authority']['status'] == 'ready'
         assert health['dead_letters']['unresolved_count'] == 1
         assert len(health['dead_letters']['recent']) == 1
 

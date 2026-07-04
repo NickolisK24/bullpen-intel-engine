@@ -16,7 +16,7 @@ from flask import Flask
 from tests.db_config import configure_test_database, create_test_schema, drop_test_schema
 
 import services.sync as sync_service
-from services import sync_metadata
+from services import source_readiness, sync_metadata
 from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
@@ -535,10 +535,21 @@ class TestSyncStatusSnapshot:
         assert health['slate_coverage']['diagnostics']['postgame_blockers'] == []
         assert health['freshness']['slate_coverage']['reason_codes'] == ['slate_complete']
         assert 'source_readiness' in health
-        assert health['source_readiness']['families']['slate_coverage']['status'] == 'ready'
-        assert 'finality_authority' in health['source_readiness']['families']
-        assert 'team_game_pitching_splits' in health['source_readiness']['families']
-        assert 'calendar_context' in health['source_readiness']['families']
+        expected_families = {
+            source_readiness.FAMILY_FINALITY_AUTHORITY,
+            source_readiness.FAMILY_STATSAPI_CORE,
+            source_readiness.FAMILY_GAME_LOGS,
+            source_readiness.FAMILY_SLATE_COVERAGE,
+            source_readiness.FAMILY_DASHBOARD_SNAPSHOTS,
+            source_readiness.FAMILY_ROSTER_STATUS_SNAPSHOTS,
+            source_readiness.FAMILY_PLAYER_TRANSACTIONS,
+            source_readiness.FAMILY_FINAL_PLAY_BY_PLAY,
+            source_readiness.FAMILY_TEAM_GAME_PITCHING_SPLITS,
+            source_readiness.FAMILY_CALENDAR_CONTEXT,
+        }
+        families = health['source_readiness']['families']
+        assert expected_families.issubset(set(families))
+        assert families['slate_coverage']['status'] == 'ready'
 
     def test_pipeline_health_payload_identifies_slate_coverage_blockers(self, client):
         slate_date = date(2026, 5, 31)
