@@ -34,6 +34,7 @@ from services.completed_game_context_service import (
 )
 from services.fatigue import calculate_fatigue
 from services.mlb_api import mlb_client
+from services.roster_status import STATUS_ACTIVE
 from services.roster_status_sync import sync_roster_statuses
 from services.team_assignment_sync import sync_team_assignments
 from utils.innings import (
@@ -48,6 +49,7 @@ from utils.time import utc_now_naive
 logger = logging.getLogger(__name__)
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
 GAME_LOG_CORRECTION_FAILURE_ENTITY_TYPE = 'game_log_correction_attempt'
+PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
 POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
@@ -61,6 +63,8 @@ FINAL_GAME_DETAILED_STATES = frozenset({
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
+POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
+POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS = 'ASSIGNED'
 
 _REQUIRED_CORRECTION_STAT_KEYS = (
     'inningsPitched',
@@ -395,6 +399,279 @@ def _upsert_game_log_from_authoritative_values(
     }
 
 
+def _positive_external_id(raw):
+    if isinstance(raw, bool) or raw in (None, ''):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _position_value(position):
+    if not isinstance(position, dict):
+        return position
+    return (
+        position.get('abbreviation')
+        or position.get('code')
+        or position.get('type')
+        or position.get('name')
+    )
+
+
+def _normalized_position(value):
+    raw = _position_value(value)
+    return str(raw).strip().upper() if raw not in (None, '') else None
+
+
+def _team_abbreviation_from(team: dict | None):
+    team = team or {}
+    return (
+        team.get('abbreviation')
+        or team.get('teamCode')
+        or team.get('fileCode')
+    )
+
+
+def _resolve_pitching_line_team(game: dict, line: dict) -> tuple[dict | None, str | None]:
+    side = line.get('side')
+    if side not in {'home', 'away'}:
+        return None, 'missing_or_invalid_team_side'
+
+    game_team_id = _positive_external_id(_game_team_id(game, side))
+    line_team_id = _positive_external_id(line.get('team_id'))
+    if game_team_id and line_team_id and game_team_id != line_team_id:
+        return None, 'conflicting_team_assignment'
+
+    team_id = line_team_id or game_team_id
+    if team_id is None:
+        return None, 'missing_team_assignment'
+
+    game_team = _game_team(game, side)
+    return {
+        'team_id': team_id,
+        'team_name': line.get('team') or game_team.get('name'),
+        'team_abbreviation': (
+            line.get('team_abbreviation')
+            or _team_abbreviation_from(game_team)
+        ),
+    }, None
+
+
+def _record_pitcher_resolution_failure(
+    *,
+    line,
+    game,
+    reason,
+    source=POSTGAME_PITCHER_RESOLUTION_SOURCE,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+):
+    game_pk = _game_pk(game)
+    dead_letter.record_failure(
+        PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE,
+        f'unresolvable pitcher line: {reason}',
+        entity_ref=game_pk,
+        payload={
+            'game_pk': game_pk,
+            'source': source,
+            'reason': reason,
+            'player_id': line.get('player_id'),
+            'person_id': line.get('person_id'),
+            'name': line.get('name'),
+            'side': line.get('side'),
+            'team_id': line.get('team_id'),
+            'team': line.get('team'),
+            'stat_keys': sorted((line.get('stats') or {}).keys()),
+        },
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
+
+
+def _pitcher_resolution_failure(
+    *,
+    line,
+    game,
+    reason,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+) -> dict:
+    _record_pitcher_resolution_failure(
+        line=line,
+        game=game,
+        reason=reason,
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
+    return {
+        'status': 'unresolved',
+        'pitcher': None,
+        'reason': reason,
+        'created': False,
+        'reactivated': False,
+    }
+
+
+def _apply_pitcher_authority_from_line(pitcher, line: dict, team: dict, timestamp):
+    before_active = bool(pitcher.active)
+    before_team = (pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation)
+    before_roster = pitcher.roster_status
+
+    line_name = line.get('name')
+    if line_name and not pitcher.full_name:
+        pitcher.full_name = line_name
+
+    desired = {
+        'active': True,
+        'position': pitcher.position or 'P',
+        'team_id': team['team_id'],
+        'team_name': team.get('team_name') or pitcher.team_name,
+        'team_abbreviation': team.get('team_abbreviation') or pitcher.team_abbreviation,
+        'team_assignment_status': POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS,
+        'team_assignment_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
+        'roster_status': STATUS_ACTIVE,
+        'roster_status_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
+        'roster_status_raw_code': STATUS_ACTIVE,
+        'roster_status_raw_description': 'Final-game pitching line',
+    }
+    changed = False
+    for attr, value in desired.items():
+        if getattr(pitcher, attr) != value:
+            setattr(pitcher, attr, value)
+            changed = True
+
+    if changed or pitcher.team_assignment_updated_at is None:
+        pitcher.team_assignment_updated_at = timestamp
+    if changed or pitcher.roster_status_updated_at is None:
+        pitcher.roster_status_updated_at = timestamp
+
+    return {
+        'reactivated': not before_active,
+        'team_changed': before_team != (
+            pitcher.team_id,
+            pitcher.team_name,
+            pitcher.team_abbreviation,
+        ),
+        'roster_changed': before_roster != pitcher.roster_status,
+        'changed': changed,
+    }
+
+
+def resolve_pitcher_for_authoritative_line(
+    line: dict,
+    game: dict,
+    *,
+    local_pitchers=None,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+):
+    """
+    Resolve or create a pitcher from a completed-game pitching line.
+
+    The boxscore pitching line provides the authoritative player id, name, and
+    team side for Branch 04. If any of those identity anchors conflict or are
+    absent, the line is dead-lettered instead of being silently skipped.
+    """
+    player_id = _positive_external_id(line.get('player_id'))
+    if player_id is None:
+        return _pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason='missing_or_invalid_player_id',
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+
+    person_id = _positive_external_id(line.get('person_id'))
+    if person_id is not None and person_id != player_id:
+        return _pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason='conflicting_player_identity',
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+
+    team, team_error = _resolve_pitching_line_team(game, line)
+    if team_error:
+        return _pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason=team_error,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+
+    line_position = _normalized_position(line.get('position'))
+    if line_position is not None and line_position not in {'P', 'PITCHER'}:
+        return _pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason='non_pitcher_position',
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+
+    local_pitchers = local_pitchers if local_pitchers is not None else {}
+    pitcher = local_pitchers.get(player_id)
+    if pitcher is None:
+        pitcher = Pitcher.query.filter_by(mlb_id=player_id).first()
+
+    timestamp = utc_now_naive()
+    if pitcher is None:
+        line_name = line.get('name')
+        if not line_name:
+            return _pitcher_resolution_failure(
+                line=line,
+                game=game,
+                reason='missing_player_name',
+                sync_run_id=sync_run_id,
+                job_name=job_name,
+            )
+        pitcher = Pitcher(
+            mlb_id=player_id,
+            full_name=line_name,
+            position='P',
+        )
+        _apply_pitcher_authority_from_line(pitcher, line, team, timestamp)
+        db.session.add(pitcher)
+        db.session.flush()
+        local_pitchers[player_id] = pitcher
+        return {
+            'status': 'created',
+            'pitcher': pitcher,
+            'created': True,
+            'reactivated': False,
+            'reason': None,
+        }
+
+    existing_position = _normalized_position(pitcher.position)
+    if existing_position is not None and existing_position not in {'P', 'PITCHER'}:
+        return _pitcher_resolution_failure(
+            line=line,
+            game=game,
+            reason='local_record_not_pitcher',
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+
+    changes = _apply_pitcher_authority_from_line(pitcher, line, team, timestamp)
+    if changes['changed']:
+        db.session.add(pitcher)
+    db.session.flush()
+    local_pitchers[player_id] = pitcher
+    status = 'reactivated' if changes['reactivated'] else 'resolved'
+    return {
+        'status': status,
+        'pitcher': pitcher,
+        'created': False,
+        'reactivated': changes['reactivated'],
+        'reason': None,
+    }
+
+
 def _pitcher_order_by_side(boxscore: dict) -> dict[str, list[int]]:
     teams = (boxscore or {}).get('teams') or {}
     return {
@@ -409,15 +686,35 @@ def _extract_pitching_lines_from_boxscore(boxscore: dict) -> list[dict]:
         team_data = ((boxscore or {}).get('teams') or {}).get(side) or {}
         team_info = team_data.get('team') or {}
         player_data = team_data.get('players') or {}
-        for pitcher_id in team_data.get('pitchers') or []:
-            player = player_data.get(f'ID{pitcher_id}') or {}
+        candidates = [
+            (pitcher_id, f'ID{pitcher_id}')
+            for pitcher_id in (team_data.get('pitchers') or [])
+        ]
+        candidate_keys = {key for _pitcher_id, key in candidates}
+        for player_key, player in player_data.items():
+            stats = ((player.get('stats') or {}).get('pitching') or {})
+            if stats and player_key not in candidate_keys:
+                person = player.get('person') or {}
+                candidates.append((person.get('id'), player_key))
+
+        for pitcher_id, player_key in candidates:
+            player = player_data.get(player_key) or {}
+            person = player.get('person') or {}
+            position = (
+                player.get('position')
+                or person.get('primaryPosition')
+                or {}
+            )
             stats = ((player.get('stats') or {}).get('pitching') or {})
             if stats:
                 pitchers.append({
                     'player_id': pitcher_id,
-                    'name': (player.get('person') or {}).get('fullName'),
+                    'person_id': person.get('id'),
+                    'name': person.get('fullName'),
                     'team': team_info.get('name'),
                     'team_id': team_info.get('id'),
+                    'team_abbreviation': _team_abbreviation_from(team_info),
+                    'position': _position_value(position),
                     'stats': stats,
                     'side': side,
                 })
@@ -492,6 +789,9 @@ def process_completed_game_for_postgame_refresh(
             'logs_added': 0,
             'logs_corrected': 0,
             'correction_attempts_failed': 0,
+            'pitcher_resolution_failures': 0,
+            'pitchers_created': 0,
+            'pitchers_reactivated': 0,
             'pitchers_touched': 0,
             'skipped': True,
             'reason': 'missing_game_pk',
@@ -504,6 +804,9 @@ def process_completed_game_for_postgame_refresh(
             'logs_added': 0,
             'logs_corrected': 0,
             'correction_attempts_failed': 0,
+            'pitcher_resolution_failures': 0,
+            'pitchers_created': 0,
+            'pitchers_reactivated': 0,
             'pitchers_touched': 0,
             'skipped': True,
             'reason': 'already_processed',
@@ -512,12 +815,18 @@ def process_completed_game_for_postgame_refresh(
     boxscore = mlb_client.get_game_boxscore(game_pk)
     pitching_lines = _extract_pitching_lines_from_boxscore(boxscore)
     pitcher_order = _pitcher_order_by_side(boxscore)
-    player_ids = [line.get('player_id') for line in pitching_lines if line.get('player_id')]
+    player_ids = sorted({
+        player_id
+        for player_id in (
+            _positive_external_id(line.get('player_id'))
+            for line in pitching_lines
+        )
+        if player_id is not None
+    })
     local_pitchers = {
         pitcher.mlb_id: pitcher
         for pitcher in (
             Pitcher.query
-            .filter(Pitcher.active == True)
             .filter(Pitcher.mlb_id.in_(player_ids or [-1]))
             .all()
         )
@@ -532,11 +841,28 @@ def process_completed_game_for_postgame_refresh(
     logs_added = 0
     logs_corrected = 0
     correction_attempts_failed = 0
+    pitcher_resolution_failures = 0
+    pitchers_created = 0
+    pitchers_reactivated = 0
     touched_pitcher_ids = set()
     for line in pitching_lines:
-        pitcher = local_pitchers.get(line.get('player_id'))
+        resolution = resolve_pitcher_for_authoritative_line(
+            line,
+            game,
+            local_pitchers=local_pitchers,
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        )
+        pitcher = resolution['pitcher']
         if pitcher is None:
+            pitcher_resolution_failures += 1
             continue
+        if resolution['created']:
+            pitchers_created += 1
+        if resolution['reactivated']:
+            pitchers_reactivated += 1
+        if pitcher.team_id and pitcher.team_abbreviation:
+            team_abbr_map[pitcher.team_id] = pitcher.team_abbreviation
         result = _ingest_boxscore_pitching_line(
             pitcher,
             line,
@@ -575,6 +901,9 @@ def process_completed_game_for_postgame_refresh(
         'logs_added': logs_added,
         'logs_corrected': logs_corrected,
         'correction_attempts_failed': correction_attempts_failed,
+        'pitcher_resolution_failures': pitcher_resolution_failures,
+        'pitchers_created': pitchers_created,
+        'pitchers_reactivated': pitchers_reactivated,
         'pitchers_touched': len(touched_pitcher_ids),
         'skipped': False,
         'reason': None,
@@ -1313,6 +1642,9 @@ def run_postgame_refresh(
         'errors': 0,
         'records_failed': 0,
         'correction_attempts_failed': 0,
+        'pitcher_resolution_failures': 0,
+        'pitchers_created': 0,
+        'pitchers_reactivated': 0,
         'completed_game_contexts_upserted': 0,
         'completed_game_context_errors': 0,
         'intelligence_snapshot': 'skipped',
@@ -1362,15 +1694,21 @@ def run_postgame_refresh(
                     status['new_logs_added'] += result['logs_added']
                     status['logs_corrected'] += result['logs_corrected']
                     status['correction_attempts_failed'] += result['correction_attempts_failed']
+                    status['pitcher_resolution_failures'] += result['pitcher_resolution_failures']
+                    status['pitchers_created'] += result['pitchers_created']
+                    status['pitchers_reactivated'] += result['pitchers_reactivated']
                     status['records_failed'] += result['correction_attempts_failed']
+                    status['records_failed'] += result['pitcher_resolution_failures']
                     status['pitchers_touched'] += result['pitchers_touched']
                     run_logger.info(
                         'Processed completed game %s: %s inserted, %s corrected, '
-                        '%s unsafe correction(s), %s pitcher(s).',
+                        '%s unsafe correction(s), %s pitcher resolution failure(s), '
+                        '%s pitcher(s).',
                         game_pk,
                         result['logs_added'],
                         result['logs_corrected'],
                         result['correction_attempts_failed'],
+                        result['pitcher_resolution_failures'],
                         result['pitchers_touched'],
                     )
                     # Derive completed-game context in its own transaction so a
@@ -1412,7 +1750,8 @@ def run_postgame_refresh(
 
             run_logger.info(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
-                'failed=%s contexts=%s logs_added=%s logs_corrected=%s.',
+                'failed=%s contexts=%s logs_added=%s logs_corrected=%s '
+                'pitchers_created=%s pitchers_reactivated=%s.',
                 schedule_date,
                 status['games_processed'],
                 status['games_skipped'],
@@ -1420,6 +1759,8 @@ def run_postgame_refresh(
                 status['completed_game_contexts_upserted'],
                 status['new_logs_added'],
                 status['logs_corrected'],
+                status['pitchers_created'],
+                status['pitchers_reactivated'],
             )
 
             changed_log_count = status['new_logs_added'] + status['logs_corrected']
