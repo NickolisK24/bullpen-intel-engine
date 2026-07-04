@@ -13,6 +13,7 @@ from models.game_log import GameLog
 from models.pitcher import Pitcher
 from models.postgame_processed_game import PostgameProcessedGame
 from models.sync_failure import SyncFailure
+from services.bullpen_population import eligible_bullpen_pitcher_contexts
 from services import sync_metadata
 from services.mlb_api import mlb_client
 from services.roster_status import STATUS_ACTIVE, STATUS_MINORS
@@ -43,12 +44,12 @@ def _status():
     }
 
 
-def _game(game_pk=8101):
+def _game(game_pk=8101, *, status=None):
     return {
         'gamePk': game_pk,
         'gameType': 'R',
         'officialDate': '2026-06-20',
-        'status': _status(),
+        'status': status or _status(),
         'teams': {
             'home': {'team': {'id': 1, 'name': 'Home Club', 'abbreviation': 'HME'}},
             'away': {'team': {'id': 2, 'name': 'Away Club', 'abbreviation': 'AWY'}},
@@ -75,11 +76,16 @@ def _stat(**overrides):
 
 
 def _player(player_id, *, name='New Reliever', stats=None, person_id=None, position='P'):
+    primary_position = (
+        position
+        if isinstance(position, dict)
+        else {'abbreviation': position}
+    )
     return {
         'person': {
             'id': person_id if person_id is not None else player_id,
             'fullName': name,
-            'primaryPosition': {'abbreviation': position},
+            'primaryPosition': primary_position,
         },
         'stats': {'pitching': stats if stats is not None else _stat()},
     }
@@ -230,6 +236,109 @@ def test_inactive_pitcher_is_reactivated_from_authoritative_final_line(app, monk
     assert pitches_thrown == 14
 
 
+def test_authoritative_two_way_pitching_line_ingests_without_bullpen_overclaim(
+    app,
+    monkeypatch,
+):
+    with app.app_context():
+        stats = _stat(
+            inningsPitched='5.0',
+            numberOfPitches=87,
+            holds=0,
+            gamesStarted=1,
+        )
+        boxscores = [
+            _boxscore(
+                player_id=660271,
+                name='Shohei Ohtani',
+                stats=stats,
+                position={
+                    'code': 'O',
+                    'name': 'Designated Hitter',
+                    'abbreviation': 'DH',
+                },
+                team_id=1,
+                team_name='Los Angeles Dodgers',
+                team_abbreviation='LAD',
+            ),
+            _boxscore(
+                player_id=660271,
+                name='Shohei Ohtani',
+                stats=stats,
+                position={
+                    'code': 'O',
+                    'name': 'Designated Hitter',
+                    'abbreviation': 'DH',
+                },
+                team_id=1,
+                team_name='Los Angeles Dodgers',
+                team_abbreviation='LAD',
+            ),
+        ]
+        monkeypatch.setattr(
+            mlb_client,
+            'get_game_boxscore',
+            lambda game_pk: boxscores.pop(0),
+        )
+
+        first = sync_service.process_completed_game_for_postgame_refresh(
+            _game(823933),
+            schedule_date=date(2026, 6, 20),
+        )
+        db.session.commit()
+        _delete_marker(823933)
+        second = sync_service.process_completed_game_for_postgame_refresh(
+            _game(823933),
+            schedule_date=date(2026, 6, 20),
+        )
+        db.session.commit()
+
+        pitcher = Pitcher.query.filter_by(mlb_id=660271).one()
+        log = GameLog.query.filter_by(pitcher_id=pitcher.id, mlb_game_pk=823933).one()
+        contexts = eligible_bullpen_pitcher_contexts(
+            [pitcher],
+            logs_by_pitcher={pitcher.id: [log]},
+            reference_date=date(2026, 6, 21),
+        )
+        failure_count = SyncFailure.query.count()
+        pitcher_count = Pitcher.query.filter_by(mlb_id=660271).count()
+        log_count = GameLog.query.filter_by(
+            pitcher_id=pitcher.id,
+            mlb_game_pk=823933,
+        ).count()
+        pitcher_payload = {
+            'full_name': pitcher.full_name,
+            'position': pitcher.position,
+            'roster_status': pitcher.roster_status,
+            'roster_status_raw_description': pitcher.roster_status_raw_description,
+        }
+        log_payload = {
+            'games_started': log.games_started,
+            'pitches_thrown': log.pitches_thrown,
+        }
+
+    assert first['pitcher_resolution_failures'] == 0
+    assert first['logs_added'] == 1
+    assert first['position_overrides_from_pitching_line'] == 1
+    assert second['pitcher_resolution_failures'] == 0
+    assert second['logs_added'] == 0
+    assert second['logs_corrected'] == 0
+    assert second['position_overrides_from_pitching_line'] == 1
+    assert failure_count == 0
+    assert pitcher_count == 1
+    assert log_count == 1
+    assert pitcher_payload['full_name'] == 'Shohei Ohtani'
+    assert pitcher_payload['position'] == 'DH'
+    assert pitcher_payload['roster_status'] == STATUS_ACTIVE
+    assert (
+        pitcher_payload['roster_status_raw_description']
+        == 'Final-game pitching line; position_override_from_pitching_line'
+    )
+    assert log_payload['games_started'] == 1
+    assert log_payload['pitches_thrown'] == 87
+    assert contexts == []
+
+
 def test_invalid_player_id_pitching_line_is_dead_lettered(app, monkeypatch):
     with app.app_context():
         monkeypatch.setattr(
@@ -262,6 +371,100 @@ def test_invalid_player_id_pitching_line_is_dead_lettered(app, monkeypatch):
     assert failure_job_name == sync_metadata.JOB_POSTGAME_REFRESH
     assert failure_payload['reason'] == 'missing_or_invalid_player_id'
     assert failure_payload['player_id'] == 'BAD'
+
+
+def test_conflicting_player_identity_is_dead_lettered(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setattr(
+            mlb_client,
+            'get_game_boxscore',
+            lambda game_pk: _boxscore(
+                player_id=707,
+                person_id=808,
+                name='Conflicted Identity',
+            ),
+        )
+
+        result = sync_service.process_completed_game_for_postgame_refresh(
+            _game(8106),
+            schedule_date=date(2026, 6, 20),
+        )
+        db.session.commit()
+        failure = SyncFailure.query.one()
+        pitcher_count = Pitcher.query.count()
+        log_count = GameLog.query.count()
+
+    assert result['pitcher_resolution_failures'] == 1
+    assert result['logs_added'] == 0
+    assert pitcher_count == 0
+    assert log_count == 0
+    assert failure.entity_type == sync_service.PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE
+    assert failure.payload['reason'] == 'conflicting_player_identity'
+    assert failure.payload['player_id'] == 707
+    assert failure.payload['person_id'] == 808
+
+
+def test_missing_player_name_is_dead_lettered(app, monkeypatch):
+    with app.app_context():
+        monkeypatch.setattr(
+            mlb_client,
+            'get_game_boxscore',
+            lambda game_pk: _boxscore(player_id=909, name=None),
+        )
+
+        result = sync_service.process_completed_game_for_postgame_refresh(
+            _game(8107),
+            schedule_date=date(2026, 6, 20),
+        )
+        db.session.commit()
+        failure = SyncFailure.query.one()
+        pitcher_count = Pitcher.query.count()
+        log_count = GameLog.query.count()
+
+    assert result['pitcher_resolution_failures'] == 1
+    assert result['logs_added'] == 0
+    assert pitcher_count == 0
+    assert log_count == 0
+    assert failure.entity_type == sync_service.PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE
+    assert failure.payload['reason'] == 'missing_player_name'
+    assert failure.payload['player_id'] == 909
+
+
+def test_non_final_non_pitcher_line_still_fails_closed(app):
+    with app.app_context():
+        line = {
+            'player_id': 1009,
+            'person_id': 1009,
+            'name': 'Position Player',
+            'side': 'home',
+            'team_id': 1,
+            'team': 'Home Club',
+            'position': 'DH',
+            'source': sync_service.POSTGAME_PITCHER_RESOLUTION_SOURCE,
+            'authority': sync_service.POSTGAME_PITCHING_LINE_AUTHORITY,
+            'stats': _stat(numberOfPitches=12),
+        }
+
+        result = sync_service.resolve_pitcher_for_authoritative_line(
+            line,
+            _game(
+                8108,
+                status={
+                    'statusCode': 'I',
+                    'detailedState': 'In Progress',
+                    'abstractGameState': 'Live',
+                },
+            ),
+        )
+        db.session.commit()
+        failure = SyncFailure.query.one()
+        pitcher_count = Pitcher.query.count()
+
+    assert result['pitcher'] is None
+    assert result['reason'] == 'non_pitcher_position'
+    assert pitcher_count == 0
+    assert failure.entity_type == sync_service.PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE
+    assert failure.payload['reason'] == 'non_pitcher_position'
 
 
 def test_conflicting_team_assignment_is_dead_lettered(app, monkeypatch):
