@@ -35,6 +35,8 @@ class ScheduledGame(db.Model):
         db.Index('ix_scheduled_games_team_date', 'team_id', 'game_date'),
         db.Index('ix_scheduled_games_game_date', 'game_date'),
         db.Index('ix_scheduled_games_status_state', 'status_state'),
+        db.Index('ix_scheduled_games_resumed_from_game_pk', 'resumed_from_game_pk'),
+        db.Index('ix_scheduled_games_resumed_to_game_pk', 'resumed_to_game_pk'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -63,6 +65,15 @@ class ScheduledGame(db.Model):
     series_game_number = db.Column(db.Integer, nullable=True)
     games_in_series = db.Column(db.Integer, nullable=True)
 
+    # Suspended/resumed linkage. These are source facts only; unresolved or
+    # contradictory linkage must fail closed in slate coverage.
+    original_game_date = db.Column(db.Date, nullable=True)
+    original_product_date = db.Column(db.Date, nullable=True)
+    resumed_game_date = db.Column(db.Date, nullable=True)
+    resumed_product_date = db.Column(db.Date, nullable=True)
+    resumed_from_game_pk = db.Column(db.Integer, nullable=True)
+    resumed_to_game_pk = db.Column(db.Integer, nullable=True)
+
     # ── Provenance ─────────────────────────────────────────────────────────────
     source = db.Column(db.String(40), nullable=False, default='schedule_ingestion')
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now_naive)
@@ -84,6 +95,12 @@ class ScheduledGame(db.Model):
         'game_number',
         'series_game_number',
         'games_in_series',
+        'original_game_date',
+        'original_product_date',
+        'resumed_game_date',
+        'resumed_product_date',
+        'resumed_from_game_pk',
+        'resumed_to_game_pk',
         'source',
     )
 
@@ -103,6 +120,20 @@ class ScheduledGame(db.Model):
             'game_number': self.game_number,
             'series_game_number': self.series_game_number,
             'games_in_series': self.games_in_series,
+            'original_game_date': (
+                self.original_game_date.isoformat() if self.original_game_date else None
+            ),
+            'original_product_date': (
+                self.original_product_date.isoformat() if self.original_product_date else None
+            ),
+            'resumed_game_date': (
+                self.resumed_game_date.isoformat() if self.resumed_game_date else None
+            ),
+            'resumed_product_date': (
+                self.resumed_product_date.isoformat() if self.resumed_product_date else None
+            ),
+            'resumed_from_game_pk': self.resumed_from_game_pk,
+            'resumed_to_game_pk': self.resumed_to_game_pk,
             'source': self.source,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,

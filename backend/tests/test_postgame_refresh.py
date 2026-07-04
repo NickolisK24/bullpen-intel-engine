@@ -189,7 +189,12 @@ def _run(app):
 def test_completed_game_detection_uses_final_schedule_status():
     assert sync_service.is_completed_game(_game(status_code='F'))
     assert sync_service.is_completed_game(_game(status_code='O', detailed_state='Game Over'))
-    assert sync_service.is_completed_game(_game(status_code='I', abstract_state='Final'))
+    assert not sync_service.is_completed_game(
+        _game(status_code='I', detailed_state='In Progress', abstract_state='Final')
+    )
+    assert not sync_service.is_completed_game(
+        _game(status_code='F', detailed_state='Postponed', abstract_state='Final')
+    )
     assert not sync_service.is_completed_game(_game(status_code='I', detailed_state='In Progress', abstract_state='Live'))
     assert not sync_service.is_completed_game({'status': {'statusCode': 'F'}})
 

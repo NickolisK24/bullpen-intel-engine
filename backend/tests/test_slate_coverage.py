@@ -33,25 +33,28 @@ def _schedule_game(
     status_code=None,
     home_id=116,
     away_id=142,
+    **linkage,
 ):
+    base_kwargs = {
+        'game_date': game_date,
+        'status_code': status_code,
+        'status_state': status,
+    }
+    base_kwargs.update(linkage)
     db.session.add_all([
         ScheduledGame(
             team_id=home_id,
             game_pk=game_pk,
-            game_date=game_date,
-            status_code=status_code,
-            status_state=status,
             home_away='home',
             opponent_team_id=away_id,
+            **base_kwargs,
         ),
         ScheduledGame(
             team_id=away_id,
             game_pk=game_pk,
-            game_date=game_date,
-            status_code=status_code,
-            status_state=status,
             home_away='away',
             opponent_team_id=home_id,
+            **base_kwargs,
         ),
     ])
 
@@ -328,3 +331,49 @@ def test_suspended_games_do_not_count_as_fully_ingested(app):
     assert coverage['games_incomplete'] == 1
     assert coverage['complete_enough_to_publish'] is False
     assert 'suspended_games_not_final' in coverage['reason_codes']
+
+
+def test_unresolved_resumed_linkage_blocks_completeness(app):
+    slate_date = date(2026, 7, 4)
+    with app.app_context():
+        _schedule_game(
+            2001,
+            slate_date,
+            resumed_from_game_pk=1001,
+            original_product_date=None,
+            resumed_product_date=slate_date,
+        )
+        _marker(2001, slate_date)
+        db.session.commit()
+
+        coverage = slate_coverage.compute_slate_coverage(slate_date)
+
+    assert coverage['games_unresolved'] == 1
+    assert coverage['games_final'] == 0
+    assert coverage['games_fully_ingested'] == 0
+    assert coverage['complete_enough_to_publish'] is False
+    assert 'resumed_linkage_unresolved' in coverage['reason_codes']
+    assert 'completeness_unknown' in coverage['reason_codes']
+
+
+def test_resolved_resumed_linkage_counts_once_on_resumed_product_day(app):
+    original_date = date(2026, 6, 20)
+    resumed_date = date(2026, 7, 4)
+    with app.app_context():
+        _schedule_game(
+            2001,
+            resumed_date,
+            resumed_from_game_pk=1001,
+            original_product_date=original_date,
+            resumed_product_date=resumed_date,
+        )
+        _marker(2001, resumed_date)
+        db.session.commit()
+
+        coverage = slate_coverage.compute_slate_coverage(resumed_date)
+
+    assert coverage['games_scheduled'] == 1
+    assert coverage['games_unresolved'] == 0
+    assert coverage['games_final'] == 1
+    assert coverage['games_fully_ingested'] == 1
+    assert coverage['complete_enough_to_publish'] is True

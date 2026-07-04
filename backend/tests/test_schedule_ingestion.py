@@ -152,6 +152,44 @@ def test_doubleheader_games_stay_separate_by_game_pk(app):
         assert {r.game_pk for r in ScheduledGame.query.filter_by(team_id=116)} == {1001, 1002}
 
 
+def test_resumed_linkage_fields_are_parsed(app):
+    with app.app_context():
+        ingest_games([
+            _game(
+                game_pk=1101,
+                official_date='2026-07-04',
+                status_code='F',
+                detailed_state='Final',
+                abstract_state='Final',
+            ) | {
+                'resumedFrom': 1001,
+                'resumedFromDate': '2026-06-20',
+            },
+            _game(
+                game_pk=1102,
+                status_code='U',
+                detailed_state='Suspended',
+                abstract_state='Live',
+            ) | {
+                'rescheduleDate': '2026-07-05',
+                'rescheduledGamePk': 1103,
+            },
+        ], source='test')
+
+        resumed = _by_team(1101)[116]
+        suspended = _by_team(1102)[116]
+
+        assert resumed.status_state == 'final'
+        assert resumed.resumed_from_game_pk == 1001
+        assert resumed.original_game_date == date(2026, 6, 20)
+        assert resumed.original_product_date == date(2026, 6, 20)
+        assert resumed.resumed_product_date == date(2026, 7, 4)
+        assert suspended.status_state == 'suspended'
+        assert suspended.resumed_to_game_pk == 1103
+        assert suspended.resumed_game_date == date(2026, 7, 5)
+        assert suspended.resumed_product_date == date(2026, 7, 5)
+
+
 # ── Missing optional fields do not crash ──────────────────────────────────────
 
 def test_missing_optional_fields_are_handled_safely(app):
