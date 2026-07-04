@@ -25,6 +25,12 @@ SNAPSHOT_STATUS_READY = 'ready'
 SNAPSHOT_STATUS_FAILED = 'failed'
 DASHBOARD_PAYLOAD_VERSION = 1
 SNAPSHOT_SOURCE_BUILDER_V2 = 'snapshot_builder_v2'
+DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING = 'dashboard_snapshot_slate_coverage_missing'
+DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE = 'dashboard_snapshot_slate_coverage_incomplete'
+_PUBLISH_WITHHELD_REASONS = {
+    DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING,
+    DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE,
+}
 
 
 def _elapsed_ms(started):
@@ -68,6 +74,27 @@ def _current_freshness(sync_status):
     return freshness if isinstance(freshness, Mapping) else {}
 
 
+def _payload_slate_coverage(payload):
+    freshness = _payload_freshness(payload)
+    coverage = freshness.get('slate_coverage')
+    return coverage if isinstance(coverage, Mapping) else {}
+
+
+def _payload_slate_coverage_unavailable_reason(payload):
+    coverage = _payload_slate_coverage(payload)
+    if not coverage:
+        return DASHBOARD_SNAPSHOT_SLATE_COVERAGE_MISSING
+    data_through = _data_through_from_payload(payload)
+    coverage_date = parse_reference_date(coverage.get('slate_date'))
+    if data_through is not None and coverage_date != data_through:
+        return DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    if coverage.get('validations_passed') is not True:
+        return DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    if coverage.get('complete_enough_to_publish') is not True:
+        return DASHBOARD_SNAPSHOT_SLATE_COVERAGE_INCOMPLETE
+    return None
+
+
 def payload_version_valid(snapshot):
     return (
         snapshot is not None
@@ -80,6 +107,8 @@ def snapshot_unavailable_reason(snapshot, sync_status=None):
     if snapshot is None:
         return 'dashboard_snapshot_missing'
     if snapshot.status != SNAPSHOT_STATUS_READY:
+        if snapshot.error_message in _PUBLISH_WITHHELD_REASONS:
+            return snapshot.error_message
         return 'dashboard_snapshot_not_ready'
     if not getattr(snapshot, 'is_published', False):
         return 'dashboard_snapshot_not_published'
@@ -87,6 +116,9 @@ def snapshot_unavailable_reason(snapshot, sync_status=None):
         return 'dashboard_snapshot_version_mismatch'
     if not isinstance(snapshot.payload, Mapping):
         return 'dashboard_snapshot_payload_invalid'
+    coverage_reason = _payload_slate_coverage_unavailable_reason(snapshot.payload)
+    if coverage_reason is not None:
+        return coverage_reason
 
     payload_freshness = _payload_freshness(snapshot.payload)
     data_age_days = (
@@ -178,6 +210,17 @@ def publish_dashboard_snapshot(snapshot, *, commit=True):
         db.session.flush()
     if snapshot.sync_run_id is None:
         raise ValueError('Published dashboard snapshots require sync_run_id provenance.')
+    coverage_reason = _payload_slate_coverage_unavailable_reason(snapshot.payload)
+    if coverage_reason is not None:
+        snapshot.status = SNAPSHOT_STATUS_PENDING
+        snapshot.is_published = False
+        snapshot.error_message = coverage_reason
+        db.session.add(snapshot)
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+        return snapshot
 
     now = utc_now_naive()
     prior_published_ids = [
@@ -346,7 +389,11 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
         status = 'failed'
     elif snapshot.status == SNAPSHOT_STATUS_PENDING and not snapshot.is_published:
         status = 'pending'
-        reason = 'dashboard_snapshot_pending_not_published'
+        reason = (
+            snapshot.error_message
+            if snapshot.error_message in _PUBLISH_WITHHELD_REASONS
+            else 'dashboard_snapshot_pending_not_published'
+        )
     elif reason is None:
         status = 'ready'
     else:

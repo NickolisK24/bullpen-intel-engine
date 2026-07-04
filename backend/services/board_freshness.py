@@ -13,6 +13,7 @@ prediction; it only reads and reshapes freshness metadata.
 """
 
 from services import dashboard_snapshot as dashboard_snapshot_service
+from services import slate_coverage
 from services import sync_metadata
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
@@ -32,6 +33,10 @@ def sync_status_freshness_block(status_payload=None):
             status_payload
         )
         freshness = status_payload.get('freshness') or {}
+        coverage = (
+            freshness.get('slate_coverage')
+            or status_payload.get('slate_coverage')
+        )
         data = status_payload.get('data') or {}
         return {
             'data_through': data.get('latest_game_date'),
@@ -56,6 +61,9 @@ def sync_status_freshness_block(status_payload=None):
             'reason_codes': list(freshness.get('reason_codes') or []),
             'label': freshness.get('label'),
             'limitations': list(freshness.get('limitations') or []),
+            'slate_coverage': coverage,
+            'validations_passed': freshness.get('validations_passed'),
+            'complete_enough_to_publish': freshness.get('complete_enough_to_publish'),
             # Fail-closed degradation tier (fresh / stale / unavailable). When
             # fail_closed is True the data is past the hard threshold and must
             # not be presented as usable.
@@ -85,6 +93,9 @@ def sync_status_freshness_block(status_payload=None):
             'reason_codes': ['durable_sync_metadata_unavailable'],
             'label': 'Freshness metadata unavailable.',
             'limitations': ['Could not read durable sync metadata.'],
+            'slate_coverage': slate_coverage.unknown_slate_coverage(),
+            'validations_passed': False,
+            'complete_enough_to_publish': False,
             'degradation': {
                 'state': 'unavailable',
                 'fail_closed': True,

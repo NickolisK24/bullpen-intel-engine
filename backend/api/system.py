@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 
 from services import sync_metadata
+from services import slate_coverage
 from utils.auth import require_admin_token
 
 
@@ -322,6 +323,7 @@ def get_pipeline_health():
                 'freshness_state': 'metadata_unavailable',
                 'degradation': {'state': 'unavailable', 'fail_closed': True},
             },
+            'slate_coverage': slate_coverage.unknown_slate_coverage(),
             'sync_status': sync_metadata.STATUS_METADATA_UNAVAILABLE,
             'last_successful_sync': None,
             'dead_letters': {'unresolved_count': 0, 'recent': []},

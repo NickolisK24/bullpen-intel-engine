@@ -21,6 +21,8 @@ from utils.db import db
 from models.pitcher import Pitcher
 from models.game_log import GameLog
 from models.fatigue_score import FatigueScore
+from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401
 from api.bullpen import bullpen_bp
@@ -67,6 +69,30 @@ def client(tmp_path, monkeypatch):
                                game_date=date.today() - timedelta(days=3),
                                innings_pitched=1.0, innings_pitched_outs=3,
                                pitches_thrown=12))
+        game_day = date.today() - timedelta(days=3)
+        db.session.add_all([
+            ScheduledGame(
+                team_id=116,
+                game_pk=10,
+                game_date=game_day,
+                status_state='final',
+                home_away='home',
+                opponent_team_id=142,
+            ),
+            ScheduledGame(
+                team_id=142,
+                game_pk=10,
+                game_date=game_day,
+                status_state='final',
+                home_away='away',
+                opponent_team_id=116,
+            ),
+        ])
+        db.session.add(PostgameProcessedGame(
+            mlb_game_pk=10,
+            game_date=game_day,
+            processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+        ))
         db.session.add(FatigueScore(pitcher_id=pitcher.id, raw_score=20.0,
                                     risk_level='LOW', calculated_at=datetime.utcnow()))
         db.session.commit()

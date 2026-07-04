@@ -9,6 +9,8 @@ from api.team_operations import team_operations_bp
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from models.postgame_processed_game import PostgameProcessedGame
+from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 from team_operations import team_operations_governance_errors
 from utils.db import db
@@ -92,16 +94,40 @@ def add_scored_pitcher(
     db.session.flush()
 
     game_date = date.today() - timedelta(days=days_since_last_game)
+    game_pk = 991000 + seed
     db.session.add(
         GameLog(
             pitcher_id=pitcher.id,
-            mlb_game_pk=991000 + seed,
+            mlb_game_pk=game_pk,
             game_date=game_date,
             pitches_thrown=log_pitches,
             innings_pitched=1.0,
             innings_pitched_outs=3,
         )
     )
+    db.session.add_all([
+        ScheduledGame(
+            team_id=team_id,
+            game_pk=game_pk,
+            game_date=game_date,
+            status_state='final',
+            home_away='home',
+            opponent_team_id=900000 + team_id,
+        ),
+        ScheduledGame(
+            team_id=900000 + team_id,
+            game_pk=game_pk,
+            game_date=game_date,
+            status_state='final',
+            home_away='away',
+            opponent_team_id=team_id,
+        ),
+    ])
+    db.session.add(PostgameProcessedGame(
+        mlb_game_pk=game_pk,
+        game_date=game_date,
+        processing_status=PostgameProcessedGame.STATUS_FULLY_PROCESSED,
+    ))
     db.session.add(
         FatigueScore(
             pitcher_id=pitcher.id,

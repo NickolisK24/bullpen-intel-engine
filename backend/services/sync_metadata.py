@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models.fatigue_score import FatigueScore
 from models.game_log import GameLog
 from models.sync_run import SyncRun
+from services import slate_coverage
 from services.availability import ACTIVE_WINDOW_DAYS
 from services.availability_reference_date import (
     product_availability_reference_date_from_metadata,
@@ -396,6 +397,7 @@ def pipeline_health_payload(reference_date=None):
         ],
         'domains': domain_freshness(metadata, reference_date=reference_date),
         'freshness': overall.get('freshness'),
+        'slate_coverage': overall.get('slate_coverage'),
         'sync_status': overall.get('status'),
         'last_successful_sync': overall.get('last_successful_sync'),
         'dead_letters': {
@@ -419,6 +421,7 @@ def determine_freshness_state(
     status,
     last_successful_sync,
     reference_date=None,
+    slate_coverage_payload=None,
 ):
     """
     Determine workload freshness from durable sync metadata and DB coverage.
@@ -446,7 +449,7 @@ def determine_freshness_state(
     )
 
     if not metadata['game_logs'] or latest_game_date is None:
-        return {
+        return slate_coverage.append_slate_coverage_to_freshness({
             'is_current': False,
             'is_stale': False,
             'freshness_state': 'missing',
@@ -463,7 +466,7 @@ def determine_freshness_state(
             'label': 'No baseball workload data loaded.',
             'limitations': ['No game logs are available.'],
             'degradation': build_degradation_block(None),
-        }
+        }, slate_coverage_payload)
 
     is_current = latest_workload_date >= cutoff
     freshness_state = 'current' if is_current else 'stale'
@@ -509,7 +512,7 @@ def determine_freshness_state(
             f"is older than the {unavailable_after}-day threshold."
         )
 
-    return {
+    return slate_coverage.append_slate_coverage_to_freshness({
         'is_current': is_current,
         'is_stale': freshness_state == 'stale',
         'freshness_state': freshness_state,
@@ -526,7 +529,7 @@ def determine_freshness_state(
         'label': label,
         'limitations': limitations,
         'degradation': degradation,
-    }
+    }, slate_coverage_payload)
 
 
 def build_sync_status_payload(legacy_status=None, reference_date=None):
@@ -594,6 +597,23 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
         if last_successful_sync
         else None
     )
+    coverage_slate_date = (
+        metadata['latest_workload_date']
+        or metadata['latest_game_date']
+        or reference_date
+        or product_current_date()
+    )
+    try:
+        slate_coverage_payload = slate_coverage.compute_slate_coverage(
+            coverage_slate_date,
+            sync_status=status,
+        )
+    except Exception as exc:  # noqa: BLE001 - trust metadata must fail closed
+        db.session.rollback()
+        logger.warning('Could not compute slate coverage: %s', exc)
+        slate_coverage_payload = slate_coverage.unknown_slate_coverage(
+            coverage_slate_date
+        )
 
     return {
         'status': status,
@@ -633,11 +653,13 @@ def build_sync_status_payload(legacy_status=None, reference_date=None):
             'latest_fatigue_calculated_at': _iso(metadata['latest_fatigue_calculated_at']),
         },
         'availability_reference_date': _iso(availability_reference_date),
+        'slate_coverage': slate_coverage_payload,
         'freshness': determine_freshness_state(
             metadata,
             status=status,
             last_successful_sync=last_successful_sync,
             reference_date=reference_date,
+            slate_coverage_payload=slate_coverage_payload,
         ),
         'sync': sync_block,
         'last_successful_sync_run': last_successful_sync_run,
