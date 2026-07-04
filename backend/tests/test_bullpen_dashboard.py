@@ -308,6 +308,54 @@ class TestDashboardEndpoint:
         ):
             assert forbidden not in encoded
 
+    def test_dashboard_surfaces_withheld_what_changed_reason_codes(self, client, monkeypatch):
+        public_payload = {
+            'capability': 'what_changed_since_yesterday_public_v1',
+            'ranking_applied': False,
+            'selection_made': False,
+            'prediction_applied': False,
+            'ordering_basis': 'team_abbreviation_then_team_name',
+            'item_limit': 30,
+            'comparison': {
+                'current_data_through': '2026-06-19',
+                'previous_data_through': '2026-06-18',
+                'comparison_available': False,
+                'reason_codes': [
+                    'prior_slate_coverage_missing',
+                    'comparison_withheld',
+                ],
+            },
+            'items': [],
+            'item_count': 0,
+            'limitations': [
+                'Prior snapshot does not include slate coverage metadata.',
+            ],
+            'reason_codes': [
+                'prior_slate_coverage_missing',
+                'comparison_withheld',
+            ],
+        }
+        calls = {}
+
+        def fake_public_payload(current, prior, **kwargs):
+            calls['kwargs'] = kwargs
+            return public_payload
+
+        monkeypatch.setattr(
+            bullpen_api,
+            'build_what_changed_public_payload',
+            fake_public_payload,
+        )
+        with client.application.app_context():
+            _seed_pitcher('A One', team_id=1, mlb_id=1001)
+
+        body = client.get('/api/bullpen/dashboard').get_json()
+        changes = body['what_changed_since_yesterday']
+
+        assert changes == public_payload
+        assert calls['kwargs']['require_trusted_snapshots'] is True
+        assert calls['kwargs']['current_snapshot_metadata']['trusted_current_payload'] is True
+
     def test_dashboard_what_changed_workload_payload_lists_top_relief_pitch_counts(self, client):
         current = date.today()
         prior = current - timedelta(days=1)

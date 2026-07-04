@@ -288,6 +288,47 @@ class TestDashboardSnapshotService:
             assert snapshot.payload['name'] == 'new'
             assert old_ready.is_published is False
 
+    def test_latest_published_snapshot_before_skips_unpublished_baseline(self, app):
+        with app.app_context():
+            run = _create_sync_run()
+            current_data_through = date(2026, 6, 20)
+            published_prior_date = date(2026, 6, 18)
+            unpublished_prior_date = date(2026, 6, 19)
+            published_prior = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=True,
+                published_at=utc_now_naive() - timedelta(minutes=10),
+                payload={**_minimal_dashboard_payload(), 'name': 'published-prior'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=published_prior_date,
+                availability_reference_date=published_prior_date,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=10),
+                source='test',
+            )
+            unpublished_prior = DashboardSnapshot(
+                snapshot_type=dashboard_snapshot.SNAPSHOT_TYPE_BULLPEN_DASHBOARD,
+                sync_run_id=run.id,
+                status=dashboard_snapshot.SNAPSHOT_STATUS_READY,
+                is_published=False,
+                payload={**_minimal_dashboard_payload(), 'name': 'unpublished-prior'},
+                payload_version=dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION,
+                data_through=unpublished_prior_date,
+                availability_reference_date=unpublished_prior_date,
+                snapshot_generated_at=utc_now_naive() - timedelta(minutes=1),
+                source='test',
+            )
+            db.session.add_all([published_prior, unpublished_prior])
+            db.session.commit()
+
+            snapshot = dashboard_snapshot.get_latest_published_dashboard_snapshot_before(
+                current_data_through
+            )
+
+            assert snapshot.id == published_prior.id
+            assert snapshot.payload['name'] == 'published-prior'
+
     def test_published_snapshot_requires_sync_run_provenance(self, app):
         with app.app_context():
             snapshot = DashboardSnapshot(

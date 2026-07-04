@@ -1232,6 +1232,33 @@ def _dashboard_payload_data_through(payload):
     )
 
 
+def _what_changed_snapshot_metadata(snapshot):
+    if snapshot is None:
+        return None
+    return {
+        'source': getattr(snapshot, 'source', None) or 'dashboard_snapshot',
+        'snapshot_id': getattr(snapshot, 'id', None),
+        'status': getattr(snapshot, 'status', None),
+        'is_published': bool(getattr(snapshot, 'is_published', False)),
+        'payload_version': getattr(snapshot, 'payload_version', None),
+        'data_through': (
+            snapshot.data_through.isoformat()
+            if getattr(snapshot, 'data_through', None)
+            else None
+        ),
+        'availability_reference_date': (
+            snapshot.availability_reference_date.isoformat()
+            if getattr(snapshot, 'availability_reference_date', None)
+            else None
+        ),
+        'snapshot_generated_at': (
+            snapshot.snapshot_generated_at.isoformat()
+            if getattr(snapshot, 'snapshot_generated_at', None)
+            else None
+        ),
+    }
+
+
 def _dashboard_what_changed_workload_payload(current_date, prior_date, availability_records):
     """
     Public workload evidence for the homepage What Changed card.
@@ -2480,7 +2507,19 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     previous_snapshot = dashboard_snapshot_service.get_latest_dashboard_snapshot_before(data_through)
     previous_payload = previous_snapshot.payload if previous_snapshot is not None else None
-    previous_data_through = _dashboard_payload_data_through(previous_payload)
+    what_changed_previous_snapshot = (
+        previous_snapshot
+        if previous_snapshot is not None and previous_snapshot.is_published
+        else dashboard_snapshot_service.get_latest_published_dashboard_snapshot_before(data_through)
+    )
+    what_changed_previous_payload = (
+        what_changed_previous_snapshot.payload
+        if what_changed_previous_snapshot is not None
+        else None
+    )
+    what_changed_previous_data_through = _dashboard_payload_data_through(
+        what_changed_previous_payload
+    )
 
     # Canonical story feed (additive). Wraps Story Intelligence V1 per team into
     # the forward-facing canonical contract, with continuity keyed to the prior
@@ -2496,7 +2535,7 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     payload['what_changed_workload'] = _dashboard_what_changed_workload_payload(
         data_through,
-        previous_data_through,
+        what_changed_previous_data_through,
         availability_records,
     )
     payload['role_change_detection'] = build_role_change_detection_payload(
@@ -2508,10 +2547,19 @@ def build_bullpen_dashboard_payload(*, use_published_freshness=False):
     )
     changes = build_what_changed_public_payload(
         payload,
-        previous_payload,
+        what_changed_previous_payload,
         limit=WHAT_CHANGED_PUBLIC_TEAM_LIMIT,
+        require_trusted_snapshots=True,
+        current_snapshot_metadata={
+            'source': 'live_dashboard_build',
+            'trusted_current_payload': True,
+            'data_through': data_through.isoformat() if data_through else None,
+        },
+        prior_snapshot_metadata=_what_changed_snapshot_metadata(
+            what_changed_previous_snapshot
+        ),
     )
-    if changes['items']:
+    if changes['items'] or not changes.get('comparison', {}).get('comparison_available'):
         payload['what_changed_since_yesterday'] = changes
 
     return payload

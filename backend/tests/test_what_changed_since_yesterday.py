@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from services.what_changed_since_yesterday import (
     CAPABILITY,
     CHANGE_COVERAGE_SAFETY,
@@ -8,8 +10,22 @@ from services.what_changed_since_yesterday import (
     CHANGE_RESTED_OPTIONS,
     CHANGE_TRUST_STRUCTURE,
     CHANGE_USABLE_DEPTH,
+    REASON_COMPARISON_WITHHELD,
+    REASON_CURRENT_SLATE_COVERAGE_MISSING,
+    REASON_CURRENT_SLATE_INCOMPLETE,
+    REASON_CURRENT_SNAPSHOT_UNTRUSTED,
+    REASON_DATA_THROUGH_MISSING,
+    REASON_NO_PRIOR_SNAPSHOT,
+    REASON_PRIOR_SLATE_COVERAGE_MISSING,
+    REASON_PRIOR_SLATE_INCOMPLETE,
+    REASON_PRIOR_SNAPSHOT_UNPUBLISHED,
+    REASON_SNAPSHOTS_NOT_COMPARABLE,
+    REASON_VALIDATIONS_FAILED,
     STATE_CHANGES_DETECTED,
+    STATE_INSUFFICIENT_CONTEXT,
     STATE_NO_MEANINGFUL_CHANGES,
+    STATUS_AVAILABLE,
+    STATUS_INSUFFICIENT_CONTEXT,
     build_team_what_changed_since_yesterday,
     build_what_changed_since_yesterday_payload,
 )
@@ -79,6 +95,94 @@ def snapshot(
             'confidence': identity_confidence,
         },
     }
+
+
+def slate_coverage(
+    slate_date,
+    *,
+    complete=True,
+    coverage_known=True,
+    validations_passed=True,
+):
+    return {
+        'slate_date': slate_date,
+        'coverage_known': coverage_known,
+        'games_scheduled': 1,
+        'games_final': 1,
+        'games_fully_ingested': 1 if complete else 0,
+        'games_incomplete': 0 if complete else 1,
+        'complete_enough_to_publish': complete,
+        'validations_passed': validations_passed,
+        'reason_codes': ['slate_complete'] if complete and validations_passed else ['slate_incomplete'],
+    }
+
+
+def dashboard_payload(
+    items,
+    *,
+    data_through='2026-06-19',
+    include_slate_coverage=True,
+    complete=True,
+    coverage_known=True,
+    validations_passed=True,
+):
+    freshness = {
+        'data_through': data_through,
+        'availability_reference_date': data_through,
+    }
+    if include_slate_coverage:
+        freshness['slate_coverage'] = slate_coverage(
+            data_through,
+            complete=complete,
+            coverage_known=coverage_known,
+            validations_passed=validations_passed,
+        )
+    return {
+        'freshness': freshness,
+        'capacity_intelligence': {
+            'teams': items,
+            'by_team_id': {str(item['team_id']): item for item in items},
+        },
+    }
+
+
+def current_metadata(data_through='2026-06-19', *, trusted=True):
+    return {
+        'source': 'live_dashboard_build',
+        'trusted_current_payload': trusted,
+        'data_through': data_through,
+    }
+
+
+def prior_metadata(data_through='2026-06-18', *, published=True, status='ready'):
+    return {
+        'source': 'dashboard_snapshot',
+        'snapshot_id': 18,
+        'status': status,
+        'is_published': published,
+        'data_through': data_through,
+    }
+
+
+def trusted_comparison(current, prior, *, current_meta=None, prior_meta=None):
+    return build_what_changed_since_yesterday_payload(
+        current,
+        prior,
+        require_trusted_snapshots=True,
+        current_snapshot_metadata=current_meta if current_meta is not None else current_metadata(),
+        prior_snapshot_metadata=prior_meta if prior_meta is not None else prior_metadata(),
+    )
+
+
+def assert_withheld(result, *reason_codes):
+    assert result['status'] == STATUS_INSUFFICIENT_CONTEXT
+    assert result['state'] == STATE_INSUFFICIENT_CONTEXT
+    assert result['change_count'] == 0
+    assert result['changes'] == []
+    assert result['teams_compared'] == 0
+    assert REASON_COMPARISON_WITHHELD in result['reason_codes']
+    for reason_code in reason_codes:
+        assert reason_code in result['reason_codes']
 
 
 def first_change(payload, change_type):
@@ -236,6 +340,157 @@ def test_league_payload_compares_teams_without_ranking_semantics():
     assert result['prediction_applied'] is False
     assert [team['team_abbreviation'] for team in result['teams']] == ['AAA', 'BBB']
     assert result['change_count'] == 2
+
+
+def test_trusted_gate_allows_complete_published_comparable_snapshots():
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+    )
+
+    assert result['status'] == STATUS_AVAILABLE
+    assert result['reason_codes'] == []
+    assert result['change_count'] == 1
+    assert first_change(result, CHANGE_RESTED_OPTIONS)['change_direction'] == 'increased'
+
+
+def test_trusted_gate_withholds_missing_prior_snapshot():
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        None,
+        prior_meta=None,
+    )
+
+    assert_withheld(result, REASON_NO_PRIOR_SNAPSHOT)
+
+
+def test_trusted_gate_withholds_unpublished_prior_snapshot():
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+        prior_meta=prior_metadata(published=False),
+    )
+
+    assert_withheld(result, REASON_PRIOR_SNAPSHOT_UNPUBLISHED)
+
+
+def test_trusted_gate_withholds_prior_missing_slate_coverage():
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload(
+            [snapshot(clean=2)],
+            data_through='2026-06-18',
+            include_slate_coverage=False,
+        ),
+    )
+
+    assert_withheld(result, REASON_PRIOR_SLATE_COVERAGE_MISSING)
+
+
+def test_trusted_gate_withholds_prior_incomplete_or_failed_validations():
+    incomplete = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18', complete=False),
+    )
+    failed_validation = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload(
+            [snapshot(clean=2)],
+            data_through='2026-06-18',
+            validations_passed=False,
+        ),
+    )
+
+    assert_withheld(incomplete, REASON_PRIOR_SLATE_INCOMPLETE)
+    assert_withheld(
+        failed_validation,
+        REASON_PRIOR_SLATE_INCOMPLETE,
+        REASON_VALIDATIONS_FAILED,
+    )
+
+
+def test_trusted_gate_withholds_prior_missing_data_through():
+    prior = dashboard_payload([snapshot(clean=2)], data_through='2026-06-18')
+    prior['freshness'].pop('data_through')
+    prior['freshness'].pop('availability_reference_date')
+
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        prior,
+        prior_meta=prior_metadata(data_through=None),
+    )
+
+    assert_withheld(result, REASON_DATA_THROUGH_MISSING)
+
+
+def test_trusted_gate_withholds_current_missing_slate_coverage():
+    result = trusted_comparison(
+        dashboard_payload(
+            [snapshot(clean=5)],
+            data_through='2026-06-19',
+            include_slate_coverage=False,
+        ),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+    )
+
+    assert_withheld(result, REASON_CURRENT_SLATE_COVERAGE_MISSING)
+
+
+def test_trusted_gate_withholds_current_missing_data_through():
+    current = dashboard_payload([snapshot(clean=5)], data_through='2026-06-19')
+    current['freshness'].pop('data_through')
+    current['freshness'].pop('availability_reference_date')
+
+    result = trusted_comparison(
+        current,
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+        current_meta=current_metadata(data_through=None),
+    )
+
+    assert_withheld(result, REASON_DATA_THROUGH_MISSING)
+
+
+def test_trusted_gate_withholds_current_incomplete_or_failed_validations():
+    incomplete = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19', complete=False),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+    )
+    failed_validation = trusted_comparison(
+        dashboard_payload(
+            [snapshot(clean=5)],
+            data_through='2026-06-19',
+            validations_passed=False,
+        ),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+    )
+
+    assert_withheld(incomplete, REASON_CURRENT_SLATE_INCOMPLETE)
+    assert_withheld(
+        failed_validation,
+        REASON_CURRENT_SLATE_INCOMPLETE,
+        REASON_VALIDATIONS_FAILED,
+    )
+
+
+def test_trusted_gate_withholds_untrusted_current_payload():
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through='2026-06-18'),
+        current_meta=current_metadata(trusted=False),
+    )
+
+    assert_withheld(result, REASON_CURRENT_SNAPSHOT_UNTRUSTED)
+
+
+@pytest.mark.parametrize('prior_date', ['2026-06-19', '2026-06-17'])
+def test_trusted_gate_withholds_non_comparable_baseline_dates(prior_date):
+    result = trusted_comparison(
+        dashboard_payload([snapshot(clean=5)], data_through='2026-06-19'),
+        dashboard_payload([snapshot(clean=2)], data_through=prior_date),
+        prior_meta=prior_metadata(data_through=prior_date),
+    )
+
+    assert_withheld(result, REASON_SNAPSHOTS_NOT_COMPARABLE)
 
 
 def test_governance_safety_no_recommendation_prediction_ranking_or_score_leakage():

@@ -2,6 +2,10 @@ import json
 import re
 
 from services.editorial_voice_contract_v1 import contains_editorial_banned_language
+from services.what_changed_since_yesterday import (
+    REASON_COMPARISON_WITHHELD,
+    REASON_PRIOR_SLATE_COVERAGE_MISSING,
+)
 from services.what_changed_since_yesterday_public import (
     CAPABILITY,
     DEFAULT_PUBLIC_ITEM_LIMIT,
@@ -59,12 +63,41 @@ def snapshot(
     }
 
 
-def payload(items, *, data_through='2026-06-19', workload=None):
+def slate_coverage(
+    slate_date,
+    *,
+    complete=True,
+    coverage_known=True,
+    validations_passed=True,
+):
+    return {
+        'slate_date': slate_date,
+        'coverage_known': coverage_known,
+        'games_scheduled': 1,
+        'games_final': 1,
+        'games_fully_ingested': 1 if complete else 0,
+        'games_incomplete': 0 if complete else 1,
+        'complete_enough_to_publish': complete,
+        'validations_passed': validations_passed,
+        'reason_codes': ['slate_complete'] if complete and validations_passed else ['slate_incomplete'],
+    }
+
+
+def payload(
+    items,
+    *,
+    data_through='2026-06-19',
+    workload=None,
+    include_slate_coverage=False,
+):
+    freshness = {
+        'data_through': data_through,
+        'availability_reference_date': data_through,
+    }
+    if include_slate_coverage:
+        freshness['slate_coverage'] = slate_coverage(data_through)
     result = {
-        'freshness': {
-            'data_through': data_through,
-            'availability_reference_date': data_through,
-        },
+        'freshness': freshness,
         'capacity_intelligence': {
             'teams': items,
             'by_team_id': {str(item['team_id']): item for item in items},
@@ -363,6 +396,46 @@ def test_public_payload_skips_no_prior_no_change_and_tiny_flagged_changes():
     assert no_prior['comparison']['comparison_available'] is False
     assert no_change['items'] == []
     assert tiny_only['items'] == []
+
+
+def test_public_payload_withheld_trusted_gate_returns_no_comparison_metadata():
+    result = build_what_changed_public_payload(
+        payload(
+            [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=5)],
+            data_through='2026-06-19',
+            include_slate_coverage=True,
+        ),
+        payload(
+            [snapshot(team_name='Alpha Club', team_abbreviation='AAA', clean=2)],
+            data_through='2026-06-18',
+            include_slate_coverage=False,
+        ),
+        require_trusted_snapshots=True,
+        current_snapshot_metadata={
+            'source': 'live_dashboard_build',
+            'trusted_current_payload': True,
+            'data_through': '2026-06-19',
+        },
+        prior_snapshot_metadata={
+            'source': 'dashboard_snapshot',
+            'snapshot_id': 18,
+            'status': 'ready',
+            'is_published': True,
+            'data_through': '2026-06-18',
+        },
+    )
+    encoded = json.dumps(result).lower()
+
+    assert result['comparison']['comparison_available'] is False
+    assert result['item_count'] == 0
+    assert result['items'] == []
+    assert result['prediction_applied'] is False
+    assert result['ranking_applied'] is False
+    assert result['selection_made'] is False
+    assert REASON_COMPARISON_WITHHELD in result['reason_codes']
+    assert REASON_PRIOR_SLATE_COVERAGE_MISSING in result['comparison']['reason_codes']
+    assert 'no meaningful bullpen movement' not in encoded
+    assert 'no changes' not in encoded
 
 
 def test_public_payload_enforces_cap_without_ranking_language():

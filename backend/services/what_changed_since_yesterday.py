@@ -7,7 +7,7 @@ relievers, or create new source data.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from services.bullpen_coverage_safety import (
@@ -63,6 +63,54 @@ NO_PRIOR_TEAM_LIMITATION = (
 INVALID_PRIOR_LIMITATION = (
     'Prior snapshot is not earlier than the current snapshot.'
 )
+COMPARISON_WITHHELD_LIMITATION = (
+    'What Changed comparison withheld because the current and prior snapshots '
+    'are not both trusted, complete, and comparable.'
+)
+
+REASON_NO_PRIOR_SNAPSHOT = 'no_prior_snapshot'
+REASON_PRIOR_SNAPSHOT_UNPUBLISHED = 'prior_snapshot_unpublished'
+REASON_CURRENT_SNAPSHOT_UNTRUSTED = 'current_snapshot_untrusted'
+REASON_PRIOR_SLATE_COVERAGE_MISSING = 'prior_slate_coverage_missing'
+REASON_PRIOR_SLATE_INCOMPLETE = 'prior_slate_incomplete'
+REASON_CURRENT_SLATE_COVERAGE_MISSING = 'current_slate_coverage_missing'
+REASON_CURRENT_SLATE_INCOMPLETE = 'current_slate_incomplete'
+REASON_VALIDATIONS_FAILED = 'validations_failed'
+REASON_SNAPSHOTS_NOT_COMPARABLE = 'snapshots_not_comparable'
+REASON_DATA_THROUGH_MISSING = 'data_through_missing'
+REASON_COMPARISON_WITHHELD = 'comparison_withheld'
+
+_REASON_LIMITATIONS = {
+    REASON_NO_PRIOR_SNAPSHOT: NO_PRIOR_LIMITATION,
+    REASON_PRIOR_SNAPSHOT_UNPUBLISHED: (
+        'Prior snapshot is not a published dashboard snapshot.'
+    ),
+    REASON_CURRENT_SNAPSHOT_UNTRUSTED: (
+        'Current snapshot trust cannot be proven for public comparison.'
+    ),
+    REASON_PRIOR_SLATE_COVERAGE_MISSING: (
+        'Prior snapshot does not include slate coverage metadata.'
+    ),
+    REASON_PRIOR_SLATE_INCOMPLETE: (
+        'Prior snapshot slate coverage is incomplete.'
+    ),
+    REASON_CURRENT_SLATE_COVERAGE_MISSING: (
+        'Current snapshot does not include slate coverage metadata.'
+    ),
+    REASON_CURRENT_SLATE_INCOMPLETE: (
+        'Current snapshot slate coverage is incomplete.'
+    ),
+    REASON_VALIDATIONS_FAILED: (
+        'Snapshot slate coverage validations did not pass.'
+    ),
+    REASON_SNAPSHOTS_NOT_COMPARABLE: (
+        'Current and prior snapshot dates are not comparable.'
+    ),
+    REASON_DATA_THROUGH_MISSING: (
+        'Current or prior snapshot is missing data-through metadata.'
+    ),
+    REASON_COMPARISON_WITHHELD: COMPARISON_WITHHELD_LIMITATION,
+}
 
 CAPACITY_ORDER = {
     'healthy': 0,
@@ -124,6 +172,138 @@ def _date_value(payload: dict[str, Any] | None) -> date | None:
         or freshness.get('reference_date')
         or direct_reference
     )
+
+
+def _freshness(payload: dict[str, Any] | None) -> dict[str, Any]:
+    freshness = payload.get('freshness') if isinstance(payload, dict) else {}
+    return freshness if isinstance(freshness, dict) else {}
+
+
+def _slate_coverage(payload: dict[str, Any] | None) -> dict[str, Any]:
+    coverage = _freshness(payload).get('slate_coverage')
+    return coverage if isinstance(coverage, dict) else {}
+
+
+def _metadata_date(
+    metadata: dict[str, Any] | None,
+    payload: dict[str, Any] | None,
+) -> date | None:
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return _parse_date(metadata.get('data_through')) or _date_value(payload)
+
+
+def _unique(values: list[str]) -> list[str]:
+    result = []
+    for value in values:
+        if value and value not in result:
+            result.append(value)
+    return result
+
+
+def _limitations_for_reason_codes(reason_codes: list[str]) -> list[str]:
+    return [
+        _REASON_LIMITATIONS[reason]
+        for reason in reason_codes
+        if reason in _REASON_LIMITATIONS
+    ]
+
+
+def _coverage_reason_codes(
+    payload: dict[str, Any] | None,
+    *,
+    role: str,
+    data_through: date | None,
+) -> list[str]:
+    missing_code = (
+        REASON_CURRENT_SLATE_COVERAGE_MISSING
+        if role == 'current'
+        else REASON_PRIOR_SLATE_COVERAGE_MISSING
+    )
+    incomplete_code = (
+        REASON_CURRENT_SLATE_INCOMPLETE
+        if role == 'current'
+        else REASON_PRIOR_SLATE_INCOMPLETE
+    )
+    coverage = _slate_coverage(payload)
+    if not coverage:
+        return [missing_code]
+
+    reasons = []
+    coverage_date = _parse_date(coverage.get('slate_date'))
+    if data_through is None or coverage_date is None:
+        reasons.append(REASON_DATA_THROUGH_MISSING)
+    elif coverage_date != data_through:
+        reasons.append(incomplete_code)
+        reasons.append(REASON_SNAPSHOTS_NOT_COMPARABLE)
+
+    if coverage.get('coverage_known') is not True:
+        reasons.append(incomplete_code)
+    if coverage.get('validations_passed') is not True:
+        reasons.append(REASON_VALIDATIONS_FAILED)
+        reasons.append(incomplete_code)
+    if coverage.get('complete_enough_to_publish') is not True:
+        reasons.append(incomplete_code)
+    return _unique(reasons)
+
+
+def _trusted_snapshot_reason_codes(
+    payload: dict[str, Any] | None,
+    *,
+    role: str,
+    metadata: dict[str, Any] | None,
+) -> list[str]:
+    metadata = metadata if isinstance(metadata, dict) else {}
+    if role == 'prior':
+        if payload is None:
+            return [REASON_NO_PRIOR_SNAPSHOT]
+        if metadata.get('is_published') is not True:
+            return [REASON_PRIOR_SNAPSHOT_UNPUBLISHED]
+        if metadata.get('status') not in (None, 'ready'):
+            return [REASON_PRIOR_SNAPSHOT_UNPUBLISHED]
+    elif metadata and metadata.get('is_published') is True:
+        pass
+    elif metadata.get('trusted_current_payload') is not True:
+        return [REASON_CURRENT_SNAPSHOT_UNTRUSTED]
+
+    return _coverage_reason_codes(
+        payload,
+        role=role,
+        data_through=_metadata_date(metadata, payload),
+    )
+
+
+def _trusted_comparison_reason_codes(
+    current_payload: dict[str, Any] | None,
+    prior_payload: dict[str, Any] | None,
+    *,
+    current_snapshot_metadata: dict[str, Any] | None,
+    prior_snapshot_metadata: dict[str, Any] | None,
+) -> list[str]:
+    reasons = []
+    current_date = _metadata_date(current_snapshot_metadata, current_payload)
+    prior_date = _metadata_date(prior_snapshot_metadata, prior_payload)
+    reasons.extend(
+        _trusted_snapshot_reason_codes(
+            current_payload,
+            role='current',
+            metadata=current_snapshot_metadata,
+        )
+    )
+    reasons.extend(
+        _trusted_snapshot_reason_codes(
+            prior_payload,
+            role='prior',
+            metadata=prior_snapshot_metadata,
+        )
+    )
+    if current_date is None or prior_date is None:
+        reasons.append(REASON_DATA_THROUGH_MISSING)
+    elif prior_date != current_date - timedelta(days=1):
+        reasons.append(REASON_SNAPSHOTS_NOT_COMPARABLE)
+
+    if reasons:
+        reasons.append(REASON_COMPARISON_WITHHELD)
+    return _unique(reasons)
 
 
 def _nested(mapping: dict[str, Any] | None, *keys, default=None):
@@ -662,13 +842,66 @@ def build_team_what_changed_since_yesterday(
     return payload
 
 
+def _withheld_payload(
+    *,
+    current_date: date | None,
+    prior_date: date | None,
+    current_teams: dict[str, dict[str, Any]],
+    reason_codes: list[str],
+) -> dict[str, Any]:
+    limitations = _limitations_for_reason_codes(reason_codes)
+    teams = [
+        _insufficient_team(
+            current_item,
+            reference_date=current_date,
+            prior_date=prior_date,
+            limitations=limitations,
+        )
+        for _, current_item in sorted(
+            current_teams.items(),
+            key=lambda pair: (
+                str(_team_abbreviation(pair[1]) or ''),
+                str(pair[0]),
+            ),
+        )
+    ]
+    return {
+        'capability': CAPABILITY,
+        'version': VERSION,
+        'source': 'backend',
+        'status': STATUS_INSUFFICIENT_CONTEXT,
+        'state': STATE_INSUFFICIENT_CONTEXT,
+        'reference_date': _iso(current_date),
+        'prior_date': _iso(prior_date),
+        'ranking_applied': False,
+        'selection_made': False,
+        'prediction_applied': False,
+        'changes': [],
+        'teams': teams,
+        'by_team_id': {
+            str(team['team_id']): team
+            for team in teams
+            if team.get('team_id') is not None
+        },
+        'teams_evaluated': len(teams),
+        'teams_compared': 0,
+        'change_count': 0,
+        'limitations': limitations,
+        'reason_codes': reason_codes,
+    }
+
+
 def build_what_changed_since_yesterday_payload(
     current_payload: dict[str, Any] | None,
     prior_payload: dict[str, Any] | None,
+    *,
+    require_trusted_snapshots: bool = False,
+    current_snapshot_metadata: dict[str, Any] | None = None,
+    prior_snapshot_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build league/team change detection from current and prior dashboard snapshots."""
-    current_date = _date_value(current_payload)
-    prior_date = _date_value(prior_payload)
+    current_date = _metadata_date(current_snapshot_metadata, current_payload)
+    prior_date = _metadata_date(prior_snapshot_metadata, prior_payload)
     current_teams = _capacity_by_team(current_payload)
     prior_teams = _capacity_by_team(prior_payload)
 
@@ -691,7 +924,23 @@ def build_what_changed_since_yesterday_payload(
             'teams_compared': 0,
             'change_count': 0,
             'limitations': [NO_CURRENT_LIMITATION],
+            'reason_codes': [],
         }
+
+    if require_trusted_snapshots:
+        reason_codes = _trusted_comparison_reason_codes(
+            current_payload,
+            prior_payload,
+            current_snapshot_metadata=current_snapshot_metadata,
+            prior_snapshot_metadata=prior_snapshot_metadata,
+        )
+        if reason_codes:
+            return _withheld_payload(
+                current_date=current_date,
+                prior_date=prior_date,
+                current_teams=current_teams,
+                reason_codes=reason_codes,
+            )
 
     league_limitations = []
     history_missing = prior_payload is None or prior_date is None
@@ -765,6 +1014,7 @@ def build_what_changed_since_yesterday_payload(
         'teams_compared': compared,
         'change_count': len(flat_changes),
         'limitations': league_limitations,
+        'reason_codes': [],
     }
 
 
@@ -780,6 +1030,17 @@ __all__ = [
     'STATE_INSUFFICIENT_CONTEXT',
     'STATE_NO_MEANINGFUL_CHANGES',
     'VERSION',
+    'REASON_COMPARISON_WITHHELD',
+    'REASON_CURRENT_SLATE_COVERAGE_MISSING',
+    'REASON_CURRENT_SLATE_INCOMPLETE',
+    'REASON_CURRENT_SNAPSHOT_UNTRUSTED',
+    'REASON_DATA_THROUGH_MISSING',
+    'REASON_NO_PRIOR_SNAPSHOT',
+    'REASON_PRIOR_SLATE_COVERAGE_MISSING',
+    'REASON_PRIOR_SLATE_INCOMPLETE',
+    'REASON_PRIOR_SNAPSHOT_UNPUBLISHED',
+    'REASON_SNAPSHOTS_NOT_COMPARABLE',
+    'REASON_VALIDATIONS_FAILED',
     'build_team_what_changed_since_yesterday',
     'build_what_changed_since_yesterday_payload',
 ]
