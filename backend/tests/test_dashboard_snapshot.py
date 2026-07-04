@@ -398,7 +398,89 @@ class TestDashboardSnapshotService:
             assert snapshot is not None
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
             assert snapshot.payload['capability'] == 'bullpen_dashboard'
+            assert snapshot.payload['freshness']['slate_coverage']['slate_date'] == (
+                snapshot.data_through.isoformat()
+            )
+            assert (
+                snapshot.payload['freshness']['slate_coverage']['complete_enough_to_publish']
+                is True
+            )
             assert dashboard_snapshot.get_latest_valid_dashboard_snapshot().id == snapshot.id
+
+    def test_new_snapshot_payload_without_slate_coverage_is_repaired_before_publish(self, app):
+        with app.app_context():
+            workload_date = _seed_dashboard_data()
+            run = _create_sync_run(workload_date)
+            payload = bullpen_api.build_bullpen_dashboard_payload()
+            payload['freshness'].pop('slate_coverage', None)
+            payload['freshness'].pop('validations_passed', None)
+            payload['freshness'].pop('complete_enough_to_publish', None)
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                payload,
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_READY
+            assert snapshot.is_published is True
+            assert coverage['slate_date'] == workload_date.isoformat()
+            assert coverage['complete_enough_to_publish'] is True
+            assert coverage['reason_codes'] == ['slate_complete']
+
+    def test_missing_slate_coverage_is_recomputed_and_still_withheld_when_incomplete(self, app):
+        with app.app_context():
+            workload_date = date.today() - timedelta(days=1)
+            run = _create_sync_run(workload_date)
+            payload = _minimal_dashboard_payload()
+            payload['freshness']['data_through'] = workload_date.isoformat()
+            payload['freshness']['latest_workload_date'] = workload_date.isoformat()
+            payload['freshness']['availability_reference_date'] = (
+                workload_date + timedelta(days=1)
+            ).isoformat()
+            payload['freshness'].pop('slate_coverage', None)
+            payload['freshness'].pop('validations_passed', None)
+            payload['freshness'].pop('complete_enough_to_publish', None)
+            db.session.add_all([
+                ScheduledGame(
+                    team_id=116,
+                    game_pk=7701,
+                    game_date=workload_date,
+                    status_state='final',
+                    home_away='home',
+                    opponent_team_id=142,
+                ),
+                ScheduledGame(
+                    team_id=142,
+                    game_pk=7701,
+                    game_date=workload_date,
+                    status_state='final',
+                    home_away='away',
+                    opponent_team_id=116,
+                ),
+            ])
+            db.session.commit()
+
+            snapshot = dashboard_snapshot.store_dashboard_snapshot(
+                payload,
+                sync_run_id=run.id,
+                source='test',
+                publish=True,
+            )
+
+            coverage = snapshot.payload['freshness']['slate_coverage']
+            assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_PENDING
+            assert snapshot.is_published is False
+            assert snapshot.error_message == 'dashboard_snapshot_slate_coverage_incomplete'
+            assert coverage['slate_date'] == workload_date.isoformat()
+            assert coverage['complete_enough_to_publish'] is False
+            assert 'postgame_markers_incomplete' in coverage['reason_codes']
+            assert (
+                dashboard_snapshot.snapshot_unavailable_reason(snapshot)
+                == 'dashboard_snapshot_slate_coverage_incomplete'
+            )
 
     def test_incomplete_slate_snapshot_is_stored_but_not_published(self, app):
         with app.app_context():
@@ -722,13 +804,15 @@ class TestDashboardSnapshotBuildEndpoint:
             headers={'X-Internal-Token': 'secret'},
         )
 
-        assert response.status_code == 202
+        assert response.status_code == 200
         body = response.get_json()
-        assert body['status'] == 'pending'
-        assert body['snapshot']['served_from'] == 'pending'
+        assert body['status'] == 'ok'
+        assert body['snapshot']['served_from'] == 'cache'
         assert body['snapshot']['snapshot_id'] is not None
+        assert body['snapshot']['is_published'] is True
+        assert body['snapshot']['payload_has_slate_coverage'] is True
 
-    def test_snapshot_build_endpoint_valid_token_builds_pending_snapshot(
+    def test_snapshot_build_endpoint_valid_token_publishes_cache_snapshot(
         self,
         client,
         monkeypatch,
@@ -744,12 +828,15 @@ class TestDashboardSnapshotBuildEndpoint:
             headers={'Authorization': 'Bearer secret'},
         )
 
-        assert response.status_code == 202
+        assert response.status_code == 200
         body = response.get_json()
-        assert body['status'] == 'pending'
-        assert body['snapshot']['served_from'] == 'pending'
+        assert body['status'] == 'ok'
+        assert body['snapshot']['served_from'] == 'cache'
         assert body['snapshot']['payload_version'] == dashboard_snapshot.DASHBOARD_PAYLOAD_VERSION
-        assert body['builder']['snapshot_served_by_dashboard'] is False
+        assert body['snapshot']['is_published'] is True
+        assert body['snapshot']['payload_has_slate_coverage'] is True
+        assert body['snapshot']['slate_coverage']['complete_enough_to_publish'] is True
+        assert body['builder']['snapshot_served_by_dashboard'] is True
         assert body['snapshot']['snapshot_id'] != prior_snapshot_id
 
         client.application.config['APP_ENV'] = 'production'
@@ -760,7 +847,7 @@ class TestDashboardSnapshotBuildEndpoint:
         )
         dashboard = client.get('/api/bullpen/dashboard').get_json()
         assert dashboard['snapshot']['served_from'] == 'cache'
-        assert dashboard['snapshot']['snapshot_id'] == prior_snapshot_id
+        assert dashboard['snapshot']['snapshot_id'] == body['snapshot']['snapshot_id']
 
     def test_snapshot_build_endpoint_returns_controlled_error_on_build_failure(
         self,

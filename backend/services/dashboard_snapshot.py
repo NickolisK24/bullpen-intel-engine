@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from models.dashboard_snapshot import DashboardSnapshot
 from models.sync_run import SyncRun
+from services import slate_coverage
 from services import sync_metadata
 from services.availability_reference_date import (
     parse_reference_date,
@@ -95,6 +96,65 @@ def _payload_slate_coverage_unavailable_reason(payload):
     return None
 
 
+def _coverage_matches_payload_data_through(payload, coverage):
+    if not isinstance(coverage, Mapping):
+        return False
+    data_through = _data_through_from_payload(payload)
+    if data_through is None:
+        return True
+    return parse_reference_date(coverage.get('slate_date')) == data_through
+
+
+def _compute_payload_slate_coverage(payload):
+    data_through = _data_through_from_payload(payload)
+    if data_through is None:
+        return slate_coverage.unknown_slate_coverage(None)
+
+    freshness = _payload_freshness(payload)
+    try:
+        return slate_coverage.compute_slate_coverage(
+            data_through,
+            sync_status=freshness.get('sync_status'),
+        )
+    except Exception as exc:  # noqa: BLE001 - snapshot coverage must fail closed
+        logger.warning(
+            'Could not compute dashboard snapshot slate coverage for %s: %s',
+            data_through,
+            exc,
+        )
+        return slate_coverage.unknown_slate_coverage(data_through)
+
+
+def _payload_with_slate_coverage(payload):
+    if not isinstance(payload, Mapping):
+        return payload
+
+    result = dict(payload)
+    freshness = dict(_payload_freshness(result))
+    coverage = freshness.get('slate_coverage')
+    if not _coverage_matches_payload_data_through(result, coverage):
+        coverage = _compute_payload_slate_coverage(result)
+
+    result['freshness'] = slate_coverage.append_slate_coverage_to_freshness(
+        freshness,
+        coverage,
+    )
+    return result
+
+
+def _latest_successful_sync_run_id():
+    try:
+        run = sync_metadata.latest_successful_sync_run()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logger.warning(
+            'Could not resolve latest successful sync run for dashboard snapshot publish: %s',
+            exc,
+        )
+        return None
+    return run.id if run is not None else None
+
+
 def payload_version_valid(snapshot):
     return (
         snapshot is not None
@@ -160,7 +220,7 @@ def store_dashboard_snapshot(
         publish,
         sync_run_id,
     )
-    stored_payload = _json_payload(payload)
+    stored_payload = _json_payload(_payload_with_slate_coverage(payload))
     logger.info(
         'Dashboard snapshot JSON serialization completed in %.2f ms source=%s.',
         _elapsed_ms(serialize_started),
@@ -358,6 +418,10 @@ def build_bullpen_dashboard_snapshot(
 ):
     from api.bullpen import build_bullpen_dashboard_payload
 
+    resolved_sync_run_id = sync_run_id
+    if publish and resolved_sync_run_id is None:
+        resolved_sync_run_id = _latest_successful_sync_run_id()
+
     def payload_builder():
         try:
             payload = build_bullpen_dashboard_payload(use_published_freshness=False)
@@ -365,7 +429,7 @@ def build_bullpen_dashboard_snapshot(
             if 'use_published_freshness' not in str(exc):
                 raise
             payload = build_bullpen_dashboard_payload()
-        if publish and sync_run_id is None:
+        if publish and resolved_sync_run_id is None:
             raise RuntimeError(
                 'Dashboard snapshot publish requires sync_run_id provenance.'
             )
@@ -373,7 +437,7 @@ def build_bullpen_dashboard_snapshot(
 
     return build_dashboard_snapshot(
         payload_builder,
-        sync_run_id=sync_run_id,
+        sync_run_id=resolved_sync_run_id,
         source=source,
         publish=publish,
         commit=commit,
@@ -383,6 +447,8 @@ def build_bullpen_dashboard_snapshot(
 
 def _snapshot_build_result(snapshot, *, duration_ms, source):
     reason = snapshot_unavailable_reason(snapshot)
+    payload = snapshot.payload if snapshot is not None else None
+    coverage = _payload_slate_coverage(payload)
     if snapshot is None:
         status = 'failed'
     elif snapshot.status == SNAPSHOT_STATUS_FAILED:
@@ -405,6 +471,12 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
         'snapshot_served_by_dashboard': reason is None,
         'snapshot_id': snapshot.id if snapshot is not None else None,
         'snapshot_status': snapshot.status if snapshot is not None else None,
+        'is_published': (
+            bool(snapshot.is_published)
+            if snapshot is not None
+            else False
+        ),
+        'error_message': snapshot.error_message if snapshot is not None else None,
         'snapshot_type': (
             snapshot.snapshot_type
             if snapshot is not None
@@ -431,8 +503,47 @@ def _snapshot_build_result(snapshot, *, duration_ms, source):
             if snapshot is not None and snapshot.snapshot_generated_at
             else None
         ),
+        'payload_has_slate_coverage': bool(coverage),
+        'slate_coverage': dict(coverage) if coverage else None,
         'source': source,
         'duration_ms': duration_ms,
+    }
+
+
+def snapshot_diagnostics(snapshot):
+    coverage = _payload_slate_coverage(snapshot.payload if snapshot is not None else None)
+    return {
+        'reason': snapshot_unavailable_reason(snapshot),
+        'snapshot_id': snapshot.id if snapshot is not None else None,
+        'snapshot_status': snapshot.status if snapshot is not None else None,
+        'is_published': (
+            bool(snapshot.is_published)
+            if snapshot is not None
+            else False
+        ),
+        'error_message': snapshot.error_message if snapshot is not None else None,
+        'payload_version': (
+            snapshot.payload_version
+            if snapshot is not None
+            else DASHBOARD_PAYLOAD_VERSION
+        ),
+        'data_through': (
+            snapshot.data_through.isoformat()
+            if snapshot is not None and snapshot.data_through
+            else None
+        ),
+        'availability_reference_date': (
+            snapshot.availability_reference_date.isoformat()
+            if snapshot is not None and snapshot.availability_reference_date
+            else None
+        ),
+        'snapshot_generated_at': (
+            snapshot.snapshot_generated_at.isoformat()
+            if snapshot is not None and snapshot.snapshot_generated_at
+            else None
+        ),
+        'payload_has_slate_coverage': bool(coverage),
+        'slate_coverage': dict(coverage) if coverage else None,
     }
 
 

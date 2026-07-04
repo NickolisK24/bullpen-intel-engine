@@ -146,6 +146,7 @@ def main():
         if args.build_dashboard_snapshot:
             payload['dashboard_snapshot'] = dashboard_snapshot_service.build_bullpen_dashboard_snapshot_v2(
                 source=dashboard_snapshot_service.SNAPSHOT_SOURCE_BUILDER_V2,
+                publish=True,
             )
 
     print(json.dumps(payload, indent=2, sort_keys=True))

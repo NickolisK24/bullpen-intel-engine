@@ -22,7 +22,7 @@ def main():
         format='%(asctime)s %(levelname)s %(name)s %(message)s',
     )
     with app.app_context():
-        result = build_bullpen_dashboard_snapshot_v2()
+        result = build_bullpen_dashboard_snapshot_v2(publish=True)
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get('status') == 'ready' else 1
 
