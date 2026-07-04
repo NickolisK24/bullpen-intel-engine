@@ -424,6 +424,9 @@ _UNKNOWN_PITCH_COUNT_REVISION = 'e3b7a9c4d2f6'
 # Stat correction provenance columns chain on top of unknown-safe pitch counts,
 # advancing the single alembic head once more.
 _GAME_LOG_CORRECTION_PROVENANCE_REVISION = 'f6a2c9d8e1b3'
+# Postgame marker lifecycle columns chain on top of stat correction provenance,
+# advancing the single alembic head once more.
+_POSTGAME_MARKER_LIFECYCLE_REVISION = 'c2f6a9d8e4b1'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -449,10 +452,10 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_GAME_LOG_CORRECTION_PROVENANCE_REVISION}
+    assert heads == {_POSTGAME_MARKER_LIFECYCLE_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
-    # -> stat-correction provenance.
+    # -> stat-correction provenance -> postgame marker lifecycle.
     assert revisions[_COMPLETED_GAME_CONTEXT_REVISION] == _EVENT_FOUNDATION_REVISION
     assert (revisions[_INTELLIGENCE_SURFACE_SNAPSHOT_REVISION]
             == _COMPLETED_GAME_CONTEXT_REVISION)
@@ -464,3 +467,5 @@ def test_migrations_have_a_single_head():
             == _TONIGHT_SNAPSHOT_REVISION)
     assert (revisions[_GAME_LOG_CORRECTION_PROVENANCE_REVISION]
             == _UNKNOWN_PITCH_COUNT_REVISION)
+    assert (revisions[_POSTGAME_MARKER_LIFECYCLE_REVISION]
+            == _GAME_LOG_CORRECTION_PROVENANCE_REVISION)

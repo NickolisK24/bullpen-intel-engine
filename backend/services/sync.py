@@ -65,6 +65,10 @@ DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
 POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
 POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS = 'ASSIGNED'
+POSTGAME_MARKER_STATUS_FULLY_PROCESSED = PostgameProcessedGame.STATUS_FULLY_PROCESSED
+POSTGAME_MARKER_STATUS_INCOMPLETE = PostgameProcessedGame.STATUS_INCOMPLETE
+POSTGAME_MARKER_STATUS_FAILED = PostgameProcessedGame.STATUS_FAILED
+POSTGAME_MARKER_RETRY_LIMIT = 3
 
 _REQUIRED_CORRECTION_STAT_KEYS = (
     'inningsPitched',
@@ -166,20 +170,60 @@ def _game_date(game: dict, fallback: date) -> date:
         return fallback
 
 
-def _unprocessed_completed_games(games: list[dict]) -> tuple[list[dict], int]:
+def _marker_processing_status(marker: PostgameProcessedGame | None) -> str | None:
+    if marker is None:
+        return None
+    return marker.processing_status or POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+
+
+def _postgame_marker_retryable(marker: PostgameProcessedGame | None) -> bool:
+    if marker is None:
+        return True
+    return (
+        _marker_processing_status(marker) == POSTGAME_MARKER_STATUS_INCOMPLETE
+        and (marker.attempt_count or 0) < POSTGAME_MARKER_RETRY_LIMIT
+    )
+
+
+def _unprocessed_completed_games(games: list[dict]) -> tuple[list[dict], dict]:
     game_pks = [pk for pk in (_game_pk(game) for game in games) if pk]
     if not game_pks:
-        return [], 0
-    processed_pks = {
-        row[0]
-        for row in (
-            db.session.query(PostgameProcessedGame.mlb_game_pk)
+        return [], {
+            'fully_processed': 0,
+            'retryable_incomplete': 0,
+            'failed': 0,
+        }
+    markers = {
+        marker.mlb_game_pk: marker
+        for marker in (
+            PostgameProcessedGame.query
             .filter(PostgameProcessedGame.mlb_game_pk.in_(game_pks))
             .all()
         )
     }
-    pending = [game for game in games if _game_pk(game) not in processed_pks]
-    return pending, len(game_pks) - len(pending)
+    counts = {
+        'fully_processed': 0,
+        'retryable_incomplete': 0,
+        'failed': 0,
+    }
+    pending = []
+    for game in games:
+        game_pk = _game_pk(game)
+        marker = markers.get(game_pk)
+        if marker is None:
+            pending.append(game)
+            continue
+
+        status = _marker_processing_status(marker)
+        if status == POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
+            counts['fully_processed'] += 1
+        elif _postgame_marker_retryable(marker):
+            counts['retryable_incomplete'] += 1
+            pending.append(game)
+        else:
+            counts['failed'] += 1
+
+    return pending, counts
 
 
 def _int_stat(stats: dict, key: str, default: int = 0) -> int:
@@ -776,6 +820,131 @@ def _ingest_boxscore_pitching_line(
     )
 
 
+def _postgame_incomplete_reason(
+    *,
+    pitching_lines_seen: int,
+    pitcher_resolution_failures: int,
+    correction_attempts_failed: int,
+) -> str | None:
+    if pitching_lines_seen <= 0:
+        return 'empty_pitching_data'
+    if pitcher_resolution_failures:
+        return 'pitcher_resolution_failures'
+    if correction_attempts_failed:
+        return 'unsafe_correction_attempts'
+    return None
+
+
+def _postgame_processing_status_for_attempt(reason: str | None, attempt_count: int) -> str:
+    if reason is None:
+        return POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+    if attempt_count >= POSTGAME_MARKER_RETRY_LIMIT:
+        return POSTGAME_MARKER_STATUS_FAILED
+    return POSTGAME_MARKER_STATUS_INCOMPLETE
+
+
+def _record_postgame_retry_exhausted_failure(
+    *,
+    marker: PostgameProcessedGame,
+    game: dict,
+    reason: str,
+    pitching_lines_seen: int,
+    pitcher_resolution_failures: int,
+    correction_attempts_failed: int,
+    sync_run_id=None,
+):
+    dead_letter.record_failure(
+        POSTGAME_GAME_FAILURE_ENTITY_TYPE,
+        f'postgame processing retry limit reached: {reason}',
+        entity_ref=marker.mlb_game_pk,
+        payload={
+            'game_pk': marker.mlb_game_pk,
+            'schedule_game_status': game.get('status') if isinstance(game, dict) else None,
+            'attempt_count': marker.attempt_count,
+            'retry_limit': POSTGAME_MARKER_RETRY_LIMIT,
+            'processing_status': marker.processing_status,
+            'incomplete_reason': reason,
+            'pitching_lines_seen': pitching_lines_seen,
+            'pitcher_resolution_failures': pitcher_resolution_failures,
+            'correction_attempts_failed': correction_attempts_failed,
+        },
+        sync_run_id=sync_run_id,
+        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+    )
+
+
+def _upsert_postgame_processed_marker(
+    *,
+    existing_marker: PostgameProcessedGame | None,
+    game: dict,
+    game_date: date,
+    logs_added: int,
+    pitchers_touched: int,
+    pitching_lines_seen: int,
+    pitcher_resolution_failures: int,
+    correction_attempts_failed: int,
+    sync_run_id=None,
+) -> tuple[PostgameProcessedGame, bool]:
+    attempted_at = utc_now_naive()
+    attempt_count = (existing_marker.attempt_count if existing_marker else 0) or 0
+    attempt_count += 1
+    incomplete_reason = _postgame_incomplete_reason(
+        pitching_lines_seen=pitching_lines_seen,
+        pitcher_resolution_failures=pitcher_resolution_failures,
+        correction_attempts_failed=correction_attempts_failed,
+    )
+    previous_status = _marker_processing_status(existing_marker)
+    processing_status = _postgame_processing_status_for_attempt(
+        incomplete_reason,
+        attempt_count,
+    )
+
+    marker = existing_marker or PostgameProcessedGame(mlb_game_pk=_game_pk(game))
+    marker.game_date = game_date
+    marker.game_type = (game or {}).get('gameType')
+    marker.home_team_id = _game_team_id(game, 'home')
+    marker.away_team_id = _game_team_id(game, 'away')
+    marker.final_state = _status_value(game, 'detailedState')
+    marker.logs_added = logs_added
+    marker.pitchers_touched = pitchers_touched
+    marker.sync_run_id = sync_run_id
+    marker.processing_status = processing_status
+    marker.attempt_count = attempt_count
+    marker.last_attempted_at = attempted_at
+    marker.incomplete_reason = incomplete_reason
+    marker.pitching_lines_seen = pitching_lines_seen
+    marker.pitcher_resolution_failures = pitcher_resolution_failures
+    marker.correction_attempts_failed = correction_attempts_failed
+
+    if processing_status == POSTGAME_MARKER_STATUS_FULLY_PROCESSED:
+        marker.processed_at = attempted_at
+        marker.failed_at = None
+    elif processing_status == POSTGAME_MARKER_STATUS_FAILED:
+        marker.processed_at = None
+        marker.failed_at = marker.failed_at or attempted_at
+    else:
+        marker.processed_at = None
+        marker.failed_at = None
+
+    db.session.add(marker)
+    retry_exhausted = (
+        processing_status == POSTGAME_MARKER_STATUS_FAILED
+        and previous_status != POSTGAME_MARKER_STATUS_FAILED
+        and incomplete_reason is not None
+    )
+    if retry_exhausted:
+        _record_postgame_retry_exhausted_failure(
+            marker=marker,
+            game=game,
+            reason=incomplete_reason,
+            pitching_lines_seen=pitching_lines_seen,
+            pitcher_resolution_failures=pitcher_resolution_failures,
+            correction_attempts_failed=correction_attempts_failed,
+            sync_run_id=sync_run_id,
+        )
+    return marker, retry_exhausted
+
+
 def process_completed_game_for_postgame_refresh(
     game: dict,
     *,
@@ -793,12 +962,18 @@ def process_completed_game_for_postgame_refresh(
             'pitchers_created': 0,
             'pitchers_reactivated': 0,
             'pitchers_touched': 0,
+            'pitching_lines_seen': 0,
+            'processing_status': None,
+            'incomplete_reason': 'missing_game_pk',
+            'attempt_count': 0,
+            'retry_exhausted': False,
             'skipped': True,
             'reason': 'missing_game_pk',
         }
 
     existing_marker = PostgameProcessedGame.query.filter_by(mlb_game_pk=game_pk).first()
-    if existing_marker is not None:
+    if existing_marker is not None and not _postgame_marker_retryable(existing_marker):
+        processing_status = _marker_processing_status(existing_marker)
         return {
             'game_pk': game_pk,
             'logs_added': 0,
@@ -808,8 +983,17 @@ def process_completed_game_for_postgame_refresh(
             'pitchers_created': 0,
             'pitchers_reactivated': 0,
             'pitchers_touched': 0,
+            'pitching_lines_seen': existing_marker.pitching_lines_seen or 0,
+            'processing_status': processing_status,
+            'incomplete_reason': existing_marker.incomplete_reason,
+            'attempt_count': existing_marker.attempt_count or 0,
+            'retry_exhausted': False,
             'skipped': True,
-            'reason': 'already_processed',
+            'reason': (
+                'already_processed'
+                if processing_status == POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+                else 'retry_limit_reached'
+            ),
         }
 
     boxscore = mlb_client.get_game_boxscore(game_pk)
@@ -882,18 +1066,17 @@ def process_completed_game_for_postgame_refresh(
         elif result['status'] == 'unsafe':
             correction_attempts_failed += 1
 
-    marker = PostgameProcessedGame(
-        mlb_game_pk=game_pk,
+    marker, retry_exhausted = _upsert_postgame_processed_marker(
+        existing_marker=existing_marker,
+        game=game,
         game_date=game_date,
-        game_type=(game or {}).get('gameType'),
-        home_team_id=_game_team_id(game, 'home'),
-        away_team_id=_game_team_id(game, 'away'),
-        final_state=_status_value(game, 'detailedState'),
         logs_added=logs_added,
         pitchers_touched=len(touched_pitcher_ids),
+        pitching_lines_seen=len(pitching_lines),
+        pitcher_resolution_failures=pitcher_resolution_failures,
+        correction_attempts_failed=correction_attempts_failed,
         sync_run_id=sync_run_id,
     )
-    db.session.add(marker)
     db.session.flush()
 
     return {
@@ -905,6 +1088,11 @@ def process_completed_game_for_postgame_refresh(
         'pitchers_created': pitchers_created,
         'pitchers_reactivated': pitchers_reactivated,
         'pitchers_touched': len(touched_pitcher_ids),
+        'pitching_lines_seen': len(pitching_lines),
+        'processing_status': marker.processing_status,
+        'incomplete_reason': marker.incomplete_reason,
+        'attempt_count': marker.attempt_count or 0,
+        'retry_exhausted': retry_exhausted,
         'skipped': False,
         'reason': None,
         # Passed back so completed-game context can reuse the boxscore that was
@@ -1633,7 +1821,10 @@ def run_postgame_refresh(
         'completed_games_found': 0,
         'newly_completed_games': 0,
         'games_already_processed': 0,
+        'games_retryable_incomplete': 0,
+        'games_failed_markers': 0,
         'games_processed': 0,
+        'games_incomplete': 0,
         'games_skipped': 0,
         'new_logs_added': 0,
         'logs_corrected': 0,
@@ -1643,6 +1834,7 @@ def run_postgame_refresh(
         'records_failed': 0,
         'correction_attempts_failed': 0,
         'pitcher_resolution_failures': 0,
+        'postgame_retry_exhausted': 0,
         'pitchers_created': 0,
         'pitchers_reactivated': 0,
         'completed_game_contexts_upserted': 0,
@@ -1664,14 +1856,19 @@ def run_postgame_refresh(
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_LOG_INGESTION)
 
             completed_games = completed_games_for_postgame_refresh(schedule_date)
-            unprocessed_games, already_processed = _unprocessed_completed_games(completed_games)
+            unprocessed_games, marker_counts = _unprocessed_completed_games(completed_games)
             status['completed_games_found'] = len(completed_games)
             status['newly_completed_games'] = len(unprocessed_games)
-            status['games_already_processed'] = already_processed
+            status['games_already_processed'] = marker_counts['fully_processed']
+            status['games_retryable_incomplete'] = marker_counts['retryable_incomplete']
+            status['games_failed_markers'] = marker_counts['failed']
             run_logger.info(
-                'Found %s completed game(s); %s already processed, %s pending.',
+                'Found %s completed game(s); %s fully processed, '
+                '%s retryable incomplete, %s failed, %s pending.',
                 len(completed_games),
-                already_processed,
+                marker_counts['fully_processed'],
+                marker_counts['retryable_incomplete'],
+                marker_counts['failed'],
                 len(unprocessed_games),
             )
 
@@ -1690,21 +1887,44 @@ def run_postgame_refresh(
                         status['games_skipped'] += 1
                         outcome = 'skipped'
                         continue
-                    status['games_processed'] += 1
+                    fully_processed = (
+                        result['processing_status']
+                        == POSTGAME_MARKER_STATUS_FULLY_PROCESSED
+                    )
+                    if fully_processed:
+                        status['games_processed'] += 1
+                    else:
+                        status['games_incomplete'] += 1
+                        if result['processing_status'] == POSTGAME_MARKER_STATUS_FAILED:
+                            status['games_failed_markers'] += 1
+                        outcome = result['processing_status']
                     status['new_logs_added'] += result['logs_added']
                     status['logs_corrected'] += result['logs_corrected']
                     status['correction_attempts_failed'] += result['correction_attempts_failed']
                     status['pitcher_resolution_failures'] += result['pitcher_resolution_failures']
+                    if result['retry_exhausted']:
+                        status['postgame_retry_exhausted'] += 1
                     status['pitchers_created'] += result['pitchers_created']
                     status['pitchers_reactivated'] += result['pitchers_reactivated']
-                    status['records_failed'] += result['correction_attempts_failed']
-                    status['records_failed'] += result['pitcher_resolution_failures']
+                    game_failure_count = (
+                        result['correction_attempts_failed']
+                        + result['pitcher_resolution_failures']
+                    )
+                    if fully_processed:
+                        status['records_failed'] += game_failure_count
+                    else:
+                        status['records_failed'] += max(1, game_failure_count)
                     status['pitchers_touched'] += result['pitchers_touched']
                     run_logger.info(
-                        'Processed completed game %s: %s inserted, %s corrected, '
+                        'Postgame attempt for game %s: status=%s reason=%s '
+                        'attempt=%s lines=%s; %s inserted, %s corrected, '
                         '%s unsafe correction(s), %s pitcher resolution failure(s), '
                         '%s pitcher(s).',
                         game_pk,
+                        result['processing_status'],
+                        result['incomplete_reason'],
+                        result['attempt_count'],
+                        result['pitching_lines_seen'],
                         result['logs_added'],
                         result['logs_corrected'],
                         result['correction_attempts_failed'],
@@ -1750,11 +1970,12 @@ def run_postgame_refresh(
 
             run_logger.info(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
-                'failed=%s contexts=%s logs_added=%s logs_corrected=%s '
+                'incomplete=%s failed=%s contexts=%s logs_added=%s logs_corrected=%s '
                 'pitchers_created=%s pitchers_reactivated=%s.',
                 schedule_date,
                 status['games_processed'],
                 status['games_skipped'],
+                status['games_incomplete'],
                 status['records_failed'],
                 status['completed_game_contexts_upserted'],
                 status['new_logs_added'],
@@ -1796,7 +2017,7 @@ def run_postgame_refresh(
                     else sync_metadata.STATUS_PARTIAL
                 )
                 status['message'] = (
-                    f"{status['records_failed']} postgame record(s) dead-lettered."
+                    f"{status['records_failed']} postgame record(s) incomplete or failed."
                 )
             elif changed_log_count > 0:
                 status['message'] = 'Updated after completed games.'
