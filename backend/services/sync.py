@@ -42,10 +42,12 @@ from utils.innings import (
     validate_innings_outs,
 )
 from utils.games_started import parse_games_started
+from utils.time import utc_now_naive
 
 
 logger = logging.getLogger(__name__)
 PITCHER_GAME_LOG_FAILURE_ENTITY_TYPE = 'pitcher_game_logs'
+GAME_LOG_CORRECTION_FAILURE_ENTITY_TYPE = 'game_log_correction_attempt'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
 POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
@@ -57,6 +59,27 @@ FINAL_GAME_DETAILED_STATES = frozenset({
     'final: tied',
 })
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
+DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
+POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
+
+_REQUIRED_CORRECTION_STAT_KEYS = (
+    'inningsPitched',
+    'strikes',
+    'hits',
+    'runs',
+    'earnedRuns',
+    'baseOnBalls',
+    'strikeOuts',
+    'homeRuns',
+)
+_OPTIONAL_BOOL_STAT_FIELDS = (
+    ('saveOpportunities', 'save_situation'),
+    ('holds', 'hold'),
+    ('blownSaves', 'blown_save'),
+    ('wins', 'win'),
+    ('losses', 'loss'),
+    ('saves', 'save'),
+)
 
 # ── Status file (written by the daily scheduler) ─────────────────────────────
 _STATUS_DIR  = Path(__file__).resolve().parent.parent / 'logs'
@@ -176,6 +199,202 @@ def _positive_stat(stats: dict, key: str) -> bool:
     return _int_stat(stats, key) > 0
 
 
+def _correction_source_state(stats: dict) -> tuple[bool, str | None, list[str]]:
+    if not stats:
+        return False, 'empty_source_line', []
+    missing = [
+        key for key in _REQUIRED_CORRECTION_STAT_KEYS
+        if key not in stats or stats.get(key) in (None, '')
+    ]
+    if missing:
+        return False, 'partial_source_line', missing
+    return True, None, []
+
+
+def _extract_leverage_index(stats: dict):
+    for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
+        raw_li = (stats or {}).get(li_key)
+        if raw_li is not None:
+            try:
+                return float(raw_li)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _game_log_values_from_stats(
+    *,
+    stats: dict,
+    pitcher,
+    game_pk: int,
+    game_date: date,
+    game_type: str,
+    opponent: str | None,
+    opponent_abbreviation: str | None,
+    games_started,
+    include_leverage_index: bool = False,
+) -> dict:
+    innings_pitched_outs = validate_innings_outs(
+        parse_mlb_innings_to_outs(stats.get('inningsPitched', '0.0'))
+    )
+    values = {
+        'pitcher_id': pitcher.id,
+        'mlb_game_pk': game_pk,
+        'game_date': game_date,
+        'game_type': game_type,
+        'opponent': opponent,
+        'opponent_abbreviation': opponent_abbreviation,
+        'games_started': games_started,
+        'innings_pitched': outs_to_decimal_innings(innings_pitched_outs),
+        'innings_pitched_outs': innings_pitched_outs,
+        'pitches_thrown': _int_stat_or_none(stats, 'numberOfPitches'),
+        'strikes': _int_stat(stats, 'strikes'),
+        'hits_allowed': _int_stat(stats, 'hits'),
+        'runs_allowed': _int_stat(stats, 'runs'),
+        'earned_runs': _int_stat(stats, 'earnedRuns'),
+        'walks': _int_stat(stats, 'baseOnBalls'),
+        'strikeouts': _int_stat(stats, 'strikeOuts'),
+        'home_runs_allowed': _int_stat(stats, 'homeRuns'),
+        'save_situation': _positive_stat(stats, 'saveOpportunities'),
+        'hold': _positive_stat(stats, 'holds'),
+        'blown_save': _positive_stat(stats, 'blownSaves'),
+        'win': _positive_stat(stats, 'wins'),
+        'loss': _positive_stat(stats, 'losses'),
+        'save': _positive_stat(stats, 'saves'),
+    }
+    if include_leverage_index:
+        values['leverage_index'] = _extract_leverage_index(stats)
+    return values
+
+
+def _authoritative_correction_fields(values: dict, stats: dict, *, include_leverage_index: bool) -> list[str]:
+    fields = [
+        'game_date',
+        'game_type',
+        'innings_pitched',
+        'innings_pitched_outs',
+        'pitches_thrown',
+        'strikes',
+        'hits_allowed',
+        'runs_allowed',
+        'earned_runs',
+        'walks',
+        'strikeouts',
+        'home_runs_allowed',
+    ]
+    for field in ('opponent', 'opponent_abbreviation', 'games_started'):
+        if values.get(field) is not None:
+            fields.append(field)
+    for source_key, model_field in _OPTIONAL_BOOL_STAT_FIELDS:
+        if source_key in (stats or {}) and (stats or {}).get(source_key) not in (None, ''):
+            fields.append(model_field)
+    if include_leverage_index and values.get('leverage_index') is not None:
+        fields.append('leverage_index')
+    return fields
+
+
+def _record_unsafe_correction_attempt(
+    *,
+    pitcher,
+    game_pk,
+    reason,
+    missing_keys=None,
+    stats=None,
+    source,
+    sync_run_id=None,
+    job_name='daily_sync',
+):
+    dead_letter.record_failure(
+        GAME_LOG_CORRECTION_FAILURE_ENTITY_TYPE,
+        f'unsafe correction source: {reason}',
+        entity_ref=game_pk,
+        payload={
+            'pitcher_id': pitcher.id,
+            'mlb_id': pitcher.mlb_id,
+            'game_pk': game_pk,
+            'source': source,
+            'reason': reason,
+            'missing_keys': list(missing_keys or []),
+            'stat_keys': sorted((stats or {}).keys()),
+        },
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
+
+
+def _upsert_game_log_from_authoritative_values(
+    *,
+    pitcher,
+    game_pk,
+    values,
+    stats,
+    source,
+    sync_run_id=None,
+    job_name='daily_sync',
+    include_leverage_index=False,
+):
+    existing = GameLog.query.filter_by(
+        pitcher_id=pitcher.id,
+        mlb_game_pk=game_pk,
+    ).first()
+    if existing is None:
+        log = GameLog(**values)
+        db.session.add(log)
+        return {
+            'status': 'inserted',
+            'log': log,
+            'changed_fields': [],
+        }
+
+    safe, reason, missing = _correction_source_state(stats)
+    if not safe:
+        _record_unsafe_correction_attempt(
+            pitcher=pitcher,
+            game_pk=game_pk,
+            reason=reason,
+            missing_keys=missing,
+            stats=stats,
+            source=source,
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        return {
+            'status': 'unsafe',
+            'log': existing,
+            'changed_fields': [],
+            'reason': reason,
+        }
+
+    changed_fields = []
+    for field in _authoritative_correction_fields(
+        values,
+        stats,
+        include_leverage_index=include_leverage_index,
+    ):
+        new_value = values[field]
+        if getattr(existing, field) != new_value:
+            setattr(existing, field, new_value)
+            changed_fields.append(field)
+
+    if not changed_fields:
+        return {
+            'status': 'unchanged',
+            'log': existing,
+            'changed_fields': [],
+        }
+
+    existing.stat_correction_count = (existing.stat_correction_count or 0) + 1
+    existing.last_stat_correction_at = utc_now_naive()
+    existing.last_stat_correction_source = source
+    existing.last_stat_correction_sync_run_id = sync_run_id
+    db.session.add(existing)
+    return {
+        'status': 'corrected',
+        'log': existing,
+        'changed_fields': changed_fields,
+    }
+
+
 def _pitcher_order_by_side(boxscore: dict) -> dict[str, list[int]]:
     teams = (boxscore or {}).get('teams') or {}
     return {
@@ -228,58 +447,36 @@ def _ingest_boxscore_pitching_line(
     game_date: date,
     team_abbr_map: dict,
     pitcher_order: dict[str, list[int]],
-) -> bool:
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+) -> dict:
     game_pk = _game_pk(game)
     if not game_pk:
-        return False
-
-    existing = GameLog.query.filter_by(
-        pitcher_id=pitcher.id,
-        mlb_game_pk=game_pk,
-    ).first()
-    if existing:
-        return False
+        return {'status': 'skipped', 'reason': 'missing_game_pk'}
 
     stats = line.get('stats') or {}
     opponent, opponent_abbreviation = _opponent_for_line(game, line, team_abbr_map)
-    innings_pitched_outs = validate_innings_outs(
-        parse_mlb_innings_to_outs(stats.get('inningsPitched', '0.0'))
-    )
-    log = GameLog(
-        pitcher_id=pitcher.id,
-        mlb_game_pk=game_pk,
+    values = _game_log_values_from_stats(
+        stats=stats,
+        pitcher=pitcher,
+        game_pk=game_pk,
         game_date=game_date,
         game_type=(game or {}).get('gameType', 'R'),
         opponent=opponent,
         opponent_abbreviation=opponent_abbreviation,
         games_started=_line_games_started(line, pitcher_order),
-        innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
-        innings_pitched_outs=innings_pitched_outs,
-        pitches_thrown=_int_stat_or_none(stats, 'numberOfPitches'),
-        strikes=_int_stat(stats, 'strikes'),
-        hits_allowed=_int_stat(stats, 'hits'),
-        runs_allowed=_int_stat(stats, 'runs'),
-        earned_runs=_int_stat(stats, 'earnedRuns'),
-        walks=_int_stat(stats, 'baseOnBalls'),
-        strikeouts=_int_stat(stats, 'strikeOuts'),
-        home_runs_allowed=_int_stat(stats, 'homeRuns'),
-        save_situation=_positive_stat(stats, 'saveOpportunities'),
-        hold=_positive_stat(stats, 'holds'),
-        blown_save=_positive_stat(stats, 'blownSaves'),
-        win=_positive_stat(stats, 'wins'),
-        loss=_positive_stat(stats, 'losses'),
-        save=_positive_stat(stats, 'saves'),
+        include_leverage_index=True,
     )
-    for li_key in ('leverageIndex', 'avgLeverageIndex', 'avgLI'):
-        raw_li = stats.get(li_key)
-        if raw_li is not None:
-            try:
-                log.leverage_index = float(raw_li)
-            except (TypeError, ValueError):
-                pass
-            break
-    db.session.add(log)
-    return True
+    return _upsert_game_log_from_authoritative_values(
+        pitcher=pitcher,
+        game_pk=game_pk,
+        values=values,
+        stats=stats,
+        source=POSTGAME_BOXSCORE_CORRECTION_SOURCE,
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+        include_leverage_index=True,
+    )
 
 
 def process_completed_game_for_postgame_refresh(
@@ -293,6 +490,8 @@ def process_completed_game_for_postgame_refresh(
         return {
             'game_pk': None,
             'logs_added': 0,
+            'logs_corrected': 0,
+            'correction_attempts_failed': 0,
             'pitchers_touched': 0,
             'skipped': True,
             'reason': 'missing_game_pk',
@@ -303,6 +502,8 @@ def process_completed_game_for_postgame_refresh(
         return {
             'game_pk': game_pk,
             'logs_added': 0,
+            'logs_corrected': 0,
+            'correction_attempts_failed': 0,
             'pitchers_touched': 0,
             'skipped': True,
             'reason': 'already_processed',
@@ -329,21 +530,31 @@ def process_completed_game_for_postgame_refresh(
     )
     game_date = _game_date(game, schedule_date)
     logs_added = 0
+    logs_corrected = 0
+    correction_attempts_failed = 0
     touched_pitcher_ids = set()
     for line in pitching_lines:
         pitcher = local_pitchers.get(line.get('player_id'))
         if pitcher is None:
             continue
-        if _ingest_boxscore_pitching_line(
+        result = _ingest_boxscore_pitching_line(
             pitcher,
             line,
             game,
             game_date=game_date,
             team_abbr_map=team_abbr_map,
             pitcher_order=pitcher_order,
-        ):
+            sync_run_id=sync_run_id,
+            job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+        )
+        if result['status'] == 'inserted':
             logs_added += 1
             touched_pitcher_ids.add(pitcher.id)
+        elif result['status'] == 'corrected':
+            logs_corrected += 1
+            touched_pitcher_ids.add(pitcher.id)
+        elif result['status'] == 'unsafe':
+            correction_attempts_failed += 1
 
     marker = PostgameProcessedGame(
         mlb_game_pk=game_pk,
@@ -362,6 +573,8 @@ def process_completed_game_for_postgame_refresh(
     return {
         'game_pk': game_pk,
         'logs_added': logs_added,
+        'logs_corrected': logs_corrected,
+        'correction_attempts_failed': correction_attempts_failed,
         'pitchers_touched': len(touched_pitcher_ids),
         'skipped': False,
         'reason': None,
@@ -646,8 +859,9 @@ def sync_recent_logs(
     job_name=sync_metadata.JOB_DAILY_SYNC,
 ):
     """
-    Pull recent game logs from the MLB Stats API for every active pitcher
-    and insert any that aren't already in the DB.
+    Pull recent game logs from the MLB Stats API for every active pitcher,
+    insert missing logs, and correct existing logs when MLB revises an
+    authoritative stat line.
 
     Partial-failure semantics: a single pitcher whose fetch fails, or a single
     malformed game-log record, is dead-lettered (recorded in sync_failures with
@@ -658,9 +872,11 @@ def sync_recent_logs(
     Returns a dict suitable for API response / log line:
         {
           'new_logs_added':       int,
+          'logs_corrected':       int,
           'pitchers_touched':     int,
           'errors':               int,
           'records_failed':       int,
+          'correction_attempts_failed': int,
           'days_back':            int,
           'season':               int,
           'cutoff':               'YYYY-MM-DD',
@@ -687,8 +903,10 @@ def sync_recent_logs(
 
     pitchers        = Pitcher.query.filter_by(active=True).all()
     new_logs        = 0
+    corrected_logs  = 0
     errors          = 0
     records_failed  = 0
+    correction_attempts_failed = 0
     pitchers_touched = 0
 
     for pitcher in pitchers:
@@ -736,8 +954,13 @@ def sync_recent_logs(
             # dead-lettered and skipped rather than aborting this pitcher or the
             # whole batch.
             try:
-                added = _ingest_game_log_split(
-                    pitcher, split, cutoff, team_abbr_map,
+                result = _ingest_game_log_split(
+                    pitcher,
+                    split,
+                    cutoff,
+                    team_abbr_map,
+                    sync_run_id=sync_run_id,
+                    job_name=job_name,
                 )
             except Exception as e:
                 logger.warning(
@@ -761,10 +984,16 @@ def sync_recent_logs(
                 )
                 continue
 
-            if added:
+            if result['status'] == 'inserted':
                 new_logs += 1
                 touched_this_pitcher = True
                 time.sleep(0.1)
+            elif result['status'] == 'corrected':
+                corrected_logs += 1
+                touched_this_pitcher = True
+            elif result['status'] == 'unsafe':
+                records_failed += 1
+                correction_attempts_failed += 1
 
         if touched_this_pitcher:
             pitchers_touched += 1
@@ -773,9 +1002,11 @@ def sync_recent_logs(
 
     result = {
         'new_logs_added':    new_logs,
+        'logs_corrected':    corrected_logs,
         'pitchers_touched':  pitchers_touched,
         'errors':            errors,
         'records_failed':    records_failed,
+        'correction_attempts_failed': correction_attempts_failed,
         'days_back':         days_back,
         'season':            season,
         'reference_date':    reference_date.isoformat(),
@@ -786,12 +1017,20 @@ def sync_recent_logs(
     return result
 
 
-def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
+def _ingest_game_log_split(
+    pitcher,
+    split,
+    cutoff,
+    team_abbr_map,
+    *,
+    sync_run_id=None,
+    job_name=sync_metadata.JOB_DAILY_SYNC,
+):
     """
-    Insert a single game-log split for a pitcher.
+    Insert or correct a single game-log split for a pitcher.
 
-    Returns True if a new GameLog row was added, False if the split was a
-    legitimate skip (before cutoff, malformed-but-empty key, or already stored).
+    Returns a result dict with status inserted, corrected, unchanged, unsafe,
+    or skipped. Skipped covers before-cutoff and malformed-but-empty keys.
     Raises on a genuinely poisoned record so the caller can dead-letter it.
     """
     game_info     = split.get('game', {})
@@ -801,57 +1040,43 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
     game_type     = game_info.get('gameType', 'R')
 
     if not game_pk or not game_date_str:
-        return False
+        return {'status': 'skipped', 'reason': 'missing_key'}
 
     if not is_completed_game(game_info):
-        return False
+        return {'status': 'skipped', 'reason': 'not_completed'}
 
     game_date = datetime.strptime(game_date_str, '%Y-%m-%d').date()
 
     if game_date < cutoff:
-        return False
-
-    existing = GameLog.query.filter_by(
-        pitcher_id=pitcher.id,
-        mlb_game_pk=game_pk,
-    ).first()
-    if existing:
-        return False
+        return {'status': 'skipped', 'reason': 'before_cutoff'}
 
     opponent = split.get('opponent', {})
-    innings_pitched_outs = validate_innings_outs(
-        parse_mlb_innings_to_outs(stat.get('inningsPitched', '0.0'))
-    )
-
-    log = GameLog(
-        pitcher_id=pitcher.id,
-        mlb_game_pk=game_pk,
+    values = _game_log_values_from_stats(
+        stats=stat,
+        pitcher=pitcher,
+        game_pk=game_pk,
         game_date=game_date,
         game_type=game_type,
         opponent=opponent.get('name'),
         opponent_abbreviation=team_abbr_map.get(opponent.get('id')),
         games_started=parse_games_started(stat.get('gamesStarted')),
-        innings_pitched=outs_to_decimal_innings(innings_pitched_outs),
-        innings_pitched_outs=innings_pitched_outs,
-        pitches_thrown=_int_stat_or_none(stat, 'numberOfPitches'),
-        strikes=int(stat.get('strikes', 0) or 0),
-        hits_allowed=int(stat.get('hits', 0) or 0),
-        runs_allowed=int(stat.get('runs', 0) or 0),
-        earned_runs=int(stat.get('earnedRuns', 0) or 0),
-        walks=int(stat.get('baseOnBalls', 0) or 0),
-        strikeouts=int(stat.get('strikeOuts', 0) or 0),
-        home_runs_allowed=int(stat.get('homeRuns', 0) or 0),
-        save_situation=stat.get('saveOpportunities', 0) > 0,
-        hold=stat.get('holds', 0) > 0,
-        blown_save=stat.get('blownSaves', 0) > 0,
-        win=stat.get('wins', 0) > 0,
-        loss=stat.get('losses', 0) > 0,
-        save=stat.get('saves', 0) > 0,
     )
-    db.session.add(log)
+    result = _upsert_game_log_from_authoritative_values(
+        pitcher=pitcher,
+        game_pk=game_pk,
+        values=values,
+        stats=stat,
+        source=DAILY_GAME_LOG_CORRECTION_SOURCE,
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
 
     # Backfill leverage index from the boxscore. A failed call or a missing LI
     # field just leaves the column as None — never crash the sync.
+    if result['status'] != 'inserted':
+        return result
+    log = result['log']
+
     try:
         pitching_lines = mlb_client.get_game_pitching_lines(game_pk)
     except Exception as e:
@@ -871,7 +1096,7 @@ def _ingest_game_log_split(pitcher, split, cutoff, team_abbr_map):
                     break
             break
 
-    return True
+    return result
 
 
 def recalculate_all_fatigue(reference_date: date | None = None):
@@ -1082,10 +1307,12 @@ def run_postgame_refresh(
         'games_processed': 0,
         'games_skipped': 0,
         'new_logs_added': 0,
+        'logs_corrected': 0,
         'pitchers_touched': 0,
         'pitchers_updated': 0,
         'errors': 0,
         'records_failed': 0,
+        'correction_attempts_failed': 0,
         'completed_game_contexts_upserted': 0,
         'completed_game_context_errors': 0,
         'intelligence_snapshot': 'skipped',
@@ -1133,11 +1360,17 @@ def run_postgame_refresh(
                         continue
                     status['games_processed'] += 1
                     status['new_logs_added'] += result['logs_added']
+                    status['logs_corrected'] += result['logs_corrected']
+                    status['correction_attempts_failed'] += result['correction_attempts_failed']
+                    status['records_failed'] += result['correction_attempts_failed']
                     status['pitchers_touched'] += result['pitchers_touched']
                     run_logger.info(
-                        'Processed completed game %s: %s log(s), %s pitcher(s).',
+                        'Processed completed game %s: %s inserted, %s corrected, '
+                        '%s unsafe correction(s), %s pitcher(s).',
                         game_pk,
                         result['logs_added'],
+                        result['logs_corrected'],
+                        result['correction_attempts_failed'],
                         result['pitchers_touched'],
                     )
                     # Derive completed-game context in its own transaction so a
@@ -1179,16 +1412,18 @@ def run_postgame_refresh(
 
             run_logger.info(
                 'Postgame ingestion complete for %s: processed=%s skipped=%s '
-                'failed=%s contexts=%s logs_added=%s.',
+                'failed=%s contexts=%s logs_added=%s logs_corrected=%s.',
                 schedule_date,
                 status['games_processed'],
                 status['games_skipped'],
                 status['records_failed'],
                 status['completed_game_contexts_upserted'],
                 status['new_logs_added'],
+                status['logs_corrected'],
             )
 
-            if status['new_logs_added'] > 0:
+            changed_log_count = status['new_logs_added'] + status['logs_corrected']
+            if changed_log_count > 0:
                 sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
                 fatigue_started = time.perf_counter()
                 run_logger.info(
@@ -1204,7 +1439,7 @@ def run_postgame_refresh(
                 )
             else:
                 run_logger.info(
-                    'Fatigue recalculation skipped: no new postgame logs added.'
+                    'Fatigue recalculation skipped: no postgame logs changed.'
                 )
 
             # Refresh the Intelligence Surface homepage cache from the freshly
@@ -1220,9 +1455,9 @@ def run_postgame_refresh(
                     else sync_metadata.STATUS_PARTIAL
                 )
                 status['message'] = (
-                    f"{status['records_failed']} completed game(s) could not be processed."
+                    f"{status['records_failed']} postgame record(s) dead-lettered."
                 )
-            elif status['new_logs_added'] > 0:
+            elif changed_log_count > 0:
                 status['message'] = 'Updated after completed games.'
             elif status['newly_completed_games'] == 0:
                 status['message'] = 'No newly completed games to process.'
@@ -1230,11 +1465,11 @@ def run_postgame_refresh(
                 status['message'] = 'Completed games were checked; no tracked pitcher workload changed.'
 
             api_metrics = mlb_client.metrics.snapshot()
-            if status['new_logs_added'] > 0:
+            if changed_log_count > 0:
                 completed_run, snapshot = complete_sync_run_with_snapshot(
                     sync_run_id,
                     final_status=status['status'],
-                    records_processed=status['new_logs_added'],
+                    records_processed=changed_log_count,
                     records_failed=status['records_failed'],
                     new_logs_added=status['new_logs_added'],
                     pitchers_updated=status['pitchers_updated'],
@@ -1300,13 +1535,15 @@ def run_postgame_refresh(
     write_status(status)
     run_logger.info(
         'postgame_refresh completed status=%s games_found=%s already_processed=%s '
-        'processed=%s skipped=%s failed=%s contexts=%s snapshot=%s elapsed_ms=%s',
+        'processed=%s skipped=%s failed=%s logs_corrected=%s contexts=%s '
+        'snapshot=%s elapsed_ms=%s',
         status['status'],
         status['completed_games_found'],
         status['games_already_processed'],
         status['games_processed'],
         status['games_skipped'],
         status['records_failed'],
+        status['logs_corrected'],
         status['completed_game_contexts_upserted'],
         status['intelligence_snapshot'],
         status['elapsed_ms'],
@@ -1355,6 +1592,7 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
         'status':           sync_metadata.STATUS_SUCCESS,
         'pitchers_updated': 0,
         'new_logs_added':   0,
+        'logs_corrected':   0,
         'errors':           0,
         'message':          '',
     }
@@ -1415,9 +1653,12 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 reference_date=product_day.calendar_date,
                 sync_run_id=sync_run_id,
             )
+            logs_corrected = pull.get('logs_corrected', 0)
+            correction_attempts_failed = pull.get('correction_attempts_failed', 0)
             run_logger.info(
-                'Pulled %s new logs (touched %s pitchers, %s errors, %s dead-lettered)',
-                pull['new_logs_added'], pull['pitchers_touched'], pull['errors'],
+                'Pulled %s new logs, corrected %s logs (touched %s pitchers, '
+                '%s errors, %s dead-lettered)',
+                pull['new_logs_added'], logs_corrected, pull['pitchers_touched'], pull['errors'],
                 pull['records_failed'],
             )
             records_failed = (
@@ -1426,7 +1667,9 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 + roster_records_failed
             )
             status['new_logs_added'] = pull['new_logs_added']
+            status['logs_corrected'] = logs_corrected
             status['records_failed'] = records_failed
+            status['correction_attempts_failed'] = correction_attempts_failed
             status['errors']         = pull['errors'] + roster['errors'] + team_assignment['errors']
             status['team_assignments_refreshed'] = team_assignment['pitchers_refreshed']
             status['team_assignments_changed'] = team_assignment['pitchers_changed']
@@ -1487,10 +1730,11 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                     f'{records_failed} record(s) dead-lettered; see sync_failures.'
                 )
             api_metrics = mlb_client.metrics.snapshot()
+            changed_log_count = pull['new_logs_added'] + logs_corrected
             completed_run, snapshot = complete_sync_run_with_snapshot(
                 sync_run_id,
                 final_status=final_status,
-                records_processed=pull['new_logs_added'],
+                records_processed=changed_log_count,
                 records_failed=records_failed,
                 new_logs_added=pull['new_logs_added'],
                 pitchers_updated=pitchers_updated,
