@@ -76,6 +76,29 @@ def _seed_complete_slate(game_date, game_pks):
         ))
 
 
+def _seed_scheduled_slate_game(game_date, game_pk, *, home_id=116, away_id=142):
+    db.session.add_all([
+        ScheduledGame(
+            team_id=home_id,
+            game_pk=game_pk,
+            game_date=game_date,
+            status_code='F',
+            status_state='final',
+            home_away='home',
+            opponent_team_id=away_id,
+        ),
+        ScheduledGame(
+            team_id=away_id,
+            game_pk=game_pk,
+            game_date=game_date,
+            status_code='F',
+            status_state='final',
+            home_away='away',
+            opponent_team_id=home_id,
+        ),
+    ])
+
+
 class TestSyncStatusSnapshot:
     def test_reports_snapshot_when_data_present_but_no_sync(self, client):
         with client.application.app_context():
@@ -509,4 +532,70 @@ class TestSyncStatusSnapshot:
         assert health['slate_coverage']['games_scheduled'] == 1
         assert health['slate_coverage']['games_fully_ingested'] == 1
         assert health['slate_coverage']['complete_enough_to_publish'] is True
+        assert health['slate_coverage']['diagnostics']['postgame_blockers'] == []
         assert health['freshness']['slate_coverage']['reason_codes'] == ['slate_complete']
+
+    def test_pipeline_health_payload_identifies_slate_coverage_blockers(self, client):
+        slate_date = date(2026, 5, 31)
+        last_attempted_at = datetime(2026, 6, 1, 3, 15, 0)
+        with client.application.app_context():
+            p = Pitcher(mlb_id=1, full_name='A', team_id=1, active=True)
+            db.session.add(p)
+            db.session.commit()
+            db.session.add(GameLog(
+                pitcher_id=p.id,
+                mlb_game_pk=41,
+                game_date=slate_date,
+                innings_pitched=1.0,
+                innings_pitched_outs=3,
+            ))
+            db.session.add(FatigueScore(
+                pitcher_id=p.id,
+                raw_score=42.0,
+                calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+            ))
+            _seed_scheduled_slate_game(slate_date, 41, home_id=116, away_id=142)
+            _seed_scheduled_slate_game(slate_date, 42, home_id=121, away_id=147)
+            db.session.add(PostgameProcessedGame(
+                mlb_game_pk=41,
+                game_date=slate_date,
+                processing_status=PostgameProcessedGame.STATUS_INCOMPLETE,
+                incomplete_reason='pitcher_resolution_failures',
+                attempt_count=3,
+                pitching_lines_seen=7,
+                pitcher_resolution_failures=2,
+                correction_attempts_failed=1,
+                last_attempted_at=last_attempted_at,
+            ))
+            db.session.add(SyncRun(
+                started_at=datetime(2026, 6, 1, 21, 39, 12),
+                completed_at=datetime(2026, 6, 1, 21, 39, 56),
+                status='success',
+                source='github_actions',
+                latest_game_date=slate_date,
+                latest_workload_date=slate_date,
+                latest_fatigue_calculated_at=datetime(2026, 6, 1, 21, 39, 55),
+                created_at=datetime(2026, 6, 1, 21, 39, 12),
+            ))
+            db.session.commit()
+
+            health = sync_metadata.pipeline_health_payload()
+
+        coverage = health['slate_coverage']
+        blockers = coverage['diagnostics']['postgame_blockers']
+        assert coverage['complete_enough_to_publish'] is False
+        assert coverage['games_final'] == 2
+        assert coverage['games_fully_ingested'] == 0
+        assert coverage['diagnostics']['postgame_blocker_count'] == 2
+        assert [blocker['mlb_game_pk'] for blocker in blockers] == [41, 42]
+        assert blockers[0]['reason_code'] == 'incomplete_marker'
+        assert blockers[0]['marker_status'] == PostgameProcessedGame.STATUS_INCOMPLETE
+        assert blockers[0]['incomplete_reason'] == 'pitcher_resolution_failures'
+        assert blockers[0]['attempt_count'] == 3
+        assert blockers[0]['pitcher_resolution_failures'] == 2
+        assert blockers[0]['last_attempted_at'] == '2026-06-01T03:15:00'
+        assert blockers[1]['reason_code'] == 'missing_marker'
+        assert blockers[1]['marker_status'] == 'missing'
+
+        sync_status = client.get('/api/bullpen/sync/status').get_json()
+        assert 'diagnostics' not in sync_status['slate_coverage']

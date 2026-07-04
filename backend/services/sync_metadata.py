@@ -384,6 +384,22 @@ def pipeline_health_payload(reference_date=None):
     metadata = collect_data_metadata()
     runs = last_run_per_job()
     overall = build_sync_status_payload(reference_date=reference_date)
+    diagnostic_slate_coverage = overall.get('slate_coverage')
+    diagnostic_slate_date = (
+        diagnostic_slate_coverage.get('slate_date')
+        if isinstance(diagnostic_slate_coverage, dict)
+        else None
+    )
+    if diagnostic_slate_date is not None:
+        try:
+            diagnostic_slate_coverage = slate_coverage.compute_slate_coverage(
+                diagnostic_slate_date,
+                sync_status=overall.get('status'),
+                include_diagnostics=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostics must not hide health
+            db.session.rollback()
+            logger.warning('Could not compute slate coverage diagnostics: %s', exc)
 
     return {
         'capability': 'pipeline_health',
@@ -397,7 +413,7 @@ def pipeline_health_payload(reference_date=None):
         ],
         'domains': domain_freshness(metadata, reference_date=reference_date),
         'freshness': overall.get('freshness'),
-        'slate_coverage': overall.get('slate_coverage'),
+        'slate_coverage': diagnostic_slate_coverage,
         'sync_status': overall.get('status'),
         'last_successful_sync': overall.get('last_successful_sync'),
         'dead_letters': {

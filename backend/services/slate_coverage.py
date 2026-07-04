@@ -21,6 +21,10 @@ REASON_COMPLETENESS_UNKNOWN = 'completeness_unknown'
 REASON_SCHEDULED_GAMES_NOT_FINAL = 'scheduled_games_not_final'
 REASON_SUSPENDED_GAMES_NOT_FINAL = 'suspended_games_not_final'
 
+DIAGNOSTIC_MISSING_MARKER = 'missing_marker'
+DIAGNOSTIC_INCOMPLETE_MARKER = 'incomplete_marker'
+DIAGNOSTIC_FAILED_MARKER = 'failed_marker'
+
 
 _OFFSEASON_MONTHS = {1, 2, 11, 12}
 _SCHEDULE_CONTEXT_WINDOW_DAYS = 7
@@ -75,6 +79,14 @@ def _reason_messages(reason_codes):
     ]
 
 
+def _iso_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
 def _schedule_rows_for_date(slate_date):
     return (
         ScheduledGame.query
@@ -112,6 +124,27 @@ def _collapse_status(statuses):
     return ScheduledGame.STATE_OTHER
 
 
+def _side_team_id(rows, side):
+    for row in rows:
+        if getattr(row, 'home_away', None) == side:
+            team_id = getattr(row, 'team_id', None)
+            if team_id is not None:
+                return int(team_id)
+
+    opposite_side = 'away' if side == 'home' else 'home'
+    for row in rows:
+        if getattr(row, 'home_away', None) == opposite_side:
+            team_id = getattr(row, 'opponent_team_id', None)
+            if team_id is not None:
+                return int(team_id)
+    return None
+
+
+def _collapsed_field(rows, field_name):
+    values = _unique(getattr(row, field_name, None) for row in rows)
+    return values[0] if len(values) == 1 else None
+
+
 def _scheduled_games(schedule_rows):
     grouped = defaultdict(list)
     for row in schedule_rows or []:
@@ -126,6 +159,10 @@ def _scheduled_games(schedule_rows):
         games.append({
             'game_pk': game_pk,
             'status_state': status,
+            'status_code': _collapsed_field(rows, 'status_code'),
+            'game_type': _collapsed_field(rows, 'game_type'),
+            'home_team': _side_team_id(rows, 'home'),
+            'away_team': _side_team_id(rows, 'away'),
             'row_count': len(rows),
         })
     games.sort(key=lambda item: item['game_pk'])
@@ -155,6 +192,92 @@ def _marker_status(marker):
         marker.processing_status
         or PostgameProcessedGame.STATUS_FULLY_PROCESSED
     )
+
+
+def _postgame_blocker_reason(marker):
+    status = _marker_status(marker)
+    if marker is None:
+        return DIAGNOSTIC_MISSING_MARKER
+    if status == PostgameProcessedGame.STATUS_FAILED:
+        return DIAGNOSTIC_FAILED_MARKER
+    if status == PostgameProcessedGame.STATUS_FULLY_PROCESSED:
+        return None
+    return DIAGNOSTIC_INCOMPLETE_MARKER
+
+
+def _postgame_blocker_diagnostic(ref, game, marker, reason_code):
+    marker_status = _marker_status(marker) or 'missing'
+    home_team = game.get('home_team')
+    away_team = game.get('away_team')
+    if marker is not None:
+        home_team = getattr(marker, 'home_team_id', None) or home_team
+        away_team = getattr(marker, 'away_team_id', None) or away_team
+
+    return {
+        'slate_date': ref.isoformat(),
+        'mlb_game_pk': game['game_pk'],
+        'away_team': away_team,
+        'home_team': home_team,
+        'game_status': game.get('status_code') or game.get('status_state'),
+        'status_state': game.get('status_state'),
+        'marker_status': marker_status,
+        'incomplete_reason': (
+            getattr(marker, 'incomplete_reason', None)
+            if marker is not None
+            else None
+        ),
+        'attempt_count': (
+            getattr(marker, 'attempt_count', None) or 0
+            if marker is not None
+            else 0
+        ),
+        'pitching_lines_seen': (
+            getattr(marker, 'pitching_lines_seen', None) or 0
+            if marker is not None
+            else 0
+        ),
+        'pitcher_resolution_failures': (
+            getattr(marker, 'pitcher_resolution_failures', None) or 0
+            if marker is not None
+            else 0
+        ),
+        'correction_attempts_failed': (
+            getattr(marker, 'correction_attempts_failed', None) or 0
+            if marker is not None
+            else 0
+        ),
+        'failed_at': (
+            _iso_datetime(getattr(marker, 'failed_at', None))
+            if marker is not None
+            else None
+        ),
+        'last_attempted_at': (
+            _iso_datetime(getattr(marker, 'last_attempted_at', None))
+            if marker is not None
+            else None
+        ),
+        'reason_code': reason_code,
+    }
+
+
+def _postgame_blocker_diagnostics(ref, final_games, markers):
+    diagnostics = []
+    for game in sorted(final_games, key=lambda item: item['game_pk']):
+        marker = markers.get(game['game_pk'])
+        reason_code = _postgame_blocker_reason(marker)
+        if reason_code is None:
+            continue
+        diagnostics.append(_postgame_blocker_diagnostic(ref, game, marker, reason_code))
+    return diagnostics
+
+
+def _slate_diagnostics(ref, postgame_blockers=None):
+    blockers = postgame_blockers or []
+    return {
+        'slate_date': ref.isoformat() if ref else None,
+        'postgame_blocker_count': len(blockers),
+        'postgame_blockers': blockers,
+    }
 
 
 def unknown_slate_coverage(slate_date=None, *, reason_code=REASON_COMPLETENESS_UNKNOWN):
@@ -191,10 +314,14 @@ def compute_slate_coverage(
     schedule_rows: Iterable[ScheduledGame] | None = None,
     postgame_markers: Iterable[PostgameProcessedGame] | None = None,
     schedule_material_available: bool | None = None,
+    include_diagnostics: bool = False,
 ):
     ref = _as_date(slate_date)
     if ref is None:
-        return unknown_slate_coverage(None)
+        payload = unknown_slate_coverage(None)
+        if include_diagnostics:
+            payload['diagnostics'] = _slate_diagnostics(None)
+        return payload
 
     rows = list(schedule_rows) if schedule_rows is not None else _schedule_rows_for_date(ref)
     games = _scheduled_games(rows)
@@ -210,7 +337,7 @@ def compute_slate_coverage(
                 reason_codes.extend([REASON_PARTIAL_SYNC, REASON_VALIDATIONS_FAILED])
             else:
                 reason_codes.append(REASON_SLATE_COMPLETE)
-            return {
+            payload = {
                 'slate_date': ref.isoformat(),
                 'games_scheduled': 0,
                 'games_final': 0,
@@ -232,7 +359,13 @@ def compute_slate_coverage(
                     'missing': 0,
                 },
             }
-        return unknown_slate_coverage(ref, reason_code=REASON_SCHEDULE_MISSING)
+            if include_diagnostics:
+                payload['diagnostics'] = _slate_diagnostics(ref)
+            return payload
+        payload = unknown_slate_coverage(ref, reason_code=REASON_SCHEDULE_MISSING)
+        if include_diagnostics:
+            payload['diagnostics'] = _slate_diagnostics(ref)
+        return payload
 
     included_games = [
         game for game in games
@@ -314,7 +447,7 @@ def compute_slate_coverage(
     reason_codes = _unique(reason_codes)
     complete_enough = validations_passed and sync_status != 'partial'
 
-    return {
+    payload = {
         'slate_date': ref.isoformat(),
         'games_scheduled': len(games),
         'games_final': len(final_games),
@@ -337,6 +470,12 @@ def compute_slate_coverage(
         'degradation_reasons': _reason_messages(reason_codes),
         'marker_counts': marker_counts,
     }
+    if include_diagnostics:
+        payload['diagnostics'] = _slate_diagnostics(
+            ref,
+            _postgame_blocker_diagnostics(ref, final_games, markers),
+        )
+    return payload
 
 
 def append_slate_coverage_to_freshness(freshness: Mapping | None, coverage: Mapping | None):
