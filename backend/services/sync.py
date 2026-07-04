@@ -65,6 +65,7 @@ POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
 POSTGAME_BOXSCORE_CORRECTION_SOURCE = 'postgame_boxscore'
 POSTGAME_PITCHER_RESOLUTION_SOURCE = 'mlb_stats_api:postgame_boxscore_pitching_line'
+POSTGAME_PITCHING_LINE_AUTHORITY = 'completed_game_boxscore_pitching_section'
 POSTGAME_PITCHER_TEAM_ASSIGNMENT_STATUS = 'ASSIGNED'
 POSTGAME_MARKER_STATUS_FULLY_PROCESSED = PostgameProcessedGame.STATUS_FULLY_PROCESSED
 POSTGAME_MARKER_STATUS_INCOMPLETE = PostgameProcessedGame.STATUS_INCOMPLETE
@@ -536,6 +537,32 @@ def _normalized_position(value):
     return str(raw).strip().upper() if raw not in (None, '') else None
 
 
+def _pitching_line_record_position(line: dict):
+    position = line.get('position')
+    return str(position).strip().upper() if position not in (None, '') else None
+
+
+def _is_pitching_position(position):
+    normalized = _normalized_position(position)
+    return normalized is None or normalized in {'P', 'PITCHER'}
+
+
+def _is_authoritative_completed_game_pitching_line(line: dict, game: dict) -> bool:
+    return (
+        line.get('source') == POSTGAME_PITCHER_RESOLUTION_SOURCE
+        and line.get('authority') == POSTGAME_PITCHING_LINE_AUTHORITY
+        and is_completed_game(game)
+        and bool(line.get('stats'))
+    )
+
+
+def _position_override_from_pitching_line(line: dict, game: dict) -> bool:
+    return (
+        _is_authoritative_completed_game_pitching_line(line, game)
+        and not _is_pitching_position(line.get('position'))
+    )
+
+
 def _team_abbreviation_from(team: dict | None):
     team = team or {}
     return (
@@ -630,7 +657,14 @@ def _pitcher_resolution_failure(
     }
 
 
-def _apply_pitcher_authority_from_line(pitcher, line: dict, team: dict, timestamp):
+def _apply_pitcher_authority_from_line(
+    pitcher,
+    line: dict,
+    team: dict,
+    timestamp,
+    *,
+    position_override=False,
+):
     before_active = bool(pitcher.active)
     before_team = (pitcher.team_id, pitcher.team_name, pitcher.team_abbreviation)
     before_roster = pitcher.roster_status
@@ -641,7 +675,7 @@ def _apply_pitcher_authority_from_line(pitcher, line: dict, team: dict, timestam
 
     desired = {
         'active': True,
-        'position': pitcher.position or 'P',
+        'position': pitcher.position or _pitching_line_record_position(line) or 'P',
         'team_id': team['team_id'],
         'team_name': team.get('team_name') or pitcher.team_name,
         'team_abbreviation': team.get('team_abbreviation') or pitcher.team_abbreviation,
@@ -650,7 +684,11 @@ def _apply_pitcher_authority_from_line(pitcher, line: dict, team: dict, timestam
         'roster_status': STATUS_ACTIVE,
         'roster_status_source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
         'roster_status_raw_code': STATUS_ACTIVE,
-        'roster_status_raw_description': 'Final-game pitching line',
+        'roster_status_raw_description': (
+            'Final-game pitching line; position_override_from_pitching_line'
+            if position_override
+            else 'Final-game pitching line'
+        ),
     }
     changed = False
     for attr, value in desired.items():
@@ -721,7 +759,16 @@ def resolve_pitcher_for_authoritative_line(
         )
 
     line_position = _normalized_position(line.get('position'))
-    if line_position is not None and line_position not in {'P', 'PITCHER'}:
+    authoritative_pitching_line = _is_authoritative_completed_game_pitching_line(
+        line,
+        game,
+    )
+    position_override = _position_override_from_pitching_line(line, game)
+    if (
+        line_position is not None
+        and line_position not in {'P', 'PITCHER'}
+        and not position_override
+    ):
         return _pitcher_resolution_failure(
             line=line,
             game=game,
@@ -749,9 +796,15 @@ def resolve_pitcher_for_authoritative_line(
         pitcher = Pitcher(
             mlb_id=player_id,
             full_name=line_name,
-            position='P',
+            position=_pitching_line_record_position(line) or 'P',
         )
-        _apply_pitcher_authority_from_line(pitcher, line, team, timestamp)
+        _apply_pitcher_authority_from_line(
+            pitcher,
+            line,
+            team,
+            timestamp,
+            position_override=position_override,
+        )
         db.session.add(pitcher)
         db.session.flush()
         local_pitchers[player_id] = pitcher
@@ -761,10 +814,11 @@ def resolve_pitcher_for_authoritative_line(
             'created': True,
             'reactivated': False,
             'reason': None,
+            'position_override_from_pitching_line': position_override,
         }
 
     existing_position = _normalized_position(pitcher.position)
-    if existing_position is not None and existing_position not in {'P', 'PITCHER'}:
+    if existing_position is not None and existing_position not in {'P', 'PITCHER'} and not authoritative_pitching_line:
         return _pitcher_resolution_failure(
             line=line,
             game=game,
@@ -773,7 +827,13 @@ def resolve_pitcher_for_authoritative_line(
             job_name=job_name,
         )
 
-    changes = _apply_pitcher_authority_from_line(pitcher, line, team, timestamp)
+    changes = _apply_pitcher_authority_from_line(
+        pitcher,
+        line,
+        team,
+        timestamp,
+        position_override=position_override,
+    )
     if changes['changed']:
         db.session.add(pitcher)
     db.session.flush()
@@ -785,6 +845,7 @@ def resolve_pitcher_for_authoritative_line(
         'created': False,
         'reactivated': changes['reactivated'],
         'reason': None,
+        'position_override_from_pitching_line': position_override,
     }
 
 
@@ -833,6 +894,8 @@ def _extract_pitching_lines_from_boxscore(boxscore: dict) -> list[dict]:
                     'position': _position_value(position),
                     'position_code': _position_code(position),
                     'position_name': _position_name(position),
+                    'source': POSTGAME_PITCHER_RESOLUTION_SOURCE,
+                    'authority': POSTGAME_PITCHING_LINE_AUTHORITY,
                     'stats': stats,
                     'side': side,
                 })
@@ -1035,6 +1098,7 @@ def process_completed_game_for_postgame_refresh(
             'pitcher_resolution_failures': 0,
             'pitchers_created': 0,
             'pitchers_reactivated': 0,
+            'position_overrides_from_pitching_line': 0,
             'pitchers_touched': 0,
             'pitching_lines_seen': 0,
             'processing_status': None,
@@ -1056,6 +1120,7 @@ def process_completed_game_for_postgame_refresh(
             'pitcher_resolution_failures': 0,
             'pitchers_created': 0,
             'pitchers_reactivated': 0,
+            'position_overrides_from_pitching_line': 0,
             'pitchers_touched': 0,
             'pitching_lines_seen': existing_marker.pitching_lines_seen or 0,
             'processing_status': processing_status,
@@ -1102,6 +1167,7 @@ def process_completed_game_for_postgame_refresh(
     pitcher_resolution_failures = 0
     pitchers_created = 0
     pitchers_reactivated = 0
+    position_overrides_from_pitching_line = 0
     touched_pitcher_ids = set()
     for line in pitching_lines:
         resolution = resolve_pitcher_for_authoritative_line(
@@ -1119,6 +1185,8 @@ def process_completed_game_for_postgame_refresh(
             pitchers_created += 1
         if resolution['reactivated']:
             pitchers_reactivated += 1
+        if resolution.get('position_override_from_pitching_line'):
+            position_overrides_from_pitching_line += 1
         if pitcher.team_id and pitcher.team_abbreviation:
             team_abbr_map[pitcher.team_id] = pitcher.team_abbreviation
         result = _ingest_boxscore_pitching_line(
@@ -1161,6 +1229,7 @@ def process_completed_game_for_postgame_refresh(
         'pitcher_resolution_failures': pitcher_resolution_failures,
         'pitchers_created': pitchers_created,
         'pitchers_reactivated': pitchers_reactivated,
+        'position_overrides_from_pitching_line': position_overrides_from_pitching_line,
         'pitchers_touched': len(touched_pitcher_ids),
         'pitching_lines_seen': len(pitching_lines),
         'processing_status': marker.processing_status,
