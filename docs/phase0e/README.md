@@ -14,8 +14,8 @@ each read derives completeness from its required components.
 ## Binding Rules
 
 - QA, renderer, decision records, and exit preparation only.
-- No migrations in 0E-05.
-- No new evidence rules in 0E-05.
+- No migrations in 0E-05 or 0E-06.
+- No new evidence rules in 0E-05 or 0E-06.
 - No headline-state implementation before an explicit post-0E-06 decision by
   Nickolis.
 - No member-read rollup contract extension unless the closed decision is
@@ -53,8 +53,20 @@ freezes, or rushed swaps.
 | 0E-02 | Complete: reliever daily read. |
 | 0E-03 | Complete: team daily read. |
 | 0E-04 | Complete: legacy reconciliation audit. |
-| 0E-05 | This branch: read QA, editorial harness, renderer, and decision records. |
-| 0E-06 | Next: legal paper and exit. |
+| 0E-05 | Complete: read QA, editorial harness, renderer, and decision records. |
+| 0E-06 | This branch: legal review paper and exit report. |
+
+## 0E-06 Exit Documents
+
+- `docs/phase0e/legal_review_paper.md`
+- `docs/phase0e/phase0e_exit_report.md`
+
+## Final Phase Summary
+
+Phase 0E exits with internal reads, QA, reconciliation, editorial decisions,
+and legal/source governance assembled for human review. It does not expose
+evidence publicly, authorize a headline state, authorize member-read rollups, or
+reopen the Phase 0B legal/source review gate.
 
 ## 0E-06 Inputs Inventory
 
@@ -68,6 +80,8 @@ The legal paper consumes these 0E-05 and carry-forward inputs:
 - Reconciliation audit tables from the production observation window.
 - Evidence classification registry and unchanged tallies.
 - Phase 0D public-language packages.
+- `docs/phase0e/legal_review_paper.md`.
+- `docs/phase0e/phase0e_exit_report.md`.
 
 ## Source Documents
 
@@ -87,3 +101,5 @@ Phase 0E consumes these Phase 0D and Phase 0E source-of-truth documents:
 - `docs/phase0e/editorial_review_guide.md`
 - `docs/phase0e/headline_state_decision.md`
 - `docs/phase0e/member_read_rollup_decision.md`
+- `docs/phase0e/legal_review_paper.md`
+- `docs/phase0e/phase0e_exit_report.md`
