@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import logging
 import re
+import time
 
 from sqlalchemy import asc
 
@@ -31,6 +33,8 @@ from services.evidence_rules import (
 )
 from utils.db import db
 
+
+logger = logging.getLogger('baseballos.daily_sync')
 
 RULE_VERSION = 1
 EVIDENCE_SOURCE = 'phase0d:team_relief_composition_evidence'
@@ -344,6 +348,184 @@ class AttributionWindow:
         return [REASON_INCOMPLETE_SLATE_DAY, REASON_BASIS_LOWER_BOUND]
 
 
+class TeamReliefCompositionBuildContext:
+    def __init__(self, product_date, coverage, sync_run_id):
+        self.product_date = _as_date(product_date)
+        self.coverage = coverage
+        self.sync_run_id = sync_run_id
+        self.start_date = self.product_date - timedelta(days=BASIS_WINDOW_DAYS - 1)
+        self.logs = _logs_for_range(self.start_date, self.product_date)
+        self.pitcher_ids = sorted({row.pitcher_id for row in self.logs})
+        self.game_pks = sorted({row.mlb_game_pk for row in self.logs})
+        self.log_dates = sorted({row.game_date for row in self.logs})
+        self.pitchers_by_id = _pitchers_by_id(self.pitcher_ids)
+        self.scheduled_games_by_pk = _scheduled_games_by_pk(self.game_pks)
+        self.snapshots_by_pitcher_date = _snapshots_by_pitcher_date(
+            self.pitcher_ids,
+            {*self.log_dates, self.product_date},
+        )
+        self.pbp_events_by_game_pk = _pbp_events_by_game_pk(self.game_pks)
+        self.source_evidence = _source_evidence_cache(self.start_date, self.product_date)
+        self._attribution_windows = {}
+        self._conflict_windows_recorded = set()
+
+    @property
+    def source_evidence_count(self):
+        return len(self.source_evidence['rows'])
+
+    @property
+    def roster_snapshot_count(self):
+        return len(self.snapshots_by_pitcher_date)
+
+    @property
+    def pbp_event_count(self):
+        return sum(len(rows) for rows in self.pbp_events_by_game_pk.values())
+
+    def attribution_window(self, window_days, *, record_conflicts=False):
+        if window_days not in self._attribution_windows:
+            self._attribution_windows[window_days] = self._build_attribution_window(window_days)
+        window = self._attribution_windows[window_days]
+        if record_conflicts and window_days not in self._conflict_windows_recorded:
+            for decision in window.decisions:
+                if decision.reason_code == REASON_ATTRIBUTION_CONFLICT:
+                    _record_attribution_dead_letter(decision, self.sync_run_id)
+            self._conflict_windows_recorded.add(window_days)
+        return window
+
+    def _build_attribution_window(self, window_days):
+        ref = self.product_date
+        start = ref - timedelta(days=window_days - 1)
+        coverage_window = self.coverage.window(ref, window_days)
+        decisions = []
+        for log in self.logs:
+            if log.game_date < start or log.game_date > ref:
+                continue
+            if not self.is_finality_certified(log):
+                continue
+            pitcher = self.pitchers_by_id.get(log.pitcher_id)
+            pitcher_name = getattr(pitcher, 'full_name', None) or f'Pitcher {log.pitcher_id}'
+            snapshot = self.same_date_snapshot(log)
+            current_snapshot = self.current_snapshot(log.pitcher_id)
+            if log.games_started is None:
+                decisions.append(AttributionDecision(
+                    log=log,
+                    team_id=_snapshot_team(snapshot, current_snapshot),
+                    pitcher_id=log.pitcher_id,
+                    pitcher_name=pitcher_name,
+                    included=False,
+                    reason_code=REASON_APPEARANCE_ROLE_UNKNOWN,
+                    snapshot=snapshot,
+                    current_snapshot=current_snapshot,
+                    pbp_events=(),
+                ))
+                continue
+            if log.games_started != 0:
+                continue
+            if snapshot is None:
+                decisions.append(AttributionDecision(
+                    log=log,
+                    team_id=_snapshot_team(snapshot, current_snapshot),
+                    pitcher_id=log.pitcher_id,
+                    pitcher_name=pitcher_name,
+                    included=False,
+                    reason_code=REASON_ATTRIBUTION_UNKNOWN,
+                    snapshot=snapshot,
+                    current_snapshot=current_snapshot,
+                    pbp_events=(),
+                ))
+                continue
+            pbp_events = tuple(self.pbp_events_for_log(log))
+            fielding_team_ids = {
+                event.fielding_team_id
+                for event in pbp_events
+                if event.fielding_team_id is not None
+            }
+            if fielding_team_ids and snapshot.team_id not in fielding_team_ids:
+                decisions.append(AttributionDecision(
+                    log=log,
+                    team_id=snapshot.team_id,
+                    pitcher_id=log.pitcher_id,
+                    pitcher_name=pitcher_name,
+                    included=False,
+                    reason_code=REASON_ATTRIBUTION_CONFLICT,
+                    snapshot=snapshot,
+                    current_snapshot=current_snapshot,
+                    pbp_events=pbp_events,
+                ))
+                continue
+            decisions.append(AttributionDecision(
+                log=log,
+                team_id=snapshot.team_id,
+                pitcher_id=log.pitcher_id,
+                pitcher_name=pitcher_name,
+                included=True,
+                reason_code=None,
+                snapshot=snapshot,
+                current_snapshot=current_snapshot,
+                pbp_events=pbp_events,
+            ))
+        return AttributionWindow(
+            product_date=ref,
+            window_days=window_days,
+            start_date=start,
+            decisions=decisions,
+            coverage_window=coverage_window,
+        )
+
+    def is_finality_certified(self, log):
+        rows = self.scheduled_games_by_pk.get(log.mlb_game_pk, ())
+        if not rows:
+            return True
+        return any(row.status_state == ScheduledGame.STATE_FINAL for row in rows)
+
+    def same_date_snapshot(self, log):
+        return self.snapshots_by_pitcher_date.get((log.pitcher_id, log.game_date))
+
+    def current_snapshot(self, pitcher_id):
+        return self.snapshots_by_pitcher_date.get((pitcher_id, self.product_date))
+
+    def pbp_events_for_log(self, log):
+        pitcher = self.pitchers_by_id.get(log.pitcher_id)
+        mlb_id = getattr(pitcher, 'mlb_id', None)
+        return [
+            event
+            for event in self.pbp_events_by_game_pk.get(log.mlb_game_pk, ())
+            if event.pitcher_id == log.pitcher_id
+            or (mlb_id is not None and event.pitcher_mlb_id == mlb_id)
+        ]
+
+    def source_member_evidence(self, rule_id, pitcher_id, product_date):
+        return self.source_evidence['member'].get((
+            rule_id,
+            str(pitcher_id),
+            _as_date(product_date),
+        ))
+
+    def source_team_window_evidence(self, rule_id, team_id, product_date, window_days):
+        rows = self.source_evidence['team'].get((
+            rule_id,
+            str(team_id),
+            _as_date(product_date),
+        ), ())
+        for row in rows:
+            trace = dict(row.computation_trace or {})
+            if trace.get('window_days') == window_days:
+                return row
+            if f'{window_days}d' in (row.subject_key or ''):
+                return row
+        return None
+
+    def source_appearance_evidence(self, rule_id, log):
+        return self.source_evidence['appearance'].get((
+            rule_id,
+            f'{log.pitcher_id}:{log.mlb_game_pk}',
+            log.game_date,
+        ))
+
+    def outing_family_ran_for_day(self, day):
+        return _as_date(day) in self.source_evidence['outing_family_days']
+
+
 _LOCAL_RULE_REGISTRY: EvidenceRuleRegistry | None = None
 _LOCAL_TEMPLATE_REGISTRY: ClaimTemplateRegistry | None = None
 
@@ -382,20 +564,42 @@ def build_team_relief_composition_evidence(
     restrict_evidence_keys: set[str] | None = None,
 ) -> dict:
     """Build internal team relief contributor composition evidence."""
+    started = time.perf_counter()
     ref = _as_date(product_date)
     registry, templates = _local_registries()
     coverage = _CoverageCache(ref)
+    logger.info(
+        'Team relief composition build starting: product_date=%s restrict_keys=%s.',
+        ref.isoformat(),
+        len(restrict_evidence_keys or ()),
+    )
+    context_started = time.perf_counter()
+    context = TeamReliefCompositionBuildContext(ref, coverage, sync_run_id)
+    logger.info(
+        'Team relief composition context loaded: product_date=%s game_logs=%s '
+        'pitchers=%s roster_snapshots=%s pbp_events=%s source_evidence=%s '
+        'elapsed_ms=%s.',
+        ref.isoformat(),
+        len(context.logs),
+        len(context.pitcher_ids),
+        context.roster_snapshot_count,
+        context.pbp_event_count,
+        context.source_evidence_count,
+        round((time.perf_counter() - context_started) * 1000, 1),
+    )
     basis_window = _attribution_window(
         ref,
         BASIS_WINDOW_DAYS,
         coverage,
         sync_run_id,
         record_conflicts=True,
+        context=context,
     )
-    emitted = []
-    basis_by_team = {}
+    basis_team_ids = basis_window.team_ids()
+    basis_evidence = []
+    basis_started = time.perf_counter()
 
-    for team_id in basis_window.team_ids():
+    for team_id in basis_team_ids:
         item = _basis_object(
             team_id=team_id,
             product_date=ref,
@@ -404,16 +608,31 @@ def build_team_relief_composition_evidence(
             templates=templates,
             sync_run_id=sync_run_id,
             source=source,
+            context=context,
         )
         if item is None:
             continue
         if restrict_evidence_keys is None or item.evidence.evidence_key in restrict_evidence_keys:
-            emitted.append(_upsert_evidence(item.evidence))
-        basis_by_team[team_id] = _current_basis_object(team_id, ref)
+            basis_evidence.append(item.evidence)
 
-    db.session.flush()
-    for team_id in sorted(basis_by_team):
-        basis = _current_basis_object(team_id, ref)
+    basis_statuses = _upsert_evidence_batch(basis_evidence)
+    basis_by_team = _current_basis_objects_by_team(basis_team_ids, ref)
+    logger.info(
+        'Team relief composition basis stage completed: product_date=%s '
+        'teams_considered=%s objects_built=%s objects_created=%s '
+        'objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(basis_team_ids),
+        len(basis_statuses),
+        sum(1 for item in basis_statuses if item == 'created'),
+        sum(1 for item in basis_statuses if item == 'refreshed'),
+        round((time.perf_counter() - basis_started) * 1000, 1),
+    )
+
+    downstream_evidence = []
+    downstream_started = time.perf_counter()
+    for team_id in sorted(basis_team_ids):
+        basis = basis_by_team.get(str(team_id))
         if basis is None:
             continue
         for item in _downstream_objects(
@@ -425,25 +644,55 @@ def build_team_relief_composition_evidence(
             templates=templates,
             sync_run_id=sync_run_id,
             source=source,
+            context=context,
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            downstream_evidence.append(item.evidence)
+
+    downstream_statuses = _upsert_evidence_batch(downstream_evidence)
+    logger.info(
+        'Team relief composition downstream stage completed: product_date=%s '
+        'teams_considered=%s objects_built=%s objects_created=%s '
+        'objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(basis_by_team),
+        len(downstream_statuses),
+        sum(1 for item in downstream_statuses if item == 'created'),
+        sum(1 for item in downstream_statuses if item == 'refreshed'),
+        round((time.perf_counter() - downstream_started) * 1000, 1),
+    )
 
     if commit:
         db.session.commit()
     else:
         db.session.flush()
 
+    emitted = basis_statuses + downstream_statuses
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        'Team relief composition build completed: product_date=%s '
+        'teams_considered=%s objects_built=%s objects_created=%s '
+        'objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(basis_team_ids),
+        len(emitted),
+        sum(1 for item in emitted if item == 'created'),
+        sum(1 for item in emitted if item == 'refreshed'),
+        elapsed_ms,
+    )
     return {
         'status': 'built',
         'product_date': ref.isoformat(),
         'rules': list(TEAM_RELIEF_COMPOSITION_RULE_IDS),
+        'teams_considered': len(basis_team_ids),
+        'game_logs_considered': len(context.logs),
         'objects_built': len(emitted),
         'objects_created': sum(1 for item in emitted if item == 'created'),
         'objects_refreshed': sum(1 for item in emitted if item == 'refreshed'),
         'basis_stage_completed': True,
         'downstream_stage_completed': True,
+        'elapsed_ms': elapsed_ms,
     }
 
 
@@ -722,12 +971,13 @@ def _downstream_objects(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     items = [
-        _rest_distribution_object(team_id, product_date, basis, registry, templates, sync_run_id, source),
-        _density_usage_count_object(team_id, product_date, basis, registry, templates, sync_run_id, source),
-        _outing_context_mix_object(team_id, product_date, basis, coverage, registry, templates, sync_run_id, source),
-        _finish_spread_object(team_id, product_date, basis, registry, templates, sync_run_id, source),
+        _rest_distribution_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context),
+        _density_usage_count_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context),
+        _outing_context_mix_object(team_id, product_date, basis, coverage, registry, templates, sync_run_id, source, context),
+        _finish_spread_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context),
     ]
     for window_days in CONCENTRATION_WINDOW_DAYS:
         items.append(
@@ -741,6 +991,7 @@ def _downstream_objects(
                 templates,
                 sync_run_id,
                 source,
+                context,
             )
         )
     return [item for item in items if item is not None]
@@ -755,6 +1006,7 @@ def _basis_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     included = window.included_for_team(team_id)
     exclusions = window.exclusions_for_team(team_id)
@@ -762,7 +1014,7 @@ def _basis_object(
         return None
 
     members = _members_from_decisions(included)
-    relationships = _current_roster_relationships(members, team_id, product_date)
+    relationships = _current_roster_relationships(members, team_id, product_date, context)
     counts = Counter(item['relationship'] for item in relationships)
     exclusion_counts = Counter(item.reason_code for item in exclusions if item.reason_code)
     reason_codes = _dedupe(
@@ -835,7 +1087,7 @@ def _basis_object(
     )
 
 
-def _rest_distribution_object(team_id, product_date, basis, registry, templates, sync_run_id, source):
+def _rest_distribution_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context=None):
     members = _basis_members(basis)
     if not members:
         return None
@@ -848,6 +1100,7 @@ def _rest_distribution_object(team_id, product_date, basis, registry, templates,
             WORKLOAD_DAYS_OF_REST_RULE_ID,
             member['pitcher_id'],
             product_date,
+            context,
         )
         if row is None:
             buckets['unknown'].append(member)
@@ -917,7 +1170,7 @@ def _rest_distribution_object(team_id, product_date, basis, registry, templates,
     )
 
 
-def _density_usage_count_object(team_id, product_date, basis, registry, templates, sync_run_id, source):
+def _density_usage_count_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context=None):
     members = _basis_members(basis)
     if not members:
         return None
@@ -935,7 +1188,7 @@ def _density_usage_count_object(team_id, product_date, basis, registry, template
         unassessable = []
         absent = []
         for member in members:
-            row = _source_member_evidence(rule_id, member['pitcher_id'], product_date)
+            row = _source_member_evidence(rule_id, member['pitcher_id'], product_date, context)
             if row is None:
                 absent.append(member)
                 continue
@@ -1014,8 +1267,9 @@ def _workload_concentration_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
-    window = _attribution_window(product_date, window_days, coverage, sync_run_id)
+    window = _attribution_window(product_date, window_days, coverage, sync_run_id, context=context)
     included = window.included_for_team(team_id)
     if not included:
         return None
@@ -1052,6 +1306,7 @@ def _workload_concentration_object(
         team_id,
         product_date,
         window_days,
+        context,
     )
     contradiction = None
     if split_source is not None:
@@ -1154,8 +1409,14 @@ def _workload_concentration_object(
     )
 
 
-def _outing_context_mix_object(team_id, product_date, basis, coverage, registry, templates, sync_run_id, source):
-    window = _attribution_window(product_date, OUTING_CONTEXT_WINDOW_DAYS, coverage, sync_run_id)
+def _outing_context_mix_object(team_id, product_date, basis, coverage, registry, templates, sync_run_id, source, context=None):
+    window = _attribution_window(
+        product_date,
+        OUTING_CONTEXT_WINDOW_DAYS,
+        coverage,
+        sync_run_id,
+        context=context,
+    )
     included = window.included_for_team(team_id)
     if not included:
         return None
@@ -1169,7 +1430,7 @@ def _outing_context_mix_object(team_id, product_date, basis, coverage, registry,
         ))
     ran_gap_days = [
         day for day in sorted({item.log.game_date for item in included})
-        if not _outing_family_ran_for_day(day)
+        if not _outing_family_ran_for_day(day, context)
     ]
     reason_codes = list(basis.reason_codes or [])
     if ran_gap_days:
@@ -1216,7 +1477,7 @@ def _outing_context_mix_object(team_id, product_date, basis, coverage, registry,
     counts = {'clean': [], 'traffic': [], 'unknown': [], 'provably_neither': []}
     consumed = []
     for decision in included:
-        rows = _outing_context_objects(decision.log)
+        rows = _outing_context_objects(decision.log, context)
         for row in rows:
             citations.append(_source_evidence_citation(row, 'derived_from_evidence'))
             consumed.append(_source_ref(row))
@@ -1277,7 +1538,7 @@ def _outing_context_mix_object(team_id, product_date, basis, coverage, registry,
     )
 
 
-def _finish_spread_object(team_id, product_date, basis, registry, templates, sync_run_id, source):
+def _finish_spread_object(team_id, product_date, basis, registry, templates, sync_run_id, source, context=None):
     members = _basis_members(basis)
     if not members:
         return None
@@ -1285,7 +1546,13 @@ def _finish_spread_object(team_id, product_date, basis, registry, templates, syn
     start = product_date - timedelta(days=FINISH_SPREAD_WINDOW_DAYS - 1)
     decisions = [
         item
-        for item in _attribution_window(product_date, FINISH_SPREAD_WINDOW_DAYS, _CoverageCache(product_date), sync_run_id).included_for_team(team_id)
+        for item in _attribution_window(
+            product_date,
+            FINISH_SPREAD_WINDOW_DAYS,
+            context.coverage if context is not None else _CoverageCache(product_date),
+            sync_run_id,
+            context=context,
+        ).included_for_team(team_id)
         if item.pitcher_id in member_ids and start <= item.log.game_date <= product_date
     ]
     if not decisions:
@@ -1301,7 +1568,7 @@ def _finish_spread_object(team_id, product_date, basis, registry, templates, syn
     consumed = []
     legacy_caveat = False
     for decision in decisions:
-        row = _appearance_finish_context_object(decision.log)
+        row = _appearance_finish_context_object(decision.log, context)
         if row is None:
             reason_codes.append(REASON_MEMBER_EVIDENCE_UNAVAILABLE)
             citations.append(_missing_member_evidence_citation(
@@ -1454,7 +1721,20 @@ def _build_object(
     )
 
 
-def _attribution_window(product_date, window_days, coverage, sync_run_id, *, record_conflicts=False):
+def _attribution_window(
+    product_date,
+    window_days,
+    coverage,
+    sync_run_id,
+    *,
+    record_conflicts=False,
+    context=None,
+):
+    if context is not None:
+        return context.attribution_window(
+            window_days,
+            record_conflicts=record_conflicts,
+        )
     ref = _as_date(product_date)
     start = ref - timedelta(days=window_days - 1)
     logs = _logs_for_range(start, ref)
@@ -1547,6 +1827,128 @@ def _logs_for_range(start_date, end_date):
     )
 
 
+def _pitchers_by_id(pitcher_ids):
+    ids = tuple(pitcher_ids or ())
+    if not ids:
+        return {}
+    return {
+        row.id: row
+        for row in Pitcher.query.filter(Pitcher.id.in_(ids)).all()
+    }
+
+
+def _scheduled_games_by_pk(game_pks):
+    pks = tuple(game_pks or ())
+    if not pks:
+        return {}
+    rows = (
+        ScheduledGame.query
+        .filter(ScheduledGame.game_pk.in_(pks))
+        .order_by(asc(ScheduledGame.game_pk), asc(ScheduledGame.id))
+        .all()
+    )
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row.game_pk].append(row)
+    return grouped
+
+
+def _snapshots_by_pitcher_date(pitcher_ids, dates):
+    ids = tuple(pitcher_ids or ())
+    snapshot_dates = tuple(sorted(_as_date(day) for day in dates or ()))
+    if not ids or not snapshot_dates:
+        return {}
+    rows = (
+        RosterStatusSnapshot.query
+        .filter(RosterStatusSnapshot.pitcher_id.in_(ids))
+        .filter(RosterStatusSnapshot.snapshot_date.in_(snapshot_dates))
+        .order_by(
+            asc(RosterStatusSnapshot.pitcher_id),
+            asc(RosterStatusSnapshot.snapshot_date),
+            asc(RosterStatusSnapshot.id),
+        )
+        .all()
+    )
+    by_key = {}
+    for row in rows:
+        by_key.setdefault((row.pitcher_id, row.snapshot_date), row)
+    return by_key
+
+
+def _pbp_events_by_game_pk(game_pks):
+    pks = tuple(game_pks or ())
+    if not pks:
+        return {}
+    rows = (
+        GamePlayByPlayEvent.query
+        .filter(GamePlayByPlayEvent.mlb_game_pk.in_(pks))
+        .order_by(
+            asc(GamePlayByPlayEvent.mlb_game_pk),
+            asc(GamePlayByPlayEvent.event_index),
+            asc(GamePlayByPlayEvent.id),
+        )
+        .all()
+    )
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row.mlb_game_pk].append(row)
+    return grouped
+
+
+def _source_evidence_cache(start_date, product_date):
+    source_rule_ids = (
+        WORKLOAD_DAYS_OF_REST_RULE_ID,
+        USAGE_BACK_TO_BACK_RULE_ID,
+        USAGE_THREE_IN_FOUR_RULE_ID,
+        USAGE_FOUR_IN_SIX_RULE_ID,
+        TEAM_BULLPEN_OUTS_WINDOW_RULE_ID,
+        OUTING_CLEAN_RULE_ID,
+        OUTING_TRAFFIC_RULE_ID,
+        OUTING_CONTEXT_UNKNOWN_RULE_ID,
+        APPEARANCE_FINISH_CONTEXT_RULE_ID,
+    )
+    rows = (
+        EvidenceObject.query
+        .filter(EvidenceObject.rule_id.in_(source_rule_ids))
+        .filter(EvidenceObject.product_date >= start_date)
+        .filter(EvidenceObject.product_date <= product_date)
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        .order_by(
+            asc(EvidenceObject.rule_id),
+            asc(EvidenceObject.subject_type),
+            asc(EvidenceObject.subject_id),
+            asc(EvidenceObject.product_date),
+            asc(EvidenceObject.id),
+        )
+        .all()
+    )
+    member = {}
+    appearance = {}
+    team = defaultdict(list)
+    outing_family_days = set()
+    for row in rows:
+        key = (row.rule_id, row.subject_id, row.product_date)
+        if row.subject_type == SUBJECT_PITCHER:
+            member.setdefault(key, row)
+        elif row.subject_type == SUBJECT_APPEARANCE:
+            appearance.setdefault(key, row)
+        elif row.subject_type == SUBJECT_TEAM:
+            team[key].append(row)
+        if row.rule_id in (
+            OUTING_CLEAN_RULE_ID,
+            OUTING_TRAFFIC_RULE_ID,
+            OUTING_CONTEXT_UNKNOWN_RULE_ID,
+        ):
+            outing_family_days.add(row.product_date)
+    return {
+        'rows': rows,
+        'member': member,
+        'appearance': appearance,
+        'team': team,
+        'outing_family_days': outing_family_days,
+    }
+
+
 def _is_finality_certified(log):
     rows = ScheduledGame.query.filter_by(game_pk=log.mlb_game_pk).all()
     if not rows:
@@ -1614,10 +2016,14 @@ def _members_from_decisions(decisions):
     return [by_pitcher[key] for key in sorted(by_pitcher)]
 
 
-def _current_roster_relationships(members, team_id, product_date):
+def _current_roster_relationships(members, team_id, product_date, context=None):
     rows = []
     for member in members:
-        snapshot = _current_snapshot(member['pitcher_id'], product_date)
+        snapshot = (
+            context.current_snapshot(member['pitcher_id'])
+            if context is not None
+            else _current_snapshot(member['pitcher_id'], product_date)
+        )
         if snapshot is None:
             relationship = 'unknown'
         elif snapshot.team_id != team_id or snapshot.active_roster is False:
@@ -1673,7 +2079,31 @@ def _current_basis_object(team_id, product_date):
     )
 
 
-def _source_member_evidence(rule_id, pitcher_id, product_date):
+def _current_basis_objects_by_team(team_ids, product_date):
+    subject_ids = [str(team_id) for team_id in team_ids or ()]
+    if not subject_ids:
+        return {}
+    rows = (
+        EvidenceObject.query
+        .filter_by(
+            rule_id=TEAM_RELIEF_CONTRIBUTOR_BASIS_RULE_ID,
+            subject_type=SUBJECT_TEAM,
+            product_date=product_date,
+        )
+        .filter(EvidenceObject.subject_id.in_(subject_ids))
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        .order_by(asc(EvidenceObject.subject_id), asc(EvidenceObject.id))
+        .all()
+    )
+    by_team = {}
+    for row in rows:
+        by_team.setdefault(row.subject_id, row)
+    return by_team
+
+
+def _source_member_evidence(rule_id, pitcher_id, product_date, context=None):
+    if context is not None:
+        return context.source_member_evidence(rule_id, pitcher_id, product_date)
     return (
         EvidenceObject.query
         .filter_by(
@@ -1688,7 +2118,14 @@ def _source_member_evidence(rule_id, pitcher_id, product_date):
     )
 
 
-def _source_team_window_evidence(rule_id, team_id, product_date, window_days):
+def _source_team_window_evidence(rule_id, team_id, product_date, window_days, context=None):
+    if context is not None:
+        return context.source_team_window_evidence(
+            rule_id,
+            team_id,
+            product_date,
+            window_days,
+        )
     rows = (
         EvidenceObject.query
         .filter_by(
@@ -1710,7 +2147,9 @@ def _source_team_window_evidence(rule_id, team_id, product_date, window_days):
     return None
 
 
-def _source_appearance_evidence(rule_id, log):
+def _source_appearance_evidence(rule_id, log, context=None):
+    if context is not None:
+        return context.source_appearance_evidence(rule_id, log)
     return (
         EvidenceObject.query
         .filter_by(
@@ -1725,7 +2164,9 @@ def _source_appearance_evidence(rule_id, log):
     )
 
 
-def _outing_family_ran_for_day(day):
+def _outing_family_ran_for_day(day, context=None):
+    if context is not None:
+        return context.outing_family_ran_for_day(day)
     return (
         EvidenceObject.query
         .filter(EvidenceObject.rule_id.in_((
@@ -1740,21 +2181,21 @@ def _outing_family_ran_for_day(day):
     )
 
 
-def _outing_context_objects(log):
+def _outing_context_objects(log, context=None):
     rows = []
     for rule_id in (
         OUTING_CLEAN_RULE_ID,
         OUTING_TRAFFIC_RULE_ID,
         OUTING_CONTEXT_UNKNOWN_RULE_ID,
     ):
-        row = _source_appearance_evidence(rule_id, log)
+        row = _source_appearance_evidence(rule_id, log, context)
         if row is not None:
             rows.append(row)
     return rows
 
 
-def _appearance_finish_context_object(log):
-    return _source_appearance_evidence(APPEARANCE_FINISH_CONTEXT_RULE_ID, log)
+def _appearance_finish_context_object(log, context=None):
+    return _source_appearance_evidence(APPEARANCE_FINISH_CONTEXT_RULE_ID, log, context)
 
 
 def _decision_citations(decision):
@@ -2098,13 +2539,43 @@ def _record_concentration_dead_letter(
 
 
 def _upsert_evidence(new_evidence):
-    existing = EvidenceObject.query.filter_by(evidence_key=new_evidence.evidence_key).first()
-    if existing is None:
-        db.session.add(new_evidence)
-        db.session.flush()
-        _supersede_template_variant_siblings(new_evidence)
-        return 'created'
+    return _upsert_evidence_batch([new_evidence])[0]
 
+
+def _upsert_evidence_batch(new_evidence_rows):
+    rows = list(new_evidence_rows or ())
+    if not rows:
+        return []
+    keys = list(dict.fromkeys(row.evidence_key for row in rows))
+    existing_by_key = {}
+    for key_chunk in _chunks(keys, 500):
+        existing_rows = (
+            EvidenceObject.query
+            .filter(EvidenceObject.evidence_key.in_(key_chunk))
+            .all()
+        )
+        existing_by_key.update({
+            row.evidence_key: row
+            for row in existing_rows
+        })
+
+    created = []
+    emitted = []
+    for new_evidence in rows:
+        existing = existing_by_key.get(new_evidence.evidence_key)
+        if existing is None:
+            db.session.add(new_evidence)
+            created.append(new_evidence)
+            emitted.append('created')
+            continue
+        _refresh_existing_evidence(existing, new_evidence)
+        emitted.append('refreshed')
+    db.session.flush()
+    _supersede_template_variant_siblings_batch(created)
+    return emitted
+
+
+def _refresh_existing_evidence(existing, new_evidence):
     prior_trace = {
         'rendered_claim': existing.rendered_claim,
         'completeness_state': existing.completeness_state,
@@ -2151,8 +2622,6 @@ def _upsert_evidence(new_evidence):
         for citation in new_evidence.citations
     ]
     db.session.add(existing)
-    db.session.flush()
-    return 'refreshed'
 
 
 def _supersede_template_variant_siblings(new_evidence):
@@ -2172,11 +2641,51 @@ def _supersede_template_variant_siblings(new_evidence):
         db.session.flush()
 
 
+def _supersede_template_variant_siblings_batch(new_rows):
+    rows = [row for row in new_rows or () if getattr(row, 'id', None) is not None]
+    if not rows:
+        return
+    replacement_by_key = {
+        (row.rule_id, row.subject_key, row.product_date): row.id
+        for row in rows
+    }
+    new_ids = {row.id for row in rows}
+    changed = False
+    for key_chunk in _chunks(list(replacement_by_key), 100):
+        clauses = [
+            db.and_(
+                EvidenceObject.rule_id == rule_id,
+                EvidenceObject.subject_key == subject_key,
+                EvidenceObject.product_date == product_date,
+            )
+            for rule_id, subject_key, product_date in key_chunk
+        ]
+        siblings = (
+            EvidenceObject.query
+            .filter(db.or_(*clauses))
+            .filter(EvidenceObject.id.notin_(new_ids))
+            .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+            .all()
+        )
+        for sibling in siblings:
+            key = (sibling.rule_id, sibling.subject_key, sibling.product_date)
+            sibling.recompute_status = EvidenceObject.RECOMPUTE_SUPERSEDED
+            sibling.superseded_by_evidence_id = replacement_by_key[key]
+            changed = True
+    if changed:
+        db.session.flush()
+
+
 def _keys_by_date(rows):
     grouped = defaultdict(set)
     for row in rows:
         grouped[row.product_date].add(row.evidence_key)
     return dict(sorted(grouped.items()))
+
+
+def _chunks(values, size):
+    for index in range(0, len(values), size):
+        yield values[index:index + size]
 
 
 def _template_id(rule_id, *, window_days=None, degraded=False):

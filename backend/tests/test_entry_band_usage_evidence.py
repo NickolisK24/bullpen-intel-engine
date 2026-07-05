@@ -21,6 +21,7 @@ from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
 from services import sync as sync_service
 from services import sync_metadata
+import services.entry_band_usage_evidence as entry_service
 from services.entry_band_usage_evidence import (
     APPEARANCE_ENTRY_BAND_RULE_ID,
     APPEARANCE_FINISH_CONTEXT_RULE_ID,
@@ -786,6 +787,25 @@ def test_idempotency_bounded_recompute_sync_stage_and_public_payload_shape(app, 
         '-like role',
     ):
         assert forbidden not in f' {rendered} '
+
+
+def test_entry_band_usage_build_batches_evidence_upserts(app, monkeypatch):
+    with app.app_context():
+        run = _sync_run()
+        pitcher = _pitcher(seed=80)
+        log = _log(pitcher, suffix=180)
+        _entry_context(log, inning=8, margin=1)
+
+        monkeypatch.setattr(
+            entry_service,
+            '_upsert_evidence',
+            lambda *_args, **_kwargs: pytest.fail('per-object entry-band upsert was used'),
+        )
+
+        result = build_entry_band_usage_evidence(PRODUCT_DATE, sync_run_id=run.id)
+
+    assert result['status'] == 'built'
+    assert result['objects_built'] > 0
 
 
 def test_no_disallowed_rule_families_or_reliever_partition_registered():
