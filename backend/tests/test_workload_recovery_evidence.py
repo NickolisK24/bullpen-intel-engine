@@ -22,6 +22,7 @@ from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
 from services import sync as sync_service
 from services import sync_metadata
+import services.workload_recovery_evidence as workload_service
 from services.evidence_language import EvidenceLanguageError
 from services.evidence_rules import (
     ClaimTemplate,
@@ -457,6 +458,36 @@ def test_zero_windows_emit_counts_but_no_vacuous_sums(app):
     assert _rows('workload_window_batters_faced') == []
 
 
+def test_zero_current_log_build_is_batched_and_active_bounded(app, monkeypatch):
+    with app.app_context():
+        _seed_complete_coverage(days=LOOKBACK_DAYS)
+        active_old = _pitcher(seed=1, name='Active Historical Pitcher')
+        inactive_old = _pitcher(seed=2, name='Inactive Historical Pitcher')
+        inactive_old.active = False
+        recent_inactive = _pitcher(seed=3, name='Recent Inactive Pitcher')
+        recent_inactive.active = False
+        _log(active_old, PRODUCT_DATE - timedelta(days=45), suffix=1)
+        _log(inactive_old, PRODUCT_DATE - timedelta(days=45), suffix=2)
+        _log(recent_inactive, PRODUCT_DATE - timedelta(days=20), suffix=3)
+        db.session.flush()
+
+        monkeypatch.setattr(
+            workload_service,
+            '_pitcher_rows',
+            lambda *_args, **_kwargs: pytest.fail('per-pitcher workload row query was used'),
+        )
+
+        result = build_workload_recovery_evidence(PRODUCT_DATE)
+        no_recent_rows = [
+            row for row in _rows('workload_last_final_appearance')
+            if 'No final appearance' in row.rendered_claim
+        ]
+
+    assert result['pitchers_considered'] == 2
+    assert any(row.subject_id == str(active_old.id) for row in no_recent_rows)
+    assert not any(row.subject_id == str(inactive_old.id) for row in no_recent_rows)
+
+
 def test_met_and_false_flag_emission_policy(app):
     with app.app_context():
         _seed_complete_coverage(days=10)
@@ -595,6 +626,38 @@ def test_sync_stage_fail_soft_dead_letter_and_kill_switch(app, monkeypatch, capl
     assert 'sync will continue' in caplog.text
     assert skipped['status'] == 'skipped'
     assert skipped['reason'] == 'disabled'
+
+
+def test_sync_stage_logs_phase0d_substep_counts_and_runs_required_work(app, caplog):
+    with app.app_context():
+        _seed_complete_coverage(days=LOOKBACK_DAYS)
+        run = _sync_run()
+        pitcher = _pitcher()
+        _log(pitcher, PRODUCT_DATE)
+
+        with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+            result = sync_service._safe_build_workload_recovery_evidence_stage(
+                [PRODUCT_DATE],
+                sync_run_id=run.id,
+                source='test',
+                run_logger=logging.getLogger('baseballos.daily_sync'),
+            )
+        messages = [record.getMessage() for record in caplog.records]
+
+    assert result['status'] == 'built'
+    assert result['builds'][0]['objects_built'] > 0
+    assert any(
+        'Phase 0D evidence step starting: '
+        f'step=workload_recovery_build:{PRODUCT_DATE.isoformat()}' in message
+        for message in messages
+    )
+    assert any(
+        'Phase 0D evidence step completed: '
+        f'step=workload_recovery_build:{PRODUCT_DATE.isoformat()}' in message
+        and 'objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
 
 
 def test_public_sync_status_payload_shape_is_unchanged(app):
