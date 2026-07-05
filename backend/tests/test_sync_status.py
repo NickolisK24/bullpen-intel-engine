@@ -271,6 +271,10 @@ class TestSyncStatusSnapshot:
         assert body['freshness']['is_current'] is False
         assert body['freshness']['freshness_state'] == 'incomplete'
         assert body['freshness']['complete_enough_to_publish'] is False
+        assert body['freshness']['label'] == (
+            'Baseball data through 2026-05-31 is incomplete and is not '
+            'publishable as current.'
+        )
         assert 'final_games_not_fully_ingested' in body['freshness']['reason_codes']
         assert body['slate_coverage']['games_final'] == 1
         assert body['slate_coverage']['games_fully_ingested'] == 0
@@ -603,6 +607,17 @@ class TestSyncStatusSnapshot:
         assert coverage['games_final'] == 2
         assert coverage['games_fully_ingested'] == 0
         assert coverage['diagnostics']['postgame_blocker_count'] == 2
+        assert coverage['diagnostics']['failed_game_pks'] == [41, 42]
+        assert coverage['diagnostics']['failed_team_ids'] == [116, 121, 142, 147]
+        assert coverage['diagnostics']['failure_domains'] == [
+            'postgame_markers',
+            'pitcher_resolution',
+            'validations',
+        ]
+        assert coverage['diagnostics']['postgame_blocker_reason_counts'] == {
+            'incomplete_marker': 1,
+            'missing_marker': 1,
+        }
         assert [blocker['mlb_game_pk'] for blocker in blockers] == [41, 42]
         assert blockers[0]['reason_code'] == 'incomplete_marker'
         assert blockers[0]['marker_status'] == PostgameProcessedGame.STATUS_INCOMPLETE
@@ -612,6 +627,16 @@ class TestSyncStatusSnapshot:
         assert blockers[0]['last_attempted_at'] == '2026-06-01T03:15:00'
         assert blockers[1]['reason_code'] == 'missing_marker'
         assert blockers[1]['marker_status'] == 'missing'
+        slate_readiness = health['source_readiness']['families']['slate_coverage']
+        assert slate_readiness['status'] == source_readiness.DEGRADED
+        assert slate_readiness['details']['failed_game_pks'] == [41, 42]
+        assert slate_readiness['details']['failed_team_ids'] == [
+            116,
+            121,
+            142,
+            147,
+        ]
+        assert slate_readiness['details']['postgame_blocker_count'] == 2
 
         sync_status = client.get('/api/bullpen/sync/status').get_json()
         assert 'diagnostics' not in sync_status['slate_coverage']

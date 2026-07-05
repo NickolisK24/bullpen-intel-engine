@@ -313,6 +313,16 @@ def _slate_coverage_readiness(reference_date=None, coverage=None, sync_status=No
         )
     ready = coverage.get('complete_enough_to_publish') is True
     reason_codes = tuple(coverage.get('reason_codes') or ())
+    diagnostics = coverage.get('diagnostics') or {}
+    details = {'sync_status': sync_status}
+    if diagnostics:
+        details.update({
+            'failure_domains': diagnostics.get('failure_domains') or [],
+            'failed_game_pks': diagnostics.get('failed_game_pks') or [],
+            'failed_team_ids': diagnostics.get('failed_team_ids') or [],
+            'postgame_blocker_count': diagnostics.get('postgame_blocker_count') or 0,
+            'non_final_game_count': diagnostics.get('non_final_game_count') or 0,
+        })
     return SourceReadiness(
         source_family=FAMILY_SLATE_COVERAGE,
         status=READY if ready else DEGRADED,
@@ -326,7 +336,7 @@ def _slate_coverage_readiness(reference_date=None, coverage=None, sync_status=No
             'games_final': coverage.get('games_final'),
             'games_fully_ingested': coverage.get('games_fully_ingested'),
         },
-        details={'sync_status': sync_status},
+        details=details,
     )
 
 

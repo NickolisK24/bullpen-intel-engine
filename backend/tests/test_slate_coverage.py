@@ -169,6 +169,28 @@ def test_diagnostics_identify_missing_and_incomplete_postgame_markers(app):
     diagnostics = coverage['diagnostics']
     blockers = diagnostics['postgame_blockers']
     assert diagnostics['slate_date'] == '2026-07-03'
+    assert diagnostics['reason_codes'] == [
+        'final_games_not_fully_ingested',
+        'postgame_markers_incomplete',
+        'validations_failed',
+    ]
+    assert diagnostics['failure_domains'] == [
+        'postgame_markers',
+        'pitcher_resolution',
+        'validations',
+    ]
+    assert diagnostics['schedule_known'] is True
+    assert diagnostics['scheduled_game_count'] == 2
+    assert diagnostics['final_game_count'] == 2
+    assert diagnostics['failed_game_pks'] == [2001, 2002]
+    assert diagnostics['failed_team_ids'] == [116, 121, 142, 147]
+    assert diagnostics['postgame_blocker_reason_counts'] == {
+        'incomplete_marker': 1,
+        'missing_marker': 1,
+    }
+    assert diagnostics['postgame_blocker_incomplete_reason_counts'] == {
+        'pitcher_resolution_failures': 1,
+    }
     assert diagnostics['postgame_blocker_count'] == 2
     assert [blocker['mlb_game_pk'] for blocker in blockers] == [2001, 2002]
     assert coverage['complete_enough_to_publish'] is False
@@ -180,6 +202,7 @@ def test_diagnostics_identify_missing_and_incomplete_postgame_markers(app):
 
     incomplete = blockers[0]
     assert incomplete['reason_code'] == 'incomplete_marker'
+    assert incomplete['diagnostic_domain'] == 'postgame_markers'
     assert incomplete['marker_status'] == PostgameProcessedGame.STATUS_INCOMPLETE
     assert incomplete['incomplete_reason'] == 'pitcher_resolution_failures'
     assert incomplete['attempt_count'] == 2
@@ -247,7 +270,10 @@ def test_partial_sync_degrades_even_when_counts_are_complete(app):
 
 def test_schedule_missing_fails_closed_during_season(app):
     with app.app_context():
-        coverage = slate_coverage.compute_slate_coverage(date(2026, 6, 25))
+        coverage = slate_coverage.compute_slate_coverage(
+            date(2026, 6, 25),
+            include_diagnostics=True,
+        )
 
     assert coverage['coverage_known'] is False
     assert coverage['complete_enough_to_publish'] is False
@@ -255,6 +281,11 @@ def test_schedule_missing_fails_closed_during_season(app):
         'schedule_missing',
         'validations_failed',
     ]
+    diagnostics = coverage['diagnostics']
+    assert diagnostics['failure_domains'] == ['schedule', 'validations']
+    assert diagnostics['schedule_known'] is False
+    assert diagnostics['scheduled_game_count'] == 0
+    assert diagnostics['failed_game_pks'] == []
 
 
 def test_zero_game_offseason_slate_is_complete_by_definition(app):
@@ -323,7 +354,10 @@ def test_suspended_games_do_not_count_as_fully_ingested(app):
         _marker(1001, slate_date)
         db.session.commit()
 
-        coverage = slate_coverage.compute_slate_coverage(slate_date)
+        coverage = slate_coverage.compute_slate_coverage(
+            slate_date,
+            include_diagnostics=True,
+        )
 
     assert coverage['games_suspended'] == 1
     assert coverage['games_final'] == 0
@@ -331,6 +365,9 @@ def test_suspended_games_do_not_count_as_fully_ingested(app):
     assert coverage['games_incomplete'] == 1
     assert coverage['complete_enough_to_publish'] is False
     assert 'suspended_games_not_final' in coverage['reason_codes']
+    assert coverage['diagnostics']['failure_domains'] == ['finality', 'validations']
+    assert coverage['diagnostics']['non_final_game_count'] == 1
+    assert coverage['diagnostics']['non_final_games'][0]['mlb_game_pk'] == 1001
 
 
 def test_unresolved_resumed_linkage_blocks_completeness(app):

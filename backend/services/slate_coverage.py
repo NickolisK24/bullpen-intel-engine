@@ -29,6 +29,12 @@ REASON_RESUMED_LINKAGE_UNRESOLVED = 'resumed_linkage_unresolved'
 DIAGNOSTIC_MISSING_MARKER = 'missing_marker'
 DIAGNOSTIC_INCOMPLETE_MARKER = 'incomplete_marker'
 DIAGNOSTIC_FAILED_MARKER = 'failed_marker'
+DIAGNOSTIC_DOMAIN_SCHEDULE = 'schedule'
+DIAGNOSTIC_DOMAIN_FINALITY = 'finality'
+DIAGNOSTIC_DOMAIN_POSTGAME_MARKERS = 'postgame_markers'
+DIAGNOSTIC_DOMAIN_PITCHER_RESOLUTION = 'pitcher_resolution'
+DIAGNOSTIC_DOMAIN_PARTIAL_SYNC = 'partial_sync'
+DIAGNOSTIC_DOMAIN_VALIDATIONS = 'validations'
 PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 
 
@@ -86,6 +92,65 @@ def _reason_messages(reason_codes):
         for code in reason_codes
         if code in _REASON_MESSAGES
     ]
+
+
+def _count_by(values):
+    counts = {}
+    for value in values:
+        if value:
+            counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _team_ids_from_blockers(blockers):
+    team_ids = set()
+    for blocker in blockers or []:
+        for key in ('away_team', 'home_team'):
+            team_id = blocker.get(key)
+            if team_id is not None:
+                team_ids.add(int(team_id))
+    return sorted(team_ids)
+
+
+def _diagnostic_domains(reason_codes, blockers):
+    domains = []
+    if REASON_SCHEDULE_MISSING in reason_codes:
+        domains.append(DIAGNOSTIC_DOMAIN_SCHEDULE)
+    if (
+        REASON_SCHEDULED_GAMES_NOT_FINAL in reason_codes
+        or REASON_SUSPENDED_GAMES_NOT_FINAL in reason_codes
+        or REASON_RESUMED_LINKAGE_UNRESOLVED in reason_codes
+    ):
+        domains.append(DIAGNOSTIC_DOMAIN_FINALITY)
+    if (
+        REASON_FINAL_GAMES_NOT_FULLY_INGESTED in reason_codes
+        or REASON_POSTGAME_MARKERS_INCOMPLETE in reason_codes
+        or REASON_POSTGAME_MARKERS_FAILED in reason_codes
+    ):
+        domains.append(DIAGNOSTIC_DOMAIN_POSTGAME_MARKERS)
+    if any(
+        blocker.get('incomplete_reason') == 'pitcher_resolution_failures'
+        or (blocker.get('pitcher_resolution_failures') or 0) > 0
+        for blocker in blockers or []
+    ):
+        domains.append(DIAGNOSTIC_DOMAIN_PITCHER_RESOLUTION)
+    if REASON_PARTIAL_SYNC in reason_codes:
+        domains.append(DIAGNOSTIC_DOMAIN_PARTIAL_SYNC)
+    if REASON_VALIDATIONS_FAILED in reason_codes:
+        domains.append(DIAGNOSTIC_DOMAIN_VALIDATIONS)
+    return _unique(domains)
+
+
+def _game_diagnostic(game):
+    return {
+        'mlb_game_pk': game['game_pk'],
+        'away_team': game.get('away_team'),
+        'home_team': game.get('home_team'),
+        'game_status': game.get('status_code') or game.get('status_state'),
+        'status_state': game.get('status_state'),
+        'game_type': game.get('game_type'),
+        'resumed_linkage_unresolved': bool(game.get('resumed_linkage_unresolved')),
+    }
 
 
 def _iso_datetime(value):
@@ -269,6 +334,7 @@ def _postgame_blocker_diagnostic(ref, game, marker, reason_code):
             else None
         ),
         'reason_code': reason_code,
+        'diagnostic_domain': DIAGNOSTIC_DOMAIN_POSTGAME_MARKERS,
     }
     if marker is not None and (marker.pitcher_resolution_failures or 0) > 0:
         diagnostic['pitcher_resolution_failure_details'] = (
@@ -309,12 +375,54 @@ def _postgame_blocker_diagnostics(ref, final_games, markers):
     return diagnostics
 
 
-def _slate_diagnostics(ref, postgame_blockers=None):
+def _slate_diagnostics(
+    ref,
+    postgame_blockers=None,
+    *,
+    games=None,
+    final_games=None,
+    reason_codes=None,
+    schedule_material_available=None,
+):
     blockers = postgame_blockers or []
+    reason_codes = list(reason_codes or [])
+    games = list(games or [])
+    final_games = list(final_games or [])
+    failed_game_pks = [
+        blocker['mlb_game_pk']
+        for blocker in blockers
+        if blocker.get('mlb_game_pk') is not None
+    ]
+    non_final_games = [
+        _game_diagnostic(game)
+        for game in games
+        if (
+            game.get('status_state') != ScheduledGame.STATE_FINAL
+            and game.get('status_state') != ScheduledGame.STATE_POSTPONED
+        )
+        or game.get('resumed_linkage_unresolved')
+    ]
+    failure_domains = _diagnostic_domains(reason_codes, blockers)
     return {
         'slate_date': ref.isoformat() if ref else None,
+        'reason_codes': reason_codes,
+        'failure_domains': failure_domains,
+        'schedule_material_available': schedule_material_available,
+        'schedule_known': bool(games) or bool(schedule_material_available),
+        'scheduled_game_count': len(games),
+        'final_game_count': len(final_games),
+        'failed_game_pks': failed_game_pks,
+        'failed_team_ids': _team_ids_from_blockers(blockers),
+        'postgame_blocker_reason_counts': _count_by(
+            blocker.get('reason_code') for blocker in blockers
+        ),
+        'postgame_blocker_incomplete_reason_counts': _count_by(
+            blocker.get('incomplete_reason') for blocker in blockers
+        ),
         'postgame_blocker_count': len(blockers),
         'postgame_blockers': blockers,
+        'non_final_game_count': len(non_final_games),
+        'non_final_games': non_final_games,
     }
 
 
@@ -359,7 +467,10 @@ def compute_slate_coverage(
     if ref is None:
         payload = unknown_slate_coverage(None)
         if include_diagnostics:
-            payload['diagnostics'] = _slate_diagnostics(None)
+            payload['diagnostics'] = _slate_diagnostics(
+                None,
+                reason_codes=payload.get('reason_codes'),
+            )
         return payload
 
     rows = list(schedule_rows) if schedule_rows is not None else _schedule_rows_for_date(ref)
@@ -400,11 +511,20 @@ def compute_slate_coverage(
                 },
             }
             if include_diagnostics:
-                payload['diagnostics'] = _slate_diagnostics(ref)
+                payload['diagnostics'] = _slate_diagnostics(
+                    ref,
+                    games=games,
+                    reason_codes=reason_codes,
+                    schedule_material_available=schedule_material_available,
+                )
             return payload
         payload = unknown_slate_coverage(ref, reason_code=REASON_SCHEDULE_MISSING)
         if include_diagnostics:
-            payload['diagnostics'] = _slate_diagnostics(ref)
+            payload['diagnostics'] = _slate_diagnostics(
+                ref,
+                reason_codes=payload.get('reason_codes'),
+                schedule_material_available=schedule_material_available,
+            )
         return payload
 
     included_games = [
@@ -525,6 +645,10 @@ def compute_slate_coverage(
         payload['diagnostics'] = _slate_diagnostics(
             ref,
             _postgame_blocker_diagnostics(ref, final_games, markers),
+            games=games,
+            final_games=final_games,
+            reason_codes=reason_codes,
+            schedule_material_available=schedule_material_available,
         )
     return payload
 
