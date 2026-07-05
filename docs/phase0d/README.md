@@ -18,10 +18,10 @@ approved branch explicitly changes posture for a registered evidence family.
 - 0D-04: inherited traffic and clean/traffic outing context. Complete.
 - 0D-05: starter exposure and calendar density evidence. Complete.
 - 0D-06: roster, IL, and transaction context. Active/completed in this branch.
-- 0D-07: entry-context bands and usage observations. Active/completed in this
-  branch. Roadmap note: this branch implements the master plan's internal
-  pressure-context proxy with entry-context band vocabulary only.
-- 0D-08: team bullpen structure reads.
+- 0D-07: entry-context bands and usage observations. Complete.
+- 0D-08: team relief contributor composition. Active/completed in this branch.
+  Roadmap note: this branch implements the master plan's team bullpen structure
+  composition item as internal-only team relief contributor composition.
 - 0D-09: integration, public-candidate review, and Phase 0D exit.
 
 The branch map is sequencing only. Branch 0D-01 implements no production
@@ -38,6 +38,9 @@ facts from stored roster snapshots, typed transactions, and transaction
 sync-window coverage rows. Branch 0D-07 adds internal-only entry-context band,
 finish-context, save/hold count, and usage-observation facts from stored game
 logs, slate coverage, and stored 0D-02/0D-03 evidence objects.
+Branch 0D-08 adds internal-only team relief contributor composition facts from
+stored game logs, same-date roster snapshots, slate coverage, play-by-play
+corroboration, and stored 0D-02/0D-04/0D-05/0D-07 evidence objects.
 
 ## Binding Interpretation Rules
 
