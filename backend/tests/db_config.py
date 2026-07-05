@@ -128,6 +128,7 @@ def create_test_schema(app):
     # Several optional test import paths load sync-failure/snapshot tables before
     # the durable sync run model. Import it here so FK metadata is complete
     # regardless of pytest collection order.
+    import models.composed_read  # noqa: F401
     import models.evidence_contract  # noqa: F401
     import models.fatigue_score  # noqa: F401
     import models.game_log  # noqa: F401

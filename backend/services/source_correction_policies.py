@@ -461,3 +461,38 @@ EVIDENCE_CITATION_CORRECTION_POLICY = register_correction_policy(SourceCorrectio
         CorrectionFieldPolicy('provenance', update_after_final=True),
     ),
 ))
+
+COMPOSED_READ_CORRECTION_POLICY = register_correction_policy(SourceCorrectionPolicy(
+    name='composed_read_corrections',
+    source_family='phase0e_composed_read_contract',
+    model_name='ComposedRead',
+    fields=(
+        CorrectionFieldPolicy('read_key', identity_key=True),
+        CorrectionFieldPolicy('read_type', update_after_final=True),
+        CorrectionFieldPolicy('read_version', update_after_final=True),
+        CorrectionFieldPolicy('subject_type', update_after_final=True),
+        CorrectionFieldPolicy('subject_id', update_after_final=True),
+        CorrectionFieldPolicy('subject_key', update_after_final=True),
+        CorrectionFieldPolicy('product_date', update_after_final=True),
+        CorrectionFieldPolicy(
+            'completeness_state',
+            update_after_final=True,
+            unknown_on_unsafe_conflict=True,
+        ),
+        CorrectionFieldPolicy('reason_codes', update_after_final=True),
+        CorrectionFieldPolicy('limitations', update_after_final=True),
+        CorrectionFieldPolicy('component_summary', update_after_final=True),
+        CorrectionFieldPolicy('posture', update_after_final=True),
+        CorrectionFieldPolicy('source', update_after_final=True),
+        CorrectionFieldPolicy('sync_run_id', update_after_final=True),
+        CorrectionFieldPolicy('last_corrected_at', update_after_final=True),
+        CorrectionFieldPolicy('correction_count', update_after_final=True),
+        CorrectionFieldPolicy('correction_source', update_after_final=True),
+        CorrectionFieldPolicy('recompute_status', update_after_final=True),
+        CorrectionFieldPolicy('recompute_reason_codes', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_at', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_by_source_table', update_after_final=True),
+        CorrectionFieldPolicy('invalidated_by_source_pk', update_after_final=True),
+        CorrectionFieldPolicy('superseded_by_read_id', update_after_final=True),
+    ),
+))
