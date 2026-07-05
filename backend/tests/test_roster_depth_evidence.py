@@ -96,6 +96,26 @@ def _sync_run():
     return run
 
 
+def _fixture_sync_run_id():
+    existing = SyncRun.query.filter_by(
+        job_name='phase0d_roster_depth_fixture',
+        source='test_fixture',
+    ).first()
+    if existing is not None:
+        return existing.id
+    run = SyncRun(
+        job_name='phase0d_roster_depth_fixture',
+        started_at=datetime(2026, 7, 4, 9, 0, 0),
+        completed_at=datetime(2026, 7, 4, 9, 0, 1),
+        status='success',
+        stage='fixture',
+        source='test_fixture',
+    )
+    db.session.add(run)
+    db.session.flush()
+    return run.id
+
+
 def _pitcher(pid, mlb_id, name, team_id=116):
     row = Pitcher(
         id=pid,
@@ -137,7 +157,7 @@ def _snapshot(
         roster_status_raw_code='stored',
         roster_status_raw_description='stored',
         source=source,
-        sync_run_id=1,
+        sync_run_id=_fixture_sync_run_id(),
         first_seen_at=datetime(2026, 7, 4, 10, 0, 0),
         created_at=datetime(2026, 7, 4, 10, 0, 0),
         updated_at=datetime(2026, 7, 4, 10, 0, 0),
@@ -186,7 +206,7 @@ def _transaction(
         source_endpoint='/transactions',
         source_query_start_date=PRODUCT_DATE - timedelta(days=13),
         source_query_end_date=PRODUCT_DATE,
-        sync_run_id=1,
+        sync_run_id=_fixture_sync_run_id(),
         first_seen_at=datetime(2026, 7, 4, 10, 0, 0),
         created_at=datetime(2026, 7, 4, 10, 0, 0),
         updated_at=datetime(2026, 7, 4, 10, 0, 0),
@@ -215,7 +235,7 @@ def _coverage(start_days_ago=13, end_days_ago=0, status='success'):
         alignment_misaligned_count=0,
         alignment_no_snapshot_count=0,
         records_failed=0 if status == 'success' else 1,
-        sync_run_id=1,
+        sync_run_id=_fixture_sync_run_id(),
         created_at=datetime(2026, 7, 4, 10, 0, 0),
     )
     db.session.add(row)
