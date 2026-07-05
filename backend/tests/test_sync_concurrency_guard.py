@@ -277,8 +277,13 @@ def test_daily_sync_logs_post_fatigue_phase_instrumentation(
     ), messages
 
 
-def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client):
+def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client, monkeypatch):
     with client.application.app_context():
+        monkeypatch.setattr(
+            sync_metadata,
+            '_uses_postgres_advisory_writer_lock',
+            lambda: False,
+        )
         stale_run = SyncRun(
             started_at=utc_now_naive() - timedelta(minutes=180),
             status=sync_metadata.STATUS_RUNNING,
@@ -397,8 +402,13 @@ def test_postgres_free_advisory_lock_reclaims_abandoned_running_row_immediately(
         assert sync_metadata.latest_running_sync_run() is None
 
 
-def test_active_running_sync_run_is_not_stolen(client):
+def test_active_running_sync_run_is_not_stolen(client, monkeypatch):
     with client.application.app_context():
+        monkeypatch.setattr(
+            sync_metadata,
+            '_uses_postgres_advisory_writer_lock',
+            lambda: False,
+        )
         active_run = SyncRun(
             started_at=utc_now_naive() - timedelta(minutes=10),
             status=sync_metadata.STATUS_RUNNING,
