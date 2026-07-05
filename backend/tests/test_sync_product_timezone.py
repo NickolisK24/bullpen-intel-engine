@@ -9,6 +9,7 @@ import models.prospect  # noqa: F401
 import services.sync as sync_service
 from models.game_log import GameLog
 from models.pitcher import Pitcher
+from services import sync_metadata
 from services.availability_reference_date import product_current_date
 from utils.db import db
 
@@ -116,6 +117,11 @@ def test_daily_sync_offseason_check_uses_product_timezone_day(
     fixed_utc,
     expected_product_day,
 ):
+    monkeypatch.setattr(
+        sync_metadata,
+        '_uses_postgres_advisory_writer_lock',
+        lambda: False,
+    )
     monkeypatch.setattr(sync_service, 'datetime', _fixed_datetime_class(fixed_utc))
     monkeypatch.setattr(
         sync_service,

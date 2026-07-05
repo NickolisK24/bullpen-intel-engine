@@ -57,6 +57,7 @@ SYNC_WRITER_LOCK_KEY = 820260801
 SYNC_WRITER_ALREADY_RUNNING = 'sync_writer_already_running'
 SYNC_WRITER_LOCK_UNAVAILABLE = 'sync_writer_lock_unavailable'
 SYNC_WRITER_STALE_RECLAIMED = 'sync_writer_stale_reclaimed'
+SYNC_WRITER_ABANDONED_RECLAIMED = 'sync_writer_abandoned_reclaimed'
 SYNC_WRITER_STALE_AFTER_MINUTES = 120
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,37 @@ def stale_running_sync_runs(now=None):
     )
 
 
+def running_sync_runs():
+    return (
+        SyncRun.query
+        .filter(SyncRun.status == STATUS_RUNNING)
+        .order_by(SyncRun.started_at.asc(), SyncRun.id.asc())
+        .all()
+    )
+
+
+def _mark_running_sync_runs_reclaimed(runs, *, completed_at, message, commit):
+    if not runs:
+        return []
+    for run in runs:
+        prior_stage = run.stage
+        run.status = STATUS_FAILED
+        run.stage = STAGE_FAILED
+        run.failed_stage = prior_stage
+        run.completed_at = completed_at
+        run.errors = max(run.errors or 0, 1)
+        if run.error_message:
+            run.error_message = f'{run.error_message}; {message}'
+        else:
+            run.error_message = message
+        db.session.add(run)
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
+    return runs
+
+
 def recover_stale_running_sync_runs(now=None, *, commit=True):
     """
     Mark abandoned running rows failed after the writer lock is held.
@@ -128,27 +160,45 @@ def recover_stale_running_sync_runs(now=None, *, commit=True):
     stale_runs = stale_running_sync_runs(now)
     if not stale_runs:
         return []
-    for run in stale_runs:
-        prior_stage = run.stage
-        run.status = STATUS_FAILED
-        run.stage = STAGE_FAILED
-        run.failed_stage = prior_stage
-        run.completed_at = now
-        run.errors = max(run.errors or 0, 1)
-        message = (
-            f'Stale running sync reclaimed after '
-            f'{_sync_writer_stale_after_minutes()} minutes.'
-        )
-        if run.error_message:
-            run.error_message = f'{run.error_message}; {message}'
-        else:
-            run.error_message = message
-        db.session.add(run)
-    if commit:
-        db.session.commit()
-    else:
-        db.session.flush()
-    return stale_runs
+    message = (
+        f'Stale running sync reclaimed after '
+        f'{_sync_writer_stale_after_minutes()} minutes.'
+    )
+    return _mark_running_sync_runs_reclaimed(
+        stale_runs,
+        completed_at=now,
+        message=message,
+        commit=commit,
+    )
+
+
+def recover_abandoned_running_sync_runs(now=None, *, commit=True):
+    """
+    Mark all durable running rows failed while the Postgres writer lock is held.
+
+    A successfully acquired Postgres advisory lock proves no other writer still
+    holds the exclusive sync lock. Any durable running row observed at that point
+    was left behind by an interrupted process and should not block retries.
+    """
+    now = now or _now()
+    abandoned_runs = running_sync_runs()
+    if not abandoned_runs:
+        return []
+    message = (
+        'Abandoned running sync reclaimed because Postgres advisory lock was free.'
+    )
+    reclaimed = _mark_running_sync_runs_reclaimed(
+        abandoned_runs,
+        completed_at=now,
+        message=message,
+        commit=commit,
+    )
+    logger.warning(
+        'Reclaimed %s abandoned running sync row(s) after acquiring the '
+        'Postgres advisory lock.',
+        len(reclaimed),
+    )
+    return reclaimed
 
 
 class SyncWriterConflict(RuntimeError):
@@ -251,15 +301,22 @@ def _acquire_process_writer_lock(job_name=None, source=None):
     return SyncWriterGuard(process_lock_acquired=True)
 
 
+def _uses_postgres_advisory_writer_lock():
+    return getattr(db.engine.dialect, 'name', '') == 'postgresql'
+
+
 def acquire_sync_writer_guard(*, job_name=JOB_DAILY_SYNC, source=SOURCE_MANUAL):
-    dialect = getattr(db.engine.dialect, 'name', '')
+    uses_postgres_lock = _uses_postgres_advisory_writer_lock()
     guard = (
         _acquire_postgres_writer_lock(job_name=job_name, source=source)
-        if dialect == 'postgresql'
+        if uses_postgres_lock
         else _acquire_process_writer_lock(job_name=job_name, source=source)
     )
     try:
-        recover_stale_running_sync_runs()
+        if uses_postgres_lock:
+            recover_abandoned_running_sync_runs()
+        else:
+            recover_stale_running_sync_runs()
         active_run = latest_running_sync_run()
         if active_run is not None:
             raise SyncWriterConflict(

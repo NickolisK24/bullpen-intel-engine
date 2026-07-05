@@ -15,7 +15,7 @@ from models.postgame_processed_game import PostgameProcessedGame
 from models.scheduled_game import ScheduledGame
 from models.sync_run import SyncRun
 import models.prospect  # noqa: F401
-from services import dashboard_snapshot
+from services import dashboard_snapshot, sync_metadata
 from services.roster_status import STATUS_ACTIVE
 from utils.db import db
 from utils.time import utc_now_naive
@@ -618,25 +618,48 @@ class TestDashboardSnapshotService:
             assert snapshot.status == dashboard_snapshot.SNAPSHOT_STATUS_FAILED
             assert 'builder exploded' in snapshot.error_message
 
-    def test_standalone_builder_does_not_publish_during_running_sync(self, app):
+    def test_standalone_builder_does_not_publish_during_running_sync(self, app, monkeypatch):
         with app.app_context():
             _seed_dashboard_data()
             prior, _ = _build_published_dashboard_snapshot()
             prior_snapshot_id = prior['snapshot_id']
-            db.session.add(SyncRun(
+            active_run = SyncRun(
                 started_at=utc_now_naive(),
                 status='running',
                 stage='log_ingestion',
                 source='manual',
                 created_at=utc_now_naive(),
-            ))
+            )
+            db.session.add(active_run)
             db.session.commit()
+            active_run_id = active_run.id
+
+            monkeypatch.setattr(
+                sync_metadata,
+                '_uses_postgres_advisory_writer_lock',
+                lambda: True,
+            )
+
+            def busy_lock(*, job_name=None, source=None):
+                raise sync_metadata.SyncWriterConflict(
+                    reason=sync_metadata.SYNC_WRITER_ALREADY_RUNNING,
+                    job_name=job_name,
+                    source=source,
+                    active_run=db.session.get(SyncRun, active_run_id),
+                )
+
+            monkeypatch.setattr(
+                sync_metadata,
+                '_acquire_postgres_writer_lock',
+                busy_lock,
+            )
 
             result = dashboard_snapshot.build_bullpen_dashboard_snapshot_v2(source='test')
 
             assert result['status'] == 'blocked'
             assert result['reason'] == 'sync_writer_already_running'
             assert result['snapshot_served_by_dashboard'] is False
+            assert db.session.get(SyncRun, active_run_id).status == 'running'
             assert (
                 dashboard_snapshot.get_latest_valid_dashboard_snapshot().id
                 == prior_snapshot_id
