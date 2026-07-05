@@ -85,3 +85,18 @@ The deferred derivation is also polluted by:
 Phase 0D-09 must decide whether BaseballOS adds a future foundation that can
 store the needed state safely, permanently accepts boxscore-only inherited
 attribution, or keeps bequeathed traffic out of the evidence system.
+
+## Reliever/Starter Partition Deferral
+
+Phase 0D-06 registers `team_active_reliever_count` only as an UNKNOWN rule.
+
+The roster snapshot foundation can count active pitchers, but it does not
+provide an official reliever/starter partition. Transactions explain movement;
+they do not authorize a role partition. Usage observations from later Phase 0D
+work may describe appearances, but they do not become an official roster
+partition by themselves.
+
+Phase 0D-09 must decide whether BaseballOS adds a future authorized
+reliever/starter partition, keeps active-pitcher census as the only roster-depth
+count, or allows a separate usage-observation family with clear non-roster
+limits.

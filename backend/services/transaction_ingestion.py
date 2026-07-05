@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date, datetime, timedelta
 import hashlib
+import logging
 
 from models.pitcher import Pitcher
 from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
@@ -12,6 +13,8 @@ from services.mlb_api import mlb_client
 from utils.db import db
 from utils.time import utc_now_naive
 
+
+logger = logging.getLogger(__name__)
 
 SOURCE_PREFIX = 'mlb_stats_api:transactions'
 SOURCE_ENDPOINT = '/transactions'
@@ -421,6 +424,10 @@ def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
             sync_run_id=sync_run_id,
             corrected_at=timestamp,
         )
+        _notify_roster_depth_evidence_transaction_correction(
+            existing,
+            sync_run_id=sync_run_id,
+        )
         db.session.add(existing)
         db.session.flush()
         return existing, 'corrected'
@@ -428,6 +435,24 @@ def _upsert_player_transaction(values, *, sync_run_id=None, timestamp=None):
     db.session.add(existing)
     db.session.flush()
     return existing, 'unchanged'
+
+
+def _notify_roster_depth_evidence_transaction_correction(transaction_row, *, sync_run_id=None):
+    try:
+        from services.roster_depth_evidence import (
+            mark_player_transaction_correction_for_roster_depth,
+        )
+        return mark_player_transaction_correction_for_roster_depth(
+            transaction_row,
+            sync_run_id=sync_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - correction marking must not block sync
+        logger.warning(
+            'Could not mark roster depth evidence for transaction correction id=%s: %s',
+            getattr(transaction_row, 'id', None),
+            exc,
+        )
+        return {'marked_count': 0, 'evidence_ids': []}
 
 
 def _alignment_for(
