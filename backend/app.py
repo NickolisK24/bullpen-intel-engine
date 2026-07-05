@@ -140,6 +140,7 @@ def create_app(config_name=None):
     from models.player_transaction import PlayerTransaction, PlayerTransactionSyncWindow
     from models.play_by_play_foundation import GamePlayByPlayEvent, PlayByPlayProcessedGame
     from models.team_game_pitching_split import TeamGamePitchingSplit
+    from models.evidence_contract import EvidenceCitation, EvidenceObject
     from models.composed_read import ComposedRead, ComposedReadComponent, ComposedReadEvidenceCitation
 
     from api.bullpen import bullpen_bp

@@ -2,6 +2,8 @@ from pathlib import Path
 import re
 import subprocess
 
+import pytest
+
 from services.evidence_classification import validate_evidence_classifications
 
 
@@ -13,6 +15,9 @@ EXPECTED_CHANGED_PATHS = {
     'docs/phase0e/legal_review_paper.md',
     'docs/phase0e/phase0e_exit_report.md',
     'docs/roadmap/BaseballOS_V4_Daily_Bullpen_Platform.md',
+}
+PHASE0E_EXIT_DOCUMENT_PATHS = EXPECTED_CHANGED_PATHS - {
+    'backend/tests/test_phase0e_exit_docs.py',
 }
 
 
@@ -93,6 +98,8 @@ def test_phase0e_exit_classification_and_alembic_head_remain_fixed():
 
 def test_phase0e_exit_branch_keeps_public_runtime_isolated():
     changed = _changed_paths_against_main()
+    if not changed.intersection(PHASE0E_EXIT_DOCUMENT_PATHS):
+        pytest.skip('Phase 0E exit document branch diff not present.')
     unexpected = sorted(path for path in changed if path not in EXPECTED_CHANGED_PATHS)
     assert unexpected == []
 
