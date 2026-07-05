@@ -66,3 +66,22 @@ For per-inning clean/traffic granularity:
 Phase 0D-09 decides whether BaseballOS adds a base-state foundation addendum or
 permanently accepts boxscore-only inherited attribution with documented
 granularity limits.
+
+## Bequeathed-Traffic Deferral
+
+Phase 0D-04 does not register or emit a bequeathed-traffic rule.
+
+Bequeathed traffic remains deferred because the available derivation would join
+a predecessor appearance to a successor's `game_logs.inherited_runners` value
+through 0D-03 succession. That would turn 0D-03 timing corroboration into
+derivation-by-join.
+
+The deferred derivation is also polluted by:
+
+- extra-innings automatic runner
+- multi-change innings
+- successor NULL inherited fields
+
+Phase 0D-09 must decide whether BaseballOS adds a future foundation that can
+store the needed state safely, permanently accepts boxscore-only inherited
+attribution, or keeps bequeathed traffic out of the evidence system.
