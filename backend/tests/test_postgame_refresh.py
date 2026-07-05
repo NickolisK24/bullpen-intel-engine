@@ -578,7 +578,61 @@ def test_postgame_sync_workflow_warms_tonight_after_postgame_refresh():
     assert text.index('      - name: Run direct postgame refresh\n') < text.index(postgame_step)
     assert text.index(postgame_step) < text.index('      - name: Verify dashboard snapshot cache\n')
 
+    daily_block = text.split(daily_step, 1)[1].split('\n      - name:', 1)[0]
     postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
+    assert 'TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m' in daily_block
+    assert "TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'" in daily_block
+    assert "TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'" in daily_block
+    assert 'Refresh schedule and warm Tonight starting at' in daily_block
+    assert 'Refresh schedule and warm Tonight completed at' in daily_block
+    assert (
+        'timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" '
+        'python backend/scripts/run_tonight_refresh.py --source github_actions'
+    ) in daily_block
+
     assert "inputs.mode == 'postgame'" in postgame_block
     assert "github.event.schedule != '0 10 * * *'" in postgame_block
-    assert 'python backend/scripts/run_tonight_refresh.py --source github_actions_postgame' in postgame_block
+    assert 'TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m' in postgame_block
+    assert "TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'" in postgame_block
+    assert "TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'" in postgame_block
+    assert 'Refresh schedule and warm Tonight after postgame starting at' in postgame_block
+    assert 'Refresh schedule and warm Tonight after postgame completed at' in postgame_block
+    assert (
+        'timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" '
+        'python backend/scripts/run_tonight_refresh.py --source github_actions_postgame'
+    ) in postgame_block
+
+
+def test_sync_workflow_direct_sync_steps_have_command_timeouts():
+    """Static guard: long-running direct sync commands fail with named errors
+    before the workflow job timeout is the only signal."""
+    from pathlib import Path
+
+    workflow = Path(__file__).resolve().parents[2] / '.github/workflows/baseballos-sync.yml'
+    text = workflow.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    daily_step = '      - name: Run direct daily sync\n'
+    postgame_step = '      - name: Run direct postgame refresh\n'
+    daily_block = text.split(daily_step, 1)[1].split('\n      - name:', 1)[0]
+    postgame_block = text.split(postgame_step, 1)[1].split('\n      - name:', 1)[0]
+
+    assert 'DAILY_SYNC_COMMAND_TIMEOUT: 20m' in daily_block
+    assert 'Direct daily sync starting at' in daily_block
+    assert 'Direct daily sync completed at' in daily_block
+    assert (
+        'timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" '
+        'python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions'
+    ) in daily_block
+    assert '::error::Direct daily sync timed out after $DAILY_SYNC_COMMAND_TIMEOUT.' in daily_block
+
+    assert 'POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m' in postgame_block
+    assert 'Direct postgame refresh starting at' in postgame_block
+    assert 'Direct postgame refresh completed at' in postgame_block
+    assert (
+        'timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" '
+        'python backend/scripts/run_postgame_refresh.py --source github_actions'
+    ) in postgame_block
+    assert (
+        '::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT.'
+        in postgame_block
+    )

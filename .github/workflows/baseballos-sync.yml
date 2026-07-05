@@ -77,13 +77,27 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          DAILY_SYNC_COMMAND_TIMEOUT: 20m
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions
+          echo "Direct daily sync starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$DAILY_SYNC_COMMAND_TIMEOUT" python backend/scripts/run_daily_sync.py --days-back 7 --source github_actions
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Direct daily sync timed out after $DAILY_SYNC_COMMAND_TIMEOUT."
+            else
+              echo "::error::Direct daily sync failed with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Direct daily sync completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Refresh schedule and warm Tonight
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') || (github.event_name == 'schedule' && github.event.schedule == '0 10 * * *') }}
@@ -93,13 +107,29 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m
+          TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'
+          TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          python backend/scripts/run_tonight_refresh.py --source github_actions
+          echo "Refresh schedule and warm Tonight starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_tonight_refresh.py --source github_actions
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Refresh schedule and warm Tonight timed out after $TONIGHT_REFRESH_COMMAND_TIMEOUT."
+            else
+              echo "::error::Refresh schedule and warm Tonight failed with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Refresh schedule and warm Tonight completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Run direct postgame refresh
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
@@ -109,13 +139,27 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          POSTGAME_REFRESH_COMMAND_TIMEOUT: 20m
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          python backend/scripts/run_postgame_refresh.py --source github_actions
+          echo "Direct postgame refresh starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$POSTGAME_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_postgame_refresh.py --source github_actions
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Direct postgame refresh timed out after $POSTGAME_REFRESH_COMMAND_TIMEOUT."
+            else
+              echo "::error::Direct postgame refresh failed with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Direct postgame refresh completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Refresh schedule and warm Tonight after postgame
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.mode == 'postgame') || (github.event_name == 'schedule' && github.event.schedule != '0 10 * * *') }}
@@ -125,13 +169,29 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ADMIN_API_TOKEN: ${{ secrets.BASEBALLOS_ADMIN_API_TOKEN }}
           AUTO_SYNC: 'false'
+          TONIGHT_REFRESH_COMMAND_TIMEOUT: 10m
+          TONIGHT_REFRESH_SCHEDULE_TIMEOUT_SECONDS: '180'
+          TONIGHT_REFRESH_WARM_TIMEOUT_SECONDS: '300'
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ -z "${SECRET_KEY:-}" ] || [ -z "${ADMIN_API_TOKEN:-}" ]; then
             echo "::error::Missing DATABASE_URL, SECRET_KEY, or BASEBALLOS_ADMIN_API_TOKEN repository secret."
             exit 1
           fi
-          python backend/scripts/run_tonight_refresh.py --source github_actions_postgame
+          echo "Refresh schedule and warm Tonight after postgame starting at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          set +e
+          timeout --kill-after=30s "$TONIGHT_REFRESH_COMMAND_TIMEOUT" python backend/scripts/run_tonight_refresh.py --source github_actions_postgame
+          exit_code=$?
+          set -e
+          if [ "$exit_code" -ne 0 ]; then
+            if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ] || [ "$exit_code" -eq 143 ]; then
+              echo "::error::Refresh schedule and warm Tonight after postgame timed out after $TONIGHT_REFRESH_COMMAND_TIMEOUT."
+            else
+              echo "::error::Refresh schedule and warm Tonight after postgame failed with exit code $exit_code."
+            fi
+            exit "$exit_code"
+          fi
+          echo "Refresh schedule and warm Tonight after postgame completed at $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
       - name: Verify dashboard snapshot cache
         env:
