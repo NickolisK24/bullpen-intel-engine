@@ -302,6 +302,101 @@ def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client):
         assert 'Stale running sync reclaimed' in run.error_message
 
 
+def test_postgres_busy_advisory_lock_preserves_active_running_row(
+    client,
+    monkeypatch,
+):
+    with client.application.app_context():
+        active_run = SyncRun(
+            started_at=utc_now_naive() - timedelta(minutes=10),
+            status=sync_metadata.STATUS_RUNNING,
+            stage=sync_metadata.STAGE_LOG_INGESTION,
+            source='github_actions',
+            created_at=utc_now_naive() - timedelta(minutes=10),
+        )
+        db.session.add(active_run)
+        db.session.commit()
+        active_run_id = active_run.id
+
+        monkeypatch.setattr(
+            sync_metadata,
+            '_uses_postgres_advisory_writer_lock',
+            lambda: True,
+        )
+
+        def busy_lock(*, job_name=None, source=None):
+            raise sync_metadata.SyncWriterConflict(
+                reason=sync_metadata.SYNC_WRITER_ALREADY_RUNNING,
+                job_name=job_name,
+                source=source,
+                active_run=sync_metadata.latest_running_sync_run(),
+            )
+
+        monkeypatch.setattr(
+            sync_metadata,
+            '_acquire_postgres_writer_lock',
+            busy_lock,
+        )
+
+        with pytest.raises(sync_metadata.SyncWriterConflict) as exc:
+            sync_metadata.acquire_sync_writer_guard(
+                job_name=sync_metadata.JOB_DAILY_SYNC,
+                source='github_actions',
+            )
+
+        run = db.session.get(SyncRun, active_run_id)
+        assert exc.value.reason == sync_metadata.SYNC_WRITER_ALREADY_RUNNING
+        assert exc.value.active_run.id == active_run_id
+        assert run.status == sync_metadata.STATUS_RUNNING
+        assert run.completed_at is None
+        assert run.stage == sync_metadata.STAGE_LOG_INGESTION
+
+
+def test_postgres_free_advisory_lock_reclaims_abandoned_running_row_immediately(
+    client,
+    monkeypatch,
+):
+    with client.application.app_context():
+        abandoned_run = SyncRun(
+            started_at=utc_now_naive() - timedelta(minutes=10),
+            status=sync_metadata.STATUS_RUNNING,
+            stage=sync_metadata.STAGE_COMPOSED_READS,
+            source='github_actions',
+            created_at=utc_now_naive() - timedelta(minutes=10),
+        )
+        db.session.add(abandoned_run)
+        db.session.commit()
+        abandoned_run_id = abandoned_run.id
+
+        guard = sync_metadata.SyncWriterGuard()
+        monkeypatch.setattr(
+            sync_metadata,
+            '_uses_postgres_advisory_writer_lock',
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            sync_metadata,
+            '_acquire_postgres_writer_lock',
+            lambda **_kwargs: guard,
+        )
+
+        acquired = sync_metadata.acquire_sync_writer_guard(
+            job_name=sync_metadata.JOB_DAILY_SYNC,
+            source='github_actions',
+        )
+        acquired.release()
+
+        run = db.session.get(SyncRun, abandoned_run_id)
+        assert acquired is guard
+        assert run.status == sync_metadata.STATUS_FAILED
+        assert run.stage == sync_metadata.STAGE_FAILED
+        assert run.failed_stage == sync_metadata.STAGE_COMPOSED_READS
+        assert run.completed_at is not None
+        assert run.errors == 1
+        assert 'Postgres advisory lock was free' in run.error_message
+        assert sync_metadata.latest_running_sync_run() is None
+
+
 def test_active_running_sync_run_is_not_stolen(client):
     with client.application.app_context():
         active_run = SyncRun(
