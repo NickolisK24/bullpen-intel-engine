@@ -132,6 +132,7 @@ def create_test_schema(app):
     import models.evidence_contract  # noqa: F401
     import models.fatigue_score  # noqa: F401
     import models.game_log  # noqa: F401
+    import models.legacy_read_audit  # noqa: F401
     import models.pitcher  # noqa: F401
     import models.play_by_play_foundation  # noqa: F401
     import models.postgame_processed_game  # noqa: F401
