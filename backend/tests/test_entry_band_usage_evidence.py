@@ -808,6 +808,73 @@ def test_entry_band_usage_build_batches_evidence_upserts(app, monkeypatch):
     assert result['objects_built'] > 0
 
 
+def test_entry_band_usage_persistence_skips_unchanged_rows_and_logs_stages(
+    app,
+    monkeypatch,
+    caplog,
+):
+    with app.app_context():
+        run = _sync_run()
+        pitcher = _pitcher(seed=82)
+        _window_fixture(pitcher, 5, finished_count=2, start_suffix=240)
+        first = build_entry_band_usage_evidence(PRODUCT_DATE, sync_run_id=run.id)
+        second = build_entry_band_usage_evidence(PRODUCT_DATE, sync_run_id=run.id)
+        converged_count = EvidenceObject.query.filter(
+            EvidenceObject.rule_id.in_(ENTRY_BAND_USAGE_RULE_IDS)
+        ).count()
+
+        monkeypatch.setattr(
+            entry_service,
+            '_refresh_existing_evidence',
+            lambda *_args, **_kwargs: pytest.fail(
+                'unchanged entry-band evidence was refreshed'
+            ),
+        )
+
+        with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+            third = build_entry_band_usage_evidence(PRODUCT_DATE, sync_run_id=run.id)
+        final_count = EvidenceObject.query.filter(
+            EvidenceObject.rule_id.in_(ENTRY_BAND_USAGE_RULE_IDS)
+        ).count()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert first['objects_built'] > 0
+    assert second['objects_refreshed'] > 0
+    assert converged_count == final_count
+    assert third['objects_built'] == first['objects_built']
+    assert third['objects_created'] == 0
+    assert third['objects_refreshed'] == 0
+    assert third['objects_unchanged'] == third['objects_built']
+    assert any(
+        'Entry band usage persistence lookup starting:' in message
+        and 'evidence_keys=' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage persistence lookup completed:' in message
+        and 'existing_objects=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage persistence plan completed:' in message
+        and 'objects_unchanged=' in message
+        and 'citations_refreshed=0' in message
+        and 'supersession_traces=0' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage persistence flush skipped: objects_changed=0.' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage finalization completed:' in message
+        and 'action=flush' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+
+
 def test_entry_band_usage_build_preloads_finality_and_source_evidence(app, monkeypatch, caplog):
     with app.app_context():
         run = _sync_run()
