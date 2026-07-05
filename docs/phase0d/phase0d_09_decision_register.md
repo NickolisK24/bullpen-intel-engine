@@ -90,3 +90,77 @@ Current decision:
 
 - keep the partition unavailable, or require a future authorized source before
   any roster partition can exist
+
+## 0D-08 Carried Decisions
+
+### Team-Level Band Aggregation
+
+Current decision:
+
+- no team-level aggregation over `appearance_entry_band` is registered in 0D-08
+- no team-level aggregation over `pitcher_entry_band_distribution` is registered
+  in 0D-08
+- lock inheritance remains intact for both rules
+
+0D-09 decision needed:
+
+- confirm the lock inheritance remains intact, or require a separately scoped
+  future branch before any team-level band aggregation can exist
+
+### Appearance Team Attribution
+
+Current decision:
+
+- same-date roster snapshot authority is the mandatory precedent for appearance
+  team attribution
+- play-by-play fielding team is corroboration only when events exist
+- snapshot/play-by-play disagreement is excluded as `attribution_conflict`
+- missing same-date snapshot authority is excluded as `attribution_unknown`
+- opponent strings are never attribution authority
+
+0D-09 decision needed:
+
+- carry this attribution method forward for any future family that composes
+  team-level appearance evidence
+
+### Basis Disclaimer
+
+Current decision:
+
+- Rule 1 basis claims must state that the set is appearance-evidenced
+- Rule 1 basis claims must state that the team's roster reliever count remains
+  unknown by design
+- `team_active_reliever_count` remains UNKNOWN by contract
+
+0D-09 decision needed:
+
+- keep the disclaimer as a public-language precondition for any future
+  composition read
+
+### Rule 5 Emission Policy Dependency
+
+Current decision:
+
+- Rule 5 depends on the 0D-04 emission policy
+- once the 0D-04 family ran for a window date, absence of `outing_clean`,
+  `outing_traffic`, and `outing_context_unknown` is provably neither
+- changing that 0D-04 policy is a breaking change for Rule 5
+
+0D-09 decision needed:
+
+- confirm this dependency before any public-candidate review of Rule 5
+
+### Deferred Scope Reaffirmation
+
+Current decision:
+
+- the reliever/starter partition remains locked
+- handedness remains deferred
+- opener/bulk remains deferred
+- base-state remains deferred
+- bequeathed traffic remains deferred
+
+0D-09 decision needed:
+
+- keep these items outside Phase 0D exit unless a separate authorized source
+  foundation is approved

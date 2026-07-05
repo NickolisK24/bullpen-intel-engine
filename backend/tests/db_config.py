@@ -129,6 +129,13 @@ def create_test_schema(app):
     # the durable sync run model. Import it here so FK metadata is complete
     # regardless of pytest collection order.
     import models.evidence_contract  # noqa: F401
+    import models.game_log  # noqa: F401
+    import models.pitcher  # noqa: F401
+    import models.play_by_play_foundation  # noqa: F401
+    import models.postgame_processed_game  # noqa: F401
+    import models.roster_status_snapshot  # noqa: F401
+    import models.scheduled_game  # noqa: F401
+    import models.sync_failure  # noqa: F401
     import models.sync_run  # noqa: F401
     from utils.db import db
     db.create_all()

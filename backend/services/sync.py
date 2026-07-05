@@ -2183,6 +2183,10 @@ def _safe_build_workload_recovery_evidence_stage(
             build_entry_band_usage_evidence,
             rebuild_marked_entry_band_usage_evidence,
         )
+        from services.team_relief_composition_evidence import (
+            build_team_relief_composition_evidence,
+            rebuild_marked_team_relief_composition_evidence,
+        )
         from services.workload_recovery_evidence import (
             build_workload_recovery_evidence,
             rebuild_marked_workload_recovery_evidence,
@@ -2209,6 +2213,10 @@ def _safe_build_workload_recovery_evidence_stage(
             source=source,
         )
         entry_band_usage_rebuild = rebuild_marked_entry_band_usage_evidence(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        team_relief_composition_rebuild = rebuild_marked_team_relief_composition_evidence(
             sync_run_id=sync_run_id,
             source=source,
         )
@@ -2260,15 +2268,25 @@ def _safe_build_workload_recovery_evidence_stage(
             )
             for product_date in dates
         ]
+        team_relief_composition_builds = [
+            build_team_relief_composition_evidence(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
         db.session.commit()
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.info(
             'Phase 0D evidence stage complete: dates=%s workload_rebuilt=%s '
             'appearance_rebuilt=%s inherited_rebuilt=%s starter_exposure_rebuilt=%s '
             'roster_depth_rebuilt=%s entry_band_usage_rebuilt=%s '
+            'team_relief_composition_rebuilt=%s '
             'workload_objects_built=%s appearance_objects_built=%s '
             'inherited_objects_built=%s starter_exposure_objects_built=%s '
             'roster_depth_objects_built=%s entry_band_usage_objects_built=%s '
+            'team_relief_composition_objects_built=%s '
             'elapsed_ms=%s.',
             ','.join(day.isoformat() for day in dates),
             rebuild.get('objects_rebuilt', 0),
@@ -2277,12 +2295,14 @@ def _safe_build_workload_recovery_evidence_stage(
             starter_exposure_rebuild.get('objects_rebuilt', 0),
             roster_depth_rebuild.get('objects_rebuilt', 0),
             entry_band_usage_rebuild.get('objects_rebuilt', 0),
+            team_relief_composition_rebuild.get('objects_rebuilt', 0),
             sum(item.get('objects_built', 0) for item in builds),
             sum(item.get('objects_built', 0) for item in appearance_builds),
             sum(item.get('objects_built', 0) for item in inherited_builds),
             sum(item.get('objects_built', 0) for item in starter_exposure_builds),
             sum(item.get('objects_built', 0) for item in roster_depth_builds),
             sum(item.get('objects_built', 0) for item in entry_band_usage_builds),
+            sum(item.get('objects_built', 0) for item in team_relief_composition_builds),
             elapsed_ms,
         )
         return {
@@ -2300,6 +2320,8 @@ def _safe_build_workload_recovery_evidence_stage(
             'roster_depth_builds': roster_depth_builds,
             'entry_band_usage_rebuild': entry_band_usage_rebuild,
             'entry_band_usage_builds': entry_band_usage_builds,
+            'team_relief_composition_rebuild': team_relief_composition_rebuild,
+            'team_relief_composition_builds': team_relief_composition_builds,
             'elapsed_ms': elapsed_ms,
         }
     except Exception as exc:  # noqa: BLE001 - optional evidence stage is fail-soft
