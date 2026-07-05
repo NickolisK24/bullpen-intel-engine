@@ -2204,91 +2204,113 @@ def _safe_build_workload_recovery_evidence_stage(
             build_workload_recovery_evidence,
             rebuild_marked_workload_recovery_evidence,
         )
+
+        dates_label = ','.join(day.isoformat() for day in dates)
+
+        def run_evidence_step(step_name, action):
+            step_started = time.perf_counter()
+            logger_to_use.info(
+                'Phase 0D evidence step starting: step=%s dates=%s.',
+                step_name,
+                dates_label,
+            )
+            try:
+                result = action()
+            except Exception:
+                elapsed_ms = round((time.perf_counter() - step_started) * 1000, 1)
+                logger_to_use.warning(
+                    'Phase 0D evidence step failed: step=%s dates=%s elapsed_ms=%s.',
+                    step_name,
+                    dates_label,
+                    elapsed_ms,
+                )
+                raise
+            elapsed_ms = round((time.perf_counter() - step_started) * 1000, 1)
+            logger_to_use.info(
+                'Phase 0D evidence step completed: step=%s status=%s '
+                'objects_built=%s objects_rebuilt=%s dates_rebuilt=%s elapsed_ms=%s.',
+                step_name,
+                result.get('status'),
+                result.get('objects_built', 0),
+                result.get('objects_rebuilt', 0),
+                ','.join(result.get('dates_rebuilt') or []),
+                elapsed_ms,
+            )
+            return result
+
+        def build_for_dates(step_name, builder):
+            return [
+                run_evidence_step(
+                    f'{step_name}:{product_date.isoformat()}',
+                    lambda product_date=product_date: builder(
+                        product_date,
+                        sync_run_id=sync_run_id,
+                        source=source,
+                    ),
+                )
+                for product_date in dates
+            ]
+
         sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_WORKLOAD_EVIDENCE)
-        rebuild = rebuild_marked_workload_recovery_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        appearance_rebuild = rebuild_marked_appearance_context_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        inherited_rebuild = rebuild_marked_inherited_traffic_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        starter_exposure_rebuild = rebuild_marked_starter_exposure_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        roster_depth_rebuild = rebuild_marked_roster_depth_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        entry_band_usage_rebuild = rebuild_marked_entry_band_usage_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        team_relief_composition_rebuild = rebuild_marked_team_relief_composition_evidence(
-            sync_run_id=sync_run_id,
-            source=source,
-        )
-        builds = [
-            build_workload_recovery_evidence(
-                product_date,
+        rebuild = run_evidence_step(
+            'workload_recovery_rebuild',
+            lambda: rebuild_marked_workload_recovery_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        appearance_builds = [
-            build_appearance_context_evidence(
-                product_date,
+            ),
+        )
+        appearance_rebuild = run_evidence_step(
+            'appearance_context_rebuild',
+            lambda: rebuild_marked_appearance_context_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        inherited_builds = [
-            build_inherited_traffic_evidence(
-                product_date,
+            ),
+        )
+        inherited_rebuild = run_evidence_step(
+            'inherited_traffic_rebuild',
+            lambda: rebuild_marked_inherited_traffic_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        starter_exposure_builds = [
-            build_starter_exposure_evidence(
-                product_date,
+            ),
+        )
+        starter_exposure_rebuild = run_evidence_step(
+            'starter_exposure_rebuild',
+            lambda: rebuild_marked_starter_exposure_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        roster_depth_builds = [
-            build_roster_depth_evidence(
-                product_date,
+            ),
+        )
+        roster_depth_rebuild = run_evidence_step(
+            'roster_depth_rebuild',
+            lambda: rebuild_marked_roster_depth_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        entry_band_usage_builds = [
-            build_entry_band_usage_evidence(
-                product_date,
+            ),
+        )
+        entry_band_usage_rebuild = run_evidence_step(
+            'entry_band_usage_rebuild',
+            lambda: rebuild_marked_entry_band_usage_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
-        team_relief_composition_builds = [
-            build_team_relief_composition_evidence(
-                product_date,
+            ),
+        )
+        team_relief_composition_rebuild = run_evidence_step(
+            'team_relief_composition_rebuild',
+            lambda: rebuild_marked_team_relief_composition_evidence(
                 sync_run_id=sync_run_id,
                 source=source,
-            )
-            for product_date in dates
-        ]
+            ),
+        )
+        builds = build_for_dates('workload_recovery_build', build_workload_recovery_evidence)
+        appearance_builds = build_for_dates('appearance_context_build', build_appearance_context_evidence)
+        inherited_builds = build_for_dates('inherited_traffic_build', build_inherited_traffic_evidence)
+        starter_exposure_builds = build_for_dates('starter_exposure_build', build_starter_exposure_evidence)
+        roster_depth_builds = build_for_dates('roster_depth_build', build_roster_depth_evidence)
+        entry_band_usage_builds = build_for_dates('entry_band_usage_build', build_entry_band_usage_evidence)
+        team_relief_composition_builds = build_for_dates(
+            'team_relief_composition_build',
+            build_team_relief_composition_evidence,
+        )
         db.session.commit()
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.info(

@@ -244,10 +244,11 @@ def build_workload_recovery_evidence(
     registry, templates = _local_registries()
     coverage = _CoverageCache(ref)
     pitchers = _population_pitcher_ids(ref)
-    emitted = []
+    rows_by_pitcher = _pitcher_rows_by_id(pitchers, ref)
+    evidence_to_upsert = []
 
     for pitcher_id in pitchers:
-        rows = _pitcher_rows(pitcher_id, ref)
+        rows = rows_by_pitcher.get(pitcher_id, ())
         built = _build_for_pitcher(
             pitcher_id=pitcher_id,
             product_date=ref,
@@ -261,8 +262,9 @@ def build_workload_recovery_evidence(
         for item in built:
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            evidence_to_upsert.append(item.evidence)
 
+    emitted = _upsert_evidence_batch(evidence_to_upsert)
     if commit:
         db.session.commit()
     else:
@@ -397,17 +399,19 @@ def _population_pitcher_ids(product_date):
             .all()
         )
     }
-    historical = {
+    historical_active = {
         row[0]
         for row in (
             db.session.query(GameLog.pitcher_id)
+            .join(Pitcher, Pitcher.id == GameLog.pitcher_id)
+            .filter(Pitcher.active == True)
             .filter(GameLog.game_date < start)
             .filter(GameLog.game_date <= product_date)
             .distinct()
             .all()
         )
     }
-    return tuple(sorted(recent | historical))
+    return tuple(sorted(recent | historical_active))
 
 
 def _pitcher_rows(pitcher_id, product_date):
@@ -420,6 +424,25 @@ def _pitcher_rows(pitcher_id, product_date):
         .order_by(asc(GameLog.game_date), asc(GameLog.id))
         .all()
     )
+
+
+def _pitcher_rows_by_id(pitcher_ids, product_date):
+    ids = tuple(pitcher_ids or ())
+    if not ids:
+        return {}
+    start = product_date - timedelta(days=LOOKBACK_DAYS - 1)
+    rows = (
+        GameLog.query
+        .filter(GameLog.pitcher_id.in_(ids))
+        .filter(GameLog.game_date >= start)
+        .filter(GameLog.game_date <= product_date)
+        .order_by(asc(GameLog.pitcher_id), asc(GameLog.game_date), asc(GameLog.id))
+        .all()
+    )
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row.pitcher_id].append(row)
+    return grouped
 
 
 def _build_for_pitcher(
@@ -1328,6 +1351,89 @@ def _upsert_evidence(new_evidence):
     db.session.add(existing)
     db.session.flush()
     return 'refreshed'
+
+
+def _upsert_evidence_batch(new_evidence_rows):
+    rows = list(new_evidence_rows or ())
+    if not rows:
+        return []
+    keys = list(dict.fromkeys(row.evidence_key for row in rows))
+    existing_by_key = {}
+    for key_chunk in _chunks(keys, 500):
+        existing_rows = (
+            EvidenceObject.query
+            .filter(EvidenceObject.evidence_key.in_(key_chunk))
+            .all()
+        )
+        existing_by_key.update({
+            row.evidence_key: row
+            for row in existing_rows
+        })
+    emitted = []
+    for new_evidence in rows:
+        existing = existing_by_key.get(new_evidence.evidence_key)
+        if existing is None:
+            db.session.add(new_evidence)
+            emitted.append('created')
+            continue
+        _refresh_existing_evidence(existing, new_evidence)
+        emitted.append('refreshed')
+    db.session.flush()
+    return emitted
+
+
+def _refresh_existing_evidence(existing, new_evidence):
+    prior_trace = {
+        'rendered_claim': existing.rendered_claim,
+        'completeness_state': existing.completeness_state,
+        'reason_codes': list(existing.reason_codes or []),
+        'invalidated_at': _iso(existing.invalidated_at),
+        'invalidated_by_source_table': existing.invalidated_by_source_table,
+        'invalidated_by_source_pk': existing.invalidated_by_source_pk,
+    }
+    for field in (
+        'evidence_type',
+        'subject_type',
+        'subject_id',
+        'subject_key',
+        'product_date',
+        'claim_template_id',
+        'rendered_claim',
+        'rule_id',
+        'rule_version',
+        'rule_definition_hash',
+        'typed_cited_inputs',
+        'computation_trace',
+        'completeness_state',
+        'reason_codes',
+        'limitations',
+        'posture',
+        'source',
+        'sync_run_id',
+    ):
+        setattr(existing, field, getattr(new_evidence, field))
+    existing.computation_trace = dict(existing.computation_trace or {})
+    existing.computation_trace['superseded_prior'] = prior_trace
+    existing.recompute_status = EvidenceObject.RECOMPUTE_CURRENT
+    existing.recompute_reason_codes = []
+    existing.citations = [
+        EvidenceCitation(
+            source_family=citation.source_family,
+            source_table=citation.source_table,
+            source_pk=citation.source_pk,
+            source_field_names=list(citation.source_field_names or []),
+            citation_role=citation.citation_role,
+            cited_values=dict(citation.cited_values or {}),
+            provenance=dict(citation.provenance or {}),
+        )
+        for citation in new_evidence.citations
+    ]
+    db.session.add(existing)
+
+
+def _chunks(values, size):
+    for index in range(0, len(values), size):
+        yield values[index:index + size]
 
 
 class _CoverageDay:
