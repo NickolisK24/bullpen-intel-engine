@@ -1,8 +1,10 @@
 from datetime import date, timedelta
+import logging
 import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -171,6 +173,108 @@ def test_stage_failure_reports_in_progress_stage_not_uncompleted_future_stage(
         assert run.status == sync_metadata.STATUS_FAILED
         assert run.stage == sync_metadata.STAGE_FAILED
         assert run.failed_stage == sync_metadata.STAGE_ROSTER_STATUS
+
+
+def test_daily_sync_logs_post_fatigue_phase_instrumentation(
+    client,
+    monkeypatch,
+    caplog,
+):
+    monkeypatch.setattr(sync_service, 'sync_team_assignments', lambda: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'reassigned_count': 0,
+        'no_organization_count': 0,
+        'unknown_count': 0,
+        'errors': 0,
+        'by_status': {'ASSIGNED': 1},
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_roster_statuses', lambda **_kwargs: {
+        'pitchers_refreshed': 1,
+        'pitchers_changed': 0,
+        'unknown_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_transactions', lambda **_kwargs: {
+        'records_fetched': 0,
+        'records_stored': 0,
+        'unknown_type_count': 0,
+        'records_failed': 0,
+        'errors': 0,
+        'error_details': [],
+    })
+    monkeypatch.setattr(sync_service, 'sync_recent_logs', lambda **_kwargs: {
+        'new_logs_added': 1,
+        'pitchers_touched': 1,
+        'errors': 0,
+        'records_failed': 0,
+        'logs_corrected': 0,
+        'correction_attempts_failed': 0,
+    })
+    monkeypatch.setattr(sync_service, 'recalculate_all_fatigue', lambda: 2)
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_workload_recovery_evidence_stage',
+        lambda *args, **kwargs: {'status': 'built'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_build_composed_reads_stage',
+        lambda *args, **kwargs: {'status': 'built'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        '_safe_run_legacy_read_reconciliation_audit_stage',
+        lambda *args, **kwargs: {'status': 'completed'},
+    )
+    monkeypatch.setattr(
+        sync_service,
+        'complete_sync_run_with_snapshot',
+        lambda *args, **kwargs: (SimpleNamespace(id=1), SimpleNamespace(id=88)),
+    )
+
+    import services.availability_backtest as availability_backtest
+
+    monkeypatch.setattr(
+        availability_backtest,
+        'refresh_availability_backtest',
+        lambda: {'status': 'skipped', 'computed_at': None},
+    )
+
+    with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+        status = sync_service.run_daily_sync(client.application, days_back=7)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert status['status'] == sync_metadata.STATUS_SUCCESS
+    assert status['pitchers_updated'] == 2
+    assert status['dashboard_snapshot_id'] == 88
+
+    expected_phases = [
+        sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+        sync_metadata.STAGE_COMPOSED_READS,
+        sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+        sync_metadata.STAGE_BACKTEST_REFRESH,
+        'sync_completion_snapshot_publish',
+        'writer_guard_release',
+        'local_status_write',
+        'logger_cleanup',
+    ]
+    for phase in expected_phases:
+        assert any(
+            f'Daily sync post-fatigue phase completed: phase={phase}' in message
+            and 'elapsed_seconds=' in message
+            for message in messages
+        ), phase
+    assert any(
+        'Daily sync post-fatigue phase duration summary:' in message
+        and sync_metadata.STAGE_COMPOSED_READS in message
+        and sync_service.STAGE_LEGACY_READ_RECONCILIATION_AUDIT in message
+        and 'sync_completion_snapshot_publish' in message
+        for message in messages
+    ), messages
 
 
 def test_stale_running_sync_run_is_reclaimed_before_new_writer_starts(client):
