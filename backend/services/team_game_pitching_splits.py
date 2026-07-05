@@ -437,8 +437,30 @@ def _upsert_split(values, *, sync_run_id):
         existing.correction_count = (existing.correction_count or 0) + 1
         existing.last_corrected_at = now
         existing.correction_source = CORRECTION_SOURCE
+        _notify_starter_exposure_evidence_split_correction(
+            existing,
+            sync_run_id=sync_run_id,
+        )
     db.session.add(existing)
     return 'corrected' if changed else 'unchanged'
+
+
+def _notify_starter_exposure_evidence_split_correction(split_row, *, sync_run_id=None):
+    try:
+        from services.starter_exposure_evidence import (
+            mark_team_game_pitching_split_correction_for_starter_exposure,
+        )
+        return mark_team_game_pitching_split_correction_for_starter_exposure(
+            split_row,
+            sync_run_id=sync_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - correction marking must not block derivation
+        logger.warning(
+            'Could not mark starter exposure evidence for split correction id=%s: %s',
+            getattr(split_row, 'id', None),
+            exc,
+        )
+        return {'marked_count': 0, 'evidence_ids': []}
 
 
 def _scheduled_rows_for_game(game_pk):

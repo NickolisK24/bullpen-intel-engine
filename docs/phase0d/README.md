@@ -15,9 +15,9 @@ approved branch explicitly changes posture for a registered evidence family.
 - 0D-01: evidence contract and language rules. Complete.
 - 0D-02: workload and recovery evidence. Complete.
 - 0D-03: entry and exit appearance context. Complete.
-- 0D-04: inherited traffic and clean/traffic outing context. Active/completed
-  in this branch.
-- 0D-05: starter exposure and calendar context.
+- 0D-04: inherited traffic and clean/traffic outing context. Complete.
+- 0D-05: starter exposure and calendar density evidence. Active/completed in
+  this branch.
 - 0D-06: roster, IL, and transaction context.
 - 0D-07: pressure proxy feasibility and limits.
 - 0D-08: role usage observations and team bullpen structure reads.
@@ -29,7 +29,9 @@ internal-only workload and recovery facts. Branch 0D-03 adds internal-only
 appearance entry and exit context facts from stored final play-by-play and
 game-log rows. Branch 0D-04 adds internal-only boxscore-authoritative
 inherited-runner, clean outing, and traffic outing facts with 0D-03 entry
-context used only for timing corroboration.
+context used only for timing corroboration. Branch 0D-05 adds internal-only
+team-level starter-exposure and calendar-density facts from stored
+team-game pitching split rows.
 
 ## Binding Interpretation Rules
 
