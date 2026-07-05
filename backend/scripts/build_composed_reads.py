@@ -43,15 +43,28 @@ def main(argv=None):
 
     from app import app
     from services.reliever_daily_read import build_reliever_daily_reads
+    from services.team_daily_read import build_team_daily_reads
     from utils.db import db
 
     with app.app_context():
-        result = build_reliever_daily_reads(
+        reliever_result = build_reliever_daily_reads(
             product_date,
             source=source,
-            commit=True,
+            commit=False,
         )
+        team_result = build_team_daily_reads(
+            product_date,
+            source=source,
+            commit=False,
+        )
+        db.session.commit()
     db.session.remove()
+    result = {
+        'status': 'built',
+        'product_date': product_date.isoformat(),
+        'reliever_daily_read': reliever_result,
+        'team_daily_read': team_result,
+    }
     print(json.dumps(result, sort_keys=True))
     return 0
 

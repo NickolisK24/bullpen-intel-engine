@@ -107,6 +107,7 @@ ALLOWED_READ_TYPE_CLASSIFICATIONS = frozenset({
 LOCKED_BAND_EVIDENCE_TYPES = frozenset({
     'appearance_entry_band',
     'pitcher_entry_band_distribution',
+    'team_active_reliever_count',
 })
 
 FORBIDDEN_READ_NAME_TOKENS = frozenset({
@@ -183,7 +184,14 @@ def validate_read_type(read_type: ReadType) -> bool:
     definition = (read_type.plain_language_definition or '').strip()
     if not definition:
         raise ComposedReadRegistryError('read type requires plain-language definition')
-    if 'bundles' not in definition.lower() or 'does not conclude' not in definition.lower():
+    lower_definition = definition.lower()
+    if (
+        'bundles' not in lower_definition
+        or (
+            'does not conclude' not in lower_definition
+            and 'concludes nothing' not in lower_definition
+        )
+    ):
         raise ComposedReadRegistryError(
             'read type definition must state what it bundles and what it does not conclude'
         )
