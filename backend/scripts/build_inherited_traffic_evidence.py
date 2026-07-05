@@ -16,7 +16,9 @@ os.environ['AUTO_SYNC'] = 'false'
 
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description='Build internal Phase 0D inherited traffic evidence for one product date.'
+        description=(
+            'Build internal Phase 0D inherited traffic evidence for one product date.'
+        )
     )
     parser.add_argument(
         '--date',
