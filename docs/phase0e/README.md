@@ -17,9 +17,9 @@ Exit-criterion reframe: Phase 0E exits with internal reads, QA, reconciliation,
 and legal paper inside 0E. Public surfacing is post-gate work after the Phase
 0B legal/source review and a later explicitly approved surface phase.
 
-0E-04 reconciliation escalation policy: materially misleading legacy labels
-become a deliberate legacy-engine defect decision for Nickolis, never a silent
-fix and never a rushed swap.
+0E-04 reconciliation escalation policy: material divergence rows become
+recommendations to Nickolis for legacy-engine defect review, never silent fixes,
+freezes, or rushed swaps.
 
 Headline states are deferred to the 0E-05 decision record. The 0E-01 contract
 contains no successor to Fresh/Stretched vocabulary and no headline, state,
@@ -31,8 +31,8 @@ label, grade, score, or rank field beyond `completeness_state`.
 | --- | --- |
 | 0E-01 | Read contract and registry |
 | 0E-02 | Reliever daily read |
-| 0E-03 | Team daily read - in progress |
-| 0E-04 | Legacy reconciliation audit |
+| 0E-03 | Team daily read |
+| 0E-04 | Legacy reconciliation audit - in progress |
 | 0E-05 | Read QA, editorial harness, and headline decision |
 | 0E-06 | Legal paper and exit |
 
@@ -61,3 +61,4 @@ Phase 0E consumes these Phase 0D source-of-truth documents:
 - `backend/services/evidence_classification.py`
 - `docs/phase0e/reliever_daily_read.md`
 - `docs/phase0e/team_daily_read.md`
+- `docs/phase0e/legacy_read_reconciliation_audit.md`

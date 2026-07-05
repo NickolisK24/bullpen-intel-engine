@@ -451,6 +451,9 @@ _PHASE0D_EVIDENCE_CONTRACT_REVISION = 'c8d2f4a1b6e9'
 # Phase 0E composed reads chain on top of the evidence contract, advancing the
 # single alembic head once more without registering a production read type.
 _PHASE0E_COMPOSED_READ_REVISION = 'a9d4e7c2f6b1'
+# Phase 0E legacy-read reconciliation audit chains on top of composed reads,
+# advancing the single alembic head with exactly the audit tables.
+_PHASE0E_LEGACY_READ_AUDIT_REVISION = 'e4b7c9d2a6f0'
 
 
 def test_metrics_migration_is_well_formed_and_chains_off_identity():
@@ -476,7 +479,7 @@ def test_migrations_have_a_single_head():
             revisions[rev.group(1)] = (down.group(1).strip() if down else None)
     referenced = {d for d in revisions.values() if d and d != 'None'}
     heads = set(revisions) - referenced
-    assert heads == {_PHASE0E_COMPOSED_READ_REVISION}
+    assert heads == {_PHASE0E_LEGACY_READ_AUDIT_REVISION}
     # The chain advances: event log -> completed-game-context -> surface snapshot
     # -> scheduled_games -> tonight snapshot -> unknown-safe pitch counts
     # -> stat-correction provenance -> postgame marker lifecycle.
@@ -509,3 +512,5 @@ def test_migrations_have_a_single_head():
             == _TEAM_GAME_PITCHING_SPLIT_REVISION)
     assert (revisions[_PHASE0E_COMPOSED_READ_REVISION]
             == _PHASE0D_EVIDENCE_CONTRACT_REVISION)
+    assert (revisions[_PHASE0E_LEGACY_READ_AUDIT_REVISION]
+            == _PHASE0E_COMPOSED_READ_REVISION)
