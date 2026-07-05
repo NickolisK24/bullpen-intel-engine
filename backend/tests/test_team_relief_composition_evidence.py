@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import logging
 
 import pytest
 from flask import Flask
@@ -23,6 +24,7 @@ from models.scheduled_game import ScheduledGame
 from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
 from services import sync as sync_service
+import services.team_relief_composition_evidence as composition_service
 from services.evidence_language import EvidenceLanguageError
 from services.evidence_rules import EvidenceRuleRegistry
 from services.team_relief_composition_evidence import (
@@ -769,6 +771,55 @@ def test_recompute_basis_first_bounded_idempotent_and_sync(app, monkeypatch):
     )
     assert skipped['status'] == 'skipped'
     assert skipped['reason'] == 'disabled'
+
+
+def test_build_uses_batched_context_and_logs_counts(app, monkeypatch, caplog):
+    pitchers = _build_basic_basis(pitcher_count=3)
+    for pitcher, days in zip(pitchers, (0, 1, 2)):
+        _evidence_object(
+            WORKLOAD_DAYS_OF_REST_RULE_ID,
+            subject_id=pitcher.id,
+            trace={'full_off_days': days},
+        )
+
+    def fail_per_row_lookup(*_args, **_kwargs):
+        pytest.fail('team relief composition used an unbatched per-row lookup')
+
+    monkeypatch.setattr(composition_service, '_same_date_snapshot', fail_per_row_lookup)
+    monkeypatch.setattr(composition_service, '_current_snapshot', fail_per_row_lookup)
+    monkeypatch.setattr(composition_service, '_pbp_events_for_log', fail_per_row_lookup)
+    monkeypatch.setattr(composition_service, '_is_finality_certified', fail_per_row_lookup)
+
+    with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+        result = build_team_relief_composition_evidence(
+            PRODUCT_DATE,
+            sync_run_id=_sync_run().id,
+        )
+    messages = [record.getMessage() for record in caplog.records]
+
+    assert result['status'] == 'built'
+    assert result['teams_considered'] >= 1
+    assert result['game_logs_considered'] >= 3
+    assert result['objects_built'] > 0
+    assert any(
+        'Team relief composition context loaded:' in message
+        and 'game_logs=' in message
+        and 'source_evidence=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Team relief composition downstream stage completed:' in message
+        and 'objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Team relief composition build completed:' in message
+        and 'teams_considered=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
 
 
 def test_public_isolation_rendered_claim_sweep_and_denominator_disclaimer(app):

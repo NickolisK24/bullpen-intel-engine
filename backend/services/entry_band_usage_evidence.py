@@ -327,7 +327,7 @@ def build_entry_band_usage_evidence(
     ref = _as_date(product_date)
     registry, templates = _local_registries()
     coverage = _CoverageCache(ref)
-    emitted = []
+    evidence_to_upsert = []
 
     product_logs = _logs_for_range(ref, ref)
     for log in product_logs:
@@ -341,7 +341,7 @@ def build_entry_band_usage_evidence(
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            evidence_to_upsert.append(item.evidence)
 
     window_start = ref - timedelta(days=OBSERVATION_WINDOW_DAYS - 1)
     window_logs = _logs_for_range(window_start, ref)
@@ -358,8 +358,9 @@ def build_entry_band_usage_evidence(
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            evidence_to_upsert.append(item.evidence)
 
+    emitted = _upsert_evidence_batch(evidence_to_upsert)
     if commit:
         db.session.commit()
     else:
@@ -1407,12 +1408,39 @@ def _build_object(
 
 
 def _upsert_evidence(new_evidence):
-    existing = EvidenceObject.query.filter_by(evidence_key=new_evidence.evidence_key).first()
-    if existing is None:
-        db.session.add(new_evidence)
-        db.session.flush()
-        return 'created'
+    return _upsert_evidence_batch([new_evidence])[0]
 
+
+def _upsert_evidence_batch(new_evidence_rows):
+    rows = list(new_evidence_rows or ())
+    if not rows:
+        return []
+    keys = list(dict.fromkeys(row.evidence_key for row in rows))
+    existing_by_key = {}
+    for key_chunk in _chunks(keys, 500):
+        existing_rows = (
+            EvidenceObject.query
+            .filter(EvidenceObject.evidence_key.in_(key_chunk))
+            .all()
+        )
+        existing_by_key.update({
+            row.evidence_key: row
+            for row in existing_rows
+        })
+    emitted = []
+    for new_evidence in rows:
+        existing = existing_by_key.get(new_evidence.evidence_key)
+        if existing is None:
+            db.session.add(new_evidence)
+            emitted.append('created')
+            continue
+        _refresh_existing_evidence(existing, new_evidence)
+        emitted.append('refreshed')
+    db.session.flush()
+    return emitted
+
+
+def _refresh_existing_evidence(existing, new_evidence):
     prior_trace = {
         'rendered_claim': existing.rendered_claim,
         'completeness_state': existing.completeness_state,
@@ -1459,8 +1487,11 @@ def _upsert_evidence(new_evidence):
         for citation in new_evidence.citations
     ]
     db.session.add(existing)
-    db.session.flush()
-    return 'refreshed'
+
+
+def _chunks(values, size):
+    for index in range(0, len(values), size):
+        yield values[index:index + size]
 
 
 def _logs_for_range(start_date, end_date):
