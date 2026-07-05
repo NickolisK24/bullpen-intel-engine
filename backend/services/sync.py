@@ -2686,6 +2686,91 @@ def _run_logged_daily_sync_phase(run_logger, timings, phase_name, operation):
     return result
 
 
+def _run_post_publish_internal_daily_sync_phase(
+    run_logger,
+    timings,
+    phase_name,
+    operation,
+):
+    try:
+        return _run_logged_daily_sync_phase(
+            run_logger,
+            timings,
+            phase_name,
+            operation,
+        )
+    except Exception as exc:  # noqa: BLE001 - internal enrichment is post-publish
+        run_logger.warning(
+            'Daily sync post-publish internal phase failed after public '
+            'snapshot publish: phase=%s error=%s',
+            phase_name,
+            exc,
+        )
+        return {'status': 'failed', 'error': str(exc)}
+
+
+def _run_post_publish_internal_postgame_phase(run_logger, phase_name, operation):
+    started = time.perf_counter()
+    run_logger.info(
+        'Postgame post-publish internal phase starting: phase=%s.',
+        phase_name,
+    )
+    try:
+        result = operation()
+    except Exception as exc:  # noqa: BLE001 - internal enrichment is post-publish
+        db.session.rollback()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        run_logger.warning(
+            'Postgame post-publish internal phase failed after public snapshot '
+            'publish: phase=%s elapsed_ms=%s error=%s',
+            phase_name,
+            elapsed_ms,
+            exc,
+        )
+        return {'status': 'failed', 'error': str(exc), 'elapsed_ms': elapsed_ms}
+
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    status = _daily_sync_phase_status(result)
+    run_logger.info(
+        'Postgame post-publish internal phase completed: phase=%s status=%s '
+        'elapsed_ms=%s.',
+        phase_name,
+        status,
+        elapsed_ms,
+    )
+    return result
+
+
+def _restore_completed_sync_publish_stage(sync_run_id, *, run_logger=None):
+    if not sync_run_id:
+        return None
+    try:
+        run = db.session.get(SyncRun, sync_run_id)
+        if run is None or run.completed_at is None:
+            return run
+        if run.stage == sync_metadata.STAGE_PUBLISHED:
+            return run
+        run.stage = sync_metadata.STAGE_PUBLISHED
+        db.session.commit()
+        if run_logger is not None:
+            run_logger.info(
+                'Restored completed sync stage after post-publish internal '
+                'phases: sync_run_id=%s.',
+                sync_run_id,
+            )
+        return run
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not undo publish
+        db.session.rollback()
+        if run_logger is not None:
+            run_logger.warning(
+                'Could not restore completed sync published stage: '
+                'sync_run_id=%s error=%s',
+                sync_run_id,
+                exc,
+            )
+        return None
+
+
 def _log_daily_sync_phase_summary(run_logger, timings):
     if not timings:
         return
@@ -3064,38 +3149,6 @@ def run_postgame_refresh(
                     'Fatigue recalculation skipped: no postgame logs changed.'
                 )
 
-            if changed_log_count > 0:
-                active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
-                _safe_build_workload_recovery_evidence_stage(
-                    [schedule_date],
-                    sync_run_id=sync_run_id,
-                    source='postgame_refresh',
-                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                    run_logger=run_logger,
-                )
-                active_stage = sync_metadata.STAGE_COMPOSED_READS
-                _safe_build_composed_reads_stage(
-                    [schedule_date],
-                    sync_run_id=sync_run_id,
-                    source='postgame_refresh',
-                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                    run_logger=run_logger,
-                )
-                active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
-                _safe_run_legacy_read_reconciliation_audit_stage(
-                    [schedule_date],
-                    sync_run_id=sync_run_id,
-                    source='postgame_refresh',
-                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
-                    run_logger=run_logger,
-                )
-
-            # Refresh the Intelligence Surface homepage cache from the freshly
-            # derived contexts. Best-effort: it never blocks or fails the refresh.
-            if status['completed_game_contexts_upserted'] > 0:
-                _safe_generate_intelligence_surface_snapshot(
-                    schedule_date, status=status, run_logger=run_logger)
-
             if status['records_failed']:
                 status['status'] = (
                     sync_metadata.STATUS_FAILED
@@ -3114,6 +3167,7 @@ def run_postgame_refresh(
 
             api_metrics = mlb_client.metrics.snapshot()
             if changed_log_count > 0:
+                active_stage = sync_metadata.STAGE_DASHBOARD_SNAPSHOT
                 completed_run, snapshot = complete_sync_run_with_snapshot(
                     sync_run_id,
                     final_status=status['status'],
@@ -3131,6 +3185,54 @@ def run_postgame_refresh(
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                 )
                 status['dashboard_snapshot_id'] = snapshot.id
+
+                # Refresh the Intelligence Surface homepage cache from the freshly
+                # derived contexts before internal-only enrichment. Best-effort:
+                # it never blocks or fails the refresh.
+                if status['completed_game_contexts_upserted'] > 0:
+                    _safe_generate_intelligence_surface_snapshot(
+                        schedule_date, status=status, run_logger=run_logger)
+
+                active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+                _run_post_publish_internal_postgame_phase(
+                    run_logger,
+                    sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+                    lambda: _safe_build_workload_recovery_evidence_stage(
+                        [schedule_date],
+                        sync_run_id=sync_run_id,
+                        source='postgame_refresh',
+                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                        run_logger=run_logger,
+                    ),
+                )
+                active_stage = sync_metadata.STAGE_COMPOSED_READS
+                _run_post_publish_internal_postgame_phase(
+                    run_logger,
+                    sync_metadata.STAGE_COMPOSED_READS,
+                    lambda: _safe_build_composed_reads_stage(
+                        [schedule_date],
+                        sync_run_id=sync_run_id,
+                        source='postgame_refresh',
+                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                        run_logger=run_logger,
+                    ),
+                )
+                active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+                _run_post_publish_internal_postgame_phase(
+                    run_logger,
+                    STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+                    lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                        [schedule_date],
+                        sync_run_id=sync_run_id,
+                        source='postgame_refresh',
+                        job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                        run_logger=run_logger,
+                    ),
+                )
+                _restore_completed_sync_publish_stage(
+                    sync_run_id,
+                    run_logger=run_logger,
+                )
             else:
                 sync_metadata.finish_sync_run(
                     sync_run_id,
@@ -3377,74 +3479,6 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
             post_fatigue_instrumentation_started = True
 
-            active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
-            _run_logged_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_WORKLOAD_EVIDENCE,
-                lambda: _safe_build_workload_recovery_evidence_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
-                    run_logger=run_logger,
-                ),
-            )
-            active_stage = sync_metadata.STAGE_COMPOSED_READS
-            _run_logged_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_COMPOSED_READS,
-                lambda: _safe_build_composed_reads_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
-                    run_logger=run_logger,
-                ),
-            )
-            active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
-            _run_logged_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
-                lambda: _safe_run_legacy_read_reconciliation_audit_stage(
-                    [product_day.calendar_date],
-                    sync_run_id=sync_run_id,
-                    source='scheduled_sync',
-                    job_name=sync_metadata.JOB_DAILY_SYNC,
-                    run_logger=run_logger,
-                ),
-            )
-
-            active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
-            def _refresh_backtest_phase():
-                try:
-                    from services.availability_backtest import refresh_availability_backtest
-                    backtest = refresh_availability_backtest()
-                    status['availability_backtest_status'] = backtest.get('status')
-                    status['availability_backtest_computed_at'] = backtest.get('computed_at')
-                    run_logger.info(
-                        'Refreshed availability backtest (%s)',
-                        backtest.get('computed_at') or backtest.get('status'),
-                    )
-                    result = {'status': backtest.get('status') or 'completed'}
-                except Exception as exc:
-                    db.session.rollback()
-                    status['availability_backtest_status'] = 'failed'
-                    status['availability_backtest_error'] = str(exc)
-                    run_logger.warning('Availability backtest refresh failed: %s', exc)
-                    result = {'status': 'failed', 'error': str(exc)}
-                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
-                return result
-
-            _run_logged_daily_sync_phase(
-                run_logger,
-                post_fatigue_phase_timings,
-                sync_metadata.STAGE_BACKTEST_REFRESH,
-                _refresh_backtest_phase,
-            )
-
             def _complete_sync_phase():
                 # Partial when records were dead-lettered but the run still
                 # refreshed its domains; otherwise success.
@@ -3482,11 +3516,85 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 status['dashboard_snapshot_id'] = snapshot.id
                 return {'status': final_status, 'snapshot_id': snapshot.id}
 
+            active_stage = sync_metadata.STAGE_DASHBOARD_SNAPSHOT
             _run_logged_daily_sync_phase(
                 run_logger,
                 post_fatigue_phase_timings,
                 'sync_completion_snapshot_publish',
                 _complete_sync_phase,
+            )
+
+            active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
+            _run_post_publish_internal_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+                lambda: _safe_build_workload_recovery_evidence_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
+            )
+            active_stage = sync_metadata.STAGE_COMPOSED_READS
+            _run_post_publish_internal_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_COMPOSED_READS,
+                lambda: _safe_build_composed_reads_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
+            )
+            active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
+            _run_post_publish_internal_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+                lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
+            )
+
+            active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
+
+            def _refresh_backtest_phase():
+                try:
+                    from services.availability_backtest import refresh_availability_backtest
+                    backtest = refresh_availability_backtest()
+                    status['availability_backtest_status'] = backtest.get('status')
+                    status['availability_backtest_computed_at'] = backtest.get('computed_at')
+                    run_logger.info(
+                        'Refreshed availability backtest (%s)',
+                        backtest.get('computed_at') or backtest.get('status'),
+                    )
+                    result = {'status': backtest.get('status') or 'completed'}
+                except Exception as exc:
+                    db.session.rollback()
+                    status['availability_backtest_status'] = 'failed'
+                    status['availability_backtest_error'] = str(exc)
+                    run_logger.warning('Availability backtest refresh failed: %s', exc)
+                    result = {'status': 'failed', 'error': str(exc)}
+                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
+                return result
+
+            _run_post_publish_internal_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_BACKTEST_REFRESH,
+                _refresh_backtest_phase,
+            )
+            _restore_completed_sync_publish_stage(
+                sync_run_id,
+                run_logger=run_logger,
             )
     except sync_metadata.SyncWriterConflict as conflict:
         status.update(sync_metadata.sync_writer_conflict_payload(conflict))
