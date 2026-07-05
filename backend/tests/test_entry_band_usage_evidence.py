@@ -808,6 +808,56 @@ def test_entry_band_usage_build_batches_evidence_upserts(app, monkeypatch):
     assert result['objects_built'] > 0
 
 
+def test_entry_band_usage_build_preloads_finality_and_source_evidence(app, monkeypatch, caplog):
+    with app.app_context():
+        run = _sync_run()
+        pitcher = _pitcher(seed=81)
+        rows = _window_fixture(pitcher, 5, finished_count=2, start_suffix=220)
+        for row in rows:
+            _multi_inning_object(row)
+
+        def fail_per_row_lookup(*_args, **_kwargs):
+            pytest.fail('entry-band build used an unbatched per-row lookup')
+
+        monkeypatch.setattr(entry_service, '_is_finality_certified', fail_per_row_lookup)
+        monkeypatch.setattr(entry_service, '_source_evidence', fail_per_row_lookup)
+        monkeypatch.setattr(
+            entry_service,
+            '_source_evidence_by_cited_game_log',
+            fail_per_row_lookup,
+        )
+
+        with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+            result = build_entry_band_usage_evidence(PRODUCT_DATE, sync_run_id=run.id)
+        messages = [record.getMessage() for record in caplog.records]
+        multi_inning = _row(PITCHER_MULTI_INNING_USAGE_OBSERVATION_RULE_ID)
+
+    assert result['status'] == 'built'
+    assert result['window_logs_considered'] == len(rows)
+    assert result['pitchers_considered'] == 1
+    assert result['objects_built'] > 0
+    assert multi_inning.computation_trace['consumed_evidence_objects']
+    assert any(
+        'Entry band usage context loaded:' in message
+        and 'window_logs=' in message
+        and 'source_evidence=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage window stage completed:' in message
+        and 'objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Entry band usage build completed:' in message
+        and 'pitchers_considered=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+
+
 def test_no_disallowed_rule_families_or_reliever_partition_registered():
     registry, _ = register_entry_band_usage_rules(
         registry=EvidenceRuleRegistry(),

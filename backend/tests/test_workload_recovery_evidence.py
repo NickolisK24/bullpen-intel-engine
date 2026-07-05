@@ -658,6 +658,27 @@ def test_sync_stage_logs_phase0d_substep_counts_and_runs_required_work(app, capl
         and 'elapsed_ms=' in message
         for message in messages
     )
+    assert any(
+        'Phase 0D evidence step completed: '
+        f'step=roster_depth_build:{PRODUCT_DATE.isoformat()}' in message
+        and 'objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Phase 0D evidence step completed: '
+        f'step=entry_band_usage_build:{PRODUCT_DATE.isoformat()}' in message
+        and 'objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Phase 0D evidence stage complete:' in message
+        and 'roster_depth_objects_built=' in message
+        and 'entry_band_usage_objects_built=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
 
 
 def test_public_sync_status_payload_shape_is_unchanged(app):

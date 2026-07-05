@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import logging
 import re
+import time
 
 from sqlalchemy import asc
 
@@ -29,12 +31,17 @@ from services.evidence_rules import (
 from utils.db import db
 
 
+logger = logging.getLogger('baseballos.daily_sync')
+
 RULE_VERSION = 1
 EVIDENCE_SOURCE = 'phase0d:entry_band_usage_evidence'
 SOURCE_READY = 'ready'
 SUBJECT_APPEARANCE = 'pitcher_appearance'
 SUBJECT_PITCHER = 'pitcher'
 FINISH_CONTEXT_CONTRADICTION_ENTITY_TYPE = 'finish_context_contradiction'
+SOURCE_ENTRY_CONTEXT_RULE_ID = 'appearance_entry_context'
+SOURCE_ORDER_RULE_ID = 'appearance_order_in_game'
+SOURCE_MULTI_INNING_RULE_ID = 'outing_multi_inning'
 
 APPEARANCE_ENTRY_BAND_RULE_ID = 'appearance_entry_band'
 APPEARANCE_FINISH_CONTEXT_RULE_ID = 'appearance_finish_context'
@@ -289,6 +296,63 @@ class BuiltEntryBandUsageEvidence:
     subject_key: str
 
 
+class EntryBandUsageBuildContext:
+    def __init__(self, product_date):
+        self.product_date = _as_date(product_date)
+        self.window_start = self.product_date - timedelta(days=OBSERVATION_WINDOW_DAYS - 1)
+        self.window_logs = _logs_for_range(self.window_start, self.product_date)
+        self.product_logs = [
+            row for row in self.window_logs
+            if row.game_date == self.product_date
+        ]
+        self.pitcher_ids = sorted({row.pitcher_id for row in self.window_logs})
+        self.game_pks = sorted({row.mlb_game_pk for row in self.window_logs})
+        self.log_ids = sorted(
+            row.id for row in self.window_logs
+            if getattr(row, 'id', None) is not None
+        )
+        self.scheduled_games_by_pk = _scheduled_games_by_pk(self.game_pks)
+        self.source_evidence = _source_evidence_cache(
+            self.window_start,
+            self.product_date,
+        )
+        self.source_evidence_by_cited_log = _source_evidence_by_cited_game_log_cache(
+            self.window_start,
+            self.product_date,
+            self.log_ids,
+        )
+
+    @property
+    def scheduled_game_count(self):
+        return sum(len(rows) for rows in self.scheduled_games_by_pk.values())
+
+    @property
+    def source_evidence_count(self):
+        return len(self.source_evidence) + len(self.source_evidence_by_cited_log)
+
+    def is_finality_certified(self, log):
+        rows = self.scheduled_games_by_pk.get(log.mlb_game_pk, ())
+        if not rows:
+            return True
+        return any(row.status_state == ScheduledGame.STATE_FINAL for row in rows)
+
+    def source_evidence_for_log(self, log, rule_id):
+        return self.source_evidence.get((
+            rule_id,
+            f'{log.pitcher_id}:{log.mlb_game_pk}',
+            log.game_date,
+        ))
+
+    def source_evidence_for_cited_game_log(self, log, rule_id):
+        if getattr(log, 'id', None) is None:
+            return None
+        return self.source_evidence_by_cited_log.get((
+            rule_id,
+            str(log.id),
+            log.game_date,
+        ))
+
+
 _LOCAL_RULE_REGISTRY: EvidenceRuleRegistry | None = None
 _LOCAL_TEMPLATE_REGISTRY: ClaimTemplateRegistry | None = None
 
@@ -324,13 +388,34 @@ def build_entry_band_usage_evidence(
     restrict_evidence_keys: set[str] | None = None,
 ) -> dict:
     """Build internal entry-context band and usage-observation evidence."""
+    started = time.perf_counter()
     ref = _as_date(product_date)
+    logger.info(
+        'Entry band usage build starting: product_date=%s restrict_keys=%s.',
+        ref.isoformat(),
+        len(restrict_evidence_keys or ()),
+    )
     registry, templates = _local_registries()
+    context_started = time.perf_counter()
+    context = EntryBandUsageBuildContext(ref)
     coverage = _CoverageCache(ref)
+    logger.info(
+        'Entry band usage context loaded: product_date=%s product_logs=%s '
+        'window_logs=%s pitchers=%s scheduled_games=%s source_evidence=%s '
+        'elapsed_ms=%s.',
+        ref.isoformat(),
+        len(context.product_logs),
+        len(context.window_logs),
+        len(context.pitcher_ids),
+        context.scheduled_game_count,
+        context.source_evidence_count,
+        round((time.perf_counter() - context_started) * 1000, 1),
+    )
     evidence_to_upsert = []
 
-    product_logs = _logs_for_range(ref, ref)
-    for log in product_logs:
+    appearance_started = time.perf_counter()
+    appearance_objects = 0
+    for log in context.product_logs:
         for item in _build_appearance_objects(
             log=log,
             product_date=ref,
@@ -338,14 +423,25 @@ def build_entry_band_usage_evidence(
             templates=templates,
             sync_run_id=sync_run_id,
             source=source,
+            context=context,
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
             evidence_to_upsert.append(item.evidence)
+            appearance_objects += 1
+    logger.info(
+        'Entry band usage appearance stage completed: product_date=%s '
+        'product_logs=%s objects_built=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(context.product_logs),
+        appearance_objects,
+        round((time.perf_counter() - appearance_started) * 1000, 1),
+    )
 
-    window_start = ref - timedelta(days=OBSERVATION_WINDOW_DAYS - 1)
-    window_logs = _logs_for_range(window_start, ref)
-    for pitcher_id, rows in _logs_by_pitcher(window_logs).items():
+    window_started = time.perf_counter()
+    window_objects = 0
+    logs_by_pitcher = _logs_by_pitcher(context.window_logs)
+    for pitcher_id, rows in logs_by_pitcher.items():
         for item in _build_pitcher_window_objects(
             pitcher_id=pitcher_id,
             product_date=ref,
@@ -355,24 +451,63 @@ def build_entry_band_usage_evidence(
             templates=templates,
             sync_run_id=sync_run_id,
             source=source,
+            context=context,
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
             evidence_to_upsert.append(item.evidence)
+            window_objects += 1
+    logger.info(
+        'Entry band usage window stage completed: product_date=%s pitchers=%s '
+        'window_logs=%s objects_built=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(logs_by_pitcher),
+        len(context.window_logs),
+        window_objects,
+        round((time.perf_counter() - window_started) * 1000, 1),
+    )
 
+    upsert_started = time.perf_counter()
     emitted = _upsert_evidence_batch(evidence_to_upsert)
+    logger.info(
+        'Entry band usage persistence completed: product_date=%s objects_built=%s '
+        'objects_created=%s objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(emitted),
+        sum(1 for item in emitted if item == 'created'),
+        sum(1 for item in emitted if item == 'refreshed'),
+        round((time.perf_counter() - upsert_started) * 1000, 1),
+    )
     if commit:
         db.session.commit()
     else:
         db.session.flush()
 
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        'Entry band usage build completed: product_date=%s product_logs=%s '
+        'window_logs=%s pitchers_considered=%s objects_built=%s '
+        'objects_created=%s objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(context.product_logs),
+        len(context.window_logs),
+        len(logs_by_pitcher),
+        len(emitted),
+        sum(1 for item in emitted if item == 'created'),
+        sum(1 for item in emitted if item == 'refreshed'),
+        elapsed_ms,
+    )
     return {
         'status': 'built',
         'product_date': ref.isoformat(),
         'rules': list(ENTRY_BAND_USAGE_RULE_IDS),
+        'product_logs_considered': len(context.product_logs),
+        'window_logs_considered': len(context.window_logs),
+        'pitchers_considered': len(logs_by_pitcher),
         'objects_built': len(emitted),
         'objects_created': sum(1 for item in emitted if item == 'created'),
         'objects_refreshed': sum(1 for item in emitted if item == 'refreshed'),
+        'elapsed_ms': elapsed_ms,
     }
 
 
@@ -542,8 +677,13 @@ def _build_appearance_objects(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
-    if not _is_finality_certified(log):
+    if context is not None:
+        finality_certified = context.is_finality_certified(log)
+    else:
+        finality_certified = _is_finality_certified(log)
+    if not finality_certified:
         return []
     if log.games_started == 1:
         if log.hold:
@@ -556,6 +696,7 @@ def _build_appearance_objects(
                     sync_run_id=sync_run_id,
                     source=source,
                     contradiction='hold_with_start',
+                    context=context,
                 )
             ]
         return []
@@ -569,6 +710,7 @@ def _build_appearance_objects(
                 templates,
                 sync_run_id,
                 source,
+                context,
             ),
             _appearance_role_unknown_object(
                 APPEARANCE_FINISH_CONTEXT_RULE_ID,
@@ -578,11 +720,12 @@ def _build_appearance_objects(
                 templates,
                 sync_run_id,
                 source,
+                context,
             ),
         ]
 
     return [
-        _entry_band_object(log, product_date, registry, templates, sync_run_id, source),
+        _entry_band_object(log, product_date, registry, templates, sync_run_id, source, context),
         _finish_context_object(
             log=log,
             product_date=product_date,
@@ -590,11 +733,12 @@ def _build_appearance_objects(
             templates=templates,
             sync_run_id=sync_run_id,
             source=source,
+            context=context,
         ),
     ]
 
 
-def _appearance_role_unknown_object(rule_id, log, product_date, registry, templates, sync_run_id, source):
+def _appearance_role_unknown_object(rule_id, log, product_date, registry, templates, sync_run_id, source, context=None):
     claim = (
         f'Evidence unknown for pitcher {log.pitcher_id} in game {log.mlb_game_pk}: '
         'the stored games-started value is unknown.'
@@ -614,7 +758,7 @@ def _appearance_role_unknown_object(rule_id, log, product_date, registry, templa
         },
         trace={
             'steps': ['Checked games_started before qualifying the appearance.'],
-            'qualifying_decision': _qualifying_decision(log),
+            'qualifying_decision': _qualifying_decision(log, context),
         },
         state=EvidenceObject.COMPLETENESS_UNKNOWN,
         reason_codes=[REASON_APPEARANCE_ROLE_UNKNOWN],
@@ -625,8 +769,12 @@ def _appearance_role_unknown_object(rule_id, log, product_date, registry, templa
     )
 
 
-def _entry_band_object(log, product_date, registry, templates, sync_run_id, source):
-    entry = _source_evidence(log, 'appearance_entry_context')
+def _entry_band_object(log, product_date, registry, templates, sync_run_id, source, context=None):
+    entry = (
+        context.source_evidence_for_log(log, SOURCE_ENTRY_CONTEXT_RULE_ID)
+        if context is not None
+        else _source_evidence(log, SOURCE_ENTRY_CONTEXT_RULE_ID)
+    )
     if entry is None:
         claim = (
             f'Entry-context band unknown for pitcher {log.pitcher_id} in game '
@@ -648,7 +796,7 @@ def _entry_band_object(log, product_date, registry, templates, sync_run_id, sour
                 'game_logs.games_started': log.games_started,
                 'final_play_by_play.mlb_game_pk': log.mlb_game_pk,
             },
-            trace=_entry_band_trace(log, None, None, 'missing_source_evidence'),
+            trace=_entry_band_trace(log, None, None, 'missing_source_evidence', context),
             limitations=(BASE_STATE_LIMITATION,),
             state=EvidenceObject.COMPLETENESS_UNKNOWN,
             reason_codes=[REASON_ENTRY_CONTEXT_UNAVAILABLE],
@@ -685,7 +833,7 @@ def _entry_band_object(log, product_date, registry, templates, sync_run_id, sour
                 'game_logs.games_started': log.games_started,
                 'final_play_by_play.mlb_game_pk': _entry_source_game_pk(entry, log),
             },
-            trace=_entry_band_trace(log, entry, None, f'source_evidence_{state}'),
+            trace=_entry_band_trace(log, entry, None, f'source_evidence_{state}', context),
             limitations=(BASE_STATE_LIMITATION,),
             state=EvidenceObject.COMPLETENESS_UNKNOWN,
             reason_codes=[reason],
@@ -717,7 +865,7 @@ def _entry_band_object(log, product_date, registry, templates, sync_run_id, sour
                 'game_logs.games_started': log.games_started,
                 'final_play_by_play.mlb_game_pk': _entry_source_game_pk(entry, log),
             },
-            trace=_entry_band_trace(log, entry, entry_values, 'incomplete_source_values'),
+            trace=_entry_band_trace(log, entry, entry_values, 'incomplete_source_values', context),
             limitations=(BASE_STATE_LIMITATION,),
             state=EvidenceObject.COMPLETENESS_UNKNOWN,
             reason_codes=[REASON_ENTRY_CONTEXT_UNAVAILABLE],
@@ -760,6 +908,7 @@ def _entry_band_object(log, product_date, registry, templates, sync_run_id, sour
                 'band_cell': cell,
             },
             'complete',
+            context,
         ),
         limitations=(BASE_STATE_LIMITATION,),
         registry=registry,
@@ -778,6 +927,7 @@ def _finish_context_object(
     sync_run_id,
     source,
     contradiction=None,
+    context=None,
 ):
     contradiction = contradiction or (
         'save_and_blown_save'
@@ -825,7 +975,7 @@ def _finish_context_object(
         },
         trace={
             'steps': ['Read stored boxscore finishing fields from game_logs.'],
-            'qualifying_decision': _qualifying_decision(log),
+            'qualifying_decision': _qualifying_decision(log, context),
             'finish_values': values,
             'legacy_row_default_false_caveat': log.batters_faced is None,
             'contradiction': contradiction,
@@ -851,11 +1001,12 @@ def _build_pitcher_window_objects(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     emitted = []
     for window_days in WINDOW_DAYS:
         emitted.append(_save_hold_window_object(
-            pitcher_id, product_date, rows, coverage, window_days, registry, templates, sync_run_id, source
+            pitcher_id, product_date, rows, coverage, window_days, registry, templates, sync_run_id, source, context
         ))
     for builder in (
         _entry_band_distribution_object,
@@ -864,7 +1015,7 @@ def _build_pitcher_window_objects(
         _first_reliever_usage_observation_object,
     ):
         emitted.append(builder(
-            pitcher_id, product_date, rows, coverage, registry, templates, sync_run_id, source
+            pitcher_id, product_date, rows, coverage, registry, templates, sync_run_id, source, context
         ))
     return [item for item in emitted if item is not None]
 
@@ -879,8 +1030,9 @@ def _save_hold_window_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
-    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days))
+    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days, context))
     if not window_rows:
         return None
     if not _denominator_citable(window_rows):
@@ -928,7 +1080,14 @@ def _save_hold_window_object(
             + list(coverage_window.coverage_citations())
         ),
         input_values=_window_input_values(product_date, window_rows),
-        trace=_window_trace(product_date, window_days, window_rows, coverage_window, extra={'counts': counts}),
+        trace=_window_trace(
+            product_date,
+            window_days,
+            window_rows,
+            coverage_window,
+            context=context,
+            extra={'counts': counts},
+        ),
         limitations=tuple(limitations),
         state=state,
         reason_codes=reasons,
@@ -950,9 +1109,10 @@ def _entry_band_distribution_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     window_days = DISTRIBUTION_WINDOW_DAYS
-    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days))
+    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days, context))
     if not window_rows or not _denominator_citable(window_rows):
         return None
     floor_object = _sample_floor_object(
@@ -965,6 +1125,7 @@ def _entry_band_distribution_object(
         templates,
         sync_run_id,
         source,
+        context,
     )
     if floor_object is not None:
         return floor_object
@@ -974,7 +1135,11 @@ def _entry_band_distribution_object(
     consumed = []
     citations = [_game_log_citation(row, ('game_date', 'mlb_game_pk', 'games_started'), citation_role='denominator_row') for row in window_rows]
     for row in window_rows:
-        band = _source_evidence(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+        band = (
+            context.source_evidence_for_log(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+            if context is not None
+            else _source_evidence(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+        )
         if band is not None:
             consumed.append(_source_ref(band))
             citations.append(_source_evidence_citation(band, 'derived_from_evidence'))
@@ -1011,6 +1176,7 @@ def _entry_band_distribution_object(
             window_days,
             window_rows,
             coverage_window,
+            context=context,
             extra={
                 'per_cell_tallies': dict(cells),
                 'band_unknown_count': band_unknown,
@@ -1039,9 +1205,10 @@ def _finish_usage_observation_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     window_days = OBSERVATION_WINDOW_DAYS
-    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days))
+    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days, context))
     if not window_rows or not _denominator_citable(window_rows):
         return None
     floor_object = _sample_floor_object(
@@ -1054,6 +1221,7 @@ def _finish_usage_observation_object(
         templates,
         sync_run_id,
         source,
+        context,
     )
     if floor_object is not None:
         return floor_object
@@ -1065,7 +1233,11 @@ def _finish_usage_observation_object(
     citations = [_game_log_citation(row, _finish_window_fields(), citation_role='denominator_row') for row in window_rows]
     consumed = []
     for row in finished:
-        band = _source_evidence(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+        band = (
+            context.source_evidence_for_log(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+            if context is not None
+            else _source_evidence(row, APPEARANCE_ENTRY_BAND_RULE_ID)
+        )
         if band is not None:
             consumed.append(_source_ref(band))
             citations.append(_source_evidence_citation(band, 'derived_from_evidence'))
@@ -1104,6 +1276,7 @@ def _finish_usage_observation_object(
             window_days,
             window_rows,
             coverage_window,
+            context=context,
             extra={
                 'finished_game_log_ids': [row.id for row in finished],
                 'unknown_games_finished_ids': [row.id for row in unknown_finished],
@@ -1134,9 +1307,10 @@ def _multi_inning_usage_observation_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     window_days = OBSERVATION_WINDOW_DAYS
-    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days))
+    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days, context))
     if not window_rows or not _denominator_citable(window_rows):
         return None
     floor_object = _sample_floor_object(
@@ -1149,6 +1323,7 @@ def _multi_inning_usage_observation_object(
         templates,
         sync_run_id,
         source,
+        context,
     )
     if floor_object is not None:
         return floor_object
@@ -1158,7 +1333,11 @@ def _multi_inning_usage_observation_object(
     citations = [_game_log_citation(row, ('game_date', 'mlb_game_pk', 'games_started'), citation_role='denominator_row') for row in window_rows]
     consumed = []
     for row in window_rows:
-        source_object = _source_evidence_by_cited_game_log(row, 'outing_multi_inning')
+        source_object = (
+            context.source_evidence_for_cited_game_log(row, SOURCE_MULTI_INNING_RULE_ID)
+            if context is not None
+            else _source_evidence_by_cited_game_log(row, SOURCE_MULTI_INNING_RULE_ID)
+        )
         if source_object is None:
             continue
         consumed.append(_source_ref(source_object))
@@ -1195,6 +1374,7 @@ def _multi_inning_usage_observation_object(
             window_days,
             window_rows,
             coverage_window,
+            context=context,
             extra={
                 'counted_game_log_ids': [row.id for row in counted],
                 'unknown_game_log_ids': [row.id for row in unknown],
@@ -1223,9 +1403,10 @@ def _first_reliever_usage_observation_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     window_days = OBSERVATION_WINDOW_DAYS
-    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days))
+    window_rows = _qualifying_rows(_window_rows(rows, product_date, window_days, context))
     if not window_rows or not _denominator_citable(window_rows):
         return None
     floor_object = _sample_floor_object(
@@ -1238,6 +1419,7 @@ def _first_reliever_usage_observation_object(
         templates,
         sync_run_id,
         source,
+        context,
     )
     if floor_object is not None:
         return floor_object
@@ -1247,7 +1429,11 @@ def _first_reliever_usage_observation_object(
     consumed = []
     citations = [_game_log_citation(row, ('game_date', 'mlb_game_pk', 'games_started'), citation_role='denominator_row') for row in window_rows]
     for row in window_rows:
-        order_object = _source_evidence(row, 'appearance_order_in_game')
+        order_object = (
+            context.source_evidence_for_log(row, SOURCE_ORDER_RULE_ID)
+            if context is not None
+            else _source_evidence(row, SOURCE_ORDER_RULE_ID)
+        )
         if order_object is not None:
             consumed.append(_source_ref(order_object))
             citations.append(_source_evidence_citation(order_object, 'derived_from_evidence'))
@@ -1284,6 +1470,7 @@ def _first_reliever_usage_observation_object(
             window_days,
             window_rows,
             coverage_window,
+            context=context,
             extra={
                 'counted_game_log_ids': [row.id for row in counted],
                 'unknown_order_game_log_ids': [row.id for row in unknown],
@@ -1313,6 +1500,7 @@ def _sample_floor_object(
     templates,
     sync_run_id,
     source,
+    context=None,
 ):
     if len(window_rows) >= MIN_OBSERVATION_APPEARANCES:
         return None
@@ -1339,6 +1527,7 @@ def _sample_floor_object(
             OBSERVATION_WINDOW_DAYS,
             window_rows,
             window,
+            context=context,
             extra={'floor_check': {'n': len(window_rows), 'minimum': MIN_OBSERVATION_APPEARANCES, 'passed': False}},
         ),
         state=EvidenceObject.COMPLETENESS_WITHHELD,
@@ -1511,9 +1700,91 @@ def _logs_by_pitcher(rows):
     return grouped
 
 
-def _window_rows(rows, product_date, window_days):
+def _scheduled_games_by_pk(game_pks):
+    pks = tuple(game_pks or ())
+    if not pks:
+        return {}
+    rows = (
+        ScheduledGame.query
+        .filter(ScheduledGame.game_pk.in_(pks))
+        .order_by(asc(ScheduledGame.game_pk), asc(ScheduledGame.id))
+        .all()
+    )
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[row.game_pk].append(row)
+    return grouped
+
+
+def _source_evidence_cache(start_date, end_date):
+    rows = (
+        EvidenceObject.query
+        .filter(EvidenceObject.rule_id.in_((
+            SOURCE_ENTRY_CONTEXT_RULE_ID,
+            APPEARANCE_ENTRY_BAND_RULE_ID,
+            SOURCE_ORDER_RULE_ID,
+        )))
+        .filter(EvidenceObject.subject_type == SUBJECT_APPEARANCE)
+        .filter(EvidenceObject.product_date >= start_date)
+        .filter(EvidenceObject.product_date <= end_date)
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        .order_by(
+            asc(EvidenceObject.rule_id),
+            asc(EvidenceObject.subject_id),
+            asc(EvidenceObject.product_date),
+            asc(EvidenceObject.id),
+        )
+        .all()
+    )
+    by_key = {}
+    for row in rows:
+        by_key.setdefault((row.rule_id, row.subject_id, row.product_date), row)
+    return by_key
+
+
+def _source_evidence_by_cited_game_log_cache(start_date, end_date, log_ids):
+    source_pks = tuple(str(log_id) for log_id in log_ids or ())
+    if not source_pks:
+        return {}
+    rows = (
+        db.session.query(EvidenceCitation, EvidenceObject)
+        .join(EvidenceObject, EvidenceCitation.evidence_object_id == EvidenceObject.id)
+        .filter(EvidenceObject.rule_id.in_((SOURCE_MULTI_INNING_RULE_ID,)))
+        .filter(EvidenceObject.product_date >= start_date)
+        .filter(EvidenceObject.product_date <= end_date)
+        .filter(EvidenceObject.recompute_status == EvidenceObject.RECOMPUTE_CURRENT)
+        .filter(EvidenceCitation.source_table == 'game_logs')
+        .filter(EvidenceCitation.source_pk.in_(source_pks))
+        .order_by(
+            asc(EvidenceObject.rule_id),
+            asc(EvidenceCitation.source_pk),
+            asc(EvidenceObject.product_date),
+            asc(EvidenceObject.id),
+            asc(EvidenceCitation.id),
+        )
+        .all()
+    )
+    by_key = {}
+    for citation, evidence in rows:
+        by_key.setdefault((
+            evidence.rule_id,
+            citation.source_pk,
+            evidence.product_date,
+        ), evidence)
+    return by_key
+
+
+def _window_rows(rows, product_date, window_days, context=None):
     start = product_date - timedelta(days=window_days - 1)
-    return [row for row in rows if start <= row.game_date <= product_date and _is_finality_certified(row)]
+    return [
+        row for row in rows
+        if start <= row.game_date <= product_date
+        and (
+            context.is_finality_certified(row)
+            if context is not None
+            else _is_finality_certified(row)
+        )
+    ]
 
 
 def _qualifying_rows(rows):
@@ -1619,7 +1890,7 @@ def _margin_band(margin):
     return 'four_plus'
 
 
-def _entry_band_trace(log, source_object, entry_values, decision):
+def _entry_band_trace(log, source_object, entry_values, decision, context=None):
     return {
         'steps': [
             'Consumed stored appearance_entry_context evidence.',
@@ -1627,7 +1898,7 @@ def _entry_band_trace(log, source_object, entry_values, decision):
             'Mapped inning phase and margin band to the registered 12-cell table.',
             'Did not reconstruct runner base state.',
         ],
-        'qualifying_decision': _qualifying_decision(log),
+        'qualifying_decision': _qualifying_decision(log, context),
         'source_evidence_object': _source_ref(source_object) if source_object is not None else None,
         'entry_inning': (entry_values or {}).get('entry_inning'),
         'margin': (entry_values or {}).get('margin'),
@@ -1638,7 +1909,7 @@ def _entry_band_trace(log, source_object, entry_values, decision):
     }
 
 
-def _window_trace(product_date, window_days, rows, coverage_window, *, extra=None):
+def _window_trace(product_date, window_days, rows, coverage_window, *, context=None, extra=None):
     payload = {
         'steps': [
             'Built trailing product-day window.',
@@ -1653,14 +1924,19 @@ def _window_trace(product_date, window_days, rows, coverage_window, *, extra=Non
         'window_day_list': [day.day.isoformat() for day in coverage_window.days],
         'coverage_complete': coverage_window.complete,
         'incomplete_days': coverage_window.incomplete_day_labels,
-        'qualifying_set_decisions': [_qualifying_decision(row) for row in rows],
+        'qualifying_set_decisions': [_qualifying_decision(row, context) for row in rows],
     }
     payload.update(extra or {})
     return payload
 
 
-def _qualifying_decision(log):
-    if not _is_finality_certified(log):
+def _qualifying_decision(log, context=None):
+    finality_certified = (
+        context.is_finality_certified(log)
+        if context is not None
+        else _is_finality_certified(log)
+    )
+    if not finality_certified:
         decision = 'excluded_not_finality_certified'
     elif log.games_started == 0:
         decision = 'qualifying_relief_appearance'
