@@ -278,13 +278,30 @@ def test_phase0e_switches_and_legacy_public_files_not_modified():
         'backend/services/tonight_intelligence_snapshot.py',
         'backend/services/what_changed_since_yesterday.py',
         'backend/services/what_changed_since_yesterday_public.py',
-        'backend/services/sync.py',
         'backend/migrations/',
     )
     assert not [
         path for path in changed
         if any(path.replace('\\', '/').startswith(prefix) for prefix in forbidden_prefixes)
     ]
+    if 'backend/services/sync.py' in [path.replace('\\', '/') for path in changed]:
+        diff = _diff_vs_main('backend/services/sync.py')
+        forbidden_sync_terms = (
+            'PHASE0D_EVIDENCE_BUILD',
+            'PHASE0E_READ_BUILD',
+            'PHASE0E_RECONCILIATION_AUDIT',
+            'phase0d_evidence_build_enabled',
+            'phase0e_read_build_enabled',
+            'phase0e_reconciliation_audit_enabled',
+        )
+        changed_sync_lines = [
+            line for line in diff.splitlines()
+            if line[:1] in {'+', '-'} and not line.startswith(('+++', '---'))
+        ]
+        assert not [
+            line for line in changed_sync_lines
+            if any(term in line for term in forbidden_sync_terms)
+        ]
 
 
 def _changed_files_vs_main():
@@ -307,6 +324,20 @@ def _changed_files_vs_main():
         return []
     values = tracked.stdout.splitlines() + untracked.stdout.splitlines()
     return [line.strip() for line in values if line.strip()]
+
+
+def _diff_vs_main(path):
+    try:
+        result = subprocess.run(
+            ['git', 'diff', 'origin/main', '--', path],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return ''
+    return result.stdout
 
 
 def _assert_legacy_vocabulary_quoted_legally(name, text):

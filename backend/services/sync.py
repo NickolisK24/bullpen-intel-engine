@@ -2613,6 +2613,70 @@ def _safe_run_legacy_read_reconciliation_audit_stage(
         }
 
 
+def _daily_sync_phase_status(result):
+    if isinstance(result, dict):
+        status = result.get('status') or result.get('reason') or 'completed'
+        snapshot_id = result.get('snapshot_id')
+        if snapshot_id is not None:
+            return f'{status};snapshot_id={snapshot_id}'
+        return str(status)
+    return 'completed'
+
+
+def _run_logged_daily_sync_phase(run_logger, timings, phase_name, operation):
+    started = time.perf_counter()
+    run_logger.info(
+        'Daily sync post-fatigue phase starting: phase=%s.',
+        phase_name,
+    )
+    try:
+        result = operation()
+    except Exception as exc:
+        elapsed_seconds = round(time.perf_counter() - started, 3)
+        timings.append({
+            'phase': phase_name,
+            'status': 'failed',
+            'elapsed_seconds': elapsed_seconds,
+        })
+        run_logger.warning(
+            'Daily sync post-fatigue phase failed: phase=%s '
+            'elapsed_seconds=%s error=%s',
+            phase_name,
+            elapsed_seconds,
+            exc,
+        )
+        raise
+
+    elapsed_seconds = round(time.perf_counter() - started, 3)
+    status = _daily_sync_phase_status(result)
+    timings.append({
+        'phase': phase_name,
+        'status': status,
+        'elapsed_seconds': elapsed_seconds,
+    })
+    run_logger.info(
+        'Daily sync post-fatigue phase completed: phase=%s status=%s '
+        'elapsed_seconds=%s.',
+        phase_name,
+        status,
+        elapsed_seconds,
+    )
+    return result
+
+
+def _log_daily_sync_phase_summary(run_logger, timings):
+    if not timings:
+        return
+    summary = ', '.join(
+        f"{item['phase']}={item['status']}:{item['elapsed_seconds']}s"
+        for item in timings
+    )
+    run_logger.info(
+        'Daily sync post-fatigue phase duration summary: %s.',
+        summary,
+    )
+
+
 def complete_sync_run_with_snapshot(
     sync_run_id,
     *,
@@ -3158,6 +3222,8 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
     sync_run_id = None
     active_stage = None
     writer_guard = None
+    post_fatigue_phase_timings = []
+    post_fatigue_instrumentation_started = False
     run_logger.info('── Daily sync starting (days_back=%s) ──', days_back)
 
     status = {
@@ -3287,83 +3353,119 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
             sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_FATIGUE_RECALCULATION)
             status['pitchers_updated'] = pitchers_updated
             run_logger.info('Recalculated fatigue for %s pitchers', pitchers_updated)
+            post_fatigue_instrumentation_started = True
 
             active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
-            _safe_build_workload_recovery_evidence_stage(
-                [product_day.calendar_date],
-                sync_run_id=sync_run_id,
-                source='scheduled_sync',
-                job_name=sync_metadata.JOB_DAILY_SYNC,
-                run_logger=run_logger,
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_WORKLOAD_EVIDENCE,
+                lambda: _safe_build_workload_recovery_evidence_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
             )
             active_stage = sync_metadata.STAGE_COMPOSED_READS
-            _safe_build_composed_reads_stage(
-                [product_day.calendar_date],
-                sync_run_id=sync_run_id,
-                source='scheduled_sync',
-                job_name=sync_metadata.JOB_DAILY_SYNC,
-                run_logger=run_logger,
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_COMPOSED_READS,
+                lambda: _safe_build_composed_reads_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
             )
             active_stage = STAGE_LEGACY_READ_RECONCILIATION_AUDIT
-            _safe_run_legacy_read_reconciliation_audit_stage(
-                [product_day.calendar_date],
-                sync_run_id=sync_run_id,
-                source='scheduled_sync',
-                job_name=sync_metadata.JOB_DAILY_SYNC,
-                run_logger=run_logger,
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                STAGE_LEGACY_READ_RECONCILIATION_AUDIT,
+                lambda: _safe_run_legacy_read_reconciliation_audit_stage(
+                    [product_day.calendar_date],
+                    sync_run_id=sync_run_id,
+                    source='scheduled_sync',
+                    job_name=sync_metadata.JOB_DAILY_SYNC,
+                    run_logger=run_logger,
+                ),
             )
 
             active_stage = sync_metadata.STAGE_BACKTEST_REFRESH
-            try:
-                from services.availability_backtest import refresh_availability_backtest
-                backtest = refresh_availability_backtest()
-                status['availability_backtest_status'] = backtest.get('status')
-                status['availability_backtest_computed_at'] = backtest.get('computed_at')
-                run_logger.info(
-                    'Refreshed availability backtest (%s)',
-                    backtest.get('computed_at') or backtest.get('status'),
-                )
-            except Exception as exc:
-                db.session.rollback()
-                status['availability_backtest_status'] = 'failed'
-                status['availability_backtest_error'] = str(exc)
-                run_logger.warning('Availability backtest refresh failed: %s', exc)
-            sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
+            def _refresh_backtest_phase():
+                try:
+                    from services.availability_backtest import refresh_availability_backtest
+                    backtest = refresh_availability_backtest()
+                    status['availability_backtest_status'] = backtest.get('status')
+                    status['availability_backtest_computed_at'] = backtest.get('computed_at')
+                    run_logger.info(
+                        'Refreshed availability backtest (%s)',
+                        backtest.get('computed_at') or backtest.get('status'),
+                    )
+                    result = {'status': backtest.get('status') or 'completed'}
+                except Exception as exc:
+                    db.session.rollback()
+                    status['availability_backtest_status'] = 'failed'
+                    status['availability_backtest_error'] = str(exc)
+                    run_logger.warning('Availability backtest refresh failed: %s', exc)
+                    result = {'status': 'failed', 'error': str(exc)}
+                sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_BACKTEST_REFRESH)
+                return result
 
-            # Partial when records were dead-lettered but the run still
-            # refreshed its domains; otherwise success.
-            final_status = (
-                sync_metadata.STATUS_PARTIAL if records_failed
-                else sync_metadata.STATUS_SUCCESS
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                sync_metadata.STAGE_BACKTEST_REFRESH,
+                _refresh_backtest_phase,
             )
-            status['status'] = final_status
-            if records_failed and not status['message']:
-                status['message'] = (
-                    f'{records_failed} record(s) dead-lettered; see sync_failures.'
+
+            def _complete_sync_phase():
+                # Partial when records were dead-lettered but the run still
+                # refreshed its domains; otherwise success.
+                final_status = (
+                    sync_metadata.STATUS_PARTIAL if records_failed
+                    else sync_metadata.STATUS_SUCCESS
                 )
-            api_metrics = mlb_client.metrics.snapshot()
-            changed_log_count = pull['new_logs_added'] + logs_corrected
-            completed_run, snapshot = complete_sync_run_with_snapshot(
-                sync_run_id,
-                final_status=final_status,
-                records_processed=changed_log_count,
-                records_failed=records_failed,
-                new_logs_added=pull['new_logs_added'],
-                pitchers_updated=pitchers_updated,
-                errors=(
-                    pull['errors']
-                    + roster['errors']
-                    + team_assignment['errors']
-                    + transactions['errors']
-                ),
-                api_calls_made=api_metrics['api_calls'],
-                retries_used=api_metrics['retries'],
-                error_message=status['message'] or None,
-                source=source,
-                started_at=started_at.replace(tzinfo=None),
-                snapshot_source='scheduled_sync',
+                status['status'] = final_status
+                if records_failed and not status['message']:
+                    status['message'] = (
+                        f'{records_failed} record(s) dead-lettered; see sync_failures.'
+                    )
+                api_metrics = mlb_client.metrics.snapshot()
+                changed_log_count = pull['new_logs_added'] + logs_corrected
+                completed_run, snapshot = complete_sync_run_with_snapshot(
+                    sync_run_id,
+                    final_status=final_status,
+                    records_processed=changed_log_count,
+                    records_failed=records_failed,
+                    new_logs_added=pull['new_logs_added'],
+                    pitchers_updated=pitchers_updated,
+                    errors=(
+                        pull['errors']
+                        + roster['errors']
+                        + team_assignment['errors']
+                        + transactions['errors']
+                    ),
+                    api_calls_made=api_metrics['api_calls'],
+                    retries_used=api_metrics['retries'],
+                    error_message=status['message'] or None,
+                    source=source,
+                    started_at=started_at.replace(tzinfo=None),
+                    snapshot_source='scheduled_sync',
+                )
+                status['dashboard_snapshot_id'] = snapshot.id
+                return {'status': final_status, 'snapshot_id': snapshot.id}
+
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                'sync_completion_snapshot_publish',
+                _complete_sync_phase,
             )
-            status['dashboard_snapshot_id'] = snapshot.id
     except sync_metadata.SyncWriterConflict as conflict:
         status.update(sync_metadata.sync_writer_conflict_payload(conflict))
         run_logger.warning('Daily sync blocked: %s', conflict.reason)
@@ -3396,16 +3498,50 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
                 )
 
     if writer_guard is not None:
-        writer_guard.release()
+        if post_fatigue_instrumentation_started:
+            _run_logged_daily_sync_phase(
+                run_logger,
+                post_fatigue_phase_timings,
+                'writer_guard_release',
+                lambda: (writer_guard.release() or {'status': 'released'}),
+            )
+        else:
+            writer_guard.release()
+    elif post_fatigue_instrumentation_started:
+        run_logger.info(
+            'Daily sync post-fatigue phase skipped: phase=writer_guard_release '
+            'status=no_guard.'
+        )
 
     status['finished_at'] = datetime.now(timezone.utc).isoformat()
 
-    write_status(status)
+    if post_fatigue_instrumentation_started:
+        _run_logged_daily_sync_phase(
+            run_logger,
+            post_fatigue_phase_timings,
+            'local_status_write',
+            lambda: (write_status(status) or {'status': 'written'}),
+        )
+        _log_daily_sync_phase_summary(run_logger, post_fatigue_phase_timings)
+    else:
+        write_status(status)
 
     run_logger.info('── Daily sync finished: %s ──', status['status'])
     # Detach the handler so it doesn't leak on the next run.
-    run_logger.removeHandler(file_handler)
-    file_handler.close()
+    if post_fatigue_instrumentation_started:
+        _run_logged_daily_sync_phase(
+            run_logger,
+            post_fatigue_phase_timings,
+            'logger_cleanup',
+            lambda: (
+                run_logger.removeHandler(file_handler),
+                file_handler.close(),
+                {'status': 'closed'},
+            )[-1],
+        )
+    else:
+        run_logger.removeHandler(file_handler)
+        file_handler.close()
 
     return status
 
