@@ -177,18 +177,26 @@ def _evidence(
 
 
 def test_registered_production_read_types_remain_internal_only():
-    from services.reliever_daily_read import READ_TYPE, register_reliever_daily_read
+    from services.reliever_daily_read import (
+        READ_TYPE as RELIEVER_READ_TYPE,
+        register_reliever_daily_read,
+    )
+    from services.team_daily_read import (
+        READ_TYPE as TEAM_READ_TYPE,
+        register_team_daily_read,
+    )
 
     register_reliever_daily_read()
+    register_team_daily_read()
     rows = read_type_registry.all_read_types()
-    assert [row.read_type for row in rows] == [READ_TYPE]
+    assert [row.read_type for row in rows] == [RELIEVER_READ_TYPE, TEAM_READ_TYPE]
     assert all(
         row.classification == EvidenceClassification.INTERNAL_ONLY_FOR_NOW
         for row in rows
     )
     assert validate_read_type_registry() == {
-        'read_type_count': 1,
-        'classified_count': 1,
+        'read_type_count': 2,
+        'classified_count': 2,
     }
 
 

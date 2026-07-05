@@ -30,8 +30,8 @@ label, grade, score, or rank field beyond `completeness_state`.
 | Branch | Scope |
 | --- | --- |
 | 0E-01 | Read contract and registry |
-| 0E-02 | Reliever daily read - in progress |
-| 0E-03 | Team daily read |
+| 0E-02 | Reliever daily read |
+| 0E-03 | Team daily read - in progress |
 | 0E-04 | Legacy reconciliation audit |
 | 0E-05 | Read QA, editorial harness, and headline decision |
 | 0E-06 | Legal paper and exit |
@@ -60,3 +60,4 @@ Phase 0E consumes these Phase 0D source-of-truth documents:
 - `docs/phase0d/phase0d_09_decision_register.md`
 - `backend/services/evidence_classification.py`
 - `docs/phase0e/reliever_daily_read.md`
+- `docs/phase0e/team_daily_read.md`

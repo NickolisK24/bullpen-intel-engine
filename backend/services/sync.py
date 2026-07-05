@@ -2378,17 +2378,18 @@ def _safe_build_composed_reads_stage(
         return {'status': 'skipped', 'reason': 'disabled', 'dates': [d.isoformat() for d in dates]}
 
     started = time.perf_counter()
+    sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_COMPOSED_READS)
     try:
         from services.reliever_daily_read import (
             build_reliever_daily_reads,
             rebuild_marked_reliever_daily_reads,
         )
-        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_COMPOSED_READS)
-        rebuild = rebuild_marked_reliever_daily_reads(
+        reliever_started = time.perf_counter()
+        reliever_rebuild = rebuild_marked_reliever_daily_reads(
             sync_run_id=sync_run_id,
             source=source,
         )
-        builds = [
+        reliever_builds = [
             build_reliever_daily_reads(
                 product_date,
                 sync_run_id=sync_run_id,
@@ -2397,40 +2398,36 @@ def _safe_build_composed_reads_stage(
             for product_date in dates
         ]
         db.session.commit()
-        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        reliever_elapsed_ms = round((time.perf_counter() - reliever_started) * 1000, 1)
         logger_to_use.info(
-            'Phase 0E composed read stage complete: dates=%s reads_rebuilt=%s '
+            'Phase 0E reliever read stage complete: dates=%s reads_rebuilt=%s '
             'reads_built=%s elapsed_ms=%s.',
             ','.join(day.isoformat() for day in dates),
-            rebuild.get('reads_rebuilt', 0),
-            sum(item.get('reads_built', 0) for item in builds),
-            elapsed_ms,
+            reliever_rebuild.get('reads_rebuilt', 0),
+            sum(item.get('reads_built', 0) for item in reliever_builds),
+            reliever_elapsed_ms,
         )
-        return {
+        reliever_result = {
             'status': 'built',
             'dates': [d.isoformat() for d in dates],
-            'rebuild': rebuild,
-            'builds': builds,
-            'elapsed_ms': elapsed_ms,
+            'rebuild': reliever_rebuild,
+            'builds': reliever_builds,
+            'elapsed_ms': reliever_elapsed_ms,
         }
     except Exception as exc:  # noqa: BLE001 - optional read stage is fail-soft
         db.session.rollback()
-        dead_letter.record_failure(
-            COMPOSED_READ_FAILURE_ENTITY_TYPE,
+        _record_composed_read_failure(
             exc,
-            entity_ref=','.join(day.isoformat() for day in dates),
-            payload={
-                'product_dates': [day.isoformat() for day in dates],
-                'source': source,
-                'stage': sync_metadata.STAGE_COMPOSED_READS,
-            },
+            dates=dates,
+            source=source,
+            read_type='reliever_daily_read',
             sync_run_id=sync_run_id,
             job_name=job_name,
         )
         db.session.commit()
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.warning(
-            'Phase 0E composed read stage failed after %sms; sync will continue: %s',
+            'Phase 0E reliever read stage failed after %sms; sync will continue: %s',
             elapsed_ms,
             exc,
         )
@@ -2439,7 +2436,100 @@ def _safe_build_composed_reads_stage(
             'dates': [d.isoformat() for d in dates],
             'error': str(exc),
             'elapsed_ms': elapsed_ms,
+            'reliever': {'status': 'failed', 'error': str(exc)},
+            'team': {'status': 'skipped', 'reason': 'reliever_failed'},
         }
+
+    try:
+        from services.team_daily_read import (
+            build_team_daily_reads,
+            rebuild_marked_team_daily_reads,
+        )
+        team_started = time.perf_counter()
+        team_rebuild = rebuild_marked_team_daily_reads(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        team_builds = [
+            build_team_daily_reads(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
+        db.session.commit()
+        team_elapsed_ms = round((time.perf_counter() - team_started) * 1000, 1)
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.info(
+            'Phase 0E team read stage complete: dates=%s reads_rebuilt=%s '
+            'reads_built=%s elapsed_ms=%s.',
+            ','.join(day.isoformat() for day in dates),
+            team_rebuild.get('reads_rebuilt', 0),
+            sum(item.get('reads_built', 0) for item in team_builds),
+            team_elapsed_ms,
+        )
+        return {
+            'status': 'built',
+            'dates': [d.isoformat() for d in dates],
+            'reliever': reliever_result,
+            'team': {
+                'status': 'built',
+                'dates': [d.isoformat() for d in dates],
+                'rebuild': team_rebuild,
+                'builds': team_builds,
+                'elapsed_ms': team_elapsed_ms,
+            },
+            'elapsed_ms': elapsed_ms,
+        }
+    except Exception as exc:  # noqa: BLE001 - team read stage is fail-soft
+        db.session.rollback()
+        _record_composed_read_failure(
+            exc,
+            dates=dates,
+            source=source,
+            read_type='team_daily_read',
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        db.session.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.warning(
+            'Phase 0E team read stage failed after %sms; reliever reads remain committed: %s',
+            elapsed_ms,
+            exc,
+        )
+        return {
+            'status': 'partial',
+            'dates': [d.isoformat() for d in dates],
+            'reliever': reliever_result,
+            'team': {'status': 'failed', 'error': str(exc)},
+            'elapsed_ms': elapsed_ms,
+        }
+
+
+def _record_composed_read_failure(
+    exc,
+    *,
+    dates,
+    source,
+    read_type,
+    sync_run_id,
+    job_name,
+):
+    dead_letter.record_failure(
+        COMPOSED_READ_FAILURE_ENTITY_TYPE,
+        exc,
+        entity_ref=','.join(day.isoformat() for day in dates),
+        payload={
+            'product_dates': [day.isoformat() for day in dates],
+            'source': source,
+            'stage': sync_metadata.STAGE_COMPOSED_READS,
+            'read_type': read_type,
+        },
+        sync_run_id=sync_run_id,
+        job_name=job_name,
+    )
 
 
 def complete_sync_run_with_snapshot(
