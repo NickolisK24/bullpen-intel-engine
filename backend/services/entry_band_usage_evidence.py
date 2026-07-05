@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import json
 import logging
 import re
 import time
@@ -471,23 +472,40 @@ def build_entry_band_usage_evidence(
     emitted = _upsert_evidence_batch(evidence_to_upsert)
     logger.info(
         'Entry band usage persistence completed: product_date=%s objects_built=%s '
-        'objects_created=%s objects_refreshed=%s elapsed_ms=%s.',
+        'objects_created=%s objects_refreshed=%s objects_unchanged=%s '
+        'elapsed_ms=%s.',
         ref.isoformat(),
         len(emitted),
         sum(1 for item in emitted if item == 'created'),
         sum(1 for item in emitted if item == 'refreshed'),
+        sum(1 for item in emitted if item == 'unchanged'),
         round((time.perf_counter() - upsert_started) * 1000, 1),
+    )
+    finalization_started = time.perf_counter()
+    finalization_action = 'commit' if commit else 'flush'
+    logger.info(
+        'Entry band usage finalization starting: product_date=%s action=%s.',
+        ref.isoformat(),
+        finalization_action,
     )
     if commit:
         db.session.commit()
     else:
         db.session.flush()
+    logger.info(
+        'Entry band usage finalization completed: product_date=%s action=%s '
+        'elapsed_ms=%s.',
+        ref.isoformat(),
+        finalization_action,
+        round((time.perf_counter() - finalization_started) * 1000, 1),
+    )
 
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
     logger.info(
         'Entry band usage build completed: product_date=%s product_logs=%s '
         'window_logs=%s pitchers_considered=%s objects_built=%s '
-        'objects_created=%s objects_refreshed=%s elapsed_ms=%s.',
+        'objects_created=%s objects_refreshed=%s objects_unchanged=%s '
+        'elapsed_ms=%s.',
         ref.isoformat(),
         len(context.product_logs),
         len(context.window_logs),
@@ -495,6 +513,7 @@ def build_entry_band_usage_evidence(
         len(emitted),
         sum(1 for item in emitted if item == 'created'),
         sum(1 for item in emitted if item == 'refreshed'),
+        sum(1 for item in emitted if item == 'unchanged'),
         elapsed_ms,
     )
     return {
@@ -507,6 +526,7 @@ def build_entry_band_usage_evidence(
         'objects_built': len(emitted),
         'objects_created': sum(1 for item in emitted if item == 'created'),
         'objects_refreshed': sum(1 for item in emitted if item == 'refreshed'),
+        'objects_unchanged': sum(1 for item in emitted if item == 'unchanged'),
         'elapsed_ms': elapsed_ms,
     }
 
@@ -1606,6 +1626,13 @@ def _upsert_evidence_batch(new_evidence_rows):
         return []
     keys = list(dict.fromkeys(row.evidence_key for row in rows))
     existing_by_key = {}
+    lookup_started = time.perf_counter()
+    chunk_count = (len(keys) + 499) // 500
+    logger.info(
+        'Entry band usage persistence lookup starting: evidence_keys=%s chunks=%s.',
+        len(keys),
+        chunk_count,
+    )
     for key_chunk in _chunks(keys, 500):
         existing_rows = (
             EvidenceObject.query
@@ -1616,17 +1643,135 @@ def _upsert_evidence_batch(new_evidence_rows):
             row.evidence_key: row
             for row in existing_rows
         })
+    logger.info(
+        'Entry band usage persistence lookup completed: evidence_keys=%s '
+        'existing_objects=%s elapsed_ms=%s.',
+        len(keys),
+        len(existing_by_key),
+        round((time.perf_counter() - lookup_started) * 1000, 1),
+    )
+
+    plan_started = time.perf_counter()
     emitted = []
+    citations_created = 0
+    citations_refreshed = 0
     for new_evidence in rows:
         existing = existing_by_key.get(new_evidence.evidence_key)
         if existing is None:
             db.session.add(new_evidence)
+            citations_created += len(new_evidence.citations or ())
             emitted.append('created')
             continue
+        if _evidence_unchanged(existing, new_evidence):
+            emitted.append('unchanged')
+            continue
         _refresh_existing_evidence(existing, new_evidence)
+        citations_refreshed += len(new_evidence.citations or ())
         emitted.append('refreshed')
-    db.session.flush()
+    created = sum(1 for item in emitted if item == 'created')
+    refreshed = sum(1 for item in emitted if item == 'refreshed')
+    unchanged = sum(1 for item in emitted if item == 'unchanged')
+    logger.info(
+        'Entry band usage persistence plan completed: objects_built=%s '
+        'objects_created=%s objects_refreshed=%s objects_unchanged=%s '
+        'citations_created=%s citations_refreshed=%s '
+        'supersession_traces=%s elapsed_ms=%s.',
+        len(emitted),
+        created,
+        refreshed,
+        unchanged,
+        citations_created,
+        citations_refreshed,
+        refreshed,
+        round((time.perf_counter() - plan_started) * 1000, 1),
+    )
+    if created or refreshed:
+        flush_started = time.perf_counter()
+        logger.info(
+            'Entry band usage persistence flush starting: objects_changed=%s '
+            'citations_written=%s.',
+            created + refreshed,
+            citations_created + citations_refreshed,
+        )
+        db.session.flush()
+        logger.info(
+            'Entry band usage persistence flush completed: objects_changed=%s '
+            'elapsed_ms=%s.',
+            created + refreshed,
+            round((time.perf_counter() - flush_started) * 1000, 1),
+        )
+    else:
+        logger.info(
+            'Entry band usage persistence flush skipped: objects_changed=0.'
+        )
     return emitted
+
+
+def _evidence_unchanged(existing, new_evidence):
+    if existing.recompute_status != EvidenceObject.RECOMPUTE_CURRENT:
+        return False
+    if existing.recompute_reason_codes:
+        return False
+    for field in (
+        'evidence_type',
+        'subject_type',
+        'subject_id',
+        'subject_key',
+        'product_date',
+        'claim_template_id',
+        'rendered_claim',
+        'rule_id',
+        'rule_version',
+        'rule_definition_hash',
+        'completeness_state',
+        'posture',
+        'source',
+    ):
+        if getattr(existing, field) != getattr(new_evidence, field):
+            return False
+    if not _json_equal(existing.typed_cited_inputs, new_evidence.typed_cited_inputs):
+        return False
+    if not _json_equal(
+        _current_trace(existing.computation_trace),
+        new_evidence.computation_trace,
+    ):
+        return False
+    if not _json_equal(existing.reason_codes or [], new_evidence.reason_codes or []):
+        return False
+    if not _json_equal(existing.limitations or [], new_evidence.limitations or []):
+        return False
+    return _citation_signatures(existing.citations) == _citation_signatures(
+        new_evidence.citations
+    )
+
+
+def _current_trace(trace):
+    payload = dict(trace or {})
+    payload.pop('superseded_prior', None)
+    return payload
+
+
+def _json_equal(left, right):
+    return _stable_json(left) == _stable_json(right)
+
+
+def _stable_json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), default=str)
+
+
+def _citation_signatures(citations):
+    return sorted(
+        (
+            citation.source_family,
+            citation.source_table,
+            str(citation.source_pk),
+            tuple(citation.source_field_names or ()),
+            citation.citation_role,
+            _stable_json(citation.cited_values or {}),
+            _stable_json(citation.provenance or {}),
+        )
+        for citation in citations or ()
+    )
 
 
 def _refresh_existing_evidence(existing, new_evidence):
