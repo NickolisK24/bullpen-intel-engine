@@ -120,7 +120,7 @@ class EvidenceObject(db.Model):
         'EvidenceCitation',
         backref='evidence_object',
         cascade='all, delete-orphan',
-        lazy='select',
+        lazy='selectin',
     )
 
     def to_dict(self):

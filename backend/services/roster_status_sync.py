@@ -8,6 +8,7 @@ freshness and local tracking state.
 """
 
 from collections import Counter, defaultdict
+import logging
 
 from models.pitcher import Pitcher
 from models.roster_status_snapshot import RosterStatusSnapshot
@@ -24,6 +25,8 @@ from services.roster_status import (
 from utils.db import db
 from utils.time import utc_now_naive
 
+
+logger = logging.getLogger(__name__)
 
 ROSTER_TYPE_ACTIVE = 'active'
 ROSTER_TYPE_40_MAN = '40Man'
@@ -491,6 +494,10 @@ def _upsert_roster_status_snapshot(values, *, sync_run_id=None, timestamp=None):
             sync_run_id=sync_run_id,
             corrected_at=timestamp,
         )
+        _notify_roster_depth_evidence_snapshot_correction(
+            existing,
+            sync_run_id=sync_run_id,
+        )
         db.session.add(existing)
         db.session.flush()
         return existing, 'corrected', False
@@ -498,6 +505,24 @@ def _upsert_roster_status_snapshot(values, *, sync_run_id=None, timestamp=None):
     db.session.add(existing)
     db.session.flush()
     return existing, 'unchanged', False
+
+
+def _notify_roster_depth_evidence_snapshot_correction(snapshot_row, *, sync_run_id=None):
+    try:
+        from services.roster_depth_evidence import (
+            mark_roster_status_snapshot_correction_for_roster_depth,
+        )
+        return mark_roster_status_snapshot_correction_for_roster_depth(
+            snapshot_row,
+            sync_run_id=sync_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - correction marking must not block sync
+        logger.warning(
+            'Could not mark roster depth evidence for snapshot correction id=%s: %s',
+            getattr(snapshot_row, 'id', None),
+            exc,
+        )
+        return {'marked_count': 0, 'evidence_ids': []}
 
 
 def latest_roster_status_snapshot_for_pitcher(pitcher_id):
