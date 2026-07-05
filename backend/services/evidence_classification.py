@@ -22,6 +22,7 @@ from services.evidence_rules import (
 )
 from services.inherited_traffic_evidence import register_inherited_traffic_rules
 from services.roster_depth_evidence import register_roster_depth_rules
+from services.roster_membership_evidence import register_roster_membership_rules
 from services.starter_exposure_evidence import register_starter_exposure_rules
 from services.team_relief_composition_evidence import register_team_relief_composition_rules
 from services.workload_recovery_evidence import register_workload_recovery_rules
@@ -84,6 +85,7 @@ APPEARANCE_LANGUAGE = 'docs/phase0d/public_language_rules.md#appearance-entry-ex
 INHERITED_LANGUAGE = 'docs/phase0d/public_language_rules.md#inherited-traffic-clean-outing'
 STARTER_EXPOSURE_LANGUAGE = 'docs/phase0d/public_language_rules.md#starter-exposure-calendar-density'
 ROSTER_LANGUAGE = 'docs/phase0d/public_language_rules.md#roster-depth-churn'
+ROSTER_MEMBERSHIP_LANGUAGE = 'docs/phase0d/public_language_rules.md#roster-membership-context'
 ENTRY_BAND_LANGUAGE = 'docs/phase0d/public_language_rules.md#entry-context-bands-usage-observations'
 TEAM_RELIEF_LANGUAGE = 'docs/phase0d/public_language_rules.md#team-relief-contributor-composition'
 
@@ -195,6 +197,7 @@ CLASSIFICATION_ENTRIES: dict[str, EvidenceClassificationEntry] = {
         _pi('team_roster_snapshot_state', 'Roster snapshot diagnostic.'),
         _pc('pitcher_il_placement_context', 'Public IL transaction context fact.', ('exact safe phrasing only',), ROSTER_LANGUAGE),
         _pc('pitcher_il_activation_context', 'Public IL transaction context fact.', ('exact safe phrasing only',), ROSTER_LANGUAGE),
+        _pc('pitcher_roster_membership_context', 'Roster snapshot membership fact only.', ('same-day snapshot required for complete evidence', 'never renders use-state or injury-state conclusions'), ROSTER_MEMBERSHIP_LANGUAGE),
         _pc('team_public_il_count', 'Team public IL count fact.', ('counts presence only; never statements about non-IL pitchers',), ROSTER_LANGUAGE),
         _pc('team_transaction_churn_window', 'Team transaction churn count fact.', ('coverage caveat',), ROSTER_LANGUAGE),
         _pc('team_transaction_category_counts_window', 'Team transaction category count fact.', ('category definitions shown',), ROSTER_LANGUAGE),
@@ -244,7 +247,7 @@ PERMANENTLY_INTERNAL_RULE_IDS = frozenset({
 })
 
 EXPECTED_CLASSIFICATION_TALLIES = {
-    EvidenceClassification.PUBLIC_CANDIDATE_WITH_REQUIRED_LANGUAGE: 43,
+    EvidenceClassification.PUBLIC_CANDIDATE_WITH_REQUIRED_LANGUAGE: 44,
     EvidenceClassification.ELIGIBLE_PUBLIC_CANDIDATE_LATER: 9,
     EvidenceClassification.INTERNAL_ONLY_FOR_NOW: 4,
     EvidenceClassification.PERMANENTLY_INTERNAL: 8,
@@ -256,6 +259,7 @@ PHASE0D_RULE_REGISTRATION_FUNCTIONS = (
     register_inherited_traffic_rules,
     register_starter_exposure_rules,
     register_roster_depth_rules,
+    register_roster_membership_rules,
     register_entry_band_usage_rules,
     register_team_relief_composition_rules,
 )

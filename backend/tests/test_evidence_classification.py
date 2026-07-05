@@ -60,8 +60,8 @@ def app():
 def test_registry_completeness_both_directions_and_future_rule_guard():
     registry, _ = phase0d_rule_registry()
     result = validate_evidence_classifications(registry=registry)
-    assert result['rule_count'] == 64
-    assert result['classified_count'] == 64
+    assert result['rule_count'] == 65
+    assert result['classified_count'] == 65
     assert set(registered_phase0d_rule_ids(registry)) == set(CLASSIFICATION_ENTRIES)
 
     registry.register(EvidenceRule(
@@ -82,7 +82,8 @@ def test_classification_tallies_and_pi_set_exactness():
         key: tallies.get(key, 0)
         for key in EXPECTED_CLASSIFICATION_TALLIES
     } == EXPECTED_CLASSIFICATION_TALLIES
-    assert tallies[EvidenceClassification.PUBLIC_CANDIDATE_WITH_REQUIRED_LANGUAGE] == 43
+    # Phase 0E-02 adds the read-scoped pitcher roster membership context rule.
+    assert tallies[EvidenceClassification.PUBLIC_CANDIDATE_WITH_REQUIRED_LANGUAGE] == 44
     assert tallies[EvidenceClassification.ELIGIBLE_PUBLIC_CANDIDATE_LATER] == 9
     assert tallies[EvidenceClassification.INTERNAL_ONLY_FOR_NOW] == 4
     assert tallies[EvidenceClassification.PERMANENTLY_INTERNAL] == 8
