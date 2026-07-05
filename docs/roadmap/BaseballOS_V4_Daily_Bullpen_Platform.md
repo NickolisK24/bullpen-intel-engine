@@ -820,7 +820,7 @@ Review cadence:
 | 2 | Phase 0A - Pipeline Integrity & Data Trust | Complete | Branches phase-0a/01 through phase-0a/08 have been merged via PRs #354-#359 and #364-#365; follow-up slate-coverage publish, slate diagnostics, and postgame blocker fixes merged via PRs #360-#363. |
 | 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Complete | Branches 0B-01 through 0B-07 completed; acquisition strategy and matrix added; Phase 0C sequencing plan is the next step. |
 | 4 | Phase 0C - Reliever Appearance Evidence Layer | Complete | Branches 0C-01 through 0C-08 completed; foundation report added and source readiness coverage integrated before public evidence interpretation. |
-| 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Complete | Evidence contract, families, classification registry, decision register, language packages, and exit report completed via PRs #381-#388 plus PR #TBD. |
+| 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Complete | Evidence contract, families, classification registry, decision register, language packages, and exit report completed via PRs #381-#388 plus PR #389. |
 | 6 | Phase 0E - Bullpen Read Quality Model | Not started | Tie reads to evidence, confidence, and limitations. |
 | 7 | Phase 0F - Pitcher Detail Evidence Surface | Not started | Explain what happened and what changed for relievers. |
 | 8 | Phase 0G - Team Bullpen Evidence Surface | Not started | Connect team reads to visible bullpen evidence. |
