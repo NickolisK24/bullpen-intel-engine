@@ -1,5 +1,8 @@
 # Phase 0D-09 Decision Register
 
+Status: superseded by `docs/phase0d/decision_register.md` for resolved 0D-09
+exit decisions. This file is retained as the pre-exit carry-forward register.
+
 ## Purpose
 
 This register carries forward decisions that Phase 0D family branches identify

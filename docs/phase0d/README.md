@@ -17,12 +17,13 @@ approved branch explicitly changes posture for a registered evidence family.
 - 0D-03: entry and exit appearance context. Complete.
 - 0D-04: inherited traffic and clean/traffic outing context. Complete.
 - 0D-05: starter exposure and calendar density evidence. Complete.
-- 0D-06: roster, IL, and transaction context. Active/completed in this branch.
+- 0D-06: roster, IL, and transaction context. Complete.
 - 0D-07: entry-context bands and usage observations. Complete.
 - 0D-08: team relief contributor composition. Active/completed in this branch.
   Roadmap note: this branch implements the master plan's team bullpen structure
   composition item as internal-only team relief contributor composition.
-- 0D-09: integration, public-candidate review, and Phase 0D exit.
+- 0D-09: evidence boundary review and Phase 0D exit. Active/completed in this
+  branch.
 
 The branch map is sequencing only. Branch 0D-01 implements no production
 evidence family. Branch 0D-02 adds the first production evidence family as
@@ -41,6 +42,20 @@ logs, slate coverage, and stored 0D-02/0D-03 evidence objects.
 Branch 0D-08 adds internal-only team relief contributor composition facts from
 stored game logs, same-date roster snapshots, slate coverage, play-by-play
 corroboration, and stored 0D-02/0D-04/0D-05/0D-07 evidence objects.
+Branch 0D-09 adds classification metadata, resolved decisions, public-language
+packages, and the evidence-layer handoff report without changing runtime
+behavior.
+
+## Phase 0D Exit Artifacts
+
+- `backend/services/evidence_classification.py`
+- `docs/phase0d/decision_register.md`
+- `docs/phase0d/public_language_rules.md`
+- `docs/phase0d/evidence_layer_report.md`
+
+0D-09 classifies eligibility only. It does not flip posture, add a public
+surface, register a new evidence family, emit new evidence, change sync stages,
+or add a migration.
 
 ## Binding Interpretation Rules
 
