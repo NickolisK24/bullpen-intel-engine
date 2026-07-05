@@ -1,4 +1,8 @@
 from datetime import date, timedelta
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from flask import Flask
@@ -11,6 +15,9 @@ from models.sync_run import SyncRun
 from services import sync_metadata
 from utils.db import db
 from utils.time import utc_now_naive
+
+
+REPO_BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -59,6 +66,44 @@ def test_manual_sync_is_refused_when_writer_lock_is_held(app_context_client):
     assert body['status'] == 'blocked'
     assert body['reason'] == sync_metadata.SYNC_WRITER_ALREADY_RUNNING
     assert _run_count() == 0
+
+
+def test_app_sync_runtime_registers_composed_read_evidence_object_mapper():
+    code = (
+        "from app import create_app; "
+        "from models.sync_run import SyncRun; "
+        "from services import sync_metadata; "
+        "from utils.db import db; "
+        "app = create_app('test'); "
+        "ctx = app.app_context(); "
+        "ctx.push(); "
+        "db.create_all(); "
+        "SyncRun.query.count(); "
+        "guard = sync_metadata.acquire_sync_writer_guard(); "
+        "guard.release(); "
+        "db.session.remove(); "
+        "db.drop_all(); "
+        "ctx.pop(); "
+        "print('mapper-ok')"
+    )
+    env = {
+        **os.environ,
+        'APP_ENV': 'test',
+        'AUTO_SYNC': 'false',
+        'DATABASE_URL': 'sqlite:///:memory:',
+        'TEST_DATABASE_URL': 'sqlite:///:memory:',
+    }
+    result = subprocess.run(
+        [sys.executable, '-c', code],
+        cwd=str(REPO_BACKEND_DIR),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert 'mapper-ok' in result.stdout
 
 
 def test_fatigue_recalculation_is_refused_when_writer_lock_is_held(app_context_client):
