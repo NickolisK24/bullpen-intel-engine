@@ -19,6 +19,7 @@ from models.sync_failure import SyncFailure
 from models.sync_run import SyncRun
 from services import sync as sync_service
 from services import sync_metadata
+import services.roster_depth_evidence as roster_service
 from services.evidence_language import EvidenceLanguageError
 from services.evidence_rules import (
     ClaimTemplate,
@@ -584,6 +585,52 @@ def test_recompute_snapshot_and_transaction_corrections_are_bounded_idempotent(a
         assert target_after.recompute_status == EvidenceObject.RECOMPUTE_CURRENT
         assert target_after.computation_trace['superseded_prior']['rendered_claim']
         assert unrelated_after.updated_at == unrelated_updated_at
+
+
+def test_roster_depth_build_batches_upserts_and_logs_phase_counts(app, monkeypatch, caplog):
+    with app.app_context():
+        run = _sync_run()
+        p1 = _pitcher(72, 872, 'Batch Target')
+        p2 = _pitcher(73, 873, 'Batch Other', team_id=117)
+        _snapshot(p1)
+        _snapshot(p2, team_id=117)
+        _coverage()
+        _transaction('tx-batch-target', p1, to_team_id=116, category='option')
+
+        monkeypatch.setattr(
+            roster_service,
+            '_upsert_evidence',
+            lambda *_args, **_kwargs: pytest.fail('per-object roster-depth upsert was used'),
+        )
+
+        with caplog.at_level(logging.INFO, logger='baseballos.daily_sync'):
+            result = build_roster_depth_evidence(PRODUCT_DATE, sync_run_id=run.id)
+        messages = [record.getMessage() for record in caplog.records]
+
+    assert result['status'] == 'built'
+    assert result['objects_built'] > 0
+    assert result['objects_created'] == result['objects_built']
+    assert result['elapsed_ms'] >= 0
+    assert any(
+        'Roster depth context loaded:' in message
+        and 'teams=' in message
+        and 'transactions=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Roster depth persistence completed:' in message
+        and 'objects_built=' in message
+        and 'objects_created=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
+    assert any(
+        'Roster depth build completed:' in message
+        and 'teams_considered=' in message
+        and 'elapsed_ms=' in message
+        for message in messages
+    )
 
 
 def test_sync_stage_fail_soft_kill_switch_and_public_payload_shape(app, monkeypatch, caplog):

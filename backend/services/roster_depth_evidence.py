@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import logging
 import re
+import time
 
 from sqlalchemy import asc, or_
 
@@ -47,6 +49,8 @@ from services.transaction_ingestion import (
 )
 from utils.db import db
 
+
+logger = logging.getLogger('baseballos.daily_sync')
 
 RULE_VERSION = 1
 EVIDENCE_SOURCE = 'phase0d:roster_depth_evidence'
@@ -433,7 +437,14 @@ def build_roster_depth_evidence(
     commit=False,
     restrict_evidence_keys: set[str] | None = None,
 ) -> dict:
+    started = time.perf_counter()
     ref = _as_date(product_date)
+    logger.info(
+        'Roster depth build starting: product_date=%s restrict_keys=%s.',
+        ref.isoformat(),
+        len(restrict_evidence_keys or ()),
+    )
+    context_started = time.perf_counter()
     registry, templates = _local_registries()
     snapshot_sets = _latest_snapshot_sets_by_team(ref)
     prior_snapshot_sets = _snapshot_sets_for_date(ref - timedelta(days=1))
@@ -445,7 +456,22 @@ def build_roster_depth_evidence(
     team_ids = _team_ids(snapshot_sets, prior_snapshot_sets, transactions)
     names = _pitcher_names(snapshot_sets, prior_snapshot_sets, transactions)
     source_state = _roster_source_state(ref)
-    emitted = []
+    logger.info(
+        'Roster depth context loaded: product_date=%s teams=%s '
+        'current_snapshot_teams=%s prior_snapshot_teams=%s transactions=%s '
+        'coverage_windows=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(team_ids),
+        len(snapshot_sets),
+        len(prior_snapshot_sets),
+        len(transactions),
+        len(coverage_rows),
+        round((time.perf_counter() - context_started) * 1000, 1),
+    )
+    assemble_started = time.perf_counter()
+    evidence_to_upsert = []
+    team_objects = 0
+    player_il_objects = 0
 
     for team_id in team_ids:
         current = snapshot_sets.get(team_id) or SnapshotSet(team_id, None, (), missing=True)
@@ -469,7 +495,8 @@ def build_roster_depth_evidence(
         for item in built:
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            evidence_to_upsert.append(item.evidence)
+            team_objects += 1
 
     for transaction in transactions:
         for item in _build_player_il_objects(
@@ -484,13 +511,48 @@ def build_roster_depth_evidence(
         ):
             if restrict_evidence_keys is not None and item.evidence.evidence_key not in restrict_evidence_keys:
                 continue
-            emitted.append(_upsert_evidence(item.evidence))
+            evidence_to_upsert.append(item.evidence)
+            player_il_objects += 1
+
+    logger.info(
+        'Roster depth evidence assembled: product_date=%s team_objects=%s '
+        'player_il_objects=%s objects_built=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        team_objects,
+        player_il_objects,
+        len(evidence_to_upsert),
+        round((time.perf_counter() - assemble_started) * 1000, 1),
+    )
+    upsert_started = time.perf_counter()
+    emitted = _upsert_evidence_batch(evidence_to_upsert)
+    logger.info(
+        'Roster depth persistence completed: product_date=%s objects_built=%s '
+        'objects_created=%s objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(emitted),
+        sum(1 for item in emitted if item == 'created'),
+        sum(1 for item in emitted if item == 'refreshed'),
+        round((time.perf_counter() - upsert_started) * 1000, 1),
+    )
 
     if commit:
         db.session.commit()
     else:
         db.session.flush()
 
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        'Roster depth build completed: product_date=%s teams_considered=%s '
+        'transactions_considered=%s objects_built=%s objects_created=%s '
+        'objects_refreshed=%s elapsed_ms=%s.',
+        ref.isoformat(),
+        len(team_ids),
+        len(transactions),
+        len(emitted),
+        sum(1 for item in emitted if item == 'created'),
+        sum(1 for item in emitted if item == 'refreshed'),
+        elapsed_ms,
+    )
     return {
         'status': 'built',
         'product_date': ref.isoformat(),
@@ -501,6 +563,7 @@ def build_roster_depth_evidence(
         'objects_created': sum(1 for item in emitted if item == 'created'),
         'objects_refreshed': sum(1 for item in emitted if item == 'refreshed'),
         'transaction_sync_window_coverage': 'player_transaction_sync_windows',
+        'elapsed_ms': elapsed_ms,
     }
 
 
@@ -1584,12 +1647,39 @@ def _build_object(
 
 
 def _upsert_evidence(new_evidence):
-    existing = EvidenceObject.query.filter_by(evidence_key=new_evidence.evidence_key).first()
-    if existing is None:
-        db.session.add(new_evidence)
-        db.session.flush()
-        return 'created'
+    return _upsert_evidence_batch([new_evidence])[0]
 
+
+def _upsert_evidence_batch(new_evidence_rows):
+    rows = list(new_evidence_rows or ())
+    if not rows:
+        return []
+    keys = list(dict.fromkeys(row.evidence_key for row in rows))
+    existing_by_key = {}
+    for key_chunk in _chunks(keys, 500):
+        existing_rows = (
+            EvidenceObject.query
+            .filter(EvidenceObject.evidence_key.in_(key_chunk))
+            .all()
+        )
+        existing_by_key.update({
+            row.evidence_key: row
+            for row in existing_rows
+        })
+    emitted = []
+    for new_evidence in rows:
+        existing = existing_by_key.get(new_evidence.evidence_key)
+        if existing is None:
+            db.session.add(new_evidence)
+            emitted.append('created')
+            continue
+        _refresh_existing_evidence(existing, new_evidence)
+        emitted.append('refreshed')
+    db.session.flush()
+    return emitted
+
+
+def _refresh_existing_evidence(existing, new_evidence):
     prior_trace = {
         'rendered_claim': existing.rendered_claim,
         'completeness_state': existing.completeness_state,
@@ -1636,8 +1726,11 @@ def _upsert_evidence(new_evidence):
         for citation in new_evidence.citations
     ]
     db.session.add(existing)
-    db.session.flush()
-    return 'refreshed'
+
+
+def _chunks(values, size):
+    for index in range(0, len(values), size):
+        yield values[index:index + size]
 
 
 def _latest_snapshot_sets_by_team(product_date):
