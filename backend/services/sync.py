@@ -69,6 +69,7 @@ PITCHER_RESOLUTION_FAILURE_ENTITY_TYPE = 'pitcher_resolution'
 POSTGAME_GAME_FAILURE_ENTITY_TYPE = 'postgame_completed_game'
 POSTGAME_CONTEXT_FAILURE_ENTITY_TYPE = 'postgame_completed_game_context'
 WORKLOAD_EVIDENCE_FAILURE_ENTITY_TYPE = 'phase0d_workload_evidence'
+COMPOSED_READ_FAILURE_ENTITY_TYPE = 'phase0e_composed_reads'
 POSTGAME_EARLY_MORNING_CUTOFF_HOUR = 6
 POSTGAME_SNAPSHOT_DEFAULT_TIMEOUT_SECONDS = 120.0
 DAILY_GAME_LOG_CORRECTION_SOURCE = 'daily_game_log'
@@ -2143,6 +2144,11 @@ def phase0d_evidence_build_enabled():
     return str(value).strip().lower() not in _FALSEY_ENV_VALUES
 
 
+def phase0e_read_build_enabled():
+    value = os.environ.get('PHASE0E_READ_BUILD', 'true')
+    return str(value).strip().lower() not in _FALSEY_ENV_VALUES
+
+
 def _safe_build_workload_recovery_evidence_stage(
     product_dates,
     *,
@@ -2342,6 +2348,89 @@ def _safe_build_workload_recovery_evidence_stage(
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         logger_to_use.warning(
             'Phase 0D workload evidence stage failed after %sms; sync will continue: %s',
+            elapsed_ms,
+            exc,
+        )
+        return {
+            'status': 'failed',
+            'dates': [d.isoformat() for d in dates],
+            'error': str(exc),
+            'elapsed_ms': elapsed_ms,
+        }
+
+
+def _safe_build_composed_reads_stage(
+    product_dates,
+    *,
+    sync_run_id=None,
+    source='sync',
+    job_name=sync_metadata.JOB_DAILY_SYNC,
+    run_logger=None,
+):
+    logger_to_use = run_logger or logger
+    dates = sorted({_date for _date in product_dates or [] if _date is not None})
+    if not dates:
+        return {'status': 'skipped', 'reason': 'no_product_dates', 'dates': []}
+    if not phase0e_read_build_enabled():
+        logger_to_use.info(
+            'Phase 0E composed read build skipped: PHASE0E_READ_BUILD disabled.'
+        )
+        return {'status': 'skipped', 'reason': 'disabled', 'dates': [d.isoformat() for d in dates]}
+
+    started = time.perf_counter()
+    try:
+        from services.reliever_daily_read import (
+            build_reliever_daily_reads,
+            rebuild_marked_reliever_daily_reads,
+        )
+        sync_metadata.set_sync_stage(sync_run_id, sync_metadata.STAGE_COMPOSED_READS)
+        rebuild = rebuild_marked_reliever_daily_reads(
+            sync_run_id=sync_run_id,
+            source=source,
+        )
+        builds = [
+            build_reliever_daily_reads(
+                product_date,
+                sync_run_id=sync_run_id,
+                source=source,
+            )
+            for product_date in dates
+        ]
+        db.session.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.info(
+            'Phase 0E composed read stage complete: dates=%s reads_rebuilt=%s '
+            'reads_built=%s elapsed_ms=%s.',
+            ','.join(day.isoformat() for day in dates),
+            rebuild.get('reads_rebuilt', 0),
+            sum(item.get('reads_built', 0) for item in builds),
+            elapsed_ms,
+        )
+        return {
+            'status': 'built',
+            'dates': [d.isoformat() for d in dates],
+            'rebuild': rebuild,
+            'builds': builds,
+            'elapsed_ms': elapsed_ms,
+        }
+    except Exception as exc:  # noqa: BLE001 - optional read stage is fail-soft
+        db.session.rollback()
+        dead_letter.record_failure(
+            COMPOSED_READ_FAILURE_ENTITY_TYPE,
+            exc,
+            entity_ref=','.join(day.isoformat() for day in dates),
+            payload={
+                'product_dates': [day.isoformat() for day in dates],
+                'source': source,
+                'stage': sync_metadata.STAGE_COMPOSED_READS,
+            },
+            sync_run_id=sync_run_id,
+            job_name=job_name,
+        )
+        db.session.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger_to_use.warning(
+            'Phase 0E composed read stage failed after %sms; sync will continue: %s',
             elapsed_ms,
             exc,
         )
@@ -2727,6 +2816,14 @@ def run_postgame_refresh(
                     job_name=sync_metadata.JOB_POSTGAME_REFRESH,
                     run_logger=run_logger,
                 )
+                active_stage = sync_metadata.STAGE_COMPOSED_READS
+                _safe_build_composed_reads_stage(
+                    [schedule_date],
+                    sync_run_id=sync_run_id,
+                    source='postgame_refresh',
+                    job_name=sync_metadata.JOB_POSTGAME_REFRESH,
+                    run_logger=run_logger,
+                )
 
             # Refresh the Intelligence Surface homepage cache from the freshly
             # derived contexts. Best-effort: it never blocks or fails the refresh.
@@ -3014,6 +3111,14 @@ def run_daily_sync(app, days_back: int = 7, source: str = sync_metadata.SOURCE_S
 
             active_stage = sync_metadata.STAGE_WORKLOAD_EVIDENCE
             _safe_build_workload_recovery_evidence_stage(
+                [product_day.calendar_date],
+                sync_run_id=sync_run_id,
+                source='scheduled_sync',
+                job_name=sync_metadata.JOB_DAILY_SYNC,
+                run_logger=run_logger,
+            )
+            active_stage = sync_metadata.STAGE_COMPOSED_READS
+            _safe_build_composed_reads_stage(
                 [product_day.calendar_date],
                 sync_run_id=sync_run_id,
                 source='scheduled_sync',

@@ -107,6 +107,20 @@ Required package:
 - include coverage caveats for transaction churn
 - require later review before public depth-delta or roster-change phrasing
 
+## Roster Membership Context
+
+Anchor: `roster-membership-context`
+
+Required package:
+
+- render only same-day snapshot facts
+- use exact forms only:
+  - `On the active roster per the <date> snapshot (team <id>).`
+  - `Not on the active roster per the <date> snapshot.`
+  - `Roster membership unknown: <reason>.`
+- require `UNKNOWN` when the same-day snapshot is missing or stale
+- add no conclusion beyond the cited roster row
+
 ## Entry Context Bands Usage Observations
 
 Anchor: `entry-context-bands-usage-observations`

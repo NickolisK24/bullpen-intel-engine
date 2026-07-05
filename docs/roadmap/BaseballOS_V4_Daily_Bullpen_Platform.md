@@ -821,7 +821,7 @@ Review cadence:
 | 3 | Phase 0B - Data Source Inventory & Acquisition Strategy | Complete | Branches 0B-01 through 0B-07 completed; acquisition strategy and matrix added; Phase 0C sequencing plan is the next step. |
 | 4 | Phase 0C - Reliever Appearance Evidence Layer | Complete | Branches 0C-01 through 0C-08 completed; foundation report added and source readiness coverage integrated before public evidence interpretation. |
 | 5 | Phase 0D - Pitch-Level / Pitch-Trend Feasibility Layer | Complete | Evidence contract, families, classification registry, decision register, language packages, and exit report completed via PRs #381-#388 plus PR #389. |
-| 6 | Phase 0E - Bullpen Read Quality Model | In progress | Read contract and registry landed as internal-only composed-read foundation; public surfacing remains blocked by legal/source review and a later surface phase. |
+| 6 | Phase 0E - Bullpen Read Quality Model | In progress | Read contract and registry landed; reliever daily read is now underway as an internal-only composed-read path with public surfacing still blocked by legal/source review and a later surface phase. |
 | 7 | Phase 0F - Pitcher Detail Evidence Surface | Not started | Explain what happened and what changed for relievers. |
 | 8 | Phase 0G - Team Bullpen Evidence Surface | Not started | Connect team reads to visible bullpen evidence. |
 | 9 | Phase 0H - Trusted Snapshot + What Changed Foundation | Not started | Compare only trusted, comparable states. |
